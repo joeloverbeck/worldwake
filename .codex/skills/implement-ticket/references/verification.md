@@ -36,6 +36,7 @@ How to verify implementation at the right boundary (Step 6).
 - When broader verification is blocked by a pre-existing unrelated dirty or untracked file, non-semantic lint/format cleanup needed to complete CI-style verification is acceptable, but still record that file as unrelated pre-existing fallout and do not imply the unrelated feature work was completed.
 - When broader verification fails on a golden in the same domain or planner path as the ticket's owned behavior, do one contract-level triage pass before labeling it unrelated.
 - When the ticket explicitly owns broad proof like `cargo test --workspace`, same-domain fallout in adjacent crates can still be current-ticket scope even if the drafted file list was single-crate. Observer/report goldens, cross-crate harness fixtures, and nearby domain-specific integration tests should be triaged as potentially owned fallout before being labeled unrelated.
+- When a touched doc or artifact declares itself generated, prefer rerunning the owning generator and treat the regenerated output as the owned verification path rather than hand-editing the generated file. Add that generator command to the ticket's verification record.
 
 ```bash
 cargo test -p <affected-crate> <test_name>

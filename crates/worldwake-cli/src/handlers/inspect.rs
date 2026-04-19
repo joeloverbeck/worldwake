@@ -304,10 +304,8 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
             cognitive.snapshot_travel_horizon, cognitive.max_node_expansions
         );
         println!(
-            "    transient_block={}, unknown_block={}, structural_block={}",
-            cognitive.transient_block_ticks,
-            cognitive.unknown_block_ticks,
-            cognitive.structural_block_ticks
+            "    transient_block={}, structural_block={}",
+            cognitive.transient_block_ticks, cognitive.structural_block_ticks
         );
         println!(
             "    initial_cooldown={}, max_cooldown={}",

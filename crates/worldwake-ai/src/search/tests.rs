@@ -57,7 +57,6 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         switch_margin: reasoning.switch_margin,
         planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
         transient_block_ticks: reasoning.transient_block_ticks,
-        unknown_block_ticks: reasoning.unknown_block_ticks,
         structural_block_ticks: reasoning.structural_block_ticks,
         stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
         contradicted_belief_backoff_ticks: CognitiveProfile::default()
@@ -2336,7 +2335,7 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
             target: Some(bread),
             action_def: Some(pick_up_id),
         },
-        blocking_fact: BlockingFact::AssumptionFailed,
+        blocking_fact: BlockingFact::TargetGone,
         diagnostic_context: None,
         observed_tick: Tick(1),
         expires_tick: Tick(20),
@@ -2353,7 +2352,7 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
             &blocked,
             Tick(5)
         ),
-        Some((Some(orchard), BlockingFact::AssumptionFailed)),
+        Some((Some(orchard), BlockingFact::TargetGone)),
     );
 }
 

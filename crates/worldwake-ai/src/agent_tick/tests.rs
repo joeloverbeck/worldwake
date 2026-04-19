@@ -105,7 +105,6 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         switch_margin: reasoning.switch_margin,
         planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
         transient_block_ticks: reasoning.transient_block_ticks,
-        unknown_block_ticks: reasoning.unknown_block_ticks,
         structural_block_ticks: reasoning.structural_block_ticks,
         stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
         contradicted_belief_backoff_ticks: CognitiveProfile::default()
@@ -4140,7 +4139,7 @@ fn persist_blocked_memory_commits_changed_component() {
             target: None,
             action_def: None,
         },
-        blocking_fact: BlockingFact::Unknown,
+        blocking_fact: BlockingFact::NoKnownPath,
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(7),
@@ -6049,13 +6048,13 @@ fn goal_completion_does_not_create_blocked_intent() {
     // Check that no blocked intent was created for the completed goal.
     let blocked_memory = harness.world.get_component_blocker_memory(harness.actor);
     if let Some(memory) = blocked_memory {
-        let has_patience_or_assumption = memory.intents.values().any(|intent| {
-            intent.blocking_fact == BlockingFact::PatienceExhausted
-                || intent.blocking_fact == BlockingFact::AssumptionFailed
-        });
+        let has_patience_or_assumption = memory
+            .intents
+            .values()
+            .any(|intent| intent.blocking_fact == BlockingFact::PatienceExhausted);
         assert!(
             !has_patience_or_assumption,
-            "goal completion must NOT create PatienceExhausted or AssumptionFailed blocked intents, \
+            "goal completion must NOT create PatienceExhausted blocked intents, \
                  got: {:?}",
             memory.intents
         );

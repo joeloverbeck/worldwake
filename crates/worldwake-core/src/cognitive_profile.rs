@@ -24,8 +24,6 @@ pub struct CognitiveProfile {
     pub planning_switch_margin: Permille,
     /// Ticks before a transiently blocked goal is re-evaluated.
     pub transient_block_ticks: u32,
-    /// Ticks before a goal blocked for unknown reasons is re-evaluated.
-    pub unknown_block_ticks: u32,
     /// Ticks before a structurally blocked goal (no valid plan exists) is re-evaluated.
     pub structural_block_ticks: u32,
     /// TTL for stale-belief discrepancies before retry.
@@ -89,7 +87,6 @@ impl Default for CognitiveProfile {
             switch_margin: Permille::new_unchecked(100),
             planning_switch_margin: Permille::new_unchecked(150),
             transient_block_ticks: 20,
-            unknown_block_ticks: 5,
             structural_block_ticks: 200,
             stale_belief_backoff_ticks: default_stale_belief_backoff_ticks(),
             contradicted_belief_backoff_ticks: default_contradicted_belief_backoff_ticks(),
@@ -202,7 +199,6 @@ mod tests {
             crate::Permille::new(150).unwrap()
         );
         assert_eq!(profile.transient_block_ticks, 20);
-        assert_eq!(profile.unknown_block_ticks, 5);
         assert_eq!(profile.structural_block_ticks, 200);
         assert_eq!(profile.stale_belief_backoff_ticks, 30);
         assert_eq!(profile.contradicted_belief_backoff_ticks, 60);
@@ -234,7 +230,6 @@ mod tests {
             switch_margin: crate::Permille::new(175).unwrap(),
             planning_switch_margin: crate::Permille::new(225).unwrap(),
             transient_block_ticks: 12,
-            unknown_block_ticks: 9,
             structural_block_ticks: 320,
             stale_belief_backoff_ticks: 31,
             contradicted_belief_backoff_ticks: 61,

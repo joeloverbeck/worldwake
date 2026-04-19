@@ -43,7 +43,7 @@ Do not hand-edit it.
 - `golden_goal_invalidation_by_another_agent`
 - `golden_unrelated_commodity_change_preserves_frontier_exhaustion`
 - `golden_priority_based_interrupt`
-- `golden_blocked_intent_memory_with_ttl_expiry`
+- `golden_discrepancy_memory_with_ttl_expiry`
 - `golden_deprivation_cascade`
 - `golden_thirst_driven_acquisition`
 - `golden_wash_action`

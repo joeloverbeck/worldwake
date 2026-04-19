@@ -1,3 +1,5 @@
+**Status**: ✅ COMPLETED
+
 # S109: Typed Discrepancy Taxonomy and BlockedIntentMemory Split
 
 ## Summary
@@ -6,7 +8,7 @@ Replace the overloaded `BlockingFact::Unknown` / `BlockingFact::AssumptionFailed
 
 ## Phase and Status
 
-Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8: Belief-First Continual Planning Foundation. Status: Completed.
 
 ## Crates
 
@@ -373,8 +375,26 @@ pub struct DiscrepancyTrace {
 
 ### Golden test extension
 
-9. Extend `golden_planner_pathology.rs` or `golden_ai_decisions.rs` with an assertion that after a target-gone replan, the agent's `BlockerMemory` contains a `BlockingFact::TargetGone` entry (not a removed `Unknown` / `AssumptionFailed` variant), and that after a belief-contradiction replan (target identity broken), `DiscrepancyMemory` contains a `Discrepancy::BeliefContradicted` entry keyed on the relevant `BlockerKey`.
+9. Keep the generated golden surfaces green after the cleanup migration, but prove typed post-failure memory routing at the strongest honest lower layer unless a live golden seam already exposes those authoritative memories. On the current branch, `failure_handling` coverage proves `TargetGone` still records on `BlockerMemory`, and `agent_tick` coverage proves belief-contradiction routing records `Discrepancy::BeliefContradicted`; no stronger golden-level persisted-memory assertion is assumed unless that surface is explicitly added later.
 
 ## Outcome
 
-To be filled in at completion.
+Completed: 2026-04-19
+
+What changed:
+- Replaced the old overloaded blocker surface with the live split across `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, and `LearnedOpportunityMemory`.
+- Removed `BlockingFact::Unknown`, `BlockingFact::AssumptionFailed`, and `CognitiveProfile::unknown_block_ticks`, and migrated runtime failure routing to typed `Discrepancy` handling.
+- Landed the supporting additive substrate for `BeliefClaimKey`, discrepancy TTL fields, memory-retention fields, read-only belief-view accessors, and the `DiscrepancyTrace` planning trace surface.
+- Migrated authored scenarios, save/load format, observer fixtures, and generated docs to the post-split contract.
+
+Deviations from original plan:
+- The original work was decomposed across the `S109TYPDISTAX-*` ticket chain instead of landing as one pass.
+- `RepairMemory` and `LearnedOpportunityMemory` initially landed as additive shells, then received their real expiry/retention semantics in follow-up ticket `S109TYPDISTAX-007`.
+- The drafted golden-level assertion for persisted post-replan memory was narrowed to stronger lower-layer proof because the live golden seam on this branch does not expose that authoritative memory aftermath directly.
+
+Verification results:
+- `cargo test --workspace --no-run`
+- `cargo build --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
+- Focused proof landed across the ticket chain for `worldwake-core`, `worldwake-ai`, `worldwake-sim`, and `worldwake-cli`, including blocker/discrepancy routing, memory retention, belief-view accessors, trace migration, scenario/save cleanup, and generated-doc refresh.

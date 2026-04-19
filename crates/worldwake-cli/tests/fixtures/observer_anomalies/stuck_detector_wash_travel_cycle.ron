@@ -74,7 +74,6 @@
                 switch_margin: 100,
                 planning_switch_margin: 150,
                 transient_block_ticks: 20,
-                unknown_block_ticks: 5,
                 structural_block_ticks: 200,
                 initial_cooldown_ticks: 4,
                 max_cooldown_ticks: 64,

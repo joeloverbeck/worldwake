@@ -796,9 +796,6 @@ fn derive_clearing_condition(
                 Some(ClearingBaseline::CommodityQuantity { quantity }),
             )
         }
-        BlockingFact::Unknown | BlockingFact::AssumptionFailed => unreachable!(
-            "typed discrepancy routing should prevent Unknown/AssumptionFailed blockers"
-        ),
         BlockingFact::PatienceExhausted | BlockingFact::NoBuyer => {
             (BlockerClearingCondition::TtlOnly, None)
         }
@@ -1120,7 +1117,6 @@ fn blocking_fact_ttl(fact: BlockingFact, cognitive: &CognitiveProfile) -> u32 {
         | BlockingFact::ReservationConflict
         | BlockingFact::ExclusiveFacilityUnavailable
         | BlockingFact::TargetGone => cognitive.transient_block_ticks,
-        BlockingFact::Unknown => cognitive.unknown_block_ticks,
         BlockingFact::NoKnownPath
         | BlockingFact::NoKnownSeller
         | BlockingFact::TooExpensive
@@ -1130,7 +1126,6 @@ fn blocking_fact_ttl(fact: BlockingFact, cognitive: &CognitiveProfile) -> u32 {
         | BlockingFact::DangerTooHigh
         | BlockingFact::CombatTooRisky
         | BlockingFact::PatienceExhausted
-        | BlockingFact::AssumptionFailed
         | BlockingFact::NoBuyer => cognitive.structural_block_ticks,
     }
 }
@@ -1512,7 +1507,6 @@ mod tests {
             switch_margin: reasoning.switch_margin,
             planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
-            unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
             stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
             contradicted_belief_backoff_ticks: CognitiveProfile::default()
@@ -2275,7 +2269,7 @@ mod tests {
         let agent = entity(1);
         let blocker = Blocker {
             blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
-            blocking_fact: BlockingFact::Unknown,
+            blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
@@ -2714,10 +2708,6 @@ mod tests {
             blocking_fact_ttl(BlockingFact::NoKnownSeller, &cognitive(&budget)),
             budget.structural_block_ticks
         );
-        assert_eq!(
-            blocking_fact_ttl(BlockingFact::Unknown, &cognitive(&budget)),
-            budget.unknown_block_ticks
-        );
     }
 
     #[test]
@@ -2798,14 +2788,6 @@ mod tests {
             discrepancy_ttl(Discrepancy::PartialExecutionDrift, &cognitive),
             19
         );
-    }
-
-    #[test]
-    fn unknown_blocker_uses_dedicated_ttl() {
-        let budget = ProfileFixture::default();
-        let ttl = blocking_fact_ttl(BlockingFact::Unknown, &cognitive(&budget));
-        assert_eq!(ttl, 5);
-        assert_ne!(ttl, budget.transient_block_ticks);
     }
 
     #[test]
@@ -2942,7 +2924,7 @@ mod tests {
         };
         blocked.record(Blocker {
             blocker_key: bk3,
-            blocking_fact: BlockingFact::Unknown,
+            blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(5),

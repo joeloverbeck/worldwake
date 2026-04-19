@@ -201,11 +201,8 @@ pub enum BlockingFact {
     TargetGone,
     DangerTooHigh,
     CombatTooRisky,
-    Unknown,
     /// Frame patience exhausted for this goal at this place/target.
     PatienceExhausted,
-    /// A critical frame assumption failed (target dead, route severed).
-    AssumptionFailed,
     /// Seller staffed a market but no trade occurred during the presence cycle.
     NoBuyer,
 }
@@ -399,7 +396,7 @@ mod tests {
         };
         let mut memory = BlockerMemory::default();
         memory.record(make_intent(bk1, BlockingFact::NoKnownPath, Tick(14)));
-        memory.record(make_intent(bk2, BlockingFact::Unknown, Tick(15)));
+        memory.record(make_intent(bk2, BlockingFact::NoKnownPath, Tick(15)));
 
         memory.expire(Tick(14));
 
@@ -643,20 +640,6 @@ mod tests {
     }
 
     #[test]
-    fn assumption_failed_blocks_goal_generation() {
-        let intent = Blocker {
-            blocker_key: sample_blocker_key(),
-            blocking_fact: BlockingFact::AssumptionFailed,
-            diagnostic_context: None,
-            observed_tick: Tick(1),
-            expires_tick: Tick(100),
-            clearing_condition: BlockerClearingCondition::TtlOnly,
-            baseline_snapshot: None,
-        };
-        assert!(intent.blocks_goal_generation());
-    }
-
-    #[test]
     fn sweep_cleared_removes_matching_entries() {
         let retained_key = BlockerKey {
             goal_key: crate::GoalKey::from(GoalKind::ReduceDanger),
@@ -666,7 +649,11 @@ mod tests {
         };
         let mut memory = BlockerMemory::default();
         memory.record(sample_blocker());
-        memory.record(make_intent(retained_key, BlockingFact::Unknown, Tick(50)));
+        memory.record(make_intent(
+            retained_key,
+            BlockingFact::NoKnownPath,
+            Tick(50),
+        ));
 
         memory.sweep_cleared(|intent| {
             matches!(

@@ -584,7 +584,6 @@ mod tests {
                 switch_margin: Permille::new(175).unwrap(),
                 planning_switch_margin: Permille::new(225).unwrap(),
                 transient_block_ticks: 12,
-                unknown_block_ticks: 6,
                 structural_block_ticks: 250,
                 stale_belief_backoff_ticks: 31,
                 contradicted_belief_backoff_ticks: 61,

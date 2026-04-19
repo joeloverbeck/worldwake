@@ -1379,7 +1379,6 @@ mod tests {
             switch_margin: reasoning.switch_margin,
             planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
-            unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
             stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
             contradicted_belief_backoff_ticks: CognitiveProfile::default()
