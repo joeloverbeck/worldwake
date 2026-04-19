@@ -61,6 +61,7 @@ For derived forensic/report/read-model tickets, use this compact scope checklist
 - confirm the deterministic ordering/storage rule (`BTree*`, stable `Vec` order, no float math)
 - separate bounded-capture/filtering policy from raw candidate collection
 - identify any same-crate type fallout needed to keep the requested API honest
+- if the ticket asks you to prove a derived trace/report field is copied or transformed from authoritative input, target the focused proof at the actual constructor/builder boundary even when the type is declared in a different module
 - when canonical names, classifications, or display rows depend on an existing registry/catalog, verify whether the live render/helper signature must accept that input explicitly instead of assuming the change is purely local `writeln!` fallout
 
 For small CLI/tooling tickets that touch a single binary or local helper surface, explicitly check whether the honest focused proof belongs beside the owned function/module (for example in `src/bin/*.rs` tests) rather than in a new integration-test binary. If the ticket sketches a new `tests/*.rs` file but the live seam is a local formatter/helper inside one binary, narrow the test placement to that seam and record the deviation in the ticket closeout.
@@ -102,7 +103,7 @@ Covered in `references/closeout.md` (Step 8 section).
 - Name exact files, symbols, layers, and invariants for non-trivial claims.
 - Treat tests, traces, event logs, and authoritative state as different proof surfaces.
 - Architectural contradictions: solve or escalate with 1-3-1 (see `references/mismatch-handling.md`, Escalation decision tree). Do not patch around them.
-- For focused test commands, verify that the selector actually proves the owned surface. Substring filters can run extra tests or, for integration-test binaries, compile the target while executing zero tests. When exactness matters, prefer the narrowest truthful selector such as an exact unit-test name or `cargo test -p <crate> --test <file_stem>` for integration-test binaries instead of a loose name filter. For `src/bin/*.rs` unit tests, `--exact` may require the fully qualified test name (for example `tests::my_case`) rather than the bare function name; check `cargo test ... -- --list` before recording the command in ticket closeout.
+- For focused test commands, verify that the selector actually proves the owned surface. Substring filters can run extra tests or, for integration-test binaries, compile the target while executing zero tests. When exactness matters, prefer the narrowest truthful selector such as an exact unit-test name or `cargo test -p <crate> --test <file_stem>` for integration-test binaries instead of a loose name filter. `--exact` may require the fully qualified module path rather than the bare function name, including ordinary lib tests and `src/bin/*.rs` unit tests (for example `agent_tick::planning::tests::my_case` or `tests::my_case`); check `cargo test ... -- --list` before recording the command in ticket closeout.
 
 ## Example Usage
 

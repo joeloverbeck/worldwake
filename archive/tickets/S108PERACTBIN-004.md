@@ -1,6 +1,6 @@
 # S108PERACTBIN-004: Decision trace — `PlannedStepSummary.binding_strictness`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `PlannedStepSummary` gains an optional `binding_strictness: Option<BindingStrictness>` trace field, populated from `ActionDef::binding_strictness` at summary construction time.
@@ -39,8 +39,8 @@ This ticket extends `PlannedStepSummary` (`crates/worldwake-ai/src/decision_trac
 
 ## Verification Layers
 
-1. Summary construction attaches the correct class -> focused unit test on the construction site in `decision_trace.rs`.
-2. Class propagates from `ActionDef::binding_strictness` without re-derivation -> same unit test asserts the traced value equals the registered value.
+1. Summary construction attaches the correct class -> focused unit test on the construction site in `agent_tick/planning.rs`, where `summarize_step` reads the registry and builds `PlannedStepSummary`.
+2. Class propagates from `ActionDef::binding_strictness` without re-derivation -> the same constructor test asserts the traced value equals the registered value.
 3. This ticket is single-layer (decision trace). No authoritative mutation, no action-trace change, no event-log impact.
 
 ## What to Change
@@ -79,10 +79,10 @@ Grep `binding_strictness` after the edit to confirm no consumer expects the fiel
 
 ### 4. Unit test
 
-Add a `#[cfg(test)]` test in `decision_trace.rs` asserting:
-- A `PlannedStepSummary` built from an `ActionDef` classified `ExactIdentity` carries `binding_strictness: Some(ExactIdentity)`.
-- A `PlannedStepSummary` built from a `FungibleEquivalentCommodity` def carries `Some(FungibleEquivalentCommodity)`.
-- (Representational) A summary whose constructor passes `None` renders without panic.
+Add focused tests asserting:
+- In `agent_tick/planning.rs`, a `PlannedStepSummary` built from an `ActionDef` classified `ExactIdentity` carries `binding_strictness: Some(ExactIdentity)`.
+- In `agent_tick/planning.rs`, a `PlannedStepSummary` built from a `FungibleEquivalentCommodity` def carries `Some(FungibleEquivalentCommodity)`.
+- In `decision_trace.rs`, a summary whose constructor passes `None` renders without panic.
 
 ## Files to Touch
 
@@ -99,7 +99,7 @@ Add a `#[cfg(test)]` test in `decision_trace.rs` asserting:
 
 ### Tests That Must Pass
 
-1. New unit test in `decision_trace.rs` asserting the field is populated from `ActionDef::binding_strictness`.
+1. New focused unit coverage proving `binding_strictness` population from `ActionDef::binding_strictness` at the `summarize_step` construction site, plus a `decision_trace.rs` formatter-safety test for `None`.
 2. Existing `decision_trace` tests continue to pass (including `StrategicStepTrace`-related tests).
 3. Existing suite: `cargo build --workspace && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`.
 
@@ -112,10 +112,31 @@ Add a `#[cfg(test)]` test in `decision_trace.rs` asserting:
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/decision_trace.rs` — new `#[cfg(test)]` case asserting `binding_strictness` population from the `ActionDef` at summary time.
+1. `crates/worldwake-ai/src/agent_tick/planning.rs` — new constructor test asserting `binding_strictness` population from the `ActionDef` at summary time.
+2. `crates/worldwake-ai/src/decision_trace.rs` — new formatter-safety case asserting `SelectedPlanTrace` rendering tolerates `binding_strictness: None`.
 
 ### Commands
 
 1. `cargo test -p worldwake-ai decision_trace`
 2. `cargo test -p worldwake-ai`
 3. `cargo build --workspace && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Implemented as a trace-only change. `PlannedStepSummary` now carries `binding_strictness: Option<BindingStrictness>` in `crates/worldwake-ai/src/decision_trace.rs`, and `agent_tick/planning.rs::summarize_step` snapshots the value directly from `ActionDef::binding_strictness` when selected plans, replacement traces, and plan-attempt traces are summarized. Manual `PlannedStepSummary` fixtures were updated to populate the new optional field, and no observer/golden consumer required a behavior change because the field remains informational.
+
+## Deviations
+
+1. The population proof landed in `crates/worldwake-ai/src/agent_tick/planning.rs` rather than `decision_trace.rs`. That is the actual construction boundary, so proving the registry-to-summary copy there is more precise and keeps the ticket aligned with the live symbol ownership.
+
+## Verification Result
+
+Passed:
+
+1. `cargo test -p worldwake-ai summarize_step_carries_binding_strictness_snapshot_from_action_def`
+2. `cargo test -p worldwake-ai selected_plan_format_tolerates_missing_binding_strictness_snapshot`
+3. `cargo test -p worldwake-ai decision_trace`
+4. `cargo test -p worldwake-ai`
+5. `cargo build --workspace`
+6. `cargo test --workspace`
+7. `cargo clippy --workspace --all-targets -- -D warnings`

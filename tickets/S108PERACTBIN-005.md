@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — this ticket is test-only. It exercises the gate wired by T-002, the revalidation gate by T-003, and the trace field from T-004 through existing golden scenarios extended with `ExactIdentity`-substitution-attempt setups.
-**Deps**: archive/tickets/S108PERACTBIN-002.md, tickets/S108PERACTBIN-003.md, tickets/S108PERACTBIN-004.md (requires the dispatch-side gate from T-002, the T-003 planner-side contract correction, and the trace field from T-004).
+**Deps**: archive/tickets/S108PERACTBIN-002.md, archive/tickets/S108PERACTBIN-003.md, archive/tickets/S108PERACTBIN-004.md (requires the dispatch-side gate from T-002, the T-003 planner-side contract correction, and the trace field from T-004).
 
 ## Problem
 

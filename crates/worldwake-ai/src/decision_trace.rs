@@ -12,7 +12,8 @@ use worldwake_core::{
     PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionStartFailureReason, ResolvedRequestTrace, TellTopicOmissionReason,
+    ActionDefRegistry, ActionStartFailureReason, BindingStrictness, ResolvedRequestTrace,
+    TellTopicOmissionReason,
 };
 
 use crate::ExhaustionRetryState;
@@ -974,6 +975,7 @@ pub struct PlannedStepSummary {
     pub op_kind: PlannerOpKind,
     pub targets: Vec<EntityId>,
     pub estimated_ticks: u32,
+    pub binding_strictness: Option<BindingStrictness>,
 }
 
 // ── Stage 3: Plan Selection ─────────────────────────────────────
@@ -3097,6 +3099,7 @@ mod tests {
                         op_kind: PlannerOpKind::Sleep,
                         targets: vec![],
                         estimated_ticks: 2,
+                        binding_strictness: None,
                     }],
                     terminal_kind: PlanTerminalKind::GoalSatisfied,
                     next_step_index: Some(0),
@@ -3106,6 +3109,7 @@ mod tests {
                         op_kind: PlannerOpKind::Sleep,
                         targets: vec![],
                         estimated_ticks: 2,
+                        binding_strictness: None,
                     }),
                     search_provenance: Some(SelectedPlanSearchProvenance {
                         expansions_used: 3,
@@ -4575,6 +4579,33 @@ mod tests {
             lines.is_empty(),
             "empty knowledge path should produce no output"
         );
+    }
+
+    #[test]
+    fn selected_plan_format_tolerates_missing_binding_strictness_snapshot() {
+        let summary = PlannedStepSummary {
+            action_def_id: ActionDefId(1),
+            action_name: "sleep".to_string(),
+            op_kind: PlannerOpKind::Sleep,
+            targets: vec![],
+            estimated_ticks: 2,
+            binding_strictness: None,
+        };
+        let selected_plan = SelectedPlanTrace {
+            steps: vec![summary.clone()],
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+            next_step_index: Some(0),
+            next_step: Some(summary),
+            search_provenance: None,
+            primary_motive: 100,
+            total_value: 100,
+            side_benefits: vec![],
+        };
+
+        let formatted = format_selected_plan(&selected_plan);
+
+        assert!(formatted.contains("GoalSatisfied"));
+        assert!(formatted.contains("next_step=Sleep"));
     }
 
     // ── Pursuit trace tests ───────────────────────────────────────
