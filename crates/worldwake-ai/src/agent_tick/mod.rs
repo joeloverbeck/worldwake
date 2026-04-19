@@ -511,13 +511,17 @@ fn process_agent(
                 emit_assumption_transitions(&pre_state, &eval, tick, &mut frame_transitions);
                 if matches!(eval, AssumptionEvalResult::CriticalFailure) {
                     // Create blocked intent so the agent doesn't immediately
-                    // re-adopt the same goal after assumption failure.
+                    // re-adopt the same goal after assumption failure. The
+                    // structural block-ticks TTL preserves the pre-S109
+                    // suppression duration of `BlockingFact::AssumptionFailed`
+                    // — a failed plan-level assumption is structural, not a
+                    // transient drift.
                     record_assumption_failure(
                         current_frame.as_ref().unwrap(),
                         view.effective_place(agent),
                         &mut discrepancy_memory,
                         tick,
-                        cognitive.partial_drift_backoff_ticks,
+                        cognitive.structural_block_ticks,
                     );
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
@@ -671,6 +675,7 @@ fn process_agent(
             &mut current_frame,
             &mut current_facility_intents,
             &mut blocked_memory,
+            &mut discrepancy_memory,
             agent,
             &ranked_candidates,
             &active_action,

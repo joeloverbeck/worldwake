@@ -417,13 +417,23 @@ pub(super) fn check_patience_exhaustion(
     true
 }
 
-/// Record a typed discrepancy for a frame whose critical assumption has failed.
+/// Record a typed discrepancy for a frame whose critical assumption has
+/// failed. Pre-S109 this path emitted `BlockingFact::AssumptionFailed`
+/// recorded with `BlockerClearingCondition::TtlOnly` and a TTL of
+/// `structural_block_ticks` (200 by default). The S109 migration must
+/// preserve that effective suppression duration: a failed-assumption goal
+/// must stay suppressed long enough that the agent considers alternative
+/// plans, not immediately re-attempt the same broken plan after re-perceiving
+/// the same target. The class-specific `partial_drift_backoff_ticks` (4) is
+/// appropriate for genuine partial-execution drift recoveries within an
+/// active plan; it is not the right TTL for "the assumption that justified
+/// this entire plan no longer holds," which is a structural failure.
 pub(super) fn record_assumption_failure(
     frame: &IntentionFrame,
     agent_place: Option<EntityId>,
     discrepancy_memory: &mut DiscrepancyMemory,
     tick: Tick,
-    partial_drift_backoff_ticks: u32,
+    structural_block_ticks: u32,
 ) {
     let target = frame_blocker_target(&frame.domain);
     let discrepancy = if target.is_some() {
@@ -431,10 +441,10 @@ pub(super) fn record_assumption_failure(
     } else {
         Discrepancy::PartialExecutionDrift
     };
-    let clearing_condition = target.map_or(DiscrepancyClearing::TtlExpiry, |target| {
-        DiscrepancyClearing::ReobservationOf { target }
-    });
-
+    // Use TtlExpiry, not ReobservationOf: a failed plan assumption is not
+    // resolved by simply re-perceiving the same target entity. Re-perception
+    // would clear the entry on the very next tick of travel back into
+    // observation range, immediately re-enabling the same broken plan.
     discrepancy_memory.record(DiscrepancyEntry {
         blocker_key: BlockerKey {
             goal_key: frame.goal,
@@ -444,8 +454,8 @@ pub(super) fn record_assumption_failure(
         },
         discrepancy,
         observed_tick: tick,
-        expires_tick: tick + u64::from(partial_drift_backoff_ticks),
-        clearing_condition,
+        expires_tick: tick + u64::from(structural_block_ticks),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
     });
 }
 
@@ -1212,5 +1222,104 @@ mod tests {
     #[test]
     fn frame_blocker_target_generic_returns_none() {
         assert_eq!(frame_blocker_target(&IntentionDomain::Generic), None);
+    }
+
+    // ── Regression: record_assumption_failure suppression duration ──────
+    //
+    // Pre-S109 this path emitted `BlockingFact::AssumptionFailed` recorded
+    // with `BlockerClearingCondition::TtlOnly` and a TTL of
+    // `structural_block_ticks` (200 by default). The S109 typed-discrepancy
+    // migration must preserve that effective suppression duration; otherwise
+    // an agent whose plan failed re-attempts the same broken plan as soon
+    // as it re-perceives the target, producing oscillation loops in
+    // survival scenarios. These tests pin the TTL and clearing condition
+    // against accidental regression in either direction.
+
+    fn assumption_failure_frame(domain: IntentionDomain) -> IntentionFrame {
+        IntentionFrame {
+            goal: GoalKey::from(GoalKind::Sleep),
+            domain,
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(0),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        }
+    }
+
+    fn structural_block_ticks_default() -> u32 {
+        worldwake_core::CognitiveProfile::default().structural_block_ticks
+    }
+
+    #[test]
+    fn record_assumption_failure_uses_structural_block_ticks_with_target() {
+        let target = make_entity(7);
+        let agent_place = make_entity(1);
+        let frame = assumption_failure_frame(IntentionDomain::Care { patient: target });
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(50);
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(&frame, Some(agent_place), &mut memory, tick, ttl);
+
+        let entry = memory
+            .entries
+            .values()
+            .next()
+            .expect("entry recorded with target");
+        assert_eq!(entry.expires_tick, Tick(tick.0 + u64::from(ttl)));
+        assert_eq!(
+            entry.clearing_condition,
+            worldwake_core::DiscrepancyClearing::TtlExpiry,
+            "with-target assumption failure must clear by TTL, not on \
+             ReobservationOf — re-perceiving the target does not validate \
+             that the failed plan-level assumption is now resolved"
+        );
+        assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+        assert_eq!(entry.blocker_key.target, Some(target));
+        assert_eq!(entry.blocker_key.place, Some(agent_place));
+    }
+
+    #[test]
+    fn record_assumption_failure_uses_structural_block_ticks_without_target() {
+        let agent_place = make_entity(1);
+        let frame = assumption_failure_frame(IntentionDomain::Generic);
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(75);
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(&frame, Some(agent_place), &mut memory, tick, ttl);
+
+        let entry = memory
+            .entries
+            .values()
+            .next()
+            .expect("entry recorded without target");
+        assert_eq!(entry.expires_tick, Tick(tick.0 + u64::from(ttl)));
+        assert_eq!(
+            entry.clearing_condition,
+            worldwake_core::DiscrepancyClearing::TtlExpiry
+        );
+        assert_eq!(entry.discrepancy, Discrepancy::PartialExecutionDrift);
+        assert_eq!(entry.blocker_key.target, None);
+    }
+
+    #[test]
+    fn record_assumption_failure_overwrites_prior_entry_for_same_key() {
+        let target = make_entity(11);
+        let agent_place = make_entity(2);
+        let frame = assumption_failure_frame(IntentionDomain::Care { patient: target });
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(&frame, Some(agent_place), &mut memory, Tick(10), ttl);
+        record_assumption_failure(&frame, Some(agent_place), &mut memory, Tick(40), ttl);
+
+        // Same blocker_key (goal/place/target) → second record replaces first.
+        assert_eq!(memory.entries.len(), 1);
+        let entry = memory.entries.values().next().unwrap();
+        assert_eq!(entry.observed_tick, Tick(40));
+        assert_eq!(entry.expires_tick, Tick(40 + u64::from(ttl)));
     }
 }

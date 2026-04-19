@@ -53,6 +53,7 @@ pub(super) fn handle_active_action_phase(
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     active_action: &worldwake_sim::ActionInstance,
@@ -133,7 +134,12 @@ pub(super) fn handle_active_action_phase(
                 worldwake_sim::InterruptReason::Reprioritized,
             )
             .map_err(|error| TickInputError::new(format!("{error:?}")))?;
-        let mut discrepancy_memory = DiscrepancyMemory::default();
+        // Pass the agent's real discrepancy_memory through. A throwaway
+        // `DiscrepancyMemory::default()` here would silently lose any
+        // discrepancy `reconcile_in_flight_state` records during interrupt
+        // reconciliation (e.g. handling the replan signal that just fired),
+        // because the throwaway is dropped at the end of this scope and
+        // never persisted to the agent's component.
         let _ = reconcile_in_flight_state(
             ctx,
             runtime,
@@ -141,7 +147,7 @@ pub(super) fn handle_active_action_phase(
             jc,
             facility_intents,
             blocked_memory,
-            &mut discrepancy_memory,
+            discrepancy_memory,
             None,
             agent,
             InFlightReconciliation {

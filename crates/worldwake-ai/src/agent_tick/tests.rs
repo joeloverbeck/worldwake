@@ -6008,12 +6008,18 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
     let mut discrepancy_memory = DiscrepancyMemory::default();
     let cognitive = CognitiveProfile::default();
 
+    // Per S109TYPDISTAX-004 correctness fix: failed plan-level assumptions
+    // are structural failures that suppress the goal for the
+    // structural-block-ticks window with TtlExpiry clearing. Re-perceiving
+    // the same target does not validate that the failed assumption is
+    // resolved, so ReobservationOf would fire too eagerly and reproduce
+    // the pre-fix oscillation regression.
     record_assumption_failure(
         &frame,
         Some(place),
         &mut discrepancy_memory,
         Tick(5),
-        cognitive.partial_drift_backoff_ticks,
+        cognitive.structural_block_ticks,
     );
 
     assert_eq!(discrepancy_memory.entries.len(), 1);
@@ -6026,12 +6032,9 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
     assert_eq!(entry.observed_tick, Tick(5));
     assert_eq!(
         entry.expires_tick,
-        Tick(5 + u64::from(cognitive.partial_drift_backoff_ticks))
+        Tick(5 + u64::from(cognitive.structural_block_ticks))
     );
-    assert_eq!(
-        entry.clearing_condition,
-        DiscrepancyClearing::ReobservationOf { target: patient }
-    );
+    assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
 }
 
 #[test]

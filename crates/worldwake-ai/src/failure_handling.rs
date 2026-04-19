@@ -814,7 +814,27 @@ fn derive_discrepancy_clearing(
         return DiscrepancyClearing::BeliefUpdate { claim_key };
     }
 
-    if let Some(target) = blocker_key.target {
+    // ReobservationOf is only meaningful for discrepancy classes that
+    // re-perceiving the target genuinely resolves: the agent saw the target
+    // again and now has a fresh observation that supersedes the recorded
+    // discrepancy. Apply it only to belief-staleness / belief-contradiction /
+    // missing-observation classes where that semantics holds. For other
+    // classes — ImproperPlanningState, PartialExecutionDrift,
+    // SearchBudgetExhausted, RouteUnknown, NoLegalBinding,
+    // NoWillingCounterparty — re-perceiving the target proves nothing about
+    // whether the failure mode is resolved. If we used ReobservationOf for
+    // these, the entry would clear the moment the agent travels back into
+    // observation range, immediately re-enabling the same broken plan and
+    // producing oscillation loops in survival scenarios.
+    let target_reobservation_resolves = matches!(
+        discrepancy,
+        Discrepancy::BeliefStale
+            | Discrepancy::BeliefContradicted
+            | Discrepancy::MissingObservation
+    );
+    if target_reobservation_resolves
+        && let Some(target) = blocker_key.target
+    {
         return DiscrepancyClearing::ReobservationOf { target };
     }
 
@@ -3011,5 +3031,110 @@ mod tests {
             1,
             "pursuit TargetGone blocker should not auto-resolve"
         );
+    }
+
+    // ── Regression: derive_discrepancy_clearing scope ─────────────────────
+    //
+    // ReobservationOf clearing is only meaningful for discrepancy classes
+    // that re-perceiving the target genuinely resolves. For other classes
+    // (ImproperPlanningState, PartialExecutionDrift, SearchBudgetExhausted,
+    // RouteUnknown, NoLegalBinding, NoWillingCounterparty), re-perceiving
+    // the target proves nothing about whether the failure mode is resolved.
+    // If we apply ReobservationOf to those classes, the entry clears the
+    // moment the agent travels back into observation range, immediately
+    // re-enabling the same broken plan and producing oscillation loops in
+    // survival scenarios. These tests pin the scope of `ReobservationOf`
+    // application against accidental regression.
+
+    fn discrepancy_blocker_key_with_target(target: EntityId) -> BlockerKey {
+        BlockerKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            place: None,
+            target: Some(target),
+            action_def: Some(ActionDefId(1)),
+        }
+    }
+
+    fn discrepancy_blocker_key_without_target() -> BlockerKey {
+        BlockerKey {
+            goal_key: GoalKey::from(GoalKind::Sleep),
+            place: None,
+            target: None,
+            action_def: Some(ActionDefId(1)),
+        }
+    }
+
+    #[test]
+    fn discrepancy_clearing_is_ttl_expiry_for_planner_state_classes() {
+        let target = EntityId {
+            slot: 7,
+            generation: 0,
+        };
+        let key = discrepancy_blocker_key_with_target(target);
+
+        // Classes where re-perceiving the target does NOT validate
+        // resolution must use TtlExpiry, even when a target is present.
+        for discrepancy in [
+            Discrepancy::ImproperPlanningState,
+            Discrepancy::PartialExecutionDrift,
+            Discrepancy::SearchBudgetExhausted,
+            Discrepancy::RouteUnknown,
+            Discrepancy::NoLegalBinding,
+            Discrepancy::NoWillingCounterparty,
+        ] {
+            assert_eq!(
+                super::derive_discrepancy_clearing(discrepancy, &key, None),
+                worldwake_core::DiscrepancyClearing::TtlExpiry,
+                "{discrepancy:?} with target should clear by TTL, not ReobservationOf",
+            );
+        }
+    }
+
+    #[test]
+    fn discrepancy_clearing_uses_reobservation_for_perceptive_classes() {
+        let target = EntityId {
+            slot: 7,
+            generation: 0,
+        };
+        let key = discrepancy_blocker_key_with_target(target);
+
+        // Classes where re-perception genuinely supersedes the discrepancy
+        // continue to use ReobservationOf when a target is present.
+        for discrepancy in [
+            Discrepancy::BeliefStale,
+            Discrepancy::BeliefContradicted,
+            Discrepancy::MissingObservation,
+        ] {
+            assert_eq!(
+                super::derive_discrepancy_clearing(discrepancy, &key, None),
+                worldwake_core::DiscrepancyClearing::ReobservationOf { target },
+                "{discrepancy:?} with target should clear on re-observation",
+            );
+        }
+    }
+
+    #[test]
+    fn discrepancy_clearing_is_ttl_expiry_for_targetless_entries_in_all_classes() {
+        let key = discrepancy_blocker_key_without_target();
+
+        // Without a target, every discrepancy class falls through to
+        // TtlExpiry — the only viable clearing path.
+        for discrepancy in [
+            Discrepancy::BeliefStale,
+            Discrepancy::BeliefContradicted,
+            Discrepancy::ImproperPlanningState,
+            Discrepancy::PartialExecutionDrift,
+            Discrepancy::SearchBudgetExhausted,
+            Discrepancy::RouteUnknown,
+            Discrepancy::NoLegalBinding,
+            Discrepancy::NoWillingCounterparty,
+            Discrepancy::MissingObservation,
+        ] {
+            assert_eq!(
+                super::derive_discrepancy_clearing(discrepancy, &key, None),
+                worldwake_core::DiscrepancyClearing::TtlExpiry,
+                "{discrepancy:?} without target must use TtlExpiry",
+            );
+        }
     }
 }
