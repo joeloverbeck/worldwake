@@ -61,6 +61,8 @@ Present in this format:
 1. <question>
 ```
 
+**Finding-key convention**: In Step 7's Pre-Apply Verification table and Step 8's status reporting, Issues are keyed `I1, I2, …`; Improvements are keyed `M1, M2, …`; Additions are keyed `F1, F2, …`. Preserve the within-category number from this section (e.g., the third Improvement listed here becomes `M3` in Step 7).
+
 ## Question Handling
 
 - **Initial report**: At most 3 questions. If more, prioritize blockers and defer rest to follow-up.

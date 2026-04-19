@@ -392,6 +392,40 @@ pub(crate) struct SnapshotPlace {
     pub(crate) bandit_camp_faction: Option<EntityId>,
 }
 
+/// Authoritative travel data is intentionally unreachable from outside
+/// `worldwake-ai`. External planner-adjacent code must use accessor methods
+/// instead of reading the underlying matrix.
+///
+/// ```compile_fail
+/// use worldwake_ai::PlanningSnapshot;
+///
+/// fn read_authoritative(snapshot: &PlanningSnapshot) {
+///     let _ = &snapshot.shortest_travel_ticks as *const _ as *const ();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// fn mention_authoritative_type() {
+///     let _: Option<worldwake_ai::planning_snapshot::DistanceMatrix> = None;
+/// }
+/// ```
+///
+/// ```
+/// use worldwake_ai::PlanningSnapshot;
+/// use worldwake_core::EntityId;
+///
+/// fn read_via_accessors(
+///     snapshot: &PlanningSnapshot,
+///     from: EntityId,
+///     to: EntityId,
+///     destinations: &[EntityId],
+/// ) -> (Option<u32>, Option<u32>) {
+///     (
+///         snapshot.min_travel_ticks(from, to),
+///         snapshot.min_travel_ticks_to_any(from, destinations),
+///     )
+/// }
+/// ```
 pub struct PlanningSnapshot {
     pub(crate) actor: EntityId,
     pub(crate) current_tick: Tick,
