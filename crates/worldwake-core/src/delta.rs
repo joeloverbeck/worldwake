@@ -3,7 +3,7 @@
 use crate::BeliefStoreDiff;
 use crate::{
     AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
-    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
+    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory, BountyTerms,
     CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
     CommodityValuationProfile, CommunicationProfile, Container, ContentionDispositionProfile,
     ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
@@ -297,7 +297,7 @@ mod tests {
         ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
         WoundCause, WoundList,
         test_utils::{
-            sample_blocked_intent_memory, sample_commodity_valuation_profile,
+            sample_blocker_memory, sample_commodity_valuation_profile,
             sample_contention_disposition_profile, sample_demand_memory,
             sample_merchandise_profile, sample_preference_profile, sample_route_experience,
             sample_source_reliability, sample_substitute_preferences,
@@ -455,7 +455,7 @@ mod tests {
             ComponentValue::NoticeContent(NoticeContent {
                 topic: NoticeTopic::ThreatWarning { place: entity(43) },
             }),
-            ComponentValue::BlockedIntentMemory(sample_blocked_intent_memory()),
+            ComponentValue::BlockerMemory(sample_blocker_memory()),
             ComponentValue::AgentBeliefStore(AgentBeliefStore {
                 entity_claims: BTreeMap::new(),
                 next_claim_id: crate::ClaimId(0),
@@ -890,7 +890,7 @@ mod tests {
                 ComponentKind::ArtifactHeader,
                 ComponentKind::BountyTerms,
                 ComponentKind::NoticeContent,
-                ComponentKind::BlockedIntentMemory,
+                ComponentKind::BlockerMemory,
                 ComponentKind::AgentBeliefStore,
                 ComponentKind::ExpectationStore,
                 ComponentKind::LastSeenMemory,

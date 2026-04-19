@@ -322,8 +322,8 @@ pub fn handle_inspect(sim: &SimulationState, entity_input: &str) -> CommandResul
             execution_budget.max_prerequisite_locations()
         );
     }
-    if let Some(bim) = world.get_component_blocked_intent_memory(entity) {
-        println!("  BlockedIntentMemory: {} entries", bim.intents.len());
+    if let Some(bim) = world.get_component_blocker_memory(entity) {
+        println!("  BlockerMemory: {} entries", bim.intents.len());
     }
     if let Some(lot) = world.get_component_item_lot(entity) {
         println!("  ItemLot: {:?} x{}", lot.commodity, lot.quantity.0);

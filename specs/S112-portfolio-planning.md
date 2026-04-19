@@ -16,7 +16,7 @@ Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
 
 ## Dependencies
 
-- S109 (Typed Discrepancy Taxonomy) — feasibility probe reads `DiscrepancyMemory` / `BlockerMemory` to reject already-suppressed goals. Soft: S112 can land before S109 by reading the current `BlockedIntentMemory`.
+- S109 (Typed Discrepancy Taxonomy) — feasibility probe reads `DiscrepancyMemory` / `BlockerMemory` to reject already-suppressed goals. Soft: S112 can land before the full S109 split by reading the current `BlockerMemory`.
 
 ## Design Goals
 

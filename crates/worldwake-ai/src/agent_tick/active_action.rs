@@ -1,6 +1,6 @@
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, CognitiveProfile, ContentionIntents, EntityId,
-    FrameState, IntentionFrame, Permille, Tick,
+    ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents, EntityId, FrameState,
+    IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
@@ -52,7 +52,7 @@ pub(super) fn handle_active_action_phase(
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     active_action: &worldwake_sim::ActionInstance,
@@ -262,7 +262,7 @@ pub(super) fn handle_current_step_failure(
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
     jc: &mut Option<IntentionFrame>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     facility_intents: &mut ContentionIntents,
     agent: EntityId,
     step: &PlannedStep,
@@ -302,7 +302,7 @@ pub(super) fn handle_current_step_failure(
         event_log,
         agent,
         tick,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         blocked_memory,
     )
 }

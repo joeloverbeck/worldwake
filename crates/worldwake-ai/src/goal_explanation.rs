@@ -1,5 +1,5 @@
 use crate::{GoalPriorityClass, build_decision_context, generate_candidates, rank_candidates};
-use worldwake_core::{BlockedIntentMemory, EntityId, GoalKind, Tick, UtilityProfile};
+use worldwake_core::{BlockerMemory, EntityId, GoalKind, Tick, UtilityProfile};
 use worldwake_sim::{GoalBeliefView, RecipeRegistry};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,7 +17,7 @@ pub fn explain_goal(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     goal: &GoalKind,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     recipes: &RecipeRegistry,
     utility: &UtilityProfile,
     current_tick: Tick,
@@ -57,7 +57,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BlockedIntentMemory, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        BlockerMemory, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         ContentionGrant, DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind,
         HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
         MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
@@ -489,7 +489,7 @@ mod tests {
             &view,
             agent,
             &goal,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             &utility(),
             Tick(5),
@@ -518,7 +518,7 @@ mod tests {
             &view,
             agent,
             &missing_goal,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             &utility(),
             Tick(5),
@@ -536,7 +536,7 @@ mod tests {
             &view,
             agent,
             &goal,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             &utility(),
             Tick(5),
@@ -561,7 +561,7 @@ mod tests {
             &view,
             agent,
             &goal,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             &utility(),
             Tick(5),
@@ -570,7 +570,7 @@ mod tests {
             &view,
             agent,
             &goal,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             &utility(),
             Tick(5),

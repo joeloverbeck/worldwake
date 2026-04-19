@@ -35,6 +35,13 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates.
 - When a flat internal carrier becomes nested or decomposed into sub-structs, sweep both the type name and moved field names across the owning crate.
 
+**Shared rename checklist (types, modules, generated accessors):**
+- Run a repo-wide symbol sweep for the old type/module/accessor names across all workspace crates before trusting the ticket's file list.
+- Include crate-root re-exports, `pub mod` declarations, and generated accessor families (for example `get_component_*`, `set_component_*`, `query_*`, `entities_with_*`) in the rename inventory.
+- Sweep downstream compile consumers, not just first-order production readers: CLI handlers, inspect/report formatters, golden harnesses, integration tests, and same-domain systems crates.
+- Treat compile-only fallout from those downstream import/accessor consumers as current-ticket scope for the rename, even when the drafted ticket only named the defining crate or macro expansion sites.
+- After the first broad rename patch lands, prefer an early all-target compile-only pass such as `cargo test --workspace --no-run` to enumerate missed rename fallout before focused proof.
+
 **Persisted-shape checks:**
 - No legacy save support by default. When persisted shape changes, update the current save format; keep older versions rejected unless the user explicitly asks for compatibility.
 - When removing or reclassifying persisted fields, search for stale tests, helpers, or docs that still assume older save versions load successfully.

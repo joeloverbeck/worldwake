@@ -4,9 +4,9 @@ use crate::{
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CognitiveProfile,
-    ContentionIntents, EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain,
-    IntentionFrame, Permille, SuspensionReason, Tick,
+    Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, ContentionIntents,
+    EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame,
+    Permille, SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -136,7 +136,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
     frame: Option<&IntentionFrame>,
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     facility_intents: &mut ContentionIntents,
     agent: EntityId,
     step: &PlannedStep,
@@ -171,7 +171,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
                 .map(|plan| plan.goal)
                 .expect("active frame travel must retain a current goal")
         });
-        blocked_memory.record(BlockedIntent {
+        blocked_memory.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key,
                 place: blocked_leg_target(step),
@@ -361,7 +361,7 @@ pub(super) fn apply_assumption_result(
 }
 
 /// Extract the domain-specific target entity for a `BlockerKey` from an
-/// `IntentionDomain`. Used when creating `BlockedIntent`s on frame exhaustion
+/// `IntentionDomain`. Used when creating `Blocker`s on frame exhaustion
 /// (patience or assumption failure).
 pub(super) fn frame_blocker_target(domain: &IntentionDomain) -> Option<EntityId> {
     match *domain {
@@ -375,7 +375,7 @@ pub(super) fn frame_blocker_target(domain: &IntentionDomain) -> Option<EntityId>
 }
 
 /// Check whether a frame's `stalled_ticks` has reached `patience_limit` after an
-/// increment. If so, record a `BlockedIntent` with `PatienceExhausted`,
+/// increment. If so, record a `Blocker` with `PatienceExhausted`,
 /// transition the frame to `Exhausted`, clear the plan, and return `true`.
 ///
 /// The caller must have already incremented `frame.stalled_ticks`. This
@@ -384,7 +384,7 @@ pub(super) fn frame_blocker_target(domain: &IntentionDomain) -> Option<EntityId>
 pub(super) fn check_patience_exhaustion(
     frame: &IntentionFrame,
     agent_place: Option<EntityId>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     facility_intents: &mut ContentionIntents,
     runtime: &mut AgentDecisionRuntime,
     tick: Tick,
@@ -393,7 +393,7 @@ pub(super) fn check_patience_exhaustion(
     if frame.stalled_ticks < frame.patience_limit {
         return false;
     }
-    blocked_memory.record(BlockedIntent {
+    blocked_memory.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: frame.goal,
             place: agent_place,
@@ -416,16 +416,16 @@ pub(super) fn check_patience_exhaustion(
     true
 }
 
-/// Record a `BlockedIntent` with `AssumptionFailed` for a frame whose critical
+/// Record a `Blocker` with `AssumptionFailed` for a frame whose critical
 /// assumption has failed.
 pub(super) fn record_assumption_failure_blocked_intent(
     frame: &IntentionFrame,
     agent_place: Option<EntityId>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     tick: Tick,
     structural_block_ticks: u32,
 ) {
-    blocked_memory.record(BlockedIntent {
+    blocked_memory.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: frame.goal,
             place: agent_place,

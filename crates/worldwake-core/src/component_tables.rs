@@ -4,7 +4,7 @@ use crate::{
     EntityId,
     bandit_camp::{BanditCamp, BanditFactionPolicy},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
-    blocked_intent::BlockedIntentMemory,
+    blocker_memory::BlockerMemory,
     cognitive_profile::CognitiveProfile,
     combat::{CombatProfile, CombatStance, DeadAt},
     communication::CommunicationProfile,
@@ -164,8 +164,8 @@ mod tests {
             EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
         },
         test_utils::{
-            sample_blocked_intent_memory, sample_contention_disposition_profile,
-            sample_demand_memory, sample_merchandise_profile, sample_substitute_preferences,
+            sample_blocker_memory, sample_contention_disposition_profile, sample_demand_memory,
+            sample_merchandise_profile, sample_substitute_preferences,
             sample_trade_disposition_profile, sample_utility_profile,
         },
     };
@@ -376,7 +376,7 @@ mod tests {
             },
         );
         tables.insert_utility_profile(entity(20), sample_utility_profile());
-        tables.insert_blocked_intent_memory(entity(21), sample_blocked_intent_memory());
+        tables.insert_blocker_memory(entity(21), sample_blocker_memory());
         tables.insert_agent_belief_store(entity(22), sample_roundtrip_belief_store());
         tables.insert_perception_profile(
             entity(24),
@@ -477,7 +477,7 @@ mod tests {
         assert_eq!(tables.iter_dead_ats().count(), 0);
         assert_eq!(tables.iter_contention_disposition_profiles().count(), 0);
         assert_eq!(tables.iter_utility_profiles().count(), 0);
-        assert_eq!(tables.iter_blocked_intent_memories().count(), 0);
+        assert_eq!(tables.iter_blocker_memories().count(), 0);
         assert_eq!(tables.iter_agent_belief_stores().count(), 0);
         assert_eq!(tables.iter_perception_profiles().count(), 0);
         assert_eq!(tables.iter_tell_profiles().count(), 0);
@@ -932,19 +932,16 @@ mod tests {
     }
 
     #[test]
-    fn insert_and_get_blocked_intent_memory() {
+    fn insert_and_get_blocker_memory() {
         let mut tables = ComponentTables::default();
         let id = entity(35);
-        let memory = sample_blocked_intent_memory();
+        let memory = sample_blocker_memory();
 
-        assert_eq!(
-            tables.insert_blocked_intent_memory(id, memory.clone()),
-            None
-        );
-        assert_eq!(tables.get_blocked_intent_memory(id), Some(&memory));
-        assert!(tables.has_blocked_intent_memory(id));
-        assert_eq!(tables.remove_blocked_intent_memory(id), Some(memory));
-        assert_eq!(tables.get_blocked_intent_memory(id), None);
+        assert_eq!(tables.insert_blocker_memory(id, memory.clone()), None);
+        assert_eq!(tables.get_blocker_memory(id), Some(&memory));
+        assert!(tables.has_blocker_memory(id));
+        assert_eq!(tables.remove_blocker_memory(id), Some(memory));
+        assert_eq!(tables.get_blocker_memory(id), None);
     }
 
     #[test]
@@ -1202,7 +1199,7 @@ mod tests {
         tables.insert_deprivation_exposure(id, DeprivationExposure::default());
         tables.insert_metabolism_profile(id, MetabolismProfile::default());
         tables.insert_utility_profile(id, sample_utility_profile());
-        tables.insert_blocked_intent_memory(id, sample_blocked_intent_memory());
+        tables.insert_blocker_memory(id, sample_blocker_memory());
         tables.insert_carry_capacity(id, CarryCapacity(LoadUnits(7)));
         tables.insert_known_recipes(id, KnownRecipes::with([crate::RecipeId(8)]));
         tables.insert_substitute_preferences(id, sample_substitute_preferences());
@@ -1266,7 +1263,7 @@ mod tests {
         assert_eq!(tables.get_combat_profile(id), None);
         assert_eq!(tables.get_dead_at(id), None);
         assert_eq!(tables.get_utility_profile(id), None);
-        assert_eq!(tables.get_blocked_intent_memory(id), None);
+        assert_eq!(tables.get_blocker_memory(id), None);
         assert_eq!(tables.get_drive_thresholds(id), None);
         assert_eq!(tables.get_homeostatic_needs(id), None);
         assert_eq!(tables.get_deprivation_exposure(id), None);

@@ -241,7 +241,7 @@ pub struct PlanningPipelineTrace {
     /// Action start failures from the previous tick's `BestEffort` inputs,
     /// drained from the `Scheduler` for this agent.
     pub action_start_failures: Vec<ActionStartFailureSummary>,
-    /// Active `BlockingFact::Unknown` blockers in `BlockedIntentMemory` at
+    /// Active `BlockingFact::Unknown` blockers in `BlockerMemory` at
     /// trace construction time. Derived view for debuggability (P27).
     pub unknown_blockers: Vec<UnknownBlockerTrace>,
     /// Exhaustion cache state at trace construction time (P27).
@@ -274,7 +274,7 @@ pub struct ActionStartFailureSummary {
 }
 
 /// Diagnostic trace for `BlockingFact::Unknown` blockers active during planning.
-/// Derived from `BlockedIntentMemory` at trace construction time (P25: derived view).
+/// Derived from `BlockerMemory` at trace construction time (P25: derived view).
 #[derive(Clone, Debug)]
 pub struct UnknownBlockerTrace {
     pub goal_key: GoalKey,
@@ -602,7 +602,7 @@ pub enum PursuitOmissionReason {
     OverRange,
     /// No route exists to the believed place.
     Unreachable,
-    /// Blocked by `BlockedIntentMemory` for this target/place combination.
+    /// Blocked by `BlockerMemory` for this target/place combination.
     Blocked,
 }
 

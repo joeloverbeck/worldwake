@@ -1,5 +1,5 @@
 use worldwake_core::{
-    BlockedIntent, BlockerKey, BlockingFact, CauseRef, EntityId, Tick, VisibilitySpec, WitnessData,
+    Blocker, BlockerKey, BlockingFact, CauseRef, EntityId, Tick, VisibilitySpec, WitnessData,
     WorldTxn,
 };
 use worldwake_sim::{PerAgentBeliefView, SpatialBeliefView, TemporalBeliefView, TickInputError};
@@ -69,7 +69,7 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
             .get_component_contention_intents(agent)
             .and_then(|intents| intents.intents.get(&facility).copied());
         let mut blocked_memory = world
-            .get_component_blocked_intent_memory(agent)
+            .get_component_blocker_memory(agent)
             .cloned()
             .unwrap_or_default();
         let mut facility_queue_intents = world
@@ -78,7 +78,7 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
             .unwrap_or_default();
         facility_queue_intents.intents.remove(&facility);
         if let Some(intent) = queued_intent {
-            blocked_memory.record(BlockedIntent {
+            blocked_memory.record(Blocker {
                 blocker_key: BlockerKey {
                     goal_key: intent.goal_key,
                     place: world.effective_place(agent),
@@ -106,10 +106,10 @@ pub(super) fn abandon_expired_facility_queues_with_limit(
         txn.set_component_contention_queue(facility, queue)
             .map_err(|error| TickInputError::new(error.to_string()))?;
         if blocked_memory.intents.is_empty() {
-            txn.clear_component_blocked_intent_memory(agent)
+            txn.clear_component_blocker_memory(agent)
                 .map_err(|error| TickInputError::new(error.to_string()))?;
         } else {
-            txn.set_component_blocked_intent_memory(agent, blocked_memory)
+            txn.set_component_blocker_memory(agent, blocked_memory)
                 .map_err(|error| TickInputError::new(error.to_string()))?;
         }
         if facility_queue_intents.intents.is_empty() {

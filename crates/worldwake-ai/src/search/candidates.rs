@@ -7,9 +7,7 @@ use crate::{
     GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{
-    ActionDefId, BlockedIntentMemory, ContentionStatus, EntityId, GoalKind, Tick,
-};
+use worldwake_core::{ActionDefId, BlockerMemory, ContentionStatus, EntityId, GoalKind, Tick};
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, FacilityBeliefView,
     InventoryBeliefView, QueueForFacilityUsePayload, RecipeRegistry, SpatialBeliefView,
@@ -49,7 +47,7 @@ pub(super) struct CandidateSearchContext<'a> {
     pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
     pub(super) registry: &'a ActionDefRegistry,
     pub(super) handlers: &'a ActionHandlerRegistry,
-    pub(super) blocked: &'a BlockedIntentMemory,
+    pub(super) blocked: &'a BlockerMemory,
     pub(super) current_tick: Tick,
     pub(super) relevant_defs: &'a BTreeSet<ActionDefId>,
 }
@@ -1146,7 +1144,7 @@ pub(super) fn candidate_blocked_by_place(
     goal: &GroundedGoal,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
 ) -> Option<(Option<EntityId>, worldwake_core::BlockingFact)> {
     let place = candidate_action_place(candidate, node, semantics_table);

@@ -2,7 +2,7 @@
 
 use crate::{
     AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
-    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockedIntentMemory, BountyTerms,
+    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory, BountyTerms,
     CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap, CommodityKind,
     CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
     ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
@@ -661,7 +661,7 @@ mod tests {
         TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError,
         Wound, WoundCause, WoundList, build_prototype_world,
         test_utils::{
-            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
+            sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
@@ -5346,25 +5346,25 @@ mod tests {
     }
 
     #[test]
-    fn blocked_intent_memory_component_roundtrip_on_agent() {
+    fn blocker_memory_component_roundtrip_on_agent() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Agent, Tick(1));
-        let memory = sample_blocked_intent_memory();
+        let memory = sample_blocker_memory();
 
         world
-            .insert_component_blocked_intent_memory(id, memory.clone())
+            .insert_component_blocker_memory(id, memory.clone())
             .unwrap();
-        assert_eq!(world.get_component_blocked_intent_memory(id), Some(&memory));
-        assert!(world.has_component_blocked_intent_memory(id));
+        assert_eq!(world.get_component_blocker_memory(id), Some(&memory));
+        assert!(world.has_component_blocker_memory(id));
         assert_eq!(
-            world.query_blocked_intent_memory().collect::<Vec<_>>(),
+            world.query_blocker_memory().collect::<Vec<_>>(),
             vec![(id, &memory)]
         );
-        assert_eq!(world.count_with_blocked_intent_memory(), 1);
+        assert_eq!(world.count_with_blocker_memory(), 1);
 
-        let removed = world.remove_component_blocked_intent_memory(id).unwrap();
+        let removed = world.remove_component_blocker_memory(id).unwrap();
         assert_eq!(removed, Some(memory));
-        assert_eq!(world.get_component_blocked_intent_memory(id), None);
+        assert_eq!(world.get_component_blocker_memory(id), None);
     }
 
     #[test]
@@ -5594,16 +5594,16 @@ mod tests {
     }
 
     #[test]
-    fn insert_blocked_intent_memory_on_non_agent_errors() {
+    fn insert_blocker_memory_on_non_agent_errors() {
         let mut world = World::new(Topology::new()).unwrap();
         let id = world.create_entity(EntityKind::Office, Tick(1));
 
         let err = world
-            .insert_component_blocked_intent_memory(id, sample_blocked_intent_memory())
+            .insert_component_blocker_memory(id, sample_blocker_memory())
             .unwrap_err();
 
         assert!(matches!(err, WorldError::InvalidOperation(_)));
-        assert_eq!(world.get_component_blocked_intent_memory(id), None);
+        assert_eq!(world.get_component_blocker_memory(id), None);
     }
 
     #[test]
@@ -6678,8 +6678,8 @@ mod tests {
         assert_eq!(world.query_agent_belief_store().count(), 0);
         assert_eq!(world.entities_with_perception_profile().count(), 0);
         assert_eq!(world.query_perception_profile().count(), 0);
-        assert_eq!(world.entities_with_blocked_intent_memory().count(), 0);
-        assert_eq!(world.query_blocked_intent_memory().count(), 0);
+        assert_eq!(world.entities_with_blocker_memory().count(), 0);
+        assert_eq!(world.query_blocker_memory().count(), 0);
         assert_eq!(world.entities_with_drive_thresholds().count(), 0);
         assert_eq!(world.query_drive_thresholds().count(), 0);
         assert_eq!(world.entities_with_item_lot().count(), 0);
@@ -6754,16 +6754,10 @@ mod tests {
             .insert_component_utility_profile(archived_named_agent, sample_utility_profile())
             .unwrap();
         world
-            .insert_component_blocked_intent_memory(
-                live_named_agent,
-                sample_blocked_intent_memory(),
-            )
+            .insert_component_blocker_memory(live_named_agent, sample_blocker_memory())
             .unwrap();
         world
-            .insert_component_blocked_intent_memory(
-                archived_named_agent,
-                sample_blocked_intent_memory(),
-            )
+            .insert_component_blocker_memory(archived_named_agent, sample_blocker_memory())
             .unwrap();
         world
             .insert_component_name(live_named_office, Name("Ledger Hall".to_string()))
@@ -6778,7 +6772,7 @@ mod tests {
         assert_eq!(world.count_with_perception_profile(), 1);
         assert_eq!(world.count_with_drive_thresholds(), 1);
         assert_eq!(world.count_with_utility_profile(), 1);
-        assert_eq!(world.count_with_blocked_intent_memory(), 1);
+        assert_eq!(world.count_with_blocker_memory(), 1);
         assert_eq!(world.count_with_item_lot(), 0);
         assert_eq!(world.count_with_unique_item(), 0);
         assert_eq!(world.count_with_ground_since(), 0);
@@ -6880,7 +6874,7 @@ mod tests {
             assert_eq!(world.get_component_agent_belief_store(place_id), None);
             assert_eq!(world.get_component_perception_profile(place_id), None);
             assert_eq!(world.get_component_utility_profile(place_id), None);
-            assert_eq!(world.get_component_blocked_intent_memory(place_id), None);
+            assert_eq!(world.get_component_blocker_memory(place_id), None);
             assert_eq!(world.get_component_drive_thresholds(place_id), None);
             assert_eq!(world.get_component_item_lot(place_id), None);
             assert_eq!(world.get_component_unique_item(place_id), None);

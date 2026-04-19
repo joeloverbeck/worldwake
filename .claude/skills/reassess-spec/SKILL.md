@@ -63,13 +63,14 @@ Before beginning Steps 2-3, classify the spec:
   - Classification shift from (a)/(b)/(c)/(d)/(e) → (f) is a legitimate and common outcome when a spec is reassessed after the work already shipped through downstream tickets. Name the shift explicitly in Step 8.
   - (f) does not participate in hybrid combinations — it is outcome-based rather than deliverable-based, and it supersedes the originally-assumed classification once Step 3 confirms full landing.
 
-**Deliverable removal**: If validation reveals a deliverable should be removed entirely, skip remaining sub-steps for that deliverable and record the removal as a finding. Continue validation for surviving deliverables.
+**Deliverable removal**: If validation reveals a deliverable should be removed entirely, skip remaining sub-steps for that deliverable and record the removal as a finding. If only part of a deliverable (enum variants, struct fields, sub-items) should be removed, record the partial removal as a finding but continue sub-step validation for the surviving parts — the surviving parts still need cross-reference and downstream-consumer checks. Continue validation for all surviving deliverables.
 
 **Hybrid specs**: Apply the union of applicable steps — use the most rigorous classification's checklist for shared steps. Common hybrids:
   - **(d)+(e)** (test triage with a bugfix): Steps 3.1-3.4 from both; 3.5-3.8 for bugfix deliverables only; 4.4 if bugfix touches candidate emission/preconditions; Section H only for bugfix deliverables.
   - **(b)+(d)** (system extension with golden tests): Full (b) checklist for production deliverables; (d) rules for test deliverables; 4.4 if any production deliverable modifies validation/emission.
   - **(b)-tooling-only + (d)** (tooling/report/observer enhancement with test-support helpers): Steps 3.1-3.4 apply fully; 3.5-3.7 apply only if the spec extends cross-crate types or enums; 3.3A applies if the spec proposes new observer/CLI output; 3.8 still applies; skip 3.9; Section H updates only for new causal hooks. Check the "Dual-Use Read-Model Types" pattern in `references/worldwake-validation-patterns.md` if the spec proposes types shared between tests and a non-test crate.
   - **(a)+(d)** (new system with test infrastructure): Full (a) checklist; test deliverables validated per 3.1-3.4 only.
+  - **(a)+(b)** (new system with migration of existing types/enums): Full (a) checklist. For migration deliverables, additionally verify existing call sites and exhaustive-match sites per 3.6 cross-crate analysis (applies rigorously even though (a) alone doesn't always trigger it) — migration deliverables need blast-radius accounting for every site that matches on the removed or renamed symbol.
 
 **Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies.
 
@@ -134,7 +135,7 @@ Do not present findings yet. Collect everything for Step 4.
 
 **Read `references/findings-and-questions.md` now, with the Read tool, before classifying.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded findings-and-questions.md — opens with "Step 5: Classify Findings"`. A bare "Loaded: findings-and-questions.md" is treated as a skipped load. The file prescribes the one-line finding format and the Step 6 presentation template; using your own format is not a substitute. Then classify all findings from Steps 3-4 and present to the user using that template.
 
-**Redesign-count checkpoint**: Before presenting, count deliverables whose approach materially changed versus total deliverables. If the ratio exceeds 50%, the `### Substantial Redesign Flag` section is mandatory in the Step 6 output, placed immediately above `### Questions`. Emit the N/total counts in your pre-draft notes even when the ratio is below 50%, so the decision is auditable.
+**Redesign-count checkpoint**: Before presenting, count deliverables whose approach materially changed (eliminated, replaced with a different mechanism, or restructured such that the implementation path is not a refinement of the original) versus total deliverables. A deliverable whose text is reworded but whose approach remains a refinement of the original does not count. If the ratio exceeds 50%, the `### Substantial Redesign Flag` section is mandatory in the Step 6 output, placed immediately above `### Questions`. Emit the N/total counts in your pre-draft notes even when the ratio is below 50%, so the decision is auditable.
 
 Wait for user response before proceeding to Step 7. (In plan mode: after question resolution, write the plan file per `references/plan-mode.md`, then call ExitPlanMode. Steps 7-8 execute after approval.)
 
@@ -167,6 +168,8 @@ Example rows for each tier:
 | I3 (recommendation-changing) | `grep -n "#[cfg(test)]"` at claimed line | boundary has moved; the targeted function is now runtime, not test-only — re-present to user before applying |
 
 The `Finding` column tier tag (`evidence-refining`, `recommendation-changing`) is required only when the pre-apply check detects a mismatch with the finding. Rows that confirm the finding exactly as written may use the compact descriptive form shown in the first example table (`I1`, `I2`, `M3`, optionally with a brief parenthetical anchor).
+
+**Bundled-answer consistency check**: When a single user response resolves multiple interdependent questions (e.g., "1) a, 2) b, 3) a" in one message), verify before building the verification table that the combined answers are internally consistent — no contradictory routing (the same symbol referenced by two answers is routed to the same destination), no dangling type references (a type referenced in one answer is defined by another), no split-brain conditions (a decision in one answer does not leave a remnant addressed by a different answer). Flag any detected contradiction as a recommendation-changing mismatch and re-present the affected findings for a follow-up round before proceeding.
 
 **Read `references/spec-writing-rules.md` now, with the Read tool, before writing.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded spec-writing-rules.md — opens with "Pre-Apply Verification"`. A bare "Loaded: spec-writing-rules.md" is treated as a skipped load. The file carries the full pre-apply verification, apply-changes, and post-apply confirmation rules. Then apply all approved changes.
 

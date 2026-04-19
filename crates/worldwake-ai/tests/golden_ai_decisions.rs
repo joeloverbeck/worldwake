@@ -443,7 +443,7 @@ fn golden_priority_based_interrupt() {
 //   -> successful harvest.
 
 #[test]
-fn golden_blocked_intent_memory_with_ttl_expiry() {
+fn golden_blocker_memory_with_ttl_expiry() {
     let mut h = GoldenHarness::new(Seed([5; 32]));
 
     // Agent at Orchard Farm, critically hungry.
@@ -511,7 +511,7 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
         h.step_once();
 
         // Check for blocked intent memory.
-        if let Some(blocked) = h.world.get_component_blocked_intent_memory(agent)
+        if let Some(blocked) = h.world.get_component_blocker_memory(agent)
             && !blocked.intents.is_empty()
         {
             saw_blocker = true;
@@ -535,7 +535,7 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
     assert!(
         eventually_harvested,
         "Agent should eventually harvest apples after resource regeneration; blocked={:?}; authoritative_source={:?}; believed_source={:?}",
-        h.world.get_component_blocked_intent_memory(agent),
+        h.world.get_component_blocker_memory(agent),
         h.world.get_component_resource_source(orchard_source),
         h.world
             .get_component_agent_belief_store(agent)
@@ -1107,7 +1107,7 @@ fn golden_bladder_relief_with_travel() {
         relieved_at_latrine,
         "Agent should complete relief at the latrine without taking the accident path; initial={initial_bladder}, final={}, visited={visited_places:?}, final_place={final_place:?}, waste_origin={waste_appeared_at_origin}, waste_latrine={waste_appeared_at_latrine}, blocked={:?}, active_actions={:?}",
         h.agent_bladder(agent),
-        h.world.get_component_blocked_intent_memory(agent),
+        h.world.get_component_blocker_memory(agent),
         h.scheduler
             .active_actions()
             .values()

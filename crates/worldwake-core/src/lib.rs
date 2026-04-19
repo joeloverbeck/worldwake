@@ -28,7 +28,7 @@ pub mod action_domain;
 pub mod allocator;
 pub mod bandit_camp;
 pub mod belief;
-pub mod blocked_intent;
+pub mod blocker_memory;
 pub mod canonical;
 pub mod cause;
 pub mod cognitive_profile;
@@ -110,9 +110,9 @@ pub use belief::{
     social_observation_is_redundant_for_listener, social_observation_is_relayable,
     tell_subject_is_directly_observable_by_listener, to_shared_belief_snapshot,
 };
-pub use blocked_intent::{
-    BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
-    BlockingFact, ClearingBaseline,
+pub use blocker_memory::{
+    Blocker, BlockerClearingCondition, BlockerDiagnostic, BlockerKey, BlockerMemory, BlockingFact,
+    ClearingBaseline,
 };
 pub use canonical::{
     CanonicalError, StateHash, canonical_bytes, hash_bytes, hash_event_log, hash_serializable,

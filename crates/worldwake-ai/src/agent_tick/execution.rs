@@ -3,7 +3,7 @@ use super::observation::update_runtime_observation_snapshot;
 use super::{AgentTickContext, handle_recoverable_travel_step_blockage, runtime_belief_view};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockedIntentMemory, CauseRef, ContentionIntents, EntityId, Tick, VisibilitySpec,
+    ActiveGoal, BlockerMemory, CauseRef, ContentionIntents, EntityId, Tick, VisibilitySpec,
     WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
@@ -14,11 +14,11 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
     jc: &mut Option<worldwake_core::IntentionFrame>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     facility_intents: &mut ContentionIntents,
     agent: EntityId,
     tick: Tick,
-    original_blocked: &BlockedIntentMemory,
+    original_blocked: &BlockerMemory,
     original_violation_memory: &worldwake_core::ViolationMemory,
     violation_memory: &worldwake_core::ViolationMemory,
     step: &PlannedStep,
@@ -149,8 +149,8 @@ pub(super) fn finalize_agent_tick(
     recipe_registry: &worldwake_sim::RecipeRegistry,
     agent: EntityId,
     tick: Tick,
-    original_blocked: &BlockedIntentMemory,
-    blocked_memory: &BlockedIntentMemory,
+    original_blocked: &BlockerMemory,
+    blocked_memory: &BlockerMemory,
     original_violation_memory: &worldwake_core::ViolationMemory,
     violation_memory: &worldwake_core::ViolationMemory,
     runtime: &mut AgentDecisionRuntime,
@@ -256,10 +256,10 @@ pub(super) fn persist_blocked_memory(
     event_log: &mut worldwake_core::EventLog,
     agent: EntityId,
     tick: Tick,
-    before: &BlockedIntentMemory,
-    after: &BlockedIntentMemory,
+    before: &BlockerMemory,
+    after: &BlockerMemory,
 ) -> Result<(), TickInputError> {
-    let existing = world.get_component_blocked_intent_memory(agent);
+    let existing = world.get_component_blocker_memory(agent);
     if existing == Some(after)
         || (existing.is_none() && before == after && after.intents.is_empty())
     {
@@ -275,7 +275,7 @@ pub(super) fn persist_blocked_memory(
         VisibilitySpec::Hidden,
         WitnessData::default(),
     );
-    txn.set_component_blocked_intent_memory(agent, after.clone())
+    txn.set_component_blocker_memory(agent, after.clone())
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     Ok(())

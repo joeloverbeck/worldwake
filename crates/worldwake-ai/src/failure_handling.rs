@@ -1,8 +1,8 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
-    BlockingFact, ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, EntityId,
-    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
+    Blocker, BlockerClearingCondition, BlockerDiagnostic, BlockerKey, BlockerMemory, BlockingFact,
+    ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, EntityId, GoalKey,
+    GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -29,7 +29,7 @@ pub fn handle_plan_failure(
     context: &PlanFailureContext<'_>,
     runtime: &mut AgentDecisionRuntime,
     jc: &mut Option<IntentionFrame>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     facility_intents: &mut ContentionIntents,
     cognitive: &CognitiveProfile,
 ) {
@@ -73,7 +73,7 @@ pub fn handle_plan_failure(
     let (clearing_condition, baseline_snapshot) =
         derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
 
-    blocked_memory.record(BlockedIntent {
+    blocked_memory.record(Blocker {
         blocker_key,
         blocking_fact,
         diagnostic_context,
@@ -88,7 +88,7 @@ pub fn handle_plan_failure(
 pub fn clear_resolved_blockers(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     current_tick: Tick,
 ) {
     blocked_memory.expire(current_tick);
@@ -749,11 +749,7 @@ fn derive_clearing_condition(
     }
 }
 
-fn is_blocker_cleared(
-    view: &dyn RuntimeBeliefView,
-    agent: EntityId,
-    blocker: &BlockedIntent,
-) -> bool {
+fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &Blocker) -> bool {
     match (&blocker.clearing_condition, &blocker.baseline_snapshot) {
         (
             BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place },
@@ -1024,13 +1020,13 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerKey,
-        BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
-        ContentionIntents, DemandObservation, DriveThresholds, EntityId, EntityKind, FrameState,
-        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
+        ClearingBaseline, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds,
+        InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -1565,7 +1561,7 @@ mod tests {
             .insert((agent, CommodityKind::Coin), Quantity(1));
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
-        let mut blocked = BlockedIntentMemory::default();
+        let mut blocked = BlockerMemory::default();
 
         handle_plan_failure(
             &PlanFailureContext {
@@ -1643,7 +1639,7 @@ mod tests {
         view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
-        let mut blocked = BlockedIntentMemory::default();
+        let mut blocked = BlockerMemory::default();
 
         handle_plan_failure(
             &PlanFailureContext {
@@ -1914,7 +1910,7 @@ mod tests {
         let agent = entity(1);
         let place = entity(10);
         let seller = entity(2);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: BlockerKey {
                 goal_key: trade_goal(),
                 place: Some(place),
@@ -1945,7 +1941,7 @@ mod tests {
     #[test]
     fn is_blocker_cleared_inventory_changed() {
         let agent = entity(1);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
             blocking_fact: BlockingFact::TooExpensive,
             diagnostic_context: None,
@@ -1969,7 +1965,7 @@ mod tests {
     #[test]
     fn is_blocker_cleared_unique_item_acquired() {
         let agent = entity(1);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
             blocking_fact: BlockingFact::MissingTool(UniqueItemKind::SimpleTool),
             diagnostic_context: None,
@@ -1993,7 +1989,7 @@ mod tests {
         let agent = entity(1);
         let current_place = entity(10);
         let destination = entity(11);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
             blocking_fact: BlockingFact::NoKnownPath,
             diagnostic_context: None,
@@ -2017,7 +2013,7 @@ mod tests {
     fn is_blocker_cleared_entity_reappeared() {
         let agent = entity(1);
         let target = entity(2);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ReduceDanger),
                 place: Some(entity(10)),
@@ -2042,7 +2038,7 @@ mod tests {
     #[test]
     fn is_blocker_cleared_danger_reduced() {
         let agent = entity(1);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::ReduceDanger)),
             blocking_fact: BlockingFact::DangerTooHigh,
             diagnostic_context: None,
@@ -2063,7 +2059,7 @@ mod tests {
     fn is_blocker_cleared_contention_changed() {
         let agent = entity(1);
         let facility = entity(3);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ProduceCommodity {
                     recipe_id: RecipeId(4),
@@ -2089,7 +2085,7 @@ mod tests {
     #[test]
     fn is_blocker_cleared_ttl_only_never_clears() {
         let agent = entity(1);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
             blocking_fact: BlockingFact::Unknown,
             diagnostic_context: None,
@@ -2111,7 +2107,7 @@ mod tests {
         let agent = entity(1);
         let place = entity(10);
         let seller = entity(2);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: BlockerKey {
                 goal_key: trade_goal(),
                 place: Some(place),
@@ -2141,7 +2137,7 @@ mod tests {
     #[test]
     fn is_blocker_cleared_missing_baseline_falls_back() {
         let agent = entity(1);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: sample_blocker_key_for(GoalKey::from(GoalKind::Sleep)),
             blocking_fact: BlockingFact::TooExpensive,
             diagnostic_context: None,
@@ -2164,7 +2160,7 @@ mod tests {
     fn is_blocker_cleared_pursuit_target_gone_ttl_only() {
         let agent = entity(1);
         let target = entity(2);
-        let blocker = BlockedIntent {
+        let blocker = Blocker {
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::RaidTarget { target }),
                 place: Some(entity(10)),
@@ -2429,7 +2425,7 @@ mod tests {
         };
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
-        let mut blocked = BlockedIntentMemory::default();
+        let mut blocked = BlockerMemory::default();
         let budget = ProfileFixture::default();
 
         handle_plan_failure(
@@ -2581,7 +2577,7 @@ mod tests {
         };
         let mut runtime = runtime_with_plan(goal, step.clone());
         let mut jc = Some(jc_for_goal(goal));
-        let mut blocked = BlockedIntentMemory::default();
+        let mut blocked = BlockerMemory::default();
         let budget = ProfileFixture::default();
 
         handle_plan_failure(
@@ -2626,14 +2622,14 @@ mod tests {
         view.commodity_quantities
             .insert((place, CommodityKind::Bread), Quantity(2));
 
-        let mut blocked = BlockedIntentMemory::default();
+        let mut blocked = BlockerMemory::default();
         let bk1 = BlockerKey {
             goal_key: goal,
             place: Some(place),
             target: Some(seller),
             action_def: Some(ActionDefId(1)),
         };
-        blocked.record(BlockedIntent {
+        blocked.record(Blocker {
             blocker_key: bk1,
             blocking_fact: BlockingFact::SellerOutOfStock,
             diagnostic_context: None,
@@ -2656,7 +2652,7 @@ mod tests {
             target: Some(workstation),
             action_def: Some(ActionDefId(3)),
         };
-        blocked.record(BlockedIntent {
+        blocked.record(Blocker {
             blocker_key: bk2,
             blocking_fact: BlockingFact::WorkstationBusy,
             diagnostic_context: None,
@@ -2673,7 +2669,7 @@ mod tests {
             target: None,
             action_def: None,
         };
-        blocked.record(BlockedIntent {
+        blocked.record(Blocker {
             blocker_key: bk3,
             blocking_fact: BlockingFact::Unknown,
             diagnostic_context: None,
@@ -2738,8 +2734,8 @@ mod tests {
 
         let goal = GoalKey::from(GoalKind::RaidTarget { target });
 
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: goal,
                 place: Some(agent_place),

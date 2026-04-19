@@ -359,7 +359,7 @@ S108 ✅ archived               S111 ✅ archived
 - **S111**: ✅ COMPLETED — archived at [archive/specs/S111-scenario-homogeneity-lints.md](/home/joeloverbeck/projects/worldwake/archive/specs/S111-scenario-homogeneity-lints.md). Landed scenario-load-time `ProfileHomogeneity` and `UnreachableExplorationDrive` lints, `scenario_lint_overrides`, load-time enforcement plus CLI bypass warnings, the `PlanningSnapshot` accessor-only doctest regression, and the CI sweep over committed `scenarios/*.ron`.
 
 **Wave 2** (after Wave 1):
-- **S109**: Typed Discrepancy Taxonomy and BlockedIntentMemory Split — replace `BlockingFact::Unknown`/`AssumptionFailed` with `Discrepancy` enum; split `BlockedIntentMemory` into `DiscrepancyMemory`/`BlockerMemory`/`RepairMemory`/`LearnedOpportunityMemory`; per-class TTL.
+- **S109**: Typed Discrepancy Taxonomy and BlockerMemory Split — replace `BlockingFact::Unknown`/`AssumptionFailed` with `Discrepancy` enum; split the old `BlockedIntentMemory` responsibilities into `DiscrepancyMemory`/`BlockerMemory`/`RepairMemory`/`LearnedOpportunityMemory`; per-class TTL.
   - soft depends on S108 for `MatchOutcome::ExactIdentityRequired` → `Discrepancy::NoLegalBinding`
 - **S110**: Authoritative Decision History Events — new `EventTag` variants (`GoalOffered`, `GoalCommitted`, `PlanAdopted`, `PlanInvalidated`, `ExpectationMismatch`, `RepairApplied`, `BlockerRecorded`, `ReplanTriggered`); bounded rejected-alternative summaries.
   - soft depends on S109 for `Discrepancy` payload on `BlockerRecorded`

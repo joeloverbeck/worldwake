@@ -30,11 +30,11 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-    BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind,
-    ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
-    EntityId, EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameState,
+    BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyCostPerTick,
+    BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant,
+    ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory,
+    DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId,
+    EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameState,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
     KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
@@ -1045,7 +1045,7 @@ fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
         .runtime_by_agent
         .entry(harness.actor)
         .or_default();
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     refresh_runtime_for_read_phase(
         &harness.world,
@@ -1737,7 +1737,7 @@ fn grant_arrival_marks_runtime_dirty_from_facility_access_snapshot() {
         Some(ActionDefId(77)),
     );
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -1852,7 +1852,7 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
 
     let blocked = harness
         .world
-        .get_component_blocked_intent_memory(harness.actor)
+        .get_component_blocker_memory(harness.actor)
         .expect("queue abandonment should persist a blocked intent immediately");
     assert_eq!(blocked.intents.len(), 1);
     let intent = blocked.intents.values().next().unwrap();
@@ -1919,7 +1919,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         Some(harvest_action),
     );
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -2023,7 +2023,7 @@ fn same_place_queue_invalidation_records_exclusive_facility_blocker() {
         .get_component_contention_intents(harness.actor)
         .cloned()
         .unwrap_or_default();
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -2101,7 +2101,7 @@ fn grant_loss_does_not_record_hard_blocker() {
         .get_component_contention_intents(harness.actor)
         .cloned()
         .unwrap_or_default();
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -2519,7 +2519,7 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
         dirty: crate::DirtySet::default(),
         ..crate::AgentDecisionRuntime::default()
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
 
     let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
         &view,
@@ -2598,7 +2598,7 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
         dirty: crate::DirtySet::default(),
         ..crate::AgentDecisionRuntime::default()
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let budget = ProfileFixture::default();
 
     let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
@@ -3148,7 +3148,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let grounded = crate::generate_candidates(
         &view,
         harness.actor,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         &harness.recipes,
         Tick(0),
     )
@@ -3244,7 +3244,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         PlanTerminalKind::GoalSatisfied,
     );
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let utility = harness
         .world
@@ -3455,7 +3455,7 @@ fn irrelevant_commodity_change_does_not_trigger_replan_for_sleep_goal() {
         commit_txn(txn);
     }
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -3512,7 +3512,7 @@ fn relevant_commodity_change_triggers_replan_for_consume_goal() {
         commit_txn(txn);
     }
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -3549,7 +3549,7 @@ fn no_plan_always_marks_runtime_dirty() {
     let mut runtime = crate::AgentDecisionRuntime::default();
     let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
     update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
 
     let _ = refresh_runtime_for_read_phase(
@@ -3612,7 +3612,7 @@ fn patrol_route_change_marks_runtime_dirty() {
     .unwrap();
     commit_txn(txn);
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -4092,12 +4092,12 @@ fn persist_blocked_memory_skips_empty_unchanged_state() {
         &mut event_log,
         agent,
         Tick(2),
-        &BlockedIntentMemory::default(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
+        &BlockerMemory::default(),
     )
     .unwrap();
 
-    assert_eq!(world.get_component_blocked_intent_memory(agent), None);
+    assert_eq!(world.get_component_blocker_memory(agent), None);
     assert_eq!(event_log.len(), 1);
 }
 
@@ -4113,8 +4113,8 @@ fn persist_blocked_memory_commits_changed_component() {
         let _ = txn.commit(&mut event_log);
         agent
     };
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
             place: None,
@@ -4134,15 +4134,12 @@ fn persist_blocked_memory_commits_changed_component() {
         &mut event_log,
         agent,
         Tick(2),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         &blocked,
     )
     .unwrap();
 
-    assert_eq!(
-        world.get_component_blocked_intent_memory(agent),
-        Some(&blocked)
-    );
+    assert_eq!(world.get_component_blocker_memory(agent), Some(&blocked));
     assert_eq!(event_log.len(), 2);
 }
 
@@ -4722,7 +4719,7 @@ fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
     );
     let blocked = harness
         .world
-        .get_component_blocked_intent_memory(harness.actor)
+        .get_component_blocker_memory(harness.actor)
         .expect("reconciled failure should persist blocked intent memory");
     assert_eq!(blocked.intents.len(), 1);
     assert_eq!(
@@ -4757,7 +4754,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         .runtime_by_agent
         .entry(harness.actor)
         .or_default();
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
 
     let initial_read = refresh_runtime_for_read_phase(
@@ -5816,7 +5813,7 @@ fn tracing_disabled_produces_identical_behavior() {
     assert!(harness_no_trace.driver.trace_sink().is_none());
 }
 
-// ── S22-005: Frame exhaustion → BlockedIntent integration tests ──
+// ── S22-005: Frame exhaustion → Blocker integration tests ──
 
 #[test]
 fn check_patience_exhaustion_creates_blocked_intent() {
@@ -5835,7 +5832,7 @@ fn check_patience_exhaustion_creates_blocked_intent() {
         stalled_ticks: 5, // >= patience_limit of 5
         patience_limit: 5,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
     let budget = ProfileFixture::default();
 
@@ -5884,7 +5881,7 @@ fn check_patience_exhaustion_below_limit_returns_false() {
         stalled_ticks: 4, // < patience_limit of 5
         patience_limit: 5,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     let exhausted = check_patience_exhaustion(
@@ -5918,7 +5915,7 @@ fn patience_exhaustion_care_domain_uses_patient_as_target() {
         stalled_ticks: 10,
         patience_limit: 10,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     check_patience_exhaustion(
@@ -5953,7 +5950,7 @@ fn patience_exhaustion_generic_domain_uses_none_target() {
         stalled_ticks: 3,
         patience_limit: 3,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     check_patience_exhaustion(
@@ -5990,7 +5987,7 @@ fn assumption_failure_creates_blocked_intent() {
         stalled_ticks: 0,
         patience_limit: 30,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let budget = ProfileFixture::default();
 
     record_assumption_failure_blocked_intent(
@@ -6027,9 +6024,7 @@ fn goal_completion_does_not_create_blocked_intent() {
     }
 
     // Check that no blocked intent was created for the completed goal.
-    let blocked_memory = harness
-        .world
-        .get_component_blocked_intent_memory(harness.actor);
+    let blocked_memory = harness.world.get_component_blocker_memory(harness.actor);
     if let Some(memory) = blocked_memory {
         let has_patience_or_assumption = memory.intents.values().any(|intent| {
             intent.blocking_fact == BlockingFact::PatienceExhausted

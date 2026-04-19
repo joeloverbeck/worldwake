@@ -41,8 +41,8 @@ use std::collections::BTreeMap;
 use transition::build_successor;
 use transition::build_successor_detailed;
 use worldwake_core::{
-    ActionDefId, BlockedIntentMemory, CognitiveProfile, CommodityKind, ExecutionBudget,
-    OpportunityKey, Tick,
+    ActionDefId, BlockerMemory, CognitiveProfile, CommodityKind, ExecutionBudget, OpportunityKey,
+    Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, InventoryBeliefView, RecipeRegistry,
@@ -446,7 +446,7 @@ pub fn search_plan(
     cognitive: &CognitiveProfile,
     execution_budget: &ExecutionBudget,
     recipes: &RecipeRegistry,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
@@ -482,7 +482,7 @@ pub(crate) fn search_plan_with_trace_metadata(
     cognitive: &CognitiveProfile,
     execution_budget: &ExecutionBudget,
     recipes: &RecipeRegistry,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,

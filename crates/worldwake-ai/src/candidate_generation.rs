@@ -27,7 +27,7 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
-    BelievedInstitutionalClaim, BlockedIntentMemory, BountyTarget, BountyTerms, CommodityKind,
+    BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DiversificationProfile, DriveThresholds, EligibilityRule, EntityId,
     EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation,
     GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
@@ -151,7 +151,7 @@ struct GenerationContext<'a> {
     place: Option<EntityId>,
     travel_horizon: u8,
     enterprise: EnterpriseSignals,
-    blocked: &'a BlockedIntentMemory,
+    blocked: &'a BlockerMemory,
     violation_memory: &'a ViolationMemory,
     recipes: &'a RecipeRegistry,
     current_tick: Tick,
@@ -195,7 +195,7 @@ pub(crate) struct PendingViolationRecord {
 pub fn generate_candidates(
     view: &dyn GoalBeliefView,
     agent: EntityId,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     recipes: &RecipeRegistry,
     current_tick: Tick,
 ) -> Vec<GroundedGoal> {
@@ -218,7 +218,7 @@ pub fn generate_candidates(
 pub(crate) fn generate_candidates_with_travel_horizon(
     view: &dyn GoalBeliefView,
     agent: EntityId,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     violation_memory: &ViolationMemory,
     recipes: &RecipeRegistry,
     current_tick: Tick,
@@ -303,7 +303,7 @@ fn artifact_posting_profile_for_goal_generation(
 
 fn filter_blocked_candidates(
     candidates: Vec<GroundedGoal>,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
     diagnostics: &mut CandidateGenerationDiagnostics,
 ) -> Vec<GroundedGoal> {
@@ -350,7 +350,7 @@ fn filter_blocked_candidates(
 
 fn find_matching_blocker(
     candidate: &GroundedGoal,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
 ) -> Option<BlockerMatchDetail> {
     blocked.intents.values().find_map(|intent| {
@@ -3539,7 +3539,7 @@ fn emit_candidate(
     kind: GoalKind,
     anchor: OpportunityAnchor,
     evidence: Evidence,
-    _blocked: &BlockedIntentMemory,
+    _blocked: &BlockerMemory,
     _current_tick: Tick,
 ) {
     if evidence.is_empty() {
@@ -5219,23 +5219,23 @@ mod tests {
     use worldwake_core::{
         AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile,
         ArtifactState, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-        BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
-        DemandObservation, DemandObservationReason, DisposalProfile, DiversificationProfile,
-        DriveThresholds, EffectiveRight, EligibilityRule, EntityId, EntityKind,
-        EpistemicDispositionProfile, ExpectationBasis, ExpectationId, ExpectationRecord,
-        ExpectationState, ExpectationStore, ExplorationProfile, GoalKey, GoalKind,
-        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource,
-        Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
-        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-        RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
-        SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic,
-        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyPart,
+        BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
+        DemandObservationReason, DisposalProfile, DiversificationProfile, DriveThresholds,
+        EffectiveRight, EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile,
+        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
+        ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
+        OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
+        ResourceSource, RewardSource, RightKind, SharedTellState, SocialObservation,
+        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
@@ -6293,7 +6293,7 @@ mod tests {
         generate_candidates(
             view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(100),
         )
@@ -6709,7 +6709,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -6753,7 +6753,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -6834,7 +6834,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -6913,7 +6913,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -6950,7 +6950,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -6988,7 +6988,7 @@ mod tests {
         let missing_profile_result = generate_candidates_with_travel_horizon(
             &missing_profile,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -7015,7 +7015,7 @@ mod tests {
         let invalid_route_result = generate_candidates_with_travel_horizon(
             &invalid_route,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -7228,13 +7228,8 @@ mod tests {
         view.dead.insert(agent);
         let recipes = RecipeRegistry::new();
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
 
         assert!(candidates.is_empty());
     }
@@ -7268,7 +7263,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -7318,7 +7313,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -7363,7 +7358,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -7401,7 +7396,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -7447,7 +7442,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -7479,7 +7474,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -7516,7 +7511,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(50),
         );
@@ -7595,7 +7590,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &recipes,
             Tick(50),
@@ -7666,7 +7661,7 @@ mod tests {
         let candidates = super::generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &recipes,
             Tick(5),
@@ -7761,7 +7756,7 @@ mod tests {
         let candidates = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &recipes,
             Tick(5),
@@ -7794,7 +7789,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -7847,7 +7842,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -7931,8 +7926,8 @@ mod tests {
         view.register_seller(orchard, CommodityKind::Bread, orchard_seller);
         view.register_seller(market, CommodityKind::Bread, market_seller);
 
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: key,
                 place: Some(orchard),
@@ -7994,8 +7989,8 @@ mod tests {
         view.register_seller(orchard, CommodityKind::Bread, orchard_seller);
         view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
 
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: key,
                 place: Some(market),
@@ -8058,9 +8053,9 @@ mod tests {
         view.register_seller(orchard, CommodityKind::Bread, orchard_seller);
         view.register_seller(market, CommodityKind::Bread, market_seller);
 
-        let mut blocked = BlockedIntentMemory::default();
+        let mut blocked = BlockerMemory::default();
         for place in [orchard, market] {
-            blocked.record(BlockedIntent {
+            blocked.record(Blocker {
                 blocker_key: BlockerKey {
                     goal_key: key,
                     place: Some(place),
@@ -8136,8 +8131,8 @@ mod tests {
         view.register_seller(orchard, CommodityKind::Bread, orchard_seller);
         view.register_seller(market, CommodityKind::Bread, market_seller);
 
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: key,
                 place: Some(orchard),
@@ -8194,7 +8189,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8254,13 +8249,8 @@ mod tests {
             WorkstationTag::OrchardRow,
         ));
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
 
         assert!(contains_goal(
             &candidates,
@@ -8292,7 +8282,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8331,7 +8321,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8344,7 +8334,7 @@ mod tests {
         let no_source_candidates = generate_candidates(
             &no_source_view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8384,7 +8374,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8408,7 +8398,7 @@ mod tests {
         let none = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8420,7 +8410,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8448,7 +8438,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8475,7 +8465,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8508,7 +8498,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8546,7 +8536,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8581,7 +8571,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8595,7 +8585,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8626,8 +8616,8 @@ mod tests {
         view.factions_by_member.insert(agent, vec![faction]);
         view.bandit_factions.insert(faction);
 
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(goal),
                 place: Some(place),
@@ -8665,7 +8655,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -8721,7 +8711,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -8777,7 +8767,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -8830,7 +8820,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8861,7 +8851,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -8902,7 +8892,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8937,7 +8927,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(0),
         );
@@ -8963,7 +8953,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -8990,7 +8980,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -9027,7 +9017,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -9069,7 +9059,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -9104,7 +9094,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -9144,13 +9134,8 @@ mod tests {
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         });
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
 
         assert!(contains_goal(
             &candidates,
@@ -9194,13 +9179,8 @@ mod tests {
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         });
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
 
         assert!(contains_goal(
             &candidates,
@@ -9392,7 +9372,7 @@ mod tests {
             },
         );
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let ctx = GenerationContext {
             view: &view,
             agent,
@@ -9457,13 +9437,8 @@ mod tests {
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         });
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
 
         assert!(contains_goal(
             &candidates,
@@ -9549,13 +9524,8 @@ mod tests {
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         });
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
         let produce = candidates
             .iter()
             .find(|candidate| candidate.key.kind == GoalKind::ProduceCommodity { recipe_id })
@@ -9653,7 +9623,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &recipes,
             Tick(5),
@@ -9713,13 +9683,8 @@ mod tests {
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         });
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
 
         assert!(!contains_goal(
             &candidates,
@@ -9781,13 +9746,8 @@ mod tests {
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         });
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
 
         assert!(contains_goal(
             &candidates,
@@ -9828,7 +9788,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -9883,7 +9843,7 @@ mod tests {
             vec![(CommodityKind::Grain, Quantity(2))],
             WorkstationTag::Mill,
         ));
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
 
         let ctx = GenerationContext {
             view: &view,
@@ -9951,7 +9911,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -9977,7 +9937,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10006,7 +9966,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10041,7 +10001,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10067,7 +10027,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10114,7 +10074,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10164,7 +10124,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10226,7 +10186,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10289,7 +10249,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10337,7 +10297,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10383,7 +10343,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10479,7 +10439,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10515,7 +10475,7 @@ mod tests {
         let witness_blocked = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10533,7 +10493,7 @@ mod tests {
         let profileless = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10605,7 +10565,7 @@ mod tests {
         let remote_guard_only = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10624,7 +10584,7 @@ mod tests {
         let local_guard_present = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -10670,7 +10630,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -10759,7 +10719,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &violations,
             &RecipeRegistry::new(),
             Tick(5),
@@ -10854,7 +10814,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &violations,
             &RecipeRegistry::new(),
             Tick(5),
@@ -10949,7 +10909,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &violations,
             &RecipeRegistry::new(),
             Tick(6),
@@ -11039,7 +10999,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11130,7 +11090,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11240,7 +11200,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11332,7 +11292,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11421,7 +11381,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11509,7 +11469,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11589,7 +11549,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11681,7 +11641,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11782,7 +11742,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11829,7 +11789,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11895,7 +11855,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -11947,7 +11907,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -12032,7 +11992,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
         );
@@ -12106,8 +12066,8 @@ mod tests {
                 believed_state(8, PerceptionSource::DirectObservation),
             )],
         );
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::ShareBelief {
                     listener,
@@ -12174,7 +12134,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
         );
@@ -12231,7 +12191,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
         );
@@ -12273,7 +12233,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
@@ -12332,7 +12292,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
@@ -12381,7 +12341,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
@@ -12443,7 +12403,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
@@ -12503,7 +12463,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
@@ -12559,7 +12519,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(60),
@@ -12636,7 +12596,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(11),
@@ -12705,7 +12665,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -12764,7 +12724,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -12810,7 +12770,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -12899,7 +12859,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
         );
@@ -12965,13 +12925,8 @@ mod tests {
             WorkstationTag::Mill,
         ));
 
-        let candidates = generate_candidates(
-            &view,
-            agent,
-            &BlockedIntentMemory::default(),
-            &recipes,
-            Tick(5),
-        );
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
 
         assert!(contains_goal(
             &candidates,
@@ -13025,7 +12980,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
         );
@@ -13077,7 +13032,7 @@ mod tests {
         let unknown_with_record = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13122,7 +13077,7 @@ mod tests {
         let with_certain_vacancy = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13145,7 +13100,7 @@ mod tests {
         let conflicted = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13207,7 +13162,7 @@ mod tests {
         let no_record = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13278,7 +13233,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13326,7 +13281,7 @@ mod tests {
         let occupied_with_stale_vacancy = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13360,7 +13315,7 @@ mod tests {
         let filled = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13396,7 +13351,7 @@ mod tests {
         let declared = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13450,7 +13405,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13518,7 +13473,7 @@ mod tests {
         let candidates = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13579,7 +13534,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13638,7 +13593,7 @@ mod tests {
         let candidates = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::default(),
             Tick(10),
@@ -13697,7 +13652,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -13744,7 +13699,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -13798,7 +13753,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -13842,7 +13797,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -13916,7 +13871,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &recipes,
             Tick(5),
@@ -13997,7 +13952,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &recipes,
             Tick(5),
@@ -14059,7 +14014,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -14108,7 +14063,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -14155,7 +14110,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -14203,7 +14158,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -14257,7 +14212,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -14330,7 +14285,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
@@ -14411,7 +14366,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             speaker,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
@@ -14465,7 +14420,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
@@ -14531,7 +14486,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
@@ -14609,7 +14564,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
@@ -14683,7 +14638,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
@@ -14730,7 +14685,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(10),
@@ -14781,12 +14736,12 @@ mod tests {
             },
         );
 
-        let mut blocked = BlockedIntentMemory::default();
+        let mut blocked = BlockerMemory::default();
         let goal_key = GoalKey::from(GoalKind::SearchForMissing {
             subject,
             last_seen: Some(last_seen_place),
         });
-        blocked.record(BlockedIntent {
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key,
                 place: Some(last_seen_place),
@@ -14867,7 +14822,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &violation_memory,
             &RecipeRegistry::new(),
             Tick(10),
@@ -14967,7 +14922,7 @@ mod tests {
         // Entity 2 still has an effective place (somewhere else, not in transit).
         view.effective_places.insert(missing_entity, entity(20));
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -15024,7 +14979,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -15069,7 +15024,7 @@ mod tests {
         view.commodity_quantities
             .insert((source_entity, CommodityKind::Apple), Quantity(0));
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -15124,7 +15079,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(5),
@@ -15174,7 +15129,7 @@ mod tests {
         view.effective_places.insert(dead_entity, place);
         view.dead.insert(dead_entity);
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -15224,7 +15179,7 @@ mod tests {
         view.entities_at.insert(place, vec![agent]);
         view.effective_places.insert(missing_entity, entity(20));
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let mut vm = ViolationMemory::default();
         // Pre-record the violation so it's already known.
         vm.record(
@@ -15279,7 +15234,7 @@ mod tests {
         view.entities_at.insert(place, vec![agent]);
         view.effective_places.insert(missing_entity, entity(20));
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let mut vm = ViolationMemory::default();
         let id = vm.record(
             worldwake_core::ViolationKind::EntityMissing {
@@ -15334,7 +15289,7 @@ mod tests {
         view.entities_at.insert(place, vec![agent]);
         view.effective_places.insert(missing_entity, entity(20));
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let mut vm = ViolationMemory::default();
         let id = vm.record(
             worldwake_core::ViolationKind::SuspectedTheft {
@@ -15398,8 +15353,8 @@ mod tests {
         view.effective_places.insert(missing_entity, entity(20));
 
         // Block the investigation goal.
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::InvestigateViolation {
                     violation_id: worldwake_core::ViolationId(0),
@@ -15462,7 +15417,7 @@ mod tests {
         view.entities_at.insert(place, vec![agent]);
         view.effective_places.insert(missing_entity, entity(20));
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -15497,7 +15452,7 @@ mod tests {
             vec![(missing_entity, belief_at_place(entity(10), Tick(1)))],
         );
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -15534,7 +15489,7 @@ mod tests {
         // (simulating the edge case).
         view.entities_at.insert(place, vec![]);
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -15573,7 +15528,7 @@ mod tests {
         view.entities_at.insert(place, vec![agent]);
         view.effective_places.insert(other_entity, entity(20));
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -15614,7 +15569,7 @@ mod tests {
         view.entities_at.insert(place, vec![agent]);
         view.effective_places.insert(missing_entity, entity(20));
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -15705,7 +15660,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(100),
         );
@@ -15776,8 +15731,8 @@ mod tests {
         view.adjacent_places.insert(agent_place, vec![remote_place]);
         view.adjacent_places.insert(remote_place, vec![agent_place]);
 
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::RaidTarget { target }),
                 place: Some(remote_place),
@@ -15843,7 +15798,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(100),
         );
@@ -15890,7 +15845,7 @@ mod tests {
         let candidates = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(100),
@@ -15940,7 +15895,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(100),
         );
@@ -15986,7 +15941,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(100),
         );
@@ -16018,7 +15973,7 @@ mod tests {
         // Entity 2 has NO effective place (it's on a travel edge).
         // (effective_places does not contain traveling_entity)
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -16049,7 +16004,7 @@ mod tests {
         view.effective_places.insert(agent, place);
         // No ViolationDispositionProfile set.
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -16083,7 +16038,7 @@ mod tests {
         view.violation_disposition_profiles
             .insert(agent, default_violation_profile());
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -16117,7 +16072,7 @@ mod tests {
         view.violation_disposition_profiles
             .insert(agent, default_violation_profile());
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let vm = ViolationMemory::default();
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -16159,8 +16114,8 @@ mod tests {
         view.bandit_factions.insert(faction);
 
         // Block EstablishBanditCamp for the faction at this place.
-        let mut blocked = BlockedIntentMemory::default();
-        blocked.record(BlockedIntent {
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key: GoalKey::from(GoalKind::EstablishBanditCamp { faction }),
                 place: Some(place),
@@ -16242,7 +16197,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(500),
         );
@@ -16431,7 +16386,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(200),
         );
@@ -16467,7 +16422,7 @@ mod tests {
         let high_need_candidates = generate_candidates(
             &high_need_view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(200),
         );
@@ -16492,7 +16447,7 @@ mod tests {
         let cooldown_candidates = generate_candidates(
             &cooldown_view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(200),
         );
@@ -16514,7 +16469,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(200),
         );
@@ -16569,7 +16524,7 @@ mod tests {
         );
         view.sync_belief_store(agent);
 
-        let blocked = BlockedIntentMemory::default();
+        let blocked = BlockerMemory::default();
         let ctx = GenerationContext {
             view: &view,
             agent,
@@ -16667,7 +16622,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(500),
         );
@@ -16754,7 +16709,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(500),
         );
@@ -16830,7 +16785,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(500),
         );
@@ -16892,7 +16847,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(500),
         );
@@ -16961,7 +16916,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(500),
         );
@@ -17044,7 +16999,7 @@ mod tests {
         let candidates = generate_candidates(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &RecipeRegistry::new(),
             Tick(500),
         );
@@ -17116,7 +17071,7 @@ mod tests {
         let result = generate_candidates_with_travel_horizon(
             &view,
             agent,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             &ViolationMemory::default(),
             &RecipeRegistry::new(),
             Tick(500),

@@ -15,7 +15,7 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey};
 use worldwake_core::{
-    AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+    AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
     BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
     CommunicationProfile, ComponentDelta, ComponentKind, ComponentValue,
     ContentionDispositionProfile, ContentionPolicy, ContentionQueue, ControlSource,
@@ -845,7 +845,7 @@ pub fn seed_agent_with_recipes(
         .unwrap();
     txn.set_component_wound_list(agent, WoundList::default())
         .unwrap();
-    txn.set_component_blocked_intent_memory(agent, BlockedIntentMemory::default())
+    txn.set_component_blocker_memory(agent, BlockerMemory::default())
         .unwrap();
     txn.set_component_carry_capacity(agent, CarryCapacity(LoadUnits(50)))
         .unwrap();

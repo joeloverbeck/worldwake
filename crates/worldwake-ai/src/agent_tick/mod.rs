@@ -312,7 +312,7 @@ fn process_agent(
 
     let mut blocked_memory = ctx
         .world
-        .get_component_blocked_intent_memory(agent)
+        .get_component_blocker_memory(agent)
         .cloned()
         .unwrap_or_default();
     let original_blocked = blocked_memory.clone();
@@ -889,7 +889,7 @@ fn process_agent(
         false
     };
 
-    // ── Patience exhaustion → BlockedIntent + Exhausted state ──
+    // ── Patience exhaustion → Blocker + Exhausted state ──
     if patience_exhausted {
         let view = runtime_belief_view(
             agent,

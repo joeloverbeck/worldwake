@@ -2,7 +2,7 @@
 
 ## Summary
 
-Replace the overloaded `BlockingFact::Unknown` / `BlockingFact::AssumptionFailed` variants with a proper discrepancy taxonomy that distinguishes stale beliefs, contradicted beliefs, contention losses, missing observations, route-unknowns, no-legal-binding failures (including S108's `ExactIdentityRequired`), search-budget exhaustion, structural impossibility, and partial-execution drift. Each discrepancy class carries its own retry policy, invalidation condition, learning update, and debug explanation. Concurrently, split the monolithic `BlockedIntentMemory` into four purpose-specific memories (`DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory`) so that epistemic retreat (stale belief → reverify) is never conflated with contention backoff (`SellerOutOfStock`) or structural impossibility (`NoKnownPath`).
+Replace the overloaded `BlockingFact::Unknown` / `BlockingFact::AssumptionFailed` variants with a proper discrepancy taxonomy that distinguishes stale beliefs, contradicted beliefs, missing observations, route-unknowns, no-legal-binding failures (including S108's `RequestResolutionRejectionReason::ExactIdentityRequired`), search-budget exhaustion, no-willing-counterparty refusals, improper planning state, and partial-execution drift. Each discrepancy class carries its own retry policy, invalidation condition, learning update, and debug explanation. Concurrently, split the monolithic `BlockedIntentMemory` into four purpose-specific memories (`DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory`) so that epistemic retreat (stale belief → reverify) is never conflated with contention backoff (`SellerOutOfStock`, `WorkstationBusy`) or missing routes. Contention losses and structural-impossibility-by-contention stay in `BlockerMemory` with the existing `BlockingFact` vocabulary — S109 does not rename or relocate them.
 
 ## Phase and Status
 
@@ -10,36 +10,40 @@ Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
 
 ## Crates
 
-- `worldwake-core` — new `Discrepancy` enum, `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory` components; migrate `BlockingFact::Unknown` / `AssumptionFailed` call sites to the new typing
-- `worldwake-ai` — `failure_handling.rs` emits typed discrepancies; TTL lookup and clearing logic split by memory class; candidate generation reads from the appropriate memory
-- `worldwake-sim` — belief-view accessors for the new memories
-- `worldwake-cli` — scenario `AgentDef` carries the new components (universal, with `Default`)
+- `worldwake-core` — new `Discrepancy` enum, `BeliefClaimKey` key type, `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory` components; migrate `BlockingFact::Unknown` / `AssumptionFailed` call sites to the new typing; preserve `BlockerClearingCondition` / `ClearingBaseline` / `BlockerDiagnostic` on `BlockerMemory`
+- `worldwake-ai` — `failure_handling.rs` emits typed discrepancies through a new `classify_discrepancy` entry point; TTL lookup and clearing logic split by memory class; candidate generation and search readers migrated to the new memories; `PlanningPipelineTrace::unknown_blockers` replaced with a typed `DiscrepancyTrace`
+- `worldwake-sim` — belief-view accessors for the new read-only memory views
+- `worldwake-cli` — scenario RON files updated to drop `unknown_block_ticks`; `AgentDef` unchanged (memories stay runtime-generated)
 
 ## Dependencies
 
-- S108 (Per-Action Binding Strictness) — provides the `MatchOutcome::ExactIdentityRequired` signal that feeds `Discrepancy::NoLegalBinding`. Soft dependency; S109 can land in parallel if S108 lands first, otherwise they interlock.
+- S108 (Per-Action Binding Strictness) — **landed** at `archive/specs/S108-per-action-binding-strictness.md`. S108 lands the `RequestResolutionRejectionReason::ExactIdentityRequired` rejection and maps it to the existing `BlockingFact::AssumptionFailed`. S109 refines that mapping into `Discrepancy::NoLegalBinding`.
 
 ## Design Goals
 
-- Eliminate `BlockingFact::Unknown` as the catch-all bucket. Every currently-Unknown pathway must map to a specific discrepancy class.
-- Distinguish epistemic discrepancies (agent belief was wrong) from world-state discrepancies (opportunity vanished) from structural discrepancies (impossible affordance).
-- Route each discrepancy to its correct memory: transient contention losses → `BlockerMemory` with short TTL; stale beliefs → `DiscrepancyMemory` with a reverify hook; successful alternate repairs → `RepairMemory`; learned opportunities discovered en route → `LearnedOpportunityMemory`.
-- Preserve FOUNDATIONS P29A: the authoritative event log records the typed discrepancy at the moment it is observed, not a generic "Unknown." S110 will add the corresponding `EventTag::BlockerRecorded` variant.
+- Eliminate `BlockingFact::Unknown` as the catch-all bucket. Every currently-Unknown pathway must map to a specific discrepancy class in the new `Discrepancy` enum, a specific typed `BlockingFact` in the surviving vocabulary, or a typed recovery condition.
+- Distinguish epistemic discrepancies (agent belief was wrong or missing) from world-state blockers (opportunity contended, depleted, or unreachable). The former live in `DiscrepancyMemory`; the latter remain in `BlockerMemory` using the existing `BlockingFact` variants.
+- Route each failure to its correct memory: transient contention losses → `BlockerMemory` (preserves `WorkstationBusy` / `ReservationConflict` / `ExclusiveFacilityUnavailable` / `SellerOutOfStock` semantics); stale beliefs → `DiscrepancyMemory` with a reverify hook; successful alternate repairs → `RepairMemory`; learned opportunities discovered en route → `LearnedOpportunityMemory`.
+- Preserve FOUNDATIONS P29A: the authoritative event log records the typed discrepancy or blocker at the moment it is observed, not a generic "Unknown." S110 will add the corresponding `EventTag::BlockerRecorded` variant.
 
 ## Non-Goals
 
 - Full PolicyPlan branching on discrepancy class — deferred to a Phase 9 spec.
-- Runtime decay / learning-rate tuning beyond setting per-class TTL defaults on each memory. Decay-shape tuning is a future adjunct.
-- Changing the existing authored `BlockingFact` variants that are already correctly typed (`NoKnownPath`, `NoKnownSeller`, `SellerOutOfStock`, etc.). Those stay; only `Unknown` and `AssumptionFailed` are decomposed.
+- Runtime decay / learning-rate tuning beyond setting per-class TTL defaults on `DiscrepancyMemory` and retaining the existing `transient_block_ticks` / `structural_block_ticks` buckets for `BlockerMemory`. Decay-shape tuning is a future adjunct.
+- Changing the existing authored `BlockingFact` variants that are already correctly typed (`NoKnownPath`, `NoKnownSeller`, `SellerOutOfStock`, `WorkstationBusy`, `ReservationConflict`, `ExclusiveFacilityUnavailable`, `TargetGone`, `DangerTooHigh`, `CombatTooRisky`, `TooExpensive`, `MissingTool`, `MissingInput`, `PatienceExhausted`, `NoBuyer`, `SourceDepleted`). Those stay on `BlockerMemory`; only `Unknown` and `AssumptionFailed` are decomposed into `Discrepancy` variants.
+- Per-variant TTL fields for `BlockerMemory`. The existing 3-bucket TTL policy (`transient_block_ticks`, `structural_block_ticks`, and the now-deleted `unknown_block_ticks`) stays for `BlockerMemory`.
 
 ## FOUNDATIONS Alignment
 
 | Principle | How Satisfied |
 |-----------|---------------|
+| FND-7 (Locality of Motion, Interaction, and Communication) | Each discrepancy and blocker is recorded against the agent that observed the failure. No cross-agent propagation; another agent learns by its own failed attempt or by a shared-belief carrier (separate path). |
+| FND-11 (Every Positive Feedback Loop Needs a Physical Dampener) | Per-class TTL on `DiscrepancyMemory` entries and the existing 3-bucket TTL on `BlockerMemory` entries are the concrete dampeners. Retry storms are bounded by explicit tick-cost retries, not invisible caps. |
 | FND-16 (Ignorance, Uncertainty, and Contradiction Are First-Class) | Each discrepancy class is a distinct epistemic state: `BeliefStale`, `BeliefContradicted`, `MissingObservation`. The architecture no longer forces all ignorance into the same bucket. |
-| FND-20 (Resource-Bounded Practical Reasoning) | Correct discrepancy classification drives correct retry policy. A `BeliefStale` failure triggers reverify; a `ContentionLost` failure triggers backoff; a `StructurallyImpossible` failure triggers permanent goal suppression. |
+| FND-20 (Resource-Bounded Practical Reasoning) | Correct discrepancy classification drives correct retry policy. A `BeliefStale` failure triggers reverify; a contention loss (BlockerMemory) triggers short backoff; a `SearchBudgetExhausted` discrepancy triggers longer backoff. |
 | FND-22A (Learning, Habits, Preference Shifts) | `LearnedOpportunityMemory` is the authoritative surface for opportunities discovered in transit, separate from blocker backoff. Decay and overwrite are explicit. |
-| FND-29 (Debuggability Is a Product Feature) | The discrepancy class answers "why did this step fail?" without needing to dig into ad-hoc log messages. |
+| FND-28 (No Backward Compatibility in Live Authority Paths) | The old `BlockingFact::Unknown` and `BlockingFact::AssumptionFailed` variants are removed, not wrapped or aliased. Saved states using those variants are not decodable. |
+| FND-29 (Debuggability Is a Product Feature) | The discrepancy class answers "why did this step fail?" without needing to dig into ad-hoc log messages. The `PlanningPipelineTrace::discrepancy_trace` field replaces the `unknown_blockers` workaround. |
 | FND-29A (Causal History Is Authoritative, Append-Only, Queryable) | The typed discrepancy is recorded in the append-only event log (S110) with its provenance (which step, which belief, which observation). |
 
 ## Deliverables
@@ -57,9 +61,6 @@ pub enum Discrepancy {
     /// Two beliefs about the same proposition disagree; neither is
     /// trusted until a new observation arbitrates.
     BeliefContradicted,
-    /// A contended affordance (queue, reservation, exclusive facility)
-    /// was won by another actor. Short-TTL backoff; retry plausible.
-    ContentionLost,
     /// The planner/executor is in a state from which no further legal
     /// step can be taken (e.g. intermediate execution aborted partway).
     /// Requires proper-state recovery before resume.
@@ -69,7 +70,7 @@ pub enum Discrepancy {
     MissingObservation,
     /// No legal binding exists for the request under the current
     /// `BindingStrictness` class. Includes S108's
-    /// `MatchOutcome::ExactIdentityRequired` case.
+    /// `RequestResolutionRejectionReason::ExactIdentityRequired` case.
     NoLegalBinding,
     /// A counterparty required for the step refused (merchant unwilling,
     /// witness declined, office-holder denied).
@@ -80,16 +81,14 @@ pub enum Discrepancy {
     /// The planner exhausted its search budget without finding a
     /// feasible plan. Longer TTL; re-evaluate when context shifts.
     SearchBudgetExhausted,
-    /// The goal is structurally impossible given the current world
-    /// (no affordance of the requested kind exists anywhere). Long TTL;
-    /// suppress until the world changes.
-    StructurallyImpossible,
     /// Execution partially applied effects before failing, leaving the
     /// agent in a state that is neither the old start nor the intended
     /// end. Needs bail-out before replan.
     PartialExecutionDrift,
 }
 ```
+
+Contention losses (`WorkstationBusy`, `ReservationConflict`, `ExclusiveFacilityUnavailable`, `SellerOutOfStock`) remain in the existing `BlockingFact` vocabulary on `BlockerMemory` — they are world-state facts with concrete clearing conditions (see D3), not epistemic states. Structural impossibility expressed as "no affordance of the requested kind exists anywhere known" continues to surface through `BlockingFact::NoKnownPath` / `NoKnownSeller` etc.
 
 ### D2: `DiscrepancyMemory` component
 
@@ -125,9 +124,20 @@ pub enum DiscrepancyClearing {
 }
 ```
 
+`BlockerKey` is the existing key from `crates/worldwake-core/src/blocker_memory.rs` (reused verbatim after T001's rename). `BeliefClaimKey` is introduced by D9 below. `DiscrepancyClearing` is intentionally simpler than `BlockerClearingCondition` because epistemic discrepancies do not compare concrete quantity baselines — they clear on reobservation, belief update, or time.
+
 ### D3: `BlockerMemory` component
 
-Carries the world-state blocker variants from the old `BlockedIntentMemory` (`SellerOutOfStock`, `WorkstationBusy`, `ReservationConflict`, `ExclusiveFacilityUnavailable`, `TargetGone`, `DangerTooHigh`, `CombatTooRisky`, `TooExpensive`, `MissingTool`, `MissingInput`, `PatienceExhausted`, `NoBuyer`, `NoKnownPath`, `NoKnownSeller`, `SourceDepleted`). Shape matches the current `BlockedIntentMemory` exactly — this is the direct migration target, less the `Unknown` / `AssumptionFailed` variants.
+Carries the world-state blocker variants from the old `BlockedIntentMemory` (`SellerOutOfStock`, `WorkstationBusy`, `ReservationConflict`, `ExclusiveFacilityUnavailable`, `TargetGone`, `DangerTooHigh`, `CombatTooRisky`, `TooExpensive`, `MissingTool`, `MissingInput`, `PatienceExhausted`, `NoBuyer`, `NoKnownPath`, `NoKnownSeller`, `SourceDepleted`).
+
+`BlockerMemory` preserves the full world-state-aware clearing infrastructure of the current blocker-memory implementation:
+
+- `BlockerClearingCondition` (all 8 variants: `CommodityAvailabilityChanged`, `InventoryChanged`, `UniqueItemAcquired`, `PathDiscovered`, `EntityReappeared`, `DangerReduced`, `ContentionChanged`, `TtlOnly`) and `ClearingBaseline` (all 6 variants) are carried over unchanged.
+- `BlockerDiagnostic` attaches to entries whose corresponding `BlockingFact` needs action-def context.
+- The `blocks_goal_generation()` gate, `is_blocked`, `is_blocked_for_search`, `find_blocked_for_search`, `record`, `expire`, `sweep_cleared`, `clear_for`, and `clear_all_for_goal` API surface on the current `BlockerMemory` is preserved with identical semantics.
+- The sweep path (`clear_resolved_blockers` → `is_blocker_cleared` in `failure_handling.rs`) applies only to `BlockerMemory`. `DiscrepancyMemory` uses a separate, simpler clearing dispatch based on `DiscrepancyClearing`.
+
+The migration is a rename plus the deletion of the two removed variants — no behavioral change in blocker clearing.
 
 ### D4: `RepairMemory` and `LearnedOpportunityMemory`
 
@@ -149,78 +159,143 @@ pub struct LearnedOpportunityMemory {
 }
 ```
 
-Exact key and entry shapes land at implementation time. Size bounds: each memory caps at a per-agent `MemoryCapacityProfile` field (default 32 entries; eviction by oldest `observed_tick`). Caps are profile-driven, not hardcoded.
+`OpportunityKey` already exists at `crates/worldwake-core/src/goal.rs:161`. `RepairKey` is new and its exact shape lands at implementation time. Size bounds: each memory caps at a per-agent `MemoryCapacityProfile` field (default 32 entries; eviction by oldest `observed_tick`). Caps are profile-driven, not hardcoded.
 
 ### D5: Migration of `BlockingFact::Unknown` and `AssumptionFailed` call sites
 
-Grep sweep: `BlockingFact::Unknown` appears in `failure_handling.rs`, `blocked_intent.rs`, `agent_tick/mod.rs`, `agent_tick/frame.rs`. Each call site maps to a specific `Discrepancy` variant:
+The `BlockingFact` enum loses its `Unknown` and `AssumptionFailed` variants after migration. Every runtime call site is rewritten against the surviving `BlockingFact` vocabulary or against the new `Discrepancy` enum.
 
-- `failure_handling.rs:66` (diagnostic filter) → `Discrepancy::ImproperPlanningState`
-- `failure_handling.rs:176` (default branch) → replaced by explicit classifier
-- `failure_handling.rs:574` (`ActionAbortRequestReason::SelfTargetForbidden`) → `Discrepancy::NoLegalBinding`
-- `agent_tick/mod.rs:840` (filter on unexpired unknowns) → migrated to query `DiscrepancyMemory` instead
-- `agent_tick/frame.rs:435` (`AssumptionFailed`) → `Discrepancy::BeliefContradicted` or `Discrepancy::TargetGone` depending on specific break (routed through `BlockerMemory::TargetGone` where applicable)
+**Emission sites (runtime, in `worldwake-ai`):**
 
-The `BlockingFact` enum loses `Unknown` and `AssumptionFailed` variants after migration. This is not backward compatible (FND-28) — old save files with those variants fail decode. Migration: new save format only; prior runs are not decodable.
+- `failure_handling.rs::derive_blocking_fact` default fallthrough (currently line 177, returning `BlockingFact::Unknown`) → routed through a new `classify_discrepancy` helper (see F1). When no specific `BlockingFact` applies, the failure is recorded in `DiscrepancyMemory` under the appropriate `Discrepancy` variant instead of fabricating a catch-all blocker.
+- `failure_handling.rs::classify_precondition_failure_detail` (currently line 568) — the `exactidentityrequired` / `targetatactorplace` / `targetdirectlypossessedbyactor` / `targetgrounded` branch returning `BlockingFact::AssumptionFailed` → returns `Discrepancy::NoLegalBinding` for `exactidentityrequired`; remaining precondition-assertion failures route to `Discrepancy::ImproperPlanningState`.
+- `failure_handling.rs::map_handler_abort_reason` `SelfTargetForbidden` arm (currently line 590, returning `BlockingFact::Unknown`) → `Discrepancy::NoLegalBinding`.
+- `failure_handling.rs::derive_clearing_condition` `Unknown | PatienceExhausted | AssumptionFailed | NoBuyer` arm (currently lines 745–748) → split: `PatienceExhausted` and `NoBuyer` stay on `BlockerMemory` with `BlockerClearingCondition::TtlOnly`; the `Unknown` and `AssumptionFailed` cases disappear from this function because their failures now route to `DiscrepancyMemory` (which has its own clearing dispatch, not `BlockerClearingCondition`).
+- `failure_handling.rs::record_blocked_intent` `diagnostic_context` Unknown branch (currently line 66) — removed. `BlockerDiagnostic` only attaches to BlockerMemory entries; `DiscrepancyMemory` entries carry their action-def context through `blocker_key.action_def`.
+- `failure_handling.rs::blocking_fact_ttl` (currently lines 992–1011) → drops the `Unknown => unknown_block_ticks` row. Remaining `BlockingFact` variants keep their bucket assignments (`transient_block_ticks`, `structural_block_ticks`). A new parallel function `discrepancy_ttl(&Discrepancy, &CognitiveProfile) -> u32` (see D6) handles `DiscrepancyMemory` entries.
+- `agent_tick/frame.rs::record_assumption_failure_blocked_intent` (currently line 435, emitting `BlockingFact::AssumptionFailed`) → routes to `DiscrepancyMemory` with `Discrepancy::BeliefContradicted` when the broken assumption is an epistemic claim (target identity, belief claim) or `Discrepancy::PartialExecutionDrift` when execution has already committed partial effects. The routing decision is made from `frame.domain` state.
+- `agent_tick/mod.rs::decision_outcome_planning` (currently line 837–852) — `PlanningPipelineTrace::unknown_blockers: Vec<UnknownBlockerTrace>` is replaced by `discrepancy_trace: Vec<DiscrepancyTrace>` (see F2). The filter reads from `DiscrepancyMemory` instead of filtering `BlockerMemory` on `BlockingFact::Unknown`.
+
+**Reader migration (runtime, in `worldwake-ai`):**
+
+- `candidate_generation.rs::generate_candidates` (currently lines 2030, 2264 call `blocked.is_blocked(...)`) → read both `BlockerMemory::is_blocked(...)` for world-state suppression and `DiscrepancyMemory::is_suppressed(...)` for epistemic suppression. Goal generation is suppressed when either memory has a live entry for the goal key scope.
+- `search/candidates.rs` (currently line 1154 calls `blocked.find_blocked_for_search(...)`) → migrate to `BlockerMemory::find_blocked_for_search(...)`. Search does not consult `DiscrepancyMemory` directly; discrepancies are filtered at candidate-generation time before search runs.
+- `feasibility.rs`, `planning_snapshot.rs`, `agent_tick/{active_action,candidates,execution,observation,planning,tests}.rs` (12 files total currently access `get_component_blocker_memory` or a local `blocker_memory` alias) → migrate read paths to `get_component_blocker_memory` plus `get_component_discrepancy_memory` as needed. Mutable access (primarily `failure_handling.rs`, `agent_tick/frame.rs`) migrates to the per-memory mutable accessors.
+
+**Diagnostic trace:**
+
+- `decision_trace.rs::PlanningPipelineTrace::unknown_blockers` (currently line 244–246) and `decision_trace.rs::UnknownBlockerTrace` struct (currently lines 279–285) → replaced by `discrepancy_trace: Vec<DiscrepancyTrace>` and `DiscrepancyTrace` struct. See F2.
+
+**Test sites (in `worldwake-ai`, `worldwake-core`):**
+
+- `failure_handling.rs` tests (boundary `#[cfg(test)]` at line 1014; sites at 1673, 1804, 1812, 2094, 2455, 2531, 2539, 2604, 2678) — rewrite to assert against the new memory's expected entry.
+- `agent_tick/tests.rs` (sites at 4124, 6006, 6036) — rewrite.
+- `candidate_generation.rs` tests (boundary at line 5200; sites at 8005, 15412, 16170) — rewrite.
+- `search/tests.rs` (sites at 2323, 2340) — rewrite.
+- `blocker_memory.rs` tests (post-T001 rename; sites at 402, 649, 669 in the pre-split draft) — delete or rewrite against `BlockerMemory` / `DiscrepancyMemory`. The `assumption_failed_blocks_goal_generation` test loses its meaning and is deleted.
+
+This is not backward compatible (FND-28) — old save files with the removed variants fail decode. Migration: new save format only; prior runs are not decodable.
 
 ### D6: TTL policy per class
 
-`failure_handling.rs::blocking_fact_ttl` currently maps every `BlockingFact` variant to a `CognitiveProfile` field. Replace with `discrepancy_ttl(&Discrepancy, &CognitiveProfile)` returning per-class TTL:
+Introduce `discrepancy_ttl(&Discrepancy, &CognitiveProfile) -> u32` alongside the existing `blocking_fact_ttl`. `blocking_fact_ttl` keeps its current structure minus the removed `Unknown => cognitive.unknown_block_ticks` row; the remaining variants continue to use `transient_block_ticks` or `structural_block_ticks` as today.
 
 | Discrepancy | Default TTL field (on `CognitiveProfile`) | Rough default |
 |-------------|-------------------------------------------|----------|
 | `BeliefStale` | `stale_belief_backoff_ticks` | 30 |
 | `BeliefContradicted` | `contradicted_belief_backoff_ticks` | 60 |
-| `ContentionLost` | `contention_backoff_ticks` | 8 |
 | `ImproperPlanningState` | `improper_state_backoff_ticks` | 2 |
 | `MissingObservation` | `missing_observation_backoff_ticks` | 20 |
 | `NoLegalBinding` | `no_legal_binding_backoff_ticks` | 120 |
 | `NoWillingCounterparty` | `counterparty_refusal_backoff_ticks` | 40 |
 | `RouteUnknown` | `route_unknown_backoff_ticks` | 200 |
 | `SearchBudgetExhausted` | `search_exhaustion_backoff_ticks` | 100 |
-| `StructurallyImpossible` | `structural_impossibility_backoff_ticks` | 400 |
 | `PartialExecutionDrift` | `partial_drift_backoff_ticks` | 4 |
 
-All defaults are per-profile and overridable per agent via scenario.
+All defaults are per-profile and overridable per agent via scenario. `transient_block_ticks` and `structural_block_ticks` remain on `CognitiveProfile` as the bucket TTLs for `BlockerMemory`; `unknown_block_ticks` is removed.
 
 ### D7: Belief-view accessors
 
-Add `discrepancy_memory(agent)`, `blocker_memory(agent)`, `repair_memory(agent)`, `learned_opportunity_memory(agent)` accessors on the appropriate belief-view sub-trait in `crates/worldwake-sim/src/belief_view.rs`. Default returns `Default::default()`; `PerAgentBeliefView` reads the live component.
+Add read-only accessors to the appropriate belief-view sub-trait in `crates/worldwake-sim/src/belief_view.rs`:
+
+```rust
+fn discrepancy_memory(&self, agent: EntityId) -> Option<&DiscrepancyMemory> { None }
+fn blocker_memory(&self, agent: EntityId) -> Option<&BlockerMemory> { None }
+fn repair_memory(&self, agent: EntityId) -> Option<&RepairMemory> { None }
+fn learned_opportunity_memory(&self, agent: EntityId) -> Option<&LearnedOpportunityMemory> { None }
+```
+
+Default implementations return `None`; `PerAgentBeliefView` / `RuntimeBeliefView` read the live components. These accessors are the surface used by AI-crate read-only consumers (candidate generation, ranking, diagnostic trace). Mutable access continues to flow directly through `get_component_blocker_memory_mut` / `get_component_discrepancy_memory_mut` / `get_component_repair_memory_mut` / `get_component_learned_opportunity_memory_mut` in `failure_handling.rs`, `agent_tick/frame.rs`, and other writer sites. This mirrors the current pattern: there is no existing `blocked_intent_memory` belief-view accessor — the 12 AI-crate files that read `BlockedIntentMemory` today do so through direct component access, and the read paths migrate to the new accessors as part of D5.
 
 ### D8: Scenario contract
 
-Add `discrepancy_memory`, `blocker_memory`, `repair_memory`, `learned_opportunity_memory` as runtime-generated universal components (exempt from scenario-authored initialization per spec-drafting-rules.md §5 — they start empty and accumulate from runtime experience). Add the new TTL fields to `CognitiveProfile` with serde defaults so existing scenarios remain valid.
+Add `discrepancy_memory`, `blocker_memory`, `repair_memory`, `learned_opportunity_memory` as runtime-generated universal components (exempt from scenario-authored initialization per `docs/spec-drafting-rules.md` §5 — they start empty and accumulate from runtime experience).
+
+Scenario RON migration (non-trivial because `unknown_block_ticks` is being removed):
+
+- `scenarios/survival-baseline.ron` — 3 occurrences.
+- `scenarios/survival-scattered.ron` — 3 occurrences.
+- `scenarios/survival-contested.ron` — 4 occurrences.
+- `scenarios/cli-evaluation.ron` — 1 occurrence.
+- `crates/worldwake-cli/tests/fixtures/observer_anomalies/acute_thirst_spike.ron` — 1 occurrence.
+- `crates/worldwake-cli/tests/fixtures/observer_anomalies/convergence_hub.ron` — 3 occurrences.
+- `crates/worldwake-cli/tests/fixtures/observer_anomalies/maintenance_starvation_wash_gap.ron` — 2 occurrences.
+- `crates/worldwake-cli/tests/fixtures/observer_anomalies/recipe_monoculture_apples_vs_grain.ron` — 2 occurrences.
+- `crates/worldwake-cli/tests/fixtures/observer_anomalies/stuck_detector_wash_travel_cycle.ron` — 1 occurrence.
+- `crates/worldwake-cli/src/scenario/types.rs:939` — test fixture literal.
+- `crates/worldwake-core/src/delta.rs:582`, `crates/worldwake-core/src/cognitive_profile.rs:59, 117, 138`, `crates/worldwake-ai/src/{agent_tick/tests.rs,agent_tick/planning.rs,decision_runtime.rs,failure_handling.rs,goal_model.rs,search/tests.rs,lib.rs}` — Rust literal sites that currently assign or assert `unknown_block_ticks`.
+
+All sites lose the field as part of the migration. New TTL fields land on `CognitiveProfile` with `#[serde(default)]` so existing scenarios that do not yet declare them continue to deserialize.
+
+`CognitiveProfile` gains the new TTL fields from D6 and loses `unknown_block_ticks`. `transient_block_ticks` and `structural_block_ticks` remain.
+
+### D9: `BeliefClaimKey` type
+
+Introduce `BeliefClaimKey` in `crates/worldwake-core/` (module location to finalize at implementation time; likely `entity_belief_claim.rs` or a new `belief_claim_key.rs`):
+
+```rust
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct BeliefClaimKey {
+    pub subject: EntityId,
+    pub aspect: EntityBeliefAspect,
+}
+```
+
+`EntityBeliefAspect` already exists and is re-exported through `crates/worldwake-core/src/belief.rs:5`. `BeliefClaimKey` is the identity under which a `DiscrepancyClearing::BeliefUpdate` request is registered: an observation of the same `(subject, aspect)` later in time clears the entry. S114 and S115 also reference `BeliefClaimKey`; S109 lands the type so later specs consume it without re-introducing it.
 
 ## FND-01 Section H: Causal Hooks
 
-1. **Information-path analysis**: Each discrepancy is recorded against the agent that observed it. Discrepancies do not propagate between agents — another agent learns about a merchant stockout only by its own failed purchase or by a shared belief (`ShareBelief` — separate path). Aligned with FND-7.
-2. **Positive-feedback analysis**: The only loop is "failure → record discrepancy → suppress goal → reattempt after TTL → possibly record again." The class-specific TTL is the dampener: `StructurallyImpossible` suppresses for 400+ ticks, preventing infinite retry spam; `ContentionLost` permits quick retry because the world genuinely changes fast.
-3. **Concrete dampeners**: Per-class TTL values are the dampener. They are not invisible caps — they encode how long an agent is justified in believing the failure classification without re-evidence. Agents with `stale_belief_backoff_ticks = 5` reverify quickly (impulsive); agents with `stale_belief_backoff_ticks = 50` reverify rarely (stubborn).
-4. **Stored state vs. derived read-model**: `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory` are authoritative stored state (each entry records a specific observation). The "is this goal blocked?" decision is derived from reading those memories plus the current tick.
+1. **Information-path analysis**: Each discrepancy and blocker is recorded against the agent that observed it. Neither `DiscrepancyMemory` nor `BlockerMemory` propagate between agents — another agent learns about a merchant stockout only by its own failed purchase or by a shared belief (`ShareBelief` — separate path). `RepairMemory` and `LearnedOpportunityMemory` are purely per-agent. Aligned with FND-7.
+2. **Positive-feedback analysis**: The only loop is "failure → record discrepancy or blocker → suppress goal → reattempt after TTL → possibly record again." The class-specific TTL is the dampener: longer-TTL classes (`RouteUnknown` 200, `SearchBudgetExhausted` 100, `structural_block_ticks` 200) suppress for many ticks, preventing retry spam; shorter-TTL classes (`ImproperPlanningState` 2, `PartialExecutionDrift` 4, `transient_block_ticks` 20) permit quick retry because the world genuinely changes fast.
+3. **Concrete dampeners**: Per-class TTL values are the dampener. They are not invisible caps — they encode how long an agent is justified in believing the failure classification without re-evidence. Agents with `stale_belief_backoff_ticks = 5` reverify quickly (impulsive); agents with `stale_belief_backoff_ticks = 50` reverify rarely (stubborn). BlockerMemory reuses the existing `transient_block_ticks` and `structural_block_ticks` dampeners unchanged.
+4. **Stored state vs. derived read-model**: `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory`, and `BeliefClaimKey` are authoritative stored state (each entry records a specific observation against a specific key). The "is this goal blocked?" decision is derived from reading those memories plus the current tick. `PlanningPipelineTrace::discrepancy_trace` (F2) is a derived view for debuggability, not authoritative state.
 
 ## SystemFn Integration
 
-No new tick-phase SystemFn. Memory maintenance (TTL expiry) runs inline within `agent_tick` the same way `BlockedIntentMemory::expire` runs today. Each memory gets an analogous `expire(current_tick)` call at the start of the agent tick.
+No new tick-phase SystemFn. Memory maintenance (TTL expiry) runs inline within `agent_tick` the same way `BlockerMemory::expire` runs today via `clear_resolved_blockers` at `failure_handling.rs:88-96`. Each of the four memories gets an analogous `expire(current_tick)` call at the start of the agent tick. `BlockerMemory` additionally keeps the existing `sweep_cleared` world-state invalidation pass driven by `is_blocker_cleared`; `DiscrepancyMemory` uses a separate, simpler clearing dispatch based on `DiscrepancyClearing` variants.
 
 ## Component Registration
 
-Four new components on `EntityKind::Agent`, runtime-generated (exempt from scenario contract per spec-drafting-rules.md §5):
+Four new components on `EntityKind::Agent`, runtime-generated (exempt from scenario contract per `docs/spec-drafting-rules.md` §5):
 
 - `DiscrepancyMemory` — universal, `Default::default()`
 - `BlockerMemory` — universal, `Default::default()`
 - `RepairMemory` — universal, `Default::default()`
 - `LearnedOpportunityMemory` — universal, `Default::default()`
 
-Old `BlockedIntentMemory` component is removed (no backward-compat path — FND-28).
+Each component is registered via the `component_schema!` macro pattern in `crates/worldwake-core/src/component_schema.rs` (with T001 already renaming the blocker registration to `BlockerMemory`) — four analogous blocks replace the one old pre-split registration.
 
-`CognitiveProfile` gains new TTL fields; existing field `unknown_block_ticks` is removed or renamed.
+Old `BlockedIntentMemory` component is removed (no backward-compat path — FND-28). All 12 AI-crate files currently accessing `get_component_blocker_memory` migrate to the new per-memory accessors.
+
+`CognitiveProfile` gains the new TTL fields from D6; existing field `unknown_block_ticks` is removed. `transient_block_ticks` and `structural_block_ticks` remain unchanged.
 
 ## Cross-System Interactions
 
-- **Sim dispatch ↔ discrepancy recording**: `tick_step.rs` BestEffort failures now produce typed discrepancies (not `Unknown`). State-mediated.
-- **Revalidation ↔ discrepancy memory**: `plan_revalidation.rs` reads `DiscrepancyMemory` when classifying revalidation failure.
-- **Candidate generation ↔ memories**: `candidate_generation.rs` filters suppressed goals by reading `BlockerMemory`, `DiscrepancyMemory`, and boosts alternatives via `RepairMemory` / `LearnedOpportunityMemory`.
-- **S110 event log ↔ discrepancy recording**: Every recorded discrepancy emits `EventTag::BlockerRecorded { discrepancy, blocker_key }` to the authoritative event log.
+- **Sim dispatch ↔ failure classification**: `tick_step.rs` BestEffort failures (including the `RequestResolutionRejectionReason::ExactIdentityRequired` rejection at `tick_step.rs:289`) now produce typed discrepancies or specific blockers (not `Unknown` / `AssumptionFailed`). State-mediated.
+- **Revalidation ↔ memories**: `plan_revalidation.rs` reads `DiscrepancyMemory` and `BlockerMemory` when classifying revalidation failure. This is new consumption — `plan_revalidation.rs` does not yet read blocker/discrepancy memory today.
+- **Candidate generation ↔ memories**: `candidate_generation.rs` filters suppressed goals by reading `BlockerMemory::is_blocked` and `DiscrepancyMemory::is_suppressed`, and boosts alternatives via `RepairMemory` / `LearnedOpportunityMemory`.
+- **Search ↔ BlockerMemory**: `search/candidates.rs` uses `BlockerMemory::find_blocked_for_search`; `DiscrepancyMemory` is filtered before search, not during.
+- **S110 event log ↔ discrepancy/blocker recording**: Every recorded discrepancy or blocker emits `EventTag::BlockerRecorded { fact_or_discrepancy, blocker_key }` to the authoritative event log.
 
 ## Profile-Driven Parameters
 
@@ -228,16 +303,55 @@ Old `BlockedIntentMemory` component is removed (no backward-compat path — FND-
 |-----------|---------|------|---------|---------|
 | `stale_belief_backoff_ticks` | `CognitiveProfile` | `u32` | 30 | How long to trust a stale-belief classification before re-evidencing |
 | `contradicted_belief_backoff_ticks` | `CognitiveProfile` | `u32` | 60 | Same for contradictions |
-| `contention_backoff_ticks` | `CognitiveProfile` | `u32` | 8 | Short backoff for race losses |
 | `improper_state_backoff_ticks` | `CognitiveProfile` | `u32` | 2 | Short backoff for planner-internal state errors |
 | `missing_observation_backoff_ticks` | `CognitiveProfile` | `u32` | 20 | Perception-gap backoff |
 | `no_legal_binding_backoff_ticks` | `CognitiveProfile` | `u32` | 120 | ExactIdentity / strictness failure backoff |
 | `counterparty_refusal_backoff_ticks` | `CognitiveProfile` | `u32` | 40 | Merchant/witness/office refused |
 | `route_unknown_backoff_ticks` | `CognitiveProfile` | `u32` | 200 | Unknown route; wait for testimony/exploration |
 | `search_exhaustion_backoff_ticks` | `CognitiveProfile` | `u32` | 100 | Planner budget exhausted |
-| `structural_impossibility_backoff_ticks` | `CognitiveProfile` | `u32` | 400 | Nothing of the kind exists anywhere known |
 | `partial_drift_backoff_ticks` | `CognitiveProfile` | `u32` | 4 | Bail-out recovery window |
+| `transient_block_ticks` | `CognitiveProfile` | `u32` | 20 | Unchanged — BlockerMemory transient bucket |
+| `structural_block_ticks` | `CognitiveProfile` | `u32` | 200 | Unchanged — BlockerMemory structural bucket |
 | `memory_capacity` | `MemoryCapacityProfile` (new) | `u32` | 32 | Entry cap per memory |
+
+`unknown_block_ticks` is removed.
+
+## Follow-up Deliverables
+
+### F1: `classify_discrepancy` entry point
+
+Introduce a named classifier function in `worldwake-ai` that replaces the implicit default-fallthrough in `derive_blocking_fact`:
+
+```rust
+fn classify_discrepancy(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    goal_key: &GoalKey,
+    step: &PlannedStep,
+    execution_failure: Option<ExecutionFailure<'_>>,
+) -> FailureClassification;
+
+enum FailureClassification {
+    Blocker(BlockingFact),
+    Discrepancy(Discrepancy),
+}
+```
+
+The caller writes to `BlockerMemory` or `DiscrepancyMemory` based on the classification. A test-time exhaustive match over `Discrepancy` variants enforces compile-time coverage (see Validation test 6).
+
+### F2: `DiscrepancyTrace` replaces `UnknownBlockerTrace`
+
+Replace `decision_trace.rs::PlanningPipelineTrace::unknown_blockers: Vec<UnknownBlockerTrace>` (currently lines 244–246) and the `UnknownBlockerTrace` struct (lines 279–285) with:
+
+```rust
+pub struct DiscrepancyTrace {
+    pub discrepancy: Discrepancy,
+    pub blocker_key: BlockerKey,
+    pub expires_tick: Tick,
+}
+```
+
+`PlanningPipelineTrace` gets a `discrepancy_trace: Vec<DiscrepancyTrace>` field. The filter at `agent_tick/mod.rs:837–852` reads from `DiscrepancyMemory` instead of `BlockedIntentMemory`. `BlockerMemory` entries are not surfaced in the trace — the observer consumes them through the existing blocker-memory snapshot path.
 
 ## Validation and Falsification
 
@@ -245,18 +359,19 @@ Old `BlockedIntentMemory` component is removed (no backward-compat path — FND-
 
 1. `DiscrepancyMemory::record` + `expire(tick)` prunes expired entries.
 2. `DiscrepancyClearing::ReobservationOf { target }` clears when perception system records a new observation of that target.
-3. `BlockerMemory` preserves exact old `BlockedIntentMemory` semantics for migrated variants.
-4. `RepairMemory` overwrites a repair entry when a fresher successful alternate is recorded.
-5. `LearnedOpportunityMemory` evicts oldest entry when `memory_capacity` is exceeded.
+3. `DiscrepancyClearing::BeliefUpdate { claim_key }` clears when a new belief claim with matching `BeliefClaimKey` is recorded.
+4. `BlockerMemory` preserves exact old `BlockedIntentMemory` semantics for migrated variants (carried over test coverage from `blocked_intent.rs` — the `SourceDepleted`, `ExclusiveFacilityUnavailable`, `TargetGone`, place-scoping, and `sweep_cleared` tests all apply unchanged).
+5. `RepairMemory` overwrites a repair entry when a fresher successful alternate is recorded.
+6. `LearnedOpportunityMemory` evicts oldest entry when `memory_capacity` is exceeded.
 
 ### Migration tests
 
-6. Every `failure_handling.rs` code path that previously emitted `BlockingFact::Unknown` now emits a specific `Discrepancy` variant (compile-time coverage via exhaustive match).
-7. Every `BlockingFact::AssumptionFailed` call site maps to a specific variant with no silent fallback to a catch-all.
+7. Every `failure_handling.rs` code path that previously emitted `BlockingFact::Unknown` now emits either a specific surviving `BlockingFact` on `BlockerMemory` or a specific `Discrepancy` variant on `DiscrepancyMemory` (compile-time coverage via exhaustive match on `FailureClassification` and `Discrepancy`).
+8. Every `BlockingFact::AssumptionFailed` call site maps to a specific `Discrepancy` variant (typically `BeliefContradicted`, `NoLegalBinding`, or `PartialExecutionDrift`) with no silent fallback to a catch-all.
 
 ### Golden test extension
 
-8. Extend an existing replan golden (e.g., `golden_healer_acquires_remote_ground_medicine_for_patient` or `golden_planner_pathology` scenarios) with an assertion that after a target-gone replan, the agent's `DiscrepancyMemory` or `BlockerMemory` contains a typed entry (not `Unknown`).
+9. Extend `golden_planner_pathology.rs` or `golden_ai_decisions.rs` with an assertion that after a target-gone replan, the agent's `BlockerMemory` contains a `BlockingFact::TargetGone` entry (not a removed `Unknown` / `AssumptionFailed` variant), and that after a belief-contradiction replan (target identity broken), `DiscrepancyMemory` contains a `Discrepancy::BeliefContradicted` entry keyed on the relevant `BlockerKey`.
 
 ## Outcome
 

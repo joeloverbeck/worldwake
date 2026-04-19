@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind, EntityId,
-    Quantity, Tick, UniqueItemKind,
+    Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, EntityId, Quantity, Tick,
+    UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -82,7 +82,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
     facility_intents: &mut ContentionIntents,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     violation_memory: &mut worldwake_core::ViolationMemory,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
@@ -270,7 +270,7 @@ pub(super) fn handle_facility_queue_transitions(
     view: &dyn RuntimeBeliefView,
     runtime: &AgentDecisionRuntime,
     facility_intents: &mut ContentionIntents,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     agent: EntityId,
     tick: Tick,
     phase: ReadPhaseContext<'_>,
@@ -332,7 +332,7 @@ pub(super) fn handle_facility_queue_transitions(
                     .remove(&facility)
                     .or(fallback_intent)
                 {
-                    blocked_memory.record(BlockedIntent {
+                    blocked_memory.record(Blocker {
                         blocker_key: BlockerKey {
                             goal_key: intent.goal_key,
                             place: current_place,
@@ -368,7 +368,7 @@ pub(super) fn reconcile_in_flight_state(
     active_goal: &mut Option<worldwake_core::ActiveGoal>,
     jc: &mut Option<worldwake_core::IntentionFrame>,
     facility_intents: &mut ContentionIntents,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
     reconciliation: InFlightReconciliation<'_>,
