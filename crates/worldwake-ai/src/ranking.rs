@@ -25,9 +25,9 @@ use worldwake_core::{
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille, NoticeTopic,
     ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, Permille, Quantity, RepairKey, RepairMemory, RightKind, SourceKey,
-    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
-    escalation_multiplier, failure_ratio_permille,
+    PerceptionSource, Permille, Quantity, RepairKey, RepairMemory, RightKind, SourceKey, TellTopic,
+    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
+    failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -220,8 +220,11 @@ fn memory_motive_bonus(
         return 0;
     }
 
-    repair_memory_bonus(candidate, context, base_motive)
-        .saturating_add(learned_opportunity_bonus(candidate, context, base_motive))
+    repair_memory_bonus(candidate, context, base_motive).saturating_add(learned_opportunity_bonus(
+        candidate,
+        context,
+        base_motive,
+    ))
 }
 
 fn repair_memory_bonus(
@@ -258,7 +261,11 @@ fn learned_opportunity_bonus(
         goal_key: candidate.key,
         anchor: candidate.anchor,
     };
-    let Some(entry) = context.learned_opportunity_memory.opportunities.get(&opportunity) else {
+    let Some(entry) = context
+        .learned_opportunity_memory
+        .opportunities
+        .get(&opportunity)
+    else {
         return 0;
     };
     if entry.expires_tick <= context.current_tick {
@@ -4015,9 +4022,18 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(baseline[0].grounded.anchor, OpportunityAnchor::Place(place_a));
-        assert_eq!(boosted[0].grounded.anchor, OpportunityAnchor::Place(place_b));
-        assert_eq!(expired[0].grounded.anchor, OpportunityAnchor::Place(place_a));
+        assert_eq!(
+            baseline[0].grounded.anchor,
+            OpportunityAnchor::Place(place_a)
+        );
+        assert_eq!(
+            boosted[0].grounded.anchor,
+            OpportunityAnchor::Place(place_b)
+        );
+        assert_eq!(
+            expired[0].grounded.anchor,
+            OpportunityAnchor::Place(place_a)
+        );
     }
 
     #[test]
@@ -4067,8 +4083,14 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(boosted[0].grounded.anchor, OpportunityAnchor::Place(place_b));
-        assert_eq!(expired[0].grounded.anchor, OpportunityAnchor::Place(place_a));
+        assert_eq!(
+            boosted[0].grounded.anchor,
+            OpportunityAnchor::Place(place_b)
+        );
+        assert_eq!(
+            expired[0].grounded.anchor,
+            OpportunityAnchor::Place(place_a)
+        );
     }
 
     #[test]

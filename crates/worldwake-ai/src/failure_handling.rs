@@ -1,8 +1,8 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
     Blocker, BlockerClearingCondition, BlockerDiagnostic, BlockerKey, BlockerMemory, BlockingFact,
-    ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, EntityId, GoalKey,
-    GoalKind, IntentionFrame, Quantity, Tick,
+    ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy, EntityId,
+    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -1007,11 +1007,27 @@ fn blocking_fact_ttl(fact: BlockingFact, cognitive: &CognitiveProfile) -> u32 {
     }
 }
 
+#[allow(dead_code)]
+fn discrepancy_ttl(discrepancy: Discrepancy, cognitive: &CognitiveProfile) -> u32 {
+    match discrepancy {
+        Discrepancy::BeliefStale => cognitive.stale_belief_backoff_ticks,
+        Discrepancy::BeliefContradicted => cognitive.contradicted_belief_backoff_ticks,
+        Discrepancy::ImproperPlanningState => cognitive.improper_state_backoff_ticks,
+        Discrepancy::MissingObservation => cognitive.missing_observation_backoff_ticks,
+        Discrepancy::NoLegalBinding => cognitive.no_legal_binding_backoff_ticks,
+        Discrepancy::NoWillingCounterparty => cognitive.counterparty_refusal_backoff_ticks,
+        Discrepancy::RouteUnknown => cognitive.route_unknown_backoff_ticks,
+        Discrepancy::SearchBudgetExhausted => cognitive.search_exhaustion_backoff_ticks,
+        Discrepancy::PartialExecutionDrift => cognitive.partial_drift_backoff_ticks,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ExecutionFailure, PlanFailureContext, blocking_fact_ttl, clear_resolved_blockers,
-        derive_blocking_fact, derive_clearing_condition, handle_plan_failure, is_blocker_cleared,
+        derive_blocking_fact, derive_clearing_condition, discrepancy_ttl, handle_plan_failure,
+        is_blocker_cleared,
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
@@ -1023,9 +1039,9 @@ mod tests {
         ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
         ClearingBaseline, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
         CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents, DemandObservation,
-        DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        Discrepancy, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -1370,9 +1386,23 @@ mod tests {
             transient_block_ticks: reasoning.transient_block_ticks,
             unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
+            stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
+            contradicted_belief_backoff_ticks: CognitiveProfile::default()
+                .contradicted_belief_backoff_ticks,
+            improper_state_backoff_ticks: CognitiveProfile::default().improper_state_backoff_ticks,
+            missing_observation_backoff_ticks: CognitiveProfile::default()
+                .missing_observation_backoff_ticks,
+            no_legal_binding_backoff_ticks: CognitiveProfile::default()
+                .no_legal_binding_backoff_ticks,
+            counterparty_refusal_backoff_ticks: CognitiveProfile::default()
+                .counterparty_refusal_backoff_ticks,
+            route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+            search_exhaustion_backoff_ticks: CognitiveProfile::default()
+                .search_exhaustion_backoff_ticks,
+            partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
             repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
-            learned_opportunity_memory_ticks:
-                CognitiveProfile::default().learned_opportunity_memory_ticks,
+            learned_opportunity_memory_ticks: CognitiveProfile::default()
+                .learned_opportunity_memory_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -2529,6 +2559,86 @@ mod tests {
         assert_eq!(
             blocking_fact_ttl(BlockingFact::Unknown, &cognitive(&budget)),
             budget.unknown_block_ticks
+        );
+    }
+
+    #[test]
+    fn discrepancy_ttl_uses_class_specific_defaults() {
+        let cognitive = CognitiveProfile::default();
+
+        assert_eq!(discrepancy_ttl(Discrepancy::BeliefStale, &cognitive), 30);
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::BeliefContradicted, &cognitive),
+            60
+        );
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::ImproperPlanningState, &cognitive),
+            2
+        );
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::MissingObservation, &cognitive),
+            20
+        );
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::NoLegalBinding, &cognitive),
+            120
+        );
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::NoWillingCounterparty, &cognitive),
+            40
+        );
+        assert_eq!(discrepancy_ttl(Discrepancy::RouteUnknown, &cognitive), 200);
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::SearchBudgetExhausted, &cognitive),
+            100
+        );
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::PartialExecutionDrift, &cognitive),
+            4
+        );
+    }
+
+    #[test]
+    fn discrepancy_ttl_respects_profile_override() {
+        let cognitive = CognitiveProfile {
+            stale_belief_backoff_ticks: 11,
+            contradicted_belief_backoff_ticks: 12,
+            improper_state_backoff_ticks: 13,
+            missing_observation_backoff_ticks: 14,
+            no_legal_binding_backoff_ticks: 15,
+            counterparty_refusal_backoff_ticks: 16,
+            route_unknown_backoff_ticks: 17,
+            search_exhaustion_backoff_ticks: 18,
+            partial_drift_backoff_ticks: 19,
+            ..CognitiveProfile::default()
+        };
+
+        assert_eq!(discrepancy_ttl(Discrepancy::BeliefStale, &cognitive), 11);
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::BeliefContradicted, &cognitive),
+            12
+        );
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::ImproperPlanningState, &cognitive),
+            13
+        );
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::MissingObservation, &cognitive),
+            14
+        );
+        assert_eq!(discrepancy_ttl(Discrepancy::NoLegalBinding, &cognitive), 15);
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::NoWillingCounterparty, &cognitive),
+            16
+        );
+        assert_eq!(discrepancy_ttl(Discrepancy::RouteUnknown, &cognitive), 17);
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::SearchBudgetExhausted, &cognitive),
+            18
+        );
+        assert_eq!(
+            discrepancy_ttl(Discrepancy::PartialExecutionDrift, &cognitive),
+            19
         );
     }
 

@@ -831,6 +831,33 @@ impl SocialBeliefView for PerAgentBeliefView<'_> {
         self.belief_store.social_observations.clone()
     }
 
+    fn discrepancy_memory(&self, agent: EntityId) -> Option<&worldwake_core::DiscrepancyMemory> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_discrepancy_memory(agent))
+            .flatten()
+    }
+
+    fn blocker_memory(&self, agent: EntityId) -> Option<&worldwake_core::BlockerMemory> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_blocker_memory(agent))
+            .flatten()
+    }
+
+    fn repair_memory(&self, agent: EntityId) -> Option<&worldwake_core::RepairMemory> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_repair_memory(agent))
+            .flatten()
+    }
+
+    fn learned_opportunity_memory(
+        &self,
+        agent: EntityId,
+    ) -> Option<&worldwake_core::LearnedOpportunityMemory> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_learned_opportunity_memory(agent))
+            .flatten()
+    }
+
     fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
         self.believed_entity(entity)
             .and_then(|state| state.believed_activity.as_ref())
@@ -1675,8 +1702,9 @@ mod tests {
         WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
         build_prototype_world,
         test_utils::{
-            sample_commodity_valuation_profile, sample_preference_profile, sample_route_experience,
-            sample_source_reliability,
+            sample_blocker_memory, sample_commodity_valuation_profile, sample_discrepancy_memory,
+            sample_learned_opportunity_memory, sample_preference_profile, sample_repair_memory,
+            sample_route_experience, sample_source_reliability,
         },
     };
 
@@ -2998,6 +3026,82 @@ mod tests {
 
         assert_eq!(ProfileBeliefView::cognitive_profile(&view, other), None);
         assert_eq!(GoalBeliefView::cognitive_profile(&view, other), None);
+    }
+
+    #[test]
+    fn memory_accessors_return_actor_memories_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let discrepancy = sample_discrepancy_memory();
+        let blocker = sample_blocker_memory();
+        let repair = sample_repair_memory();
+        let learned = sample_learned_opportunity_memory();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_discrepancy_memory(agent, discrepancy.clone())
+                .unwrap();
+            txn.set_component_blocker_memory(agent, blocker.clone())
+                .unwrap();
+            txn.set_component_repair_memory(agent, repair.clone())
+                .unwrap();
+            txn.set_component_learned_opportunity_memory(agent, learned.clone())
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            GoalBeliefView::discrepancy_memory(&view, agent),
+            Some(&discrepancy)
+        );
+        assert_eq!(GoalBeliefView::blocker_memory(&view, agent), Some(&blocker));
+        assert_eq!(GoalBeliefView::repair_memory(&view, agent), Some(&repair));
+        assert_eq!(
+            GoalBeliefView::learned_opportunity_memory(&view, agent),
+            Some(&learned)
+        );
+    }
+
+    #[test]
+    fn memory_accessors_return_none_for_non_self_entity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, other) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let other = txn.create_agent("Briar", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(other, place).unwrap();
+            txn.set_component_discrepancy_memory(other, sample_discrepancy_memory())
+                .unwrap();
+            txn.set_component_blocker_memory(other, sample_blocker_memory())
+                .unwrap();
+            txn.set_component_repair_memory(other, sample_repair_memory())
+                .unwrap();
+            txn.set_component_learned_opportunity_memory(
+                other,
+                sample_learned_opportunity_memory(),
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, other)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(GoalBeliefView::discrepancy_memory(&view, other), None);
+        assert_eq!(GoalBeliefView::blocker_memory(&view, other), None);
+        assert_eq!(GoalBeliefView::repair_memory(&view, other), None);
+        assert_eq!(
+            GoalBeliefView::learned_opportunity_memory(&view, other),
+            None
+        );
     }
 
     #[test]

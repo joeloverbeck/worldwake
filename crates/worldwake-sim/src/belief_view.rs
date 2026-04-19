@@ -96,6 +96,25 @@ pub trait GoalBeliefView {
         let _ = agent;
         Vec::new()
     }
+    fn discrepancy_memory(&self, agent: EntityId) -> Option<&worldwake_core::DiscrepancyMemory> {
+        let _ = agent;
+        None
+    }
+    fn blocker_memory(&self, agent: EntityId) -> Option<&worldwake_core::BlockerMemory> {
+        let _ = agent;
+        None
+    }
+    fn repair_memory(&self, agent: EntityId) -> Option<&worldwake_core::RepairMemory> {
+        let _ = agent;
+        None
+    }
+    fn learned_opportunity_memory(
+        &self,
+        agent: EntityId,
+    ) -> Option<&worldwake_core::LearnedOpportunityMemory> {
+        let _ = agent;
+        None
+    }
     fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
         let _ = agent;
         Vec::new()
@@ -687,6 +706,25 @@ pub trait SocialBeliefView {
         let _ = agent;
         Vec::new()
     }
+    fn discrepancy_memory(&self, agent: EntityId) -> Option<&worldwake_core::DiscrepancyMemory> {
+        let _ = agent;
+        None
+    }
+    fn blocker_memory(&self, agent: EntityId) -> Option<&worldwake_core::BlockerMemory> {
+        let _ = agent;
+        None
+    }
+    fn repair_memory(&self, agent: EntityId) -> Option<&worldwake_core::RepairMemory> {
+        let _ = agent;
+        None
+    }
+    fn learned_opportunity_memory(
+        &self,
+        agent: EntityId,
+    ) -> Option<&worldwake_core::LearnedOpportunityMemory> {
+        let _ = agent;
+        None
+    }
     fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
         let _ = entity;
         None
@@ -1041,6 +1079,34 @@ where
         agent: worldwake_core::EntityId,
     ) -> Vec<worldwake_core::SocialObservation> {
         SocialBeliefView::known_social_observations(self, agent)
+    }
+
+    fn discrepancy_memory(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<&worldwake_core::DiscrepancyMemory> {
+        SocialBeliefView::discrepancy_memory(self, agent)
+    }
+
+    fn blocker_memory(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<&worldwake_core::BlockerMemory> {
+        SocialBeliefView::blocker_memory(self, agent)
+    }
+
+    fn repair_memory(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<&worldwake_core::RepairMemory> {
+        SocialBeliefView::repair_memory(self, agent)
+    }
+
+    fn learned_opportunity_memory(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<&worldwake_core::LearnedOpportunityMemory> {
+        SocialBeliefView::learned_opportunity_memory(self, agent)
     }
 
     fn known_institutional_beliefs(
@@ -2244,6 +2310,23 @@ mod tests {
         assert_eq!(GoalBeliefView::diversification_profile(&view, agent), None);
         assert_eq!(
             GoalBeliefView::last_proactive_exploration_tick(&view, agent),
+            None
+        );
+    }
+
+    #[test]
+    fn goal_belief_view_memory_accessors_default_to_none() {
+        let view = StubGoalBeliefView;
+        let agent = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+
+        assert_eq!(GoalBeliefView::discrepancy_memory(&view, agent), None);
+        assert_eq!(GoalBeliefView::blocker_memory(&view, agent), None);
+        assert_eq!(GoalBeliefView::repair_memory(&view, agent), None);
+        assert_eq!(
+            GoalBeliefView::learned_opportunity_memory(&view, agent),
             None
         );
     }

@@ -11,8 +11,8 @@ use super::{
     AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
     committed_action_for_step, effective_goal_switch_margin,
     handle_recoverable_travel_step_blockage, persist_blocked_memory,
-    record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
-    plan_and_validate_next_step_traced, update_exploration_counter_for_adopted_goal,
+    plan_and_validate_next_step_traced, record_learned_opportunities_from_read_phase,
+    record_repair_memory_from_completed_plan, update_exploration_counter_for_adopted_goal,
     update_frame_for_adopted_plan,
 };
 use crate::ProfileFixture;
@@ -106,9 +106,22 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         transient_block_ticks: reasoning.transient_block_ticks,
         unknown_block_ticks: reasoning.unknown_block_ticks,
         structural_block_ticks: reasoning.structural_block_ticks,
+        stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
+        contradicted_belief_backoff_ticks: CognitiveProfile::default()
+            .contradicted_belief_backoff_ticks,
+        improper_state_backoff_ticks: CognitiveProfile::default().improper_state_backoff_ticks,
+        missing_observation_backoff_ticks: CognitiveProfile::default()
+            .missing_observation_backoff_ticks,
+        no_legal_binding_backoff_ticks: CognitiveProfile::default().no_legal_binding_backoff_ticks,
+        counterparty_refusal_backoff_ticks: CognitiveProfile::default()
+            .counterparty_refusal_backoff_ticks,
+        route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+        search_exhaustion_backoff_ticks: CognitiveProfile::default()
+            .search_exhaustion_backoff_ticks,
+        partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
         repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
-        learned_opportunity_memory_ticks:
-            CognitiveProfile::default().learned_opportunity_memory_ticks,
+        learned_opportunity_memory_ticks: CognitiveProfile::default()
+            .learned_opportunity_memory_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
         max_snapshot_entities_per_place: CognitiveProfile::default()

@@ -355,7 +355,8 @@ pub(super) fn persist_repair_memory(
     after: &RepairMemory,
 ) -> Result<(), TickInputError> {
     let existing = world.get_component_repair_memory(agent);
-    if existing == Some(after) || (existing.is_none() && before == after && after.repairs.is_empty())
+    if existing == Some(after)
+        || (existing.is_none() && before == after && after.repairs.is_empty())
     {
         return Ok(());
     }

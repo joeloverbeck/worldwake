@@ -82,6 +82,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 
 - When extending a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or generated surfaces. Distinguish the canonical consumer boundary from implementation-detail mirrors.
 - If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself.
+- If the named facade trait is blanket-implemented from narrower subtraits, verify which subtrait actually owns the default method body or read contract. In that pattern, the real implementation boundary may be the owning subtrait plus the blanket forwarding impl rather than the facade trait alone.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 
 **Trait extraction sweep (for trait-split tickets):**
@@ -153,6 +154,7 @@ When a ticket adds a field to a shared struct/component that is serde-deserializ
 When a ticket removes a live scenario/config/save field, also sweep authored-file comments, schema-drift notes, and nearby maintenance annotations in the same active files when the intended invariant is that no live references remain. Do not stop at behavioral cleanup if those files still describe the removed field as current schema.
 When the owning crate needs a focused omitted-field serde proof and does not already have a suitable text serializer in dev-dependencies, prefer adding a dev-only dependency in that crate over moving the proof to a broader integration crate.
 When a shared struct/component gains fields, do not wait for compile errors alone to discover fallout. During reassessment, run an early repo-wide sweep for explicit struct literals, helper constructors, scenario builders, fixtures, and test harness code that instantiate the type manually across all workspace crates, and treat those updates as current-ticket scope when the new field is part of the live contract.
+When a later sibling ticket has already landed additional fields on the same shared struct/component, treat those live sibling-added fields as baseline immediately. Narrow the current ticket to the still-missing fields only, but preserve the already-landed sibling fields at every explicit literal, helper constructor, and fallback path you touch during current-ticket constructor fallout.
 
 ## Internal diagnostic and trace carriers
 

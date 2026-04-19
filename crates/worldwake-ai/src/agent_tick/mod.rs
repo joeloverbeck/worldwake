@@ -1085,9 +1085,11 @@ fn record_repair_memory_from_completed_plan(
     let has_prior_alternate_context = blocked_memory.intents.values().any(|blocker| {
         blocker.expires_tick > current_tick
             && blocker.blocker_key.goal_key == summary.goal_key
-            && blocker.blocker_key.target.or(blocker.blocker_key.place).is_some_and(|blocked| {
-                blocked != alternate_target
-            })
+            && blocker
+                .blocker_key
+                .target
+                .or(blocker.blocker_key.place)
+                .is_some_and(|blocked| blocked != alternate_target)
     });
     if !has_prior_alternate_context {
         return;

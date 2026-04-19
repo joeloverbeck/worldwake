@@ -1,10 +1,10 @@
 # S109TYPDISTAX-003: Belief-view accessors, CognitiveProfile TTL fields, and discrepancy_ttl function
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new `GoalBeliefView` accessor methods, new `CognitiveProfile` fields (additive), new `discrepancy_ttl` helper
-**Deps**: S109TYPDISTAX-001, S109TYPDISTAX-002
+**Deps**: archive/tickets/S109TYPDISTAX-001.md, archive/tickets/S109TYPDISTAX-002.md, archive/tickets/S109TYPDISTAX-007.md
 
 ## Problem
 
@@ -16,13 +16,13 @@ The existing `CognitiveProfile::unknown_block_ticks` field stays for now — T00
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `CognitiveProfile` is defined at `crates/worldwake-core/src/cognitive_profile.rs:6` and currently has three TTL fields: `transient_block_ticks` (default 20), `unknown_block_ticks` (default 5), `structural_block_ticks` (default 200). `blocking_fact_ttl` lives at `crates/worldwake-ai/src/failure_handling.rs:992–1011` and buckets `BlockingFact` variants by those three fields. Existing focused unit tests on `CognitiveProfile` at `cognitive_profile.rs:81–223`: `cognitive_profile_component_bounds`, `cognitive_profile_default_matches_split_defaults`, `cognitive_profile_roundtrips_through_bincode`, `cognitive_profile_deserialization_defaults_use_ff_heuristic`, `cognitive_profile_deserialization_defaults_travel_candidate_cap_to_none`, `cognitive_profile_registers_for_agents`. Existing `blocking_fact_ttl` tests at `failure_handling.rs:2517–2543`: `blocking_fact_ttl_uses_budget_classification`, `unknown_blocker_uses_dedicated_ttl`, `transient_blockers_unchanged_ttl`.
-2. `GoalBeliefView` trait is defined at `crates/worldwake-sim/src/belief_view.rs:70`. No `blocked_intent_memory` or `blocker_memory` accessor exists on the trait today — the 12 AI-crate consumers of `BlockerMemory` (post-T001 rename) access it directly via `get_component_blocker_memory`. `RuntimeBeliefView` impl lives in the same file (lines ~230–520) and `PerAgentBeliefView` impl lives at `crates/worldwake-sim/src/per_agent_belief_view.rs`. Spec D7 prescribes 4 read-only accessors on the trait, each defaulting to `None`.
-3. Shared abstraction boundary: the `GoalBeliefView` trait surface used by the AI crate's candidate generation, ranking, and runtime observers. The boundary under audit is purely additive — we add 4 new methods with `None` defaults, so existing implementors that don't override them compile unchanged. The new methods are read-only by contract; mutable access continues through direct component accessors.
+1. `CognitiveProfile` is defined at `crates/worldwake-core/src/cognitive_profile.rs:6`. T007 already landed `repair_memory_ticks` and `learned_opportunity_memory_ticks`, so the still-live additive TTL work here is only the 9 discrepancy/backoff fields from S109 D6 alongside the existing `transient_block_ticks`, `unknown_block_ticks`, and `structural_block_ticks`. `blocking_fact_ttl` lives at `crates/worldwake-ai/src/failure_handling.rs:988` and still buckets `BlockingFact` variants by those three legacy fields. Existing focused unit tests on `CognitiveProfile` already include T007 memory-TTL coverage; T003 extends that proof surface only for the 9 discrepancy TTL additions.
+2. `GoalBeliefView` is defined at `crates/worldwake-sim/src/belief_view.rs:70`. No `discrepancy_memory`, `blocker_memory`, `repair_memory`, or `learned_opportunity_memory` accessor exists on the trait today. Live AI readers still access these components directly through `World`/`RuntimeBeliefView` component getters, and T007 intentionally kept the repair/opportunity read seam local inside `worldwake-ai` rather than widening `GoalBeliefView`. This ticket still owns the additive read-only accessor family from spec D7; T007 only means those accessors are no longer a blocker for repair/opportunity semantics.
+3. Shared abstraction boundary: the `GoalBeliefView` trait surface used by the AI crate, plus the additive discrepancy TTL contract on `CognitiveProfile`. The accessors remain read-only by contract; mutable access continues through direct component accessors.
 8. No heuristic removed or bypassed. The new `discrepancy_ttl` function is additive alongside the unchanged `blocking_fact_ttl`. T004's emission migration will choose which function to call based on the `FailureClassification` the classifier returns.
-13. No adjacent contradictions. The 9 new `CognitiveProfile` TTL fields all carry `#[serde(default = "...")]` so existing scenario RONs and existing `CognitiveProfile { ... }` literal sites continue to deserialize and compile. The 32 explicit construction sites + 12 spread sites surveyed during reassessment do not need updating in this ticket — the spread sites inherit the new defaults, and the explicit sites remain valid because they list a subset of fields (Rust requires all fields at construction, which means every explicit site already lists `unknown_block_ticks` — those sites stay compilable until T006 removes the field).
+13. Adjacent contradiction correction: T007 already added `repair_memory_ticks` / `learned_opportunity_memory_ticks`, so the drafted T003 literal fallout list is stale and incomplete. The still-live compile fallout is the 9 new discrepancy TTL fields plus the already-landed T007 fields that must remain present at every explicit `CognitiveProfile { ... }` literal. In addition to the originally drafted AI/core files, live explicit literals also exist in `crates/worldwake-cli/src/handlers/persistence.rs`, `crates/worldwake-cli/src/scenario/lints.rs`, `crates/worldwake-sim/src/per_agent_belief_view.rs`, and `crates/worldwake-ai/tests/conformance_execution_budget.rs`.
 
-Correction from reassessment: the 9 new fields are not added with `#[serde(default)]` alone because `CognitiveProfile` is constructed in Rust literal form (not just deserialized) at ~20 sites. Rust field-init syntax requires every field at each explicit literal site. Therefore the 20 explicit sites must either (a) use `..CognitiveProfile::default()` spread, or (b) list all 9 new fields. Decision: all 20 explicit sites already exist (surveyed 2026-04-19); T003 updates those sites to include the 9 new fields at their default values, OR converts them to spread syntax where appropriate. This is mechanical and adds ~9 lines per site. This is necessary in T003 rather than deferred because otherwise the workspace won't compile after T003's CognitiveProfile field additions.
+Correction from reassessment: the 9 new fields are not addable with `#[serde(default)]` alone because `CognitiveProfile` is constructed explicitly in Rust literals across core, sim, AI, CLI, and test code. Rust field-init syntax requires every full literal site to name the new fields or use `..CognitiveProfile::default()` spread. T003 therefore owns the explicit literal fallout needed to keep the workspace compiling after the new discrepancy TTL fields land.
 
 ## Architecture Check
 
@@ -35,7 +35,7 @@ Correction from reassessment: the 9 new fields are not added with `#[serde(defau
 2. `CognitiveProfile` serde-default behavior → focused unit test: deserialize a minimal RON without the new fields and assert each surfaces at its default value. Mirrors the existing `cognitive_profile_deserialization_defaults_use_ff_heuristic` pattern.
 3. `discrepancy_ttl` correctness → focused unit test: for each `Discrepancy` variant, `discrepancy_ttl(variant, &CognitiveProfile::default())` returns the documented default (spec D6 table).
 4. `GoalBeliefView` default accessors return `None` on the trait default impl → focused unit test at `belief_view.rs`.
-5. `PerAgentBeliefView` accessors return `Some(&DiscrepancyMemory)` / etc. when the component is registered on the agent → focused unit test at `per_agent_belief_view.rs`.
+5. `PerAgentBeliefView` accessors return `Some(&DiscrepancyMemory)` / etc. when the component is registered on the actor and `None` for non-self entities → focused unit test at `per_agent_belief_view.rs`.
 6. Single-layer ticket for each addition: trait default, `CognitiveProfile` field, `discrepancy_ttl` function are each provable at their own unit layer; no mixed-layer invariant asserted here.
 
 ## What to Change
@@ -160,6 +160,9 @@ In `crates/worldwake-ai/src/failure_handling.rs` `#[cfg(test)]`:
 - `crates/worldwake-ai/src/search/tests.rs` (modify — `CognitiveProfile` literal at line 60)
 - `crates/worldwake-ai/src/lib.rs` (modify — `PlanningBudget`/`ProfileFixture` default at lines 132, 150)
 - `crates/worldwake-cli/src/scenario/types.rs` (modify — `CognitiveProfile` fallback default at line 939)
+- `crates/worldwake-cli/src/handlers/persistence.rs` (modify — save/load roundtrip fixture literal)
+- `crates/worldwake-cli/src/scenario/lints.rs` (modify — scenario lint fixture literal)
+- `crates/worldwake-ai/tests/conformance_execution_budget.rs` (modify — explicit cognitive profile fixture literals)
 
 ## Out of Scope
 
@@ -176,9 +179,10 @@ In `crates/worldwake-ai/src/failure_handling.rs` `#[cfg(test)]`:
 
 1. `cargo test -p worldwake-core cognitive_profile` — existing + new default/roundtrip/serde-default tests.
 2. `cargo test -p worldwake-ai failure_handling::tests::discrepancy_ttl` — new `discrepancy_ttl` tests.
-3. `cargo test -p worldwake-sim belief_view per_agent_belief_view` — new accessor tests.
-4. Existing focused tests still pass: `cognitive_profile_default_matches_split_defaults`, `cognitive_profile_roundtrips_through_bincode`, `cognitive_profile_deserialization_defaults_use_ff_heuristic`, `cognitive_profile_deserialization_defaults_travel_candidate_cap_to_none`, `blocking_fact_ttl_uses_budget_classification`, `unknown_blocker_uses_dedicated_ttl`, `transient_blockers_unchanged_ttl`.
-5. Existing full suite: `cargo test --workspace`.
+3. `cargo test -p worldwake-sim belief_view`
+4. `cargo test -p worldwake-sim per_agent_belief_view`
+5. Existing focused tests still pass: `cognitive_profile_default_matches_split_defaults`, `cognitive_profile_roundtrips_through_bincode`, `cognitive_profile_deserialization_defaults_use_ff_heuristic`, `cognitive_profile_deserialization_defaults_travel_candidate_cap_to_none`, `blocking_fact_ttl_uses_budget_classification`, `unknown_blocker_uses_dedicated_ttl`, `transient_blockers_unchanged_ttl`.
+6. Existing full suite: `cargo test --workspace`.
 
 ### Invariants
 
@@ -194,12 +198,36 @@ In `crates/worldwake-ai/src/failure_handling.rs` `#[cfg(test)]`:
 1. `crates/worldwake-core/src/cognitive_profile.rs` — extend default-match + bincode-roundtrip tests; add `cognitive_profile_deserialization_defaults_ttl_fields`.
 2. `crates/worldwake-ai/src/failure_handling.rs` `#[cfg(test)]` — add `discrepancy_ttl_uses_class_specific_defaults`, `discrepancy_ttl_respects_profile_override`.
 3. `crates/worldwake-sim/src/belief_view.rs` `#[cfg(test)]` — add default-returns-None test for each of the 4 new accessors.
-4. `crates/worldwake-sim/src/per_agent_belief_view.rs` `#[cfg(test)]` — add returns-Some-when-registered test for each of the 4 new accessors.
+4. `crates/worldwake-sim/src/per_agent_belief_view.rs` `#[cfg(test)]` — add returns-Some-when-registered and non-self-returns-None tests for the new accessors.
 
 ### Commands
 
 1. `cargo test -p worldwake-core cognitive_profile`
 2. `cargo test -p worldwake-ai failure_handling`
 3. `cargo test -p worldwake-sim belief_view`
-4. `cargo clippy --workspace --all-targets -- -D warnings`
-5. `cargo test --workspace`
+4. `cargo test -p worldwake-sim per_agent_belief_view`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
+6. `cargo test --workspace`
+
+## Outcome
+
+Completed the additive discrepancy/backoff slice for S109. `CognitiveProfile` now carries the 9 discrepancy TTL fields from spec D6 with serde defaults and default values, `failure_handling.rs` now exposes `discrepancy_ttl(&Discrepancy, &CognitiveProfile)`, and `GoalBeliefView` / `PerAgentBeliefView` now provide read-only accessors for `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, and `LearnedOpportunityMemory`.
+
+Reassessment narrowed the live scope versus the original T003 draft. T007 had already landed `repair_memory_ticks` / `learned_opportunity_memory_ticks`, so this ticket only added the remaining discrepancy TTL fields and belief-view accessors. The real compile fallout was also narrower than the expanded reassessment inventory: explicit `CognitiveProfile` literals in core and AI helper/test code needed updates, while several drafted files and surveyed neighbors already used `..CognitiveProfile::default()` or serde omission paths and compiled unchanged.
+
+## Deviations
+
+1. T007 had already landed `repair_memory_ticks` / `learned_opportunity_memory_ticks`, so T003 no longer owned those fields and their associated constructor fallout.
+2. The drafted `RuntimeBeliefView` implementation edit in `belief_view.rs` was not a real separate surface on the live branch; the correct implementation boundary was the existing `SocialBeliefView` forwarding path plus `PerAgentBeliefView`.
+3. `discrepancy_ttl` is staged additive infrastructure for T004 and is not called yet on this branch. To keep CI-matching clippy honest without inventing premature production usage, the landed helper carries a narrow `#[allow(dead_code)]`.
+4. No code changes were needed in several reassessed files that were initially listed or surveyed for fallout, including `crates/worldwake-cli/src/scenario/types.rs`, `crates/worldwake-cli/src/handlers/persistence.rs`, `crates/worldwake-cli/src/scenario/lints.rs`, and `crates/worldwake-ai/tests/conformance_execution_budget.rs`, because their live construction/deserialization paths already inherited defaults lawfully.
+
+## Verification Result
+
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo test -p worldwake-core cognitive_profile`
+- Passed `cargo test -p worldwake-ai failure_handling`
+- Passed `cargo test -p worldwake-sim belief_view`
+- Passed `cargo test -p worldwake-sim per_agent_belief_view`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`
