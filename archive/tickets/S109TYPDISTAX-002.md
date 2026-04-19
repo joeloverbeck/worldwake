@@ -1,6 +1,6 @@
 # S109TYPDISTAX-002: Core discrepancy types and memory components
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `Discrepancy` enum, `BeliefClaimKey`, `DiscrepancyMemory`, `RepairMemory`, `LearnedOpportunityMemory` components registered in the ECS
@@ -18,7 +18,7 @@ S109 introduces a typed discrepancy taxonomy (`Discrepancy` enum) and three new 
 2. S109 spec (`specs/S109-typed-discrepancy-taxonomy.md` D1, D2, D4, D9) defines the required shapes. `Discrepancy` has 9 variants (`BeliefStale`, `BeliefContradicted`, `ImproperPlanningState`, `MissingObservation`, `NoLegalBinding`, `NoWillingCounterparty`, `RouteUnknown`, `SearchBudgetExhausted`, `PartialExecutionDrift`). `DiscrepancyClearing` has 4 variants (`TtlExpiry`, `ReobservationOf { target }`, `BeliefUpdate { claim_key }`, `WorldStructureChange`). All types derive `Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize`; memories are `Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize` (non-Copy because they own `BTreeMap`).
 3. Shared abstraction boundary: the `with_component_schema_entries!` macro expansion sites at `crates/worldwake-core/src/world.rs`, `delta.rs`, `component_tables.rs`. Per `tickets/README.md` check #13, each new component_schema block requires bare type imports at each expansion site. The 3 new memories (DiscrepancyMemory, RepairMemory, LearnedOpportunityMemory) follow the existing `BlockerMemory` registration pattern verbatim (minus the now-landed `BlockerMemory` block).
 13. No adjacent contradictions. `BeliefClaimKey` is defined as `(subject: EntityId, aspect: EntityBeliefAspect)`; this composite is what observation-pipeline updates to `AgentBeliefStore` already carry conceptually (the claim's subject and aspect are visible at every record site in `belief.rs`), so introducing the key type does not widen or narrow the existing claim-identification semantics.
-15. Memory capacity: S109 introduces a `MemoryCapacityProfile` with `memory_capacity: u32 = 32` (default, profile-driven). `RepairMemory` and `LearnedOpportunityMemory` eviction follows oldest-`observed_tick` first. This ticket introduces the profile struct with `Default` impl but does NOT wire capacity enforcement into any hot path yet (enforcement lands with the emission ticket T004). Unit tests 5 and 6 from the spec's Validation section exercise the eviction logic directly on the memory structs.
+15. Memory capacity: S109 introduces a `MemoryCapacityProfile` with `memory_capacity: u32 = 32` (default, profile-driven). `RepairMemory` and `LearnedOpportunityMemory` eviction follows oldest-`observed_tick` first. This ticket introduces the profile struct with `Default` impl but does NOT wire capacity enforcement into any hot path yet (enforcement lands with the emission ticket T004). Unit tests 5 and 6 from the spec's Validation section exercise the eviction logic directly on the memory structs. The T002 entry shapes for `RepairMemory` / `LearnedOpportunityMemory` do not yet carry expiry metadata, so their `expire(current_tick)` methods land as API-preserving no-ops in this ticket rather than inventing retention state that the spec has not defined.
 
 ## Architecture Check
 
@@ -226,3 +226,27 @@ Additionally: bincode roundtrip tests per type (derive_value_bounds-style assert
 1. `cargo test -p worldwake-core`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-19.
+
+- Added the new S109 core types in `worldwake-core`: `Discrepancy`, `BeliefClaimKey`, `DiscrepancyMemory`, `RepairMemory`, `LearnedOpportunityMemory`, and `MemoryCapacityProfile`, with focused unit coverage for roundtrips and the additive memory behaviors this ticket owns.
+- Registered `DiscrepancyMemory`, `RepairMemory`, `LearnedOpportunityMemory`, and `MemoryCapacityProfile` as agent components via `with_component_schema_entries!`, then updated the core macro expansion/import sites and `delta.rs` sample coverage so the generated accessor surface compiles cleanly across the workspace.
+- Added deterministic test fixtures in `test_utils.rs` for the new memory/profile components so future shared-surface tests can construct the new component values without re-implementing boilerplate.
+
+## Deviations
+
+- Reassessment found one specification gap inside the ticket itself: `RepairMemory` and `LearnedOpportunityMemory` were required to expose `expire(current_tick)` even though their T002 entry shapes do not yet carry expiry metadata. This ticket now documents and implements those `expire` methods as API-preserving no-ops rather than inventing unsupported retention state.
+- The acceptance-criteria command `cargo test -p worldwake-core repair_memory learned_opportunity_memory belief_claim_key memory_capacity_profile` is not a valid single Cargo filter invocation. Verification was run as separate focused `cargo test -p worldwake-core <module>` commands for each new module.
+
+## Verification Result
+
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo test -p worldwake-core discrepancy`
+- Passed `cargo test -p worldwake-core repair_memory`
+- Passed `cargo test -p worldwake-core learned_opportunity_memory`
+- Passed `cargo test -p worldwake-core belief_claim_key`
+- Passed `cargo test -p worldwake-core memory_capacity_profile`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`
