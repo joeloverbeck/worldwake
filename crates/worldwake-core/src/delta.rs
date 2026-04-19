@@ -586,6 +586,8 @@ mod tests {
                 transient_block_ticks: 12,
                 unknown_block_ticks: 6,
                 structural_block_ticks: 250,
+                repair_memory_ticks: 144,
+                learned_opportunity_memory_ticks: 72,
                 initial_cooldown_ticks: 7,
                 max_cooldown_ticks: 90,
                 max_snapshot_entities_per_place: 60,

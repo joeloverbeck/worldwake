@@ -12,6 +12,7 @@ pub struct RepairKey {
 pub struct RepairEntry {
     pub repair_key: RepairKey,
     pub observed_tick: Tick,
+    pub expires_tick: Tick,
     pub success_count: u32,
 }
 
@@ -30,8 +31,9 @@ impl RepairMemory {
         }
     }
 
-    pub fn expire(&mut self, _current_tick: Tick) {
-        // T002 does not yet define retention metadata for repair entries.
+    pub fn expire(&mut self, current_tick: Tick) {
+        self.repairs
+            .retain(|_, entry| entry.expires_tick > current_tick);
     }
 
     pub fn enforce_capacity(&mut self, profile: &MemoryCapacityProfile) {
@@ -78,6 +80,7 @@ mod tests {
         RepairEntry {
             repair_key: repair_key(slot),
             observed_tick: Tick(observed_tick),
+            expires_tick: Tick(observed_tick + 20),
             success_count,
         }
     }
@@ -117,11 +120,13 @@ mod tests {
         let stale = RepairEntry {
             repair_key: key,
             observed_tick: Tick(10),
+            expires_tick: Tick(20),
             success_count: 1,
         };
         let fresh = RepairEntry {
             repair_key: key,
             observed_tick: Tick(15),
+            expires_tick: Tick(35),
             success_count: 4,
         };
         let mut memory = RepairMemory::default();
@@ -138,11 +143,13 @@ mod tests {
         let fresh = RepairEntry {
             repair_key: key,
             observed_tick: Tick(15),
+            expires_tick: Tick(35),
             success_count: 4,
         };
         let stale = RepairEntry {
             repair_key: key,
             observed_tick: Tick(10),
+            expires_tick: Tick(20),
             success_count: 1,
         };
         let mut memory = RepairMemory::default();
@@ -154,13 +161,16 @@ mod tests {
     }
 
     #[test]
-    fn expire_is_noop_without_retention_metadata() {
+    fn expire_prunes_stale_entries() {
         let mut memory = RepairMemory::default();
         memory.record(repair_entry(3, 8, 2));
+        memory.record(repair_entry(4, 15, 1));
 
-        memory.expire(Tick(999));
+        memory.expire(Tick(30));
 
         assert_eq!(memory.repairs.len(), 1);
+        assert!(!memory.repairs.contains_key(&repair_key(3)));
+        assert!(memory.repairs.contains_key(&repair_key(4)));
     }
 
     #[test]

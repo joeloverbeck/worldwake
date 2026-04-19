@@ -133,7 +133,7 @@ pub(super) fn handle_active_action_phase(
                 worldwake_sim::InterruptReason::Reprioritized,
             )
             .map_err(|error| TickInputError::new(format!("{error:?}")))?;
-        reconcile_in_flight_state(
+        let _ = reconcile_in_flight_state(
             ctx,
             runtime,
             active_goal,

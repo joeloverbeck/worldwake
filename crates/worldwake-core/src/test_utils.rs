@@ -229,6 +229,7 @@ pub fn sample_repair_memory() -> RepairMemory {
             alternate_target: entity_id(14, 0),
         },
         observed_tick: Tick(13),
+        expires_tick: Tick(133),
         success_count: 2,
     };
     let mut repairs = BTreeMap::new();
@@ -244,6 +245,7 @@ pub fn sample_learned_opportunity_memory() -> LearnedOpportunityMemory {
             anchor: OpportunityAnchor::Place(entity_id(15, 0)),
         },
         observed_tick: Tick(14),
+        expires_tick: Tick(74),
         observed_at: entity_id(16, 0),
     };
     let mut opportunities = BTreeMap::new();

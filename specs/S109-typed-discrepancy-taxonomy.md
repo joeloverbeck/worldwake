@@ -159,7 +159,7 @@ pub struct LearnedOpportunityMemory {
 }
 ```
 
-`OpportunityKey` already exists at `crates/worldwake-core/src/goal.rs:161`. `RepairKey` is new and its exact shape lands at implementation time. Size bounds: each memory caps at a per-agent `MemoryCapacityProfile` field (default 32 entries; eviction by oldest `observed_tick`). Caps are profile-driven, not hardcoded.
+`RepairEntry` and `OpportunityEntry` both carry explicit `expires_tick: Tick` fields in addition to `observed_tick`, so liveness is authoritative stored state rather than a read-time heuristic. `OpportunityKey` already exists at `crates/worldwake-core/src/goal.rs:161`. `RepairKey` is new and its exact shape lands at implementation time. Size bounds: each memory caps at a per-agent `MemoryCapacityProfile` field (default 32 entries; eviction by oldest `observed_tick`). Retention is profile-driven via `CognitiveProfile::repair_memory_ticks` and `CognitiveProfile::learned_opportunity_memory_ticks`; caps are profile-driven, not hardcoded.
 
 ### D5: Migration of `BlockingFact::Unknown` and `AssumptionFailed` call sites
 
@@ -312,6 +312,8 @@ Old `BlockedIntentMemory` component is removed (no backward-compat path — FND-
 | `partial_drift_backoff_ticks` | `CognitiveProfile` | `u32` | 4 | Bail-out recovery window |
 | `transient_block_ticks` | `CognitiveProfile` | `u32` | 20 | Unchanged — BlockerMemory transient bucket |
 | `structural_block_ticks` | `CognitiveProfile` | `u32` | 200 | Unchanged — BlockerMemory structural bucket |
+| `repair_memory_ticks` | `CognitiveProfile` | `u32` | 120 | How long a successful alternate repair stays eligible to bias ranking |
+| `learned_opportunity_memory_ticks` | `CognitiveProfile` | `u32` | 60 | How long an in-transit learned opportunity stays eligible to bias ranking |
 | `memory_capacity` | `MemoryCapacityProfile` (new) | `u32` | 32 | Entry cap per memory |
 
 `unknown_block_ticks` is removed.

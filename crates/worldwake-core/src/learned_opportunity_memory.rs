@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 pub struct OpportunityEntry {
     pub opportunity: OpportunityKey,
     pub observed_tick: Tick,
+    pub expires_tick: Tick,
     pub observed_at: crate::EntityId,
 }
 
@@ -24,8 +25,9 @@ impl LearnedOpportunityMemory {
         }
     }
 
-    pub fn expire(&mut self, _current_tick: Tick) {
-        // T002 does not yet define retention metadata for learned opportunities.
+    pub fn expire(&mut self, current_tick: Tick) {
+        self.opportunities
+            .retain(|_, entry| entry.expires_tick > current_tick);
     }
 
     pub fn enforce_capacity(&mut self, profile: &MemoryCapacityProfile) {
@@ -74,6 +76,7 @@ mod tests {
         OpportunityEntry {
             opportunity: opportunity_key(slot),
             observed_tick: Tick(observed_tick),
+            expires_tick: Tick(observed_tick + 20),
             observed_at: entity_id(slot + 10, 0),
         }
     }
@@ -112,11 +115,13 @@ mod tests {
         let stale = OpportunityEntry {
             opportunity: key,
             observed_tick: Tick(10),
+            expires_tick: Tick(20),
             observed_at: entity_id(20, 0),
         };
         let fresh = OpportunityEntry {
             opportunity: key,
             observed_tick: Tick(14),
+            expires_tick: Tick(30),
             observed_at: entity_id(21, 0),
         };
         let mut memory = LearnedOpportunityMemory::default();
@@ -128,13 +133,16 @@ mod tests {
     }
 
     #[test]
-    fn expire_is_noop_without_retention_metadata() {
+    fn expire_prunes_stale_entries() {
         let mut memory = LearnedOpportunityMemory::default();
         memory.record(opportunity_entry(4, 12));
+        memory.record(opportunity_entry(5, 18));
 
-        memory.expire(Tick(999));
+        memory.expire(Tick(35));
 
         assert_eq!(memory.opportunities.len(), 1);
+        assert!(!memory.opportunities.contains_key(&opportunity_key(4)));
+        assert!(memory.opportunities.contains_key(&opportunity_key(5)));
     }
 
     #[test]

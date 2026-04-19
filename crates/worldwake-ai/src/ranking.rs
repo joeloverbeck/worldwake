@@ -15,6 +15,7 @@ use crate::{
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
+    sync::OnceLock,
 };
 use worldwake_core::{
     ActionDomain, BelievedEntityState, BountyTarget, CommodityKind, CommodityPurpose,
@@ -22,10 +23,11 @@ use worldwake_core::{
     DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
     ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
-    ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
-    Quantity, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind,
-    belief_confidence, escalation_multiplier, failure_ratio_permille,
+    InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille, NoticeTopic,
+    ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor, OpportunityKey,
+    PerceptionSource, Permille, Quantity, RepairKey, RepairMemory, RightKind, SourceKey,
+    TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
+    escalation_multiplier, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -89,7 +91,39 @@ pub fn rank_candidates(
     utility: &UtilityProfile,
     decision_context: &DecisionContext,
 ) -> RankingOutcome {
-    let context = RankingContext::new(view, agent, current_tick, utility, *decision_context);
+    rank_candidates_with_memories(
+        candidates,
+        view,
+        agent,
+        current_tick,
+        utility,
+        *decision_context,
+        &RepairMemory::default(),
+        &LearnedOpportunityMemory::default(),
+    )
+}
+
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn rank_candidates_with_memories(
+    candidates: &[GroundedGoal],
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    current_tick: Tick,
+    utility: &UtilityProfile,
+    decision_context: DecisionContext,
+    repair_memory: &RepairMemory,
+    learned_opportunity_memory: &LearnedOpportunityMemory,
+) -> RankingOutcome {
+    let context = RankingContext::with_memories(
+        view,
+        agent,
+        current_tick,
+        utility,
+        decision_context,
+        repair_memory,
+        learned_opportunity_memory,
+    );
 
     let mut suppressed = Vec::new();
     let mut zero_motive = Vec::new();
@@ -160,7 +194,7 @@ fn ranked_motive_score(
     context: &RankingContext<'_>,
     provenance: Option<&RankedGoalProvenance>,
 ) -> u32 {
-    provenance.cloned().map_or_else(
+    let base = provenance.cloned().map_or_else(
         || motive_score(candidate, context),
         |provenance| match provenance {
             RankedGoalProvenance::Danger(_) => {
@@ -173,7 +207,65 @@ fn ranked_motive_score(
                 .max()
                 .unwrap_or(0),
         },
-    )
+    );
+    base.saturating_add(memory_motive_bonus(candidate, context, base))
+}
+
+fn memory_motive_bonus(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    base_motive: u32,
+) -> u32 {
+    if base_motive == 0 {
+        return 0;
+    }
+
+    repair_memory_bonus(candidate, context, base_motive)
+        .saturating_add(learned_opportunity_bonus(candidate, context, base_motive))
+}
+
+fn repair_memory_bonus(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    base_motive: u32,
+) -> u32 {
+    let alternate_target = match candidate.anchor {
+        OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place) => place,
+        OpportunityAnchor::None => return 0,
+    };
+    let repair_key = RepairKey {
+        goal_key: candidate.key,
+        alternate_target,
+    };
+    let Some(entry) = context.repair_memory.repairs.get(&repair_key) else {
+        return 0;
+    };
+    if entry.expires_tick <= context.current_tick {
+        return 0;
+    }
+
+    (base_motive / 10)
+        .max(1)
+        .saturating_mul(entry.success_count.max(1))
+}
+
+fn learned_opportunity_bonus(
+    candidate: &GroundedGoal,
+    context: &RankingContext<'_>,
+    base_motive: u32,
+) -> u32 {
+    let opportunity = OpportunityKey {
+        goal_key: candidate.key,
+        anchor: candidate.anchor,
+    };
+    let Some(entry) = context.learned_opportunity_memory.opportunities.get(&opportunity) else {
+        return 0;
+    };
+    if entry.expires_tick <= context.current_tick {
+        return 0;
+    }
+
+    (base_motive / 20).max(1)
 }
 
 fn apply_competition_discount(
@@ -345,6 +437,8 @@ struct RankingContext<'a> {
     agent: EntityId,
     current_tick: Tick,
     utility: &'a UtilityProfile,
+    repair_memory: &'a RepairMemory,
+    learned_opportunity_memory: &'a LearnedOpportunityMemory,
     needs: Option<HomeostaticNeeds>,
     thresholds: Option<DriveThresholds>,
     exposure: Option<DeprivationExposure>,
@@ -363,12 +457,33 @@ struct RankingContext<'a> {
 }
 
 impl<'a> RankingContext<'a> {
+    #[cfg_attr(not(test), allow(dead_code))]
     fn new(
         view: &'a dyn GoalBeliefView,
         agent: EntityId,
         current_tick: Tick,
         utility: &'a UtilityProfile,
         decision_context: DecisionContext,
+    ) -> Self {
+        Self::with_memories(
+            view,
+            agent,
+            current_tick,
+            utility,
+            decision_context,
+            empty_repair_memory(),
+            empty_learned_opportunity_memory(),
+        )
+    }
+
+    fn with_memories(
+        view: &'a dyn GoalBeliefView,
+        agent: EntityId,
+        current_tick: Tick,
+        utility: &'a UtilityProfile,
+        decision_context: DecisionContext,
+        repair_memory: &'a RepairMemory,
+        learned_opportunity_memory: &'a LearnedOpportunityMemory,
     ) -> Self {
         let danger_assessment = assess_danger(view, agent);
         let satiation_profile = view.obligation_satiation_profile(agent);
@@ -384,6 +499,8 @@ impl<'a> RankingContext<'a> {
             agent,
             current_tick,
             utility,
+            repair_memory,
+            learned_opportunity_memory,
             needs: view.homeostatic_needs(agent),
             thresholds: view.drive_thresholds(agent),
             exposure: view.deprivation_exposure(agent),
@@ -401,6 +518,18 @@ impl<'a> RankingContext<'a> {
             local_alternatives: local_alternatives_from_view(view, agent),
         }
     }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn empty_repair_memory() -> &'static RepairMemory {
+    static EMPTY: OnceLock<RepairMemory> = OnceLock::new();
+    EMPTY.get_or_init(RepairMemory::default)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn empty_learned_opportunity_memory() -> &'static LearnedOpportunityMemory {
+    static EMPTY: OnceLock<LearnedOpportunityMemory> = OnceLock::new();
+    EMPTY.get_or_init(LearnedOpportunityMemory::default)
 }
 
 #[derive(Copy, Clone)]
@@ -1836,7 +1965,7 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
 mod tests {
     use super::{
         RankingContext, apply_competition_discount, apply_obligation_satiation,
-        apply_source_reliability_discount, build_decision_context, rank_candidates,
+        apply_source_reliability_discount, build_decision_context,
     };
     use crate::{
         GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
@@ -3805,8 +3934,141 @@ mod tests {
         current_tick: Tick,
         utility: &UtilityProfile,
     ) -> super::RankingOutcome {
+        rank_with_memories(
+            candidates,
+            view,
+            agent,
+            current_tick,
+            utility,
+            &worldwake_core::RepairMemory::default(),
+            &worldwake_core::LearnedOpportunityMemory::default(),
+        )
+    }
+
+    fn rank_with_memories(
+        candidates: &[GroundedGoal],
+        view: &TestBeliefView,
+        agent: EntityId,
+        current_tick: Tick,
+        utility: &UtilityProfile,
+        repair_memory: &worldwake_core::RepairMemory,
+        learned_opportunity_memory: &worldwake_core::LearnedOpportunityMemory,
+    ) -> super::RankingOutcome {
         let dc = build_decision_context(view, agent);
-        rank_candidates(candidates, view, agent, current_tick, utility, &dc)
+        super::rank_candidates_with_memories(
+            candidates,
+            view,
+            agent,
+            current_tick,
+            utility,
+            dc,
+            repair_memory,
+            learned_opportunity_memory,
+        )
+    }
+
+    #[test]
+    fn repair_memory_boosts_matching_alternative_only_while_live() {
+        let agent = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let goal_kind = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let candidates = [
+            goal_at_place(goal_kind, place_a),
+            goal_at_place(goal_kind, place_b),
+        ];
+        let view = base_view(agent);
+        let utility = utility();
+        let baseline = rank(&candidates, &view, agent, current_tick(), &utility).into_ranked();
+        let mut repair_memory = worldwake_core::RepairMemory::default();
+        repair_memory.record(worldwake_core::RepairEntry {
+            repair_key: worldwake_core::RepairKey {
+                goal_key: worldwake_core::GoalKey::from(goal_kind),
+                alternate_target: place_b,
+            },
+            observed_tick: Tick(2),
+            expires_tick: Tick(20),
+            success_count: 1,
+        });
+
+        let boosted = rank_with_memories(
+            &candidates,
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            &repair_memory,
+            &worldwake_core::LearnedOpportunityMemory::default(),
+        )
+        .into_ranked();
+        let expired = rank_with_memories(
+            &candidates,
+            &view,
+            agent,
+            Tick(21),
+            &utility,
+            &repair_memory,
+            &worldwake_core::LearnedOpportunityMemory::default(),
+        )
+        .into_ranked();
+
+        assert_eq!(baseline[0].grounded.anchor, OpportunityAnchor::Place(place_a));
+        assert_eq!(boosted[0].grounded.anchor, OpportunityAnchor::Place(place_b));
+        assert_eq!(expired[0].grounded.anchor, OpportunityAnchor::Place(place_a));
+    }
+
+    #[test]
+    fn learned_opportunity_memory_boosts_matching_opportunity_only_while_live() {
+        let agent = entity(1);
+        let place_a = entity(20);
+        let place_b = entity(21);
+        let goal_kind = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let candidates = [
+            goal_at_place(goal_kind, place_a),
+            goal_at_place(goal_kind, place_b),
+        ];
+        let view = base_view(agent);
+        let utility = utility();
+        let mut learned = worldwake_core::LearnedOpportunityMemory::default();
+        learned.record(worldwake_core::OpportunityEntry {
+            opportunity: worldwake_core::OpportunityKey {
+                goal_key: worldwake_core::GoalKey::from(goal_kind),
+                anchor: OpportunityAnchor::Place(place_b),
+            },
+            observed_tick: Tick(3),
+            expires_tick: Tick(18),
+            observed_at: place_b,
+        });
+
+        let boosted = rank_with_memories(
+            &candidates,
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            &worldwake_core::RepairMemory::default(),
+            &learned,
+        )
+        .into_ranked();
+        let expired = rank_with_memories(
+            &candidates,
+            &view,
+            agent,
+            Tick(19),
+            &utility,
+            &worldwake_core::RepairMemory::default(),
+            &learned,
+        )
+        .into_ranked();
+
+        assert_eq!(boosted[0].grounded.anchor, OpportunityAnchor::Place(place_b));
+        assert_eq!(expired[0].grounded.anchor, OpportunityAnchor::Place(place_a));
     }
 
     #[test]

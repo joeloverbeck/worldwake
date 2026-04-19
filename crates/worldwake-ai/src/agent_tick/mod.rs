@@ -21,8 +21,8 @@ use frame::{
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
-    InFlightReconciliation, ReadPhaseContext, reconcile_in_flight_state,
-    refresh_runtime_for_read_phase, update_runtime_observation_snapshot,
+    CompletedPlanSummary, InFlightReconciliation, ReadPhaseContext, reconcile_in_flight_state,
+    refresh_runtime_for_read_phase_with_memories, update_runtime_observation_snapshot,
 };
 use planning::{
     build_candidate_plans, plan_and_validate_next_step_traced, selection_candidates,
@@ -43,9 +43,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockingFact, CauseRef, CognitiveProfile, ContentionIntents,
-    ControlSource, EntityId, ExecutionBudget, IntentionFrame, LastProactiveExplorationTick, Tick,
-    VisibilitySpec, WitnessData, WorldTxn,
+    ActionDefId, ActiveGoal, BlockerMemory, BlockingFact, CauseRef, CognitiveProfile,
+    ContentionIntents, ControlSource, EntityId, ExecutionBudget, IntentionFrame,
+    LastProactiveExplorationTick, LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry,
+    RepairEntry, RepairKey, RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -322,6 +323,25 @@ fn process_agent(
         .cloned()
         .unwrap_or_default();
     let original_violation_memory = violation_memory.clone();
+    let mut repair_memory = ctx
+        .world
+        .get_component_repair_memory(agent)
+        .cloned()
+        .unwrap_or_default();
+    let original_repair_memory = repair_memory.clone();
+    let mut learned_opportunity_memory = ctx
+        .world
+        .get_component_learned_opportunity_memory(agent)
+        .cloned()
+        .unwrap_or_default();
+    let original_learned_opportunity_memory = learned_opportunity_memory.clone();
+    let memory_capacity = ctx
+        .world
+        .get_component_memory_capacity_profile(agent)
+        .cloned()
+        .unwrap_or_default();
+    repair_memory.expire(tick);
+    learned_opportunity_memory.expire(tick);
     let utility = ctx
         .world
         .get_component_utility_profile(agent)
@@ -406,7 +426,7 @@ fn process_agent(
         }
     }
 
-    reconcile_in_flight_state(
+    let completed_plan = reconcile_in_flight_state(
         ctx,
         runtime,
         &mut current_active_goal,
@@ -421,6 +441,16 @@ fn process_agent(
             committed_actions,
         },
     )?;
+    if let Some(summary) = completed_plan {
+        record_repair_memory_from_completed_plan(
+            &mut repair_memory,
+            &blocked_memory,
+            &summary,
+            tick,
+            cognitive.repair_memory_ticks,
+            memory_capacity,
+        );
+    }
 
     // Detect progress recorded during reconciliation (advance_completed_step).
     if let Some(ref mut ft) = frame_transitions {
@@ -493,7 +523,7 @@ fn process_agent(
 
     // ── Read phase: candidate generation + ranking ──
     let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
-    let read_result = refresh_runtime_for_read_phase(
+    let read_result = refresh_runtime_for_read_phase_with_memories(
         ctx.world,
         ctx.scheduler,
         action_defs,
@@ -502,6 +532,8 @@ fn process_agent(
         &mut current_facility_intents,
         &mut blocked_memory,
         &mut violation_memory,
+        &repair_memory,
+        &learned_opportunity_memory,
         agent,
         replan_signals,
         ReadPhaseContext {
@@ -512,6 +544,22 @@ fn process_agent(
             structural_block_ticks: cognitive.structural_block_ticks,
         },
         tracing,
+    );
+    record_learned_opportunities_from_read_phase(
+        &runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            action_defs,
+            recipe_registry,
+        ),
+        agent,
+        active_goal_key,
+        &read_result.generated_keys,
+        &mut learned_opportunity_memory,
+        tick,
+        cognitive.learned_opportunity_memory_ticks,
+        memory_capacity,
     );
     if !read_result.pending_acquisition_exhaustion_resets.is_empty() {
         apply_acquisition_exhaustion_tracker_resets(
@@ -736,6 +784,10 @@ fn process_agent(
                 &original_blocked,
                 &original_violation_memory,
                 &violation_memory,
+                &original_repair_memory,
+                &repair_memory,
+                &original_learned_opportunity_memory,
+                &learned_opportunity_memory,
                 &step,
                 valid,
             );
@@ -998,6 +1050,10 @@ fn process_agent(
         &blocked_memory,
         &original_violation_memory,
         &violation_memory,
+        &original_repair_memory,
+        &repair_memory,
+        &original_learned_opportunity_memory,
+        &learned_opportunity_memory,
         runtime,
     )?;
 
@@ -1006,6 +1062,87 @@ fn process_agent(
         tick,
         outcome,
     }))
+}
+
+fn record_repair_memory_from_completed_plan(
+    repair_memory: &mut RepairMemory,
+    blocked_memory: &BlockerMemory,
+    summary: &CompletedPlanSummary,
+    current_tick: Tick,
+    ttl_ticks: u32,
+    memory_capacity: worldwake_core::MemoryCapacityProfile,
+) {
+    let alternate_target = match summary.opportunity.anchor {
+        OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place) => place,
+        OpportunityAnchor::None => return,
+    };
+    if !matches!(
+        summary.terminal_kind,
+        crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment
+    ) {
+        return;
+    }
+    let has_prior_alternate_context = blocked_memory.intents.values().any(|blocker| {
+        blocker.expires_tick > current_tick
+            && blocker.blocker_key.goal_key == summary.goal_key
+            && blocker.blocker_key.target.or(blocker.blocker_key.place).is_some_and(|blocked| {
+                blocked != alternate_target
+            })
+    });
+    if !has_prior_alternate_context {
+        return;
+    }
+
+    let repair_key = RepairKey {
+        goal_key: summary.goal_key,
+        alternate_target,
+    };
+    let success_count = repair_memory
+        .repairs
+        .get(&repair_key)
+        .filter(|entry| entry.expires_tick > current_tick)
+        .map_or(1, |entry| entry.success_count.saturating_add(1));
+    repair_memory.record(RepairEntry {
+        repair_key,
+        observed_tick: current_tick,
+        expires_tick: Tick(current_tick.0 + u64::from(ttl_ticks)),
+        success_count,
+    });
+    repair_memory.enforce_capacity(&memory_capacity);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_learned_opportunities_from_read_phase(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    active_goal: Option<worldwake_core::GoalKey>,
+    generated_keys: &[worldwake_core::OpportunityKey],
+    learned_opportunity_memory: &mut LearnedOpportunityMemory,
+    current_tick: Tick,
+    ttl_ticks: u32,
+    memory_capacity: worldwake_core::MemoryCapacityProfile,
+) {
+    let Some(active_goal) = active_goal else {
+        return;
+    };
+    let Some(in_transit) = view.in_transit_state(agent) else {
+        return;
+    };
+    for opportunity in generated_keys {
+        if opportunity.goal_key == active_goal {
+            continue;
+        }
+        if matches!(opportunity.anchor, OpportunityAnchor::None) {
+            continue;
+        }
+        learned_opportunity_memory.record(OpportunityEntry {
+            opportunity: *opportunity,
+            observed_tick: current_tick,
+            expires_tick: Tick(current_tick.0 + u64::from(ttl_ticks)),
+            observed_at: in_transit.destination,
+        });
+    }
+    learned_opportunity_memory.enforce_capacity(&memory_capacity);
 }
 
 pub(super) fn update_exploration_counter_for_adopted_goal(

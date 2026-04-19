@@ -3,8 +3,8 @@ use super::observation::update_runtime_observation_snapshot;
 use super::{AgentTickContext, handle_recoverable_travel_step_blockage, runtime_belief_view};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockerMemory, CauseRef, ContentionIntents, EntityId, Tick, VisibilitySpec,
-    WitnessData, WorldTxn,
+    ActiveGoal, BlockerMemory, CauseRef, ContentionIntents, EntityId, LearnedOpportunityMemory,
+    RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
 
@@ -21,6 +21,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     original_blocked: &BlockerMemory,
     original_violation_memory: &worldwake_core::ViolationMemory,
     violation_memory: &worldwake_core::ViolationMemory,
+    original_repair_memory: &RepairMemory,
+    repair_memory: &RepairMemory,
+    original_learned_opportunity_memory: &LearnedOpportunityMemory,
+    learned_opportunity_memory: &LearnedOpportunityMemory,
     step: &PlannedStep,
     valid: bool,
 ) -> Result<(), TickInputError> {
@@ -95,6 +99,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 blocked_memory,
                 original_violation_memory,
                 violation_memory,
+                original_repair_memory,
+                repair_memory,
+                original_learned_opportunity_memory,
+                learned_opportunity_memory,
                 runtime,
             );
         }
@@ -121,6 +129,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             blocked_memory,
             original_violation_memory,
             violation_memory,
+            original_repair_memory,
+            repair_memory,
+            original_learned_opportunity_memory,
+            learned_opportunity_memory,
             runtime,
         );
     };
@@ -153,6 +165,10 @@ pub(super) fn finalize_agent_tick(
     blocked_memory: &BlockerMemory,
     original_violation_memory: &worldwake_core::ViolationMemory,
     violation_memory: &worldwake_core::ViolationMemory,
+    original_repair_memory: &RepairMemory,
+    repair_memory: &RepairMemory,
+    original_learned_opportunity_memory: &LearnedOpportunityMemory,
+    learned_opportunity_memory: &LearnedOpportunityMemory,
     runtime: &mut AgentDecisionRuntime,
 ) -> Result<(), TickInputError> {
     persist_blocked_memory(
@@ -170,6 +186,22 @@ pub(super) fn finalize_agent_tick(
         tick,
         original_violation_memory,
         violation_memory,
+    )?;
+    persist_repair_memory(
+        world,
+        event_log,
+        agent,
+        tick,
+        original_repair_memory,
+        repair_memory,
+    )?;
+    persist_learned_opportunity_memory(
+        world,
+        event_log,
+        agent,
+        tick,
+        original_learned_opportunity_memory,
+        learned_opportunity_memory,
     )?;
     {
         // Snapshot the post-mutation world state before ending the tick.
@@ -309,6 +341,65 @@ pub(super) fn persist_violation_memory(
         WitnessData::default(),
     );
     txn.set_component_violation_memory(agent, after.clone())
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+pub(super) fn persist_repair_memory(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    before: &RepairMemory,
+    after: &RepairMemory,
+) -> Result<(), TickInputError> {
+    let existing = world.get_component_repair_memory(agent);
+    if existing == Some(after) || (existing.is_none() && before == after && after.repairs.is_empty())
+    {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.set_component_repair_memory(agent, after.clone())
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+pub(super) fn persist_learned_opportunity_memory(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    before: &LearnedOpportunityMemory,
+    after: &LearnedOpportunityMemory,
+) -> Result<(), TickInputError> {
+    let existing = world.get_component_learned_opportunity_memory(agent);
+    if existing == Some(after)
+        || (existing.is_none() && before == after && after.opportunities.is_empty())
+    {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.set_component_learned_opportunity_memory(agent, after.clone())
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     Ok(())

@@ -28,6 +28,12 @@ pub struct CognitiveProfile {
     pub unknown_block_ticks: u32,
     /// Ticks before a structurally blocked goal (no valid plan exists) is re-evaluated.
     pub structural_block_ticks: u32,
+    /// Ticks a successful repair remains ranking-relevant before expiring.
+    #[serde(default = "default_repair_memory_ticks")]
+    pub repair_memory_ticks: u32,
+    /// Ticks a learned opportunity remains ranking-relevant before expiring.
+    #[serde(default = "default_learned_opportunity_memory_ticks")]
+    pub learned_opportunity_memory_ticks: u32,
     /// Base cooldown ticks after a goal fails before the agent retries it.
     pub initial_cooldown_ticks: u32,
     /// Maximum cooldown ticks after repeated failures (exponential backoff cap).
@@ -58,6 +64,8 @@ impl Default for CognitiveProfile {
             transient_block_ticks: 20,
             unknown_block_ticks: 5,
             structural_block_ticks: 200,
+            repair_memory_ticks: default_repair_memory_ticks(),
+            learned_opportunity_memory_ticks: default_learned_opportunity_memory_ticks(),
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
             max_snapshot_entities_per_place: 50,
@@ -75,6 +83,14 @@ const fn default_max_candidates_per_expansion() -> u16 {
 
 const fn default_use_ff_heuristic() -> bool {
     true
+}
+
+const fn default_repair_memory_ticks() -> u32 {
+    120
+}
+
+const fn default_learned_opportunity_memory_ticks() -> u32 {
+    60
 }
 
 #[cfg(test)]
@@ -116,6 +132,8 @@ mod tests {
         assert_eq!(profile.transient_block_ticks, 20);
         assert_eq!(profile.unknown_block_ticks, 5);
         assert_eq!(profile.structural_block_ticks, 200);
+        assert_eq!(profile.repair_memory_ticks, 120);
+        assert_eq!(profile.learned_opportunity_memory_ticks, 60);
         assert_eq!(profile.initial_cooldown_ticks, 4);
         assert_eq!(profile.max_cooldown_ticks, 64);
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
@@ -137,6 +155,8 @@ mod tests {
             transient_block_ticks: 12,
             unknown_block_ticks: 9,
             structural_block_ticks: 320,
+            repair_memory_ticks: 144,
+            learned_opportunity_memory_ticks: 88,
             initial_cooldown_ticks: 6,
             max_cooldown_ticks: 72,
             max_snapshot_entities_per_place: 75,
@@ -188,6 +208,37 @@ mod tests {
         let profile: CognitiveProfile = from_str(&without_field).unwrap();
 
         assert_eq!(profile.max_travel_candidates_per_expansion, None);
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_memory_ttls() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                repair_memory_ticks: 11,
+                learned_opportunity_memory_ticks: 22,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_fields = serialized
+            .lines()
+            .filter(|line| {
+                !line.contains("repair_memory_ticks")
+                    && !line.contains("learned_opportunity_memory_ticks")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_fields).unwrap();
+
+        assert_eq!(
+            profile.repair_memory_ticks,
+            CognitiveProfile::default().repair_memory_ticks
+        );
+        assert_eq!(
+            profile.learned_opportunity_memory_ticks,
+            CognitiveProfile::default().learned_opportunity_memory_ticks
+        );
     }
 
     #[test]

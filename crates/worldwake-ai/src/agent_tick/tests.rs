@@ -11,6 +11,7 @@ use super::{
     AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
     committed_action_for_step, effective_goal_switch_margin,
     handle_recoverable_travel_step_blockage, persist_blocked_memory,
+    record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
     plan_and_validate_next_step_traced, update_exploration_counter_for_adopted_goal,
     update_frame_for_adopted_plan,
 };
@@ -37,12 +38,13 @@ use worldwake_core::{
     EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameState,
     HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
-    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
-    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
+    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
+    RecordKind, RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile,
+    TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
+    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
@@ -104,6 +106,9 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         transient_block_ticks: reasoning.transient_block_ticks,
         unknown_block_ticks: reasoning.unknown_block_ticks,
         structural_block_ticks: reasoning.structural_block_ticks,
+        repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
+        learned_opportunity_memory_ticks:
+            CognitiveProfile::default().learned_opportunity_memory_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
         max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -6214,4 +6219,112 @@ fn exploration_counter_resets_when_non_explore_goal_is_adopted() {
             .consecutive_exploration_count,
         0
     );
+}
+
+#[test]
+fn completed_alternate_plan_records_repair_memory_entry() {
+    let goal = GoalKey::from(GoalKind::Sleep);
+    let successful_place = entity(91);
+    let mut repair_memory = RepairMemory::default();
+    let blocked_memory = BlockerMemory {
+        intents: BTreeMap::from([(
+            BlockerKey {
+                goal_key: goal,
+                place: Some(entity(90)),
+                target: None,
+                action_def: None,
+            },
+            Blocker {
+                blocker_key: BlockerKey {
+                    goal_key: goal,
+                    place: Some(entity(90)),
+                    target: None,
+                    action_def: None,
+                },
+                blocking_fact: BlockingFact::NoKnownPath,
+                diagnostic_context: None,
+                observed_tick: Tick(3),
+                expires_tick: Tick(40),
+                clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+                baseline_snapshot: None,
+            },
+        )]),
+    };
+
+    record_repair_memory_from_completed_plan(
+        &mut repair_memory,
+        &blocked_memory,
+        &super::CompletedPlanSummary {
+            goal_key: goal,
+            opportunity: OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(successful_place),
+            },
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+        },
+        Tick(10),
+        120,
+        MemoryCapacityProfile::default(),
+    );
+
+    let entry = repair_memory
+        .repairs
+        .get(&worldwake_core::RepairKey {
+            goal_key: goal,
+            alternate_target: successful_place,
+        })
+        .expect("repair success should be recorded");
+    assert_eq!(entry.observed_tick, Tick(10));
+    assert_eq!(entry.expires_tick, Tick(130));
+    assert_eq!(entry.success_count, 1);
+}
+
+#[test]
+fn in_transit_read_phase_records_learned_opportunity_memory_entry() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let actor_place = harness.world.effective_place(harness.actor).unwrap();
+    let mut txn = new_txn(&mut harness.world, 1);
+    txn.set_component_in_transit_on_edge(
+        harness.actor,
+        worldwake_core::InTransitOnEdge {
+            edge_id: TravelEdgeId(1),
+            origin: actor_place,
+            destination: actor_place,
+            departure_tick: Tick(1),
+            arrival_tick: Tick(3),
+        },
+    )
+    .unwrap();
+    commit_txn(txn);
+    let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
+    let mut learned = LearnedOpportunityMemory::default();
+    let learned_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Water,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+
+    record_learned_opportunities_from_read_phase(
+        &view,
+        harness.actor,
+        Some(GoalKey::from(GoalKind::Sleep)),
+        &[OpportunityKey {
+            goal_key: learned_goal,
+            anchor: OpportunityAnchor::Place(actor_place),
+        }],
+        &mut learned,
+        Tick(5),
+        60,
+        MemoryCapacityProfile::default(),
+    );
+
+    let entry = learned
+        .opportunities
+        .get(&OpportunityKey {
+            goal_key: learned_goal,
+            anchor: OpportunityAnchor::Place(actor_place),
+        })
+        .expect("in-transit discovery should be recorded");
+    assert_eq!(entry.observed_tick, Tick(5));
+    assert_eq!(entry.expires_tick, Tick(65));
+    assert_eq!(entry.observed_at, actor_place);
 }
