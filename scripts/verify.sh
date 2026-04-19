@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "[verify] cargo fmt --all -- --check"
+cargo fmt --all -- --check
+
 echo "[verify] cargo test --workspace"
 cargo test --workspace
 
