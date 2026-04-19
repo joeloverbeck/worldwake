@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 148: Survival Baseline Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_baseline.rs:343`
+- Source: `golden_survival_baseline.rs:289`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 149: Survival Baseline Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_baseline.rs:399`
+- Source: `golden_survival_baseline.rs:328`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -37,13 +37,13 @@ Scenarios: 5
 
 **Setup**: Run the authored survival baseline for 1440 ticks and collect action
 
-**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions in
+**Proves**: every agent commits the scenario-authored self-care families in the
 
 **Cross-system chain**: varied initial needs and authored place affordances -> repeated
 
 ### Scenario 150: Survival Baseline Explorer Discovers Fertile Fields Orchard
 
-- Source: `golden_survival_baseline.rs:426`
+- Source: `golden_survival_baseline.rs:361`
 - Systems: AI, Exploration, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 151: Survival Baseline Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_baseline.rs:460`
+- Source: `golden_survival_baseline.rs:396`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -79,18 +79,18 @@ Scenarios: 5
 
 ### Scenario 152: Survival Baseline Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_baseline.rs:490`
+- Source: `golden_survival_baseline.rs:427`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
 - Places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
 - Principles: 6, 22, 31
-- Primary tests: `no_stuck_idle_windows_with_elevated_needs`
+- Primary tests: `no_stuck_idle_windows_with_elevated_needs`, `survival_contract_guard_rejects_missing_authored_contract`, `survival_need_run_tracker_uses_authored_drive_thresholds`
 - Replay tests: None
-- All tests: `no_stuck_idle_windows_with_elevated_needs`
+- All tests: `no_stuck_idle_windows_with_elevated_needs`, `survival_contract_guard_rejects_missing_authored_contract`, `survival_need_run_tracker_uses_authored_drive_thresholds`
 
 **Setup**: Run the authored survival baseline for 1440 ticks and track idle
 
-**Proves**: no agent is idle for 20+ consecutive ticks while any need exceeds
+**Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions

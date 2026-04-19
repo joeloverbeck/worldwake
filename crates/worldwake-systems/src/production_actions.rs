@@ -126,6 +126,7 @@ fn harvest_action_def(
             required_tool_kinds: recipe.required_tool_kinds.clone(),
         }),
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
     })
 }
 
@@ -199,6 +200,7 @@ fn craft_action_def(
             required_tool_kinds: recipe.required_tool_kinds.clone(),
         }),
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
     })
 }
 
@@ -1262,6 +1264,7 @@ mod tests {
                 requested_quantity: Quantity(1),
             }),
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
 
         let instance = ActionInstance {
@@ -2060,6 +2063,7 @@ mod tests {
                 requested_quantity: Quantity(2),
             }),
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         };
 
         let instance = ActionInstance {

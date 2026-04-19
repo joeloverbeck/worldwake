@@ -134,6 +134,8 @@ Do not present findings yet. Collect everything for Step 4.
 
 **Read `references/findings-and-questions.md` now, with the Read tool, before classifying.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded findings-and-questions.md — opens with "Step 5: Classify Findings"`. A bare "Loaded: findings-and-questions.md" is treated as a skipped load. The file prescribes the one-line finding format and the Step 6 presentation template; using your own format is not a substitute. Then classify all findings from Steps 3-4 and present to the user using that template.
 
+**Redesign-count checkpoint**: Before presenting, count deliverables whose approach materially changed versus total deliverables. If the ratio exceeds 50%, the `### Substantial Redesign Flag` section is mandatory in the Step 6 output, placed immediately above `### Questions`. Emit the N/total counts in your pre-draft notes even when the ratio is below 50%, so the decision is auditable.
+
 Wait for user response before proceeding to Step 7. (In plan mode: after question resolution, write the plan file per `references/plan-mode.md`, then call ExitPlanMode. Steps 7-8 execute after approval.)
 
 **Auto mode interaction**: When auto mode is active and the findings contain no Issues (CRITICAL/HIGH severity or FOUNDATIONS violations) and no open Questions, proceed directly to Step 7. Report the auto-mode auto-approval inline in Step 6 presentation (e.g., "Auto mode: no Issues, proceeding to Step 7"). If any Issue is present or any Question is open, the wait-for-user gate still applies even in auto mode.
@@ -152,7 +154,19 @@ Example:
 | I2 | `grep -rn "AnomalyKind::" crates/worldwake-cli/src/` | 17 matches, all in `bin/observer.rs` — no external consumers to migrate |
 | M3 | `test -f specs/S118-stuck-agent-detector-active-frame-exclusion.md` | file exists — dependency path valid |
 
-If any check invalidates a finding, re-present the corrected finding to the user before applying any edits — do not silently drop or modify the finding.
+If a check reveals a mismatch with a finding, classify the mismatch and respond accordingly:
+
+- **Recommendation-changing mismatch**: the pre-apply check invalidates the finding's *recommendation* — the fix that was approved no longer applies, the target text/symbol has moved, or a different fix is now warranted. Re-present the corrected finding to the user and wait for confirmation before applying any edits. Do not silently drop or modify the finding.
+- **Evidence-refining mismatch**: the pre-apply check refines the finding's *supporting evidence* (e.g., a symbol the finding claimed was absent turns out to exist in a different location) but the recommendation still holds unchanged. Note the refinement inline in the Result column of the pre-apply table (e.g., "partial invalidation: symbol exists at <path>:<line>, not at spec-claimed location — recommendation unchanged") and proceed. The user sees the refinement in the emitted table, so this is not silent modification.
+
+Example rows for each tier:
+
+| Finding | Check | Result |
+|---------|-------|--------|
+| I5 (evidence-refining) | `grep -rn "NEEDS_LOW_CEILING"` | exists at `observer.rs:1931`, not at spec-claimed `golden_survival_contested.rs` — recommendation (cite scenario-authored contract field instead) unchanged |
+| I3 (recommendation-changing) | `grep -n "#[cfg(test)]"` at claimed line | boundary has moved; the targeted function is now runtime, not test-only — re-present to user before applying |
+
+The `Finding` column tier tag (`evidence-refining`, `recommendation-changing`) is required only when the pre-apply check detects a mismatch with the finding. Rows that confirm the finding exactly as written may use the compact descriptive form shown in the first example table (`I1`, `I2`, `M3`, optionally with a brief parenthetical anchor).
 
 **Read `references/spec-writing-rules.md` now, with the Read tool, before writing.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded spec-writing-rules.md — opens with "Pre-Apply Verification"`. A bare "Loaded: spec-writing-rules.md" is treated as a skipped load. The file carries the full pre-apply verification, apply-changes, and post-apply confirmation rules. Then apply all approved changes.
 

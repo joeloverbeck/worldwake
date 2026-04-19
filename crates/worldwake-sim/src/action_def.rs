@@ -8,6 +8,21 @@ use worldwake_core::{
     ActionDefId, ActionDomain, BodyCostPerTick, EventTag, Permille, VisibilitySpec,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum BindingStrictness {
+    ExactIdentity,
+    FungibleEquivalentCommodity,
+    EquivalentWorkstationTagAtSamePlace,
+    EquivalentRouteStep,
+    AnyLegalTarget,
+}
+
+impl BindingStrictness {
+    pub(crate) fn exact_identity_default() -> Self {
+        Self::ExactIdentity
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionDef {
     pub id: ActionDefId,
@@ -26,11 +41,13 @@ pub struct ActionDef {
     pub causal_event_tags: BTreeSet<EventTag>,
     pub payload: ActionPayload,
     pub handler: ActionHandlerId,
+    #[serde(default = "BindingStrictness::exact_identity_default")]
+    pub binding_strictness: BindingStrictness,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ActionDef;
+    use super::{ActionDef, BindingStrictness};
     use crate::{
         ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility, Precondition,
         ReservationReq, TargetSpec,
@@ -90,6 +107,7 @@ mod tests {
             causal_event_tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
             payload: ActionPayload::None,
             handler: ActionHandlerId(7),
+            binding_strictness: BindingStrictness::EquivalentRouteStep,
         }
     }
 
@@ -119,6 +137,7 @@ mod tests {
             causal_event_tags,
             payload,
             handler,
+            binding_strictness,
         } = action_def;
 
         let _: ActionDefId = id;
@@ -137,6 +156,7 @@ mod tests {
         let _: BTreeSet<EventTag> = causal_event_tags;
         let _: ActionPayload = payload;
         let _: ActionHandlerId = handler;
+        let _: BindingStrictness = binding_strictness;
     }
 
     #[test]

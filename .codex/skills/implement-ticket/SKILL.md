@@ -33,6 +33,7 @@ When a system ticket claims a new event-log, trace, or transition carrier, verif
 Load `references/reassessment-checks.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md`.
 
 For belief-barrier or snapshot-admission tickets, explicitly classify each planner-visible carrier under audit as `authoritative local`, `belief-backed remote`, `explicit evidence`, or `out of scope` before changing code, so remote omniscience can be removed without accidentally stripping lawful local visibility.
+For golden E2E tickets, explicitly decide whether reassessment disproved the ticket's invariant or only disproved the drafted proof seam. If the invariant still holds but live replanning, control flow, or timing removes the authored autonomous observation window, rewrite the ticket/spec to the strongest honest proof seam before coding instead of treating the whole contract as false.
 
 When a ticket or spec uses generic domain language such as “affordance presence”, “local support”, or “relevant local state”, bind that phrase to the exact live carrier before coding. If the branch uses concrete place tags, workstation markers, item lots, resource sources, or another existing convention rather than a dedicated helper/type named in the prose, record that narrowing and implement against the live carrier instead of inventing a new abstraction by default.
 When a golden or observer ticket targets a CLI/report pipeline that currently exists only under `src/bin/*` with no callable public helper, treat the compiled binary itself as a potentially honest E2E seam during reassessment. In that case, prefer an integration test that drives `env!("CARGO_BIN_EXE_<name>")` with temp inputs/outputs over inventing a new public helper just to satisfy the draft.
@@ -61,6 +62,7 @@ For derived forensic/report/read-model tickets, use this compact scope checklist
 - confirm the deterministic ordering/storage rule (`BTree*`, stable `Vec` order, no float math)
 - separate bounded-capture/filtering policy from raw candidate collection
 - identify any same-crate type fallout needed to keep the requested API honest
+- if the ticket asks you to prove a derived trace/report field is copied or transformed from authoritative input, target the focused proof at the actual constructor/builder boundary even when the type is declared in a different module
 - when canonical names, classifications, or display rows depend on an existing registry/catalog, verify whether the live render/helper signature must accept that input explicitly instead of assuming the change is purely local `writeln!` fallout
 
 For small CLI/tooling tickets that touch a single binary or local helper surface, explicitly check whether the honest focused proof belongs beside the owned function/module (for example in `src/bin/*.rs` tests) rather than in a new integration-test binary. If the ticket sketches a new `tests/*.rs` file but the live seam is a local formatter/helper inside one binary, narrow the test placement to that seam and record the deviation in the ticket closeout.
@@ -75,11 +77,14 @@ Load `references/implementation-discipline.md` when reassessment shows a non-mec
 Run the narrowest correct verification first, then broaden.
 
 Prefer sequential `cargo` verification runs unless there is a concrete reason to parallelize them; this keeps cargo-lock contention, attribution, and close-out evidence truthful.
+Do not launch multiple `cargo` commands in parallel for focused proofs or broadened verification. Run one Cargo command to completion before starting the next.
 
 Load `references/verification.md`.
 
 When a golden or observer ticket relies on named integration-test binaries, explicitly check whether the cited command executes the intended authored scenario cases or only compiles the binary plus non-ignored helper tests. If the motivating long-run scenario cases are still `#[ignore]`, record that distinction honestly in the ticket closeout instead of implying those scenarios ran.
 
+When request-resolution, `tick_step`, or other authoritative failure-boundary changes move where a rejection or legality failure surfaces, expect mixed-layer fallout in AI blocker classification, planner recovery, or golden behavior. Treat at least one targeted `worldwake-ai` or golden regression check as normal before relying on full-workspace verification alone.
+When a golden owns an AI-selected binding contract but a purely autonomous run no longer exposes a stable stale-request window, expect a hybrid proof seam: snapshot the AI-selected binding from decision trace, carry it through the narrowest lawful external request or harness action, set control source explicitly, and then assert the authoritative/runtime outcome. Record that narrowed proof seam in the ticket/spec instead of continuing to chase a fully autonomous scenario that the live branch cannot hold still.
 When a planner-boundary fix removes an unlawful omniscient carrier, expect dependent tests to fail until remote fixtures are rewritten to seed the needed belief or evidence state explicitly. Treat that as normal fallout to audit, not automatic proof that the production fix is wrong.
 When broadened verification exposes intentionally staged unused private surface (for example new enum variants, helper entry points, or report fields that sibling tickets will start using later), the current ticket may absorb the narrowest local lint-safe annotation or cleanup needed to keep CI-matching verification green. Record that staged-state deviation explicitly in the ticket closeout instead of silently treating it as unrelated noise.
 
@@ -89,6 +94,7 @@ Load `references/closeout.md`.
 
 Before closing out, re-read any ticket claims about optional rendering, disabled flags, or suppressed sections and confirm the landed behavior matches those claims exactly. If the ticket distinguishes between “render empty-state” and “omit entirely when disabled,” make sure at least one focused assertion proves that exact disabled-path contract before marking the ticket complete.
 If reassessment or verification narrowed the owned seam, introduced a private helper, or required narrow same-ticket lint cleanup to support staged infrastructure, say so explicitly in the ticket's `Deviations`/`Outcome` notes rather than leaving the drafted implementation sketch as the only recorded shape.
+If broadened verification proves the landed contract differs from the drafted invariant or top-level ticket summary, update the ticket's header fields and any now-false acceptance or invariant wording as part of closeout instead of recording the difference only under `Deviations`.
 
 ### 8. Close the loop on the ticket
 
@@ -99,7 +105,7 @@ Covered in `references/closeout.md` (Step 8 section).
 - Name exact files, symbols, layers, and invariants for non-trivial claims.
 - Treat tests, traces, event logs, and authoritative state as different proof surfaces.
 - Architectural contradictions: solve or escalate with 1-3-1 (see `references/mismatch-handling.md`, Escalation decision tree). Do not patch around them.
-- For focused test commands, verify that the selector actually proves the owned surface. Substring filters can run extra tests or, for integration-test binaries, compile the target while executing zero tests. When exactness matters, prefer the narrowest truthful selector such as an exact unit-test name or `cargo test -p <crate> --test <file_stem>` for integration-test binaries instead of a loose name filter.
+- For focused test commands, verify that the selector actually proves the owned surface. Substring filters can run extra tests or, for integration-test binaries, compile the target while executing zero tests. When exactness matters, prefer the narrowest truthful selector such as an exact unit-test name or `cargo test -p <crate> --test <file_stem>` for integration-test binaries instead of a loose name filter. `--exact` may require the fully qualified module path rather than the bare function name, including ordinary lib tests and `src/bin/*.rs` unit tests (for example `agent_tick::planning::tests::my_case` or `tests::my_case`); check `cargo test ... -- --list` before recording the command in ticket closeout.
 
 ## Example Usage
 

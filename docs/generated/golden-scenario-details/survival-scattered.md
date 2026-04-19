@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_scattered.rs:349`
+- Source: `golden_survival_scattered.rs:292`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 154: Scattered Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_scattered.rs:408`
+- Source: `golden_survival_scattered.rs:334`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -37,13 +37,13 @@ Scenarios: 5
 
 **Setup**: Run the authored survival scattered scenario for 1440 ticks and
 
-**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions
+**Proves**: every agent commits the scenario-authored self-care families despite
 
 **Cross-system chain**: spatially separated resource affordances + travel metabolism ->
 
 ### Scenario 155: Isolated Agent Reaches A Food Source From Ravine Shelter
 
-- Source: `golden_survival_scattered.rs:436`
+- Source: `golden_survival_scattered.rs:368`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 156: Scattered Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_scattered.rs:467`
+- Source: `golden_survival_scattered.rs:400`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -79,7 +79,7 @@ Scenarios: 5
 
 ### Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_scattered.rs:500`
+- Source: `golden_survival_scattered.rs:434`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -91,6 +91,6 @@ Scenarios: 5
 
 **Setup**: Run the authored survival scattered scenario for 1440 ticks and
 
-**Proves**: no agent is idle for 30+ consecutive ticks while any need exceeds
+**Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions

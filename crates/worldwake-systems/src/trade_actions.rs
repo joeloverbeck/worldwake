@@ -73,6 +73,7 @@ fn trade_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         ]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -1357,6 +1358,7 @@ fn staff_market_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         causal_event_tags: BTreeSet::from([EventTag::Trade, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

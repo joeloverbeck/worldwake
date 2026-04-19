@@ -62,6 +62,7 @@ fn search_place_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         causal_event_tags: BTreeSet::from([EventTag::Discovery]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
     }
 }
 

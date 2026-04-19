@@ -63,6 +63,7 @@ fn queue_for_facility_use_action_def(id: ActionDefId, handler: ActionHandlerId) 
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
     }
 }
 

@@ -26,6 +26,7 @@ Completed Phase 7 specs:
 - `S105: Observation Salience Filtering` — archived at [archive/specs/S105-observation-salience-filtering.md](/home/joeloverbeck/projects/worldwake/archive/specs/S105-observation-salience-filtering.md). Landed `PerceptionProfile.observation_budget` with authored-input compatibility, deterministic same-place observation priority plus budget truncation in `collect_direct_local_observation_batch`, focused unit proof for non-place truncation / need-based non-Waste boosting, and Scenario 341 golden coverage for bounded waste visibility under reduced observation budgets.
 - `S106: Ground Item Decay` — archived at [archive/specs/S106-ground-item-decay.md](/home/joeloverbeck/projects/worldwake/archive/specs/S106-ground-item-decay.md). Landed `GroundSince`, persisted `CommodityDecayMap`, `EventTag::ItemDecay`, `SystemId::ItemDecay`, live decay archival after `EvidenceDecay`, and Scenario 342 golden proof of bounded Waste steady state plus regenerated golden inventory/detail docs.
 - `S107: Proactive Diversification Exploration` — archived at [archive/specs/S107-proactive-diversification.md](/home/joeloverbeck/projects/worldwake/archive/specs/S107-proactive-diversification.md). Landed `DiversificationProfile`, passive place-visit tracking, proactive `ExploreLocation` emission/ranking with need-slack and cooldown gating, authored scenario support, and golden exploration coverage plus refreshed generated golden docs.
+- `S108: Per-Action Binding Strictness` — archived at [archive/specs/S108-per-action-binding-strictness.md](/home/joeloverbeck/projects/worldwake/archive/specs/S108-per-action-binding-strictness.md). Landed authoritative `BindingStrictness` on `ActionDef`, the dispatch-side strictness gate plus `ExactIdentityRequired` failure surface, the planner-contract correction that preserves same-target revalidation helpers, decision-trace strictness snapshots, and hybrid golden end-to-end proof for exact-identity refusal plus fungible fallback.
 - `S120: Survival Critical-Window Forensics` — archived at [archive/specs/S120-survival-critical-window-forensics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S120-survival-critical-window-forensics.md). Landed the shared runtime forensics model and extractor in `worldwake-ai`, golden-harness forensic helpers and focused proof, observer Section 9 rendering plus `--critical-window-top-n`, and the survival-debugging documentation updates.
 - `S104: Survival Baseline Recovery` — archived at [archive/specs/S104-survival-baseline-recovery.md](/home/joeloverbeck/projects/worldwake/archive/specs/S104-survival-baseline-recovery.md). Landed the survival-baseline recovery slice: golden triage, TellProfile profile-gating cleanup, the authored `survival-baseline.ron` scenario, planner cleanup for the remaining survival-path `ProduceCommodity` budget exhaustion, and the Layer 0 survival golden proof. The later Layer 1–3 rebuild wave was intentionally not pursued.
 
@@ -285,14 +286,14 @@ Derived from `/scenario-analysis` of `survival-contested.ron` (seed 306006, 1440
 ```text
 S116 ✅ archived
 S117 ✅ archived
-S118 (observer, independent)
+S118 ✅ archived (observer, independent)
 ```
 
 **Wave** (parallel, no deps among S116/S117/S118):
 
 - **S116**: ✅ COMPLETED — archived at [archive/specs/S116-drive-escalation-sustained-critical.md](/home/joeloverbeck/projects/worldwake/archive/specs/S116-drive-escalation-sustained-critical.md). Landed `DriveEscalationProfile`, extended `DeprivationExposure`, escalation transition event tagging from `needs_system`, motive-score multiplier integration in AI ranking, dedicated drive-escalation golden coverage, and the contested authored survival-bound tightening from 400 to 300.
 - **S117**: ✅ COMPLETED — archived at [archive/specs/S117-convergence-maintenance-observer-smells.md](/home/joeloverbeck/projects/worldwake/archive/specs/S117-convergence-maintenance-observer-smells.md). Landed the four observer-side anomaly detectors (`GEOGRAPHIC_CONVERGENCE`, `MAINTENANCE_STARVATION`, `RECIPE_MONOCULTURE`, `ACUTE_NEED_SPIKE`), Section 2 maintenance-rate and recipe-usage tables, the compiled-binary golden suite plus fixtures, and the downstream scenario-analysis doc graduation; the live baseline contract keeps `GEOGRAPHIC_CONVERGENCE` absent on `survival-baseline.ron` while treating the broader smell surface as diagnostic rather than a health-oracle failure.
-- **S118**: Stuck-Agent Detector Precision — Active-Frame Exclusion — observer-only fix that excludes tick windows overlapping an open ActionStarted/ActionCommitted frame from the `STUCK_AGENT` idle counter. Eliminates the 26-tick wash+travel false positive observed on Agent C.
+- **S118**: ✅ COMPLETED — archived at [archive/specs/S118-stuck-agent-detector-active-frame-exclusion.md](/home/joeloverbeck/projects/worldwake/archive/specs/S118-stuck-agent-detector-active-frame-exclusion.md). Landed the observer-only active-frame exclusion for `STUCK_AGENT`, the wash+travel regression, the genuine-idle and `StartFailed` guardrail proofs, and the downstream scenario-analysis caveat simplification; eliminates the 26-tick wash+travel false positive observed on Agent C.
 
 Follow-up tickets (not specs): scenario weight rebalance for `survival-contested.ron`, belief-retention investigation for landmark facilities under memory pressure (pending mid-run belief snapshot capability).
 
@@ -353,7 +354,7 @@ S108 (independent)              S111 (independent)
 ### Active Execution Steps
 
 **Wave 1** (parallel, no hard deps):
-- **S108**: Per-Action Binding Strictness — `BindingStrictness` enum per `ActionDef`; revalidation/dispatch/affordance-enum all consult the same strictness class; `ExactIdentity` refuses BestEffort substitution for socially-consequential actions.
+- **S108**: ✅ COMPLETED — archived at [archive/specs/S108-per-action-binding-strictness.md](/home/joeloverbeck/projects/worldwake/archive/specs/S108-per-action-binding-strictness.md). Landed authoritative `BindingStrictness` on `ActionDef`, the dispatch-side strictness gate plus `ExactIdentityRequired` failure surface, the planner-contract correction that preserves same-target revalidation helpers, decision-trace strictness snapshots, and hybrid golden end-to-end proof for exact-identity refusal plus fungible fallback.
 - **S111**: Scenario Profile Homogeneity Lints — scenario-load-time lints for profile homogeneity, proactive-exploration-without-curiosity, archetype inheritance; includes the `PlanningSnapshot` accessor-only architecture regression test (PR-1.11 travel-fence audit).
 
 **Wave 2** (after Wave 1):
@@ -381,6 +382,8 @@ S108 (independent)              S111 (independent)
 - [ ] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
+
+- Note: S108 is complete and archived. The remaining Wave 1 gate item is S111.
 
 ---
 

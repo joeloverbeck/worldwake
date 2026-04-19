@@ -653,6 +653,7 @@ mod tests {
             causal_event_tags: BTreeSet::from([EventTag::System]),
             payload: worldwake_sim::ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         });
     }
 

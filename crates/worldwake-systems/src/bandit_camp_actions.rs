@@ -65,6 +65,7 @@ fn establish_camp_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

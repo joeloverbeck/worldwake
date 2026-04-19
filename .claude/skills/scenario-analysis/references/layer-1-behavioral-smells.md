@@ -18,7 +18,7 @@ Already in Section 3 — add narrative context and root-cause hypotheses.
    - *Pathological*: needs rising while agent does nothing. Check Section 7 for planner outcomes during the idle period. If candidate count dropped to 0, the agent is idle because no goal candidates were generated.
    - *Post-death*: if the agent has dead ticks, idle status post-death is expected — focus on ticks leading to death.
 
-   **Detector caveat**: The mechanical detector counts consecutive ticks with no action *started or in-progress*. Multi-tick actions like sleep usually occupy the agent and aren't counted as idle, but travel+multi-tick-action sequences (travel→wash→travel, travel→harvest→travel) can still register as stuck windows — behavior is not 100% reliable for composite maintenance trips. Before classifying a flagged window as a false positive, verify against Section 7 decision timeline and Section 4 ActionStarted/ActionCommitted pairs inside the window: continuous active frames or action-lifecycle pairs covering the window confirm a false positive; otherwise investigate. Section 2's "max consecutive idle ticks" may therefore exceed the detector threshold without triggering an anomaly, and anomalies may fire on windows containing active multi-tick work.
+   **Detector caveat**: the mechanical stuck-agent detector counts consecutive ticks with no action *started or in-progress*. Multi-tick actions like sleep, wash, and travel legs occupy the agent and are not counted as idle. Therefore "max consecutive idle ticks" in Section 2 may exceed the detector's threshold without triggering an anomaly.
 
 4. **Failed Action Spirals** — Agent keeps attempting actions that fail validation. Which precondition is failing? Is the agent's belief stale?
 

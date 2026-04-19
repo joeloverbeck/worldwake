@@ -5,16 +5,17 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 14
-- Files contributing `golden_*` tests: 14
-- Total `golden_*` tests: 98
+- Golden test files: 15
+- Files contributing `golden_*` tests: 15
+- Total `golden_*` tests: 106
 
 ## Per-File Inventory
 
 | File | `golden_*` tests |
 |------|------------------|
 | `golden_activation_decay.rs` | 6 |
-| `golden_ai_decisions.rs` | 13 |
+| `golden_ai_decisions.rs` | 15 |
+| `golden_drive_escalation_wash_priority.rs` | 3 |
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 11 |
 | `golden_item_decay.rs` | 1 |
@@ -23,8 +24,8 @@ Do not hand-edit it.
 | `golden_perception_exposure.rs` | 7 |
 | `golden_planner_pathology.rs` | 3 |
 | `golden_simulation_gaps.rs` | 5 |
-| `golden_survival_baseline.rs` | 5 |
-| `golden_survival_contested.rs` | 6 |
+| `golden_survival_baseline.rs` | 7 |
+| `golden_survival_contested.rs` | 7 |
 | `golden_survival_scattered.rs` | 5 |
 | `golden_travel_physiology.rs` | 12 |
 
@@ -52,6 +53,14 @@ Do not hand-edit it.
 - `golden_utility_weight_diversity_in_need_selection`
 - `golden_trace_enabled_scenario`
 - `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
+- `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`
+- `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
+
+### `golden_drive_escalation_wash_priority.rs`
+
+- `dirtiness_wash_cycle_under_priority_override`
+- `escalation_respects_belief_only_planning`
+- `escalation_fades_after_relief`
 
 ### `golden_experience_preferences.rs`
 
@@ -135,6 +144,8 @@ Do not hand-edit it.
 - `explorer_discovers_food_source`
 - `no_budget_exhaustion_on_survival_goals`
 - `no_stuck_idle_windows_with_elevated_needs`
+- `survival_contract_guard_rejects_missing_authored_contract`
+- `survival_need_run_tracker_uses_authored_drive_thresholds`
 
 ### `golden_survival_contested.rs`
 
@@ -144,6 +155,7 @@ Do not hand-edit it.
 - `both_camp_sides_reach_food`
 - `no_budget_exhaustion_on_survival_goals`
 - `no_stuck_idle_windows_with_elevated_needs`
+- `per_need_critical_run_limit_override_beats_default_for_dirtiness_only`
 
 ### `golden_survival_scattered.rs`
 

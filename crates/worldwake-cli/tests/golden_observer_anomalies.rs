@@ -76,7 +76,10 @@ fn anomaly_block<'a>(report: &'a str, kind: &str) -> &'a str {
 fn convergence_smell_fires_on_forced_hub_scenario() {
     let report = run_observer("tests/fixtures/observer_anomalies/convergence_hub.ron", 300);
 
-    assert_eq!(count_anomalies_of_kind(&report, "GEOGRAPHIC_CONVERGENCE"), 1);
+    assert_eq!(
+        count_anomalies_of_kind(&report, "GEOGRAPHIC_CONVERGENCE"),
+        1
+    );
     let headers = anomaly_headers_of_kind(&report, "GEOGRAPHIC_CONVERGENCE");
     assert_eq!(headers.len(), 1);
     assert!(headers[0].contains("Alice"));
@@ -88,7 +91,10 @@ fn convergence_smell_fires_on_forced_hub_scenario() {
 fn convergence_smell_stays_absent_on_survival_baseline() {
     let report = run_observer("../../scenarios/survival-baseline.ron", 1440);
 
-    assert_eq!(count_anomalies_of_kind(&report, "GEOGRAPHIC_CONVERGENCE"), 0);
+    assert_eq!(
+        count_anomalies_of_kind(&report, "GEOGRAPHIC_CONVERGENCE"),
+        0
+    );
 }
 
 #[test]
@@ -98,7 +104,10 @@ fn maintenance_starvation_fires_on_wash_gap() {
         600,
     );
 
-    assert_eq!(count_anomalies_of_kind(&report, "MAINTENANCE_STARVATION"), 2);
+    assert_eq!(
+        count_anomalies_of_kind(&report, "MAINTENANCE_STARVATION"),
+        2
+    );
     let blocks = anomaly_headers_of_kind(&report, "MAINTENANCE_STARVATION");
     assert_eq!(blocks.len(), 2);
     let section = section_three(&report);
@@ -108,6 +117,33 @@ fn maintenance_starvation_fires_on_wash_gap() {
     assert!(section.contains("relieved only"));
     assert!(section.contains("Net deficit"));
     assert!(section.contains("above high threshold"));
+}
+
+#[test]
+fn stuck_detector_excludes_wash_travel_cycle() {
+    let report = run_observer(
+        "tests/fixtures/observer_anomalies/stuck_detector_wash_travel_cycle.ron",
+        30,
+    );
+
+    assert_eq!(
+        count_anomalies_of_kind(&report, "STUCK_AGENT"),
+        0,
+        "wash+travel cycle must not register as stuck; Section 3:\n{}",
+        section_three(&report),
+    );
+}
+
+#[test]
+fn stuck_detector_still_fires_on_genuine_idle() {
+    let report = run_observer(
+        "tests/fixtures/observer_anomalies/stuck_detector_genuine_idle.ron",
+        25,
+    );
+
+    assert_eq!(count_anomalies_of_kind(&report, "STUCK_AGENT"), 1);
+    let block = anomaly_block(&report, "STUCK_AGENT");
+    assert!(block.contains("consecutive ticks"));
 }
 
 #[test]
@@ -131,7 +167,10 @@ fn recipe_monoculture_fires_on_single_food_dependency() {
 
 #[test]
 fn acute_need_spike_fires_on_bounded_thirst_run() {
-    let report = run_observer("tests/fixtures/observer_anomalies/acute_thirst_spike.ron", 200);
+    let report = run_observer(
+        "tests/fixtures/observer_anomalies/acute_thirst_spike.ron",
+        200,
+    );
 
     assert_eq!(count_anomalies_of_kind(&report, "ACUTE_NEED_SPIKE"), 1);
 

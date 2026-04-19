@@ -1207,6 +1207,7 @@ mod tests {
             causal_event_tags: std::collections::BTreeSet::new(),
             payload: ActionPayload::None,
             handler: crate::ActionHandlerId(0),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         };
         let payload = ActionPayload::Punish(PunishActionPayload {
             office,

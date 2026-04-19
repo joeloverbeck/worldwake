@@ -96,6 +96,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload,
             handler: ActionHandlerId(0),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         }
     }
 

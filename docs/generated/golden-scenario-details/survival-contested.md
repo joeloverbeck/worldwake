@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_contested.rs:421`
+- Source: `golden_survival_contested.rs:373`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -25,7 +25,7 @@ Scenarios: 6
 
 ### Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_contested.rs:488`
+- Source: `golden_survival_contested.rs:422`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -37,13 +37,13 @@ Scenarios: 6
 
 **Setup**: Run the authored survival contested scenario for 1440 ticks and
 
-**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions
+**Proves**: every agent commits the scenario-authored self-care families despite
 
 **Cross-system chain**: contested resources + chokepoint topology -> agents explore, queue,
 
 ### Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
 
-- Source: `golden_survival_contested.rs:517`
+- Source: `golden_survival_contested.rs:457`
 - Systems: AI, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Needs, Travel, Production
@@ -61,7 +61,7 @@ Scenarios: 6
 
 ### Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
 
-- Source: `golden_survival_contested.rs:560`
+- Source: `golden_survival_contested.rs:501`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -79,7 +79,7 @@ Scenarios: 6
 
 ### Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_contested.rs:596`
+- Source: `golden_survival_contested.rs:538`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -97,18 +97,18 @@ Scenarios: 6
 
 ### Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_contested.rs:629`
+- Source: `golden_survival_contested.rs:572`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
 - Places: all 8 contested-scenario places
 - Principles: 6, 7, 22, 31
-- Primary tests: `no_stuck_idle_windows_with_elevated_needs`
+- Primary tests: `no_stuck_idle_windows_with_elevated_needs`, `per_need_critical_run_limit_override_beats_default_for_dirtiness_only`
 - Replay tests: None
-- All tests: `no_stuck_idle_windows_with_elevated_needs`
+- All tests: `no_stuck_idle_windows_with_elevated_needs`, `per_need_critical_run_limit_override_beats_default_for_dirtiness_only`
 
 **Setup**: Run the authored survival contested scenario for 1440 ticks and
 
-**Proves**: no agent is idle for 40+ consecutive ticks while any need exceeds
+**Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions

@@ -441,6 +441,7 @@ mod tests {
             causal_event_tags,
             payload: ActionPayload::None,
             handler,
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         }
     }
 
@@ -586,6 +587,7 @@ mod tests {
             causal_event_tags: BTreeSet::new(),
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         });
 
         let mut handlers = ActionHandlerRegistry::new();

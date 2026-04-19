@@ -422,6 +422,7 @@ fn attack_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         causal_event_tags: BTreeSet::from([EventTag::Combat, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -478,6 +479,7 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         causal_event_tags: BTreeSet::from([EventTag::ActionStarted]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -520,6 +522,7 @@ fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         ]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -573,6 +576,7 @@ fn bury_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -608,6 +612,7 @@ fn queue_for_corpse_use_action_def(id: ActionDefId, handler: ActionHandlerId) ->
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -847,6 +852,7 @@ fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation, EventTag::Inventory]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -882,6 +888,7 @@ fn queue_for_care_target_action_def(id: ActionDefId, handler: ActionHandlerId) -
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

@@ -4,7 +4,12 @@ After all findings are resolved and approved:
 
 ## Pre-Apply Verification
 
-Run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). If a finding is invalidated, re-present the corrected finding before applying. Do not silently substitute different changes.
+Run targeted checks to confirm each finding still holds (e.g., grep confirming symbol presence/absence, count validation). Classify any mismatch between check and finding into one of two tiers:
+
+- **Recommendation-changing mismatch**: the check invalidates the finding's *recommendation* — the approved fix no longer applies, the target text/symbol has moved, or a different fix is now warranted. Re-present the corrected finding to the user and wait for confirmation before applying any edits. Do not silently substitute different changes.
+- **Evidence-refining mismatch**: the check refines the finding's *supporting evidence* but leaves the recommendation unchanged (e.g., a symbol the finding claimed was absent turns out to exist at a different location, and the recommendation already targets the actual location used by the consumer). Note the refinement inline in the Result column of the pre-apply table and proceed. The user sees the refinement in the emitted table, so this is not silent modification.
+
+When in doubt, treat the mismatch as recommendation-changing and re-present — it is cheaper to ask than to apply the wrong fix.
 
 ## Apply Changes
 

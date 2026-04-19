@@ -115,6 +115,7 @@ fn post_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
         causal_event_tags: BTreeSet::from([EventTag::Social, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -154,6 +155,7 @@ fn post_notice_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
         causal_event_tags: BTreeSet::from([EventTag::Social, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 
@@ -200,6 +202,7 @@ fn claim_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandl
         ]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
     }
 }
 

@@ -511,6 +511,7 @@ mod tests {
             causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
             payload: ActionPayload::None,
             handler: ActionHandlerId(1),
+            binding_strictness: crate::BindingStrictness::ExactIdentity,
         }
     }
 

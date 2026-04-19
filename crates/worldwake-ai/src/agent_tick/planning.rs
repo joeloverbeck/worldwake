@@ -108,9 +108,8 @@ pub(super) fn summarize_step(
     step: &PlannedStep,
     action_defs: &worldwake_sim::ActionDefRegistry,
 ) -> PlannedStepSummary {
-    let action_name = action_defs
-        .get(step.def_id)
-        .map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
+    let action_def = action_defs.get(step.def_id);
+    let action_name = action_def.map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
     PlannedStepSummary {
         action_def_id: step.def_id,
         action_name,
@@ -121,6 +120,7 @@ pub(super) fn summarize_step(
             .filter_map(|t| authoritative_target(*t))
             .collect(),
         estimated_ticks: step.estimated_ticks,
+        binding_strictness: action_def.map(|def| def.binding_strictness),
     }
 }
 
@@ -1327,7 +1327,8 @@ mod tests {
         build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
-        ActionDefRegistry, ActionHandlerRegistry, PerAgentBeliefView, RecipeDefinition,
+        ActionDef, ActionDefRegistry, ActionHandlerId, ActionHandlerRegistry, ActionPayload,
+        BindingStrictness, DurationExpr, Interruptibility, PerAgentBeliefView, RecipeDefinition,
         RecipeRegistry, Scheduler, SystemManifest,
     };
     use worldwake_systems::build_full_action_registries;
@@ -1858,6 +1859,83 @@ mod tests {
         assert_eq!(summary.side_benefits.len(), 1);
         assert_eq!(summary.side_benefits[0].at_place, market);
         assert_eq!(summary.side_benefits[0].estimated_value, 30);
+    }
+
+    #[test]
+    fn summarize_step_carries_binding_strictness_snapshot_from_action_def() {
+        let mut action_defs = ActionDefRegistry::new();
+        action_defs.register(ActionDef {
+            id: ActionDefId(0),
+            name: "heal".to_string(),
+            domain: ActionDomain::Combat,
+            actor_constraints: vec![],
+            targets: vec![],
+            preconditions: vec![],
+            reservation_requirements: vec![],
+            duration: DurationExpr::Fixed(NonZeroU32::new(3).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: BindingStrictness::ExactIdentity,
+        });
+        action_defs.register(ActionDef {
+            id: ActionDefId(1),
+            name: "eat".to_string(),
+            domain: ActionDomain::Needs,
+            actor_constraints: vec![],
+            targets: vec![],
+            preconditions: vec![],
+            reservation_requirements: vec![],
+            duration: DurationExpr::Fixed(NonZeroU32::new(2).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: vec![],
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: BindingStrictness::FungibleEquivalentCommodity,
+        });
+
+        let exact = super::summarize_step(
+            &PlannedStep {
+                def_id: ActionDefId(0),
+                targets: vec![],
+                payload_override: None,
+                op_kind: crate::PlannerOpKind::Heal,
+                estimated_ticks: 3,
+                is_materialization_barrier: false,
+                expected_materializations: vec![],
+            },
+            &action_defs,
+        );
+        let fungible = super::summarize_step(
+            &PlannedStep {
+                def_id: ActionDefId(1),
+                targets: vec![],
+                payload_override: None,
+                op_kind: crate::PlannerOpKind::Consume,
+                estimated_ticks: 2,
+                is_materialization_barrier: false,
+                expected_materializations: vec![],
+            },
+            &action_defs,
+        );
+
+        assert_eq!(
+            exact.binding_strictness,
+            Some(BindingStrictness::ExactIdentity)
+        );
+        assert_eq!(
+            fungible.binding_strictness,
+            Some(BindingStrictness::FungibleEquivalentCommodity)
+        );
     }
 
     #[test]

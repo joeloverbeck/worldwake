@@ -57,6 +57,7 @@ pub fn register_travel_actions(
         causal_event_tags: BTreeSet::from([EventTag::Travel]),
         payload: ActionPayload::None,
         handler,
+        binding_strictness: worldwake_sim::BindingStrictness::EquivalentRouteStep,
     })
 }
 
