@@ -347,10 +347,12 @@ S108 ✅ archived               S111 ✅ archived
    │
    └── S109 ✅ archived
          │
-         └── S110 (soft dep on S109)
-                    │
-                    ├── S112 (soft dep on S109)
-                    └── S113 (soft dep on S109)
+         ├── S110 (soft dep on S109)
+         │       │
+         │       ├── S112 (soft dep on S109)
+         │       └── S113 (soft dep on S109)
+         │
+         └── S122 (hard dep on S109)
 ```
 
 ### Active Execution Steps
@@ -371,9 +373,15 @@ S108 ✅ archived               S111 ✅ archived
 - **S113**: Planner-Facing Belief Envelope — `BeliefValue<T>` / `BeliefSet<T>` wrappers on target-presence / believed-location / believed-stock queries; surface confidence, freshness, status (Certain/Probable/Stale/Disputed/Contradicted), and alternatives.
   - soft depends on S109 for `BeliefStatus::Contradicted` alignment
 
+**Wave 3 adjunct** (Phase 8 critical-path closer):
+- **S122**: Frame Assumption — Commodity Availability — implement `FrameAssumption::CommodityAvailableAt` evaluation against the agent's belief store and FND-14A same-tick co-located perception; populate the assumption when an `IntentionDomain::Travel` frame's committed goal is `AcquireCommodity`. Closes the FND-21 / FND-15 / FND-17 feedback gap exposed by the S109 typed-taxonomy split: agents whose plan depends on commodity availability at a specific place revise the intention when local perception refutes the belief, gaining the post-S109 `record_assumption_failure` suppression that lets alternative plans win ranking. Without S122, the survival baseline / contested / scattered goldens overshoot their authored `max_authored_critical_run_ticks` because no architectural path invalidates the stale belief that drove the broken plan.
+  - hard depends on S109 (consumes the post-correction `record_assumption_failure` TTL/clearing semantics)
+  - soft depends on S110 (assumption failures emit `EventTag::AssumptionFailed` when the variant lands)
+  - soft depends on S113 (consumes `BeliefValue::confidence` if landed; falls back to crisp belief queries otherwise)
+
 ### Phase 8 Gate
 
-- [ ] All 6 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [ ] All 7 specs reassessed (`/reassess-spec`) and ticket-decomposed
 - [ ] Wave 1 specs implemented and passing golden E2E tests
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
@@ -385,7 +393,7 @@ S108 ✅ archived               S111 ✅ archived
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 
-- Note: Wave 1 is complete. The remaining Phase 8 work is S110, S112, and S113.
+- Note: Wave 1 is complete. The remaining Phase 8 work is S110, S112, S113, and S122.
 
 ---
 
