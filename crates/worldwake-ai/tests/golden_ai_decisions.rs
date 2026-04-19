@@ -4,6 +4,7 @@ mod golden_harness;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 
 use golden_harness::*;
 use worldwake_ai::{
@@ -12,12 +13,15 @@ use worldwake_ai::{
     OpportunityKey, PlanTerminalKind,
 };
 use worldwake_core::{
-    BeliefConfidencePolicy, CognitiveProfile, CommodityKind, FrameState, HomeostaticNeeds,
-    IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag, prototype_place_entity,
-    total_live_lot_quantity,
+    AgentData, BeliefConfidencePolicy, CognitiveProfile, CommodityKind, ControlSource, DeadAt,
+    DeathCause, EntityId, FrameState, HomeostaticNeeds, IntentionDispositionProfile,
+    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
+    UtilityProfile, WorkstationTag, prototype_place_entity, total_live_lot_quantity,
 };
-use worldwake_sim::{ActionTraceKind, SaveableRuntime};
+use worldwake_sim::{
+    ActionRequestMode, ActionTraceKind, BindingStrictness, InputKind, RequestBindingKind,
+    RequestProvenance, RequestResolutionOutcome, SaveableRuntime,
+};
 
 // ---------------------------------------------------------------------------
 // Scenario 1: Goal Invalidation by Another Agent
@@ -1813,5 +1817,455 @@ fn golden_fallback_to_addressable_need_when_top_need_unsatisfiable() {
         zero_step_self_care.is_empty(),
         "low-band Sleep/Relieve goals must not collapse into zero-step GoalSatisfied selections:\n{}",
         zero_step_self_care.join("\n")
+    );
+}
+
+fn place_ground_commodity(
+    h: &mut GoldenHarness,
+    place: EntityId,
+    commodity: CommodityKind,
+    quantity: Quantity,
+) -> EntityId {
+    let mut txn = new_txn(&mut h.world, 0);
+    let lot = txn.create_item_lot(commodity, quantity).unwrap();
+    txn.set_ground_location(lot, place).unwrap();
+    commit_txn(txn, &mut h.event_log);
+    lot
+}
+
+fn seed_lootable_corpse(
+    h: &mut GoldenHarness,
+    name: &str,
+    place: EntityId,
+    commodity: CommodityKind,
+    quantity: Quantity,
+) -> EntityId {
+    let corpse = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        name,
+        place,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+        worldwake_core::KnownRecipes::new(),
+    );
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_dead_at(
+        corpse,
+        DeadAt {
+            tick: Tick(0),
+            cause: DeathCause::CombatWounds,
+        },
+    )
+    .unwrap();
+    txn.set_component_agent_data(
+        corpse,
+        AgentData {
+            control_source: ControlSource::None,
+        },
+    )
+    .unwrap();
+    txn.set_component_contention_queue(corpse, worldwake_core::ContentionQueue::default())
+        .unwrap();
+    txn.set_component_contention_policy(
+        corpse,
+        worldwake_core::ContentionPolicy {
+            grant_hold_ticks: NonZeroU32::new(5).unwrap(),
+            auto_promote: true,
+            max_waiters: None,
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+    give_commodity(
+        &mut h.world,
+        &mut h.event_log,
+        corpse,
+        place,
+        commodity,
+        quantity,
+    );
+    corpse
+}
+
+#[test]
+fn golden_loot_refuses_substitute_corpse_after_remote_travel_commitment() {
+    let mut h = GoldenHarness::new(Seed([81; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
+
+    let looter = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Queued Looter",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new_sated(),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let primary_corpse = seed_lootable_corpse(
+        &mut h,
+        "Primary Corpse",
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(2),
+    );
+    let fallback_corpse = seed_lootable_corpse(
+        &mut h,
+        "Fallback Corpse",
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(2),
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        looter,
+        Tick(0),
+        worldwake_core::PerceptionSource::DirectObservation,
+    );
+
+    let mut planned_corpse = None;
+    let mut planned_binding = None;
+    for _ in 0..20 {
+        let tick = h.step_once().tick;
+        if let Some(trace) = h
+            .driver
+            .trace_sink()
+            .and_then(|sink| sink.trace_at(looter, tick))
+        {
+            let DecisionOutcome::Planning(planning) = &trace.outcome else {
+                continue;
+            };
+            let planned_step = planning
+                .selection
+                .selected_plan
+                .as_ref()
+                .and_then(|plan| plan.steps.iter().find(|step| step.action_name == "loot"));
+            planned_corpse = planned_step.and_then(|step| step.targets.first().copied());
+            planned_binding = planned_step.and_then(|step| step.binding_strictness);
+            if planned_corpse.is_some() {
+                break;
+            }
+        }
+    }
+    let planned_corpse = planned_corpse.expect("remote loot plan should target a corpse");
+    assert_eq!(planned_binding, Some(BindingStrictness::ExactIdentity));
+    for _ in 0..20 {
+        h.step_once();
+        let queued = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(looter)
+            .iter()
+            .any(|event| {
+                event.action_name == "queue_for_corpse_use"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        if queued && h.agent_active_action_name(looter).is_none() {
+            break;
+        }
+    }
+    assert!(
+        h.action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(looter)
+            .iter()
+            .any(|event| {
+                event.action_name == "queue_for_corpse_use"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "looter should commit queue_for_corpse_use before the stale-corpse interposition"
+    );
+
+    let loot_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "loot")
+        .map(|def| def.id)
+        .expect("full registries should include loot");
+
+    let mut control_txn = new_txn(&mut h.world, 0);
+    control_txn
+        .set_component_agent_data(
+            looter,
+            AgentData {
+                control_source: ControlSource::Human,
+            },
+        )
+        .unwrap();
+    commit_txn(control_txn, &mut h.event_log);
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_ground_location(planned_corpse, ORCHARD_FARM)
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let bread_before_attempt = h
+        .world
+        .controlled_commodity_quantity(looter, CommodityKind::Bread);
+    let current_tick = h.scheduler.current_tick();
+    h.scheduler.input_queue_mut().enqueue(
+        current_tick,
+        InputKind::RequestAction {
+            actor: looter,
+            def_id: loot_def_id,
+            targets: vec![planned_corpse],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+
+    let attempt_tick = h.step_once().tick;
+
+    let request_event = h
+        .request_resolution_trace_sink()
+        .expect("request-resolution tracing should be enabled")
+        .events_for_at(looter, attempt_tick)
+        .into_iter()
+        .find(|event| event.action_name == "loot")
+        .expect("stale loot attempt should record request resolution");
+    match &request_event.outcome {
+        RequestResolutionOutcome::Bound {
+            binding,
+            resolved_targets,
+            start_attempted,
+        } => {
+            assert_eq!(request_event.requested_targets, vec![planned_corpse]);
+            assert!(
+                matches!(
+                    *binding,
+                    RequestBindingKind::ReproducedAffordance
+                        | RequestBindingKind::BestEffortFallback
+                ),
+                "stale loot should preserve the exact corpse binding rather than reject by retargeting"
+            );
+            assert_eq!(
+                *resolved_targets,
+                vec![planned_corpse],
+                "exact-identity loot must not silently retarget to a different corpse"
+            );
+            assert!(
+                *start_attempted,
+                "fully bound stale loot requests should continue into authoritative start-time validation"
+            );
+        }
+        other @ RequestResolutionOutcome::RejectedBeforeStart { .. } => {
+            panic!("unexpected request-resolution outcome for stale loot: {other:?}")
+        }
+    }
+
+    let action_event = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled")
+        .events_for_at(looter, attempt_tick)
+        .into_iter()
+        .find(|event| event.action_name == "loot")
+        .expect("stale loot attempt should record an action lifecycle event");
+    assert!(
+        matches!(action_event.kind, ActionTraceKind::StartFailed { .. }),
+        "stale loot attempt should fail to start rather than commit against a substitute corpse"
+    );
+    assert!(
+        !h.action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(looter)
+            .iter()
+            .any(|event| {
+                event.tick == attempt_tick
+                    && event.action_name == "loot"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            }),
+        "no loot commit should occur in the stale-target tick"
+    );
+    assert_eq!(
+        h.world
+            .controlled_commodity_quantity(looter, CommodityKind::Bread),
+        bread_before_attempt,
+        "the refused stale request must not grant additional bread from a substitute corpse"
+    );
+    assert_eq!(
+        h.world.effective_place(fallback_corpse),
+        Some(VILLAGE_SQUARE),
+        "the alternate corpse should remain available for a lawful future plan without being silently rebound"
+    );
+    assert_eq!(
+        h.world.effective_place(primary_corpse),
+        if planned_corpse == primary_corpse {
+            Some(ORCHARD_FARM)
+        } else {
+            Some(VILLAGE_SQUARE)
+        }
+    );
+}
+
+#[test]
+fn golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change() {
+    let mut h = GoldenHarness::new(Seed([82; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    h.enable_request_resolution_tracing();
+
+    let eater = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "Remote Eater",
+        prototype_place_entity(PrototypePlace::CommonHouse),
+        HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile::default(),
+    );
+    let _bread_a =
+        place_ground_commodity(&mut h, VILLAGE_SQUARE, CommodityKind::Bread, Quantity(1));
+    let _bread_b =
+        place_ground_commodity(&mut h, VILLAGE_SQUARE, CommodityKind::Bread, Quantity(1));
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        eater,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let mut planned_pick_up = None;
+    let mut planned_binding = None;
+    for _ in 0..20 {
+        let tick = h.step_once().tick;
+        if let Some(trace) = h
+            .driver
+            .trace_sink()
+            .and_then(|sink| sink.trace_at(eater, tick))
+        {
+            let DecisionOutcome::Planning(planning) = &trace.outcome else {
+                continue;
+            };
+            let planned_step = planning
+                .selection
+                .selected_plan
+                .as_ref()
+                .and_then(|plan| plan.steps.iter().find(|step| step.action_name == "pick_up"));
+            planned_pick_up = planned_step.and_then(|step| step.targets.first().copied());
+            planned_binding = planned_step.and_then(|step| step.binding_strictness);
+            if planned_pick_up.is_some() {
+                break;
+            }
+        }
+    }
+    let planned_pick_up = planned_pick_up.expect("remote consume plan should target a bread lot");
+    assert_eq!(
+        planned_binding,
+        Some(BindingStrictness::FungibleEquivalentCommodity)
+    );
+
+    for _ in 0..20 {
+        h.step_once();
+        if h.world.effective_place(eater) == Some(VILLAGE_SQUARE)
+            && h.agent_active_action_name(eater).is_none()
+        {
+            break;
+        }
+    }
+    assert_eq!(
+        h.world.effective_place(eater),
+        Some(VILLAGE_SQUARE),
+        "eater should finish the travel leg before the stale-lot interposition"
+    );
+
+    let pick_up_def_id = h
+        .defs
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("full registries should include pick_up");
+    let mut control_txn = new_txn(&mut h.world, 0);
+    control_txn
+        .set_component_agent_data(
+            eater,
+            AgentData {
+                control_source: ControlSource::Human,
+            },
+        )
+        .unwrap();
+    commit_txn(control_txn, &mut h.event_log);
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_ground_location(planned_pick_up, ORCHARD_FARM)
+        .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let current_tick = h.scheduler.current_tick();
+    h.scheduler.input_queue_mut().enqueue(
+        current_tick,
+        InputKind::RequestAction {
+            actor: eater,
+            def_id: pick_up_def_id,
+            targets: vec![planned_pick_up],
+            payload_override: None,
+            mode: ActionRequestMode::BestEffort,
+            provenance: RequestProvenance::External,
+        },
+    );
+
+    let rebound_tick = h.step_once().tick;
+
+    let request_event = h
+        .request_resolution_trace_sink()
+        .expect("request-resolution tracing should be enabled")
+        .events_for_at(eater, rebound_tick)
+        .into_iter()
+        .find(|event| event.action_name == "pick_up")
+        .expect("rebound pick_up attempt should record request resolution");
+    match &request_event.outcome {
+        RequestResolutionOutcome::Bound {
+            binding,
+            resolved_targets: _,
+            start_attempted,
+        } => {
+            assert_eq!(*binding, RequestBindingKind::BestEffortFallback);
+            assert_eq!(request_event.requested_targets, vec![planned_pick_up]);
+            assert!(*start_attempted, "rebound pick_up should still start");
+        }
+        other @ RequestResolutionOutcome::RejectedBeforeStart { .. } => {
+            panic!("unexpected request-resolution outcome for rebound pick_up: {other:?}")
+        }
+    }
+
+    let mut ai_txn = new_txn(&mut h.world, 0);
+    ai_txn
+        .set_component_agent_data(
+            eater,
+            AgentData {
+                control_source: ControlSource::Ai,
+            },
+        )
+        .unwrap();
+    commit_txn(ai_txn, &mut h.event_log);
+
+    let mut ate = false;
+    for _ in 0..10 {
+        h.step_once();
+        ate = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(eater)
+            .iter()
+            .any(|event| {
+                event.action_name == "eat"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            });
+        if ate {
+            break;
+        }
+    }
+    assert!(
+        ate,
+        "the consume pipeline should still complete with an eat commit"
+    );
+    assert!(
+        h.agent_hunger(eater) < pm(900),
+        "hunger should fall after the fungible fallback path completes"
     );
 }

@@ -1,12 +1,14 @@
 # S108: Per-Action Binding Strictness
 
+**Status**: COMPLETED
+
 ## Summary
 
 Tighten `ActionRequestMode::BestEffort` substitution by attaching an explicit `BindingStrictness` classifier to every `ActionDef`. Today BestEffort is permissive-by-default: when the unified matcher finds no identity match, `resolve_affordance` (`crates/worldwake-sim/src/tick_step.rs:504`) synthesizes an `Affordance` directly from the raw requested targets, regardless of whether the step semantically requires a specific identity (accuse *this* suspect, transfer *this* item, loot *this* corpse, escort *this* subject). Classify each action on the spectrum `ExactIdentity → FungibleEquivalentCommodity → EquivalentWorkstationTagAtSamePlace → EquivalentRouteStep → AnyLegalTarget`, gate the BestEffort synthesis site in `resolve_affordance` through a dedicated `check_binding_strictness` helper, apply the same helper to the two best-effort-like fallbacks in `plan_revalidation.rs`, and refuse substitutions that would cross the strictness boundary. Landed note: the current dispatch gate rejects underbound or malformed `ExactIdentity` BestEffort requests at request resolution, while fully bound stale exact-identity requests still flow into authoritative start-time revalidation instead of dying at `resolve_affordance`.
 
 ## Phase and Status
 
-Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8: Belief-First Continual Planning Foundation. Status: Completed and ready for archival.
 
 ## Crates
 
@@ -280,10 +282,10 @@ Once D3–D6 land, `revalidate_exact_target_step`'s all-`TargetSpec::SpecificEnt
 
 ### Integration tests
 
-7. Existing `accuse` golden: with a substituted suspect entity available at the place, confirm the planner does NOT substitute; the original target-gone step fails through revalidation and triggers a lawful replan.
-8. Existing `loot` golden (any Phase-1 combat aftermath scenario): confirm that when the planned corpse is moved or removed, BestEffort dispatch does not silently pick a different corpse at the same place.
-9. Existing `eat` / `drink` golden: confirm fungible substitution still works under `FungibleEquivalentCommodity`.
-10. Existing `travel` golden: confirm equivalent-route substitution works under `EquivalentRouteStep`.
+7. Existing `loot` golden (or the strongest live AI decision golden owner): capture the AI-selected corpse binding, then carry that stale binding through a BestEffort external `loot` request after the corpse moves. Confirm request resolution preserves the original corpse id and the action trace refuses start rather than silently rebinding to a different corpse.
+8. Existing consume-pipeline golden (or the strongest live needs/decision golden owner): capture the AI-selected fungible `pick_up` lot for self-consumption, then carry that stale binding through a BestEffort external `pick_up` request after the lot moves. Confirm the request follows the non-exact path and the consume pipeline still reaches `eat` / `drink`.
+9. Real decision-trace assertions: at least one exact-identity golden and one fungible consume-pipeline golden assert the AI-selected step's `binding_strictness` against the authoritative registry value.
+10. No travel-route golden is required on the current branch: `travel` binds to destination place, so alternate-edge reuse is not a distinct AI-visible golden boundary without additional production-surface route identity.
 
 ### Regression guard
 
@@ -300,8 +302,36 @@ Because this spec modifies BestEffort dispatch, tickets must verify the full AI 
 4. `BestEffort` action start — core site. Underbound or malformed exact-identity requests are rejected at request resolution, while fully bound stale exact-identity requests continue into authoritative start-time validation; confirm the resulting failure still converts cleanly into `BlockingFact::AssumptionFailed` (pre-S109).
 5. `handle_plan_failure` — confirm `BlockingFact::AssumptionFailed` routes through `failure_handling.rs` for re-plan.
 6. Payload revalidation (`with_payload_override_validator`) — same-target exact-identity payload revalidation remains lawful; verify with the affected focused and golden proofs (`post_notice`, `post_bounty`, `accuse`).
-7. Golden tests — run the relevant exact golden proving the lawful social loop still holds; broader golden expansion remains T-005.
+7. Golden tests — run the relevant exact golden proving stale-corpse refusal, the consume-pipeline fungible fallback golden, and the lawful social loop (`post_notice`) that T-003 preserved.
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-19.
+
+- Added authoritative `BindingStrictness` metadata to `worldwake_sim::ActionDef`, plus the pure `check_binding_strictness` helper and `StrictnessGate`.
+- Classified the live action registry across `worldwake-systems`, preserved `ActionDef` serde/bincode compatibility, and updated exhaustive fixture construction across `worldwake-sim`, `worldwake-systems`, and `worldwake-ai`.
+- Added `RequestResolutionRejectionReason::ExactIdentityRequired`, the strictness-aware request-resolution / dispatch behavior for underbound or malformed exact-identity BestEffort requests, and the AI-side `BlockingFact::AssumptionFailed` mapping.
+- Corrected the drafted planner-side D5 contract during implementation: `plan_revalidation.rs` keeps its same-target fallback helpers because they do not perform alternate-target substitution on the live branch.
+- Added `binding_strictness` to `PlannedStepSummary` and populated it from `ActionDef` at the real trace-construction boundary.
+- Added hybrid golden end-to-end proof in `golden_ai_decisions.rs` for exact-identity stale-corpse refusal and fungible consume-pipeline fallback, then regenerated the golden inventory/docs.
+
+### Deviations
+
+1. D4 narrowed during implementation: fully bound stale `ExactIdentity` BestEffort requests are not rejected universally at request resolution. Under the landed contract, only underbound or malformed exact-identity requests are rejected there; fully bound stale requests still proceed to authoritative start-time validation.
+2. D5 was corrected rather than implemented literally. `revalidate_best_effort_payload_override_step` and `revalidate_exact_target_step` remain lawful same-target revalidation helpers, so no blanket planner-side `check_binding_strictness` gate was added.
+3. The end-to-end proof in Validation items 7–10 landed as a hybrid golden seam: the AI-selected binding is captured from decision trace, then carried through the narrowest lawful external BestEffort request because the live autonomous branch does not hold a stable stale-request window for those cases.
+4. The drafted travel-route golden was not required on the live branch because `travel` binds to destination place rather than route-edge identity at the AI-visible proof surface.
+
+### Verification Result
+
+Passed across the ticket chain that delivered this spec:
+
+1. `cargo test -p worldwake-sim`
+2. Targeted `worldwake-ai` regressions for T-002, T-003, and T-004, including the same-target revalidation proofs and `decision_trace` coverage
+3. `cargo test -p worldwake-ai golden_loot_refuses_substitute_corpse_after_remote_travel_commitment -- --exact`
+4. `cargo test -p worldwake-ai golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change -- --exact`
+5. `python3 scripts/golden_inventory.py --write --check-docs`
+6. `cargo test -p worldwake-ai`
+7. `cargo build --workspace`
+8. `cargo test --workspace`
+9. `cargo clippy --workspace --all-targets -- -D warnings`

@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
-- Source: `golden_ai_decisions.rs:23`
+- Source: `golden_ai_decisions.rs:27`
 - Systems: Needs, Production, Travel, AI
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Travel, Production
@@ -24,7 +24,7 @@ Scenarios: 6
 
 ### Scenario 1b: Unrelated Commodity Change Preserves Frontier Exhaustion
 
-- Source: `golden_ai_decisions.rs:124`
+- Source: `golden_ai_decisions.rs:128`
 - Systems: Needs, AI, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -42,7 +42,7 @@ Scenarios: 6
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:311`
+- Source: `golden_ai_decisions.rs:315`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -60,7 +60,7 @@ Scenarios: 6
 
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
 
-- Source: `golden_ai_decisions.rs:424`
+- Source: `golden_ai_decisions.rs:428`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -77,7 +77,7 @@ Scenarios: 6
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:543`
+- Source: `golden_ai_decisions.rs:547`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -94,15 +94,15 @@ Scenarios: 6
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1359`
+- Source: `golden_ai_decisions.rs:1385`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
 - Places: VillageSquare, OrchardFarm
 - Principles: P20 (resource-bounded practical reasoning)
-- Primary tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
+- Primary tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`, `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`, `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
 - Replay tests: None
-- All tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
+- All tests: `golden_utility_weight_diversity_in_need_selection`, `golden_trace_enabled_scenario`, `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`, `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`, `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
 
 **Setup**: Single AI agent with high thirst (700) and moderate hunger (400). No Water items anywhere (thirst unsatisfiable). Apple available at location.
 

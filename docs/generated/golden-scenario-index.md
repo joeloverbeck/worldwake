@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 84
-- Contributing golden test files: 14
-- Associated tests: 98
+- Scenario blocks: 87
+- Contributing golden test files: 15
+- Associated tests: 106
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -57,7 +57,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
-- Source: `golden_ai_decisions.rs:23`
+- Source: `golden_ai_decisions.rs:27`
 - Systems: Needs, Production, Travel, AI
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Travel, Production
@@ -71,7 +71,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 1b: Unrelated Commodity Change Preserves Frontier Exhaustion
 
-- Source: `golden_ai_decisions.rs:124`
+- Source: `golden_ai_decisions.rs:128`
 - Systems: Needs, AI, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -86,7 +86,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:311`
+- Source: `golden_ai_decisions.rs:315`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -101,7 +101,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 5: Blocked Intent Memory with TTL Expiry
 
-- Source: `golden_ai_decisions.rs:424`
+- Source: `golden_ai_decisions.rs:428`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -115,7 +115,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:543`
+- Source: `golden_ai_decisions.rs:547`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -129,7 +129,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1359`
+- Source: `golden_ai_decisions.rs:1385`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -141,6 +141,51 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: when top-priority need (thirst) has no viable plan, agent falls back to next-best addressable need (hunger) instead of going idle indefinitely.
 
 **Cross-system chain**: unsatisfiable top need -> planner exhausts thirst-relief candidates -> falls back to hunger-relief -> agent eats or sleeps.
+
+### Scenario 164: Sustained Dirtiness Escalation Restores Wash Cycles
+
+- Source: `golden_drive_escalation_wash_priority.rs:493`
+- Systems: AI, Needs, Travel, Production
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Relieve
+- ActionDomains: Needs, Travel, Production
+- Places: Base Camp, Central Crossing, Spring Basin, East Orchard
+- Principles: 3, 11, 20, 22
+
+**Setup**: Load the authored `drive-escalation-wash-priority.ron` scenario with
+
+**Proves**: sustained critical dirtiness now produces repeated wash cycles
+
+**Cross-system chain**: outdoor relief at the orchard -> dirtiness remains critical long
+
+### Scenario 165: Escalation Preserves Belief-Only Wash Planning
+
+- Source: `golden_drive_escalation_wash_priority.rs:532`
+- Systems: AI, Needs, PlanningSnapshot
+- GoalKinds: Wash, Relieve
+- ActionDomains: Needs
+- Places: Orchard Farm, Village Square
+- Principles: 7, 14, 15, 20
+
+**Setup**: Direct-harness agent at outdoor Orchard Farm with no food, thirst, or
+
+**Proves**: drive escalation does not synthesize remote wash knowledge. Dirtiness
+
+**Cross-system chain**: repeated relieve_wilderness -> dirtiness crosses critical and stays
+
+### Scenario 166: Dirtiness Escalation Ends Immediately After Wash Relief
+
+- Source: `golden_drive_escalation_wash_priority.rs:593`
+- Systems: Needs, AI, Event Log
+- GoalKinds: Wash, Relieve
+- ActionDomains: Needs, Travel, Production
+- Places: Base Camp, Central Crossing, Spring Basin, East Orchard
+- Principles: 3, 11, 29
+
+**Setup**: Reuse the authored drive-escalation scenario and watch for the first
+
+**Proves**: escalation falls away through the physical wash relief path itself:
+
+**Cross-system chain**: sustained critical dirtiness -> escalation begin -> committed wash ->
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
@@ -817,7 +862,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 148: Survival Baseline Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_baseline.rs:343`
+- Source: `golden_survival_baseline.rs:289`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -832,7 +877,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 149: Survival Baseline Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_baseline.rs:399`
+- Source: `golden_survival_baseline.rs:328`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -841,13 +886,13 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Run the authored survival baseline for 1440 ticks and collect action
 
-**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions in
+**Proves**: every agent commits the scenario-authored self-care families in the
 
 **Cross-system chain**: varied initial needs and authored place affordances -> repeated
 
 ### Scenario 150: Survival Baseline Explorer Discovers Fertile Fields Orchard
 
-- Source: `golden_survival_baseline.rs:426`
+- Source: `golden_survival_baseline.rs:361`
 - Systems: AI, Exploration, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -862,7 +907,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 151: Survival Baseline Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_baseline.rs:460`
+- Source: `golden_survival_baseline.rs:396`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -877,7 +922,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 152: Survival Baseline Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_baseline.rs:490`
+- Source: `golden_survival_baseline.rs:427`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -886,13 +931,13 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Run the authored survival baseline for 1440 ticks and track idle
 
-**Proves**: no agent is idle for 20+ consecutive ticks while any need exceeds
+**Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 
 ### Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_contested.rs:421`
+- Source: `golden_survival_contested.rs:373`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -907,7 +952,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_contested.rs:488`
+- Source: `golden_survival_contested.rs:422`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -916,13 +961,13 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Run the authored survival contested scenario for 1440 ticks and
 
-**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions
+**Proves**: every agent commits the scenario-authored self-care families despite
 
 **Cross-system chain**: contested resources + chokepoint topology -> agents explore, queue,
 
 ### Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
 
-- Source: `golden_survival_contested.rs:517`
+- Source: `golden_survival_contested.rs:457`
 - Systems: AI, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Needs, Travel, Production
@@ -937,7 +982,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
 
-- Source: `golden_survival_contested.rs:560`
+- Source: `golden_survival_contested.rs:501`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -952,7 +997,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_contested.rs:596`
+- Source: `golden_survival_contested.rs:538`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -967,7 +1012,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_contested.rs:629`
+- Source: `golden_survival_contested.rs:572`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -976,13 +1021,13 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Run the authored survival contested scenario for 1440 ticks and
 
-**Proves**: no agent is idle for 40+ consecutive ticks while any need exceeds
+**Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_scattered.rs:349`
+- Source: `golden_survival_scattered.rs:292`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -997,7 +1042,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 154: Scattered Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_scattered.rs:408`
+- Source: `golden_survival_scattered.rs:334`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1006,13 +1051,13 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Run the authored survival scattered scenario for 1440 ticks and
 
-**Proves**: every agent commits eat, drink, sleep, relieve, and wash actions
+**Proves**: every agent commits the scenario-authored self-care families despite
 
 **Cross-system chain**: spatially separated resource affordances + travel metabolism ->
 
 ### Scenario 155: Isolated Agent Reaches A Food Source From Ravine Shelter
 
-- Source: `golden_survival_scattered.rs:436`
+- Source: `golden_survival_scattered.rs:368`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -1027,7 +1072,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 156: Scattered Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_scattered.rs:467`
+- Source: `golden_survival_scattered.rs:400`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -1042,7 +1087,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_scattered.rs:500`
+- Source: `golden_survival_scattered.rs:434`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1051,7 +1096,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: Run the authored survival scattered scenario for 1440 ticks and
 
-**Proves**: no agent is idle for 30+ consecutive ticks while any need exceeds
+**Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 

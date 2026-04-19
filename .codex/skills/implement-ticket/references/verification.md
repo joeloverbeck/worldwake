@@ -49,6 +49,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When broader verification surfaces a timing-sensitive golden whose contract still holds, recalibrate the fixture's timing budget or hold window.
 - When a golden assumes agents observe co-located facts at tick 0, verify the setup explicitly seeds those beliefs or perception prerequisites.
 - When a golden uses external action requests for scripted setup, set that actor's `ControlSource` to `Human` or `None`.
+- When the owned contract is “AI selected X, then stale request Y must refuse/rebind/continue lawfully” but the autonomous branch fresh-replans before Y is observable, keep the AI-selected binding proof and switch only the minimum necessary request leg to a scripted external action. Treat that hybrid proof as valid only if the ticket/spec closeout states the seam honestly.
 - When a golden proves durable learned-state aftermath, assert the semantic contract unless exact tick identity is the owned invariant.
 - If focused implementation shows the corrected ticket still over-claims, narrow the ticket before final verification.
 - When a valid architecture change makes a golden stale, update it to prove the new lawful contract.
