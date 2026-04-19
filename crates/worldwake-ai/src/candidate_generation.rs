@@ -3,9 +3,9 @@ use crate::{
     decision_trace::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
-        CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace,
-        DesireFullyBlocked, PoliticalCandidateOmission, PoliticalCandidateOmissionReason,
-        PoliticalGoalFamily, PursuitDiagnostic, PursuitOmissionReason, SocialCandidateOmission,
+        CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, DesireFullyBlocked,
+        PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+        PursuitDiagnostic, PursuitOmissionReason, SocialCandidateOmission,
         ViolationDetectionOmission, ViolationDetectionOmissionReason,
     },
     derive_danger_pressure,
@@ -26,18 +26,17 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
-    BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms,
-    CommodityKind, CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds,
-    EligibilityRule, EntityId, EntityKind, ExpectationOutcome, ExpectationRecord,
-    ExpectationState, ExplorationMotivation, GoalKey, GoalKind, HomeostaticNeedId,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
+    CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
+    EntityId, EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    ExplorationMotivation, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement,
-    PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData,
-    RecordKind, RewardSource, RightKind, SocialObservation, SocialObservationDetail, TellTopic,
-    TheftFacts, Tick, UtilityProfile, ViolationId, ViolationKind, ViolationMemory,
-    WorkstationTag, classify_communication,
-    current_institutional_belief_topics, load_per_unit,
+    PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
+    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
+    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
+    UtilityProfile, ViolationId, ViolationKind, ViolationMemory, WorkstationTag,
+    classify_communication, current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -343,9 +342,11 @@ fn filter_suppressed_candidates(
 ) -> Vec<GroundedGoal> {
     let mut blocked_by_goal: BTreeMap<
         GoalKey,
-        Vec<(OpportunityKey, Option<crate::decision_trace::BlockerMatchDetail>)>,
-    > =
-        BTreeMap::new();
+        Vec<(
+            OpportunityKey,
+            Option<crate::decision_trace::BlockerMatchDetail>,
+        )>,
+    > = BTreeMap::new();
     let mut emitted_counts: BTreeMap<GoalKey, usize> = BTreeMap::new();
     let mut surviving = Vec::new();
 
@@ -401,14 +402,10 @@ fn find_matching_suppression(
     discrepancies: &DiscrepancyMemory,
     current_tick: Tick,
 ) -> Option<SuppressionMatch> {
-    if discrepancies
-        .entries
-        .values()
-        .any(|entry| {
-            entry.expires_tick > current_tick
-                && candidate_matches_blocker(candidate, &entry.blocker_key)
-        })
-    {
+    if discrepancies.entries.values().any(|entry| {
+        entry.expires_tick > current_tick
+            && candidate_matches_blocker(candidate, &entry.blocker_key)
+    }) {
         return Some(SuppressionMatch::Discrepancy);
     }
 
@@ -419,10 +416,11 @@ fn find_matching_suppression(
             && candidate_matches_blocker(candidate, &intent.blocker_key);
         matches.then_some(SuppressionMatch::Blocker(
             crate::decision_trace::BlockerMatchDetail {
-            blocker_key: intent.blocker_key,
-            blocking_fact: intent.blocking_fact,
-            expires_tick: intent.expires_tick,
-        }))
+                blocker_key: intent.blocker_key,
+                blocking_fact: intent.blocking_fact,
+                expires_tick: intent.expires_tick,
+            },
+        ))
     })
 }
 
@@ -433,7 +431,8 @@ fn goal_is_suppressed(
     target: Option<EntityId>,
     action_def: Option<worldwake_core::ActionDefId>,
 ) -> bool {
-    ctx.blocked.is_blocked(goal_key, place, target, action_def, ctx.current_tick)
+    ctx.blocked
+        .is_blocked(goal_key, place, target, action_def, ctx.current_tick)
         || ctx.discrepancies.is_suppressed(
             &worldwake_core::BlockerKey {
                 goal_key: *goal_key,

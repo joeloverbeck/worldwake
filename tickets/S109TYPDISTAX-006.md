@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — remove `BlockingFact::Unknown` and `AssumptionFailed` variants, remove `CognitiveProfile::unknown_block_ticks`, bump `SAVE_FORMAT_VERSION`, update 14 RON files and ~20 Rust literal sites
-**Deps**: archive/tickets/S109TYPDISTAX-004.md, S109TYPDISTAX-005
+**Deps**: archive/tickets/S109TYPDISTAX-004.md, archive/tickets/S109TYPDISTAX-005.md
 
 ## Problem
 

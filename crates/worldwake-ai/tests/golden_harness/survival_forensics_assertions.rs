@@ -267,7 +267,7 @@ pub fn synthetic_planning_trace(
                 failure: None,
             },
             action_start_failures: Vec::<ActionStartFailureSummary>::new(),
-            unknown_blockers: Vec::new(),
+            discrepancy_trace: Vec::new(),
             exhaustion_snapshot: Vec::new(),
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),

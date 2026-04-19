@@ -1,9 +1,9 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
     Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact, ClearingBaseline,
-    CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityBeliefAspect, EntityId,
-    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
+    CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy, DiscrepancyClearing,
+    DiscrepancyEntry, DiscrepancyMemory, EntityBeliefAspect, EntityId, GoalKey, GoalKind,
+    IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -542,9 +542,9 @@ fn map_replan_abort_reason(signal: &ReplanNeeded) -> Option<FailureClassificatio
             worldwake_sim::Precondition::TargetAdjacentToActor(_) => {
                 Some(FailureClassification::Blocker(BlockingFact::NoKnownPath))
             }
-            worldwake_sim::Precondition::TargetLacksProductionJob(_) => {
-                Some(FailureClassification::Blocker(BlockingFact::WorkstationBusy))
-            }
+            worldwake_sim::Precondition::TargetLacksProductionJob(_) => Some(
+                FailureClassification::Blocker(BlockingFact::WorkstationBusy),
+            ),
             worldwake_sim::Precondition::TargetHasResourceSource { .. } => {
                 Some(FailureClassification::Blocker(BlockingFact::SourceDepleted))
             }
@@ -572,11 +572,9 @@ fn map_replan_abort_reason(signal: &ReplanNeeded) -> Option<FailureClassificatio
 
 fn map_start_failure_reason(reason: &ActionStartFailureReason) -> Option<FailureClassification> {
     match reason {
-        ActionStartFailureReason::ReservationUnavailable(_) => {
-            Some(FailureClassification::Blocker(
-                BlockingFact::ReservationConflict,
-            ))
-        }
+        ActionStartFailureReason::ReservationUnavailable(_) => Some(
+            FailureClassification::Blocker(BlockingFact::ReservationConflict),
+        ),
         ActionStartFailureReason::PreconditionFailed(detail) => {
             classify_precondition_failure_detail(detail).or_else(|| parse_abort_detail(detail))
         }
@@ -629,11 +627,9 @@ fn map_handler_abort_reason(reason: &ActionAbortRequestReason) -> Option<Failure
             FailureClassification::Discrepancy(Discrepancy::NoLegalBinding),
         ),
         ActionAbortRequestReason::ActorMissingWeaponCommodity { commodity, .. }
-        | ActionAbortRequestReason::HolderLacksAccessibleCommodity { commodity, .. } => {
-            Some(FailureClassification::Blocker(BlockingFact::MissingInput(
-                *commodity,
-            )))
-        }
+        | ActionAbortRequestReason::HolderLacksAccessibleCommodity { commodity, .. } => Some(
+            FailureClassification::Blocker(BlockingFact::MissingInput(*commodity)),
+        ),
         ActionAbortRequestReason::TradeBundleRejected { acceptance, .. } => match acceptance {
             worldwake_sim::TradeAcceptance::Accept => None,
             worldwake_sim::TradeAcceptance::Reject { reason } => match reason {
@@ -647,9 +643,9 @@ fn map_handler_abort_reason(reason: &ActionAbortRequestReason) -> Option<Failure
             },
         },
         ActionAbortRequestReason::SaleLotNotListed { .. }
-        | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. } => {
-            Some(FailureClassification::Blocker(BlockingFact::SellerOutOfStock))
-        }
+        | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. } => Some(
+            FailureClassification::Blocker(BlockingFact::SellerOutOfStock),
+        ),
         ActionAbortRequestReason::ViolationNoLongerActive { .. } => None,
     }
 }
@@ -671,7 +667,9 @@ fn parse_abort_detail(detail: &str) -> Option<FailureClassification> {
     } else if detail.contains("path") {
         Some(FailureClassification::Blocker(BlockingFact::NoKnownPath))
     } else if detail.contains("route") {
-        Some(FailureClassification::Discrepancy(Discrepancy::RouteUnknown))
+        Some(FailureClassification::Discrepancy(
+            Discrepancy::RouteUnknown,
+        ))
     } else if detail.contains("destroyed") || detail.contains("gone") {
         Some(FailureClassification::Blocker(BlockingFact::TargetGone))
     } else if detail.contains("contention") || detail.contains("grant") || detail.contains("queue")
@@ -850,7 +848,10 @@ fn contradiction_claim_key(
         _ => return None,
     };
 
-    Some(worldwake_core::BeliefClaimKey { subject: target, aspect })
+    Some(worldwake_core::BeliefClaimKey {
+        subject: target,
+        aspect,
+    })
 }
 
 fn is_discrepancy_cleared(
@@ -1153,8 +1154,8 @@ fn discrepancy_ttl(discrepancy: Discrepancy, cognitive: &CognitiveProfile) -> u3
 mod tests {
     use super::{
         ExecutionFailure, FailureClassification, PlanFailureContext, blocking_fact_ttl,
-        classify_discrepancy, clear_resolved_failures, derive_clearing_condition,
-        discrepancy_ttl, handle_plan_failure, is_blocker_cleared,
+        classify_discrepancy, clear_resolved_failures, derive_clearing_condition, discrepancy_ttl,
+        handle_plan_failure, is_blocker_cleared,
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
@@ -1166,10 +1167,10 @@ mod tests {
         ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
         ClearingBaseline, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
         CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents, DemandObservation,
-        Discrepancy, DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState,
-        GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource,
-        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        Discrepancy, DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey,
+        GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,

@@ -35,9 +35,9 @@ use worldwake_core::{
     BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant,
     ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory,
     DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
-    DiscrepancyClearing, DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, EventLog,
-    EventPayload, ExecutionBudget, ExplorationProfile, FrameState, HomeostaticNeedId,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId,
+    EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameState,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
     KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
     MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
@@ -6112,6 +6112,167 @@ fn affordance_trace_absent_when_tracing_disabled() {
         harness.driver.trace_sink().is_none(),
         "trace sink should be None when tracing is disabled"
     );
+}
+
+#[test]
+fn discrepancy_trace_populated_from_discrepancy_memory() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.driver.enable_tracing();
+    let first = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        place: Some(entity(10)),
+        target: Some(entity(11)),
+        action_def: Some(ActionDefId(12)),
+    };
+    let second = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        place: Some(entity(20)),
+        target: Some(entity(21)),
+        action_def: Some(ActionDefId(22)),
+    };
+    let mut memory = DiscrepancyMemory::default();
+    memory.record(DiscrepancyEntry {
+        blocker_key: first,
+        discrepancy: Discrepancy::BeliefContradicted,
+        observed_tick: Tick(0),
+        expires_tick: Tick(5),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+    memory.record(DiscrepancyEntry {
+        blocker_key: second,
+        discrepancy: Discrepancy::RouteUnknown,
+        observed_tick: Tick(0),
+        expires_tick: Tick(6),
+        clearing_condition: DiscrepancyClearing::WorldStructureChange,
+    });
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_discrepancy_memory(harness.actor, memory)
+        .expect("should set discrepancy memory");
+    commit_txn(txn);
+
+    harness.step_once();
+
+    let sink = harness.driver.trace_sink().unwrap();
+    let trace = sink
+        .trace_at(harness.actor, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+
+    assert_eq!(planning.discrepancy_trace.len(), 2);
+    assert!(planning.discrepancy_trace.iter().any(|trace| {
+        trace.discrepancy == Discrepancy::BeliefContradicted
+            && trace.blocker_key == first
+            && trace.expires_tick == Tick(5)
+    }));
+    assert!(planning.discrepancy_trace.iter().any(|trace| {
+        trace.discrepancy == Discrepancy::RouteUnknown
+            && trace.blocker_key == second
+            && trace.expires_tick == Tick(6)
+    }));
+}
+
+#[test]
+fn blocker_memory_entries_not_in_discrepancy_trace() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.driver.enable_tracing();
+    let blocker_key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        place: Some(entity(30)),
+        target: Some(entity(31)),
+        action_def: Some(ActionDefId(32)),
+    };
+    let mut memory = BlockerMemory::default();
+    memory.record(Blocker {
+        blocker_key,
+        blocking_fact: BlockingFact::SellerOutOfStock,
+        diagnostic_context: None,
+        observed_tick: Tick(0),
+        expires_tick: Tick(5),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
+    });
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_blocker_memory(harness.actor, memory)
+        .expect("should set blocker memory");
+    commit_txn(txn);
+
+    harness.step_once();
+
+    let sink = harness.driver.trace_sink().unwrap();
+    let trace = sink
+        .trace_at(harness.actor, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+
+    assert!(
+        planning.discrepancy_trace.is_empty(),
+        "blocker memory entries must not appear in discrepancy_trace: {:?}",
+        planning.discrepancy_trace
+    );
+}
+
+#[test]
+fn discrepancy_trace_excludes_expired_entries() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.driver.enable_tracing();
+    let expired_key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        place: Some(entity(40)),
+        target: Some(entity(41)),
+        action_def: Some(ActionDefId(42)),
+    };
+    let live_key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Wash),
+        place: Some(entity(43)),
+        target: Some(entity(44)),
+        action_def: Some(ActionDefId(45)),
+    };
+    let mut memory = DiscrepancyMemory::default();
+    memory.record(DiscrepancyEntry {
+        blocker_key: expired_key,
+        discrepancy: Discrepancy::MissingObservation,
+        observed_tick: Tick(0),
+        expires_tick: Tick(0),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+    memory.record(DiscrepancyEntry {
+        blocker_key: live_key,
+        discrepancy: Discrepancy::ImproperPlanningState,
+        observed_tick: Tick(0),
+        expires_tick: Tick(3),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_discrepancy_memory(harness.actor, memory)
+        .expect("should set discrepancy memory");
+    commit_txn(txn);
+
+    harness.step_once();
+
+    let sink = harness.driver.trace_sink().unwrap();
+    let trace = sink
+        .trace_at(harness.actor, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+
+    assert_eq!(planning.discrepancy_trace.len(), 1);
+    assert_eq!(
+        planning.discrepancy_trace[0].discrepancy,
+        Discrepancy::ImproperPlanningState
+    );
+    assert_eq!(planning.discrepancy_trace[0].blocker_key, live_key);
 }
 
 #[test]

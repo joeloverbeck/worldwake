@@ -17,8 +17,8 @@ use execution::{
 };
 use frame::{
     AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
-    handle_recoverable_travel_step_blockage, populate_assumptions,
-    record_assumption_failure, update_frame_for_adopted_plan,
+    handle_recoverable_travel_step_blockage, populate_assumptions, record_assumption_failure,
+    update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
@@ -32,10 +32,10 @@ use planning::{
 
 use crate::decision_trace::{
     ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
-    CandidateTrace, DecisionOutcome, DecisionTraceSink, ExecutionFailureReason, ExecutionTrace,
-    ExhaustionTraceEntry, FrameTransitionKind, FrameTransitionTrace, InterruptTrace,
-    PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace, SelectionTrace,
-    UnknownBlockerTrace,
+    CandidateTrace, DecisionOutcome, DecisionTraceSink, DiscrepancyTrace, ExecutionFailureReason,
+    ExecutionTrace, ExhaustionTraceEntry, FrameTransitionKind, FrameTransitionTrace,
+    InterruptTrace, PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace,
+    SelectionTrace,
 };
 use crate::{
     AgentDecisionRuntime, PlannerOpSemantics, build_semantics_table, frame_runtime_snapshot,
@@ -897,19 +897,14 @@ fn process_agent(
                     failure: None,
                 }),
                 action_start_failures: agent_failures,
-                unknown_blockers: discrepancy_memory
+                discrepancy_trace: discrepancy_memory
                     .entries
                     .values()
-                    .filter_map(|entry| {
-                        let action_def = entry.blocker_key.action_def?;
-                        let op_kind = semantics_table.get(&action_def)?.op_kind;
-                        Some(UnknownBlockerTrace {
-                            goal_key: entry.blocker_key.goal_key,
-                            failed_action_def: action_def,
-                            op_kind,
-                            target: entry.blocker_key.target,
-                            place: entry.blocker_key.place,
-                        })
+                    .filter(|entry| entry.expires_tick > tick)
+                    .map(|entry| DiscrepancyTrace {
+                        discrepancy: entry.discrepancy,
+                        blocker_key: entry.blocker_key,
+                        expires_tick: entry.expires_tick,
                     })
                     .collect(),
                 exhaustion_snapshot: runtime

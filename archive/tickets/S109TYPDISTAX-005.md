@@ -1,6 +1,6 @@
 # S109TYPDISTAX-005: Replace UnknownBlockerTrace with DiscrepancyTrace
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `decision_trace.rs` struct replacement + `agent_tick/mod.rs` filter update
@@ -16,9 +16,9 @@ This ticket replaces `UnknownBlockerTrace` with a typed `DiscrepancyTrace` struc
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `UnknownBlockerTrace` is defined at `crates/worldwake-ai/src/decision_trace.rs:276–285` and referenced from the `PlanningPipelineTrace::unknown_blockers: Vec<UnknownBlockerTrace>` field at `decision_trace.rs:244–246`. The producing site is the filter at `crates/worldwake-ai/src/agent_tick/mod.rs:837–852`, which T004 already rewrote to read `DiscrepancyMemory` while keeping the `UnknownBlockerTrace` wrapper shape. No downstream consumer code (observer binary, CLI) references `UnknownBlockerTrace` by name — the field is consumed as a `Vec` of items with `goal_key`, `failed_action_def`, `op_kind`, `target`, `place`.
+1. `UnknownBlockerTrace` is defined at `crates/worldwake-ai/src/decision_trace.rs` and referenced from `PlanningPipelineTrace::unknown_blockers`. The producing site in `crates/worldwake-ai/src/agent_tick/mod.rs` already reads `DiscrepancyMemory`. A repo-wide sweep confirmed that live downstream compile consumers also include `crates/worldwake-ai/src/survival_forensics.rs`, `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs`, and the observer bin test helper in `crates/worldwake-cli/src/bin/observer.rs`; no `handlers/inspect.rs` consumer exists on the current branch.
 2. S109 spec follow-up deliverable F2 prescribes the exact struct shape: `DiscrepancyTrace { discrepancy: Discrepancy, blocker_key: BlockerKey, expires_tick: Tick }`. The spec notes BlockerMemory entries are not surfaced.
-3. Shared abstraction boundary: the `PlanningPipelineTrace` struct and the `decision_trace` module's public surface. After this ticket, the field name and struct change; consumers (observer binary, forensic tooling) must recompile. This is an expected consequence of renaming — no backwards-compatibility shim is introduced.
+3. Shared abstraction boundary: the `PlanningPipelineTrace` struct and the `decision_trace` module's public surface, plus direct forensic/report consumers that construct or read that trace. After this ticket, the field name and struct change; those consumers recompile against the new shape. This is an expected consequence of renaming — no backwards-compatibility shim is introduced.
 13. No adjacent contradictions. T004 left `unknown_blockers: Vec<UnknownBlockerTrace>` as an interim adapter populated from `DiscrepancyMemory` — this ticket completes the rename. After this ticket, `grep -rn "UnknownBlockerTrace\|unknown_blockers" crates/` returns zero matches in runtime code.
 
 ## Architecture Check
@@ -28,9 +28,9 @@ This ticket replaces `UnknownBlockerTrace` with a typed `DiscrepancyTrace` struc
 
 ## Verification Layers
 
-1. `DiscrepancyTrace` struct shape → focused unit test in `decision_trace.rs#[cfg(test)]` that constructs the struct with all four fields populated.
-2. `PlanningPipelineTrace::discrepancy_trace` field populates from `DiscrepancyMemory` during a real `agent_tick` call → runtime integration test at `agent_tick/tests.rs`: seed `DiscrepancyMemory` with two entries, tick the agent, assert `decision_trace.discrepancy_trace.len() == 2` and the variants/keys match.
-3. `BlockerMemory` entries are NOT surfaced in `discrepancy_trace` → focused test in `agent_tick/tests.rs`: seed `BlockerMemory` with a `BlockingFact::SellerOutOfStock` entry, tick, assert `discrepancy_trace` is empty (or only contains `DiscrepancyMemory` entries if both are seeded).
+1. `DiscrepancyTrace` struct shape → focused unit test in `decision_trace.rs#[cfg(test)]` that constructs the struct with all three fields populated.
+2. `PlanningPipelineTrace::discrepancy_trace` field populates from `DiscrepancyMemory` during a real `agent_tick` call → runtime unit tests at `agent_tick/tests.rs`: seed `DiscrepancyMemory` through `WorldTxn`, tick the agent, assert the expected entries are present.
+3. `BlockerMemory` entries are NOT surfaced in `discrepancy_trace`, and expired `DiscrepancyMemory` entries are filtered out → focused tests in `agent_tick/tests.rs`.
 6. Single-layer ticket for diagnostic trace: decision-trace assertion surface is the direct proof.
 
 ## What to Change
@@ -108,9 +108,9 @@ Remove any tests previously named `unknown_blockers_*` — their coverage migrat
 - `crates/worldwake-ai/src/decision_trace.rs` (modify — struct rename + field rename + imports)
 - `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — filter at lines 837–852)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — test renames + new coverage)
-- `crates/worldwake-ai/src/lib.rs` (modify — re-export rename if `UnknownBlockerTrace` was re-exported)
+- `crates/worldwake-ai/src/survival_forensics.rs` (modify — downstream forensic consumer now reads `discrepancy_trace` directly)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — consumer rendering; if `unknown_blockers` is accessed by name)
-- `crates/worldwake-cli/src/handlers/inspect.rs` (modify — same, if applicable)
+- `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` (modify — helper trace constructor renamed field)
 
 ## Out of Scope
 
@@ -125,9 +125,14 @@ Remove any tests previously named `unknown_blockers_*` — their coverage migrat
 ### Tests That Must Pass
 
 1. `cargo test -p worldwake-ai decision_trace` — new struct-shape test.
-2. `cargo test -p worldwake-ai agent_tick::tests::discrepancy_trace` — new trace-population tests.
+2. Exact `agent_tick` trace-population selectors:
+   - `cargo test -p worldwake-ai --lib agent_tick::tests::discrepancy_trace_populated_from_discrepancy_memory -- --exact`
+   - `cargo test -p worldwake-ai --lib agent_tick::tests::blocker_memory_entries_not_in_discrepancy_trace -- --exact`
+   - `cargo test -p worldwake-ai --lib agent_tick::tests::discrepancy_trace_excludes_expired_entries -- --exact`
 3. Existing `agent_tick` suite: `cargo test -p worldwake-ai agent_tick`.
-4. Full workspace: `cargo test --workspace`.
+4. Broad compile verification: `cargo test --workspace --no-run`.
+5. CI-matching lint: `cargo clippy --workspace --all-targets -- -D warnings`.
+6. Full workspace: `cargo test --workspace`.
 
 ### Invariants
 
@@ -146,6 +151,36 @@ Remove any tests previously named `unknown_blockers_*` — their coverage migrat
 ### Commands
 
 1. `cargo test -p worldwake-ai decision_trace`
-2. `cargo test -p worldwake-ai agent_tick::tests::discrepancy_trace`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
-4. `cargo test --workspace`
+2. `cargo test -p worldwake-ai --lib agent_tick::tests::discrepancy_trace_populated_from_discrepancy_memory -- --exact`
+3. `cargo test -p worldwake-ai --lib agent_tick::tests::blocker_memory_entries_not_in_discrepancy_trace -- --exact`
+4. `cargo test -p worldwake-ai --lib agent_tick::tests::discrepancy_trace_excludes_expired_entries -- --exact`
+5. `cargo test -p worldwake-ai agent_tick`
+6. `cargo test --workspace --no-run`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
+8. `cargo test --workspace`
+
+## Outcome
+
+Completed on 2026-04-19.
+
+- Replaced `UnknownBlockerTrace` with `DiscrepancyTrace` and renamed `PlanningPipelineTrace::unknown_blockers` to `discrepancy_trace` in `crates/worldwake-ai/src/decision_trace.rs`.
+- Updated the `agent_tick` trace builder to copy live `DiscrepancyMemory` entries into the new `DiscrepancyTrace { discrepancy, blocker_key, expires_tick }` shape, filtering out expired entries.
+- Updated direct downstream trace consumers in `crates/worldwake-ai/src/survival_forensics.rs`, `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs`, and `crates/worldwake-cli/src/bin/observer.rs`.
+- Added focused trace-shape and runtime population tests in `decision_trace.rs` and `agent_tick/tests.rs`.
+
+## Deviations
+
+- `crates/worldwake-ai/src/lib.rs` and `crates/worldwake-cli/src/handlers/inspect.rs` did not require edits on the current branch; there was no live re-export or inspect consumer for the old trace type.
+- Reassessment broadened the drafted consumer list to include `survival_forensics.rs` and the golden harness because they construct and read the planning trace directly.
+- The honest focused `agent_tick` proof required three exact test selectors, not the drafted shorthand `cargo test -p worldwake-ai agent_tick::tests::discrepancy_trace`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai decision_trace`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::discrepancy_trace_populated_from_discrepancy_memory -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::blocker_memory_entries_not_in_discrepancy_trace -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::discrepancy_trace_excludes_expired_entries -- --exact`
+- Passed `cargo test -p worldwake-ai agent_tick`
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

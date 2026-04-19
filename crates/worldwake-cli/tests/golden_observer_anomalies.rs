@@ -173,9 +173,15 @@ fn acute_thirst_fixture_surfaces_sustained_thirst_anomalies() {
     );
 
     assert_eq!(count_anomalies_of_kind(&report, "ACUTE_NEED_SPIKE"), 0);
-    assert_eq!(count_anomalies_of_kind(&report, "SUSTAINED_CRITICAL_NEED"), 2);
+    assert_eq!(
+        count_anomalies_of_kind(&report, "SUSTAINED_CRITICAL_NEED"),
+        2
+    );
     assert_eq!(count_anomalies_of_kind(&report, "UNADDRESSED_NEED"), 1);
-    assert_eq!(count_anomalies_of_kind(&report, "MAINTENANCE_STARVATION"), 1);
+    assert_eq!(
+        count_anomalies_of_kind(&report, "MAINTENANCE_STARVATION"),
+        1
+    );
 
     let block = anomaly_block(&report, "SUSTAINED_CRITICAL_NEED");
     assert!(block.contains("thirst above 750"));
