@@ -3,6 +3,7 @@
 //! `types` defines the deserialization schema (`ScenarioDef` and sub-structs).
 //! `spawn_scenario()` builds a fully initialized simulation from a `ScenarioDef`.
 
+pub mod lints;
 pub mod types;
 
 use std::collections::{BTreeMap, BTreeSet};

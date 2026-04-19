@@ -141,7 +141,7 @@ Add to the existing `#[cfg(test)] mod tests` from S111SCEHOMLIN-002:
 
 ### Tests That Must Pass
 
-1. `cargo test -p worldwake-cli scenario::lints` (the 3 new tests pass + the 5 from S111SCEHOMLIN-002 still pass).
+1. `cargo test -p worldwake-cli scenario::lints` (the 3 new tests pass + the 6 from S111SCEHOMLIN-002 still pass).
 2. `cargo test -p worldwake-cli` (no regression in existing CLI tests, including `tests/integration.rs` and `tests/golden_observer_anomalies.rs` — these may need scenario fixes from S111SCEHOMLIN-004 first; if so, this ticket's PR should land after 004 or include the minimal fix).
 3. Manual smoke: `cargo run --bin worldwake-cli -- --scenario <homogeneous-scenario>` returns nonzero exit + lint-failure stderr; rerun with `--ignore-lints` returns zero exit + warning stderr.
 4. `cargo clippy --workspace --all-targets -- -D warnings`.

@@ -1,6 +1,6 @@
 # S111SCEHOMLIN-002: `scenario::lints` module + rule implementations
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
@@ -140,7 +140,7 @@ Per spec D6.1, D6.2, D6.3:
 
 ### Tests That Must Pass
 
-1. `cargo test -p worldwake-cli scenario::lints::tests` (the 5 new unit tests pass).
+1. `cargo test -p worldwake-cli scenario::lints` (the 6 new unit tests pass, including the cross-rule accumulation proof).
 2. `cargo test -p worldwake-cli` (no regression in existing CLI tests).
 3. `cargo clippy --workspace --all-targets -- -D warnings` (no new lints).
 
@@ -155,10 +155,29 @@ Per spec D6.1, D6.2, D6.3:
 
 ### New/Modified Tests
 
-1. `crates/worldwake-cli/src/scenario/lints.rs` (new file) — 5 unit tests under `#[cfg(test)] mod tests { ... }`. Rationale: each test exercises one branch of one rule (or the exempt branch). Covers spec D6.1–D6.3 plus two boundary conditions surfaced during reassessment (population-size exemption, control-source filter).
+1. `crates/worldwake-cli/src/scenario/lints.rs` (new file) — 6 unit tests under `#[cfg(test)] mod tests { ... }`. Rationale: the ticket’s 5 drafted rule/exemption tests landed, plus one explicit multi-failure test proving `LintReport` accumulates failures across rules instead of short-circuiting. Covers spec D6.1–D6.3 plus the population-size exemption, control-source filter, and cross-rule accumulation invariant.
 
 ### Commands
 
 1. `cargo test -p worldwake-cli scenario::lints` (targeted — runs only the new module's tests)
 2. `cargo test -p worldwake-cli` (regression on the CLI crate)
 3. `cargo clippy --workspace --all-targets -- -D warnings` (CI parity)
+
+## Outcome
+
+Completed on 2026-04-19.
+
+Added `crates/worldwake-cli/src/scenario/lints.rs` with the public `LintReport` / `LintFailure` / `LintWarning` / `LintRule` types plus `run_lints`, `check_profile_homogeneity`, and `check_unreachable_exploration_drive`. `ProfileHomogeneity` now scans only AI-controlled agents and compares the eight scenario-authored profile fields named in the ticket/spec; `UnreachableExplorationDrive` now flags AI agents whose `exploration_profile.curiosity_weight` is zero while diversification is absent or also zero. `crates/worldwake-cli/src/scenario/mod.rs` now declares `pub mod lints;` without wiring the lints into `spawn_scenario`, preserving the ticket boundary with S111SCEHOMLIN-003.
+
+## Deviations
+
+The drafted test list named 5 new tests, but the ticket’s `Verification Layers` and invariant 4 also required proving that `LintReport` accumulates failures across rules. The landed module therefore includes a 6th focused unit test, `lint_report_accumulates_failures_across_rules`, and the ticket’s acceptance/test-plan text has been updated to match the real proof surface.
+
+## Verification Result
+
+Passed on 2026-04-19:
+
+1. `cargo test -p worldwake-cli scenario::lints -- --list`
+2. `cargo test -p worldwake-cli scenario::lints`
+3. `cargo test -p worldwake-cli`
+4. `cargo clippy --workspace --all-targets -- -D warnings`
