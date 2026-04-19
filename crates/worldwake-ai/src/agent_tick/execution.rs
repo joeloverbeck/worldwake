@@ -3,8 +3,8 @@ use super::observation::update_runtime_observation_snapshot;
 use super::{AgentTickContext, handle_recoverable_travel_step_blockage, runtime_belief_view};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockerMemory, CauseRef, ContentionIntents, EntityId, LearnedOpportunityMemory,
-    RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    ActiveGoal, BlockerMemory, CauseRef, ContentionIntents, DiscrepancyMemory, EntityId,
+    LearnedOpportunityMemory, RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
 
@@ -15,10 +15,12 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     active_goal: Option<worldwake_core::GoalKey>,
     jc: &mut Option<worldwake_core::IntentionFrame>,
     blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     facility_intents: &mut ContentionIntents,
     agent: EntityId,
     tick: Tick,
     original_blocked: &BlockerMemory,
+    original_discrepancy_memory: &DiscrepancyMemory,
     original_violation_memory: &worldwake_core::ViolationMemory,
     violation_memory: &worldwake_core::ViolationMemory,
     original_repair_memory: &RepairMemory,
@@ -58,6 +60,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             active_goal,
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             step,
@@ -97,6 +100,8 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 tick,
                 original_blocked,
                 blocked_memory,
+                original_discrepancy_memory,
+                discrepancy_memory,
                 original_violation_memory,
                 violation_memory,
                 original_repair_memory,
@@ -112,6 +117,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             active_goal,
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             step,
@@ -127,6 +133,8 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             tick,
             original_blocked,
             blocked_memory,
+            original_discrepancy_memory,
+            discrepancy_memory,
             original_violation_memory,
             violation_memory,
             original_repair_memory,
@@ -163,6 +171,8 @@ pub(super) fn finalize_agent_tick(
     tick: Tick,
     original_blocked: &BlockerMemory,
     blocked_memory: &BlockerMemory,
+    original_discrepancy_memory: &DiscrepancyMemory,
+    discrepancy_memory: &DiscrepancyMemory,
     original_violation_memory: &worldwake_core::ViolationMemory,
     violation_memory: &worldwake_core::ViolationMemory,
     original_repair_memory: &RepairMemory,
@@ -178,6 +188,14 @@ pub(super) fn finalize_agent_tick(
         tick,
         original_blocked,
         blocked_memory,
+    )?;
+    persist_discrepancy_memory(
+        world,
+        event_log,
+        agent,
+        tick,
+        original_discrepancy_memory,
+        discrepancy_memory,
     )?;
     persist_violation_memory(
         world,
@@ -308,6 +326,36 @@ pub(super) fn persist_blocked_memory(
         WitnessData::default(),
     );
     txn.set_component_blocker_memory(agent, after.clone())
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+pub(super) fn persist_discrepancy_memory(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    before: &DiscrepancyMemory,
+    after: &DiscrepancyMemory,
+) -> Result<(), TickInputError> {
+    let existing = world.get_component_discrepancy_memory(agent);
+    if existing == Some(after)
+        || (existing.is_none() && before == after && after.entries.is_empty())
+    {
+        return Ok(());
+    }
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.set_component_discrepancy_memory(agent, after.clone())
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     Ok(())

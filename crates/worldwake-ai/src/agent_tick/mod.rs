@@ -12,12 +12,13 @@ use candidates::abandon_expired_facility_queues;
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
     enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_active_goal,
-    persist_blocked_memory, persist_facility_queue_intents, persist_intention_frame, plan_finished,
+    persist_blocked_memory, persist_discrepancy_memory, persist_facility_queue_intents,
+    persist_intention_frame, plan_finished,
 };
 use frame::{
     AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
     handle_recoverable_travel_step_blockage, populate_assumptions,
-    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan,
+    record_assumption_failure, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
@@ -43,10 +44,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockerMemory, BlockingFact, CauseRef, CognitiveProfile,
-    ContentionIntents, ControlSource, EntityId, ExecutionBudget, IntentionFrame,
-    LastProactiveExplorationTick, LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry,
-    RepairEntry, RepairKey, RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    ActionDefId, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents,
+    ControlSource, EntityId, ExecutionBudget, IntentionFrame, LastProactiveExplorationTick,
+    LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, RepairEntry, RepairKey,
+    RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -317,6 +318,12 @@ fn process_agent(
         .cloned()
         .unwrap_or_default();
     let original_blocked = blocked_memory.clone();
+    let mut discrepancy_memory = ctx
+        .world
+        .get_component_discrepancy_memory(agent)
+        .cloned()
+        .unwrap_or_default();
+    let original_discrepancy_memory = discrepancy_memory.clone();
     let mut violation_memory = ctx
         .world
         .get_component_violation_memory(agent)
@@ -433,6 +440,7 @@ fn process_agent(
         &mut current_frame,
         &mut current_facility_intents,
         &mut blocked_memory,
+        &mut discrepancy_memory,
         active_action.as_ref(),
         agent,
         InFlightReconciliation {
@@ -504,12 +512,12 @@ fn process_agent(
                 if matches!(eval, AssumptionEvalResult::CriticalFailure) {
                     // Create blocked intent so the agent doesn't immediately
                     // re-adopt the same goal after assumption failure.
-                    record_assumption_failure_blocked_intent(
+                    record_assumption_failure(
                         current_frame.as_ref().unwrap(),
                         view.effective_place(agent),
-                        &mut blocked_memory,
+                        &mut discrepancy_memory,
                         tick,
-                        cognitive.structural_block_ticks,
+                        cognitive.partial_drift_backoff_ticks,
                     );
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
@@ -531,6 +539,7 @@ fn process_agent(
         active_goal_key,
         &mut current_facility_intents,
         &mut blocked_memory,
+        &mut discrepancy_memory,
         &mut violation_memory,
         &repair_memory,
         &learned_opportunity_memory,
@@ -778,10 +787,12 @@ fn process_agent(
                 active_goal_key,
                 &mut current_frame,
                 &mut blocked_memory,
+                &mut discrepancy_memory,
                 &mut current_facility_intents,
                 agent,
                 tick,
                 &original_blocked,
+                &original_discrepancy_memory,
                 &original_violation_memory,
                 &violation_memory,
                 &original_repair_memory,
@@ -886,19 +897,18 @@ fn process_agent(
                     failure: None,
                 }),
                 action_start_failures: agent_failures,
-                unknown_blockers: blocked_memory
-                    .intents
+                unknown_blockers: discrepancy_memory
+                    .entries
                     .values()
-                    .filter(|i| i.blocking_fact == BlockingFact::Unknown && i.expires_tick > tick)
-                    .filter_map(|i| {
-                        let action_def = i.diagnostic_context?.action_def;
+                    .filter_map(|entry| {
+                        let action_def = entry.blocker_key.action_def?;
                         let op_kind = semantics_table.get(&action_def)?.op_kind;
                         Some(UnknownBlockerTrace {
-                            goal_key: i.blocker_key.goal_key,
+                            goal_key: entry.blocker_key.goal_key,
                             failed_action_def: action_def,
                             op_kind,
-                            target: i.blocker_key.target,
-                            place: i.blocker_key.place,
+                            target: entry.blocker_key.target,
+                            place: entry.blocker_key.place,
                         })
                     })
                     .collect(),
@@ -1048,6 +1058,8 @@ fn process_agent(
         tick,
         &original_blocked,
         &blocked_memory,
+        &original_discrepancy_memory,
+        &discrepancy_memory,
         &original_violation_memory,
         &violation_memory,
         &original_repair_memory,

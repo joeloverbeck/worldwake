@@ -1,6 +1,6 @@
 use worldwake_core::{
-    ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents, EntityId, FrameState,
-    IntentionFrame, Permille, Tick,
+    ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents, DiscrepancyMemory,
+    EntityId, FrameState, IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
@@ -11,7 +11,7 @@ use super::frame::progress_op_kinds;
 use super::observation::{InFlightReconciliation, reconcile_in_flight_state};
 use super::{
     AgentTickContext, FrameSwitchMarginSource, build_candidate_plans, persist_blocked_memory,
-    selection_candidates,
+    persist_discrepancy_memory, selection_candidates,
 };
 use crate::DirtySet;
 use crate::failure_handling::ExecutionFailure;
@@ -133,6 +133,7 @@ pub(super) fn handle_active_action_phase(
                 worldwake_sim::InterruptReason::Reprioritized,
             )
             .map_err(|error| TickInputError::new(format!("{error:?}")))?;
+        let mut discrepancy_memory = DiscrepancyMemory::default();
         let _ = reconcile_in_flight_state(
             ctx,
             runtime,
@@ -140,6 +141,7 @@ pub(super) fn handle_active_action_phase(
             jc,
             facility_intents,
             blocked_memory,
+            &mut discrepancy_memory,
             None,
             agent,
             InFlightReconciliation {
@@ -263,6 +265,7 @@ pub(super) fn handle_current_step_failure(
     active_goal: Option<worldwake_core::GoalKey>,
     jc: &mut Option<IntentionFrame>,
     blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     facility_intents: &mut ContentionIntents,
     agent: EntityId,
     step: &PlannedStep,
@@ -292,6 +295,7 @@ pub(super) fn handle_current_step_failure(
         runtime,
         jc,
         blocked_memory,
+        discrepancy_memory,
         facility_intents,
         cognitive,
     );
@@ -304,6 +308,14 @@ pub(super) fn handle_current_step_failure(
         tick,
         &BlockerMemory::default(),
         blocked_memory,
+    )?;
+    persist_discrepancy_memory(
+        world,
+        event_log,
+        agent,
+        tick,
+        &DiscrepancyMemory::default(),
+        discrepancy_memory,
     )
 }
 

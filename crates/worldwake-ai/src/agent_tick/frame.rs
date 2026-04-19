@@ -5,8 +5,9 @@ use crate::{
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, ContentionIntents,
-    EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame,
-    Permille, SuspensionReason, Tick,
+    Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityId,
+    FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame, Permille,
+    SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -416,28 +417,35 @@ pub(super) fn check_patience_exhaustion(
     true
 }
 
-/// Record a `Blocker` with `AssumptionFailed` for a frame whose critical
-/// assumption has failed.
-pub(super) fn record_assumption_failure_blocked_intent(
+/// Record a typed discrepancy for a frame whose critical assumption has failed.
+pub(super) fn record_assumption_failure(
     frame: &IntentionFrame,
     agent_place: Option<EntityId>,
-    blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     tick: Tick,
-    structural_block_ticks: u32,
+    partial_drift_backoff_ticks: u32,
 ) {
-    blocked_memory.record(Blocker {
+    let target = frame_blocker_target(&frame.domain);
+    let discrepancy = if target.is_some() {
+        Discrepancy::BeliefContradicted
+    } else {
+        Discrepancy::PartialExecutionDrift
+    };
+    let clearing_condition = target.map_or(DiscrepancyClearing::TtlExpiry, |target| {
+        DiscrepancyClearing::ReobservationOf { target }
+    });
+
+    discrepancy_memory.record(DiscrepancyEntry {
         blocker_key: BlockerKey {
             goal_key: frame.goal,
             place: agent_place,
-            target: frame_blocker_target(&frame.domain),
+            target,
             action_def: None,
         },
-        blocking_fact: BlockingFact::AssumptionFailed,
-        diagnostic_context: None,
+        discrepancy,
         observed_tick: tick,
-        expires_tick: tick + u64::from(structural_block_ticks),
-        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
-        baseline_snapshot: None,
+        expires_tick: tick + u64::from(partial_drift_backoff_ticks),
+        clearing_condition,
     });
 }
 

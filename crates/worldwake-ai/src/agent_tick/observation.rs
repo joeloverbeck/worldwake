@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, EntityId,
+    Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DiscrepancyMemory, EntityId,
     LearnedOpportunityMemory, Quantity, RepairMemory, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
@@ -8,13 +8,13 @@ use worldwake_sim::{
     TickInputError,
 };
 
-use crate::candidate_generation::generate_candidates_with_travel_horizon;
+use crate::candidate_generation::generate_candidates_with_memories_with_travel_horizon;
 use crate::failure_handling::ExecutionFailure;
 use crate::knowledge_path::KnowledgePath;
 use crate::ranking::rank_candidates_with_memories;
 use crate::{
     AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
-    authoritative_target, clear_resolved_blockers,
+    authoritative_target, clear_resolved_failures,
 };
 use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 
@@ -98,6 +98,7 @@ pub(super) fn refresh_runtime_for_read_phase(
     phase: ReadPhaseContext<'_>,
     tracing: bool,
 ) -> ReadPhaseResult {
+    let mut discrepancy_memory = DiscrepancyMemory::default();
     refresh_runtime_for_read_phase_with_memories(
         world,
         scheduler,
@@ -106,6 +107,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         active_goal,
         facility_intents,
         blocked_memory,
+        &mut discrepancy_memory,
         violation_memory,
         &RepairMemory::default(),
         &LearnedOpportunityMemory::default(),
@@ -125,6 +127,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     active_goal: Option<worldwake_core::GoalKey>,
     facility_intents: &mut ContentionIntents,
     blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     violation_memory: &mut worldwake_core::ViolationMemory,
     repair_memory: &RepairMemory,
     learned_opportunity_memory: &LearnedOpportunityMemory,
@@ -145,7 +148,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         phase.tick,
         phase,
     );
-    clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
+    clear_resolved_failures(&view, agent, blocked_memory, discrepancy_memory, phase.tick);
     let blocked_changed_from_cleanup = *blocked_memory != before;
     let snapshot_domains =
         observation_snapshot_changed(&view, agent, active_goal, runtime, phase.recipe_registry);
@@ -188,10 +191,11 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
     }
 
-    let mut candidates = generate_candidates_with_travel_horizon(
+    let mut candidates = generate_candidates_with_memories_with_travel_horizon(
         &view,
         agent,
         blocked_memory,
+        discrepancy_memory,
         violation_memory,
         phase.recipe_registry,
         phase.tick,
@@ -415,6 +419,7 @@ pub(super) fn reconcile_in_flight_state(
     jc: &mut Option<worldwake_core::IntentionFrame>,
     facility_intents: &mut ContentionIntents,
     blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
     reconciliation: InFlightReconciliation<'_>,
@@ -439,6 +444,7 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             &step,
@@ -454,6 +460,7 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             &step,
@@ -470,6 +477,7 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             &step,
@@ -499,6 +507,7 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             &step,

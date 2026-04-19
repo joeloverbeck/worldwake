@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `decision_trace.rs` struct replacement + `agent_tick/mod.rs` filter update
-**Deps**: S109TYPDISTAX-002, S109TYPDISTAX-004
+**Deps**: archive/tickets/S109TYPDISTAX-002.md, archive/tickets/S109TYPDISTAX-004.md
 
 ## Problem
 

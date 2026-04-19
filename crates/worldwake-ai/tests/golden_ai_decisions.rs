@@ -443,7 +443,7 @@ fn golden_priority_based_interrupt() {
 //   -> successful harvest.
 
 #[test]
-fn golden_blocker_memory_with_ttl_expiry() {
+fn golden_discrepancy_memory_with_ttl_expiry() {
     let mut h = GoldenHarness::new(Seed([5; 32]));
 
     // Agent at Orchard Farm, critically hungry.
@@ -504,17 +504,17 @@ fn golden_blocker_memory_with_ttl_expiry() {
         worldwake_core::PerceptionSource::DirectObservation,
     );
 
-    let mut saw_blocker = false;
+    let mut saw_discrepancy = false;
     let mut eventually_harvested = false;
 
     for _ in 0..200 {
         h.step_once();
 
-        // Check for blocked intent memory.
-        if let Some(blocked) = h.world.get_component_blocker_memory(agent)
-            && !blocked.intents.is_empty()
+        // Check for typed discrepancy memory.
+        if let Some(discrepancies) = h.world.get_component_discrepancy_memory(agent)
+            && !discrepancies.entries.is_empty()
         {
-            saw_blocker = true;
+            saw_discrepancy = true;
         }
 
         // Harvest drops apple lots on the ground at the workstation.
@@ -526,16 +526,16 @@ fn golden_blocker_memory_with_ttl_expiry() {
     }
 
     assert!(
-        saw_blocker,
-        "Agent should record a blocked intent when the depleted orchard source blocks harvest"
+        saw_discrepancy,
+        "Agent should record a discrepancy when the depleted orchard source blocks harvest"
     );
 
     // After resource regeneration (10+ ticks to reach Quantity(2)),
     // the agent should eventually harvest, creating apple lots.
     assert!(
         eventually_harvested,
-        "Agent should eventually harvest apples after resource regeneration; blocked={:?}; authoritative_source={:?}; believed_source={:?}",
-        h.world.get_component_blocker_memory(agent),
+        "Agent should eventually harvest apples after resource regeneration; discrepancies={:?}; authoritative_source={:?}; believed_source={:?}",
+        h.world.get_component_discrepancy_memory(agent),
         h.world.get_component_resource_source(orchard_source),
         h.world
             .get_component_agent_belief_store(agent)

@@ -2,12 +2,11 @@ use crate::{
     GroundedGoal,
     decision_trace::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
-        BlockerMatchDetail, CandidateEvidenceContributor, CandidateEvidenceExclusion,
-        CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
-        CandidateLegalityTrace, DesireFullyBlocked, PoliticalCandidateOmission,
-        PoliticalCandidateOmissionReason, PoliticalGoalFamily, PursuitDiagnostic,
-        PursuitOmissionReason, SocialCandidateOmission, ViolationDetectionOmission,
-        ViolationDetectionOmissionReason,
+        CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
+        CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace,
+        DesireFullyBlocked, PoliticalCandidateOmission, PoliticalCandidateOmissionReason,
+        PoliticalGoalFamily, PursuitDiagnostic, PursuitOmissionReason, SocialCandidateOmission,
+        ViolationDetectionOmission, ViolationDetectionOmissionReason,
     },
     derive_danger_pressure,
     enterprise::{
@@ -27,16 +26,17 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
-    BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
-    CommodityPurpose, DiversificationProfile, DriveThresholds, EligibilityRule, EntityId,
-    EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation,
-    GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-    OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
-    ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
-    Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
-    ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
+    BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms,
+    CommodityKind, CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds,
+    EligibilityRule, EntityId, EntityKind, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, ExplorationMotivation, GoalKey, GoalKind, HomeostaticNeedId,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
+    PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement,
+    PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData,
+    RecordKind, RewardSource, RightKind, SocialObservation, SocialObservationDetail, TellTopic,
+    TheftFacts, Tick, UtilityProfile, ViolationId, ViolationKind, ViolationMemory,
+    WorkstationTag, classify_communication,
     current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
@@ -152,6 +152,7 @@ struct GenerationContext<'a> {
     travel_horizon: u8,
     enterprise: EnterpriseSignals,
     blocked: &'a BlockerMemory,
+    discrepancies: &'a DiscrepancyMemory,
     violation_memory: &'a ViolationMemory,
     recipes: &'a RecipeRegistry,
     current_tick: Tick,
@@ -225,6 +226,31 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     travel_horizon: u8,
     tracing_enabled: bool,
 ) -> CandidateGenerationResult {
+    generate_candidates_with_memories_with_travel_horizon(
+        view,
+        agent,
+        blocked,
+        &DiscrepancyMemory::default(),
+        violation_memory,
+        recipes,
+        current_tick,
+        travel_horizon,
+        tracing_enabled,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    blocked: &BlockerMemory,
+    discrepancies: &DiscrepancyMemory,
+    violation_memory: &ViolationMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+    travel_horizon: u8,
+    tracing_enabled: bool,
+) -> CandidateGenerationResult {
     if view.is_dead(agent) || !view.is_alive(agent) {
         return CandidateGenerationResult {
             candidates: Vec::new(),
@@ -247,6 +273,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
         travel_horizon,
         enterprise: analyze_candidate_enterprise(view, agent, place),
         blocked,
+        discrepancies,
         violation_memory,
         recipes,
         current_tick,
@@ -279,7 +306,13 @@ pub(crate) fn generate_candidates_with_travel_horizon(
     let pending_violations =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
-    let candidates = filter_blocked_candidates(candidates, blocked, current_tick, &mut diagnostics);
+    let candidates = filter_suppressed_candidates(
+        candidates,
+        blocked,
+        discrepancies,
+        current_tick,
+        &mut diagnostics,
+    );
 
     CandidateGenerationResult {
         candidates,
@@ -301,26 +334,35 @@ fn artifact_posting_profile_for_goal_generation(
         .unwrap_or_default()
 }
 
-fn filter_blocked_candidates(
+fn filter_suppressed_candidates(
     candidates: Vec<GroundedGoal>,
     blocked: &BlockerMemory,
+    discrepancies: &DiscrepancyMemory,
     current_tick: Tick,
     diagnostics: &mut CandidateGenerationDiagnostics,
 ) -> Vec<GroundedGoal> {
-    let mut blocked_by_goal: BTreeMap<GoalKey, Vec<(OpportunityKey, Option<BlockerMatchDetail>)>> =
+    let mut blocked_by_goal: BTreeMap<
+        GoalKey,
+        Vec<(OpportunityKey, Option<crate::decision_trace::BlockerMatchDetail>)>,
+    > =
         BTreeMap::new();
     let mut emitted_counts: BTreeMap<GoalKey, usize> = BTreeMap::new();
     let mut surviving = Vec::new();
 
     for candidate in candidates {
         *emitted_counts.entry(candidate.key).or_default() += 1;
-        if let Some(detail) = find_matching_blocker(&candidate, blocked, current_tick) {
+        if let Some(suppression) =
+            find_matching_suppression(&candidate, blocked, discrepancies, current_tick)
+        {
             blocked_by_goal.entry(candidate.key).or_default().push((
                 OpportunityKey {
                     goal_key: candidate.key,
                     anchor: candidate.anchor,
                 },
-                Some(detail),
+                match suppression {
+                    SuppressionMatch::Discrepancy => None,
+                    SuppressionMatch::Blocker(detail) => Some(detail),
+                },
             ));
             continue;
         }
@@ -348,22 +390,59 @@ fn filter_blocked_candidates(
     surviving
 }
 
-fn find_matching_blocker(
+enum SuppressionMatch {
+    Discrepancy,
+    Blocker(crate::decision_trace::BlockerMatchDetail),
+}
+
+fn find_matching_suppression(
     candidate: &GroundedGoal,
     blocked: &BlockerMemory,
+    discrepancies: &DiscrepancyMemory,
     current_tick: Tick,
-) -> Option<BlockerMatchDetail> {
+) -> Option<SuppressionMatch> {
+    if discrepancies
+        .entries
+        .values()
+        .any(|entry| {
+            entry.expires_tick > current_tick
+                && candidate_matches_blocker(candidate, &entry.blocker_key)
+        })
+    {
+        return Some(SuppressionMatch::Discrepancy);
+    }
+
     blocked.intents.values().find_map(|intent| {
         let matches = intent.blocker_key.goal_key == candidate.key
             && intent.expires_tick > current_tick
             && intent.blocks_goal_generation()
             && candidate_matches_blocker(candidate, &intent.blocker_key);
-        matches.then(|| BlockerMatchDetail {
+        matches.then_some(SuppressionMatch::Blocker(
+            crate::decision_trace::BlockerMatchDetail {
             blocker_key: intent.blocker_key,
             blocking_fact: intent.blocking_fact,
             expires_tick: intent.expires_tick,
-        })
+        }))
     })
+}
+
+fn goal_is_suppressed(
+    ctx: &GenerationContext<'_>,
+    goal_key: &GoalKey,
+    place: Option<EntityId>,
+    target: Option<EntityId>,
+    action_def: Option<worldwake_core::ActionDefId>,
+) -> bool {
+    ctx.blocked.is_blocked(goal_key, place, target, action_def, ctx.current_tick)
+        || ctx.discrepancies.is_suppressed(
+            &worldwake_core::BlockerKey {
+                goal_key: *goal_key,
+                place,
+                target,
+                action_def,
+            },
+            ctx.current_tick,
+        )
 }
 
 fn candidate_matches_blocker(
@@ -2027,12 +2106,12 @@ fn emit_remote_engage_hostile_targets(
         }
 
         let goal_key = GoalKey::from(GoalKind::EngageHostile { target });
-        if ctx.blocked.is_blocked(
+        if goal_is_suppressed(
+            ctx,
             &goal_key,
             Some(belief.believed_place),
             Some(target),
             None,
-            ctx.current_tick,
         ) {
             if tracing {
                 emit_pursuit_omission_trace_with_belief(
@@ -2261,12 +2340,12 @@ fn emit_remote_raid_targets(
 
         // Check blocked intent for this target/place combination.
         let goal_key = GoalKey::from(GoalKind::RaidTarget { target });
-        if ctx.blocked.is_blocked(
+        if goal_is_suppressed(
+            ctx,
             &goal_key,
             Some(belief.believed_place),
             Some(target),
             None,
-            ctx.current_tick,
         ) {
             if tracing {
                 emit_pursuit_omission_trace_with_belief(
@@ -9380,6 +9459,7 @@ mod tests {
             travel_horizon: 6,
             enterprise: analyze_candidate_enterprise(&view, agent, Some(origin)),
             blocked: &blocked,
+            discrepancies: &worldwake_core::DiscrepancyMemory::default(),
             violation_memory: &ViolationMemory::default(),
             recipes: &RecipeRegistry::new(),
             current_tick: Tick(5),
@@ -9852,6 +9932,7 @@ mod tests {
             travel_horizon: 6,
             enterprise: EnterpriseSignals::default(),
             blocked: &blocked,
+            discrepancies: &worldwake_core::DiscrepancyMemory::default(),
             violation_memory: &ViolationMemory::default(),
             recipes: &recipes,
             current_tick: Tick(5),
@@ -16532,6 +16613,7 @@ mod tests {
             travel_horizon: 6,
             enterprise: EnterpriseSignals::default(),
             blocked: &blocked,
+            discrepancies: &worldwake_core::DiscrepancyMemory::default(),
             violation_memory: &ViolationMemory::default(),
             recipes: &RecipeRegistry::new(),
             current_tick: Tick(500),

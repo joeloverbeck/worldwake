@@ -34,9 +34,10 @@ use worldwake_core::{
     BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyCostPerTick,
     BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant,
     ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory,
-    DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds, EntityId,
-    EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameState,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
+    DiscrepancyClearing, DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, EventLog,
+    EventPayload, ExecutionBudget, ExplorationProfile, FrameState, HomeostaticNeedId,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
     KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
     MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
@@ -5989,8 +5990,8 @@ fn patience_exhaustion_generic_domain_uses_none_target() {
 }
 
 #[test]
-fn assumption_failure_creates_blocked_intent() {
-    use super::frame::record_assumption_failure_blocked_intent;
+fn assumption_failure_creates_discrepancy_memory_entry() {
+    use super::frame::record_assumption_failure;
 
     let patient = entity(50);
     let goal = GoalKey::from(GoalKind::Sleep);
@@ -6005,28 +6006,32 @@ fn assumption_failure_creates_blocked_intent() {
         stalled_ticks: 0,
         patience_limit: 30,
     };
-    let mut blocked_memory = BlockerMemory::default();
-    let budget = ProfileFixture::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let cognitive = CognitiveProfile::default();
 
-    record_assumption_failure_blocked_intent(
+    record_assumption_failure(
         &frame,
         Some(place),
-        &mut blocked_memory,
+        &mut discrepancy_memory,
         Tick(5),
-        budget.structural_block_ticks,
+        cognitive.partial_drift_backoff_ticks,
     );
 
-    assert_eq!(blocked_memory.intents.len(), 1);
-    let intent = blocked_memory.intents.values().next().unwrap();
-    assert_eq!(intent.blocking_fact, BlockingFact::AssumptionFailed);
-    assert_eq!(intent.blocker_key.goal_key, goal);
-    assert_eq!(intent.blocker_key.place, Some(place));
-    assert_eq!(intent.blocker_key.target, Some(patient));
-    assert!(intent.blocker_key.action_def.is_none());
-    assert_eq!(intent.observed_tick, Tick(5));
+    assert_eq!(discrepancy_memory.entries.len(), 1);
+    let entry = discrepancy_memory.entries.values().next().unwrap();
+    assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+    assert_eq!(entry.blocker_key.goal_key, goal);
+    assert_eq!(entry.blocker_key.place, Some(place));
+    assert_eq!(entry.blocker_key.target, Some(patient));
+    assert!(entry.blocker_key.action_def.is_none());
+    assert_eq!(entry.observed_tick, Tick(5));
     assert_eq!(
-        intent.expires_tick,
-        Tick(5 + u64::from(budget.structural_block_ticks))
+        entry.expires_tick,
+        Tick(5 + u64::from(cognitive.partial_drift_backoff_ticks))
+    );
+    assert_eq!(
+        entry.clearing_condition,
+        DiscrepancyClearing::ReobservationOf { target: patient }
     );
 }
 

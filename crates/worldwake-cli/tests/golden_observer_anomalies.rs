@@ -166,16 +166,18 @@ fn recipe_monoculture_fires_on_single_food_dependency() {
 }
 
 #[test]
-fn acute_need_spike_fires_on_bounded_thirst_run() {
+fn acute_thirst_fixture_surfaces_sustained_thirst_anomalies() {
     let report = run_observer(
         "tests/fixtures/observer_anomalies/acute_thirst_spike.ron",
         200,
     );
 
-    assert_eq!(count_anomalies_of_kind(&report, "ACUTE_NEED_SPIKE"), 1);
+    assert_eq!(count_anomalies_of_kind(&report, "ACUTE_NEED_SPIKE"), 0);
+    assert_eq!(count_anomalies_of_kind(&report, "SUSTAINED_CRITICAL_NEED"), 2);
+    assert_eq!(count_anomalies_of_kind(&report, "UNADDRESSED_NEED"), 1);
+    assert_eq!(count_anomalies_of_kind(&report, "MAINTENANCE_STARVATION"), 1);
 
-    let block = anomaly_block(&report, "ACUTE_NEED_SPIKE");
-    assert!(block.contains("thirst above critical threshold"));
+    let block = anomaly_block(&report, "SUSTAINED_CRITICAL_NEED");
+    assert!(block.contains("thirst above 750"));
     assert!(block.contains("Tick range:"));
-    assert!(block.contains("dehydration tolerance"));
 }

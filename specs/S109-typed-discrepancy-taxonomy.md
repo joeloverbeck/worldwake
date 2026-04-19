@@ -11,7 +11,7 @@ Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
 ## Crates
 
 - `worldwake-core` — new `Discrepancy` enum, `BeliefClaimKey` key type, `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory` components; migrate `BlockingFact::Unknown` / `AssumptionFailed` call sites to the new typing; preserve `BlockerClearingCondition` / `ClearingBaseline` / `BlockerDiagnostic` on `BlockerMemory`
-- `worldwake-ai` — `failure_handling.rs` emits typed discrepancies through a new `classify_discrepancy` entry point; TTL lookup and clearing logic split by memory class; candidate generation and search readers migrated to the new memories; `PlanningPipelineTrace::unknown_blockers` replaced with a typed `DiscrepancyTrace`
+- `worldwake-ai` — `failure_handling.rs` emits typed discrepancies through a new `classify_discrepancy` entry point; TTL lookup and clearing logic split by memory class; candidate generation and search readers migrated to the new memories; T004 now feeds discrepancy data through the existing `PlanningPipelineTrace::unknown_blockers` adapter, and T005 completes the rename to a typed `DiscrepancyTrace`
 - `worldwake-sim` — belief-view accessors for the new read-only memory views
 - `worldwake-cli` — scenario RON files updated to drop `unknown_block_ticks`; `AgentDef` unchanged (memories stay runtime-generated)
 
@@ -43,7 +43,7 @@ Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
 | FND-20 (Resource-Bounded Practical Reasoning) | Correct discrepancy classification drives correct retry policy. A `BeliefStale` failure triggers reverify; a contention loss (BlockerMemory) triggers short backoff; a `SearchBudgetExhausted` discrepancy triggers longer backoff. |
 | FND-22A (Learning, Habits, Preference Shifts) | `LearnedOpportunityMemory` is the authoritative surface for opportunities discovered in transit, separate from blocker backoff. Decay and overwrite are explicit. |
 | FND-28 (No Backward Compatibility in Live Authority Paths) | The old `BlockingFact::Unknown` and `BlockingFact::AssumptionFailed` variants are removed, not wrapped or aliased. Saved states using those variants are not decodable. |
-| FND-29 (Debuggability Is a Product Feature) | The discrepancy class answers "why did this step fail?" without needing to dig into ad-hoc log messages. The `PlanningPipelineTrace::discrepancy_trace` field replaces the `unknown_blockers` workaround. |
+| FND-29 (Debuggability Is a Product Feature) | The discrepancy class answers "why did this step fail?" without needing to dig into ad-hoc log messages. T004 already routes typed discrepancy data into the trace through the existing `unknown_blockers` adapter, and T005 completes the rename to `PlanningPipelineTrace::discrepancy_trace`. |
 | FND-29A (Causal History Is Authoritative, Append-Only, Queryable) | The typed discrepancy is recorded in the append-only event log (S110) with its provenance (which step, which belief, which observation). |
 
 ## Deliverables
@@ -174,7 +174,7 @@ The `BlockingFact` enum loses its `Unknown` and `AssumptionFailed` variants afte
 - `failure_handling.rs::record_blocked_intent` `diagnostic_context` Unknown branch (currently line 66) — removed. `BlockerDiagnostic` only attaches to BlockerMemory entries; `DiscrepancyMemory` entries carry their action-def context through `blocker_key.action_def`.
 - `failure_handling.rs::blocking_fact_ttl` (currently lines 992–1011) → drops the `Unknown => unknown_block_ticks` row. Remaining `BlockingFact` variants keep their bucket assignments (`transient_block_ticks`, `structural_block_ticks`). A new parallel function `discrepancy_ttl(&Discrepancy, &CognitiveProfile) -> u32` (see D6) handles `DiscrepancyMemory` entries.
 - `agent_tick/frame.rs::record_assumption_failure_blocked_intent` (currently line 435, emitting `BlockingFact::AssumptionFailed`) → routes to `DiscrepancyMemory` with `Discrepancy::BeliefContradicted` when the broken assumption is an epistemic claim (target identity, belief claim) or `Discrepancy::PartialExecutionDrift` when execution has already committed partial effects. The routing decision is made from `frame.domain` state.
-- `agent_tick/mod.rs::decision_outcome_planning` (currently line 837–852) — `PlanningPipelineTrace::unknown_blockers: Vec<UnknownBlockerTrace>` is replaced by `discrepancy_trace: Vec<DiscrepancyTrace>` (see F2). The filter reads from `DiscrepancyMemory` instead of filtering `BlockerMemory` on `BlockingFact::Unknown`.
+- `agent_tick/mod.rs::decision_outcome_planning` (currently line 837–852) — T004 already changed the filter to read from `DiscrepancyMemory` instead of filtering `BlockerMemory` on `BlockingFact::Unknown`, while keeping the interim `PlanningPipelineTrace::unknown_blockers: Vec<UnknownBlockerTrace>` wrapper. T005 completes the rename to `discrepancy_trace: Vec<DiscrepancyTrace>` (see F2).
 
 **Reader migration (runtime, in `worldwake-ai`):**
 
@@ -184,7 +184,7 @@ The `BlockingFact` enum loses its `Unknown` and `AssumptionFailed` variants afte
 
 **Diagnostic trace:**
 
-- `decision_trace.rs::PlanningPipelineTrace::unknown_blockers` (currently line 244–246) and `decision_trace.rs::UnknownBlockerTrace` struct (currently lines 279–285) → replaced by `discrepancy_trace: Vec<DiscrepancyTrace>` and `DiscrepancyTrace` struct. See F2.
+- `decision_trace.rs::PlanningPipelineTrace::unknown_blockers` (currently line 244–246) and `decision_trace.rs::UnknownBlockerTrace` struct (currently lines 279–285) remain as the post-T004 interim trace adapter populated from `DiscrepancyMemory`. T005 replaces them with `discrepancy_trace: Vec<DiscrepancyTrace>` and `DiscrepancyTrace`. See F2.
 
 **Test sites (in `worldwake-ai`, `worldwake-core`):**
 
@@ -268,7 +268,7 @@ pub struct BeliefClaimKey {
 1. **Information-path analysis**: Each discrepancy and blocker is recorded against the agent that observed it. Neither `DiscrepancyMemory` nor `BlockerMemory` propagate between agents — another agent learns about a merchant stockout only by its own failed purchase or by a shared belief (`ShareBelief` — separate path). `RepairMemory` and `LearnedOpportunityMemory` are purely per-agent. Aligned with FND-7.
 2. **Positive-feedback analysis**: The only loop is "failure → record discrepancy or blocker → suppress goal → reattempt after TTL → possibly record again." The class-specific TTL is the dampener: longer-TTL classes (`RouteUnknown` 200, `SearchBudgetExhausted` 100, `structural_block_ticks` 200) suppress for many ticks, preventing retry spam; shorter-TTL classes (`ImproperPlanningState` 2, `PartialExecutionDrift` 4, `transient_block_ticks` 20) permit quick retry because the world genuinely changes fast.
 3. **Concrete dampeners**: Per-class TTL values are the dampener. They are not invisible caps — they encode how long an agent is justified in believing the failure classification without re-evidence. Agents with `stale_belief_backoff_ticks = 5` reverify quickly (impulsive); agents with `stale_belief_backoff_ticks = 50` reverify rarely (stubborn). BlockerMemory reuses the existing `transient_block_ticks` and `structural_block_ticks` dampeners unchanged.
-4. **Stored state vs. derived read-model**: `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory`, and `BeliefClaimKey` are authoritative stored state (each entry records a specific observation against a specific key). The "is this goal blocked?" decision is derived from reading those memories plus the current tick. `PlanningPipelineTrace::discrepancy_trace` (F2) is a derived view for debuggability, not authoritative state.
+4. **Stored state vs. derived read-model**: `DiscrepancyMemory`, `BlockerMemory`, `RepairMemory`, `LearnedOpportunityMemory`, and `BeliefClaimKey` are authoritative stored state (each entry records a specific observation against a specific key). The "is this goal blocked?" decision is derived from reading those memories plus the current tick. The post-T004 `PlanningPipelineTrace::unknown_blockers` adapter, and the final F2 `PlanningPipelineTrace::discrepancy_trace` rename, are derived views for debuggability rather than authoritative state.
 
 ## SystemFn Integration
 
