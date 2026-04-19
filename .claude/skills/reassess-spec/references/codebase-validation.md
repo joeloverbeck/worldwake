@@ -23,7 +23,11 @@ Grep for each type. Confirm existence and current shape (fields, members). Check
 
 ## 3.3 Functions and Methods
 
-Grep for each function. Confirm signature, module location, and export status. Line-number references in specs are informational aids, not authoritative. Verify they point to the claimed content. If accurate, leave them — they help implementers navigate. If drifted, either correct them or replace with function/type names that are grep-stable. Check for:
+Grep for each function. Confirm signature, module location, and export status. Line-number references in specs are informational aids, not authoritative. Verify they point to the claimed content. If accurate, leave them — they help implementers navigate. If drifted, either correct them or replace with function/type names that are grep-stable.
+
+**Large-file handling**: For files exceeding the Read tool's token limit (typically engine modules >25k tokens like `crates/worldwake-ai/src/planning_snapshot.rs` or `crates/worldwake-cli/src/scenario/mod.rs`), prefer Grep with `output_mode=content` and `-n=true` to locate the target symbols, then targeted offset/limit Read calls rather than chunked full-file Reads. Full reads of large files waste context that is better spent on cross-file validation.
+
+Check for:
 
 - **Signature differences** from what the spec assumes.
 - **New function parameter sufficiency**: Validate that proposed parameters provide sufficient data at every call site. Flag if a parameter type lacks needed context.

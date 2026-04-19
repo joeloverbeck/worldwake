@@ -359,6 +359,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: std::collections::BTreeMap::new(),
         };
         spawn_scenario(&def).unwrap()
     }
@@ -380,6 +381,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: std::collections::BTreeMap::new(),
         };
         spawn_scenario(&def).unwrap()
     }

@@ -3,6 +3,7 @@
 //! These are pure data types — no logic, just the schema for scenario files.
 //! All location references use string names, resolved to `EntityId` during spawning.
 
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use serde::Deserialize;
@@ -41,6 +42,10 @@ pub struct ScenarioDef {
     /// Default: 50. Set to 0 to disable compaction.
     #[serde(default = "default_compaction_interval")]
     pub compaction_interval: u32,
+    /// Per-rule lint overrides keyed by `LintRule` variant.
+    /// Values must be non-empty justification strings.
+    #[serde(default)]
+    pub scenario_lint_overrides: BTreeMap<crate::scenario::lints::LintRule, String>,
 }
 
 fn default_compaction_interval() -> u32 {

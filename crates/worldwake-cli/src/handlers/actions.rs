@@ -293,6 +293,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: std::collections::BTreeMap::new(),
         };
         let spawned = spawn_scenario(&def).unwrap();
         let agent_id = spawned
@@ -359,6 +360,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: std::collections::BTreeMap::new(),
         };
         spawn_scenario(&def).unwrap()
     }

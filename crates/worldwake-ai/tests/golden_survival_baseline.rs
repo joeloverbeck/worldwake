@@ -474,6 +474,7 @@ fn survival_contract_guard_rejects_missing_authored_contract() {
         commodity_decay: None,
         survival_health_contract: None,
         compaction_interval: 0,
+        scenario_lint_overrides: std::collections::BTreeMap::new(),
     };
 
     let result = std::panic::catch_unwind(|| {

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 use worldwake_ai::AgentTickDriver;
 use worldwake_cli::repl::{run_repl, run_single_command};
-use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
+use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints};
 
 fn default_scenario_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -34,6 +34,10 @@ struct Cli {
     /// On each invocation: loads state if file exists, saves state after command.
     #[arg(long)]
     state: Option<PathBuf>,
+
+    /// Bypass scenario lint failures for ad-hoc debugging.
+    #[arg(long)]
+    ignore_lints: bool,
 }
 
 fn main() {
@@ -47,7 +51,33 @@ fn main() {
         }
     };
 
-    let spawned = match spawn_scenario(&def) {
+    if cli.ignore_lints {
+        let report = worldwake_cli::scenario::lints::run_lints(&def);
+        let report = match worldwake_cli::scenario::lints::filter_overrides(
+            report,
+            &def.scenario_lint_overrides,
+        ) {
+            Ok(report) => report,
+            Err(e) => {
+                eprintln!("Failed to spawn scenario: {e}");
+                process::exit(1);
+            }
+        };
+        for failure in &report.failures {
+            eprintln!(
+                "WARNING (lint suppressed by --ignore-lints): {:?} [{}] {}",
+                failure.rule,
+                failure.affected_agents.join(", "),
+                failure.detail
+            );
+        }
+    }
+
+    let spawned = match if cli.ignore_lints {
+        spawn_scenario_ignoring_lints(&def)
+    } else {
+        spawn_scenario(&def)
+    } {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Failed to spawn scenario: {e}");
@@ -143,5 +173,15 @@ mod tests {
     fn test_cli_args_default_to_bundled_scenario() {
         let cli = Cli::parse_from(["worldwake"]);
         assert_eq!(cli.scenario, default_scenario_path());
+    }
+
+    #[test]
+    fn test_cli_args_parse_ignore_lints() {
+        let cli = Cli::parse_from([
+            "worldwake",
+            "--ignore-lints",
+            "scenarios/survival-baseline.ron",
+        ]);
+        assert!(cli.ignore_lints);
     }
 }

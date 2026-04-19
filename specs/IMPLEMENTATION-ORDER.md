@@ -27,6 +27,7 @@ Completed Phase 7 specs:
 - `S106: Ground Item Decay` — archived at [archive/specs/S106-ground-item-decay.md](/home/joeloverbeck/projects/worldwake/archive/specs/S106-ground-item-decay.md). Landed `GroundSince`, persisted `CommodityDecayMap`, `EventTag::ItemDecay`, `SystemId::ItemDecay`, live decay archival after `EvidenceDecay`, and Scenario 342 golden proof of bounded Waste steady state plus regenerated golden inventory/detail docs.
 - `S107: Proactive Diversification Exploration` — archived at [archive/specs/S107-proactive-diversification.md](/home/joeloverbeck/projects/worldwake/archive/specs/S107-proactive-diversification.md). Landed `DiversificationProfile`, passive place-visit tracking, proactive `ExploreLocation` emission/ranking with need-slack and cooldown gating, authored scenario support, and golden exploration coverage plus refreshed generated golden docs.
 - `S108: Per-Action Binding Strictness` — archived at [archive/specs/S108-per-action-binding-strictness.md](/home/joeloverbeck/projects/worldwake/archive/specs/S108-per-action-binding-strictness.md). Landed authoritative `BindingStrictness` on `ActionDef`, the dispatch-side strictness gate plus `ExactIdentityRequired` failure surface, the planner-contract correction that preserves same-target revalidation helpers, decision-trace strictness snapshots, and hybrid golden end-to-end proof for exact-identity refusal plus fungible fallback.
+- `S111: Scenario Profile Homogeneity Lints` — archived at [archive/specs/S111-scenario-homogeneity-lints.md](/home/joeloverbeck/projects/worldwake/archive/specs/S111-scenario-homogeneity-lints.md). Landed scenario-load linting for `ProfileHomogeneity` and `UnreachableExplorationDrive`, `ScenarioDef.scenario_lint_overrides`, load-time enforcement plus CLI `--ignore-lints`, the `PlanningSnapshot` accessor-fence doctests, and the CI sweep over committed `scenarios/*.ron`.
 - `S120: Survival Critical-Window Forensics` — archived at [archive/specs/S120-survival-critical-window-forensics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S120-survival-critical-window-forensics.md). Landed the shared runtime forensics model and extractor in `worldwake-ai`, golden-harness forensic helpers and focused proof, observer Section 9 rendering plus `--critical-window-top-n`, and the survival-debugging documentation updates.
 - `S104: Survival Baseline Recovery` — archived at [archive/specs/S104-survival-baseline-recovery.md](/home/joeloverbeck/projects/worldwake/archive/specs/S104-survival-baseline-recovery.md). Landed the survival-baseline recovery slice: golden triage, TellProfile profile-gating cleanup, the authored `survival-baseline.ron` scenario, planner cleanup for the remaining survival-path `ProduceCommodity` budget exhaustion, and the Layer 0 survival golden proof. The later Layer 1–3 rebuild wave was intentionally not pursued.
 
@@ -341,7 +342,7 @@ The travel-fence epistemic regression audit (originally PR-1.11 in the assessmen
 ### Dependency Graph
 
 ```text
-S108 (independent)              S111 (independent)
+S108 ✅ archived               S111 ✅ archived
    │
    └── S109 (soft dep on S108)
          │
@@ -355,7 +356,7 @@ S108 (independent)              S111 (independent)
 
 **Wave 1** (parallel, no hard deps):
 - **S108**: ✅ COMPLETED — archived at [archive/specs/S108-per-action-binding-strictness.md](/home/joeloverbeck/projects/worldwake/archive/specs/S108-per-action-binding-strictness.md). Landed authoritative `BindingStrictness` on `ActionDef`, the dispatch-side strictness gate plus `ExactIdentityRequired` failure surface, the planner-contract correction that preserves same-target revalidation helpers, decision-trace strictness snapshots, and hybrid golden end-to-end proof for exact-identity refusal plus fungible fallback.
-- **S111**: Scenario Profile Homogeneity Lints — scenario-load-time lints for profile homogeneity, proactive-exploration-without-curiosity, archetype inheritance; includes the `PlanningSnapshot` accessor-only architecture regression test (PR-1.11 travel-fence audit).
+- **S111**: ✅ COMPLETED — archived at [archive/specs/S111-scenario-homogeneity-lints.md](/home/joeloverbeck/projects/worldwake/archive/specs/S111-scenario-homogeneity-lints.md). Landed scenario-load-time `ProfileHomogeneity` and `UnreachableExplorationDrive` lints, `scenario_lint_overrides`, load-time enforcement plus CLI bypass warnings, the `PlanningSnapshot` accessor-only doctest regression, and the CI sweep over committed `scenarios/*.ron`.
 
 **Wave 2** (after Wave 1):
 - **S109**: Typed Discrepancy Taxonomy and BlockedIntentMemory Split — replace `BlockingFact::Unknown`/`AssumptionFailed` with `Discrepancy` enum; split `BlockedIntentMemory` into `DiscrepancyMemory`/`BlockerMemory`/`RepairMemory`/`LearnedOpportunityMemory`; per-class TTL.
@@ -383,7 +384,7 @@ S108 (independent)              S111 (independent)
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 
-- Note: S108 is complete and archived. The remaining Wave 1 gate item is S111.
+- Note: Wave 1 is complete. The remaining Phase 8 work is S109, S110, S112, and S113.
 
 ---
 

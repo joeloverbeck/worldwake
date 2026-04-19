@@ -37,6 +37,9 @@ For golden E2E tickets, explicitly decide whether reassessment disproved the tic
 
 When a ticket or spec uses generic domain language such as “affordance presence”, “local support”, or “relevant local state”, bind that phrase to the exact live carrier before coding. If the branch uses concrete place tags, workstation markers, item lots, resource sources, or another existing convention rather than a dedicated helper/type named in the prose, record that narrowing and implement against the live carrier instead of inventing a new abstraction by default.
 When a golden or observer ticket targets a CLI/report pipeline that currently exists only under `src/bin/*` with no callable public helper, treat the compiled binary itself as a potentially honest E2E seam during reassessment. In that case, prefer an integration test that drives `env!("CARGO_BIN_EXE_<name>")` with temp inputs/outputs over inventing a new public helper just to satisfy the draft.
+When a ticket wires validation into `spawn_scenario`, `load_scenario_file`, or another shared authored-input/load boundary, sweep not only `scenarios/` but also any test fixtures, observer scenarios, or golden `.ron` files that pass through the same boundary. If broadened verification then fails on one of those same-domain fixture inputs, treat the minimal fixture fix or justified override as current-ticket fallout when the ticket's required test target depends on it.
+For Rust `compile_fail`, privacy, or accessor-fence tickets, verify the exact external symbol path and failure mode before trusting the drafted snippet. Confirm whether the doctest is compiled as an external crate, whether a referenced symbol is actually re-exported from the crate root or only reachable through a module path, and whether the snippet would fail open independently for each intended visibility leak rather than only when multiple symbols change together. If private-type semantics make a drafted field-access regression impossible to prove in the stated form, rewrite the ticket/spec to the strongest honest boundary before coding.
+When a ticket mostly adds a new file plus a small declaration/edit in a large existing file (for example `pub mod ...;`, enum registration, or a one-line export), treat the existing file as a fragile edit surface: confirm the expected declaration layout before patching, then immediately re-read the touched header/section after editing to confirm the file skeleton is still intact before moving on to verification.
 
 ### 3. Handle mismatches explicitly
 
@@ -51,6 +54,7 @@ When that follow-up path requires creating a new ticket, read `tickets/README.md
 When reassessment shows the blocker is a missing substrate already captured by an active draft spec, create or update a bounded implementation ticket from that spec immediately and rewrite the current ticket to depend on that implementation ticket instead of leaving the spec as an implicit blocker.
 When repeated follow-up tickets in the same numbered family keep exposing the same missing contract, proof surface, or traceability substrate, stop and assess whether the remaining concern now belongs in a new spec or roadmap update rather than another local ticket.
 If a golden/observer ticket exposes a concrete contradiction in the exact read/report/proof surface it is asserting against, the current ticket may absorb the narrowest production fix needed to make that surface honest. When that happens, update the ticket's `Engine Changes`, `Files to Touch`, and closeout `Deviations` instead of preserving a stale “tests only” scope.
+If a ticket's manual regression step, `compile_fail` sketch, or claimed proof seam is impossible as written because of language/tooling semantics, rewrite the active ticket/spec to the strongest honest proof seam before final verification instead of preserving the stale step and only noting the mismatch in conversation.
 
 ### 4. Extract the implementation scope
 
@@ -67,6 +71,13 @@ For derived forensic/report/read-model tickets, use this compact scope checklist
 
 For small CLI/tooling tickets that touch a single binary or local helper surface, explicitly check whether the honest focused proof belongs beside the owned function/module (for example in `src/bin/*.rs` tests) rather than in a new integration-test binary. If the ticket sketches a new `tests/*.rs` file but the live seam is a local formatter/helper inside one binary, narrow the test placement to that seam and record the deviation in the ticket closeout.
 When the live proof seam or owned implementation boundary differs from the ticket's drafted sketch, record the exact landed seam in the ticket closeout instead of preserving the drafted shape in prose. Small/local tickets often land through a private extracted helper or a narrower same-file formatter/test seam even when the draft described a more direct in-place edit.
+Before implementation scope is final, compare `Verification Layers`, `Acceptance Criteria`, and drafted `New/Modified Tests` for one-to-one proof coverage. If the ticket names an invariant that requires its own focused proof but the drafted tests do not include it, correct the ticket/test plan up front instead of discovering the missing proof only during closeout.
+
+For doc-only or compile-time regression tickets, use this compact scope checklist before editing:
+- verify the exact external path for every symbol referenced in docs/tests (`crate_root::Type` vs `module::Type`)
+- confirm whether each negative proof fails independently for the intended regression, or only when multiple symbols change together
+- pair negative `compile_fail` coverage with a positive compile/runnable proof when that guards against always-pass regressions
+- if language privacy or type-checking semantics block the drafted proof shape, rewrite the ticket/spec to the strongest honest seam before implementation and closeout
 
 ### 5. Implement with Worldwake discipline
 
@@ -82,11 +93,13 @@ Do not launch multiple `cargo` commands in parallel for focused proofs or broade
 Load `references/verification.md`.
 
 When a golden or observer ticket relies on named integration-test binaries, explicitly check whether the cited command executes the intended authored scenario cases or only compiles the binary plus non-ignored helper tests. If the motivating long-run scenario cases are still `#[ignore]`, record that distinction honestly in the ticket closeout instead of implying those scenarios ran.
+When a ticket drafts a shorthand golden-family command such as `golden_survival` or another family label rather than exact test binaries, resolve the real integration-test binary names on the live branch before finalizing verification. Check whether the scenario-asserting cases inside those binaries are `#[ignore]`; if so, replace the shorthand with the exact per-binary commands and include `-- --ignored` wherever that is the only truthful way to prove the owned scenario contract.
 
 When request-resolution, `tick_step`, or other authoritative failure-boundary changes move where a rejection or legality failure surfaces, expect mixed-layer fallout in AI blocker classification, planner recovery, or golden behavior. Treat at least one targeted `worldwake-ai` or golden regression check as normal before relying on full-workspace verification alone.
 When a golden owns an AI-selected binding contract but a purely autonomous run no longer exposes a stable stale-request window, expect a hybrid proof seam: snapshot the AI-selected binding from decision trace, carry it through the narrowest lawful external request or harness action, set control source explicitly, and then assert the authoritative/runtime outcome. Record that narrowed proof seam in the ticket/spec instead of continuing to chase a fully autonomous scenario that the live branch cannot hold still.
 When a planner-boundary fix removes an unlawful omniscient carrier, expect dependent tests to fail until remote fixtures are rewritten to seed the needed belief or evidence state explicitly. Treat that as normal fallout to audit, not automatic proof that the production fix is wrong.
 When broadened verification exposes intentionally staged unused private surface (for example new enum variants, helper entry points, or report fields that sibling tickets will start using later), the current ticket may absorb the narrowest local lint-safe annotation or cleanup needed to keep CI-matching verification green. Record that staged-state deviation explicitly in the ticket closeout instead of silently treating it as unrelated noise.
+When a ticket's manual smoke needs synthetic authored input, prefer a disposable repo-local temp file or another cleanup-safe local fixture path over ad hoc external temp locations. Record the exact command/output honestly in the ticket closeout, then remove the temporary file before finalizing the session.
 
 ### 7. Close out the ticket honestly
 
@@ -95,6 +108,7 @@ Load `references/closeout.md`.
 Before closing out, re-read any ticket claims about optional rendering, disabled flags, or suppressed sections and confirm the landed behavior matches those claims exactly. If the ticket distinguishes between “render empty-state” and “omit entirely when disabled,” make sure at least one focused assertion proves that exact disabled-path contract before marking the ticket complete.
 If reassessment or verification narrowed the owned seam, introduced a private helper, or required narrow same-ticket lint cleanup to support staged infrastructure, say so explicitly in the ticket's `Deviations`/`Outcome` notes rather than leaving the drafted implementation sketch as the only recorded shape.
 If broadened verification proves the landed contract differs from the drafted invariant or top-level ticket summary, update the ticket's header fields and any now-false acceptance or invariant wording as part of closeout instead of recording the difference only under `Deviations`.
+If implementation added a focused proof that the drafted `Test Plan` omitted but the ticket's own invariants or verification layers required, update the ticket's `Acceptance Criteria`, `New/Modified Tests`, and command wording together during closeout so the final handoff reflects the real proof surface coherently.
 
 ### 8. Close the loop on the ticket
 

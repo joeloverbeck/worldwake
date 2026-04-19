@@ -20,7 +20,7 @@ use worldwake_ai::{
     LocalSurvivalStateSummary, SurvivalForensicExtractor,
 };
 use worldwake_cli::display::entity_display_name;
-use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
+use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints};
 use worldwake_core::{
     AgentBeliefStore, CommodityKind, DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView,
     HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, Quantity, RecipeId, Tick,
@@ -49,6 +49,9 @@ struct ObserverCli {
     /// Number of longest authored-critical windows to render in Section 9 (0 disables the section)
     #[arg(long, default_value_t = 3)]
     critical_window_top_n: usize,
+    /// Bypass scenario lint failures for ad-hoc debugging.
+    #[arg(long)]
+    ignore_lints: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -3266,7 +3269,33 @@ fn main() {
 
     let seed = def.seed;
 
-    let spawned = match spawn_scenario(&def) {
+    if cli.ignore_lints {
+        let report = worldwake_cli::scenario::lints::run_lints(&def);
+        let report = match worldwake_cli::scenario::lints::filter_overrides(
+            report,
+            &def.scenario_lint_overrides,
+        ) {
+            Ok(report) => report,
+            Err(e) => {
+                eprintln!("Failed to spawn scenario: {e}");
+                std::process::exit(1);
+            }
+        };
+        for failure in &report.failures {
+            eprintln!(
+                "WARNING (lint suppressed by --ignore-lints): {:?} [{}] {}",
+                failure.rule,
+                failure.affected_agents.join(", "),
+                failure.detail
+            );
+        }
+    }
+
+    let spawned = match if cli.ignore_lints {
+        spawn_scenario_ignoring_lints(&def)
+    } else {
+        spawn_scenario(&def)
+    } {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Failed to spawn scenario: {e}");
