@@ -1,10 +1,10 @@
 # S111SCEHOMLIN-003: Wire lints into scenario load + override mechanism
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: S111SCEHOMLIN-002
+**Deps**: archive/tickets/S111SCEHOMLIN-002.md
 
 ## Problem
 
@@ -12,7 +12,7 @@ S111SCEHOMLIN-002 builds the `scenario::lints` module but it is not yet enforced
 
 ## Assumption Reassessment (2026-04-19)
 
-1. **Existing tests on `spawn_scenario`**: `crates/worldwake-cli/tests/integration.rs` and `crates/worldwake-cli/tests/golden_observer_anomalies.rs` exercise the scenario-load path. Both call `spawn_scenario` (via `Grep` in `crates/worldwake-cli/src` and `tests/`). After this ticket, both will run lints; their committed scenarios must already pass lints (verified in S111SCEHOMLIN-004) or have explicit overrides.
+1. **Existing tests on `spawn_scenario`**: `crates/worldwake-cli/tests/integration.rs` and `crates/worldwake-cli/tests/golden_observer_anomalies.rs` exercise the scenario-load path. Both call `spawn_scenario` (via `Grep` in `crates/worldwake-cli/src` and `tests/`). During implementation, `crates/worldwake-cli/tests/fixtures/observer_anomalies/stuck_detector_wash_travel_cycle.ron` failed the new `UnreachableExplorationDrive` lint; this ticket absorbed a minimal scenario-root override there so Acceptance Criteria #2 remains truthful before the broader scenario sweep in S111SCEHOMLIN-004 lands.
 2. **Spec/docs reference**: `specs/S111-scenario-homogeneity-lints.md` D4 + D6.4 + D6.5 (current revision after `/reassess-spec` 2026-04-19).
 3. **Shared abstraction boundary**: `spawn_scenario` (`crates/worldwake-cli/src/scenario/mod.rs:105`) is the canonical scenario-bootstrap entry point. All bins (`main.rs`, `bin/observer.rs`) and tests funnel through it. Wiring lints here is the single-point enforcement boundary.
 6. **AI regression layer**: N/A — no AI behavior changes; lints run before any tick advances.
@@ -128,6 +128,8 @@ Add to the existing `#[cfg(test)] mod tests` from S111SCEHOMLIN-002:
 - `crates/worldwake-cli/src/scenario/lints.rs` (modify — add `filter_overrides`, add 3 new unit tests)
 - `crates/worldwake-cli/src/main.rs` (modify — `--ignore-lints` flag wiring)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — `--ignore-lints` flag wiring)
+- `crates/worldwake-cli/tests/fixtures/observer_anomalies/stuck_detector_wash_travel_cycle.ron` (modify — add a justified `UnreachableExplorationDrive` override so the observer golden keeps isolating wash/travel behavior under the new load-time lint gate)
+- `crates/worldwake-ai/tests/golden_survival_baseline.rs` (modify — add the new `ScenarioDef` field to the remaining cross-crate test literal surfaced by workspace `clippy --all-targets`)
 
 ## Out of Scope
 
@@ -143,7 +145,7 @@ Add to the existing `#[cfg(test)] mod tests` from S111SCEHOMLIN-002:
 
 1. `cargo test -p worldwake-cli scenario::lints` (the 3 new tests pass + the 6 from S111SCEHOMLIN-002 still pass).
 2. `cargo test -p worldwake-cli` (no regression in existing CLI tests, including `tests/integration.rs` and `tests/golden_observer_anomalies.rs` — these may need scenario fixes from S111SCEHOMLIN-004 first; if so, this ticket's PR should land after 004 or include the minimal fix).
-3. Manual smoke: `cargo run --bin worldwake-cli -- --scenario <homogeneous-scenario>` returns nonzero exit + lint-failure stderr; rerun with `--ignore-lints` returns zero exit + warning stderr.
+3. Manual smoke: `cargo run -p worldwake-cli --bin worldwake-cli -- <homogeneous-scenario> --exec quit` returns nonzero exit + lint-failure stderr; rerun with `--ignore-lints` returns zero exit + warning stderr.
 4. `cargo clippy --workspace --all-targets -- -D warnings`.
 
 ### Invariants
@@ -166,3 +168,30 @@ Add to the existing `#[cfg(test)] mod tests` from S111SCEHOMLIN-002:
 1. `cargo test -p worldwake-cli scenario::lints` (targeted — new + carried-over tests)
 2. `cargo test -p worldwake-cli` (full crate regression including integration tests)
 3. `cargo clippy --workspace --all-targets -- -D warnings` (CI parity)
+
+## Outcome
+
+Completed on 2026-04-19.
+
+- Added `scenario_lint_overrides` to `ScenarioDef`, `ScenarioError::LintFailure`, `lints::filter_overrides`, and `spawn_scenario_ignoring_lints`, while keeping `load_scenario_file` as pure deserialize.
+- Wired lint enforcement into `spawn_scenario` and added bin-level `--ignore-lints` handling in both `worldwake-cli` and `observer`, including visible stderr warnings for suppressed lint failures.
+- Added the three ticketed focused proofs in `scenario/lints.rs` and one CLI parse test for `--ignore-lints`.
+- Absorbed a minimal same-domain fixture fix: `stuck_detector_wash_travel_cycle.ron` now carries a justified `UnreachableExplorationDrive` override so existing observer goldens still pass under the new load-time gate.
+- Absorbed one workspace all-target constructor fallout site in `crates/worldwake-ai/tests/golden_survival_baseline.rs` so the shared `ScenarioDef` addition is fully closed under CI-matching clippy.
+
+## Deviations
+
+- The drafted `run_lints_for_warning` helper did not land as a standalone API. The warning formatting stays bin-local in `main.rs` and `bin/observer.rs`; the shared reusable boundary is `run_lints` plus `filter_overrides`.
+- Although broad scenario/future-fixture sweeping remains owned by S111SCEHOMLIN-004, this ticket absorbed one minimal observer-fixture override because Acceptance Criteria #2 required `cargo test -p worldwake-cli` to pass on the live branch.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli scenario::lints -- --list`
+- Passed `cargo test -p worldwake-cli scenario::lints`
+- Passed `cargo test -p worldwake-cli --test golden_observer_anomalies stuck_detector_excludes_wash_travel_cycle -- --exact`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline --no-run`
+- Manual smoke passed on a temporary homogeneous scenario file that was deleted after verification:
+  - `cargo run -p worldwake-cli --bin worldwake-cli -- /home/joeloverbeck/projects/worldwake/.tmp-s111-homogeneous.ron --exec quit` exited nonzero with `lint failure: ProfileHomogeneity ...`
+  - `cargo run -p worldwake-cli --bin worldwake-cli -- --ignore-lints /home/joeloverbeck/projects/worldwake/.tmp-s111-homogeneous.ron --exec quit` exited zero and printed `WARNING (lint suppressed by --ignore-lints): ProfileHomogeneity ...`

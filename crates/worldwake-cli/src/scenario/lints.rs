@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::scenario::types::{AgentDef, ScenarioDef};
 use serde::Deserialize;
 use worldwake_core::{ControlSource, Permille};
@@ -33,6 +35,25 @@ pub fn run_lints(scenario: &ScenarioDef) -> LintReport {
     check_profile_homogeneity(scenario, &mut report);
     check_unreachable_exploration_drive(scenario, &mut report);
     report
+}
+
+pub fn filter_overrides(
+    mut report: LintReport,
+    overrides: &BTreeMap<LintRule, String>,
+) -> Result<LintReport, super::ScenarioError> {
+    for (rule, justification) in overrides {
+        if justification.trim().is_empty() {
+            return Err(super::ScenarioError::Validation(format!(
+                "lint override for {rule:?} requires a non-empty justification string"
+            )));
+        }
+    }
+
+    let suppressed: BTreeSet<LintRule> = overrides.keys().copied().collect();
+    report
+        .failures
+        .retain(|failure| !suppressed.contains(&failure.rule));
+    Ok(report)
 }
 
 fn check_profile_homogeneity(scenario: &ScenarioDef, report: &mut LintReport) {
@@ -116,8 +137,10 @@ fn check_unreachable_exploration_drive(scenario: &ScenarioDef, report: &mut Lint
 
 #[cfg(test)]
 mod tests {
-    use super::{LintRule, run_lints};
+    use super::{LintRule, filter_overrides, run_lints};
     use crate::scenario::types::{AgentDef, ExplorationProfileDef, PlaceDef, ScenarioDef};
+    use crate::scenario::{ScenarioError, spawn_scenario};
+    use std::collections::BTreeMap;
     use worldwake_core::{
         CognitiveProfile, ControlSource, DiversificationProfile, EpistemicDispositionProfile,
         IntentionDispositionProfile, LastSeenMemory, PerceptionProfile, Permille, PlaceTag,
@@ -182,6 +205,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         }
     }
 
@@ -330,6 +354,73 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    #[test]
+    fn override_with_justification_suppresses_failure() {
+        let mut scenario = scenario_with_agents(vec![
+            fully_profiled_ai("Alice"),
+            fully_profiled_ai("Bob"),
+            fully_profiled_ai("Cara"),
+        ]);
+        scenario.scenario_lint_overrides.insert(
+            LintRule::ProfileHomogeneity,
+            "covers identical-twin regression".into(),
+        );
+
+        let report =
+            filter_overrides(run_lints(&scenario), &scenario.scenario_lint_overrides).unwrap();
+
+        assert!(
+            !report
+                .failures
+                .iter()
+                .any(|failure| failure.rule == LintRule::ProfileHomogeneity)
+        );
+    }
+
+    #[test]
+    fn override_with_empty_justification_returns_validation_error() {
+        let mut scenario = scenario_with_agents(vec![
+            fully_profiled_ai("Alice"),
+            fully_profiled_ai("Bob"),
+            fully_profiled_ai("Cara"),
+        ]);
+        scenario
+            .scenario_lint_overrides
+            .insert(LintRule::ProfileHomogeneity, String::new());
+
+        let error =
+            filter_overrides(run_lints(&scenario), &scenario.scenario_lint_overrides).unwrap_err();
+
+        match error {
+            ScenarioError::Validation(message) => {
+                assert!(message.contains("ProfileHomogeneity"));
+            }
+            other => panic!("expected validation error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unsuppressed_failure_short_circuits_spawn() {
+        let scenario = scenario_with_agents(vec![
+            fully_profiled_ai("Alice"),
+            fully_profiled_ai("Bob"),
+            fully_profiled_ai("Cara"),
+        ]);
+
+        match spawn_scenario(&scenario) {
+            Err(ScenarioError::LintFailure(report)) => {
+                assert!(
+                    report
+                        .failures
+                        .iter()
+                        .any(|failure| failure.rule == LintRule::ProfileHomogeneity)
+                );
+            }
+            Ok(_) => panic!("expected lint failure"),
+            Err(other) => panic!("expected lint failure, got {other:?}"),
+        }
     }
 
     fn fully_profiled_human(name: &str) -> AgentDef {

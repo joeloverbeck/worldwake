@@ -46,6 +46,7 @@ pub enum ScenarioError {
     Parse(ron::error::SpannedError),
     Validation(String),
     World(worldwake_core::WorldError),
+    LintFailure(lints::LintReport),
 }
 
 impl From<std::io::Error> for ScenarioError {
@@ -73,6 +74,18 @@ impl std::fmt::Display for ScenarioError {
             Self::Parse(e) => write!(f, "RON parse error: {e}"),
             Self::Validation(msg) => write!(f, "validation error: {msg}"),
             Self::World(e) => write!(f, "world error: {e}"),
+            Self::LintFailure(report) => {
+                for failure in &report.failures {
+                    writeln!(
+                        f,
+                        "lint failure: {:?} [{}] {}",
+                        failure.rule,
+                        failure.affected_agents.join(", "),
+                        failure.detail
+                    )?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -104,6 +117,23 @@ pub fn load_scenario_file(path: &Path) -> Result<ScenarioDef, ScenarioError> {
 /// 4. Build action registries and dispatch table
 /// 5. Assemble `SimulationState` + runtime artifacts into `SpawnedSimulation`
 pub fn spawn_scenario(def: &ScenarioDef) -> Result<SpawnedSimulation, ScenarioError> {
+    let report = lints::run_lints(def);
+    let report = lints::filter_overrides(report, &def.scenario_lint_overrides)?;
+    if !report.failures.is_empty() {
+        return Err(ScenarioError::LintFailure(report));
+    }
+    spawn_scenario_inner(def)
+}
+
+pub fn spawn_scenario_ignoring_lints(
+    def: &ScenarioDef,
+) -> Result<SpawnedSimulation, ScenarioError> {
+    let report = lints::run_lints(def);
+    let _report = lints::filter_overrides(report, &def.scenario_lint_overrides)?;
+    spawn_scenario_inner(def)
+}
+
+fn spawn_scenario_inner(def: &ScenarioDef) -> Result<SpawnedSimulation, ScenarioError> {
     let mut names: BTreeMap<String, EntityId> = BTreeMap::new();
     let mut place_names: BTreeSet<String> = BTreeSet::new();
     let recipe_registry = build_canonical_production_recipe_registry();
@@ -672,6 +702,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         }
     }
 
@@ -751,6 +782,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -794,6 +826,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -826,6 +859,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -863,6 +897,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -899,6 +934,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -950,6 +986,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -999,6 +1036,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1047,6 +1085,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1101,6 +1140,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1157,6 +1197,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let result = spawn_scenario(&def);
@@ -1208,6 +1249,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1268,6 +1310,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1326,6 +1369,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1387,6 +1431,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1471,6 +1516,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1509,6 +1555,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1623,6 +1670,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1668,6 +1716,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1712,6 +1761,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1823,6 +1873,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1882,6 +1933,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1932,6 +1984,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2025,6 +2078,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2133,6 +2187,7 @@ mod tests {
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
         };
 
         let Err(error) = spawn_scenario(&def) else {

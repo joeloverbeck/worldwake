@@ -134,4 +134,7 @@
         (commodity: Water, location: "Home Camp", facility: "Home Well", regeneration_ticks_per_unit: 3, capacity: 20),
         (commodity: Apple, location: "Orchard Camp", facility: "Valley Orchard", regeneration_ticks_per_unit: 3, capacity: 20),
     ],
+    scenario_lint_overrides: {
+        UnreachableExplorationDrive: "observer stuck-detector wash/travel fixture intentionally disables exploration so the anomaly stays isolated to wash-vs-travel behavior",
+    },
 )

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: S111SCEHOMLIN-003
+**Deps**: archive/tickets/S111SCEHOMLIN-003.md
 
 ## Problem
 
