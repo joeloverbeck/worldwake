@@ -1,6 +1,6 @@
 # S111SCEHOMLIN-004: CI scenario sweep + fix existing scenarios
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
@@ -23,6 +23,7 @@ After S111SCEHOMLIN-003 wires lints into `spawn_scenario`, every committed scena
 3. **Shared abstraction boundary**: this ticket asserts that the contract from S111SCEHOMLIN-002/003 (no scenario passes load with unsuppressed lint failures) holds for every committed scenario at the time of landing. The CI test enforces it on every PR thereafter.
 12. **Scenario isolation precision**: scenarios that legitimately need homogeneity (e.g., regression tests where every agent must behave identically to isolate one variable) get a `scenario_lint_overrides` entry whose justification names the regression invariant being preserved. Scenarios where homogeneity is incidental (just author oversight) get fixed by varying at least one profile field per FND-22.
 13. **Adjacent contradictions**: if the audit reveals that `survival-baseline.ron` or another scenario has been silently riding herd-behavior since landing, that's a finding worth noting in the ticket completion summary — but the fix is to vary the agents (FND-22 alignment), not to silence the lint.
+14. **Live audit result**: on the current branch, every committed file in `scenarios/` already passes `run_lints` without requiring new overrides or profile edits. `crates/worldwake-cli/src/lib.rs` already exports `pub mod scenario;`, so the remaining owned delta is the CI sweep test only.
 
 ## Architecture Check
 
@@ -155,5 +156,35 @@ The test reads `scenarios/` relative to the crate manifest. If the directory or 
 
 1. `cargo test -p worldwake-cli --test scenario_lint_sweep` (targeted — new CI test)
 2. `cargo test -p worldwake-cli` (CLI crate regression including integration + golden_observer_anomalies)
-3. `cargo test -p worldwake-ai golden_survival golden_drive_escalation_wash_priority` (verify scenario behavioral fixes don't break existing goldens)
-4. `cargo clippy --workspace --all-targets -- -D warnings` (CI parity)
+3. `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+4. `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
+5. `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
+6. `cargo test -p worldwake-ai --test golden_drive_escalation_wash_priority -- --ignored`
+7. `cargo clippy --workspace --all-targets -- -D warnings` (CI parity)
+
+## Outcome
+
+Completed on 2026-04-19.
+
+- Audited every committed scenario under `scenarios/` against the live load-time lint contract from archived `S111SCEHOMLIN-003`; all five already passed without needing new profile variation or new scenario-root overrides.
+- Added the new CI guard at `crates/worldwake-cli/tests/scenario_lint_sweep.rs`, which iterates `scenarios/*.ron`, loads each file, applies `run_lints` plus `filter_overrides`, and fails on any unsuppressed lint report.
+- Verified that `worldwake-cli::scenario` was already publicly exported from `crates/worldwake-cli/src/lib.rs`, so no production code or scenario-file edits were required on the current branch.
+
+## Deviations
+
+- The draft expected at least some scenario-file fixes or overrides, especially for `drive-escalation-wash-priority.ron`. The live branch no longer needed them; this ticket landed as a CI regression guard only.
+- The drafted shorthand command `cargo test -p worldwake-ai golden_survival golden_drive_escalation_wash_priority` was not a truthful proof surface. The final verification used the exact golden test binaries, and because their scenario assertions are `#[ignore]`, the closeout records the explicit `-- --ignored` commands that actually ran.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --test scenario_lint_sweep`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested -- --ignored`
+- Passed `cargo test -p worldwake-ai --test golden_drive_escalation_wash_priority`
+- Passed `cargo test -p worldwake-ai --test golden_drive_escalation_wash_priority -- --ignored`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

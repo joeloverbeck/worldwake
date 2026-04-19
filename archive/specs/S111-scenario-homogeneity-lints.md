@@ -1,12 +1,14 @@
 # S111: Scenario Profile Homogeneity Lints
 
+**Status**: COMPLETED
+
 ## Summary
 
 Add scenario-load-time lints that fail fast when a scenario ships an agent population with suspiciously homogeneous cognitive/utility/perception/exploration profiles, or when an agent's exploration configuration is internally inconsistent (curiosity weight zero on every exploration-related profile so no exploration drive can ever fire). Also fold in an architecture-lint regression: confirm `PlanningSnapshot` exposes no authoritative-only fields to planner code outside `worldwake-ai` (the travel-fence audit — PR-1.11 in the assessment). Lints run at scenario load inside `worldwake-cli` and inside CI-targeted tests, turning "silent herd behavior" into a scenario-author-visible error.
 
 ## Phase and Status
 
-Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8: Belief-First Continual Planning Foundation. Status: Completed.
 
 ## Crates
 
@@ -248,4 +250,24 @@ Listed in D6 (1)–(5).
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-19.
+
+- Landed the `worldwake-cli::scenario::lints` module with `LintReport`, `LintFailure`, `LintWarning`, `LintRule`, `run_lints`, and the two shipped rules: `ProfileHomogeneity` and `UnreachableExplorationDrive`.
+- Added `ScenarioDef.scenario_lint_overrides`, `ScenarioError::LintFailure`, load-time lint enforcement in `spawn_scenario`, `spawn_scenario_ignoring_lints`, and explicit `--ignore-lints` support in both CLI entry bins.
+- Landed the `PlanningSnapshot` accessor-fence regression as co-located doctests in `crates/worldwake-ai/src/planning_snapshot.rs`, using two `compile_fail` snippets plus a positive accessor-surface doctest.
+- Added the CI sweep test at `crates/worldwake-cli/tests/scenario_lint_sweep.rs`, which iterates `scenarios/*.ron`, loads each scenario, runs lints, applies override filtering, and fails on unsuppressed lint reports.
+- Audited the committed `scenarios/` corpus on the live branch; all current scenarios already passed the lint contract without needing scenario-file edits or new overrides.
+
+### Deviations
+
+- The draft summary and `IMPLEMENTATION-ORDER.md` shorthand still referenced the older broader rule sketch ("proactive-exploration-without-curiosity" and archetype inheritance). The landed spec family narrowed to the type-checked `UnreachableExplorationDrive` rule and kept archetype-inheritance lints as a non-goal.
+- The existing-scenario audit did not require the expected scenario rewrites or scenario-root overrides; the final S111 family landed the enforcement and CI guard without modifying committed scenario files.
+
+### Verification Result
+
+- Passed `cargo test --doc -p worldwake-ai`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test -p worldwake-cli scenario::lints`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo test -p worldwake-cli --test scenario_lint_sweep`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
