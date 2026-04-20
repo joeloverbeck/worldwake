@@ -181,7 +181,17 @@ pub struct GoalSuspendedPayload {
 pub struct GoalAbandonedPayload {
     pub agent: EntityId,
     pub goal_key: GoalKey,
-    pub reason: GoalRejectionReason,
+    pub reason: GoalAbandonReason,
+}
+
+pub enum GoalAbandonReason {
+    FrameCleared { reason: FrameClearReason },
+    GoalSwitched { new_goal: GoalKey, switch_kind: GoalSwitchReason },
+}
+
+pub enum GoalSwitchReason {
+    HigherPriorityGoal,
+    SameClassMargin,
 }
 
 pub struct PlanAdoptedPayload {
@@ -197,13 +207,25 @@ pub struct PlanInvalidatedPayload {
 }
 
 pub enum PlanInvalidationReason {
-    BeliefUpdate { claim_key: BeliefClaimKey }, // core
+    BeliefUpdate { claim_key: BeliefClaimKey },
     TargetGone { target: EntityId },
     ExpectationMismatch { step_index: u16 },
     ContentionLost { place: EntityId, action: ActionDefId },
-    DiscrepancyRecorded { discrepancy: Discrepancy }, // S109 core type
+    DiscrepancyRecorded { discrepancy: Discrepancy },
     PreemptedByHigherGoal { new_goal: GoalKey },
+    PursuitInvalidated { reason: PursuitInvalidationReasonTag },
+    AssumptionFailed { assumption: FrameAssumption },
     AgentIncapacitated,
+}
+
+pub enum PursuitInvalidationReasonTag {
+    NoProfile,
+    NoBelief,
+    TargetDead,
+    PlaceUnknown,
+    CoLocated,
+    PlaceChanged,
+    ConfidenceDecayed,
 }
 
 /// Pre-S114 payload shape. Before S114 lands, `ExpectationMismatch` fires
@@ -242,10 +264,20 @@ pub struct ReplanTriggeredPayload {
 }
 
 pub enum ReplanReason {
-    PlanInvalidated,
+    PlanInvalidated { reason: PlanInvalidationReason },
+    ActionInterrupted { reason: ActionInterruptReasonTag },
+    ActionStartFailed,
+    BlockingFactRecorded { blocking_fact: BlockingFact },
+    DiscrepancyRecorded { discrepancy: Discrepancy },
     LocalRepairExhausted,
     SearchBudgetExhausted,
-    GoalSwitched,
+    GoalSwitched { new_goal: GoalKey, switch_kind: GoalSwitchReason },
+}
+
+pub enum ActionInterruptReasonTag {
+    DangerNearby,
+    Reprioritized,
+    Other,
 }
 
 pub struct BlockerRecordedPayload {
@@ -279,12 +311,12 @@ Representative emission call sites (final wiring at implementation time):
 - `candidate_generation.rs` / `ranking.rs` (authoritative provenance capture into diagnostics), then `agent_tick/mod.rs` (event-log emission seam) → `EventTag::GoalOffered` + `GoalOfferedPayload` and `EventTag::GoalSuppressed` + `GoalSuppressedPayload`. The `rejected_alternatives` list is captured at commit, not here.
 - `agent_tick/planning.rs` (post-ranking commit path) → `EventTag::GoalCommitted` + `GoalCommittedPayload` with the captured alternatives
 - `agent_tick/planning.rs` (successful plan build) → `EventTag::PlanAdopted` + `PlanAdoptedPayload`
-- `goal_switching.rs` / `agent_tick` goal-switch path → `EventTag::GoalSuspended` / `EventTag::GoalAbandoned` + matching payloads
-- `plan_revalidation.rs` (every invalidation return path) → `EventTag::PlanInvalidated` + `PlanInvalidatedPayload`
+- `agent_tick/mod.rs` frame-transition path → `EventTag::GoalSuspended` / `EventTag::GoalAbandoned` + matching payloads
+- `agent_tick/observation.rs` reconciliation results returned into `agent_tick/mod.rs` → `EventTag::PlanInvalidated` + `PlanInvalidatedPayload`
 - `plan_revalidation.rs` / action execution (step expectation check — pre-S114 fires on explicit `expected_materializations` mismatches; S114 widens the trigger set) → `EventTag::ExpectationMismatch` + `ExpectationMismatchPayload`
 - `failure_handling.rs` (any successful local repair path) → `EventTag::RepairApplied` + `RepairAppliedPayload`
 - `failure_handling.rs` / memory-record call sites (both `DiscrepancyMemory` and `BlockerMemory` recording points) → `EventTag::BlockerRecorded` + `BlockerRecordedPayload`
-- `agent_tick/active_action.rs::handle_plan_failure` + any replan trigger → `EventTag::ReplanTriggered` + `ReplanTriggeredPayload`
+- `agent_tick/active_action.rs`, `agent_tick/execution.rs`, and observation-driven invalidation paths returned into `agent_tick/mod.rs` → `EventTag::ReplanTriggered` + `ReplanTriggeredPayload`
 
 Emission-volume note: every candidate offer emits `GoalOffered`. In high-candidate scenarios (e.g., `survival-contested.ron`), this multiplies per-tick event count meaningfully (tens of offers per agent-tick times many agents). The growth is intentional — the log replaces heuristic observer synthesis from S85/S98 (`archive/specs/S85-observer-behavioral-enrichment.md`, `archive/specs/S98-observer-affordance-change-detection.md`) — but a future spec may add per-agent gating if observer workload demands it.
 

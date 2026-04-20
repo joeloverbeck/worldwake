@@ -38,17 +38,18 @@ use worldwake_core::{
     DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
     DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
     EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary,
-    ExecutionBudget, ExplorationProfile, FrameAssumption, FrameState, GoalOfferedPayload,
-    GoalRejectionReason, GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    IntentionDispositionProfile, IntentionDomain, IntentionFrame, KnownRecipes,
-    LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
-    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
-    PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
-    RecordKind, RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
-    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    ExecutionBudget, ExplorationProfile, FrameAssumption, FrameClearReason, FrameState,
+    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason,
+    GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile,
+    IntentionDomain, IntentionFrame, KnownRecipes, LearnedOpportunityMemory, LoadUnits,
+    MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
+    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairMemory, ResourceSource, Seed,
+    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
+    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    WoundList,
     build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
@@ -5912,6 +5913,50 @@ fn trace_dead_agent() {
     assert!(
         matches!(traces[0].outcome, crate::DecisionOutcome::Dead),
         "dead agent should produce Dead outcome"
+    );
+}
+
+#[test]
+fn dead_agent_emits_goal_abandoned_with_death_reason() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.step_once();
+    let goal_key = harness
+        .world
+        .get_component_active_goal(harness.actor)
+        .expect("agent should have an active goal after first tick")
+        .goal_key;
+
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_dead_at(
+            harness.actor,
+            DeadAt {
+                tick: Tick(1),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    harness.step_once();
+
+    let abandoned = harness.event_log.events_by_tag(EventTag::GoalAbandoned);
+    assert!(
+        abandoned.iter().any(|event_id| {
+            harness
+                .event_log
+                .get(*event_id)
+                .and_then(|record| record.decision_payload())
+                == Some(&DecisionEventPayload::GoalAbandoned(GoalAbandonedPayload {
+                    agent: harness.actor,
+                    goal_key,
+                    reason: GoalAbandonReason::FrameCleared {
+                        reason: FrameClearReason::Death,
+                    },
+                }))
+        }),
+        "expected dead-agent cleanup to emit GoalAbandoned with FrameClearReason::Death"
     );
 }
 

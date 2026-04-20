@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DecisionEventPayload,
-    DiscrepancyMemory, EntityId, ExpectationMismatchPayload, EventTag,
-    LearnedOpportunityMemory, Quantity, RepairMemory, Tick, UniqueItemKind,
+    DiscrepancyMemory, EntityId, ExpectationMismatchPayload, EventTag, GoalKey,
+    LearnedOpportunityMemory, PlanInvalidationReason, Quantity, RepairMemory, ReplanReason, Tick,
+    UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -46,6 +47,13 @@ pub(crate) struct CompletedPlanSummary {
     pub(super) goal_key: worldwake_core::GoalKey,
     pub(super) opportunity: worldwake_core::OpportunityKey,
     pub(super) terminal_kind: crate::PlanTerminalKind,
+}
+
+#[derive(Default)]
+pub(crate) struct ReconciliationResult {
+    pub(super) completed_plan: Option<CompletedPlanSummary>,
+    pub(super) plan_invalidation: Option<(GoalKey, PlanInvalidationReason)>,
+    pub(super) replan_trigger: Option<(GoalKey, ReplanReason)>,
 }
 
 /// Result of the read phase, preserving trace-relevant data alongside ranked candidates.
@@ -457,25 +465,30 @@ pub(super) fn reconcile_in_flight_state(
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
     reconciliation: InFlightReconciliation<'_>,
-) -> Result<Option<CompletedPlanSummary>, TickInputError> {
+) -> Result<ReconciliationResult, TickInputError> {
     if !runtime.step_in_flight {
-        return Ok(None);
+        return Ok(ReconciliationResult::default());
     }
     if active_action.is_some() {
-        return Ok(None);
+        return Ok(ReconciliationResult::default());
     }
 
     let failed_signal = reconciliation.replan_signals.first().copied();
     let Some(step) = current_step(runtime).cloned() else {
         runtime.step_in_flight = false;
-        return Ok(None);
+        return Ok(ReconciliationResult::default());
     };
+    let goal_key = active_goal
+        .as_ref()
+        .map(|ag| ag.goal_key)
+        .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
+        .expect("in-flight step must have a current goal");
 
     if let Some(signal) = failed_signal {
-        handle_current_step_failure(
+        let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
-            active_goal.as_ref().map(|ag| ag.goal_key),
+            Some(goal_key),
             jc,
             blocked_memory,
             discrepancy_memory,
@@ -484,14 +497,18 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             Some(ExecutionFailure::Replan(signal)),
         )?;
-        return Ok(None);
+        return Ok(ReconciliationResult {
+            completed_plan: None,
+            plan_invalidation: None,
+            replan_trigger: Some((goal_key, replan_reason)),
+        });
     }
 
     if let Some(start_failure) = matching_start_failure(&step, reconciliation.start_failures) {
-        handle_current_step_failure(
+        let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
-            active_goal.as_ref().map(|ag| ag.goal_key),
+            Some(goal_key),
             jc,
             blocked_memory,
             discrepancy_memory,
@@ -500,15 +517,19 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             Some(ExecutionFailure::Start(start_failure)),
         )?;
-        return Ok(None);
+        return Ok(ReconciliationResult {
+            completed_plan: None,
+            plan_invalidation: None,
+            replan_trigger: Some((goal_key, replan_reason)),
+        });
     }
 
     let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
     else {
-        handle_current_step_failure(
+        let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
-            active_goal.as_ref().map(|ag| ag.goal_key),
+            Some(goal_key),
             jc,
             blocked_memory,
             discrepancy_memory,
@@ -517,7 +538,11 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             None,
         )?;
-        return Ok(None);
+        return Ok(ReconciliationResult {
+            completed_plan: None,
+            plan_invalidation: None,
+            replan_trigger: Some((goal_key, replan_reason)),
+        });
     };
     let completed_plan = runtime.current_plan.as_ref().and_then(|plan| {
         let next_index = runtime.current_step_index.checked_add(1)?;
@@ -532,23 +557,26 @@ pub(super) fn reconcile_in_flight_state(
             terminal_kind: plan.terminal_kind,
         })
     });
-    let goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
-    reconcile_committed_facility_queue_intents(runtime, facility_intents, goal_key, &step);
+    reconcile_committed_facility_queue_intents(runtime, facility_intents, Some(goal_key), &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
-        if let Some(goal_key) = goal_key {
-            emit_expectation_mismatch(
-                ctx.event_log,
-                ctx.tick,
-                agent,
-                goal_key,
-                runtime.current_step_index,
-                &step,
-            );
-        }
-        handle_current_step_failure(
+        emit_expectation_mismatch(
+            ctx.event_log,
+            ctx.tick,
+            agent,
+            goal_key,
+            runtime.current_step_index,
+            &step,
+        );
+        let invalidation_reason = PlanInvalidationReason::ExpectationMismatch {
+            step_index: runtime
+                .current_step_index
+                .try_into()
+                .expect("step index exceeds u16"),
+        };
+        let _ = handle_current_step_failure(
             ctx,
             runtime,
-            active_goal.as_ref().map(|ag| ag.goal_key),
+            Some(goal_key),
             jc,
             blocked_memory,
             discrepancy_memory,
@@ -557,7 +585,16 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             None,
         )?;
-        return Ok(None);
+        return Ok(ReconciliationResult {
+            completed_plan: None,
+            plan_invalidation: Some((goal_key, invalidation_reason)),
+            replan_trigger: Some((
+                goal_key,
+                ReplanReason::PlanInvalidated {
+                    reason: invalidation_reason,
+                },
+            )),
+        });
     }
 
     runtime.step_in_flight = false;
@@ -569,7 +606,11 @@ pub(super) fn reconcile_in_flight_state(
         step.op_kind,
         ctx.tick,
     );
-    Ok(completed_plan)
+    Ok(ReconciliationResult {
+        completed_plan,
+        plan_invalidation: None,
+        replan_trigger: None,
+    })
 }
 
 fn matching_start_failure<'a>(

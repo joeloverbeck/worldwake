@@ -47,9 +47,12 @@ use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents,
     ControlSource, DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
-    GoalOfferedPayload, GoalSuppressedPayload, IntentionFrame, LastProactiveExplorationTick,
-    LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, PendingEvent, RepairEntry,
-    RepairKey, RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalSuspendedPayload,
+    GoalSuppressedPayload, GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick,
+    LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, PendingEvent,
+    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, RepairEntry,
+    RepairKey, RepairMemory, ReplanReason, ReplanTriggeredPayload, Tick, VisibilitySpec,
+    WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -248,6 +251,85 @@ pub(super) fn emit_decision_event(
     }));
 }
 
+fn emit_plan_invalidated(
+    event_log: &mut worldwake_core::EventLog,
+    tick: Tick,
+    agent: EntityId,
+    goal_key: worldwake_core::GoalKey,
+    reason: PlanInvalidationReason,
+) {
+    emit_decision_event(
+        event_log,
+        tick,
+        agent,
+        EventTag::PlanInvalidated,
+        DecisionEventPayload::PlanInvalidated(PlanInvalidatedPayload {
+            agent,
+            goal_key,
+            reason,
+        }),
+    );
+}
+
+fn emit_replan_triggered(
+    event_log: &mut worldwake_core::EventLog,
+    tick: Tick,
+    agent: EntityId,
+    goal_key: worldwake_core::GoalKey,
+    reason: ReplanReason,
+) {
+    emit_decision_event(
+        event_log,
+        tick,
+        agent,
+        EventTag::ReplanTriggered,
+        DecisionEventPayload::ReplanTriggered(ReplanTriggeredPayload {
+            agent,
+            goal_key,
+            reason,
+        }),
+    );
+}
+
+fn map_pursuit_invalidation_reason(
+    reason: crate::PursuitInvalidationReason,
+) -> PursuitInvalidationReasonTag {
+    match reason {
+        crate::PursuitInvalidationReason::NoProfile => PursuitInvalidationReasonTag::NoProfile,
+        crate::PursuitInvalidationReason::NoBelief => PursuitInvalidationReasonTag::NoBelief,
+        crate::PursuitInvalidationReason::TargetDead => PursuitInvalidationReasonTag::TargetDead,
+        crate::PursuitInvalidationReason::PlaceUnknown => {
+            PursuitInvalidationReasonTag::PlaceUnknown
+        }
+        crate::PursuitInvalidationReason::CoLocated => PursuitInvalidationReasonTag::CoLocated,
+        crate::PursuitInvalidationReason::PlaceChanged => {
+            PursuitInvalidationReasonTag::PlaceChanged
+        }
+        crate::PursuitInvalidationReason::ConfidenceDecayed => {
+            PursuitInvalidationReasonTag::ConfidenceDecayed
+        }
+    }
+}
+
+fn infer_goal_switch_reason(
+    previous_goal: worldwake_core::GoalKey,
+    new_goal: worldwake_core::GoalKey,
+    ranked_candidates: &[crate::RankedGoal],
+) -> GoalSwitchReason {
+    let previous = ranked_candidates
+        .iter()
+        .find(|candidate| candidate.grounded.key == previous_goal);
+    let new = ranked_candidates
+        .iter()
+        .find(|candidate| candidate.grounded.key == new_goal);
+    match (previous, new) {
+        (Some(previous), Some(new)) if new.priority_class > previous.priority_class => {
+            GoalSwitchReason::HigherPriorityGoal
+        }
+        _ => GoalSwitchReason::SameClassMargin,
+    }
+}
+
 fn emit_candidate_decision_events(
     event_log: &mut worldwake_core::EventLog,
     tick: Tick,
@@ -430,6 +512,7 @@ fn process_agent(
         .unwrap_or_default();
     let mut current_facility_intents = original_facility_intents.clone();
     let runtime = runtime_by_agent.entry(agent).or_default();
+    let original_plan_goal = runtime.current_plan.as_ref().map(|plan| plan.goal);
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
     let mut frame_transitions: Option<Vec<FrameTransitionKind>> =
@@ -445,6 +528,21 @@ fn process_agent(
             recipe_registry,
         );
         if view.is_dead(agent) || !view.is_alive(agent) {
+            if let Some(goal_key) = original_active_goal.map(|goal| goal.goal_key) {
+                emit_decision_event(
+                    ctx.event_log,
+                    tick,
+                    agent,
+                    EventTag::GoalAbandoned,
+                    DecisionEventPayload::GoalAbandoned(GoalAbandonedPayload {
+                        agent,
+                        goal_key,
+                        reason: GoalAbandonReason::FrameCleared {
+                            reason: FrameClearReason::Death,
+                        },
+                    }),
+                );
+            }
             if current_frame.is_some() {
                 runtime.last_frame_clear_reason = Some(FrameClearReason::Death);
                 current_frame = None;
@@ -496,7 +594,7 @@ fn process_agent(
         }
     }
 
-    let completed_plan = reconcile_in_flight_state(
+    let reconciliation = reconcile_in_flight_state(
         ctx,
         runtime,
         &mut current_active_goal,
@@ -512,7 +610,13 @@ fn process_agent(
             committed_actions,
         },
     )?;
-    if let Some(summary) = completed_plan {
+    if let Some((goal_key, reason)) = reconciliation.plan_invalidation {
+        emit_plan_invalidated(ctx.event_log, tick, agent, goal_key, reason);
+    }
+    if let Some((goal_key, reason)) = reconciliation.replan_trigger.clone() {
+        emit_replan_triggered(ctx.event_log, tick, agent, goal_key, reason);
+    }
+    if let Some(summary) = reconciliation.completed_plan {
         record_repair_memory_from_completed_plan(
             &mut repair_memory,
             &blocked_memory,
@@ -573,6 +677,9 @@ fn process_agent(
                 ));
                 emit_assumption_transitions(&pre_state, &eval, tick, &mut frame_transitions);
                 if matches!(eval, AssumptionEvalResult::CriticalFailure(_)) {
+                    let AssumptionEvalResult::CriticalFailure(assumption) = eval else {
+                        unreachable!()
+                    };
                     // Create blocked intent so the agent doesn't immediately
                     // re-adopt the same goal after assumption failure. The
                     // structural block-ticks TTL preserves the pre-S109
@@ -594,6 +701,19 @@ fn process_agent(
                     runtime.materialization_bindings.clear();
                     current_facility_intents.intents.clear();
                     runtime.dirty.insert(crate::DirtySet::ASSUMPTION_FAILED);
+                    if let Some(goal_key) = original_plan_goal
+                        .or(current_active_goal.as_ref().map(|goal| goal.goal_key))
+                    {
+                        let reason = PlanInvalidationReason::AssumptionFailed { assumption };
+                        emit_plan_invalidated(ctx.event_log, tick, agent, goal_key, reason);
+                        emit_replan_triggered(
+                            ctx.event_log,
+                            tick,
+                            agent,
+                            goal_key,
+                            ReplanReason::PlanInvalidated { reason },
+                        );
+                    }
                 }
             }
         }
@@ -624,6 +744,22 @@ fn process_agent(
         },
         tracing,
     );
+    let pursuit_invalidation = read_result.pursuit_invalidation;
+    if let Some(pursuit_invalidation) = pursuit_invalidation
+        && let Some(goal_key) = original_plan_goal.or(active_goal_key)
+    {
+        let reason = PlanInvalidationReason::PursuitInvalidated {
+            reason: map_pursuit_invalidation_reason(pursuit_invalidation),
+        };
+        emit_plan_invalidated(ctx.event_log, tick, agent, goal_key, reason);
+        emit_replan_triggered(
+            ctx.event_log,
+            tick,
+            agent,
+            goal_key,
+            ReplanReason::PlanInvalidated { reason },
+        );
+    }
     emit_candidate_decision_events(
         ctx.event_log,
         tick,
@@ -760,6 +896,23 @@ fn process_agent(
             action_handlers,
             read_result.decision_context,
         )?;
+        if matches!(
+            interrupt_decision,
+            crate::InterruptDecision::InterruptForReplan { .. }
+        ) && let Some(goal_key) = active_goal_before_interrupt
+            .or_else(|| original_plan_goal)
+            .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
+        {
+            emit_replan_triggered(
+                ctx.event_log,
+                tick,
+                agent,
+                goal_key,
+                ReplanReason::ActionInterrupted {
+                    reason: worldwake_core::ActionInterruptReasonTag::Reprioritized,
+                },
+            );
+        }
 
         tracing.then(|| {
             let action_name = action_defs
@@ -1005,7 +1158,7 @@ fn process_agent(
                 frame_transition: build_frame_transition_trace(&mut frame_transitions),
                 patrol_route,
                 selected_patrol_anchor,
-                pursuit_invalidation: read_result.pursuit_invalidation,
+                pursuit_invalidation,
             }))
         })
     };
@@ -1104,6 +1257,78 @@ fn process_agent(
         current_active_goal.as_ref(),
         tick,
     )?;
+
+    if let Some(original_frame) = original_frame.as_ref()
+        && let Some(IntentionFrame {
+            goal,
+            state:
+                worldwake_core::FrameState::Suspended {
+                    reason,
+                    suspended_at: _,
+                },
+            ..
+        }) = current_frame.as_ref()
+        && *goal == original_frame.goal
+        && !matches!(
+            original_frame.state,
+            worldwake_core::FrameState::Suspended {
+                reason: existing_reason,
+                ..
+            } if existing_reason == *reason
+        )
+    {
+        emit_decision_event(
+            ctx.event_log,
+            tick,
+            agent,
+            EventTag::GoalSuspended,
+            DecisionEventPayload::GoalSuspended(GoalSuspendedPayload {
+                agent,
+                goal_key: original_frame.goal,
+                reason: *reason,
+            }),
+        );
+    }
+
+    if let Some(previous_goal) = original_active_goal.map(|goal| goal.goal_key) {
+        let preserved_as_suspended = current_frame.as_ref().is_some_and(|frame| {
+            frame.goal == previous_goal
+                && matches!(frame.state, worldwake_core::FrameState::Suspended { .. })
+        });
+        let still_active = current_active_goal
+            .as_ref()
+            .is_some_and(|goal| goal.goal_key == previous_goal);
+        if !preserved_as_suspended && !still_active {
+            let abandon_reason = if let Some(new_goal) = current_active_goal.map(|goal| goal.goal_key)
+            {
+                GoalAbandonReason::GoalSwitched {
+                    new_goal,
+                    switch_kind: infer_goal_switch_reason(
+                        previous_goal,
+                        new_goal,
+                        &ranked_candidates,
+                    ),
+                }
+            } else if let Some(reason) = runtime.last_frame_clear_reason {
+                GoalAbandonReason::FrameCleared { reason }
+            } else {
+                GoalAbandonReason::FrameCleared {
+                    reason: FrameClearReason::LostPlan,
+                }
+            };
+            emit_decision_event(
+                ctx.event_log,
+                tick,
+                agent,
+                EventTag::GoalAbandoned,
+                DecisionEventPayload::GoalAbandoned(GoalAbandonedPayload {
+                    agent,
+                    goal_key: previous_goal,
+                    reason: abandon_reason,
+                }),
+            );
+        }
+    }
 
     // ── Finalize (runs for both paths) ──
     persist_intention_frame(

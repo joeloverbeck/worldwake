@@ -8,7 +8,7 @@ use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
     ActiveGoal, BlockerRecordedPayload, BlockerMemory, CauseRef, ContentionIntents,
     DecisionEventPayload, DiscrepancyMemory, EntityId, EventTag, LearnedOpportunityMemory,
-    RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
 
@@ -58,7 +58,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
         if handled {
             return Ok(());
         }
-        return handle_current_step_failure(
+        let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
             active_goal,
@@ -69,7 +69,21 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             agent,
             step,
             None,
-        );
+        )?;
+        if let Some(goal_key) = active_goal {
+            emit_decision_event(
+                ctx.event_log,
+                tick,
+                agent,
+                EventTag::ReplanTriggered,
+                DecisionEventPayload::ReplanTriggered(ReplanTriggeredPayload {
+                    agent,
+                    goal_key,
+                    reason: replan_reason,
+                }),
+            );
+        }
+        return Ok(());
     }
 
     let Some(targets) = resolve_step_targets(runtime, step) else {
@@ -115,7 +129,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 runtime,
             );
         }
-        handle_current_step_failure(
+        let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
             active_goal,
@@ -127,6 +141,19 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             step,
             None,
         )?;
+        if let Some(goal_key) = active_goal {
+            emit_decision_event(
+                ctx.event_log,
+                tick,
+                agent,
+                EventTag::ReplanTriggered,
+                DecisionEventPayload::ReplanTriggered(ReplanTriggeredPayload {
+                    agent,
+                    goal_key,
+                    reason: replan_reason,
+                }),
+            );
+        }
         return finalize_agent_tick(
             ctx.world,
             ctx.event_log,

@@ -1,6 +1,6 @@
 use crate::{
-    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, Discrepancy, EntityId, GoalKey,
-    MaterializationTag, SuspensionReason, Tick,
+    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, Discrepancy, EntityId,
+    FrameAssumption, FrameClearReason, GoalKey, MaterializationTag, SuspensionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -113,7 +113,24 @@ pub struct GoalSuspendedPayload {
 pub struct GoalAbandonedPayload {
     pub agent: EntityId,
     pub goal_key: GoalKey,
-    pub reason: GoalRejectionReason,
+    pub reason: GoalAbandonReason,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum GoalAbandonReason {
+    FrameCleared {
+        reason: FrameClearReason,
+    },
+    GoalSwitched {
+        new_goal: GoalKey,
+        switch_kind: GoalSwitchReason,
+    },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum GoalSwitchReason {
+    HigherPriorityGoal,
+    SameClassMargin,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -151,7 +168,24 @@ pub enum PlanInvalidationReason {
     PreemptedByHigherGoal {
         new_goal: GoalKey,
     },
+    PursuitInvalidated {
+        reason: PursuitInvalidationReasonTag,
+    },
+    AssumptionFailed {
+        assumption: FrameAssumption,
+    },
     AgentIncapacitated,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum PursuitInvalidationReasonTag {
+    NoProfile,
+    NoBelief,
+    TargetDead,
+    PlaceUnknown,
+    CoLocated,
+    PlaceChanged,
+    ConfidenceDecayed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -186,12 +220,34 @@ pub struct ReplanTriggeredPayload {
     pub reason: ReplanReason,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ReplanReason {
-    PlanInvalidated,
+    PlanInvalidated {
+        reason: PlanInvalidationReason,
+    },
+    ActionInterrupted {
+        reason: ActionInterruptReasonTag,
+    },
+    ActionStartFailed,
+    BlockingFactRecorded {
+        blocking_fact: BlockingFact,
+    },
+    DiscrepancyRecorded {
+        discrepancy: Discrepancy,
+    },
     LocalRepairExhausted,
     SearchBudgetExhausted,
-    GoalSwitched,
+    GoalSwitched {
+        new_goal: GoalKey,
+        switch_kind: GoalSwitchReason,
+    },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ActionInterruptReasonTag {
+    DangerNearby,
+    Reprioritized,
+    Other,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -206,15 +262,17 @@ pub struct BlockerRecordedPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockerRecordedPayload, DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary,
-        ExpectationMismatchPayload, GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload,
-        GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, PlanAdoptedPayload,
-        PlanInvalidatedPayload, PlanInvalidationReason, RejectedAlternativeSummary,
-        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
+        ActionInterruptReasonTag, BlockerRecordedPayload, DecisionEventPayload, EmitterTag,
+        EvidenceKindTag, EvidenceSummary, ExpectationMismatchPayload, GoalAbandonReason,
+        GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload, GoalRejectionReason,
+        GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, PlanAdoptedPayload,
+        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
+        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+        ReplanTriggeredPayload,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
-        MaterializationTag, SuspensionReason, Tick,
+        FrameAssumption, FrameClearReason, MaterializationTag, SuspensionReason, Tick,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -268,7 +326,10 @@ mod tests {
             DecisionEventPayload::GoalAbandoned(GoalAbandonedPayload {
                 agent: entity_id(5, 0),
                 goal_key: sample_goal_key(),
-                reason: GoalRejectionReason::ArbitrationLost,
+                reason: GoalAbandonReason::GoalSwitched {
+                    new_goal: sample_goal_key(),
+                    switch_kind: GoalSwitchReason::SameClassMargin,
+                },
             }),
             DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                 agent: entity_id(6, 0),
@@ -278,11 +339,8 @@ mod tests {
             DecisionEventPayload::PlanInvalidated(PlanInvalidatedPayload {
                 agent: entity_id(7, 0),
                 goal_key: sample_goal_key(),
-                reason: PlanInvalidationReason::BeliefUpdate {
-                    claim_key: BeliefClaimKey {
-                        subject: entity_id(8, 0),
-                        aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
-                    },
+                reason: PlanInvalidationReason::PursuitInvalidated {
+                    reason: PursuitInvalidationReasonTag::PlaceChanged,
                 },
             }),
             DecisionEventPayload::ExpectationMismatch(ExpectationMismatchPayload {
@@ -301,7 +359,11 @@ mod tests {
             DecisionEventPayload::ReplanTriggered(ReplanTriggeredPayload {
                 agent: entity_id(12, 0),
                 goal_key: sample_goal_key(),
-                reason: ReplanReason::PlanInvalidated,
+                reason: ReplanReason::PlanInvalidated {
+                    reason: PlanInvalidationReason::AssumptionFailed {
+                        assumption: FrameAssumption::NoCriticalThreat,
+                    },
+                },
             }),
             DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent: entity_id(13, 0),
@@ -326,14 +388,18 @@ mod tests {
         assert_copy_value_bounds::<GoalRejectionReason>();
         assert_value_bounds::<GoalSuspendedPayload>();
         assert_value_bounds::<GoalAbandonedPayload>();
+        assert_value_bounds::<GoalAbandonReason>();
+        assert_copy_value_bounds::<GoalSwitchReason>();
         assert_value_bounds::<PlanAdoptedPayload>();
         assert_value_bounds::<PlanInvalidatedPayload>();
-        assert_copy_value_bounds::<PlanInvalidationReason>();
+        assert_value_bounds::<PlanInvalidationReason>();
+        assert_copy_value_bounds::<PursuitInvalidationReasonTag>();
         assert_value_bounds::<ExpectationMismatchPayload>();
         assert_value_bounds::<RepairAppliedPayload>();
         assert_copy_value_bounds::<RepairKind>();
         assert_value_bounds::<ReplanTriggeredPayload>();
-        assert_copy_value_bounds::<ReplanReason>();
+        assert_value_bounds::<ReplanReason>();
+        assert_copy_value_bounds::<ActionInterruptReasonTag>();
         assert_value_bounds::<BlockerRecordedPayload>();
     }
 
@@ -373,12 +439,73 @@ mod tests {
             PlanInvalidationReason::PreemptedByHigherGoal {
                 new_goal: sample_goal_key(),
             },
+            PlanInvalidationReason::PursuitInvalidated {
+                reason: PursuitInvalidationReasonTag::ConfidenceDecayed,
+            },
+            PlanInvalidationReason::AssumptionFailed {
+                assumption: FrameAssumption::TargetAlive(entity_id(9, 0)),
+            },
             PlanInvalidationReason::AgentIncapacitated,
         ];
 
         for reason in reasons {
             let bytes = bincode::serialize(&reason).unwrap();
             let roundtrip: PlanInvalidationReason = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, reason);
+        }
+    }
+
+    #[test]
+    fn goal_abandon_reason_variants_roundtrip_through_bincode() {
+        let reasons = [
+            GoalAbandonReason::FrameCleared {
+                reason: FrameClearReason::LostPlan,
+            },
+            GoalAbandonReason::GoalSwitched {
+                new_goal: sample_goal_key(),
+                switch_kind: GoalSwitchReason::HigherPriorityGoal,
+            },
+        ];
+
+        for reason in reasons {
+            let bytes = bincode::serialize(&reason).unwrap();
+            let roundtrip: GoalAbandonReason = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, reason);
+        }
+    }
+
+    #[test]
+    fn replan_reason_variants_roundtrip_through_bincode() {
+        let reasons = [
+            ReplanReason::PlanInvalidated {
+                reason: PlanInvalidationReason::BeliefUpdate {
+                    claim_key: BeliefClaimKey {
+                        subject: entity_id(8, 0),
+                        aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+                    },
+                },
+            },
+            ReplanReason::ActionInterrupted {
+                reason: ActionInterruptReasonTag::Reprioritized,
+            },
+            ReplanReason::ActionStartFailed,
+            ReplanReason::BlockingFactRecorded {
+                blocking_fact: BlockingFact::NoKnownPath,
+            },
+            ReplanReason::DiscrepancyRecorded {
+                discrepancy: Discrepancy::ImproperPlanningState,
+            },
+            ReplanReason::LocalRepairExhausted,
+            ReplanReason::SearchBudgetExhausted,
+            ReplanReason::GoalSwitched {
+                new_goal: sample_goal_key(),
+                switch_kind: GoalSwitchReason::SameClassMargin,
+            },
+        ];
+
+        for reason in reasons {
+            let bytes = bincode::serialize(&reason).unwrap();
+            let roundtrip: ReplanReason = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, reason);
         }
     }
