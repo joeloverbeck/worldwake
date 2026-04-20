@@ -498,7 +498,7 @@ fn process_agent(
                 recipe_registry,
             );
             let frame = current_frame.as_mut().unwrap();
-            frame.assumptions = populate_assumptions(&frame.domain, agent, &view);
+            frame.assumptions = populate_assumptions(frame, agent, &view);
             let eval = evaluate_assumptions(&frame.assumptions, &view, None);
             if !matches!(eval, AssumptionEvalResult::Deferred) {
                 let pre_state = current_frame.as_ref().unwrap().state;

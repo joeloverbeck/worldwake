@@ -1,6 +1,6 @@
 # S122FRAASSCOM-002: Populate `CommodityAvailableAt` in `populate_assumptions`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `populate_assumptions` signature widened from `(domain: &IntentionDomain, agent, view)` to `(frame: &IntentionFrame, agent, view)`; the `Travel | Errand` arm gains a conditional `CommodityAvailableAt` push driven by `frame.expected_commodity()`.
@@ -134,3 +134,21 @@ The `FrameAssumption::CommodityAvailableAt` variant exists in the type system bu
 1. `cargo test -p worldwake-ai --lib agent_tick::frame`
 2. `cargo test -p worldwake-ai --lib agent_tick`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-20.
+
+- Widened `populate_assumptions` in `crates/worldwake-ai/src/agent_tick/frame.rs` from `(domain, agent, view)` to `(frame, agent, view)` so population can read the frame's committed goal through `frame.expected_commodity()`.
+- Extended the `Travel | Errand` arm to add `FrameAssumption::CommodityAvailableAt { commodity, place }` when the active frame serves an `AcquireCommodity` goal, while leaving Care, Escort, and Generic behavior unchanged.
+- Updated the production call site in `crates/worldwake-ai/src/agent_tick/mod.rs` to pass the full `IntentionFrame`, migrated the five existing populate tests to the new signature, and added a focused `Travel + AcquireCommodity` unit test proving both `RouteExists` and `CommodityAvailableAt` are emitted.
+
+## Deviations
+
+- The active ticket file remains untracked in this worktree, so close-out evidence for the ticket body itself does not appear in ordinary tracked-file git diffs.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib agent_tick::frame`
+- Passed `cargo test -p worldwake-ai --lib agent_tick`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `evaluate_assumptions` signature widened to take `agent: EntityId`; `AssumptionEvalResult::CriticalFailure` widened from unit variant to `CriticalFailure(FrameAssumption)`; existing `TargetAlive` arm updated to pass payload; `apply_assumption_result`, `emit_assumption_transitions`, both call sites at `mod.rs:502/599`, and 6 affected test sites all updated; stub comment + always-true arm + `commodity_available_at_stubbed_as_pass` test removed.
-**Deps**: archive/tickets/S122FRAASSCOM-001.md, tickets/S122FRAASSCOM-002.md
+**Deps**: archive/tickets/S122FRAASSCOM-001.md, archive/tickets/S122FRAASSCOM-002.md
 
 ## Problem
 

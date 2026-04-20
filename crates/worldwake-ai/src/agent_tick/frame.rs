@@ -278,19 +278,23 @@ pub(super) fn assess_commodity_availability(
 /// method on `IntentionFrame`) to keep `worldwake-core` free of `BeliefView`
 /// dependencies.
 pub(super) fn populate_assumptions(
-    domain: &IntentionDomain,
+    frame: &IntentionFrame,
     agent: EntityId,
     view: &dyn RuntimeBeliefView,
 ) -> Vec<FrameAssumption> {
+    let domain = &frame.domain;
     let current_place = view.effective_place(agent);
     match *domain {
         IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination } => {
-            let mut assumptions = Vec::with_capacity(1);
+            let mut assumptions = Vec::with_capacity(2);
             if let Some(from) = current_place {
                 assumptions.push(FrameAssumption::RouteExists {
                     from,
                     to: destination,
                 });
+            }
+            if let Some((commodity, place)) = frame.expected_commodity() {
+                assumptions.push(FrameAssumption::CommodityAvailableAt { commodity, place });
             }
             assumptions
         }
@@ -528,8 +532,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
+        DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
         IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
         PerceptionSource, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
@@ -939,9 +943,12 @@ mod tests {
         let mut view = MockBeliefView::new();
         view.alive.insert(agent);
         view.places.insert(agent, place_a);
+        let frame = make_frame(
+            IntentionDomain::Travel { destination: dest },
+            FrameState::Active,
+        );
 
-        let assumptions =
-            populate_assumptions(&IntentionDomain::Travel { destination: dest }, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(
             assumptions,
             vec![FrameAssumption::RouteExists {
@@ -962,8 +969,9 @@ mod tests {
         view.alive.insert(patient);
         view.places.insert(agent, place_a);
         view.places.insert(patient, place_b);
+        let frame = make_frame(IntentionDomain::Care { patient }, FrameState::Active);
 
-        let assumptions = populate_assumptions(&IntentionDomain::Care { patient }, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(
             assumptions,
             vec![
@@ -986,15 +994,15 @@ mod tests {
         view.alive.insert(agent);
         view.alive.insert(ward);
         view.places.insert(agent, place_a);
-
-        let assumptions = populate_assumptions(
-            &IntentionDomain::Escort {
+        let frame = make_frame(
+            IntentionDomain::Escort {
                 ward,
                 destination: dest,
             },
-            agent,
-            &view,
+            FrameState::Active,
         );
+
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(
             assumptions,
             vec![
@@ -1015,9 +1023,12 @@ mod tests {
         let mut view = MockBeliefView::new();
         view.alive.insert(agent);
         view.places.insert(agent, place_a);
+        let frame = make_frame(
+            IntentionDomain::Errand { destination: dest },
+            FrameState::Active,
+        );
 
-        let assumptions =
-            populate_assumptions(&IntentionDomain::Errand { destination: dest }, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(
             assumptions,
             vec![FrameAssumption::RouteExists {
@@ -1031,9 +1042,48 @@ mod tests {
     fn populate_generic_produces_no_critical_threat() {
         let agent = make_entity(0);
         let view = MockBeliefView::new();
+        let frame = make_frame(IntentionDomain::Generic, FrameState::Active);
 
-        let assumptions = populate_assumptions(&IntentionDomain::Generic, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(assumptions, vec![FrameAssumption::NoCriticalThreat]);
+    }
+
+    #[test]
+    fn populate_travel_with_acquire_commodity_produces_route_and_commodity() {
+        let agent = make_entity(0);
+        let place_a = make_entity(10);
+        let dest = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        view.places.insert(agent, place_a);
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            domain: IntentionDomain::Travel { destination: dest },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(0),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        };
+
+        let assumptions = populate_assumptions(&frame, agent, &view);
+        assert_eq!(
+            assumptions,
+            vec![
+                FrameAssumption::RouteExists {
+                    from: place_a,
+                    to: dest,
+                },
+                FrameAssumption::CommodityAvailableAt {
+                    commodity: CommodityKind::Apple,
+                    place: dest,
+                },
+            ]
+        );
     }
 
     // ── evaluate_assumptions tests ──
