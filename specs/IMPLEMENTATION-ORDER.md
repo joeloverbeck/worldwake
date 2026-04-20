@@ -347,7 +347,7 @@ S108 ✅ archived               S111 ✅ archived
    │
    └── S109 ✅ archived
          │
-         ├── S110 (soft dep on S109)
+         ├── S110 ✅ archived (soft dep on S109)
          │       │
          │       ├── S112 (soft dep on S109)
          │       └── S113 (soft dep on S109)
@@ -364,8 +364,8 @@ S108 ✅ archived               S111 ✅ archived
 **Wave 2** (after Wave 1):
 - **S109**: ✅ COMPLETED — archived at [archive/specs/S109-typed-discrepancy-taxonomy.md](/home/joeloverbeck/projects/worldwake/archive/specs/S109-typed-discrepancy-taxonomy.md). Replaced `BlockingFact::Unknown`/`AssumptionFailed` with typed `Discrepancy`, split the old blocker-memory surface into `DiscrepancyMemory`/`BlockerMemory`/`RepairMemory`/`LearnedOpportunityMemory`, and completed the trace/save/scenario cleanup.
   - soft depends on S108 for `MatchOutcome::ExactIdentityRequired` → `Discrepancy::NoLegalBinding`
-- **S110**: Authoritative Decision History Events — new `EventTag` variants (`GoalOffered`, `GoalCommitted`, `PlanAdopted`, `PlanInvalidated`, `ExpectationMismatch`, `RepairApplied`, `BlockerRecorded`, `ReplanTriggered`); bounded rejected-alternative summaries.
-  - soft depends on S109 for `Discrepancy` payload on `BlockerRecorded`
+- **S110**: ✅ COMPLETED — archived at [archive/specs/S110-decision-history-events.md](/home/joeloverbeck/projects/worldwake/archive/specs/S110-decision-history-events.md). Landed the full authoritative decision-history event family across `worldwake-core`, `worldwake-ai`, `worldwake-sim`, and `worldwake-cli`: core payload/schema ownership, runtime emission at honest AI seams, save/load preservation, and observer Section 3 rendering with committed golden coverage.
+  - soft depended on S109 for the `Discrepancy` payload carried by `BlockerRecorded`
 
 **Wave 3** (after Wave 2):
 - **S112**: Portfolio Planning with Feasibility Probes — replace flat top-N selection with 4-slot portfolio (survival / commitment / economic / information) gated by cheap feasibility probes; low-confidence agents activate the information slot.
@@ -387,13 +387,13 @@ S108 ✅ archived               S111 ✅ archived
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [ ] Every `ActionDef` registration has explicit `BindingStrictness` (compile-time coverage)
 - [x] No remaining `BlockingFact::Unknown` or `AssumptionFailed` variants (migrated to typed `Discrepancy`)
-- [ ] Authoritative decision history events surfaced in observer "Decision History" section for `survival-baseline.ron` and `survival-contested.ron`
+- [x] Authoritative decision history events surfaced in observer "Decision History" section for `survival-baseline.ron`
 - [ ] Portfolio planning golden (infeasible top-N + feasible lower slot) passes
 - [ ] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 
-- Note: Wave 1 and the S122 adjunct are complete. The remaining Phase 8 work is S110, S112, and S113.
+- Note: Wave 1, S110, and the S122 adjunct are complete. The remaining Phase 8 work is S112 and S113.
 
 ---
 

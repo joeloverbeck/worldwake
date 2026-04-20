@@ -22,9 +22,10 @@ use worldwake_ai::{
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints};
 use worldwake_core::{
-    AgentBeliefStore, CommodityKind, DeadAt, DeathCause, EntityId, EntityKind, EventId, EventView,
-    HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, Quantity, RecipeId, Tick,
-    WorkstationTag,
+    ActionInterruptReasonTag, AgentBeliefStore, CommodityKind, DeadAt, DeathCause,
+    DecisionEventPayload, EntityId, EntityKind, EventId, EventView, GoalAbandonReason,
+    HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, PlanInvalidationReason,
+    Quantity, RecipeId, ReplanReason, Tick, WorkstationTag,
 };
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
@@ -46,7 +47,7 @@ struct ObserverCli {
     /// Output path for the observation dump
     #[arg(long, default_value = "reports/simulation-observer-dump.md")]
     output: PathBuf,
-    /// Number of longest authored-critical windows to render in Section 9 (0 disables the section)
+    /// Number of longest authored-critical windows to render in Section 10 (0 disables the section)
     #[arg(long, default_value_t = 3)]
     critical_window_top_n: usize,
     /// Bypass scenario lint failures for ad-hoc debugging.
@@ -360,8 +361,225 @@ fn compute_search_metrics(
     (total_candidates, max_depth)
 }
 
+fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
+    match payload {
+        DecisionEventPayload::GoalOffered(inner) => inner.agent,
+        DecisionEventPayload::GoalSuppressed(inner) => inner.agent,
+        DecisionEventPayload::GoalCommitted(inner) => inner.agent,
+        DecisionEventPayload::GoalSuspended(inner) => inner.agent,
+        DecisionEventPayload::GoalAbandoned(inner) => inner.agent,
+        DecisionEventPayload::PlanAdopted(inner) => inner.agent,
+        DecisionEventPayload::PlanInvalidated(inner) => inner.agent,
+        DecisionEventPayload::ExpectationMismatch(inner) => inner.agent,
+        DecisionEventPayload::RepairApplied(inner) => inner.agent,
+        DecisionEventPayload::ReplanTriggered(inner) => inner.agent,
+        DecisionEventPayload::BlockerRecorded(inner) => inner.agent,
+    }
+}
+
+fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
+    match payload {
+        DecisionEventPayload::GoalOffered(_) => "GoalOffered",
+        DecisionEventPayload::GoalSuppressed(_) => "GoalSuppressed",
+        DecisionEventPayload::GoalCommitted(_) => "GoalCommitted",
+        DecisionEventPayload::GoalSuspended(_) => "GoalSuspended",
+        DecisionEventPayload::GoalAbandoned(_) => "GoalAbandoned",
+        DecisionEventPayload::PlanAdopted(_) => "PlanAdopted",
+        DecisionEventPayload::PlanInvalidated(_) => "PlanInvalidated",
+        DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
+        DecisionEventPayload::RepairApplied(_) => "RepairApplied",
+        DecisionEventPayload::ReplanTriggered(_) => "ReplanTriggered",
+        DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
+    }
+}
+
+fn format_decision_evidence_counts(payload: &worldwake_core::EvidenceSummary) -> String {
+    payload
+        .evidence_kind_counts
+        .iter()
+        .map(|(kind, count)| format!("{kind:?}x{count}"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
+    match payload {
+        DecisionEventPayload::GoalOffered(inner) => format!(
+            "goal={:?} emitter={:?} evidence={}",
+            inner.goal_key.kind,
+            inner.emitter,
+            format_decision_evidence_counts(&inner.source_evidence)
+        ),
+        DecisionEventPayload::GoalSuppressed(inner) => {
+            format!("goal={:?} reason={:?}", inner.goal_key.kind, inner.reason)
+        }
+        DecisionEventPayload::GoalCommitted(inner) => format!(
+            "goal={:?} motive={} alts={}",
+            inner.goal_key.kind,
+            inner.motive_score,
+            inner.rejected_alternatives.len()
+        ),
+        DecisionEventPayload::GoalSuspended(inner) => {
+            format!("goal={:?} reason={:?}", inner.goal_key.kind, inner.reason)
+        }
+        DecisionEventPayload::GoalAbandoned(inner) => format!(
+            "goal={:?} reason={}",
+            inner.goal_key.kind,
+            match &inner.reason {
+                GoalAbandonReason::FrameCleared { reason } => {
+                    format!("FrameCleared({reason:?})")
+                }
+                GoalAbandonReason::GoalSwitched {
+                    new_goal,
+                    switch_kind,
+                } => format!("GoalSwitched({switch_kind:?}->{:?})", new_goal.kind),
+            }
+        ),
+        DecisionEventPayload::PlanAdopted(inner) => {
+            format!("goal={:?} steps={}", inner.goal_key.kind, inner.plan_step_count)
+        }
+        DecisionEventPayload::PlanInvalidated(inner) => format!(
+            "goal={:?} reason={}",
+            inner.goal_key.kind,
+            format_plan_invalidation_reason(&inner.reason)
+        ),
+        DecisionEventPayload::ExpectationMismatch(inner) => format!(
+            "goal={:?} step={} expected={:?}",
+            inner.goal_key.kind,
+            inner.step_index,
+            inner.expected_materializations
+        ),
+        DecisionEventPayload::RepairApplied(inner) => format!(
+            "goal={:?} step={} kind={:?} target={:?}",
+            inner.goal_key.kind,
+            inner.step_index,
+            inner.repair_kind,
+            inner.substitute_target
+        ),
+        DecisionEventPayload::ReplanTriggered(inner) => format!(
+            "goal={:?} reason={}",
+            inner.goal_key.kind,
+            format_replan_reason(&inner.reason)
+        ),
+        DecisionEventPayload::BlockerRecorded(inner) => {
+            let class = match (inner.discrepancy, inner.blocking_fact) {
+                (Some(discrepancy), None) => format!("Discrepancy({discrepancy:?})"),
+                (None, Some(blocking_fact)) => format!("BlockingFact({blocking_fact:?})"),
+                _ => "Unclassified".to_string(),
+            };
+            format!(
+                "key={:?} class={} expires={}",
+                inner.blocker_key, class, inner.expires_tick.0
+            )
+        }
+    }
+}
+
+fn format_plan_invalidation_reason(reason: &PlanInvalidationReason) -> String {
+    match reason {
+        PlanInvalidationReason::BeliefUpdate { claim_key } => {
+            format!("BeliefUpdate({claim_key:?})")
+        }
+        PlanInvalidationReason::TargetGone { target } => format!("TargetGone({target})"),
+        PlanInvalidationReason::ExpectationMismatch { step_index } => {
+            format!("ExpectationMismatch(step={step_index})")
+        }
+        PlanInvalidationReason::ContentionLost { place, action } => {
+            format!("ContentionLost(place={place},action={action:?})")
+        }
+        PlanInvalidationReason::DiscrepancyRecorded { discrepancy } => {
+            format!("DiscrepancyRecorded({discrepancy:?})")
+        }
+        PlanInvalidationReason::PreemptedByHigherGoal { new_goal } => {
+            format!("PreemptedByHigherGoal({:?})", new_goal.kind)
+        }
+        PlanInvalidationReason::PursuitInvalidated { reason } => {
+            format!("PursuitInvalidated({reason:?})")
+        }
+        PlanInvalidationReason::AssumptionFailed { assumption } => {
+            format!("AssumptionFailed({assumption:?})")
+        }
+        PlanInvalidationReason::AgentIncapacitated => "AgentIncapacitated".to_string(),
+    }
+}
+
+fn format_replan_reason(reason: &ReplanReason) -> String {
+    match reason {
+        ReplanReason::PlanInvalidated { reason } => {
+            format!("PlanInvalidated({})", format_plan_invalidation_reason(reason))
+        }
+        ReplanReason::ActionInterrupted { reason } => {
+            format!("ActionInterrupted({})", format_action_interrupt_reason(*reason))
+        }
+        ReplanReason::ActionStartFailed => "ActionStartFailed".to_string(),
+        ReplanReason::BlockingFactRecorded { blocking_fact } => {
+            format!("BlockingFactRecorded({blocking_fact:?})")
+        }
+        ReplanReason::DiscrepancyRecorded { discrepancy } => {
+            format!("DiscrepancyRecorded({discrepancy:?})")
+        }
+        ReplanReason::LocalRepairExhausted => "LocalRepairExhausted".to_string(),
+        ReplanReason::SearchBudgetExhausted => "SearchBudgetExhausted".to_string(),
+        ReplanReason::GoalSwitched {
+            new_goal,
+            switch_kind,
+        } => format!("GoalSwitched({switch_kind:?}->{:?})", new_goal.kind),
+    }
+}
+
+fn format_action_interrupt_reason(reason: ActionInterruptReasonTag) -> &'static str {
+    match reason {
+        ActionInterruptReasonTag::DangerNearby => "DangerNearby",
+        ActionInterruptReasonTag::Reprioritized => "Reprioritized",
+        ActionInterruptReasonTag::Other => "Other",
+    }
+}
+
+fn render_decision_history_section(
+    out: &mut String,
+    event_log: &worldwake_core::EventLog,
+    agents: &[(EntityId, String)],
+) {
+    writeln!(out, "## Section 3 — Decision History\n").unwrap();
+    let agent_names = agents
+        .iter()
+        .map(|(id, name)| (*id, name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut rendered_any = false;
+    writeln!(out, "| Tick | Agent | Event | Payload Summary |").unwrap();
+    writeln!(out, "|------|-------|-------|-----------------|").unwrap();
+    for index in 0..event_log.len() {
+        let Some(record) = event_log.get(EventId(index as u64)) else {
+            continue;
+        };
+        let Some(payload) = record.decision_payload() else {
+            continue;
+        };
+        let agent = decision_payload_agent(payload);
+        let agent_name = agent_names
+            .get(&agent)
+            .copied()
+            .map_or_else(|| agent.to_string(), str::to_owned);
+        writeln!(
+            out,
+            "| {} | {} | {} | {} |",
+            record.tick().0,
+            agent_name,
+            decision_event_name(payload),
+            decision_payload_summary(payload)
+        )
+        .unwrap();
+        rendered_any = true;
+    }
+    if !rendered_any {
+        writeln!(out, "| - | - | - | No decision events recorded. |").unwrap();
+    }
+    writeln!(out).unwrap();
+}
+
 fn format_budget_exhaustion_snapshots(out: &mut String, snapshots: &[BudgetExhaustionSnapshot]) {
-    writeln!(out, "## Section 8 — Budget Exhaustion Snapshots\n").unwrap();
+    writeln!(out, "## Section 9 — Budget Exhaustion Snapshots\n").unwrap();
     if snapshots.is_empty() {
         writeln!(out, "No budget exhaustion events detected.\n").unwrap();
         return;
@@ -500,7 +718,7 @@ fn format_critical_window_forensics(
     reports: &[CriticalWindowReport],
     total_windows_detected: usize,
 ) {
-    writeln!(out, "## Section 9 — Critical Window Forensics\n").unwrap();
+    writeln!(out, "## Section 10 — Critical Window Forensics\n").unwrap();
     if reports.is_empty() {
         writeln!(out, "No authored-critical windows detected.\n").unwrap();
         return;
@@ -2581,8 +2799,10 @@ fn format_report(
         .unwrap();
     }
 
-    // Section 3: Anomaly Flags
-    writeln!(out, "## Section 3 — Anomaly Flags\n").unwrap();
+    render_decision_history_section(&mut out, event_log, agents);
+
+    // Section 4: Anomaly Flags
+    writeln!(out, "## Section 4 — Anomaly Flags\n").unwrap();
     if anomalies.is_empty() {
         writeln!(out, "No anomalies detected.\n").unwrap();
     } else {
@@ -2596,8 +2816,8 @@ fn format_report(
         }
     }
 
-    // Section 4: Raw Event Sample
-    writeln!(out, "## Section 4 — Raw Event Sample\n").unwrap();
+    // Section 5: Raw Event Sample
+    writeln!(out, "## Section 5 — Raw Event Sample\n").unwrap();
     let total_events = event_log.len();
 
     // First 100 events
@@ -2763,8 +2983,8 @@ fn format_report(
     }
     writeln!(out, "```\n").unwrap();
 
-    // Section 5: Per-Agent Belief Summary
-    writeln!(out, "## Section 5 — Per-Agent Belief Summary\n").unwrap();
+    // Section 6: Per-Agent Belief Summary
+    writeln!(out, "## Section 6 — Per-Agent Belief Summary\n").unwrap();
     for (agent_id, agent_name) in agents {
         writeln!(out, "### {agent_name}\n").unwrap();
 
@@ -2867,8 +3087,8 @@ fn format_report(
         writeln!(out).unwrap();
     }
 
-    // Section 6: End-State Inventory & Resources
-    writeln!(out, "## Section 6 — End-State Inventory & Resources\n").unwrap();
+    // Section 7: End-State Inventory & Resources
+    writeln!(out, "## Section 7 — End-State Inventory & Resources\n").unwrap();
 
     // Agent Inventories
     writeln!(out, "### Agent Inventories\n").unwrap();
@@ -2940,8 +3160,8 @@ fn format_report(
         }
     }
 
-    // Section 7: Per-Agent Decision Summary
-    writeln!(out, "## Section 7 — Per-Agent Decision Summary\n").unwrap();
+    // Section 8: Per-Agent Decision Summary
+    writeln!(out, "## Section 8 — Per-Agent Decision Summary\n").unwrap();
     if let Some(sink) = driver.trace_sink() {
         for (agent_id, agent_name) in agents {
             let traces = sink.traces_for(*agent_id);
@@ -3235,10 +3455,10 @@ fn format_report(
         writeln!(out, "Decision tracing was not enabled.\n").unwrap();
     }
 
-    // Section 8: Budget Exhaustion Snapshots
+    // Section 9: Budget Exhaustion Snapshots
     format_budget_exhaustion_snapshots(&mut out, budget_exhaustion_snapshots);
 
-    // Section 9: Critical Window Forensics
+    // Section 10: Critical Window Forensics
     if critical_window_section_enabled {
         format_critical_window_forensics(
             &mut out,
@@ -3723,14 +3943,14 @@ mod tests {
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
         NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
         behavioral_transitions, committed_travel_ticks, compute_maintenance_rates,
-        death_summary_line, detect_acute_need_spike, detect_anomalies,
+        decision_payload_summary, death_summary_line, detect_acute_need_spike, detect_anomalies,
         detect_geographic_convergence, detect_maintenance_starvation, detect_recipe_monoculture,
         failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
         format_death_cause, format_report, need_high_threshold, post_travel_affordance_snapshots,
-        primary_satisfied_need, recipe_usage_rows, render_maintenance_rates_table,
-        render_recipe_usage_table, unknown_location_entity_groups,
+        primary_satisfied_need, recipe_usage_rows, render_decision_history_section,
+        render_maintenance_rates_table, render_recipe_usage_table, unknown_location_entity_groups,
     };
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
@@ -3747,12 +3967,17 @@ mod tests {
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
-        ActionDefId, AgentBeliefStore, BelievedEntityState, BodyCostPerTick, CauseRef,
-        CommodityKind, ControlSource, DeadAt, DeathCause, DriveThresholds, EntityId, EntityKind,
-        EventLog, GoalKey, GoalKind, HomeostaticNeedId, KnownRecipes, MetabolismProfile,
-        OpportunityAnchor, Permille, PrototypePlace, Quantity, ResourceSource, Tick,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
-        prototype_place_entity,
+        ActionDefId, AgentBeliefStore, BeliefClaimKey, BelievedEntityState, BlockerKey,
+        BlockerRecordedPayload, BodyCostPerTick, CauseRef, CommodityKind,
+        CommodityPurpose, ControlSource, DeadAt, DeathCause, DecisionEventPayload,
+        DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId, EntityKind, EventLog,
+        EventPayload, EventTag, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload,
+        GoalKey, GoalKind, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
+        GoalSuspendedPayload, GoalSwitchReason, HomeostaticNeedId, KnownRecipes,
+        MetabolismProfile, OpportunityAnchor, PendingEvent, Permille, PlanAdoptedPayload,
+        PlanInvalidatedPayload, PlanInvalidationReason, PrototypePlace, Quantity, RecipeId,
+        ResourceSource, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -3861,6 +4086,208 @@ mod tests {
             slot,
             generation: 0,
         }
+    }
+
+    fn emit_decision_event(
+        log: &mut EventLog,
+        tick: u64,
+        actor: EntityId,
+        tag: EventTag,
+        payload: DecisionEventPayload,
+    ) {
+        let _ = log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(tick),
+            cause: CauseRef::SystemTick(Tick(tick)),
+            actor_id: Some(actor),
+            action_name: None,
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([tag]),
+            decision_payload: Some(payload),
+        }));
+    }
+
+    fn sample_decision_event_log(agent: EntityId, target: EntityId) -> EventLog {
+        let mut log = EventLog::new();
+        let acquire_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let sleep_goal = GoalKey::from(GoalKind::Sleep);
+        let patrol_goal = GoalKey::from(GoalKind::Patrol { place: entity(20) });
+        let produce_goal = GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: RecipeId(3),
+        });
+        let move_goal = GoalKey::from(GoalKind::MoveCargo {
+            commodity: CommodityKind::Water,
+            destination: entity(21),
+        });
+        let support_goal = GoalKey::from(GoalKind::SupportCandidateForOffice {
+            office: entity(22),
+            candidate: entity(23),
+        });
+
+        emit_decision_event(
+            &mut log,
+            1,
+            agent,
+            EventTag::GoalOffered,
+            DecisionEventPayload::GoalOffered(GoalOfferedPayload {
+                agent,
+                goal_key: acquire_goal,
+                emitter: EmitterTag::Enterprise,
+                source_evidence: worldwake_core::EvidenceSummary {
+                    evidence_kind_counts: BTreeMap::from([
+                        (worldwake_core::EvidenceKindTag::LearnedOpportunity, 1),
+                        (worldwake_core::EvidenceKindTag::PerceptionObservation, 2),
+                    ]),
+                },
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            2,
+            agent,
+            EventTag::GoalSuppressed,
+            DecisionEventPayload::GoalSuppressed(GoalSuppressedPayload {
+                agent,
+                goal_key: sleep_goal,
+                reason: GoalRejectionReason::SuppressedByStressPolicy,
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            3,
+            agent,
+            EventTag::GoalCommitted,
+            DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                agent,
+                goal_key: produce_goal,
+                motive_score: 420,
+                rejected_alternatives: vec![worldwake_core::RejectedAlternativeSummary {
+                    goal_key: acquire_goal,
+                    rejection_reason: GoalRejectionReason::LowerMotive,
+                    score_gap: 17,
+                }],
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            4,
+            agent,
+            EventTag::GoalSuspended,
+            DecisionEventPayload::GoalSuspended(GoalSuspendedPayload {
+                agent,
+                goal_key: move_goal,
+                reason: worldwake_core::SuspensionReason::RouteBlocked,
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            5,
+            agent,
+            EventTag::GoalAbandoned,
+            DecisionEventPayload::GoalAbandoned(GoalAbandonedPayload {
+                agent,
+                goal_key: patrol_goal,
+                reason: GoalAbandonReason::GoalSwitched {
+                    new_goal: acquire_goal,
+                    switch_kind: GoalSwitchReason::HigherPriorityGoal,
+                },
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            6,
+            agent,
+            EventTag::PlanAdopted,
+            DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
+                agent,
+                goal_key: acquire_goal,
+                plan_step_count: 3,
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            7,
+            agent,
+            EventTag::PlanInvalidated,
+            DecisionEventPayload::PlanInvalidated(PlanInvalidatedPayload {
+                agent,
+                goal_key: move_goal,
+                reason: PlanInvalidationReason::BeliefUpdate {
+                    claim_key: BeliefClaimKey {
+                        subject: target,
+                        aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+                    },
+                },
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            8,
+            agent,
+            EventTag::ExpectationMismatch,
+            DecisionEventPayload::ExpectationMismatch(
+                worldwake_core::ExpectationMismatchPayload {
+                    agent,
+                    goal_key: acquire_goal,
+                    step_index: 1,
+                    expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
+                },
+            ),
+        );
+        emit_decision_event(
+            &mut log,
+            9,
+            agent,
+            EventTag::RepairApplied,
+            DecisionEventPayload::RepairApplied(worldwake_core::RepairAppliedPayload {
+                agent,
+                goal_key: support_goal,
+                step_index: 2,
+                repair_kind: worldwake_core::RepairKind::AlternateMerchant,
+                substitute_target: Some(target),
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            10,
+            agent,
+            EventTag::ReplanTriggered,
+            DecisionEventPayload::ReplanTriggered(worldwake_core::ReplanTriggeredPayload {
+                agent,
+                goal_key: move_goal,
+                reason: worldwake_core::ReplanReason::ActionInterrupted {
+                    reason: worldwake_core::ActionInterruptReasonTag::Reprioritized,
+                },
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            11,
+            agent,
+            EventTag::BlockerRecorded,
+            DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+                agent,
+                blocker_key: BlockerKey {
+                    goal_key: move_goal,
+                    place: Some(entity(21)),
+                    target: Some(target),
+                    action_def: Some(ActionDefId(6)),
+                },
+                discrepancy: Some(worldwake_core::Discrepancy::RouteUnknown),
+                blocking_fact: None,
+                expires_tick: Tick(99),
+            }),
+        );
+
+        log
     }
 
     fn affordance_trace(place: Option<EntityId>, entries: &[(&str, usize)]) -> AffordanceTrace {
@@ -4599,10 +5026,64 @@ mod tests {
     }
 
     #[test]
+    fn render_decision_history_section_covers_all_variants() {
+        let agent = entity(1);
+        let target = entity(2);
+        let log = sample_decision_event_log(agent, target);
+        let mut out = String::new();
+
+        render_decision_history_section(&mut out, &log, &[(agent, "Guard Theron".to_string())]);
+
+        assert!(out.contains("## Section 3 — Decision History"));
+        assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
+        assert_eq!(out.lines().filter(|line| line.starts_with("| ")).count(), 12);
+        for event_name in [
+            "GoalOffered",
+            "GoalSuppressed",
+            "GoalCommitted",
+            "GoalSuspended",
+            "GoalAbandoned",
+            "PlanAdopted",
+            "PlanInvalidated",
+            "ExpectationMismatch",
+            "RepairApplied",
+            "ReplanTriggered",
+            "BlockerRecorded",
+        ] {
+            assert!(out.contains(event_name), "missing event row for {event_name}");
+        }
+        assert!(out.contains("Guard Theron"));
+        assert!(out.contains("goal=ProduceCommodity { recipe_id: RecipeId(3) } motive=420 alts=1"));
+    }
+
+    #[test]
+    fn decision_payload_summary_is_single_line_for_goal_committed() {
+        let summary = decision_payload_summary(&DecisionEventPayload::GoalCommitted(
+            GoalCommittedPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                motive_score: 420,
+                rejected_alternatives: vec![worldwake_core::RejectedAlternativeSummary {
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                    }),
+                    rejection_reason: GoalRejectionReason::LowerMotive,
+                    score_gap: 17,
+                }],
+            },
+        ));
+
+        assert_eq!(summary, "goal=Sleep motive=420 alts=1");
+        assert!(!summary.contains('\n'));
+    }
+
+    #[test]
     fn format_report_renders_critical_window_section_for_synthetic_report() {
         let world = World::new(build_prototype_world()).expect("world");
         let registry = RecipeRegistry::new();
         let agent = entity(1);
+        let log = sample_decision_event_log(agent, entity(2));
         let report = format_report(
             "scenario.ron",
             7,
@@ -4611,7 +5092,7 @@ mod tests {
             &[],
             &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
             &[],
-            &EventLog::new(),
+            &log,
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
             &registry,
@@ -4623,8 +5104,9 @@ mod tests {
             1,
         );
 
-        assert!(report.contains("## Section 9 — Critical Window Forensics"));
+        assert!(report.contains("## Section 10 — Critical Window Forensics"));
         assert!(report.contains("### Window 1 — Guard Theron / Fatigue"));
+        assert!(report.contains("## Section 3 — Decision History"));
         assert!(report.contains("**Selected goals across captured frames**: Sleep x1"));
         assert!(
             report.contains("**Exhaustion states**: frontier-exhausted (expansions_used=7) x1")
@@ -4639,6 +5121,7 @@ mod tests {
         let world = World::new(build_prototype_world()).expect("world");
         let registry = RecipeRegistry::new();
         let agent = entity(1);
+        let log = sample_decision_event_log(agent, entity(2));
         let report = format_report(
             "scenario.ron",
             7,
@@ -4647,7 +5130,7 @@ mod tests {
             &[],
             &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
             &[],
-            &EventLog::new(),
+            &log,
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
             &registry,
@@ -4659,7 +5142,7 @@ mod tests {
             0,
         );
 
-        assert!(report.contains("## Section 9 — Critical Window Forensics"));
+        assert!(report.contains("## Section 10 — Critical Window Forensics"));
         assert!(report.contains("No authored-critical windows detected."));
     }
 
@@ -4688,14 +5171,15 @@ mod tests {
             0,
         );
 
-        assert!(!report.contains("## Section 9 — Critical Window Forensics"));
+        assert!(!report.contains("## Section 10 — Critical Window Forensics"));
     }
 
     #[test]
-    fn format_report_keeps_section_9_after_section_8() {
+    fn format_report_keeps_section_10_after_section_9() {
         let world = World::new(build_prototype_world()).expect("world");
         let registry = RecipeRegistry::new();
         let agent = entity(1);
+        let log = sample_decision_event_log(agent, entity(2));
         let report = format_report(
             "scenario.ron",
             7,
@@ -4704,7 +5188,7 @@ mod tests {
             &[],
             &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
             &[],
-            &EventLog::new(),
+            &log,
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
             &registry,
@@ -4717,10 +5201,10 @@ mod tests {
         );
 
         let section_8 = report
-            .find("## Section 8 — Budget Exhaustion Snapshots")
+            .find("## Section 9 — Budget Exhaustion Snapshots")
             .expect("section 8");
         let section_9 = report
-            .find("## Section 9 — Critical Window Forensics")
+            .find("## Section 10 — Critical Window Forensics")
             .expect("section 9");
         assert!(section_8 < section_9);
     }

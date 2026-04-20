@@ -1,12 +1,14 @@
 # S110: Authoritative Decision History Events
 
+**Status**: COMPLETED
+
 ## Summary
 
 Add authoritative decision-history events to the append-only event log so FND-29 ("why did this agent do that?") and FND-29A (causal history is authoritative and queryable) can be answered from world history alone, not from optional `AgentDecisionTrace` sinks. Every committed/rejected goal, adopted/invalidated plan, expectation mismatch, repair application, blocker recording, and replan trigger lands as a typed `EventTag` variant plus a typed decision-event payload on the main event log. Heavy search-frontier traces remain optional (via the existing `DecisionTraceSink`); this spec lands only the lightweight, always-on causal spine.
 
 ## Phase and Status
 
-Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8: Belief-First Continual Planning Foundation. Status: Completed.
 
 ## Crates
 
@@ -328,13 +330,13 @@ Add a focused save/load round-trip test: given a persisted `SimulationState` who
 
 ### D7: Observer integration
 
-The observer bin (`crates/worldwake-cli/src/bin/observer.rs`) already renders event-log summaries (see the `event_log` consumption around line 2387). Add a new "Section — Decision History" rendered as a single markdown table:
+The observer bin (`crates/worldwake-cli/src/bin/observer.rs`) already renders numbered event-log report sections. The landed integration adds `## Section 3 — Decision History`, rendered as a single markdown table:
 
 ```
 | Tick | Agent | Event | Payload Summary |
 ```
 
-Rows are emitted in event-log order filtered to the new eleven `EventTag` variants. `Payload Summary` is a deterministic one-line string produced per variant (e.g., `goal=HomeostaticThirst motive=420 alts=3` for `GoalCommitted`). The rendering is deterministic under the existing observer-snapshot-test contract. This replaces much of what the observer-behavioral-enrichment waves (`archive/specs/S85-observer-behavioral-enrichment.md`, `archive/specs/S98-observer-affordance-change-detection.md`) previously synthesized from heuristics.
+Rows are emitted in event-log order filtered to the new eleven `EventTag` variants. `Payload Summary` is a deterministic one-line string produced per variant (e.g., `goal=AcquireCommodity { commodity: Water, purpose: SelfConsume } motive=168000 alts=0` for `GoalCommitted`). The rendering is deterministic under the existing observer snapshot contract. Because the observer report already used numbered headings, landing this section also renumbered later observer sections; existing observer fixtures were updated in place rather than treating the change as a strictly additive text append. This replaces much of what the observer-behavioral-enrichment waves (`archive/specs/S85-observer-behavioral-enrichment.md`, `archive/specs/S98-observer-affordance-change-detection.md`) previously synthesized from heuristics.
 
 ## FND-01 Section H: Causal Hooks
 
@@ -381,8 +383,27 @@ None. The new events attach to the event log, not to agent components. `Cognitiv
 
 ### Observer regression
 
-9. Observer "Decision History" section renders the new events for one of the existing scenarios (`survival-baseline.ron`, `survival-contested.ron`). Snapshot test against a small deterministic tick window.
+9. Observer "Decision History" section renders the new events for an existing scenario. The landed proof runs `survival-baseline.ron` for 5 ticks via the compiled `observer` binary and compares the extracted Section 3 markdown fragment against a committed golden fixture.
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-20.
+
+What changed:
+- `worldwake-core` gained the full decision-history schema surface: `DecisionEventPayload`, the 11 decision `EventTag` variants, `EventPayload::decision_payload`, and the core-owned `MaterializationTag` relocation.
+- `worldwake-ai` now emits authoritative decision-history events for offer/suppression, commitment/adoption, invalidation/replanning, blocker recording, expectation mismatch, and the full live `RepairApplied` family through the real runtime seams rather than optional traces.
+- `worldwake-sim` gained the save/load round-trip proof that preserves all decision payload variants through the canonical persisted `SimulationState` boundary.
+- `worldwake-cli` now renders `## Section 3 — Decision History` from the authoritative event log with deterministic one-line payload summaries and committed golden coverage.
+
+Deviations from original plan:
+- The rollout landed through the archived ticket family `archive/tickets/S110DECHISEVE-001.md` through `010.md` rather than as one monolithic change.
+- The observer proof seam landed as an extracted Section 3 fragment for `survival-baseline.ron` at 5 ticks, not a broader whole-report snapshot or a `survival-contested.ron` observer golden.
+- The save/load invariance proof landed at the canonical `save_load.rs` `SimulationState` boundary rather than through a lower-level replay harness.
+
+Verification:
+- `cargo test -p worldwake-core decision_event_payload`
+- `cargo test -p worldwake-sim save_load`
+- `cargo test -p worldwake-cli --bin observer tests::render_decision_history_section_covers_all_variants -- --exact`
+- `cargo test -p worldwake-cli --test observer_decision_history`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`

@@ -1,6 +1,6 @@
 # S110DECHISEVE-006: Observer Decision History section
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — observer binary only; no simulation state or action behavior affected
@@ -14,7 +14,7 @@ S110's user-facing benefit is answering "why did this agent commit / reject / re
 
 1. Observer binary lives at `crates/worldwake-cli/src/bin/observer.rs`. The observer already consumes `event_log: &worldwake_core::EventLog` (parameter of the render function around `observer.rs:2387`) and renders sections for Run Metadata (line 2401), Per-Agent Summary (line 2426), action counts, etc. The "Decision History" section is additive — insert a new section (positioned per the spec's implicit ordering after per-agent summary) that iterates decision-tagged events in log order.
 2. The observer has an existing snapshot-test contract: the Markdown output is deterministic given a fixed scenario + seed + tick count. New rendering must preserve this determinism. Iteration must use a stable order (event-log insertion order, which is tick-sequential and deterministic).
-3. Shared abstraction boundary under audit: the observer's Markdown output format. The "Decision History" section is a new header + table; it does not change any existing section. Downstream consumers of the observer dump (test harnesses, CI regression checks, external reviewers) see a strictly additive diff.
+3. Shared abstraction boundary under audit: the observer's Markdown output format. The "Decision History" section is a new header + table inserted after per-agent summary. Because the observer uses numbered section headings, this is content-additive but it necessarily renumbers later sections; downstream observer tests and fixtures must absorb that heading shift explicitly.
 
 ## Architecture Check
 
@@ -105,10 +105,31 @@ Add to `crates/worldwake-cli/src/bin/observer.rs` `#[cfg(test)]` block a test th
 
 1. `crates/worldwake-cli/src/bin/observer.rs` (`#[cfg(test)]`) — `render_decision_history_section_covers_all_variants`.
 2. `crates/worldwake-cli/tests/observer_decision_history.rs` (new) — `survival_baseline_decision_history_section_matches_golden`.
-3. Committed golden fragment file (path chosen by implementer; alongside other observer snapshots if they exist).
+3. `crates/worldwake-cli/tests/fixtures/observer_decision_history/survival_baseline_5_ticks.md` — committed golden fragment for the extracted Decision History section.
 
 ### Commands
 
-1. `cargo test -p worldwake-cli observer_decision_history` — targeted.
-2. `cargo test --workspace`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-cli --bin observer tests::render_decision_history_section_covers_all_variants -- --exact`
+2. `cargo test -p worldwake-cli --test observer_decision_history`
+3. `cargo test -p worldwake-cli`
+4. `cargo test --workspace`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-20. The observer now renders `## Section 3 — Decision History` directly from authoritative `DecisionEventPayload` rows in `EventLog` order via `render_decision_history_section(...)` in `crates/worldwake-cli/src/bin/observer.rs`, with stable one-line payload summaries for all 11 S110 decision-event variants. Existing observer sections after Per-Agent Summary were renumbered to preserve deterministic ordering, and the anomaly-focused observer integration test was updated to follow the new section boundaries.
+
+The implementation landed two proof surfaces:
+
+1. A focused unit test in `observer.rs` that constructs one event per decision variant and verifies the rendered table covers the full family.
+2. A binary-driven golden test in `crates/worldwake-cli/tests/observer_decision_history.rs` that runs `scenarios/survival-baseline.ron` for 5 ticks and compares the extracted Decision History section against `crates/worldwake-cli/tests/fixtures/observer_decision_history/survival_baseline_5_ticks.md`.
+
+## Verification Result
+
+Passed on 2026-04-20:
+
+1. `cargo test -p worldwake-cli --bin observer tests::render_decision_history_section_covers_all_variants -- --exact`
+2. `cargo test -p worldwake-cli --test observer_decision_history`
+3. `cargo test -p worldwake-cli`
+4. `cargo test --workspace`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
