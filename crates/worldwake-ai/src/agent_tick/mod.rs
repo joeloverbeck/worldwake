@@ -38,7 +38,8 @@ use crate::decision_trace::{
     SelectionTrace,
 };
 use crate::{
-    AgentDecisionRuntime, PlannerOpSemantics, build_semantics_table, frame_runtime_snapshot,
+    AgentDecisionRuntime, PlannerOpSemantics, authoritative_target, build_semantics_table,
+    frame_runtime_snapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -389,6 +390,7 @@ fn process_agent(
                 if let Some(ref mut ft) = frame_transitions {
                     ft.push(FrameTransitionKind::Cleared {
                         reason: FrameClearReason::Death,
+                        failed_assumption: None,
                     });
                 }
             }
@@ -519,6 +521,9 @@ fn process_agent(
                     record_assumption_failure(
                         current_frame.as_ref().unwrap(),
                         view.effective_place(agent),
+                        current_step(runtime)
+                            .and_then(|step| step.targets.first().copied())
+                            .and_then(authoritative_target),
                         &mut discrepancy_memory,
                         tick,
                         cognitive.structural_block_ticks,
@@ -1012,7 +1017,10 @@ fn process_agent(
                 .any(|t| matches!(t, FrameTransitionKind::Cleared { .. }))
             && let Some(reason) = runtime.last_frame_clear_reason
         {
-            ft.push(FrameTransitionKind::Cleared { reason });
+            ft.push(FrameTransitionKind::Cleared {
+                reason,
+                failed_assumption: None,
+            });
         }
     }
 
@@ -1315,9 +1323,10 @@ fn emit_assumption_transitions(
                 tick,
             });
         }
-        AssumptionEvalResult::CriticalFailure(_) => {
+        AssumptionEvalResult::CriticalFailure(failed) => {
             ft.push(FrameTransitionKind::Cleared {
                 reason: FrameClearReason::AssumptionFailed,
+                failed_assumption: Some(*failed),
             });
         }
         AssumptionEvalResult::AllPass => {

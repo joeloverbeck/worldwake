@@ -9,6 +9,7 @@
 ## Problem
 
 Goldens are now backed by `scenarios/*.ron` observer runs (see design doc `docs/plans/2026-04-19-scenario-roadmap-doc-design.md`, §Brainstorm Context). Without a machine-readable coverage snapshot, designers must read every RON by hand to judge which gameplay features are truly active — and profiles like `TellProfile` are easy to misclassify as "covered" when every gating field is zero. The editorial roadmap (SCEROAD-002) needs an evidence companion that CI can diff to keep doc and scenarios in lockstep.
+This ticket only establishes structural/activation evidence. It must not overclaim that an active feature is therefore validly proved by a scenario golden; scenario-golden causal validity is owned by `docs/golden-e2e-testing.md` and the roadmap contracts in SCEROAD-002.
 
 ## Assumption Reassessment (2026-04-19)
 
@@ -24,10 +25,11 @@ Additional notes:
 ## Architecture Check
 
 1. **Single source of truth for feature detection.** The `const FEATURES: &[FeatureDef]` table inside the binary is the evidence companion to §3 of the roadmap doc. Detection logic routes through that one table — no scattered per-feature classifiers. This makes the doc/catalog lockstep auditable.
-2. **Tooling boundary (FOUNDATIONS Principle 28).** The binary reads `ScenarioDef` via the canonical deserializer and writes markdown. It never mutates simulation state, never introduces a parallel schema, and never reaches into authoritative components.
-3. **Forward-compatible via serde defaults.** When new profile fields land, deserialization keeps working; unrecognized top-level fields surface as a warning row in the generated file — prompting a `FEATURES` catalog update without silently hiding drift.
-4. **Determinism.** Aggregation uses `BTreeMap`/`BTreeSet` throughout; markdown emission iterates scenarios in filesystem-sorted order and features in `FEATURES` declaration order. Consistent with the project rule (`CLAUDE.md` → Critical Invariants → determinism) even though this binary is tooling.
-5. **No backwards-compat shim.** There is no prior generator to maintain parity with.
+2. **Activation evidence only.** The generated companion answers "is this feature active/present/inactive in the scenario definition?" It does not answer "did the backing golden prove the intended causal branch?" That distinction must stay explicit so scenario validity is not inferred from profile presence.
+3. **Tooling boundary (FOUNDATIONS Principle 28).** The binary reads `ScenarioDef` via the canonical deserializer and writes markdown. It never mutates simulation state, never introduces a parallel schema, and never reaches into authoritative components.
+4. **Forward-compatible via serde defaults.** When new profile fields land, deserialization keeps working; unrecognized top-level fields surface as a warning row in the generated file — prompting a `FEATURES` catalog update without silently hiding drift.
+5. **Determinism.** Aggregation uses `BTreeMap`/`BTreeSet` throughout; markdown emission iterates scenarios in filesystem-sorted order and features in `FEATURES` declaration order. Consistent with the project rule (`CLAUDE.md` → Critical Invariants → determinism) even though this binary is tooling.
+6. **No backwards-compat shim.** There is no prior generator to maintain parity with.
 
 ## Verification Layers
 
@@ -80,6 +82,7 @@ Per-scenario detection smoke tests (e.g., `survival-baseline` has UtilityProfile
 - Changes to `ScenarioDef` or any profile schema.
 - Authoring new `.ron` scenarios or new goldens.
 - Reporting coverage for features outside `AgentDef` + top-level `ScenarioDef` (e.g., runtime-only state) — design doc §3 scope is profile-struct-driven activation.
+- Certifying that a scenario or golden is architecturally valid; this ticket only inventories activation state.
 
 ## Acceptance Criteria
 
@@ -98,6 +101,7 @@ Per-scenario detection smoke tests (e.g., `survival-baseline` has UtilityProfile
 2. Generator uses `BTreeMap`/`BTreeSet` in authoritative output assembly; no `HashMap`/`HashSet` in paths that affect row order.
 3. `--check` exits non-zero whenever committed and freshly-generated content differ by any byte.
 4. Binary never mutates simulation state and performs no `World::*` mutating calls.
+5. Generated output never describes structural activation as proof that a backing golden exercised the feature.
 
 ## Test Plan
 

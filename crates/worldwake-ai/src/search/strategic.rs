@@ -3,7 +3,9 @@
 use crate::{GoalKindPlannerExt, GroundedGoal, PlanningSnapshot, PlanningState};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
-use worldwake_core::{CommodityKind, EntityId, EntityKind, ExecutionBudget, GoalKind, Quantity};
+use worldwake_core::{
+    CommodityKind, EntityId, EntityKind, ExecutionBudget, GoalKind, OpportunityAnchor, Quantity,
+};
 use worldwake_sim::{
     EconomicBeliefView, FacilityBeliefView, InventoryBeliefView, RecipeRegistry, SpatialBeliefView,
 };
@@ -176,6 +178,10 @@ fn goal_places(
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
 ) -> Vec<EntityId> {
+    if let Some(place) = anchored_goal_place(goal, state) {
+        return vec![place];
+    }
+
     let mut places = goal.key.kind.goal_relevant_places(state, recipes);
     if places.is_empty() && matches!(goal.key.kind, GoalKind::SearchForMissing { .. }) {
         places.extend(goal.evidence_places.iter().copied());
@@ -183,6 +189,17 @@ fn goal_places(
     places.sort_unstable();
     places.dedup();
     places
+}
+
+fn anchored_goal_place(goal: &GroundedGoal, state: &PlanningState<'_>) -> Option<EntityId> {
+    if !matches!(goal.key.kind, GoalKind::AcquireCommodity { .. }) {
+        return None;
+    }
+    match goal.anchor {
+        OpportunityAnchor::Place(place) => Some(place),
+        OpportunityAnchor::Entity(entity) => state.effective_place(entity),
+        OpportunityAnchor::None => None,
+    }
 }
 
 fn missing_commodities(
@@ -195,17 +212,16 @@ fn missing_commodities(
     let actor = state.snapshot().actor();
     let mut commodities = match goal.key.kind {
         GoalKind::AcquireCommodity { commodity, .. } => {
-            (state.commodity_quantity(actor, commodity) == Quantity(0)
-                && !goal_places.contains(&actor_place))
-            .then_some(commodity)
-            .into_iter()
-            .collect()
+            let needs_stage = anchored_goal_place(goal, state).is_none()
+                && !goal_places.contains(&actor_place)
+                && state.commodity_quantity(actor, commodity) == Quantity(0);
+            needs_stage.then_some(commodity).into_iter().collect()
         }
         GoalKind::TreatWounds { .. } => (state.commodity_quantity(actor, CommodityKind::Medicine)
             == Quantity(0))
         .then_some(CommodityKind::Medicine)
-        .into_iter()
-        .collect(),
+            .into_iter()
+            .collect(),
         GoalKind::ProduceCommodity { recipe_id } => recipes
             .get(recipe_id)
             .into_iter()
@@ -1284,6 +1300,65 @@ mod tests {
         assert!(
             plan.steps.is_empty(),
             "local acquire opportunities should remain a direct tactical problem instead of forcing prerequisite travel staging"
+        );
+    }
+
+    #[test]
+    fn place_anchored_acquire_opportunity_scopes_strategic_goal_place() {
+        let actor = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let local_source = entity(20);
+        let remote_source = entity(21);
+        let mut view = StubBeliefView::default();
+        register_agent(&mut view, actor, place_a);
+        register_facility(
+            &mut view,
+            local_source,
+            place_a,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        register_facility(
+            &mut view,
+            remote_source,
+            place_b,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        connect(&mut view, place_a, place_b, 5);
+
+        let snapshot = snapshot(&view, actor, 1);
+        let goal = crate::GroundedGoal {
+            key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            }),
+            anchor: OpportunityAnchor::Place(place_b),
+            evidence_entities: BTreeSet::from([local_source, remote_source]),
+            evidence_places: BTreeSet::from([place_a, place_b]),
+        };
+
+        let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
+
+        assert_eq!(
+            plan.steps,
+            vec![super::StrategicStep {
+                destination: place_b,
+                sub_goal: TacticalSubGoal::SatisfyGoal,
+                estimated_travel_ticks: 5,
+            }],
+            "selected place-anchored opportunities must remain scoped to their chosen place"
         );
     }
 

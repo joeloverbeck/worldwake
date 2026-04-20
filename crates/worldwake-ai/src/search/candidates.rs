@@ -1163,7 +1163,7 @@ pub(super) fn candidate_blocked_by_place(
 ///
 /// Travel actions use the destination (target place) as their action place.
 /// All other actions use the actor's current simulated place.
-fn candidate_action_place(
+pub(super) fn candidate_action_place(
     candidate: &SearchCandidate,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,

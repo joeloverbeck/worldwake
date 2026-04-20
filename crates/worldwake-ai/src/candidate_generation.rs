@@ -404,6 +404,7 @@ fn find_matching_suppression(
 ) -> Option<SuppressionMatch> {
     if discrepancies.entries.values().any(|entry| {
         entry.expires_tick > current_tick
+            && entry.blocker_key.goal_key == candidate.key
             && candidate_matches_blocker(candidate, &entry.blocker_key)
     }) {
         return Some(SuppressionMatch::Discrepancy);
@@ -5280,8 +5281,9 @@ mod tests {
     use super::{
         AcquisitionSearchOptions, BeliefGateOptions, CandidateGenerationDiagnostics,
         GenerationContext, belief_gated_places, deliverable_quantity, emit_produce_goals,
-        emit_restock_goals, generate_candidates, generate_candidates_with_travel_horizon,
-        proactive_curiosity_pressure, proactive_familiarity, proactive_novelty,
+        emit_restock_goals, filter_suppressed_candidates, generate_candidates,
+        generate_candidates_with_travel_horizon, proactive_curiosity_pressure,
+        proactive_familiarity, proactive_novelty,
     };
     use crate::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
@@ -5300,11 +5302,12 @@ mod tests {
         BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyPart,
         BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
         CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
-        DemandObservationReason, DisposalProfile, DiversificationProfile, DriveThresholds,
-        EffectiveRight, EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile,
-        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        ExplorationProfile, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        DemandObservationReason, Discrepancy, DiscrepancyEntry, DiscrepancyMemory,
+        DisposalProfile, DiversificationProfile, DriveThresholds, EffectiveRight,
+        EligibilityRule, EntityId, EntityKind, EpistemicDispositionProfile, ExpectationBasis,
+        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+        GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
         LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
         OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
@@ -8241,6 +8244,96 @@ mod tests {
             result.diagnostics.fully_blocked_desires.is_empty(),
             "a surviving sibling opportunity must suppress the desire-level diagnostic"
         );
+    }
+
+    #[test]
+    fn discrepancy_suppression_does_not_cross_commodity_goals_at_same_place() {
+        let agent = entity(1);
+        let orchard = entity(12);
+        let apple_source = entity(20);
+        let water_source = entity(21);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, apple_source, water_source]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(orchard, EntityKind::Place);
+        view.entity_kinds.insert(apple_source, EntityKind::Facility);
+        view.entity_kinds.insert(water_source, EntityKind::Facility);
+        view.effective_places.insert(agent, orchard);
+        view.effective_places.insert(apple_source, orchard);
+        view.effective_places.insert(water_source, orchard);
+        view.homeostatic_needs.insert(agent, hunger(850));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.sources_at
+            .insert((orchard, CommodityKind::Apple), vec![apple_source]);
+        view.sources_at
+            .insert((orchard, CommodityKind::Water), vec![water_source]);
+        view.resource_sources.insert(
+            apple_source,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+        view.resource_sources.insert(
+            water_source,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let apple_goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let water_goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+        let mut discrepancies = DiscrepancyMemory::default();
+        discrepancies.record(DiscrepancyEntry {
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(water_goal),
+                place: Some(orchard),
+                target: Some(water_source),
+                action_def: None,
+            },
+            discrepancy: Discrepancy::BeliefContradicted,
+            observed_tick: Tick(1),
+            expires_tick: Tick(20),
+            clearing_condition: worldwake_core::DiscrepancyClearing::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Water,
+                place: orchard,
+            },
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+        let unrelated_suppressed = filter_suppressed_candidates(
+            result.candidates,
+            &BlockerMemory::default(),
+            &discrepancies,
+            Tick(5),
+            &mut CandidateGenerationDiagnostics::default(),
+        );
+
+        assert!(goals_for(&unrelated_suppressed, &apple_goal).len() == 1);
+        assert!(goals_for(&unrelated_suppressed, &water_goal).is_empty());
     }
 
     #[test]

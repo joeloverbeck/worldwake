@@ -13,6 +13,7 @@
 - Each entry is not just a to-do — it's a **scenario contract** listing what features the scenario must exercise and what invariants the backing golden must prove.
 - **Survival-always is a first-class invariant.** Every future scenario runs the proven survival loop AND the new feature. No feature-isolation scenarios. Done-when gates always include survival-health contract compliance.
 - Maintenance: hand-authored priority and contract content + machine-generated status/coverage companion file, matching the project's `scripts/profile_docs.py` + `scripts/golden_inventory.py` precedent.
+- Scenario validity must be stricter than structural coverage or end-state survival. The roadmap has to encode what the backing golden proves about the causal path, the acceptable rival branches, and the excluded lawful branches, or a scenario can pass for the wrong reason and still look "landed".
 
 **Final confidence.** 95% at the interview-to-approaches transition. No assumptions carried forward — every gap was resolved in-band.
 
@@ -37,7 +38,7 @@ Top-level outline:
 1. **Preamble / Philosophy** — scenarios back goldens; survival-always invariant; architectural-risk ordering; feature-stacking rule; one-feature-at-a-time cadence.
 2. **Gameplay Feature Catalog** — canonical list of every gameplay feature the simulation supports, mapped to the profiles and fields that activate it. Reference lookup, not a roadmap.
 3. **Status Summary** — short table: feature → first scenario that landed it (or "Planned — see row N"). Derived from the generated companion.
-4. **Priority Roadmap** — ordered list of next scenarios to build, each entry using the contract template (Section 2 below).
+4. **Priority Roadmap** — ordered list of next scenarios to build, each entry using the contract template (Section 2 below), including the causal-proof contract for the backing golden.
 5. **Landed Scenarios** — one section per landed `.ron`, using the same contract template in retrospective form, plus pointers to backing goldens.
 6. **Maintenance Workflow** — how to add an entry, run the coverage binary, close an entry, handle schema drift.
 7. **Detection Rule Appendix** — the formal "active vs present-but-inactive" rule, per profile and world feature.
@@ -87,6 +88,12 @@ we expect to stress. Cite FOUNDATIONS principles when relevant
 - Feature-specific invariants derived from Must-exercise.
 - Negative invariants when appropriate: "No agent collapses from dehydration
   while trading" guards against new-feature regressions on survival.
+- For each scenario-specific invariant, name the proof surface that establishes
+  it earliest (`decision trace`, `action trace`, `authoritative world state`,
+  `event log`, or a mixed timeline when justified).
+- If the scenario can lawfully pass through multiple branches, state which
+  branches are accepted and which branch-specific failure modes must still be
+  rejected as invalid passes.
 
 **Deliberately inactive** (cumulative from prior entries plus anything this
 entry still zeros out)
@@ -97,6 +104,8 @@ entry still zeros out)
   shows it as Landed.
 - Golden file exists, passes, and is referenced from the entry.
 - Every Must-exercise bullet is proved by a trace-backed assertion.
+- The backing golden proves the scenario passed for the authored reason rather
+  than only by end-state outcome.
 - Survival-health contract passes across all observer-run ticks.
 - Status flipped to Landed; generated companion regenerated and committed.
 ```
@@ -105,6 +114,7 @@ entry still zeros out)
 
 - **Deliberately inactive** is cumulative until a later entry flips the item. This keeps the feature-stacking rule auditable — looking at entry N tells you exactly what is still off.
 - **Must-exercise is behavioral, not structural.** A scenario declaring `tell_profile: Some(...)` but producing no Tell actions across 1440 ticks does not count as covering Tell. The coverage binary verifies structural activation; the golden proves behavioral activation. The template makes the split explicit.
+- **Must-prove is causal, not just outcome-level.** A scenario passing its survival envelope or reaching the expected end state does not count as valid if the golden cannot distinguish the authored branch from accidental lawful alternatives. Each entry must name the proof surface and the accepted/excluded rival branches.
 
 ---
 
@@ -215,6 +225,7 @@ Retrospective entries for the five current `.ron` files, using the contract temp
 2. Apply the Activation checklist — each bullet maps to a RON edit.
 3. Run the observer for 1440 ticks locally. Iterate on starting needs, profile weights, and topology until the survival-health contract holds and must-exercise bullets produce observable events.
 4. Write the backing golden under `crates/worldwake-ai/tests/golden_<name>.rs`, asserting every must-prove invariant (survival contract first, feature invariants next, negative invariants last).
+   Validate that the golden proves the scenario passed for the intended branch rather than only by end-state survival; if a rival lawful branch remains possible, assert the distinction explicitly.
 5. Run `cargo run -p worldwake-cli --bin scenario-coverage -- --write`. Verify the generated companion shows the entry as `Landed` and that active profiles match the Activation checklist. On mismatch, fix the checklist (the RON is the source of truth; the doc is derived editorial).
 6. Flip status to `Landed`. Fill in Source scenario + Backing goldens paths. Commit doc + `.ron` + golden + regenerated companion together.
 
@@ -234,6 +245,8 @@ Retrospective entries for the five current `.ron` files, using the contract temp
 1. Every required profile in the Feature Catalog is `Some(...)` on at least one agent in S (structural presence), AND
 2. For each gating field identified in the Feature Catalog row, the value is non-zero / non-default (behavioral enablement), AND
 3. The world conditions required by the feature exist in S.
+
+This appendix only answers whether a feature is structurally and behaviorally active in a scenario definition. It does not prove that a backing golden exercises the feature for the intended causal reason; that stronger validity contract belongs to the roadmap entry and the golden itself.
 
 **Gating fields per profile** (source of truth — the binary implements exactly this):
 

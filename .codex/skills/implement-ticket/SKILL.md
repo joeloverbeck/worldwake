@@ -49,6 +49,7 @@ When a ticket mostly adds a new file plus a small declaration/edit in a large ex
 Load `references/mismatch-handling.md` when reassessment exposes a contradiction, risky ticket/code divergence, or a user decision that requires 1-3-1.
 
 If reassessment changes a shared API, type contract, schema shape, or cross-ticket assumption, update any still-active dependent tickets/spec references in the same family before implementing or closing out the current ticket.
+If a golden-driven ticket proves that the scenario contract itself is underspecified — for example, the scenario can pass or fail without proving the authored causal branch — escalate from local ticket reassessment to the owning golden-policy / scenario-roadmap docs and any live roadmap tickets instead of recording the gap only in ticket closeout.
 
 If reassessment exposes a separate architectural concern that must be tracked but is not honestly owned by the current ticket, create or update a dedicated follow-up ticket before proceeding, and rewrite the active ticket so that concern is referenced explicitly as an external dependency or out-of-scope blocker rather than left implicit.
 If an investigation/disposition ticket concludes that the live contradiction is already owned by an existing sibling ticket, close the current ticket by recording that conclusion and updating the sibling ticket's scope/deps factually instead of creating a duplicate follow-up.

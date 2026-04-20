@@ -1317,6 +1317,15 @@ impl GoalKindPlannerExt for GoalKind {
 
     fn is_satisfied(&self, state: &PlanningState<'_>) -> bool {
         let actor = state.snapshot().actor();
+        let holds_concrete_commodity = |commodity: CommodityKind| {
+            state
+                .direct_possessions_ref(PlanningEntityRef::Authoritative(actor))
+                .into_iter()
+                .any(|entity| {
+                    state.item_lot_commodity_ref(entity) == Some(commodity)
+                        && state.commodity_quantity_ref(entity, commodity) > Quantity(0)
+                })
+        };
         match self {
             GoalKind::ConsumeOwnedCommodity { commodity } => {
                 let Some(needs) = state.homeostatic_needs(actor) else {
@@ -1334,9 +1343,8 @@ impl GoalKindPlannerExt for GoalKind {
                 })
             }
             GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
-                CommodityPurpose::SelfConsume
-                | CommodityPurpose::Restock
-                | CommodityPurpose::RecipeInput(_) => {
+                CommodityPurpose::SelfConsume => holds_concrete_commodity(*commodity),
+                CommodityPurpose::Restock | CommodityPurpose::RecipeInput(_) => {
                     state.commodity_quantity(actor, *commodity) > Quantity(0)
                 }
             },
@@ -6015,6 +6023,26 @@ mod tests {
         );
 
         assert!(!goal.is_satisfied(&advanced));
+    }
+
+    #[test]
+    fn acquire_self_consume_goal_is_not_satisfied_by_aggregate_quantity_without_held_lot() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let state = PlanningState::new(&snapshot).with_commodity_quantity(
+            actor,
+            CommodityKind::Apple,
+            Quantity(1),
+        );
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+
+        assert!(
+            !goal.is_satisfied(&state),
+            "self-consume acquisition must require a concrete held commodity lot, not only aggregate quantity"
+        );
     }
 
     #[test]

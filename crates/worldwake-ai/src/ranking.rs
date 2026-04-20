@@ -618,6 +618,15 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
             .map_or(GoalPriorityClass::Low, |assessment| {
                 assessment.priority_class
             }),
+        GoalKind::ExploreLocation {
+            motivating_need: ExplorationMotivation::NeedDriven(need_id),
+            ..
+        } => drive_priority(
+            context,
+            |needs| need_pressure_for_id(needs, need_id),
+            |thresholds| threshold_band_for_need(thresholds, need_id),
+            need_driven_exploration_recovery_relevant(need_id),
+        ),
         GoalKind::FreeCarryCapacity
         | GoalKind::BuryCorpse { .. }
         | GoalKind::SearchForMissing { .. }
@@ -627,7 +636,10 @@ fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> Goa
         | GoalKind::ShareBelief { .. }
         | GoalKind::InvestigateViolation { .. }
         | GoalKind::Patrol { .. }
-        | GoalKind::ExploreLocation { .. }
+        | GoalKind::ExploreLocation {
+            motivating_need: ExplorationMotivation::Proactive,
+            ..
+        }
         | GoalKind::StealItem { .. }
         | GoalKind::Accuse { .. }
         | GoalKind::PunishAccused { .. } => GoalPriorityClass::Low,
@@ -871,8 +883,13 @@ fn exploration_motive(context: &RankingContext<'_>, motivating_need: Exploration
             let Some(profile) = context.exploration_profile else {
                 return 0;
             };
-            u32::from(profile.curiosity_weight.value())
-                .saturating_mul(u32::from(need_pressure_for_id(needs, need_id).value()))
+            drive_score(
+                context,
+                need_id,
+                |needs| need_pressure_for_id(needs, need_id),
+                |utility| utility_weight_for_need(utility, need_id),
+            )
+            .saturating_mul(u32::from(profile.curiosity_weight.value()))
                 / 1000
         }
         ExplorationMotivation::Proactive => {
@@ -907,6 +924,36 @@ fn proactive_curiosity_pressure(
         .min(1000);
     let raw = ticks_since.saturating_mul(u64::from(profile.curiosity_buildup_rate.value()));
     Permille::new_unchecked(raw.min(1000) as u16)
+}
+
+fn utility_weight_for_need(utility: &UtilityProfile, need_id: HomeostaticNeedId) -> Permille {
+    match need_id {
+        HomeostaticNeedId::Hunger => utility.hunger_weight,
+        HomeostaticNeedId::Thirst => utility.thirst_weight,
+        HomeostaticNeedId::Fatigue => utility.fatigue_weight,
+        HomeostaticNeedId::Bladder => utility.bladder_weight,
+        HomeostaticNeedId::Dirtiness => utility.dirtiness_weight,
+    }
+}
+
+fn threshold_band_for_need(
+    thresholds: DriveThresholds,
+    need_id: HomeostaticNeedId,
+) -> worldwake_core::ThresholdBand {
+    match need_id {
+        HomeostaticNeedId::Hunger => thresholds.hunger,
+        HomeostaticNeedId::Thirst => thresholds.thirst,
+        HomeostaticNeedId::Fatigue => thresholds.fatigue,
+        HomeostaticNeedId::Bladder => thresholds.bladder,
+        HomeostaticNeedId::Dirtiness => thresholds.dirtiness,
+    }
+}
+
+fn need_driven_exploration_recovery_relevant(need_id: HomeostaticNeedId) -> bool {
+    matches!(
+        need_id,
+        HomeostaticNeedId::Hunger | HomeostaticNeedId::Thirst
+    )
 }
 
 fn need_pressure_for_id(needs: HomeostaticNeeds, need_id: HomeostaticNeedId) -> Permille {
@@ -7262,7 +7309,7 @@ mod tests {
     }
 
     #[test]
-    fn explore_location_ranks_as_low_priority() {
+    fn explore_location_need_driven_priority_tracks_underlying_need_band() {
         let agent = entity(1);
         let target_place = entity(10);
         let mut view = base_view(agent);
@@ -7299,11 +7346,11 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked.len(), 1);
-        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
     }
 
     #[test]
-    fn explore_location_motive_uses_need_pressure_times_curiosity() {
+    fn explore_location_motive_uses_need_utility_scaled_by_curiosity() {
         let agent = entity(1);
         let target_place = entity(10);
         let mut view = base_view(agent);
@@ -7340,7 +7387,58 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked.len(), 1);
-        assert_eq!(ranked[0].motive_score, 420);
+        assert_eq!(ranked[0].motive_score, 378_000);
+    }
+
+    #[test]
+    fn critical_hunger_exploration_outranks_lower_class_sleep() {
+        let agent = entity(1);
+        let target_place = entity(10);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(900).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(650).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.exploration_profiles.insert(
+            agent,
+            worldwake_core::ExplorationProfile {
+                curiosity_weight: Permille::new(600).unwrap(),
+                ..worldwake_core::ExplorationProfile::default()
+            },
+        );
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::Sleep),
+                goal(GoalKind::ExploreLocation {
+                    target_place,
+                    motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                        worldwake_core::HomeostaticNeedId::Hunger,
+                    ),
+                }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].grounded.key.kind,
+            GoalKind::ExploreLocation {
+                target_place,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    worldwake_core::HomeostaticNeedId::Hunger,
+                ),
+            }
+        );
     }
 
     #[test]

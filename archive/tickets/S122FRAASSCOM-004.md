@@ -1,6 +1,6 @@
 # S122FRAASSCOM-004: Trace surface payload + integration tests + survival-golden gate
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `FrameTransitionKind::Cleared` gains `failed_assumption: Option<FrameAssumption>` field; `format_frame_transition_kind` surfaces the payload in the trace summary; integration tests #10 (suppression prevents re-adoption) and #11 (stale defers, fresh refutes) land; survival goldens (`baseline`, `contested`, `scattered`) re-run as the architectural acceptance gate.
@@ -153,3 +153,25 @@ With the assumption evaluable (003), the failure event is recorded but the decis
 4. `cargo test --release -p worldwake-ai --test golden_survival_contested -- --ignored --test-threads=1`
 5. `cargo test --release -p worldwake-ai --test golden_survival_scattered -- --ignored --test-threads=1`
 6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-20.
+
+- Extended `FrameTransitionKind::Cleared` with `failed_assumption: Option<FrameAssumption>`, updated the formatter in `crates/worldwake-ai/src/decision_trace.rs`, and populated the payload from assumption-driven clears in `crates/worldwake-ai/src/agent_tick/mod.rs`.
+- Added the formatter coverage plus the two S122 integration proofs in `crates/worldwake-ai/src/agent_tick/tests.rs`: stale remote beliefs defer until co-located refresh refutes, and failed local `(goal, place)` opportunities are suppressed from immediate re-adoption.
+- Broadened the production fix needed to satisfy the survival-golden acceptance gate: local commodity-availability contradictions now clear from fresh place-scoped reobservation, anchored `AcquireCommodity` goals stay constrained to their selected place through strategic and tactical search, suppression no longer crosses commodities at the same place, interruption logic no longer rotates between critical self-care goals incorrectly, need-driven exploration ranking now tracks the underlying need band, and self-consume acquire satisfaction now requires a concrete held lot instead of aggregate ghost quantity.
+- Updated `docs/golden-e2e-testing.md`, `docs/plans/2026-04-19-scenario-roadmap-doc-design.md`, and active `SCEROAD-001..003` tickets to formalize the scenario-golden validity gap exposed during the survival-gate work: structural activation and survival outcome are no longer sufficient to claim that a scenario validly proved its authored causal branch.
+
+## Deviations
+
+- The ticket began as a trace-surface plus integration-test slice, but the authored survival-golden gate exposed additional production bugs in search, ranking, suppression, failure clearing, and goal satisfaction that had to be fixed to satisfy the existing acceptance contract honestly. The trace payload remained informational, but the surrounding architectural fixes were required to make the gate green.
+- The broader verification work also exposed a documentation/roadmap contract gap around scenario-backed golden validity. That concern was resolved in the owning docs and active `SCEROAD` tickets rather than split into a new follow-up ticket.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib`
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_baseline -- --ignored --test-threads=1`
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_contested -- --ignored --test-threads=1`
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_scattered -- --ignored --test-threads=1`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

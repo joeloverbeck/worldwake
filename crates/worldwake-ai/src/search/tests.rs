@@ -2357,6 +2357,204 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
 }
 
 #[test]
+fn place_anchored_acquire_search_does_not_retarget_sibling_place_lot() {
+    let actor = entity(1);
+    let home = entity(10);
+    let orchard = entity(11);
+    let home_apple = entity(20);
+    let orchard_apple = entity(21);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, home, orchard, home_apple, orchard_apple]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(home, EntityKind::Place);
+    view.kinds.insert(orchard, EntityKind::Place);
+    view.kinds.insert(home_apple, EntityKind::ItemLot);
+    view.kinds.insert(orchard_apple, EntityKind::ItemLot);
+    view.effective_places.insert(actor, orchard);
+    view.effective_places.insert(home_apple, home);
+    view.effective_places.insert(orchard_apple, orchard);
+    view.entities_at.insert(home, vec![home_apple]);
+    view.entities_at.insert(orchard, vec![actor, orchard_apple]);
+    view.lot_commodities.insert(home_apple, CommodityKind::Apple);
+    view.lot_commodities
+        .insert(orchard_apple, CommodityKind::Apple);
+    view.consumable_profiles.insert(
+        home_apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.consumable_profiles.insert(
+        orchard_apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.commodity_quantities
+        .insert((home_apple, CommodityKind::Apple), Quantity(1));
+    view.commodity_quantities
+        .insert((orchard_apple, CommodityKind::Apple), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(home_apple, LoadUnits(1));
+    view.entity_loads.insert(orchard_apple, LoadUnits(1));
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.adjacent
+        .insert(home, vec![(orchard, NonZeroU32::new(3).unwrap())]);
+    view.adjacent
+        .insert(orchard, vec![(home, NonZeroU32::new(3).unwrap())]);
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(orchard),
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([home_apple, orchard_apple]),
+        evidence_places: BTreeSet::from([home, orchard]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        3,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("anchored local apple should remain satisfiable without sibling travel");
+
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(orchard_apple)]
+    );
+}
+
+#[test]
+fn place_anchored_acquire_search_does_not_escape_blocked_local_lot_to_sibling_place() {
+    let actor = entity(1);
+    let home = entity(10);
+    let orchard = entity(11);
+    let home_apple = entity(20);
+    let orchard_apple = entity(21);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, home, orchard, home_apple, orchard_apple]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(home, EntityKind::Place);
+    view.kinds.insert(orchard, EntityKind::Place);
+    view.kinds.insert(home_apple, EntityKind::ItemLot);
+    view.kinds.insert(orchard_apple, EntityKind::ItemLot);
+    view.effective_places.insert(actor, orchard);
+    view.effective_places.insert(home_apple, home);
+    view.effective_places.insert(orchard_apple, orchard);
+    view.entities_at.insert(home, vec![home_apple]);
+    view.entities_at.insert(orchard, vec![actor, orchard_apple]);
+    view.lot_commodities.insert(home_apple, CommodityKind::Apple);
+    view.lot_commodities
+        .insert(orchard_apple, CommodityKind::Apple);
+    view.consumable_profiles.insert(
+        home_apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.consumable_profiles.insert(
+        orchard_apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.commodity_quantities
+        .insert((home_apple, CommodityKind::Apple), Quantity(1));
+    view.commodity_quantities
+        .insert((orchard_apple, CommodityKind::Apple), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(home_apple, LoadUnits(1));
+    view.entity_loads.insert(orchard_apple, LoadUnits(1));
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.adjacent
+        .insert(home, vec![(orchard, NonZeroU32::new(3).unwrap())]);
+    view.adjacent
+        .insert(orchard, vec![(home, NonZeroU32::new(3).unwrap())]);
+
+    let (registry, handlers) = build_registry();
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(orchard),
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([home_apple, orchard_apple]),
+        evidence_places: BTreeSet::from([home, orchard]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        3,
+    );
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
+        blocker_key: BlockerKey {
+            goal_key: goal.key,
+            place: Some(orchard),
+            target: Some(orchard_apple),
+            action_def: Some(pick_up_id),
+        },
+        blocking_fact: BlockingFact::TargetGone,
+        diagnostic_context: None,
+        observed_tick: Tick(1),
+        expires_tick: Tick(20),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
+    });
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &blocked,
+        Tick(5),
+        None,
+        None,
+    );
+
+    assert!(
+        !result.is_found(),
+        "anchored local commodity goals must not reroute to sibling places when the local lot is blocked"
+    );
+}
+
+#[test]
 fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
     let actor = entity(1);
     let town = entity(10);

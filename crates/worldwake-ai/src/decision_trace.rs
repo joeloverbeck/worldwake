@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameClearReason,
-    GoalKey, InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag,
+    FrameAssumption, GoalKey, InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag,
     OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
     PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
@@ -57,6 +57,7 @@ pub enum FrameTransitionKind {
     },
     Cleared {
         reason: FrameClearReason,
+        failed_assumption: Option<FrameAssumption>,
     },
 }
 
@@ -1989,8 +1990,30 @@ fn format_frame_transition_kind(kind: &FrameTransitionKind) -> String {
         } => format!(
             "FRAME_EXHAUSTED: stalled={stalled_ticks}/{patience_limit}, blocked={blocked_intent_recorded}"
         ),
-        FrameTransitionKind::Cleared { reason } => {
-            format!("FRAME_CLEARED: reason={reason:?}")
+        FrameTransitionKind::Cleared {
+            reason,
+            failed_assumption,
+        } => failed_assumption.as_ref().map_or_else(
+            || format!("FRAME_CLEARED: reason={reason:?}"),
+            |assumption| {
+                format!(
+                    "FRAME_CLEARED: reason={reason:?}, failed={}",
+                    format_frame_assumption(assumption)
+                )
+            },
+        ),
+    }
+}
+
+fn format_frame_assumption(assumption: &FrameAssumption) -> String {
+    match assumption {
+        FrameAssumption::TargetAlive(entity) => format!("TargetAlive(entity={entity:?})"),
+        FrameAssumption::RouteExists { from, to } => {
+            format!("RouteExists(from={from:?}, to={to:?})")
+        }
+        FrameAssumption::NoCriticalThreat => "NoCriticalThreat".to_string(),
+        FrameAssumption::CommodityAvailableAt { commodity, place } => {
+            format!("CommodityAvailableAt(commodity={commodity:?}, place={place:?})")
         }
     }
 }
@@ -4289,10 +4312,31 @@ mod tests {
     fn frame_transition_trace_cleared_format() {
         let kind = FrameTransitionKind::Cleared {
             reason: FrameClearReason::PatienceExhausted,
+            failed_assumption: None,
         };
         let formatted = format_frame_transition_kind(&kind);
         assert!(formatted.contains("FRAME_CLEARED"));
         assert!(formatted.contains("PatienceExhausted"));
+    }
+
+    #[test]
+    fn format_frame_transition_cleared_with_failed_commodity_assumption_includes_payload() {
+        let place = entity(7);
+        let kind = FrameTransitionKind::Cleared {
+            reason: FrameClearReason::AssumptionFailed,
+            failed_assumption: Some(FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            }),
+        };
+
+        let formatted = format_frame_transition_kind(&kind);
+
+        assert!(formatted.contains("FRAME_CLEARED"));
+        assert!(formatted.contains("AssumptionFailed"));
+        assert!(formatted.contains("CommodityAvailableAt"));
+        assert!(formatted.contains("Apple"));
+        assert!(formatted.contains(&format!("{place:?}")));
     }
 
     #[test]

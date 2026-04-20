@@ -43,21 +43,18 @@ pub fn evaluate_interrupt(
         return InterruptDecision::NoInterrupt;
     }
 
+    let effective_active_goal = effective_active_goal(runtime, active_goal, jc);
+
     if !plan_valid {
+        if ranked_candidates
+            .first()
+            .is_some_and(|candidate| Some(candidate.grounded.key) == effective_active_goal)
+        {
+            return InterruptDecision::NoInterrupt;
+        }
         return InterruptDecision::InterruptForReplan {
             trigger: InterruptTrigger::PlanInvalid,
         };
-    }
-
-    let effective_active_goal = effective_active_goal(runtime, active_goal, jc);
-
-    if current_action_interruptibility == Interruptibility::InterruptibleWithPenalty
-        && ranked_candidates.first().is_some_and(|candidate| {
-            candidate.priority_class == GoalPriorityClass::Critical
-                && Some(candidate.grounded.key) == effective_active_goal
-        })
-    {
-        return InterruptDecision::NoInterrupt;
     }
 
     let Some(challenger) = best_challenger(effective_active_goal, ranked_candidates) else {
@@ -66,7 +63,18 @@ pub fn evaluate_interrupt(
 
     match current_action_interruptibility {
         Interruptibility::NonInterruptible => InterruptDecision::NoInterrupt,
-        Interruptibility::InterruptibleWithPenalty => interrupt_with_penalty(challenger),
+        Interruptibility::InterruptibleWithPenalty => {
+            if penalty_interrupt_trigger(&challenger.grounded.key.kind)
+                == Some(InterruptTrigger::CriticalSurvival)
+                && effective_active_goal.is_some_and(|goal| {
+                    penalty_interrupt_trigger(&goal.kind) == Some(InterruptTrigger::CriticalSurvival)
+                })
+            {
+                InterruptDecision::NoInterrupt
+            } else {
+                interrupt_with_penalty(challenger)
+            }
+        }
         Interruptibility::FreelyInterruptible => interrupt_freely(
             effective_active_goal,
             runtime,
@@ -103,6 +111,17 @@ fn interrupt_with_penalty(challenger: &RankedGoal) -> InterruptDecision {
             InterruptDecision::InterruptForReplan { trigger }
         }
         PenaltyInterruptEligibility::Never => InterruptDecision::NoInterrupt,
+    }
+}
+
+fn penalty_interrupt_trigger(kind: &worldwake_core::GoalKind) -> Option<InterruptTrigger> {
+    match GoalDispatchKey::from_goal_kind(kind)
+        .declaration()
+        .family_policy
+        .penalty_interrupt
+    {
+        PenaltyInterruptEligibility::WhenCritical { trigger } => Some(trigger),
+        PenaltyInterruptEligibility::Never => None,
     }
 }
 
@@ -451,7 +470,11 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
-            &[ranked(current_goal, GoalPriorityClass::Medium, 100)],
+            &[ranked(
+                GoalKind::ReduceDanger,
+                GoalPriorityClass::Critical,
+                1_000,
+            )],
             None,
             false,
             default_switch_margin(),
@@ -465,6 +488,27 @@ mod tests {
                 trigger: InterruptTrigger::PlanInvalid,
             }
         );
+    }
+
+    #[test]
+    fn interruptible_with_penalty_keeps_running_same_critical_goal_even_if_plan_marked_invalid() {
+        let current_goal = GoalKind::Relieve;
+        let challengers = vec![ranked(current_goal, GoalPriorityClass::Critical, 1_000)];
+
+        let decision = evaluate_interrupt(
+            &runtime(current_goal, GoalPriorityClass::Critical),
+            Some(GoalKey::from(current_goal)),
+            None,
+            Interruptibility::InterruptibleWithPenalty,
+            &challengers,
+            None,
+            false,
+            default_switch_margin(),
+            default_switch_margin(),
+            &dummy_context(),
+        );
+
+        assert_eq!(decision, InterruptDecision::NoInterrupt);
     }
 
     #[test]
@@ -485,6 +529,37 @@ mod tests {
 
         let decision = evaluate_interrupt(
             &runtime(current_goal, GoalPriorityClass::Medium),
+            Some(GoalKey::from(current_goal)),
+            None,
+            Interruptibility::InterruptibleWithPenalty,
+            &challengers,
+            None,
+            true,
+            default_switch_margin(),
+            default_switch_margin(),
+            &dummy_context(),
+        );
+
+        assert_eq!(decision, InterruptDecision::NoInterrupt);
+    }
+
+    #[test]
+    fn interruptible_with_penalty_does_not_rotate_between_critical_self_care_goals() {
+        let current_goal = GoalKind::Relieve;
+        let challengers = vec![
+            ranked(current_goal, GoalPriorityClass::Critical, 1_000),
+            ranked(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::Critical,
+                1_100,
+            ),
+        ];
+
+        let decision = evaluate_interrupt(
+            &runtime(current_goal, GoalPriorityClass::Critical),
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,

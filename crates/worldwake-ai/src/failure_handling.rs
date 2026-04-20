@@ -56,7 +56,7 @@ pub fn handle_plan_failure(
         context.failed_step,
         context.execution_failure,
     );
-    let blocker_key = BlockerKey {
+    let mut blocker_key = BlockerKey {
         goal_key: context.goal_key,
         place: related_place(
             context.view,
@@ -67,6 +67,16 @@ pub fn handle_plan_failure(
         target: related_entity(context.failed_step),
         action_def: Some(context.failed_step.def_id),
     };
+
+    if should_scope_local_commodity_unavailability_to_place(
+        context.view,
+        context.agent,
+        &blocker_key,
+        context.failed_step,
+    )
+    {
+        blocker_key.target = None;
+    }
 
     match classification {
         FailureClassification::Blocker(blocking_fact) => {
@@ -189,6 +199,10 @@ fn classify_discrepancy(
 
     if danger_too_high(view, agent) {
         return FailureClassification::Blocker(BlockingFact::DangerTooHigh);
+    }
+
+    if local_commodity_availability_contradicted(view, agent, goal_key, step) {
+        return FailureClassification::Discrepancy(Discrepancy::BeliefContradicted);
     }
 
     if let Some(classification) = execution_failure.and_then(map_execution_failure) {
@@ -328,6 +342,54 @@ fn classify_trade_handler_abort_reason(
         },
         _ => None,
     }
+}
+
+fn should_scope_local_commodity_unavailability_to_place(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    blocker_key: &BlockerKey,
+    step: &PlannedStep,
+) -> bool {
+    if !matches!(
+        blocker_key.goal_key.kind,
+        GoalKind::AcquireCommodity { .. } | GoalKind::RestockCommodity { .. }
+    ) {
+        return false;
+    }
+
+    if !matches!(
+        step.op_kind,
+        PlannerOpKind::MoveCargo | PlannerOpKind::Trade | PlannerOpKind::Harvest
+    ) {
+        return false;
+    }
+
+    let Some(place) = blocker_key.place else {
+        return false;
+    };
+    let Some(commodity) = blocker_key.goal_key.commodity else {
+        return false;
+    };
+    if view.effective_place(agent) != Some(place) {
+        return false;
+    }
+
+    !place_has_local_commodity_support(view, agent, place, commodity, blocker_key.target)
+}
+
+fn local_commodity_availability_contradicted(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    goal_key: &GoalKey,
+    step: &PlannedStep,
+) -> bool {
+    let blocker_key = BlockerKey {
+        goal_key: *goal_key,
+        place: related_place(view, agent, goal_key, step),
+        target: related_entity(step),
+        action_def: Some(step.def_id),
+    };
+    should_scope_local_commodity_unavailability_to_place(view, agent, &blocker_key, step)
 }
 
 fn classify_production_failure(
@@ -753,6 +815,18 @@ fn derive_clearing_condition(
                 (BlockerClearingCondition::TtlOnly, None)
             }
             _ => {
+                if blocker_key.target.is_none()
+                    && let (Some(commodity), Some(place)) =
+                        (blocker_key.goal_key.commodity, blocker_key.place)
+                {
+                    return (
+                        BlockerClearingCondition::CommodityAvailabilityChanged {
+                            commodity,
+                            place,
+                        },
+                        None,
+                    );
+                }
                 let Some(entity) = blocker_key.target else {
                     return (BlockerClearingCondition::TtlOnly, None);
                 };
@@ -891,7 +965,46 @@ fn is_discrepancy_cleared(
                     claim.aspect == claim_key.aspect && claim.acquired_tick > entry.observed_tick
                 })
             }),
+        DiscrepancyClearing::CommodityAvailabilityChanged { commodity, place } => {
+            commodity_availability_reobserved(view, agent, commodity, place, entry.observed_tick)
+        }
     }
+}
+
+fn commodity_availability_reobserved(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    commodity: CommodityKind,
+    place: EntityId,
+    observed_tick: Tick,
+) -> bool {
+    if view.effective_place(agent) == Some(place)
+        && view.entities_at(place).into_iter().any(|entity| {
+            view.item_lot_commodity(entity) == Some(commodity)
+                || view.resource_source(entity).is_some_and(|source| {
+                    source.commodity == commodity && source.available_quantity > Quantity(0)
+                })
+        })
+    {
+        return true;
+    }
+
+    view.agent_belief_store(agent).is_some_and(|store| {
+        store.known_entities.values().any(|state| {
+            state.last_known_place == Some(place)
+                && state
+                    .last_observed_tick()
+                    .is_some_and(|tick| tick > observed_tick)
+                && (state.resource_source.as_ref().is_some_and(|source| {
+                    source.commodity == commodity && source.available_quantity > Quantity(0)
+                }) || state
+                    .last_known_inventory
+                    .get(&commodity)
+                    .copied()
+                    .unwrap_or(Quantity(0))
+                    > Quantity(0))
+        })
+    })
 }
 
 fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &Blocker) -> bool {
@@ -911,13 +1024,9 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
                 .is_some_and(|resource| resource.available_quantity > Quantity(0)),
             _ => view.locally_observed_commodity_quantity(agent, *place, *commodity) != *baseline,
         },
-        (BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place }, None) => view
-            .listed_sale_lots_at(*place, *commodity)
-            .into_iter()
-            .any(|lot| {
-                view.seller_for_sale_lot(lot)
-                    .is_some_and(|seller| seller != agent)
-            }),
+        (BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place }, None) => {
+            place_has_local_commodity_support(view, agent, *place, *commodity, None)
+        }
         (
             BlockerClearingCondition::InventoryChanged { commodity },
             Some(ClearingBaseline::InventoryQuantity { quantity: baseline }),
@@ -986,6 +1095,44 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
         }
         _ => false,
     }
+}
+
+fn place_has_local_commodity_support(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+    excluded_target: Option<EntityId>,
+) -> bool {
+    view.listed_sale_lots_at(place, commodity)
+        .into_iter()
+        .filter(|lot| Some(*lot) != excluded_target)
+        .any(|lot| {
+            view.seller_for_sale_lot(lot)
+                .is_some_and(|seller| seller != agent)
+        })
+        || view
+            .entities_at(place)
+            .into_iter()
+            .filter(|entity| Some(*entity) != excluded_target)
+            .any(|entity| {
+                view.item_lot_commodity(entity) == Some(commodity)
+                    && view.direct_container(entity).is_none()
+                    && view.direct_possessor(entity).is_none()
+            })
+        || view
+            .resource_sources_at(place, commodity)
+            .into_iter()
+            .filter(|source| Some(*source) != excluded_target)
+            .any(|source| {
+                view.resource_source(source)
+                    .is_some_and(|resource| resource.available_quantity > Quantity(0))
+            })
+        || view
+            .corpse_entities_at(place)
+            .into_iter()
+            .filter(|corpse| Some(*corpse) != excluded_target)
+            .any(|corpse| view.commodity_quantity(corpse, commodity) > Quantity(0))
 }
 
 fn related_entity(step: &PlannedStep) -> Option<EntityId> {
@@ -1182,10 +1329,11 @@ mod tests {
         ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
         ClearingBaseline, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
         CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents, DemandObservation,
-        Discrepancy, DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey,
-        GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds,
+        EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
+        IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
+        UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -1880,6 +2028,120 @@ mod tests {
         assert_eq!(entry.blocker_key.target, Some(bread_lot));
         assert_eq!(entry.blocker_key.place, Some(remote_place));
         assert_eq!(entry.blocker_key.action_def, Some(step.def_id));
+    }
+
+    #[test]
+    fn handle_plan_failure_scopes_local_missing_commodity_target_to_place() {
+        let agent = entity(1);
+        let home = entity(10);
+        let missing_lot = entity(2);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let step = move_cargo_step(missing_lot);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = Some(jc_for_goal(goal));
+        let mut blocked = BlockerMemory::default();
+        let mut discrepancies = DiscrepancyMemory::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: None,
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut jc,
+            &mut blocked,
+            &mut discrepancies,
+            &mut ContentionIntents::default(),
+            &cognitive(&ProfileFixture::default()),
+        );
+
+        let entry = blocked
+            .intents
+            .values()
+            .next()
+            .expect("local target-gone acquire failure should record a blocker");
+        assert_eq!(entry.blocking_fact, BlockingFact::TargetGone);
+        assert_eq!(entry.blocker_key.place, Some(home));
+        assert_eq!(entry.blocker_key.target, None);
+        assert_eq!(
+            entry.clearing_condition,
+            BlockerClearingCondition::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Bread,
+                place: home,
+            }
+        );
+        assert_eq!(entry.baseline_snapshot, None);
+        assert!(discrepancies.entries.is_empty());
+    }
+
+    #[test]
+    fn handle_plan_failure_records_local_commodity_contradiction_as_place_scoped_discrepancy() {
+        let agent = entity(1);
+        let home = entity(10);
+        let local_lot = entity(2);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let step = move_cargo_step(local_lot);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(local_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(local_lot, home);
+        view.entities_at.insert(home, vec![local_lot]);
+        view.lot_commodities.insert(local_lot, CommodityKind::Bread);
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = Some(jc_for_goal(goal));
+        let mut blocked = BlockerMemory::default();
+        let mut discrepancies = DiscrepancyMemory::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: Some(ExecutionFailure::Start(&ActionStartFailure {
+                    tick: Tick(20),
+                    actor: agent,
+                    def_id: step.def_id,
+                    request: sample_request(1),
+                    reason: ActionStartFailureReason::PreconditionFailed(
+                        "TargetAtActorPlace(0)".to_string(),
+                    ),
+                })),
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut jc,
+            &mut blocked,
+            &mut discrepancies,
+            &mut ContentionIntents::default(),
+            &cognitive(&ProfileFixture::default()),
+        );
+
+        assert!(blocked.intents.is_empty());
+        let entry = discrepancies
+            .entries
+            .values()
+            .next()
+            .expect("local unsupported acquire failure should record a discrepancy");
+        assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+        assert_eq!(entry.blocker_key.place, Some(home));
+        assert_eq!(entry.blocker_key.target, None);
     }
 
     #[test]
@@ -3136,5 +3398,47 @@ mod tests {
                 "{discrepancy:?} without target must use TtlExpiry",
             );
         }
+    }
+
+    #[test]
+    fn commodity_availability_clearing_triggers_on_fresh_local_source() {
+        let agent = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+        let place = EntityId {
+            slot: 2,
+            generation: 0,
+        };
+        let source = EntityId {
+            slot: 3,
+            generation: 0,
+        };
+        let mut view = TestBeliefView::default();
+        view.effective_places.insert(agent, place);
+        view.entities_at.insert(place, vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(2),
+                max_quantity: Quantity(2),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let entry = DiscrepancyEntry {
+            blocker_key: discrepancy_blocker_key_with_target(source),
+            discrepancy: Discrepancy::BeliefContradicted,
+            observed_tick: Tick(10),
+            expires_tick: Tick(200),
+            clearing_condition: DiscrepancyClearing::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Apple,
+                place,
+            },
+        };
+
+        assert!(super::is_discrepancy_cleared(&view, agent, &entry));
     }
 }

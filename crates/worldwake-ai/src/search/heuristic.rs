@@ -12,6 +12,22 @@ use super::{
     landmarks::{LandmarkSet, PlanningFact, actionable_landmarks},
 };
 
+fn anchored_goal_place(goal: &GroundedGoal, state: &PlanningState<'_>) -> Option<EntityId> {
+    if !matches!(
+        goal.key.kind,
+        worldwake_core::GoalKind::AcquireCommodity { .. }
+    ) {
+        return None;
+    }
+    match goal.anchor {
+        worldwake_core::OpportunityAnchor::Place(place) => Some(place),
+        worldwake_core::OpportunityAnchor::Entity(entity) => {
+            state.effective_place_ref(PlanningEntityRef::Authoritative(entity))
+        }
+        worldwake_core::OpportunityAnchor::None => None,
+    }
+}
+
 /// Compute the A* heuristic: minimum perceived travel cost from the actor's
 /// current simulated position to the nearest goal-relevant place. Returns 0
 /// when the actor is already at a goal-relevant place, when no spatial
@@ -110,7 +126,10 @@ fn combined_relevant_places_internal(
     execution_budget: &ExecutionBudget,
     include_guidance_trace: bool,
 ) -> CombinedRelevantPlaces {
-    let mut places = goal.key.kind.goal_relevant_places(state, recipes);
+    let mut places = anchored_goal_place(goal, state).map_or_else(
+        || goal.key.kind.goal_relevant_places(state, recipes),
+        |place| vec![place],
+    );
     if places.is_empty()
         && matches!(
             goal.key.kind,

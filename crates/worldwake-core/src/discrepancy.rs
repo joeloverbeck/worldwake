@@ -1,4 +1,4 @@
-use crate::{BeliefClaimKey, BlockerKey, Component, EntityId, Tick};
+use crate::{BeliefClaimKey, BlockerKey, CommodityKind, Component, EntityId, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -38,6 +38,10 @@ pub enum DiscrepancyClearing {
     TtlExpiry,
     ReobservationOf { target: EntityId },
     BeliefUpdate { claim_key: BeliefClaimKey },
+    CommodityAvailabilityChanged {
+        commodity: CommodityKind,
+        place: EntityId,
+    },
     WorldStructureChange,
 }
 
@@ -294,6 +298,46 @@ mod tests {
             matches!(
                 entry.clearing_condition,
                 DiscrepancyClearing::BeliefUpdate { claim_key } if claim_key == clear_claim_key
+            )
+        });
+
+        assert_eq!(memory.entries.len(), 1);
+        assert!(memory.entries.contains_key(&other_key));
+    }
+
+    #[test]
+    fn discrepancy_memory_clear_by_condition_matches_commodity_availability_change() {
+        let clear_place = entity_id(30, 0);
+        let retained_place = entity_id(31, 0);
+        let mut memory = DiscrepancyMemory::default();
+
+        memory.record(discrepancy_entry(
+            blocker_key(),
+            Discrepancy::BeliefContradicted,
+            Tick(20),
+            DiscrepancyClearing::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Apple,
+                place: clear_place,
+            },
+        ));
+
+        let mut other_key = blocker_key();
+        other_key.goal_key = crate::GoalKey::from(GoalKind::Sleep);
+        memory.record(discrepancy_entry(
+            other_key,
+            Discrepancy::BeliefContradicted,
+            Tick(20),
+            DiscrepancyClearing::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Apple,
+                place: retained_place,
+            },
+        ));
+
+        memory.clear_by_condition(|entry| {
+            matches!(
+                entry.clearing_condition,
+                DiscrepancyClearing::CommodityAvailabilityChanged { commodity, place }
+                    if commodity == CommodityKind::Apple && place == clear_place
             )
         });
 

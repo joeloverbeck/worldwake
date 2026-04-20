@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None — adds opt-in validators to the survival-golden harness only. No production code changes.
-**Deps**: S122FRAASSCOM-004
+**Deps**: archive/tickets/S122FRAASSCOM-004.md
 
 ## Problem
 

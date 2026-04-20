@@ -37,15 +37,16 @@ use worldwake_core::{
     DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
     DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId,
     EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameState,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
-    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
-    PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
-    RecordKind, RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
-    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    FrameAssumption, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile,
+    IntentionDomain, IntentionFrame, KnownRecipes, LearnedOpportunityMemory, LoadUnits,
+    MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
+    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairMemory, ResourceSource, Seed,
+    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
+    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    WoundList,
     build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
@@ -6008,15 +6009,13 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
     let mut discrepancy_memory = DiscrepancyMemory::default();
     let cognitive = CognitiveProfile::default();
 
-    // Per S109TYPDISTAX-004 correctness fix: failed plan-level assumptions
-    // are structural failures that suppress the goal for the
-    // structural-block-ticks window with TtlExpiry clearing. Re-perceiving
-    // the same target does not validate that the failed assumption is
-    // resolved, so ReobservationOf would fire too eagerly and reproduce
-    // the pre-fix oscillation regression.
+    // Non-commodity assumption failures remain structural TTL suppressions.
+    // Re-perceiving the same target does not validate that the failed
+    // plan-level assumption is now resolved.
     record_assumption_failure(
         &frame,
         Some(place),
+        Some(patient),
         &mut discrepancy_memory,
         Tick(5),
         cognitive.structural_block_ticks,
@@ -6039,7 +6038,84 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
 
 #[test]
 fn commodity_assumption_failure_records_suppression() {
+    let mut fixture = commodity_assumption_fixture(false, false, false);
+
+    let _ = fixture.harness.step_once();
+    assert!(
+        fixture
+            .harness
+            .world
+            .get_component_discrepancy_memory(fixture.harness.actor)
+            .is_none_or(|memory| memory.entries.is_empty()),
+        "remote stale belief should defer failure until co-location"
+    );
+    assert_ne!(
+        fixture.harness.runtime().unwrap().last_frame_clear_reason,
+        Some(worldwake_core::FrameClearReason::AssumptionFailed),
+        "remote stale belief should not clear the frame before co-location"
+    );
+
+    relocate_entity(
+        &mut fixture.harness.world,
+        fixture.harness.actor,
+        fixture.destination,
+        Tick(3),
+    );
+    let _ = fixture.harness.step_once();
+
+    let entry = fixture
+        .harness
+        .world
+        .get_component_discrepancy_memory(fixture.harness.actor)
+        .expect("assumption failure should record discrepancy memory")
+        .entries
+        .values()
+        .next()
+        .expect("suppression entry should be present");
+    assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+    assert_eq!(entry.blocker_key.goal_key, fixture.goal);
+    assert_eq!(
+        entry.clearing_condition,
+        DiscrepancyClearing::CommodityAvailabilityChanged {
+            commodity: CommodityKind::Apple,
+            place: fixture.destination,
+        }
+    );
+    assert_eq!(
+        entry.expires_tick,
+        Tick(entry.observed_tick.0 + u64::from(CognitiveProfile::default().structural_block_ticks))
+    );
+    assert_eq!(
+        fixture.harness.runtime().unwrap().last_frame_clear_reason,
+        Some(worldwake_core::FrameClearReason::AssumptionFailed)
+    );
+    assert_eq!(
+        fixture
+            .harness
+            .world
+            .get_component_intention_frame(fixture.harness.actor)
+            .expect("failed frame should persist as exhausted")
+            .state,
+        FrameState::Exhausted
+    );
+}
+
+struct CommodityAssumptionFixture {
+    harness: Harness,
+    destination: EntityId,
+    goal: GoalKey,
+    stale_lot: EntityId,
+}
+
+fn commodity_assumption_fixture(
+    with_alternate_origin_lot: bool,
+    tracing: bool,
+    remove_initial_bread: bool,
+) -> CommodityAssumptionFixture {
     let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+    if tracing {
+        harness.driver.enable_tracing();
+    }
     let origin = harness
         .world
         .effective_place(harness.actor)
@@ -6050,12 +6126,29 @@ fn commodity_assumption_failure_records_suppression() {
         .place_ids()
         .find(|place| *place != origin)
         .expect("prototype world should expose a second place");
+    if remove_initial_bread {
+        let initial_bread = harness
+            .world
+            .query_item_lot()
+            .find(|(_, lot)| lot.commodity == CommodityKind::Bread)
+            .map(|(entity, _)| entity)
+            .expect("harness should start with an owned bread lot");
+        let mut txn = new_txn(&mut harness.world, 1);
+        txn.archive_entity(initial_bread).unwrap();
+        commit_txn(txn);
+    }
     let remote_lot = {
         let mut txn = new_txn(&mut harness.world, 1);
         let remote_lot = txn
             .create_item_lot(CommodityKind::Apple, Quantity(2))
             .unwrap();
         txn.set_ground_location(remote_lot, destination).unwrap();
+        if with_alternate_origin_lot {
+            let local_lot = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(local_lot, origin).unwrap();
+        }
         commit_txn(txn);
         remote_lot
     };
@@ -6101,60 +6194,274 @@ fn commodity_assumption_failure_records_suppression() {
         },
     );
 
-    let _ = harness.step_once();
+    CommodityAssumptionFixture {
+        harness,
+        destination,
+        goal,
+        stale_lot: remote_lot,
+    }
+}
+
+#[test]
+fn commodity_assumption_stale_defers_fresh_refutes() {
+    let mut fixture = commodity_assumption_fixture(false, true, false);
+
+    let _ = fixture.harness.step_once();
     assert!(
-        harness
+        fixture
+            .harness
             .world
-            .get_component_discrepancy_memory(harness.actor)
+            .get_component_discrepancy_memory(fixture.harness.actor)
             .is_none_or(|memory| memory.entries.is_empty()),
         "remote stale belief should defer failure until co-location"
     );
-    assert!(
-        !matches!(
-            harness
-                .world
-                .get_component_intention_frame(harness.actor)
-                .expect("frame should still exist before arrival")
-                .state,
-            FrameState::Exhausted
-        ),
-        "pre-arrival remote belief should not exhaust the frame"
-    );
     assert_ne!(
-        harness.runtime().unwrap().last_frame_clear_reason,
+        fixture.harness.runtime().unwrap().last_frame_clear_reason,
         Some(worldwake_core::FrameClearReason::AssumptionFailed),
         "remote stale belief should not clear the frame before co-location"
     );
+    let pre_arrival_trace = fixture
+        .harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled")
+        .trace_at(fixture.harness.actor, Tick(0))
+        .expect("pre-arrival trace should exist");
+    let pre_arrival_frame_transition = match &pre_arrival_trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning.frame_transition.as_ref(),
+        crate::DecisionOutcome::ActiveAction {
+            frame_transition, ..
+        } => frame_transition.as_ref(),
+        crate::DecisionOutcome::Dead => {
+            panic!("expected traced decision outcome, got Dead")
+        }
+    };
+    if let Some(frame_transition) = pre_arrival_frame_transition {
+        assert!(
+            !frame_transition.transitions.iter().any(|transition| {
+                matches!(
+                    transition,
+                    crate::decision_trace::FrameTransitionKind::Cleared {
+                        reason: worldwake_core::FrameClearReason::AssumptionFailed,
+                        ..
+                    }
+                )
+            }),
+            "remote stale belief should not emit an assumption-failed clear before co-location"
+        );
+    }
 
-    relocate_entity(&mut harness.world, harness.actor, destination, Tick(3));
-    let _ = harness.step_once();
+    relocate_entity(
+        &mut fixture.harness.world,
+        fixture.harness.actor,
+        fixture.destination,
+        Tick(3),
+    );
+    let _ = fixture.harness.step_once();
 
-    let entry = harness
+    let sink = fixture
+        .harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled");
+    assert!(sink.traces_for(fixture.harness.actor).iter().any(|trace| {
+        let frame_transition = match &trace.outcome {
+            crate::DecisionOutcome::Planning(planning) => planning.frame_transition.as_ref(),
+            crate::DecisionOutcome::ActiveAction {
+                frame_transition, ..
+            } => frame_transition.as_ref(),
+            crate::DecisionOutcome::Dead => None,
+        };
+        frame_transition.is_some_and(|frame_transition| {
+            frame_transition.transitions.iter().any(|transition| {
+                matches!(
+                    transition,
+                    crate::decision_trace::FrameTransitionKind::Cleared {
+                        reason: worldwake_core::FrameClearReason::AssumptionFailed,
+                        failed_assumption: Some(FrameAssumption::CommodityAvailableAt {
+                            commodity: CommodityKind::Apple,
+                            place,
+                        }),
+                    } if *place == fixture.destination
+                )
+            })
+        })
+    }));
+}
+
+#[test]
+fn commodity_assumption_failure_suppresses_readoption() {
+    let mut fixture = commodity_assumption_fixture(true, true, false);
+
+    let _ = fixture.harness.step_once();
+    relocate_entity(
+        &mut fixture.harness.world,
+        fixture.harness.actor,
+        fixture.destination,
+        Tick(3),
+    );
+    let _ = fixture.harness.step_once();
+
+    let discrepancy_expires_tick = fixture
+        .harness
         .world
-        .get_component_discrepancy_memory(harness.actor)
+        .get_component_discrepancy_memory(fixture.harness.actor)
         .expect("assumption failure should record discrepancy memory")
         .entries
         .values()
-        .next()
-        .expect("suppression entry should be present");
-    assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
-    assert_eq!(entry.blocker_key.goal_key, goal);
-    assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
-    assert_eq!(
-        entry.expires_tick,
-        Tick(entry.observed_tick.0 + u64::from(CognitiveProfile::default().structural_block_ticks))
+        .find(|entry| entry.blocker_key.goal_key == fixture.goal)
+        .expect("suppression entry should be present")
+        .expires_tick;
+    let window_start_tick = fixture.harness.scheduler.current_tick();
+    while fixture.harness.scheduler.current_tick() < discrepancy_expires_tick {
+        let _ = fixture.harness.step_once();
+        if let Some(plan) = fixture
+            .harness
+            .runtime()
+            .and_then(|runtime| runtime.current_plan.as_ref())
+        {
+            let current_step = plan
+                .steps
+                .get(fixture.harness.runtime().unwrap().current_step_index)
+                .expect("current plan should expose the active step");
+            let authoritative_targets = current_step
+                .targets
+                .iter()
+                .filter_map(|target| crate::authoritative_target(*target))
+                .collect::<Vec<_>>();
+            assert!(
+                !authoritative_targets.contains(&fixture.stale_lot),
+                "suppressed lot target should not be re-adopted while discrepancy is active"
+            );
+        }
+    }
+
+    let sink = fixture
+        .harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled");
+    let mut saw_active_discrepancy = false;
+    for trace in sink.traces_for(fixture.harness.actor) {
+        if trace.tick < window_start_tick || trace.tick >= discrepancy_expires_tick {
+            continue;
+        }
+        let crate::DecisionOutcome::Planning(planning) = &trace.outcome else {
+            continue;
+        };
+        if let Some(selected_plan) = planning.selection.selected_plan.as_ref()
+            && let Some(next_step) = selected_plan.next_step.as_ref()
+        {
+            assert!(
+                !next_step.targets.contains(&fixture.stale_lot),
+                "suppressed lot target should not be selected before discrepancy expiry"
+            );
+        }
+        if planning
+            .discrepancy_trace
+            .iter()
+            .any(|entry| entry.blocker_key.goal_key == fixture.goal)
+        {
+            saw_active_discrepancy = true;
+        }
+    }
+    assert!(saw_active_discrepancy);
+}
+
+#[test]
+fn fresh_local_commodity_clears_assumption_discrepancy_before_ttl_expiry() {
+    let mut fixture = commodity_assumption_fixture(true, true, false);
+
+    let _ = fixture.harness.step_once();
+    relocate_entity(
+        &mut fixture.harness.world,
+        fixture.harness.actor,
+        fixture.destination,
+        Tick(3),
     );
-    assert_eq!(
-        harness.runtime().unwrap().last_frame_clear_reason,
-        Some(worldwake_core::FrameClearReason::AssumptionFailed)
-    );
-    assert_eq!(
-        harness
+    let _ = fixture.harness.step_once();
+
+    let discrepancy_expires_tick = fixture
+        .harness
+        .world
+        .get_component_discrepancy_memory(fixture.harness.actor)
+        .expect("assumption failure should record discrepancy memory")
+        .entries
+        .values()
+        .find(|entry| entry.blocker_key.goal_key == fixture.goal)
+        .expect("suppression entry should be present")
+        .expires_tick;
+
+    let initial_bread = fixture
+        .harness
+        .world
+        .query_item_lot()
+        .find(|(_, lot)| lot.commodity == CommodityKind::Bread)
+        .map(|(entity, _)| entity)
+        .expect("harness should still have the initial bread lot");
+
+    {
+        let mut txn = new_txn(&mut fixture.harness.world, 4);
+        txn.archive_entity(initial_bread)
+            .expect("initial bread lot should be removable for focused proof");
+        txn.set_component_homeostatic_needs(
+            fixture.harness.actor,
+            HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        )
+        .unwrap();
+        let fresh_lot = txn
+            .create_item_lot(CommodityKind::Apple, Quantity(2))
+            .expect("fresh local apple lot should be creatable");
+        txn.set_ground_location(fresh_lot, fixture.destination)
+            .expect("fresh local apple lot should be placeable");
+        commit_txn(txn);
+    }
+
+    let current_tick = fixture.harness.scheduler.current_tick();
+    let _ = fixture.harness.step_once();
+
+    assert!(
+        fixture
+            .harness
             .world
-            .get_component_intention_frame(harness.actor)
-            .expect("failed frame should persist as exhausted")
-            .state,
-        FrameState::Exhausted
+            .get_component_discrepancy_memory(fixture.harness.actor)
+            .is_none_or(|memory| !memory.entries.contains_key(&BlockerKey {
+                goal_key: fixture.goal,
+                place: Some(fixture.destination),
+                target: Some(fixture.stale_lot),
+                action_def: None,
+            })),
+        "fresh local commodity evidence should clear the stale assumption discrepancy early"
+    );
+    assert!(
+        fixture.harness.scheduler.current_tick() < discrepancy_expires_tick,
+        "fresh evidence should clear before TTL expiry"
+    );
+
+    let trace = fixture
+        .harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled")
+        .trace_at(fixture.harness.actor, current_tick)
+        .expect("post-refresh trace should exist");
+    let goal_reenabled = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning
+            .candidates
+            .generated
+            .iter()
+            .any(|opportunity| opportunity.goal_key == fixture.goal),
+        crate::DecisionOutcome::ActiveAction { interrupt, .. } => interrupt
+            .top_challenger
+            .as_ref()
+            .is_some_and(|goal| goal.opportunity.goal_key == fixture.goal),
+        crate::DecisionOutcome::Dead => {
+            panic!("expected Planning or ActiveAction outcome, got Dead")
+        }
+    };
+    assert!(
+        goal_reenabled,
+        "fresh local commodity should re-enable the apple goal before TTL expiry"
     );
 }
 

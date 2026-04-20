@@ -488,30 +488,31 @@ pub(super) fn check_patience_exhaustion(
 /// failed. Pre-S109 this path emitted `BlockingFact::AssumptionFailed`
 /// recorded with `BlockerClearingCondition::TtlOnly` and a TTL of
 /// `structural_block_ticks` (200 by default). The S109 migration must
-/// preserve that effective suppression duration: a failed-assumption goal
-/// must stay suppressed long enough that the agent considers alternative
-/// plans, not immediately re-attempt the same broken plan after re-perceiving
-/// the same target. The class-specific `partial_drift_backoff_ticks` (4) is
-/// appropriate for genuine partial-execution drift recoveries within an
-/// active plan; it is not the right TTL for "the assumption that justified
-/// this entire plan no longer holds," which is a structural failure.
+/// preserve that structural suppression window, but commodity-availability
+/// failures also need a place-level clearing path so fresh local evidence can
+/// unblock the goal before TTL expiry. Other assumption failures remain
+/// TTL-only because re-perceiving the same target does not prove that the
+/// failed plan-level assumption is now resolved.
 pub(super) fn record_assumption_failure(
     frame: &IntentionFrame,
     agent_place: Option<EntityId>,
+    blocker_target: Option<EntityId>,
     discrepancy_memory: &mut DiscrepancyMemory,
     tick: Tick,
     structural_block_ticks: u32,
 ) {
-    let target = frame_blocker_target(&frame.domain);
+    let target = blocker_target.or_else(|| frame_blocker_target(&frame.domain));
+    let clearing_condition =
+        frame
+            .expected_commodity()
+            .map_or(DiscrepancyClearing::TtlExpiry, |(commodity, place)| {
+                DiscrepancyClearing::CommodityAvailabilityChanged { commodity, place }
+            });
     let discrepancy = if target.is_some() {
         Discrepancy::BeliefContradicted
     } else {
         Discrepancy::PartialExecutionDrift
     };
-    // Use TtlExpiry, not ReobservationOf: a failed plan assumption is not
-    // resolved by simply re-perceiving the same target entity. Re-perception
-    // would clear the entry on the very next tick of travel back into
-    // observation range, immediately re-enabling the same broken plan.
     discrepancy_memory.record(DiscrepancyEntry {
         blocker_key: BlockerKey {
             goal_key: frame.goal,
@@ -522,7 +523,7 @@ pub(super) fn record_assumption_failure(
         discrepancy,
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
-        clearing_condition: DiscrepancyClearing::TtlExpiry,
+        clearing_condition,
     });
 }
 
@@ -1554,11 +1555,10 @@ mod tests {
     // Pre-S109 this path emitted `BlockingFact::AssumptionFailed` recorded
     // with `BlockerClearingCondition::TtlOnly` and a TTL of
     // `structural_block_ticks` (200 by default). The S109 typed-discrepancy
-    // migration must preserve that effective suppression duration; otherwise
-    // an agent whose plan failed re-attempts the same broken plan as soon
-    // as it re-perceives the target, producing oscillation loops in
-    // survival scenarios. These tests pin the TTL and clearing condition
-    // against accidental regression in either direction.
+    // migration must preserve that effective suppression duration while still
+    // allowing commodity-availability failures to clear on fresh local
+    // reavailability. These tests pin the TTL and clearing condition against
+    // accidental regression in either direction.
 
     fn assumption_failure_frame(domain: IntentionDomain) -> IntentionFrame {
         IntentionFrame {
@@ -1586,7 +1586,7 @@ mod tests {
         let tick = Tick(50);
         let ttl = structural_block_ticks_default();
 
-        record_assumption_failure(&frame, Some(agent_place), &mut memory, tick, ttl);
+        record_assumption_failure(&frame, Some(agent_place), Some(target), &mut memory, tick, ttl);
 
         let entry = memory
             .entries
@@ -1607,6 +1607,47 @@ mod tests {
     }
 
     #[test]
+    fn record_assumption_failure_for_expected_commodity_clears_on_reavailability() {
+        let destination = make_entity(7);
+        let source = make_entity(11);
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(0),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        };
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(50);
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(&frame, Some(destination), Some(source), &mut memory, tick, ttl);
+
+        let entry = memory
+            .entries
+            .values()
+            .next()
+            .expect("entry recorded with commodity expectation");
+        assert_eq!(entry.expires_tick, Tick(tick.0 + u64::from(ttl)));
+        assert_eq!(
+            entry.clearing_condition,
+            worldwake_core::DiscrepancyClearing::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Apple,
+                place: destination,
+            }
+        );
+        assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+        assert_eq!(entry.blocker_key.target, Some(source));
+        assert_eq!(entry.blocker_key.place, Some(destination));
+    }
+
+    #[test]
     fn record_assumption_failure_uses_structural_block_ticks_without_target() {
         let agent_place = make_entity(1);
         let frame = assumption_failure_frame(IntentionDomain::Generic);
@@ -1614,7 +1655,7 @@ mod tests {
         let tick = Tick(75);
         let ttl = structural_block_ticks_default();
 
-        record_assumption_failure(&frame, Some(agent_place), &mut memory, tick, ttl);
+        record_assumption_failure(&frame, Some(agent_place), None, &mut memory, tick, ttl);
 
         let entry = memory
             .entries
@@ -1638,8 +1679,8 @@ mod tests {
         let mut memory = worldwake_core::DiscrepancyMemory::default();
         let ttl = structural_block_ticks_default();
 
-        record_assumption_failure(&frame, Some(agent_place), &mut memory, Tick(10), ttl);
-        record_assumption_failure(&frame, Some(agent_place), &mut memory, Tick(40), ttl);
+        record_assumption_failure(&frame, Some(agent_place), Some(target), &mut memory, Tick(10), ttl);
+        record_assumption_failure(&frame, Some(agent_place), Some(target), &mut memory, Tick(40), ttl);
 
         // Same blocker_key (goal/place/target) → second record replaces first.
         assert_eq!(memory.entries.len(), 1);

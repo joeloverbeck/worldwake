@@ -4,6 +4,7 @@ Use this document when adding or revising tests under `crates/worldwake-ai/tests
 
 It exists to keep golden assertions aligned with the architecture instead of drifting into brittle scheduler-coupled checks.
 For the live mechanical inventory and docs-sync validation workflow, use `python3 scripts/golden_inventory.py --write --check-docs` and the generated artifacts at `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, and `docs/generated/golden-scenario-details/`.
+For scenario-backed goldens, a passing end state is not enough by itself: the test must also prove that the authored scenario invariant was actually exercised through the intended causal path, or explicitly name the alternative lawful paths that are accepted.
 
 ## Assertion Hierarchy
 
@@ -63,6 +64,37 @@ For survival scenarios such as `survival-baseline.ron`, `survival-scattered.ron`
 - if a survival scenario does not define `survival_health_contract`, the golden should fail at the helper/guard boundary instead of silently inventing fallback constants
 
 This keeps the scenario author as the single source of truth for what "healthy" means and prevents goldens from drifting away from the live authored profile.
+
+## Scenario-Backed Golden Validity
+
+Scenario-backed goldens have a stricter contract than ordinary end-to-end smoke tests. A scenario golden is only valid when it proves both:
+
+- the scenario-authored outcome contract happened
+- the scenario passed for the authored causal reason, not merely by an accidental or rival lawful branch
+
+This matters most for long-run survival scenarios. A 1440-tick pass can hide architectural bugs if:
+
+- the seed never forces the intended branch
+- the system survives through an unrelated fallback path
+- one bug masks another and still lands in an acceptable final state
+- the test asserts only survival/end-state and never proves the motivating contradiction, suppression, planner branch, or recovery mechanism
+
+When writing or revising a scenario-backed golden, the owning ticket/spec must name all of the following:
+
+1. the intended invariant or branch under contract
+2. the earliest causal proof surface that can establish that invariant
+3. the lawful competing branches the live architecture currently allows
+4. which competing branches are intentionally removed from setup, and why
+5. if multiple branches remain lawful and acceptable, which ones the golden accepts and how it distinguishes them from invalid passes
+
+For scenario-backed survival goldens, "all agents survived" is necessary but not sufficient. The golden should usually prove at least one scenario-specific causal contract in addition to the survival-health contract, such as:
+
+- a contradiction was locally observed and changed the selected goal or blocker state
+- a suppressed candidate was later re-enabled by the intended local/world event
+- a feature-specific branch outranked or interrupted a rival branch for the intended reason
+- a feature-specific coordination or contention path actually occurred rather than being bypassed
+
+Prefer trace assertions at the earliest boundary that proves the scenario's claimed reason for success. If the scenario promises a planner, suppression, contradiction, or ranking behavior, do not treat eventual survival or eventual commodity movement as sufficient evidence on its own.
 
 ## Survival Critical-Window Forensics
 
@@ -466,7 +498,8 @@ block, before the first `fn` definition:
   values (pm(800), Quantity(4)) when they are load-bearing for the scenario.
 - **Proves**: What architectural claim does this scenario lock down? Frame each
   point as "X proves Y" rather than "agent does Z". Focus on cross-system
-  emergence, not single-system behavior.
+  emergence, not single-system behavior. If the scenario excludes a rival lawful
+  branch, name that exclusion here or in Setup.
 - **Chain**: Trace the causal chain from trigger to final outcome using arrows.
   Name system boundaries when crossing them.
 
