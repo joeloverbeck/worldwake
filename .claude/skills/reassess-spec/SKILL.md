@@ -72,6 +72,8 @@ Before beginning Steps 2-3, classify the spec:
   - **(a)+(d)** (new system with test infrastructure): Full (a) checklist; test deliverables validated per 3.1-3.4 only.
   - **(a)+(b)** (new system with migration of existing types/enums): Full (a) checklist. For migration deliverables, additionally verify existing call sites and exhaustive-match sites per 3.6 cross-crate analysis (applies rigorously even though (a) alone doesn't always trigger it) — migration deliverables need blast-radius accounting for every site that matches on the removed or renamed symbol.
 
+**Emergent migration at Step 7**: If Step 7 edits introduce migration of an existing type across crates that was not part of the original spec (typically surfaced by the pre-apply verification table or the bundled-answer consistency check), re-promote the reassessment to `(a)+(b)` and run 3.6 cross-crate consumer analysis on the migrating type before finalizing edits. Record the scope extension in the pre-apply table per the scope-extending tier (see Step 7's Pre-Apply Verification Table section), so the user sees the classification shift in the same pass as the edit.
+
 **Re-reassessment shortcut**: If the same spec was reassessed earlier in this session and not externally modified, Steps 2-3 may scope to only references affected by the triggering change. Step 1 still applies.
 
 **Self-authored spec note**: Full validation is required even for specs authored earlier in this session — authoring may introduce unchecked assumptions.
@@ -101,7 +103,7 @@ Extract every concrete codebase reference from the spec:
 - **Code examples** (inline code blocks showing API usage, precondition lists, struct definitions) — extract for fidelity checking against actual source
 - **Scenario and test configuration files** referenced by the spec (RON scenarios, test fixtures, seed values) — extract profile/parameter values the spec's claims depend on
 
-Build a validation checklist (internal). Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
+Build a validation checklist. For specs with >15 references, prefer `TodoWrite` to track the checklist per reference, marking each `validated | drifted | missing`; the external surface catches references that mental tracking can silently drop. For ≤15 references, mental tracking is acceptable. Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
 
 For investigation/bugfix specs (type e, investigation/bugfix subtype), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist. Structured root-cause tracing:
 
@@ -159,6 +161,7 @@ If a check reveals a mismatch with a finding, classify the mismatch and respond 
 
 - **Recommendation-changing mismatch**: the pre-apply check invalidates the finding's *recommendation* — the fix that was approved no longer applies, the target text/symbol has moved, or a different fix is now warranted. Re-present the corrected finding to the user and wait for confirmation before applying any edits. Do not silently drop or modify the finding.
 - **Evidence-refining mismatch**: the pre-apply check refines the finding's *supporting evidence* (e.g., a symbol the finding claimed was absent turns out to exist in a different location) but the recommendation still holds unchanged. Note the refinement inline in the Result column of the pre-apply table (e.g., "partial invalidation: symbol exists at <path>:<line>, not at spec-claimed location — recommendation unchanged") and proceed. The user sees the refinement in the emitted table, so this is not silent modification.
+- **Scope-extending mismatch**: the approved recommendation still applies, but fulfilling it requires adding a new deliverable, migration, or subsystem change not discussed at question time. The recommendation was not refuted and the evidence was not merely refined — the scope grew. Note the scope extension inline in the Result column of the pre-apply table (e.g., "scope-extending: requires new D4 to relocate `MaterializationTag` from sim to core so the payload type can live in core — recommendation unchanged") and proceed. Additionally, surface the scope extension in the Step 8 summary under a dedicated line (or in the classification-shift note) so the user sees it in both the pre-apply table and the final summary. If the scope extension constitutes a cross-crate type migration, also apply the Pre-Process "Emergent migration at Step 7" guidance and run 3.6 cross-crate consumer analysis before finalizing edits.
 
 Example rows for each tier:
 

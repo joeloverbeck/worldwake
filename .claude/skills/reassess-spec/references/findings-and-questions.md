@@ -65,6 +65,7 @@ Present in this format:
 
 ## Question Handling
 
+- **Option fidelity**: Each option that names an existing type, field, or function must cite its current definition (grepped at presentation time), not a summary characterization. The user's approval binds to the option label, so an imprecise label — e.g., describing a field as `BTreeSet<T>` when the actual type is `Vec<WrapperT>` — produces an ambiguously approved fix that the Step 7 pre-apply check must then disambiguate. Ground every option in current code before presenting.
 - **Initial report**: At most 3 questions. If more, prioritize blockers and defer rest to follow-up.
 - **Interdependent questions**: Present as a single combined question with labeled option combinations.
 - **Discrete options (2-4), single question**: Use `AskUserQuestion` with a recommended default.
