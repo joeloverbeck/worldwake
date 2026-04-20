@@ -93,6 +93,17 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 2. Derive compatibility — new variant fields satisfy existing derives
 3. `#[allow(clippy::large_enum_variant)]` — check if new variant is significantly larger than existing ones
 
+## Existing Variant Payload Widening
+
+**Trigger**: Spec proposes widening an existing enum variant's payload — e.g., turning a unit variant `Foo::Bar` into a payload-bearing `Foo::Bar(NewType)`, or adding a field to an existing tuple/struct variant. The variant already exists; the change is to its shape, not its presence.
+
+**Verify the spec addresses**:
+
+1. Exhaustive match sites that destructure the variant — grep across all crates for the variant by name (e.g., `Foo::Bar`); every site that previously matched a unit variant now needs the new pattern (e.g., `Foo::Bar(payload)` or `Foo::Bar { .. }`). Tests that asserted the bare variant (e.g., `assert_eq!(result, Foo::Bar)`) need updating to the new pattern.
+2. Sibling unit variants in the same enum — if other variants in the enum carry analogous information that the new payload represents (e.g., `CriticalFailure` gains the failed assumption while `RecoverableFailure(SuspensionReason)` already carries its reason), consider whether uniform widening across siblings improves ergonomic consistency. Flag as Improvement if mixed.
+3. Derive compatibility — `Copy`, `Clone`, `Eq`, `Hash`, `Serialize`, `Deserialize` derives on the enum may break if the new payload type does not satisfy them. Flag as CRITICAL Issue if a non-`Copy` payload is added to a `Copy`-deriving enum.
+4. Downstream payload consumers — for each match site updated in (1), trace whether the new payload data is actually consumed (e.g., emitted in traces, recorded in events, used for branching). If the spec adds a payload but no consumer reads it, flag as Issue — payload widening for trace surfacing only is legitimate but should be named explicitly.
+
 ## Dual-Use Read-Model Types
 
 **Trigger**: Spec proposes types, extractors, or report models that must be consumable from both `crates/*/tests/` and any non-test crate (e.g., the observer binary in `worldwake-cli`, a diagnostic CLI, or a future replay tool). Common signals: "shared observer code", "golden support or observer rendering", forensic/report/snapshot/diagnostic surfaces.

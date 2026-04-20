@@ -10,8 +10,10 @@ General reassessment validation checklists for Step 2 of the ticket implementati
 - Cross-check `Deps` against `What to Change` for additive tickets that assume earlier slices landed.
 - When the ticket belongs to a numbered family or references a parent spec with split follow-up tickets, scan sibling tickets in that family before coding. Confirm whether adjacent missing substrate is already owned elsewhere so the current ticket neither over-claims sibling work nor narrows away an unowned gap.
 - For staged decomposition tickets, verify whether any temporary carrier or intermediate shape named in the ticket still exists on the current branch. If an earlier slice already removed it, narrow the ticket to the remaining live debt.
+- When the drafted API implies behavior that the drafted stored fields cannot yet support, stop and prove that mismatch explicitly during reassessment. Do not invent retention state, identifiers, or side-channel carriers that the ticket/spec has not actually defined; either narrow the semantics to an honest placeholder or update the ticket to add the missing substrate first.
 - When roadmap summary, active spec, and live ticket disagree, compare all three and record which is authoritative.
 - When the ticket extracts or reuses private helper logic, confirm exact crate/file ownership before finalizing the plan.
+- When focused runtime proof in a downstream crate needs preloaded authoritative component or world state, verify the lawful test-seeding path during reassessment. Prefer `WorldTxn`, public component setters, or existing harness helpers over private direct world mutation, and correct the ticket's proof seam before implementation if the drafted setup assumes inaccessible mut accessors.
 - Described architecture still matches live code.
 - Stated coverage gaps are real and correctly classified.
 - When adding, extending, or newly reading a universal agent profile or other always-present bootstrap component, verify both the schema registration/read surface and the canonical default-seeding path (for example `World::create_agent()` plus any transaction/bootstrap delta tests). Do not treat registration alone, or a plausible "component may be absent" assumption, as satisfying the live universal-profile contract.
@@ -34,6 +36,13 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - CLI handlers, diagnostic bins, renderers, and inspect/output code that read moved fields directly
 - When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates.
 - When a flat internal carrier becomes nested or decomposed into sub-structs, sweep both the type name and moved field names across the owning crate.
+
+**Shared rename checklist (types, modules, generated accessors):**
+- Run a repo-wide symbol sweep for the old type/module/accessor names across all workspace crates before trusting the ticket's file list.
+- Include crate-root re-exports, `pub mod` declarations, and generated accessor families (for example `get_component_*`, `set_component_*`, `query_*`, `entities_with_*`) in the rename inventory.
+- Sweep downstream compile consumers, not just first-order production readers: CLI handlers, inspect/report formatters, golden harnesses, integration tests, and same-domain systems crates.
+- Treat compile-only fallout from those downstream import/accessor consumers as current-ticket scope for the rename, even when the drafted ticket only named the defining crate or macro expansion sites.
+- After the first broad rename patch lands, prefer an early all-target compile-only pass such as `cargo test --workspace --no-run` to enumerate missed rename fallout before focused proof.
 
 **Persisted-shape checks:**
 - No legacy save support by default. When persisted shape changes, update the current save format; keep older versions rejected unless the user explicitly asks for compatibility.
@@ -74,6 +83,7 @@ When shared types, serialized carriers, or persisted components change, sweep th
 
 - When extending a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or generated surfaces. Distinguish the canonical consumer boundary from implementation-detail mirrors.
 - If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself.
+- If the named facade trait is blanket-implemented from narrower subtraits, verify which subtrait actually owns the default method body or read contract. In that pattern, the real implementation boundary may be the owning subtrait plus the blanket forwarding impl rather than the facade trait alone.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 
 **Trait extraction sweep (for trait-split tickets):**
@@ -144,6 +154,8 @@ When a ticket names a trait as the change surface, also verify whether that trai
 When a ticket adds a field to a shared struct/component that is serde-deserialized from scenarios, saves, or other explicit inputs, verify omitted-field compatibility during reassessment instead of assuming the struct's `Default` impl is sufficient. Also prove the positive authored-input path: if the ticket makes a new field live for scenario/save/authored input, plan focused proof that an explicit input value for that field parses successfully, not just that omission still defaults lawfully. Decide whether the ticket must own a field-level serde default, explicit input migration, or fixture/scenario updates before implementation.
 When a ticket removes a live scenario/config/save field, also sweep authored-file comments, schema-drift notes, and nearby maintenance annotations in the same active files when the intended invariant is that no live references remain. Do not stop at behavioral cleanup if those files still describe the removed field as current schema.
 When the owning crate needs a focused omitted-field serde proof and does not already have a suitable text serializer in dev-dependencies, prefer adding a dev-only dependency in that crate over moving the proof to a broader integration crate.
+When a shared struct/component gains fields, do not wait for compile errors alone to discover fallout. During reassessment, run an early repo-wide sweep for explicit struct literals, helper constructors, scenario builders, fixtures, and test harness code that instantiate the type manually across all workspace crates, and treat those updates as current-ticket scope when the new field is part of the live contract.
+When a later sibling ticket has already landed additional fields on the same shared struct/component, treat those live sibling-added fields as baseline immediately. Narrow the current ticket to the still-missing fields only, but preserve the already-landed sibling fields at every explicit literal, helper constructor, and fallback path you touch during current-ticket constructor fallout.
 
 ## Internal diagnostic and trace carriers
 

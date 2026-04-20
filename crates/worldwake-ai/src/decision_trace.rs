@@ -6,9 +6,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;
 use worldwake_core::{
-    ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameClearReason,
-    GoalKey, InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag,
-    OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
+    ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameAssumption,
+    FrameClearReason, GoalKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDomainTag, OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
     PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
@@ -57,6 +57,7 @@ pub enum FrameTransitionKind {
     },
     Cleared {
         reason: FrameClearReason,
+        failed_assumption: Option<FrameAssumption>,
     },
 }
 
@@ -166,10 +167,10 @@ impl DecisionOutcome {
                     .top_ranked_comparison
                     .as_ref()
                     .map_or_else(String::new, format_ranked_goal_comparison_summary);
-                let unknown_suffix = if planning.unknown_blockers.is_empty() {
+                let discrepancy_suffix = if planning.discrepancy_trace.is_empty() {
                     String::new()
                 } else {
-                    format!(", unknown_blockers={}", planning.unknown_blockers.len())
+                    format!(", discrepancy_trace={}", planning.discrepancy_trace.len())
                 };
                 let replacement_suffix = planning
                     .selection
@@ -195,7 +196,7 @@ impl DecisionOutcome {
                         });
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{competition_suffix}{ranking_suffix}{unknown_suffix}{frame_suffix}{patrol_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{competition_suffix}{ranking_suffix}{discrepancy_suffix}{frame_suffix}{patrol_suffix}"
                 )
             }
         }
@@ -241,9 +242,9 @@ pub struct PlanningPipelineTrace {
     /// Action start failures from the previous tick's `BestEffort` inputs,
     /// drained from the `Scheduler` for this agent.
     pub action_start_failures: Vec<ActionStartFailureSummary>,
-    /// Active `BlockingFact::Unknown` blockers in `BlockedIntentMemory` at
-    /// trace construction time. Derived view for debuggability (P27).
-    pub unknown_blockers: Vec<UnknownBlockerTrace>,
+    /// Active discrepancy-memory entries at trace construction time. Derived
+    /// view for debuggability (P27).
+    pub discrepancy_trace: Vec<DiscrepancyTrace>,
     /// Exhaustion cache state at trace construction time (P27).
     pub exhaustion_snapshot: Vec<ExhaustionTraceEntry>,
     /// Frame lifecycle events recorded during this tick (P27).
@@ -273,15 +274,13 @@ pub struct ActionStartFailureSummary {
     pub reason: ActionStartFailureReason,
 }
 
-/// Diagnostic trace for `BlockingFact::Unknown` blockers active during planning.
-/// Derived from `BlockedIntentMemory` at trace construction time (P25: derived view).
+/// Diagnostic trace for typed discrepancy entries active during planning.
+/// Derived from `DiscrepancyMemory` at trace construction time (P27: derived view).
 #[derive(Clone, Debug)]
-pub struct UnknownBlockerTrace {
-    pub goal_key: GoalKey,
-    pub failed_action_def: ActionDefId,
-    pub op_kind: PlannerOpKind,
-    pub target: Option<EntityId>,
-    pub place: Option<EntityId>,
+pub struct DiscrepancyTrace {
+    pub discrepancy: worldwake_core::Discrepancy,
+    pub blocker_key: BlockerKey,
+    pub expires_tick: Tick,
 }
 
 /// Snapshot of one opportunity's exhaustion state at trace time.
@@ -602,7 +601,7 @@ pub enum PursuitOmissionReason {
     OverRange,
     /// No route exists to the believed place.
     Unreachable,
-    /// Blocked by `BlockedIntentMemory` for this target/place combination.
+    /// Blocked by `BlockerMemory` for this target/place combination.
     Blocked,
 }
 
@@ -1721,18 +1720,21 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                     }
                 }
             }
-            if !planning.unknown_blockers.is_empty() {
-                let _ = write!(out, "\n  Unknown blockers active:");
-                for ub in &planning.unknown_blockers {
-                    let def_name = action_defs
-                        .get(ub.failed_action_def)
+            if !planning.discrepancy_trace.is_empty() {
+                let _ = write!(out, "\n  Discrepancies active:");
+                for discrepancy in &planning.discrepancy_trace {
+                    let def_name = discrepancy
+                        .blocker_key
+                        .action_def
+                        .and_then(|action_def| action_defs.get(action_def))
                         .map_or("unknown", |d| d.name.as_str());
                     let _ = write!(
                         out,
-                        "\n    goal={} action={def_name} op={:?} place={:?}",
-                        format_goal_key(&ub.goal_key),
-                        ub.op_kind,
-                        ub.place,
+                        "\n    goal={} discrepancy={:?} action={def_name} place={:?} expires_tick={}",
+                        format_goal_key(&discrepancy.blocker_key.goal_key),
+                        discrepancy.discrepancy,
+                        discrepancy.blocker_key.place,
+                        discrepancy.expires_tick.0,
                     );
                 }
             }
@@ -1988,8 +1990,30 @@ fn format_frame_transition_kind(kind: &FrameTransitionKind) -> String {
         } => format!(
             "FRAME_EXHAUSTED: stalled={stalled_ticks}/{patience_limit}, blocked={blocked_intent_recorded}"
         ),
-        FrameTransitionKind::Cleared { reason } => {
-            format!("FRAME_CLEARED: reason={reason:?}")
+        FrameTransitionKind::Cleared {
+            reason,
+            failed_assumption,
+        } => failed_assumption.as_ref().map_or_else(
+            || format!("FRAME_CLEARED: reason={reason:?}"),
+            |assumption| {
+                format!(
+                    "FRAME_CLEARED: reason={reason:?}, failed={}",
+                    format_frame_assumption(assumption)
+                )
+            },
+        ),
+    }
+}
+
+fn format_frame_assumption(assumption: &FrameAssumption) -> String {
+    match assumption {
+        FrameAssumption::TargetAlive(entity) => format!("TargetAlive(entity={entity:?})"),
+        FrameAssumption::RouteExists { from, to } => {
+            format!("RouteExists(from={from:?}, to={to:?})")
+        }
+        FrameAssumption::NoCriticalThreat => "NoCriticalThreat".to_string(),
+        FrameAssumption::CommodityAvailableAt { commodity, place } => {
+            format!("CommodityAvailableAt(commodity={commodity:?}, place={place:?})")
         }
     }
 }
@@ -2306,7 +2330,7 @@ mod tests {
                     failure: None,
                 },
                 action_start_failures: Vec::new(),
-                unknown_blockers: Vec::new(),
+                discrepancy_trace: Vec::new(),
                 exhaustion_snapshot: Vec::new(),
                 frame_transition: None,
                 patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -2360,7 +2384,7 @@ mod tests {
                     failure: None,
                 },
                 action_start_failures: Vec::new(),
-                unknown_blockers: Vec::new(),
+                discrepancy_trace: Vec::new(),
                 exhaustion_snapshot: Vec::new(),
                 patrol_route: PatrolRouteSnapshotTrace::default(),
                 selected_patrol_anchor: None,
@@ -2928,7 +2952,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3160,7 +3184,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3244,7 +3268,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3320,7 +3344,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3386,7 +3410,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3453,7 +3477,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3520,7 +3544,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3586,7 +3610,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3657,7 +3681,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3740,7 +3764,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3815,7 +3839,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -3908,7 +3932,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -4030,7 +4054,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: None,
             patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -4101,6 +4125,30 @@ mod tests {
             required_target: None,
         };
         assert_eq!(rej.required_target, None);
+    }
+
+    #[test]
+    fn discrepancy_trace_struct_carries_typed_discrepancy() {
+        let trace = DiscrepancyTrace {
+            discrepancy: worldwake_core::Discrepancy::BeliefContradicted,
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::new(GoalKind::Sleep),
+                place: Some(entity(4)),
+                target: Some(entity(5)),
+                action_def: Some(ActionDefId(6)),
+            },
+            expires_tick: Tick(12),
+        };
+
+        assert_eq!(
+            trace.discrepancy,
+            worldwake_core::Discrepancy::BeliefContradicted
+        );
+        assert_eq!(trace.blocker_key.goal_key, GoalKey::new(GoalKind::Sleep));
+        assert_eq!(trace.blocker_key.place, Some(entity(4)));
+        assert_eq!(trace.blocker_key.target, Some(entity(5)));
+        assert_eq!(trace.blocker_key.action_def, Some(ActionDefId(6)));
+        assert_eq!(trace.expires_tick, Tick(12));
     }
 
     #[test]
@@ -4264,10 +4312,31 @@ mod tests {
     fn frame_transition_trace_cleared_format() {
         let kind = FrameTransitionKind::Cleared {
             reason: FrameClearReason::PatienceExhausted,
+            failed_assumption: None,
         };
         let formatted = format_frame_transition_kind(&kind);
         assert!(formatted.contains("FRAME_CLEARED"));
         assert!(formatted.contains("PatienceExhausted"));
+    }
+
+    #[test]
+    fn format_frame_transition_cleared_with_failed_commodity_assumption_includes_payload() {
+        let place = entity(7);
+        let kind = FrameTransitionKind::Cleared {
+            reason: FrameClearReason::AssumptionFailed,
+            failed_assumption: Some(FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            }),
+        };
+
+        let formatted = format_frame_transition_kind(&kind);
+
+        assert!(formatted.contains("FRAME_CLEARED"));
+        assert!(formatted.contains("AssumptionFailed"));
+        assert!(formatted.contains("CommodityAvailableAt"));
+        assert!(formatted.contains("Apple"));
+        assert!(formatted.contains(&format!("{place:?}")));
     }
 
     #[test]
@@ -4355,7 +4424,7 @@ mod tests {
                 failure: None,
             },
             action_start_failures: vec![],
-            unknown_blockers: vec![],
+            discrepancy_trace: vec![],
             exhaustion_snapshot: vec![],
             frame_transition: Some(FrameTransitionTrace {
                 transitions: vec![FrameTransitionKind::Created {
@@ -4544,7 +4613,7 @@ mod tests {
                     failure: None,
                 },
                 action_start_failures: vec![],
-                unknown_blockers: vec![],
+                discrepancy_trace: vec![],
                 exhaustion_snapshot: vec![],
                 frame_transition: None,
                 patrol_route: PatrolRouteSnapshotTrace::default(),

@@ -13,10 +13,11 @@ use worldwake_ai::{
     OpportunityKey, PlanTerminalKind,
 };
 use worldwake_core::{
-    AgentData, BeliefConfidencePolicy, CognitiveProfile, CommodityKind, ControlSource, DeadAt,
-    DeathCause, EntityId, FrameState, HomeostaticNeeds, IntentionDispositionProfile,
-    MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity, ResourceSource, Seed, Tick,
-    UtilityProfile, WorkstationTag, prototype_place_entity, total_live_lot_quantity,
+    AgentData, BeliefConfidencePolicy, BlockingFact, CognitiveProfile, CommodityKind,
+    ControlSource, DeadAt, DeathCause, EntityId, FrameState, HomeostaticNeeds,
+    IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
+    ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag, prototype_place_entity,
+    total_live_lot_quantity,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionTraceKind, BindingStrictness, InputKind, RequestBindingKind,
@@ -425,7 +426,7 @@ fn golden_priority_based_interrupt() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 5: Blocked Intent Memory with TTL Expiry
+// Scenario 5: Local Depleted Source Regenerates Without Spurious Failure Memory
 // ---------------------------------------------------------------------------
 //
 // Systems: Production, AI
@@ -436,14 +437,15 @@ fn golden_priority_based_interrupt() {
 // Setup: Agent at Orchard Farm, critically hungry. ResourceSource depleted but
 //   regenerates at 1/5 ticks.
 //
-// Proves: Depleted source blocks harvest. Resource regeneration restores
-//   apples over time. Agent eventually harvests.
+// Proves: Direct local observation of a depleted source does not create
+//   spurious blocker or discrepancy memory before any failed harvest step.
+//   Resource regeneration restores apples over time. Agent eventually harvests.
 //
 // Chain: Depleted resource -> failed plan -> resource regeneration ticks
 //   -> successful harvest.
 
 #[test]
-fn golden_blocked_intent_memory_with_ttl_expiry() {
+fn golden_local_depleted_source_regenerates_without_spurious_failure_memory() {
     let mut h = GoldenHarness::new(Seed([5; 32]));
 
     // Agent at Orchard Farm, critically hungry.
@@ -504,17 +506,25 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
         worldwake_core::PerceptionSource::DirectObservation,
     );
 
-    let mut saw_blocker = false;
+    let mut saw_failure_memory = false;
     let mut eventually_harvested = false;
 
     for _ in 0..200 {
         h.step_once();
 
-        // Check for blocked intent memory.
-        if let Some(blocked) = h.world.get_component_blocked_intent_memory(agent)
-            && !blocked.intents.is_empty()
+        if h.world
+            .get_component_blocker_memory(agent)
+            .is_some_and(|blockers| {
+                blockers
+                    .intents
+                    .values()
+                    .any(|blocker| blocker.blocking_fact == BlockingFact::SourceDepleted)
+            })
+            || h.world
+                .get_component_discrepancy_memory(agent)
+                .is_some_and(|discrepancies| !discrepancies.entries.is_empty())
         {
-            saw_blocker = true;
+            saw_failure_memory = true;
         }
 
         // Harvest drops apple lots on the ground at the workstation.
@@ -526,16 +536,17 @@ fn golden_blocked_intent_memory_with_ttl_expiry() {
     }
 
     assert!(
-        saw_blocker,
-        "Agent should record a blocked intent when the depleted orchard source blocks harvest"
+        !saw_failure_memory,
+        "Direct local knowledge of depletion should not create blocker or discrepancy memory before harvest becomes actionable"
     );
 
     // After resource regeneration (10+ ticks to reach Quantity(2)),
     // the agent should eventually harvest, creating apple lots.
     assert!(
         eventually_harvested,
-        "Agent should eventually harvest apples after resource regeneration; blocked={:?}; authoritative_source={:?}; believed_source={:?}",
-        h.world.get_component_blocked_intent_memory(agent),
+        "Agent should eventually harvest apples after resource regeneration without spurious failure memory; blockers={:?}; discrepancies={:?}; authoritative_source={:?}; believed_source={:?}",
+        h.world.get_component_blocker_memory(agent),
+        h.world.get_component_discrepancy_memory(agent),
         h.world.get_component_resource_source(orchard_source),
         h.world
             .get_component_agent_belief_store(agent)
@@ -1107,7 +1118,7 @@ fn golden_bladder_relief_with_travel() {
         relieved_at_latrine,
         "Agent should complete relief at the latrine without taking the accident path; initial={initial_bladder}, final={}, visited={visited_places:?}, final_place={final_place:?}, waste_origin={waste_appeared_at_origin}, waste_latrine={waste_appeared_at_latrine}, blocked={:?}, active_actions={:?}",
         h.agent_bladder(agent),
-        h.world.get_component_blocked_intent_memory(agent),
+        h.world.get_component_blocker_memory(agent),
         h.scheduler
             .active_actions()
             .values()

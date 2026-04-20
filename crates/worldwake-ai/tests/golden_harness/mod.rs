@@ -6,6 +6,7 @@
 // Each test binary uses a different subset of harness items.
 #![allow(dead_code)]
 
+pub mod commodity_assumption_falsification;
 pub mod soak_world;
 pub mod survival_forensics_assertions;
 mod timeline;
@@ -15,7 +16,7 @@ use std::num::NonZeroU32;
 
 use worldwake_ai::{AgentTickDriver, OpportunityAnchor, OpportunityKey};
 use worldwake_core::{
-    AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory,
+    AgentBeliefStore, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
     BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CombatProfile, CombatStance, CommodityKind,
     CommunicationProfile, ComponentDelta, ComponentKind, ComponentValue,
     ContentionDispositionProfile, ContentionPolicy, ContentionQueue, ControlSource,
@@ -40,6 +41,10 @@ use worldwake_sim::{
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
 // Re-export so test files using `use golden_harness::*` get the ownership types.
+#[allow(unused_imports)]
+pub use commodity_assumption_falsification::{
+    CommodityAssumptionFalsificationProbes, commodity_assumption_falsification_probes_from_env,
+};
 #[allow(unused_imports)]
 pub use survival_forensics_assertions::{
     dump_reports_for_debug, expect_deterministic_reports, expect_sleep_progress_barrier_window,
@@ -845,7 +850,7 @@ pub fn seed_agent_with_recipes(
         .unwrap();
     txn.set_component_wound_list(agent, WoundList::default())
         .unwrap();
-    txn.set_component_blocked_intent_memory(agent, BlockedIntentMemory::default())
+    txn.set_component_blocker_memory(agent, BlockerMemory::default())
         .unwrap();
     txn.set_component_carry_capacity(agent, CarryCapacity(LoadUnits(50)))
         .unwrap();

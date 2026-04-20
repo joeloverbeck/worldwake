@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 32;
+pub const SAVE_FORMAT_VERSION: u32 = 33;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -781,7 +781,7 @@ mod tests {
         let (state, _, _, _) = populated_state();
         let mut bytes = save_to_bytes(&state, None).unwrap();
         bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
-            .copy_from_slice(&(SAVE_FORMAT_VERSION + 1).to_le_bytes());
+            .copy_from_slice(&(SAVE_FORMAT_VERSION - 1).to_le_bytes());
 
         let error = load_from_bytes(&bytes).unwrap_err();
 
@@ -790,7 +790,7 @@ mod tests {
             SaveError::UnsupportedVersion {
                 found,
                 expected: SAVE_FORMAT_VERSION
-            } if found == SAVE_FORMAT_VERSION + 1
+            } if found == SAVE_FORMAT_VERSION - 1
         ));
     }
 

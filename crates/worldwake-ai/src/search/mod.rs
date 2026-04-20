@@ -16,7 +16,7 @@ use candidates::search_candidate_from_planner;
 use candidates::search_candidates;
 use candidates::{
     CandidateFilterTraceSinks, CandidateSearchContext, CandidateTraceSinks, CommodityFilterContext,
-    SearchCandidate, apply_commodity_relevance_filter_with_expansion_trace,
+    SearchCandidate, apply_commodity_relevance_filter_with_expansion_trace, candidate_action_place,
     search_candidates_from_affordance, search_candidates_with_expansion_trace, unsupported_goal,
     update_expansion_candidate_outcome, update_root_candidate_outcome,
 };
@@ -41,8 +41,8 @@ use std::collections::BTreeMap;
 use transition::build_successor;
 use transition::build_successor_detailed;
 use worldwake_core::{
-    ActionDefId, BlockedIntentMemory, CognitiveProfile, CommodityKind, ExecutionBudget,
-    OpportunityKey, Tick,
+    ActionDefId, BlockerMemory, CognitiveProfile, CommodityKind, ExecutionBudget, OpportunityKey,
+    Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, InventoryBeliefView, RecipeRegistry,
@@ -188,6 +188,10 @@ fn should_fail_fast_for_missing_tactical_goal(
 
 fn travel_to_goal_supports_tactical_barrier(goal: &worldwake_core::GoalKind) -> bool {
     !matches!(goal, worldwake_core::GoalKind::Accuse { .. })
+}
+
+fn anchored_place_constrains_execution(goal: &worldwake_core::GoalKind) -> bool {
+    matches!(goal, worldwake_core::GoalKind::AcquireCommodity { .. })
 }
 
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
@@ -446,7 +450,7 @@ pub fn search_plan(
     cognitive: &CognitiveProfile,
     execution_budget: &ExecutionBudget,
     recipes: &RecipeRegistry,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
@@ -482,7 +486,7 @@ pub(crate) fn search_plan_with_trace_metadata(
     cognitive: &CognitiveProfile,
     execution_budget: &ExecutionBudget,
     recipes: &RecipeRegistry,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
@@ -1045,10 +1049,39 @@ fn apply_tactical_candidate_filter_with_expansion_trace(
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     tactical_goal: Option<&TacticalGoal>,
 ) {
+    let actor_place = node.state.effective_place(node.state.snapshot().actor());
+    let anchored_place = match goal.anchor {
+        worldwake_core::OpportunityAnchor::Place(place) => Some(place),
+        worldwake_core::OpportunityAnchor::Entity(entity) => node.state.effective_place(entity),
+        worldwake_core::OpportunityAnchor::None => None,
+    };
     let Some(tactical_goal) = tactical_goal else {
+        if !anchored_place_constrains_execution(&goal.key.kind) {
+            return;
+        }
+        let Some(anchor_place) = anchored_place else {
+            return;
+        };
+        let mut expansion_candidates = expansion_candidates;
+        candidates.retain(|candidate| {
+            let keep = if actor_place == Some(anchor_place) {
+                candidate_action_place(candidate, node, semantics_table) == Some(anchor_place)
+            } else {
+                travel_advances_toward_destination(node, candidate, semantics_table, anchor_place)
+            };
+            if !keep {
+                crate::search::candidates::update_expansion_candidate_outcome(
+                    &mut expansion_candidates,
+                    candidate.expansion_trace_index,
+                    crate::decision_trace::ExpansionCandidateOutcome::Filtered(
+                        crate::decision_trace::ExpansionCandidateFilterReason::TacticalGoalMismatch,
+                    ),
+                );
+            }
+            keep
+        });
         return;
     };
-    let actor_place = node.state.effective_place(node.state.snapshot().actor());
     let mut expansion_candidates = expansion_candidates;
     candidates.retain(|candidate| {
         let keep = match tactical_goal {

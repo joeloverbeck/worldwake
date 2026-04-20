@@ -24,10 +24,41 @@ pub struct CognitiveProfile {
     pub planning_switch_margin: Permille,
     /// Ticks before a transiently blocked goal is re-evaluated.
     pub transient_block_ticks: u32,
-    /// Ticks before a goal blocked for unknown reasons is re-evaluated.
-    pub unknown_block_ticks: u32,
     /// Ticks before a structurally blocked goal (no valid plan exists) is re-evaluated.
     pub structural_block_ticks: u32,
+    /// TTL for stale-belief discrepancies before retry.
+    #[serde(default = "default_stale_belief_backoff_ticks")]
+    pub stale_belief_backoff_ticks: u32,
+    /// TTL for contradicted-belief discrepancies before retry.
+    #[serde(default = "default_contradicted_belief_backoff_ticks")]
+    pub contradicted_belief_backoff_ticks: u32,
+    /// TTL for planner-state discrepancies before retry.
+    #[serde(default = "default_improper_state_backoff_ticks")]
+    pub improper_state_backoff_ticks: u32,
+    /// TTL for missing-observation discrepancies before retry.
+    #[serde(default = "default_missing_observation_backoff_ticks")]
+    pub missing_observation_backoff_ticks: u32,
+    /// TTL for legal-binding discrepancies before retry.
+    #[serde(default = "default_no_legal_binding_backoff_ticks")]
+    pub no_legal_binding_backoff_ticks: u32,
+    /// TTL for counterparty-refusal discrepancies before retry.
+    #[serde(default = "default_counterparty_refusal_backoff_ticks")]
+    pub counterparty_refusal_backoff_ticks: u32,
+    /// TTL for route-unknown discrepancies before retry.
+    #[serde(default = "default_route_unknown_backoff_ticks")]
+    pub route_unknown_backoff_ticks: u32,
+    /// TTL for search-budget-exhaustion discrepancies before retry.
+    #[serde(default = "default_search_exhaustion_backoff_ticks")]
+    pub search_exhaustion_backoff_ticks: u32,
+    /// TTL for partial-execution-drift discrepancies before retry.
+    #[serde(default = "default_partial_drift_backoff_ticks")]
+    pub partial_drift_backoff_ticks: u32,
+    /// Ticks a successful repair remains ranking-relevant before expiring.
+    #[serde(default = "default_repair_memory_ticks")]
+    pub repair_memory_ticks: u32,
+    /// Ticks a learned opportunity remains ranking-relevant before expiring.
+    #[serde(default = "default_learned_opportunity_memory_ticks")]
+    pub learned_opportunity_memory_ticks: u32,
     /// Base cooldown ticks after a goal fails before the agent retries it.
     pub initial_cooldown_ticks: u32,
     /// Maximum cooldown ticks after repeated failures (exponential backoff cap).
@@ -56,8 +87,18 @@ impl Default for CognitiveProfile {
             switch_margin: Permille::new_unchecked(100),
             planning_switch_margin: Permille::new_unchecked(150),
             transient_block_ticks: 20,
-            unknown_block_ticks: 5,
             structural_block_ticks: 200,
+            stale_belief_backoff_ticks: default_stale_belief_backoff_ticks(),
+            contradicted_belief_backoff_ticks: default_contradicted_belief_backoff_ticks(),
+            improper_state_backoff_ticks: default_improper_state_backoff_ticks(),
+            missing_observation_backoff_ticks: default_missing_observation_backoff_ticks(),
+            no_legal_binding_backoff_ticks: default_no_legal_binding_backoff_ticks(),
+            counterparty_refusal_backoff_ticks: default_counterparty_refusal_backoff_ticks(),
+            route_unknown_backoff_ticks: default_route_unknown_backoff_ticks(),
+            search_exhaustion_backoff_ticks: default_search_exhaustion_backoff_ticks(),
+            partial_drift_backoff_ticks: default_partial_drift_backoff_ticks(),
+            repair_memory_ticks: default_repair_memory_ticks(),
+            learned_opportunity_memory_ticks: default_learned_opportunity_memory_ticks(),
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
             max_snapshot_entities_per_place: 50,
@@ -75,6 +116,50 @@ const fn default_max_candidates_per_expansion() -> u16 {
 
 const fn default_use_ff_heuristic() -> bool {
     true
+}
+
+const fn default_stale_belief_backoff_ticks() -> u32 {
+    30
+}
+
+const fn default_contradicted_belief_backoff_ticks() -> u32 {
+    60
+}
+
+const fn default_improper_state_backoff_ticks() -> u32 {
+    2
+}
+
+const fn default_missing_observation_backoff_ticks() -> u32 {
+    20
+}
+
+const fn default_no_legal_binding_backoff_ticks() -> u32 {
+    120
+}
+
+const fn default_counterparty_refusal_backoff_ticks() -> u32 {
+    40
+}
+
+const fn default_route_unknown_backoff_ticks() -> u32 {
+    200
+}
+
+const fn default_search_exhaustion_backoff_ticks() -> u32 {
+    100
+}
+
+const fn default_partial_drift_backoff_ticks() -> u32 {
+    4
+}
+
+const fn default_repair_memory_ticks() -> u32 {
+    120
+}
+
+const fn default_learned_opportunity_memory_ticks() -> u32 {
+    60
 }
 
 #[cfg(test)]
@@ -114,8 +199,18 @@ mod tests {
             crate::Permille::new(150).unwrap()
         );
         assert_eq!(profile.transient_block_ticks, 20);
-        assert_eq!(profile.unknown_block_ticks, 5);
         assert_eq!(profile.structural_block_ticks, 200);
+        assert_eq!(profile.stale_belief_backoff_ticks, 30);
+        assert_eq!(profile.contradicted_belief_backoff_ticks, 60);
+        assert_eq!(profile.improper_state_backoff_ticks, 2);
+        assert_eq!(profile.missing_observation_backoff_ticks, 20);
+        assert_eq!(profile.no_legal_binding_backoff_ticks, 120);
+        assert_eq!(profile.counterparty_refusal_backoff_ticks, 40);
+        assert_eq!(profile.route_unknown_backoff_ticks, 200);
+        assert_eq!(profile.search_exhaustion_backoff_ticks, 100);
+        assert_eq!(profile.partial_drift_backoff_ticks, 4);
+        assert_eq!(profile.repair_memory_ticks, 120);
+        assert_eq!(profile.learned_opportunity_memory_ticks, 60);
         assert_eq!(profile.initial_cooldown_ticks, 4);
         assert_eq!(profile.max_cooldown_ticks, 64);
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
@@ -135,8 +230,18 @@ mod tests {
             switch_margin: crate::Permille::new(175).unwrap(),
             planning_switch_margin: crate::Permille::new(225).unwrap(),
             transient_block_ticks: 12,
-            unknown_block_ticks: 9,
             structural_block_ticks: 320,
+            stale_belief_backoff_ticks: 31,
+            contradicted_belief_backoff_ticks: 61,
+            improper_state_backoff_ticks: 3,
+            missing_observation_backoff_ticks: 21,
+            no_legal_binding_backoff_ticks: 121,
+            counterparty_refusal_backoff_ticks: 41,
+            route_unknown_backoff_ticks: 201,
+            search_exhaustion_backoff_ticks: 101,
+            partial_drift_backoff_ticks: 5,
+            repair_memory_ticks: 144,
+            learned_opportunity_memory_ticks: 88,
             initial_cooldown_ticks: 6,
             max_cooldown_ticks: 72,
             max_snapshot_entities_per_place: 75,
@@ -188,6 +293,110 @@ mod tests {
         let profile: CognitiveProfile = from_str(&without_field).unwrap();
 
         assert_eq!(profile.max_travel_candidates_per_expansion, None);
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_memory_ttls() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                repair_memory_ticks: 11,
+                learned_opportunity_memory_ticks: 22,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_fields = serialized
+            .lines()
+            .filter(|line| {
+                !line.contains("repair_memory_ticks")
+                    && !line.contains("learned_opportunity_memory_ticks")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_fields).unwrap();
+
+        assert_eq!(
+            profile.repair_memory_ticks,
+            CognitiveProfile::default().repair_memory_ticks
+        );
+        assert_eq!(
+            profile.learned_opportunity_memory_ticks,
+            CognitiveProfile::default().learned_opportunity_memory_ticks
+        );
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_discrepancy_ttls() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                stale_belief_backoff_ticks: 1,
+                contradicted_belief_backoff_ticks: 2,
+                improper_state_backoff_ticks: 3,
+                missing_observation_backoff_ticks: 4,
+                no_legal_binding_backoff_ticks: 5,
+                counterparty_refusal_backoff_ticks: 6,
+                route_unknown_backoff_ticks: 7,
+                search_exhaustion_backoff_ticks: 8,
+                partial_drift_backoff_ticks: 9,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_fields = serialized
+            .lines()
+            .filter(|line| {
+                !line.contains("stale_belief_backoff_ticks")
+                    && !line.contains("contradicted_belief_backoff_ticks")
+                    && !line.contains("improper_state_backoff_ticks")
+                    && !line.contains("missing_observation_backoff_ticks")
+                    && !line.contains("no_legal_binding_backoff_ticks")
+                    && !line.contains("counterparty_refusal_backoff_ticks")
+                    && !line.contains("route_unknown_backoff_ticks")
+                    && !line.contains("search_exhaustion_backoff_ticks")
+                    && !line.contains("partial_drift_backoff_ticks")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_fields).unwrap();
+
+        assert_eq!(
+            profile.stale_belief_backoff_ticks,
+            CognitiveProfile::default().stale_belief_backoff_ticks
+        );
+        assert_eq!(
+            profile.contradicted_belief_backoff_ticks,
+            CognitiveProfile::default().contradicted_belief_backoff_ticks
+        );
+        assert_eq!(
+            profile.improper_state_backoff_ticks,
+            CognitiveProfile::default().improper_state_backoff_ticks
+        );
+        assert_eq!(
+            profile.missing_observation_backoff_ticks,
+            CognitiveProfile::default().missing_observation_backoff_ticks
+        );
+        assert_eq!(
+            profile.no_legal_binding_backoff_ticks,
+            CognitiveProfile::default().no_legal_binding_backoff_ticks
+        );
+        assert_eq!(
+            profile.counterparty_refusal_backoff_ticks,
+            CognitiveProfile::default().counterparty_refusal_backoff_ticks
+        );
+        assert_eq!(
+            profile.route_unknown_backoff_ticks,
+            CognitiveProfile::default().route_unknown_backoff_ticks
+        );
+        assert_eq!(
+            profile.search_exhaustion_backoff_ticks,
+            CognitiveProfile::default().search_exhaustion_backoff_ticks
+        );
+        assert_eq!(
+            profile.partial_drift_backoff_ticks,
+            CognitiveProfile::default().partial_drift_backoff_ticks
+        );
     }
 
     #[test]

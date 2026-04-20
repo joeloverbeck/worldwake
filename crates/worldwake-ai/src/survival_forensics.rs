@@ -419,9 +419,9 @@ fn blocker_summary(
     };
     let selected_goal = selected_goal?;
     let matching = planning
-        .unknown_blockers
+        .discrepancy_trace
         .iter()
-        .filter(|blocker| blocker.goal_key == selected_goal)
+        .filter(|discrepancy| discrepancy.blocker_key.goal_key == selected_goal)
         .collect::<Vec<_>>();
     if matching.is_empty() {
         return None;
@@ -429,12 +429,7 @@ fn blocker_summary(
     let top = matching[0];
     Some(BlockerSummary {
         blocker_count: matching.len() as u16,
-        top_blocker: Some(BlockerKey {
-            goal_key: top.goal_key,
-            place: top.place,
-            target: top.target,
-            action_def: Some(top.failed_action_def),
-        }),
+        top_blocker: Some(top.blocker_key),
     })
 }
 
@@ -491,8 +486,7 @@ mod tests {
     use crate::{
         ActionStartFailureSummary, CandidateTrace, DirtySet, ExecutionTrace, ExhaustionTraceEntry,
         GoalSwitchSummary, OpportunityKey, PatrolRouteSnapshotTrace, PlanSearchTrace,
-        PlanningPipelineTrace, SelectedPlanTrace, SelectionTrace,
-        decision_trace::UnknownBlockerTrace,
+        PlanningPipelineTrace, SelectedPlanTrace, SelectionTrace, decision_trace::DiscrepancyTrace,
     };
     use worldwake_core::{
         ActionDefId, CauseRef, ControlSource, DriveThresholds, GoalKind, OpportunityAnchor,
@@ -822,7 +816,7 @@ mod tests {
                     failure: None,
                 },
                 action_start_failures: Vec::<ActionStartFailureSummary>::new(),
-                unknown_blockers: Vec::<UnknownBlockerTrace>::new(),
+                discrepancy_trace: Vec::<DiscrepancyTrace>::new(),
                 exhaustion_snapshot: Vec::<ExhaustionTraceEntry>::new(),
                 frame_transition: None,
                 patrol_route: PatrolRouteSnapshotTrace::default(),
@@ -843,12 +837,15 @@ mod tests {
         };
         planning.planning.attempts[0].outcome =
             PlanSearchOutcome::BudgetExhausted { expansions_used: 7 };
-        planning.unknown_blockers.push(UnknownBlockerTrace {
-            goal_key: goal,
-            failed_action_def: ActionDefId(5),
-            op_kind: crate::PlannerOpKind::Sleep,
-            target: Some(entity(41)),
-            place: Some(entity(40)),
+        planning.discrepancy_trace.push(DiscrepancyTrace {
+            discrepancy: worldwake_core::Discrepancy::ImproperPlanningState,
+            blocker_key: BlockerKey {
+                goal_key: goal,
+                place: Some(entity(40)),
+                target: Some(entity(41)),
+                action_def: Some(ActionDefId(5)),
+            },
+            expires_tick: Tick(9),
         });
         trace
     }

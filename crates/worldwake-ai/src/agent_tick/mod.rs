@@ -12,17 +12,18 @@ use candidates::abandon_expired_facility_queues;
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
     enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_active_goal,
-    persist_blocked_memory, persist_facility_queue_intents, persist_intention_frame, plan_finished,
+    persist_blocked_memory, persist_discrepancy_memory, persist_facility_queue_intents,
+    persist_intention_frame, plan_finished,
 };
 use frame::{
     AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
-    handle_recoverable_travel_step_blockage, populate_assumptions,
-    record_assumption_failure_blocked_intent, update_frame_for_adopted_plan,
+    handle_recoverable_travel_step_blockage, populate_assumptions, record_assumption_failure,
+    update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
-    InFlightReconciliation, ReadPhaseContext, reconcile_in_flight_state,
-    refresh_runtime_for_read_phase, update_runtime_observation_snapshot,
+    CompletedPlanSummary, InFlightReconciliation, ReadPhaseContext, reconcile_in_flight_state,
+    refresh_runtime_for_read_phase_with_memories, update_runtime_observation_snapshot,
 };
 use planning::{
     build_candidate_plans, plan_and_validate_next_step_traced, selection_candidates,
@@ -31,21 +32,23 @@ use planning::{
 
 use crate::decision_trace::{
     ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
-    CandidateTrace, DecisionOutcome, DecisionTraceSink, ExecutionFailureReason, ExecutionTrace,
-    ExhaustionTraceEntry, FrameTransitionKind, FrameTransitionTrace, InterruptTrace,
-    PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace, SelectionTrace,
-    UnknownBlockerTrace,
+    CandidateTrace, DecisionOutcome, DecisionTraceSink, DiscrepancyTrace, ExecutionFailureReason,
+    ExecutionTrace, ExhaustionTraceEntry, FrameTransitionKind, FrameTransitionTrace,
+    InterruptTrace, PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace,
+    SelectionTrace,
 };
 use crate::{
-    AgentDecisionRuntime, PlannerOpSemantics, build_semantics_table, frame_runtime_snapshot,
+    AgentDecisionRuntime, PlannerOpSemantics, authoritative_target, build_semantics_table,
+    frame_runtime_snapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockingFact, CauseRef, CognitiveProfile, ContentionIntents,
-    ControlSource, EntityId, ExecutionBudget, IntentionFrame, LastProactiveExplorationTick, Tick,
-    VisibilitySpec, WitnessData, WorldTxn,
+    ActionDefId, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents,
+    ControlSource, EntityId, ExecutionBudget, IntentionFrame, LastProactiveExplorationTick,
+    LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, RepairEntry, RepairKey,
+    RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -312,16 +315,41 @@ fn process_agent(
 
     let mut blocked_memory = ctx
         .world
-        .get_component_blocked_intent_memory(agent)
+        .get_component_blocker_memory(agent)
         .cloned()
         .unwrap_or_default();
     let original_blocked = blocked_memory.clone();
+    let mut discrepancy_memory = ctx
+        .world
+        .get_component_discrepancy_memory(agent)
+        .cloned()
+        .unwrap_or_default();
+    let original_discrepancy_memory = discrepancy_memory.clone();
     let mut violation_memory = ctx
         .world
         .get_component_violation_memory(agent)
         .cloned()
         .unwrap_or_default();
     let original_violation_memory = violation_memory.clone();
+    let mut repair_memory = ctx
+        .world
+        .get_component_repair_memory(agent)
+        .cloned()
+        .unwrap_or_default();
+    let original_repair_memory = repair_memory.clone();
+    let mut learned_opportunity_memory = ctx
+        .world
+        .get_component_learned_opportunity_memory(agent)
+        .cloned()
+        .unwrap_or_default();
+    let original_learned_opportunity_memory = learned_opportunity_memory.clone();
+    let memory_capacity = ctx
+        .world
+        .get_component_memory_capacity_profile(agent)
+        .cloned()
+        .unwrap_or_default();
+    repair_memory.expire(tick);
+    learned_opportunity_memory.expire(tick);
     let utility = ctx
         .world
         .get_component_utility_profile(agent)
@@ -362,6 +390,7 @@ fn process_agent(
                 if let Some(ref mut ft) = frame_transitions {
                     ft.push(FrameTransitionKind::Cleared {
                         reason: FrameClearReason::Death,
+                        failed_assumption: None,
                     });
                 }
             }
@@ -406,13 +435,14 @@ fn process_agent(
         }
     }
 
-    reconcile_in_flight_state(
+    let completed_plan = reconcile_in_flight_state(
         ctx,
         runtime,
         &mut current_active_goal,
         &mut current_frame,
         &mut current_facility_intents,
         &mut blocked_memory,
+        &mut discrepancy_memory,
         active_action.as_ref(),
         agent,
         InFlightReconciliation {
@@ -421,6 +451,16 @@ fn process_agent(
             committed_actions,
         },
     )?;
+    if let Some(summary) = completed_plan {
+        record_repair_memory_from_completed_plan(
+            &mut repair_memory,
+            &blocked_memory,
+            &summary,
+            tick,
+            cognitive.repair_memory_ticks,
+            memory_capacity,
+        );
+    }
 
     // Detect progress recorded during reconciliation (advance_completed_step).
     if let Some(ref mut ft) = frame_transitions {
@@ -460,8 +500,8 @@ fn process_agent(
                 recipe_registry,
             );
             let frame = current_frame.as_mut().unwrap();
-            frame.assumptions = populate_assumptions(&frame.domain, agent, &view);
-            let eval = evaluate_assumptions(&frame.assumptions, &view, None);
+            frame.assumptions = populate_assumptions(frame, agent, &view);
+            let eval = evaluate_assumptions(&frame.assumptions, &view, agent, None);
             if !matches!(eval, AssumptionEvalResult::Deferred) {
                 let pre_state = current_frame.as_ref().unwrap().state;
                 current_frame = Some(apply_assumption_result(
@@ -471,13 +511,20 @@ fn process_agent(
                     runtime,
                 ));
                 emit_assumption_transitions(&pre_state, &eval, tick, &mut frame_transitions);
-                if matches!(eval, AssumptionEvalResult::CriticalFailure) {
+                if matches!(eval, AssumptionEvalResult::CriticalFailure(_)) {
                     // Create blocked intent so the agent doesn't immediately
-                    // re-adopt the same goal after assumption failure.
-                    record_assumption_failure_blocked_intent(
+                    // re-adopt the same goal after assumption failure. The
+                    // structural block-ticks TTL preserves the pre-S109
+                    // suppression duration of `BlockingFact::AssumptionFailed`
+                    // — a failed plan-level assumption is structural, not a
+                    // transient drift.
+                    record_assumption_failure(
                         current_frame.as_ref().unwrap(),
                         view.effective_place(agent),
-                        &mut blocked_memory,
+                        current_step(runtime)
+                            .and_then(|step| step.targets.first().copied())
+                            .and_then(authoritative_target),
+                        &mut discrepancy_memory,
                         tick,
                         cognitive.structural_block_ticks,
                     );
@@ -493,7 +540,7 @@ fn process_agent(
 
     // ── Read phase: candidate generation + ranking ──
     let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
-    let read_result = refresh_runtime_for_read_phase(
+    let read_result = refresh_runtime_for_read_phase_with_memories(
         ctx.world,
         ctx.scheduler,
         action_defs,
@@ -501,7 +548,10 @@ fn process_agent(
         active_goal_key,
         &mut current_facility_intents,
         &mut blocked_memory,
+        &mut discrepancy_memory,
         &mut violation_memory,
+        &repair_memory,
+        &learned_opportunity_memory,
         agent,
         replan_signals,
         ReadPhaseContext {
@@ -512,6 +562,22 @@ fn process_agent(
             structural_block_ticks: cognitive.structural_block_ticks,
         },
         tracing,
+    );
+    record_learned_opportunities_from_read_phase(
+        &runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            action_defs,
+            recipe_registry,
+        ),
+        agent,
+        active_goal_key,
+        &read_result.generated_keys,
+        &mut learned_opportunity_memory,
+        tick,
+        cognitive.learned_opportunity_memory_ticks,
+        memory_capacity,
     );
     if !read_result.pending_acquisition_exhaustion_resets.is_empty() {
         apply_acquisition_exhaustion_tracker_resets(
@@ -544,6 +610,7 @@ fn process_agent(
                     action_defs,
                     recipe_registry,
                 ),
+                agent,
                 Some(&ranked_candidates),
             );
             if matches!(
@@ -614,6 +681,7 @@ fn process_agent(
             &mut current_frame,
             &mut current_facility_intents,
             &mut blocked_memory,
+            &mut discrepancy_memory,
             agent,
             &ranked_candidates,
             &active_action,
@@ -730,12 +798,18 @@ fn process_agent(
                 active_goal_key,
                 &mut current_frame,
                 &mut blocked_memory,
+                &mut discrepancy_memory,
                 &mut current_facility_intents,
                 agent,
                 tick,
                 &original_blocked,
+                &original_discrepancy_memory,
                 &original_violation_memory,
                 &violation_memory,
+                &original_repair_memory,
+                &repair_memory,
+                &original_learned_opportunity_memory,
+                &learned_opportunity_memory,
                 &step,
                 valid,
             );
@@ -834,20 +908,14 @@ fn process_agent(
                     failure: None,
                 }),
                 action_start_failures: agent_failures,
-                unknown_blockers: blocked_memory
-                    .intents
+                discrepancy_trace: discrepancy_memory
+                    .entries
                     .values()
-                    .filter(|i| i.blocking_fact == BlockingFact::Unknown && i.expires_tick > tick)
-                    .filter_map(|i| {
-                        let action_def = i.diagnostic_context?.action_def;
-                        let op_kind = semantics_table.get(&action_def)?.op_kind;
-                        Some(UnknownBlockerTrace {
-                            goal_key: i.blocker_key.goal_key,
-                            failed_action_def: action_def,
-                            op_kind,
-                            target: i.blocker_key.target,
-                            place: i.blocker_key.place,
-                        })
+                    .filter(|entry| entry.expires_tick > tick)
+                    .map(|entry| DiscrepancyTrace {
+                        discrepancy: entry.discrepancy,
+                        blocker_key: entry.blocker_key,
+                        expires_tick: entry.expires_tick,
                     })
                     .collect(),
                 exhaustion_snapshot: runtime
@@ -889,7 +957,7 @@ fn process_agent(
         false
     };
 
-    // ── Patience exhaustion → BlockedIntent + Exhausted state ──
+    // ── Patience exhaustion → Blocker + Exhausted state ──
     if patience_exhausted {
         let view = runtime_belief_view(
             agent,
@@ -949,7 +1017,10 @@ fn process_agent(
                 .any(|t| matches!(t, FrameTransitionKind::Cleared { .. }))
             && let Some(reason) = runtime.last_frame_clear_reason
         {
-            ft.push(FrameTransitionKind::Cleared { reason });
+            ft.push(FrameTransitionKind::Cleared {
+                reason,
+                failed_assumption: None,
+            });
         }
     }
 
@@ -996,8 +1067,14 @@ fn process_agent(
         tick,
         &original_blocked,
         &blocked_memory,
+        &original_discrepancy_memory,
+        &discrepancy_memory,
         &original_violation_memory,
         &violation_memory,
+        &original_repair_memory,
+        &repair_memory,
+        &original_learned_opportunity_memory,
+        &learned_opportunity_memory,
         runtime,
     )?;
 
@@ -1006,6 +1083,89 @@ fn process_agent(
         tick,
         outcome,
     }))
+}
+
+fn record_repair_memory_from_completed_plan(
+    repair_memory: &mut RepairMemory,
+    blocked_memory: &BlockerMemory,
+    summary: &CompletedPlanSummary,
+    current_tick: Tick,
+    ttl_ticks: u32,
+    memory_capacity: worldwake_core::MemoryCapacityProfile,
+) {
+    let alternate_target = match summary.opportunity.anchor {
+        OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place) => place,
+        OpportunityAnchor::None => return,
+    };
+    if !matches!(
+        summary.terminal_kind,
+        crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment
+    ) {
+        return;
+    }
+    let has_prior_alternate_context = blocked_memory.intents.values().any(|blocker| {
+        blocker.expires_tick > current_tick
+            && blocker.blocker_key.goal_key == summary.goal_key
+            && blocker
+                .blocker_key
+                .target
+                .or(blocker.blocker_key.place)
+                .is_some_and(|blocked| blocked != alternate_target)
+    });
+    if !has_prior_alternate_context {
+        return;
+    }
+
+    let repair_key = RepairKey {
+        goal_key: summary.goal_key,
+        alternate_target,
+    };
+    let success_count = repair_memory
+        .repairs
+        .get(&repair_key)
+        .filter(|entry| entry.expires_tick > current_tick)
+        .map_or(1, |entry| entry.success_count.saturating_add(1));
+    repair_memory.record(RepairEntry {
+        repair_key,
+        observed_tick: current_tick,
+        expires_tick: Tick(current_tick.0 + u64::from(ttl_ticks)),
+        success_count,
+    });
+    repair_memory.enforce_capacity(&memory_capacity);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_learned_opportunities_from_read_phase(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    active_goal: Option<worldwake_core::GoalKey>,
+    generated_keys: &[worldwake_core::OpportunityKey],
+    learned_opportunity_memory: &mut LearnedOpportunityMemory,
+    current_tick: Tick,
+    ttl_ticks: u32,
+    memory_capacity: worldwake_core::MemoryCapacityProfile,
+) {
+    let Some(active_goal) = active_goal else {
+        return;
+    };
+    let Some(in_transit) = view.in_transit_state(agent) else {
+        return;
+    };
+    for opportunity in generated_keys {
+        if opportunity.goal_key == active_goal {
+            continue;
+        }
+        if matches!(opportunity.anchor, OpportunityAnchor::None) {
+            continue;
+        }
+        learned_opportunity_memory.record(OpportunityEntry {
+            opportunity: *opportunity,
+            observed_tick: current_tick,
+            expires_tick: Tick(current_tick.0 + u64::from(ttl_ticks)),
+            observed_at: in_transit.destination,
+        });
+    }
+    learned_opportunity_memory.enforce_capacity(&memory_capacity);
 }
 
 pub(super) fn update_exploration_counter_for_adopted_goal(
@@ -1163,9 +1323,10 @@ fn emit_assumption_transitions(
                 tick,
             });
         }
-        AssumptionEvalResult::CriticalFailure => {
+        AssumptionEvalResult::CriticalFailure(failed) => {
             ft.push(FrameTransitionKind::Cleared {
                 reason: FrameClearReason::AssumptionFailed,
+                failed_assumption: Some(*failed),
             });
         }
         AssumptionEvalResult::AllPass => {

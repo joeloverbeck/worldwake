@@ -7,10 +7,9 @@ use std::{
     num::NonZeroU32,
 };
 use worldwake_core::{
-    ActionDefId, BlockedIntent, BlockerKey, BlockingFact, BodyCostPerTick, CommodityKind,
-    DemandMemory, DemandObservation, DemandObservationReason, EntityId, EntityKind, EventTag,
-    GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey, Tick, VisibilitySpec, WorldTxn,
-    WoundList,
+    ActionDefId, Blocker, BlockerKey, BlockingFact, BodyCostPerTick, CommodityKind, DemandMemory,
+    DemandObservation, DemandObservationReason, EntityId, EntityKind, EventTag, GoalKey, GoalKind,
+    MerchandiseProfile, Quantity, SourceKey, Tick, VisibilitySpec, WorldTxn, WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -1549,7 +1548,7 @@ fn record_unproductive_demand(
     let _ = txn.set_component_demand_memory(actor, memory);
 }
 
-/// Create a `BlockedIntent` for `SellCommodity { commodity }` after an unproductive
+/// Create a `Blocker` for `SellCommodity { commodity }` after an unproductive
 /// market-presence cycle.  The blocking period equals `market_presence_ticks` from
 /// the actor's `TradeDispositionProfile`, so per-agent diversity is preserved.
 fn record_sell_blocked_intent(
@@ -1563,10 +1562,10 @@ fn record_sell_blocked_intent(
         .get_component_trade_disposition_profile(actor)
         .map_or(30, |profile| profile.market_presence_ticks.get());
     let mut memory = txn
-        .get_component_blocked_intent_memory(actor)
+        .get_component_blocker_memory(actor)
         .cloned()
         .unwrap_or_default();
-    memory.record(BlockedIntent {
+    memory.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: GoalKey::from(GoalKind::SellCommodity { commodity }),
             place: Some(place),
@@ -1580,7 +1579,7 @@ fn record_sell_blocked_intent(
         clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
         baseline_snapshot: None,
     });
-    let _ = txn.set_component_blocked_intent_memory(actor, memory);
+    let _ = txn.set_component_blocker_memory(actor, memory);
 }
 
 #[cfg(test)]
@@ -4000,7 +3999,7 @@ mod tests {
 
         let blocked = h
             .world
-            .get_component_blocked_intent_memory(h.actor)
+            .get_component_blocker_memory(h.actor)
             .expect("blocked intent memory should exist after unproductive cycle");
         let sell_blocker = blocked.intents.values().find(|intent| {
             intent.blocking_fact == BlockingFact::NoBuyer

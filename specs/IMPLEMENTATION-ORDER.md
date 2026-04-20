@@ -27,6 +27,7 @@ Completed Phase 7 specs:
 - `S106: Ground Item Decay` — archived at [archive/specs/S106-ground-item-decay.md](/home/joeloverbeck/projects/worldwake/archive/specs/S106-ground-item-decay.md). Landed `GroundSince`, persisted `CommodityDecayMap`, `EventTag::ItemDecay`, `SystemId::ItemDecay`, live decay archival after `EvidenceDecay`, and Scenario 342 golden proof of bounded Waste steady state plus regenerated golden inventory/detail docs.
 - `S107: Proactive Diversification Exploration` — archived at [archive/specs/S107-proactive-diversification.md](/home/joeloverbeck/projects/worldwake/archive/specs/S107-proactive-diversification.md). Landed `DiversificationProfile`, passive place-visit tracking, proactive `ExploreLocation` emission/ranking with need-slack and cooldown gating, authored scenario support, and golden exploration coverage plus refreshed generated golden docs.
 - `S108: Per-Action Binding Strictness` — archived at [archive/specs/S108-per-action-binding-strictness.md](/home/joeloverbeck/projects/worldwake/archive/specs/S108-per-action-binding-strictness.md). Landed authoritative `BindingStrictness` on `ActionDef`, the dispatch-side strictness gate plus `ExactIdentityRequired` failure surface, the planner-contract correction that preserves same-target revalidation helpers, decision-trace strictness snapshots, and hybrid golden end-to-end proof for exact-identity refusal plus fungible fallback.
+- `S109: Typed Discrepancy Taxonomy and BlockerMemory Split` — archived at [archive/specs/S109-typed-discrepancy-taxonomy.md](/home/joeloverbeck/projects/worldwake/archive/specs/S109-typed-discrepancy-taxonomy.md). Replaced `BlockingFact::Unknown` / `AssumptionFailed` with typed `Discrepancy`, split the old blocker memory responsibilities into `DiscrepancyMemory` / `BlockerMemory` / `RepairMemory` / `LearnedOpportunityMemory`, migrated the planning trace to `discrepancy_trace`, removed `unknown_block_ticks`, and completed the scenario/save/generated-doc cleanup.
 - `S111: Scenario Profile Homogeneity Lints` — archived at [archive/specs/S111-scenario-homogeneity-lints.md](/home/joeloverbeck/projects/worldwake/archive/specs/S111-scenario-homogeneity-lints.md). Landed scenario-load linting for `ProfileHomogeneity` and `UnreachableExplorationDrive`, `ScenarioDef.scenario_lint_overrides`, load-time enforcement plus CLI `--ignore-lints`, the `PlanningSnapshot` accessor-fence doctests, and the CI sweep over committed `scenarios/*.ron`.
 - `S120: Survival Critical-Window Forensics` — archived at [archive/specs/S120-survival-critical-window-forensics.md](/home/joeloverbeck/projects/worldwake/archive/specs/S120-survival-critical-window-forensics.md). Landed the shared runtime forensics model and extractor in `worldwake-ai`, golden-harness forensic helpers and focused proof, observer Section 9 rendering plus `--critical-window-top-n`, and the survival-debugging documentation updates.
 - `S104: Survival Baseline Recovery` — archived at [archive/specs/S104-survival-baseline-recovery.md](/home/joeloverbeck/projects/worldwake/archive/specs/S104-survival-baseline-recovery.md). Landed the survival-baseline recovery slice: golden triage, TellProfile profile-gating cleanup, the authored `survival-baseline.ron` scenario, planner cleanup for the remaining survival-path `ProduceCommodity` budget exhaustion, and the Layer 0 survival golden proof. The later Layer 1–3 rebuild wave was intentionally not pursued.
@@ -344,12 +345,14 @@ The travel-fence epistemic regression audit (originally PR-1.11 in the assessmen
 ```text
 S108 ✅ archived               S111 ✅ archived
    │
-   └── S109 (soft dep on S108)
+   └── S109 ✅ archived
          │
-         └── S110 (soft dep on S109)
-                    │
-                    ├── S112 (soft dep on S109)
-                    └── S113 (soft dep on S109)
+         ├── S110 (soft dep on S109)
+         │       │
+         │       ├── S112 (soft dep on S109)
+         │       └── S113 (soft dep on S109)
+         │
+         └── S122 ✅ archived
 ```
 
 ### Active Execution Steps
@@ -359,7 +362,7 @@ S108 ✅ archived               S111 ✅ archived
 - **S111**: ✅ COMPLETED — archived at [archive/specs/S111-scenario-homogeneity-lints.md](/home/joeloverbeck/projects/worldwake/archive/specs/S111-scenario-homogeneity-lints.md). Landed scenario-load-time `ProfileHomogeneity` and `UnreachableExplorationDrive` lints, `scenario_lint_overrides`, load-time enforcement plus CLI bypass warnings, the `PlanningSnapshot` accessor-only doctest regression, and the CI sweep over committed `scenarios/*.ron`.
 
 **Wave 2** (after Wave 1):
-- **S109**: Typed Discrepancy Taxonomy and BlockedIntentMemory Split — replace `BlockingFact::Unknown`/`AssumptionFailed` with `Discrepancy` enum; split `BlockedIntentMemory` into `DiscrepancyMemory`/`BlockerMemory`/`RepairMemory`/`LearnedOpportunityMemory`; per-class TTL.
+- **S109**: ✅ COMPLETED — archived at [archive/specs/S109-typed-discrepancy-taxonomy.md](/home/joeloverbeck/projects/worldwake/archive/specs/S109-typed-discrepancy-taxonomy.md). Replaced `BlockingFact::Unknown`/`AssumptionFailed` with typed `Discrepancy`, split the old blocker-memory surface into `DiscrepancyMemory`/`BlockerMemory`/`RepairMemory`/`LearnedOpportunityMemory`, and completed the trace/save/scenario cleanup.
   - soft depends on S108 for `MatchOutcome::ExactIdentityRequired` → `Discrepancy::NoLegalBinding`
 - **S110**: Authoritative Decision History Events — new `EventTag` variants (`GoalOffered`, `GoalCommitted`, `PlanAdopted`, `PlanInvalidated`, `ExpectationMismatch`, `RepairApplied`, `BlockerRecorded`, `ReplanTriggered`); bounded rejected-alternative summaries.
   - soft depends on S109 for `Discrepancy` payload on `BlockerRecorded`
@@ -370,21 +373,27 @@ S108 ✅ archived               S111 ✅ archived
 - **S113**: Planner-Facing Belief Envelope — `BeliefValue<T>` / `BeliefSet<T>` wrappers on target-presence / believed-location / believed-stock queries; surface confidence, freshness, status (Certain/Probable/Stale/Disputed/Contradicted), and alternatives.
   - soft depends on S109 for `BeliefStatus::Contradicted` alignment
 
+**Wave 3 adjunct** (Phase 8 critical-path closer):
+- **S122**: ✅ COMPLETED — archived at [archive/specs/S122-frame-assumption-commodity-availability.md](/home/joeloverbeck/projects/worldwake/archive/specs/S122-frame-assumption-commodity-availability.md). Landed the live `FrameAssumption::CommodityAvailableAt` path end to end: goal-derived assumption population, belief/co-location evaluation, failed-assumption trace payloads, survival-golden/falsification-harness proof, and the adjacent survival-path cleanup needed to make the S122 contradiction chain honest in long-run goldens.
+  - hard depended on S109 (consumed the post-correction `record_assumption_failure` TTL/clearing semantics)
+  - soft relationship with S110 remains historical only; S122 itself still did not add a new decision-history `EventTag`
+  - soft relationship with S113 remains optional; the landed path uses the live belief surface without requiring the envelope layer first
+
 ### Phase 8 Gate
 
-- [ ] All 6 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [ ] All 7 specs reassessed (`/reassess-spec`) and ticket-decomposed
 - [ ] Wave 1 specs implemented and passing golden E2E tests
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [ ] Every `ActionDef` registration has explicit `BindingStrictness` (compile-time coverage)
-- [ ] No remaining `BlockingFact::Unknown` or `AssumptionFailed` variants (migrated to typed `Discrepancy`)
+- [x] No remaining `BlockingFact::Unknown` or `AssumptionFailed` variants (migrated to typed `Discrepancy`)
 - [ ] Authoritative decision history events surfaced in observer "Decision History" section for `survival-baseline.ron` and `survival-contested.ron`
 - [ ] Portfolio planning golden (infeasible top-N + feasible lower slot) passes
 - [ ] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 
-- Note: Wave 1 is complete. The remaining Phase 8 work is S109, S110, S112, and S113.
+- Note: Wave 1 and the S122 adjunct are complete. The remaining Phase 8 work is S110, S112, and S113.
 
 ---
 

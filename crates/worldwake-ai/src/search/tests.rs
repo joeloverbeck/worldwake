@@ -21,8 +21,8 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState, BelievedArtifactState,
-    BelievedBountyTerms, BelievedEntityState, BlockedIntent, BlockedIntentMemory, BlockerKey,
-    BlockingFact, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef,
+    BelievedBountyTerms, BelievedEntityState, Blocker, BlockerKey, BlockerMemory, BlockingFact,
+    BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef,
     CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
     ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
@@ -57,8 +57,23 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         switch_margin: reasoning.switch_margin,
         planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
         transient_block_ticks: reasoning.transient_block_ticks,
-        unknown_block_ticks: reasoning.unknown_block_ticks,
         structural_block_ticks: reasoning.structural_block_ticks,
+        stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
+        contradicted_belief_backoff_ticks: CognitiveProfile::default()
+            .contradicted_belief_backoff_ticks,
+        improper_state_backoff_ticks: CognitiveProfile::default().improper_state_backoff_ticks,
+        missing_observation_backoff_ticks: CognitiveProfile::default()
+            .missing_observation_backoff_ticks,
+        no_legal_binding_backoff_ticks: CognitiveProfile::default().no_legal_binding_backoff_ticks,
+        counterparty_refusal_backoff_ticks: CognitiveProfile::default()
+            .counterparty_refusal_backoff_ticks,
+        route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+        search_exhaustion_backoff_ticks: CognitiveProfile::default()
+            .search_exhaustion_backoff_ticks,
+        partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
+        repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
+        learned_opportunity_memory_ticks: CognitiveProfile::default()
+            .learned_opportunity_memory_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
         max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -80,7 +95,7 @@ fn candidate_search_context<'a>(
     semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &'a ActionDefRegistry,
     handlers: &'a worldwake_sim::ActionHandlerRegistry,
-    blocked: &'a BlockedIntentMemory,
+    blocked: &'a BlockerMemory,
     current_tick: Tick,
     relevant_defs: &'a BTreeSet<ActionDefId>,
 ) -> CandidateSearchContext<'a> {
@@ -117,7 +132,7 @@ fn search_plan(
     handlers: &worldwake_sim::ActionHandlerRegistry,
     reasoning: &ProfileFixture,
     recipes: &RecipeRegistry,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
@@ -147,7 +162,7 @@ fn search_plan_with_trace_metadata(
     handlers: &worldwake_sim::ActionHandlerRegistry,
     reasoning: &ProfileFixture,
     recipes: &RecipeRegistry,
-    blocked: &BlockedIntentMemory,
+    blocked: &BlockerMemory,
     current_tick: Tick,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
@@ -246,7 +261,7 @@ fn collect_root_non_terminal_successors_for_tactical_goal<'snapshot>(
             &semantics_table,
             registry,
             handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &relevant_defs,
         ),
@@ -1203,7 +1218,7 @@ fn search_returns_one_step_consume_plan_for_local_food() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1321,7 +1336,7 @@ fn search_returns_travel_then_consume_for_adjacent_food() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1370,7 +1385,7 @@ fn search_returns_none_when_only_wrong_local_consumable_is_controllable() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1453,7 +1468,7 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1554,7 +1569,7 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1643,7 +1658,7 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1705,7 +1720,7 @@ fn search_respects_plan_depth_budget() {
         &handlers,
         &budget,
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1759,7 +1774,7 @@ fn search_returns_none_when_node_expansion_budget_is_exhausted() {
         &handlers,
         &budget,
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1813,7 +1828,7 @@ fn search_candidate_safety_valve_triggers_at_threshold() {
         &cognitive,
         &execution_budget(&ProfileFixture::default()),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1868,7 +1883,7 @@ fn search_beam_width_1_prunes_viable_slower_branch() {
             ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1884,7 +1899,7 @@ fn search_beam_width_1_prunes_viable_slower_branch() {
             ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1952,7 +1967,7 @@ fn search_beam_width_widening_keeps_more_successors() {
             ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -1968,7 +1983,7 @@ fn search_beam_width_widening_keeps_more_successors() {
             ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2035,7 +2050,7 @@ fn search_returns_none_when_large_beam_still_exhausts_node_budget() {
             ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2052,7 +2067,7 @@ fn search_returns_none_when_large_beam_still_exhausts_node_budget() {
             ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2098,7 +2113,7 @@ fn search_returns_none_when_plan_depth_is_zero() {
             ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2168,7 +2183,7 @@ fn search_rejects_branch_when_duration_estimation_fails() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2228,7 +2243,7 @@ fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2312,15 +2327,15 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
         trace_index: None,
         expansion_trace_index: None,
     };
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: goal.key,
             place: Some(orchard),
             target: Some(bread),
             action_def: Some(pick_up_id),
         },
-        blocking_fact: BlockingFact::AssumptionFailed,
+        blocking_fact: BlockingFact::TargetGone,
         diagnostic_context: None,
         observed_tick: Tick(1),
         expires_tick: Tick(20),
@@ -2337,7 +2352,207 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
             &blocked,
             Tick(5)
         ),
-        Some((Some(orchard), BlockingFact::AssumptionFailed)),
+        Some((Some(orchard), BlockingFact::TargetGone)),
+    );
+}
+
+#[test]
+fn place_anchored_acquire_search_does_not_retarget_sibling_place_lot() {
+    let actor = entity(1);
+    let home = entity(10);
+    let orchard = entity(11);
+    let home_apple = entity(20);
+    let orchard_apple = entity(21);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, home, orchard, home_apple, orchard_apple]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(home, EntityKind::Place);
+    view.kinds.insert(orchard, EntityKind::Place);
+    view.kinds.insert(home_apple, EntityKind::ItemLot);
+    view.kinds.insert(orchard_apple, EntityKind::ItemLot);
+    view.effective_places.insert(actor, orchard);
+    view.effective_places.insert(home_apple, home);
+    view.effective_places.insert(orchard_apple, orchard);
+    view.entities_at.insert(home, vec![home_apple]);
+    view.entities_at.insert(orchard, vec![actor, orchard_apple]);
+    view.lot_commodities
+        .insert(home_apple, CommodityKind::Apple);
+    view.lot_commodities
+        .insert(orchard_apple, CommodityKind::Apple);
+    view.consumable_profiles.insert(
+        home_apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.consumable_profiles.insert(
+        orchard_apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.commodity_quantities
+        .insert((home_apple, CommodityKind::Apple), Quantity(1));
+    view.commodity_quantities
+        .insert((orchard_apple, CommodityKind::Apple), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(home_apple, LoadUnits(1));
+    view.entity_loads.insert(orchard_apple, LoadUnits(1));
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.adjacent
+        .insert(home, vec![(orchard, NonZeroU32::new(3).unwrap())]);
+    view.adjacent
+        .insert(orchard, vec![(home, NonZeroU32::new(3).unwrap())]);
+
+    let (registry, handlers) = build_registry();
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(orchard),
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([home_apple, orchard_apple]),
+        evidence_places: BTreeSet::from([home, orchard]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        3,
+    );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .expect("anchored local apple should remain satisfiable without sibling travel");
+
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::MoveCargo);
+    assert_eq!(
+        plan.steps[0].targets,
+        vec![PlanningEntityRef::Authoritative(orchard_apple)]
+    );
+}
+
+#[test]
+fn place_anchored_acquire_search_does_not_escape_blocked_local_lot_to_sibling_place() {
+    let actor = entity(1);
+    let home = entity(10);
+    let orchard = entity(11);
+    let home_apple = entity(20);
+    let orchard_apple = entity(21);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, home, orchard, home_apple, orchard_apple]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(home, EntityKind::Place);
+    view.kinds.insert(orchard, EntityKind::Place);
+    view.kinds.insert(home_apple, EntityKind::ItemLot);
+    view.kinds.insert(orchard_apple, EntityKind::ItemLot);
+    view.effective_places.insert(actor, orchard);
+    view.effective_places.insert(home_apple, home);
+    view.effective_places.insert(orchard_apple, orchard);
+    view.entities_at.insert(home, vec![home_apple]);
+    view.entities_at.insert(orchard, vec![actor, orchard_apple]);
+    view.lot_commodities
+        .insert(home_apple, CommodityKind::Apple);
+    view.lot_commodities
+        .insert(orchard_apple, CommodityKind::Apple);
+    view.consumable_profiles.insert(
+        home_apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.consumable_profiles.insert(
+        orchard_apple,
+        CommodityKind::Apple.spec().consumable_profile.unwrap(),
+    );
+    view.commodity_quantities
+        .insert((home_apple, CommodityKind::Apple), Quantity(1));
+    view.commodity_quantities
+        .insert((orchard_apple, CommodityKind::Apple), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(4));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(home_apple, LoadUnits(1));
+    view.entity_loads.insert(orchard_apple, LoadUnits(1));
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.adjacent
+        .insert(home, vec![(orchard, NonZeroU32::new(3).unwrap())]);
+    view.adjacent
+        .insert(orchard, vec![(home, NonZeroU32::new(3).unwrap())]);
+
+    let (registry, handlers) = build_registry();
+    let pick_up_id = registry
+        .iter()
+        .find(|def| def.name == "pick_up")
+        .map(|def| def.id)
+        .expect("pick_up action should be registered");
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(orchard),
+        key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([home_apple, orchard_apple]),
+        evidence_places: BTreeSet::from([home, orchard]),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        3,
+    );
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
+        blocker_key: BlockerKey {
+            goal_key: goal.key,
+            place: Some(orchard),
+            target: Some(orchard_apple),
+            action_def: Some(pick_up_id),
+        },
+        blocking_fact: BlockingFact::TargetGone,
+        diagnostic_context: None,
+        observed_tick: Tick(1),
+        expires_tick: Tick(20),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
+    });
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &blocked,
+        Tick(5),
+        None,
+        None,
+    );
+
+    assert!(
+        !result.is_found(),
+        "anchored local commodity goals must not reroute to sibling places when the local lot is blocked"
     );
 }
 
@@ -2383,7 +2598,7 @@ fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2447,7 +2662,7 @@ fn search_returns_partial_pick_up_goal_satisfaction_for_local_food_lot() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2544,7 +2759,7 @@ fn cargo_search_finds_pickup_then_travel_plan() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2643,7 +2858,7 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2762,7 +2977,7 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -2864,7 +3079,7 @@ fn sell_search_for_stored_home_stock_requires_stage_before_goal_satisfaction() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -3009,7 +3224,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -3053,7 +3268,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -3129,7 +3344,7 @@ fn search_uses_hypothetical_movement_to_reduce_local_danger() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -3184,7 +3399,7 @@ fn search_marks_leaf_combat_as_combat_commitment() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -3598,7 +3813,7 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -3702,7 +3917,7 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
         &handlers,
         &ProfileFixture::default(),
         &recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -3837,7 +4052,7 @@ fn search_local_wash_candidates_require_basin_and_water_source() {
             &semantics_table,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &relevant_defs,
         ),
@@ -4152,7 +4367,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         None,
@@ -4195,7 +4410,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         None,
@@ -4543,7 +4758,7 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
         &fixture.handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -4598,7 +4813,7 @@ fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_witho
         &fixture.handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -4652,7 +4867,7 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
         &fixture.handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -4709,7 +4924,7 @@ fn search_acquire_self_consume_skips_queue_when_matching_grant_is_already_active
         &fixture.handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -4776,7 +4991,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -4802,8 +5017,8 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
     };
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: goal.key,
             place: Some(fixture.orchard_farm),
@@ -4849,7 +5064,7 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
             &fixture.semantics,
             &fixture.registry,
             &fixture.handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -4875,8 +5090,8 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
     };
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: goal.key,
             place: Some(fixture.orchard_farm),
@@ -4918,7 +5133,7 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         &fixture.handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -5003,8 +5218,8 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         evidence_entities: BTreeSet::from([fixture.orchard_row, second_orchard]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
     };
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: goal.key,
             place: Some(fixture.orchard_farm),
@@ -5039,7 +5254,7 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         &fixture.handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -5164,7 +5379,7 @@ fn corpse_loot_goal_searches_queue_step_before_loot_when_corpse_is_contention_ma
         &fixture.handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -5283,7 +5498,7 @@ fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_ma
         &fixture.handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -5999,7 +6214,7 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(10),
         None,
         None,
@@ -6217,7 +6432,7 @@ fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(10),
         None,
         None,
@@ -6871,7 +7086,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -7046,7 +7261,7 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -7134,7 +7349,7 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -7279,7 +7494,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &accuse_defs,
         ),
@@ -7306,7 +7521,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &punish_defs,
         ),
@@ -7498,7 +7713,7 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -7648,7 +7863,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -7778,7 +7993,7 @@ fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_dea
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -7918,7 +8133,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -8059,7 +8274,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &rel_defs,
         ),
@@ -8129,7 +8344,7 @@ fn test_binding_two_corpses_same_place() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         Some(&mut rejections),
         None,
@@ -8213,7 +8428,7 @@ fn test_binding_two_hostiles_same_place() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         Some(&mut rejections),
         None,
@@ -8289,7 +8504,7 @@ fn test_binding_flexible_goal_unaffected() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         Some(&mut rejections),
         None,
@@ -8353,7 +8568,7 @@ fn test_binding_rejection_trace_populated() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         Some(&mut rejections),
         None,
@@ -8478,7 +8693,7 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -8572,7 +8787,7 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -8675,7 +8890,7 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
         &handlers,
         &tight_budget,
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -8784,7 +8999,7 @@ fn search_expansion_summaries_collected_when_tracing_enabled() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut summaries),
@@ -8833,7 +9048,7 @@ fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds()
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut summaries),
@@ -8896,7 +9111,7 @@ fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
         &cognitive(&ProfileFixture::default()),
         &execution_budget(&ProfileFixture::default()),
         &fixture.recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         Some(&mut summaries),
@@ -8984,7 +9199,7 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
         &no_landmarks,
         &execution_budget(&ProfileFixture::default()),
         &fixture.recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         Some(&mut summaries),
@@ -9185,7 +9400,7 @@ fn ff_successor_rewrite_preserves_spatial_heuristic_when_it_exceeds_relaxed_plan
             &semantics,
             &registry,
             &handlers,
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             &relevant_defs,
         ),
@@ -9304,7 +9519,7 @@ fn search_trace_metadata_records_ff_heuristic_and_helpful_actions_when_enabled()
         &cognitive(&ProfileFixture::default()),
         &execution_budget(&ProfileFixture::default()),
         &recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut summaries),
@@ -9365,7 +9580,7 @@ fn search_trace_metadata_disables_ff_fields_when_profile_toggle_is_off() {
         &no_ff,
         &execution_budget(&ProfileFixture::default()),
         &fixture.recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         Some(&mut summaries),
@@ -9422,7 +9637,7 @@ fn ff_dead_end_falls_back_to_landmark_guidance_at_root() {
         &cognitive(&ProfileFixture::default()),
         &execution_budget(&ProfileFixture::default()),
         &fixture.recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         Some(&mut ff_summaries),
@@ -9440,7 +9655,7 @@ fn ff_dead_end_falls_back_to_landmark_guidance_at_root() {
         &no_ff,
         &execution_budget(&ProfileFixture::default()),
         &fixture.recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         Some(&mut no_ff_summaries),
@@ -9557,7 +9772,7 @@ fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_s
         &cognitive(&ProfileFixture::default()),
         &execution_budget(&ProfileFixture::default()),
         &recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         None,
@@ -9629,7 +9844,7 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
         &cognitive(&ProfileFixture::default()),
         &execution_budget(&ProfileFixture::default()),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -9684,7 +9899,7 @@ fn local_critical_sleep_returns_progress_barrier_after_one_step() {
         &cognitive(&ProfileFixture::default()),
         &execution_budget(&ProfileFixture::default()),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -9753,7 +9968,7 @@ fn search_generic_explore_without_tactical_goal_still_finds_plan() {
         &cognitive(&ProfileFixture::default()),
         &execution_budget(&ProfileFixture::default()),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -9969,7 +10184,7 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -10049,7 +10264,7 @@ fn search_acquire_commodity_uses_travel_to_goal() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -10110,7 +10325,7 @@ fn search_patrol_uses_travel_to_goal_for_remote_place() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -10186,7 +10401,7 @@ fn search_investigate_uses_travel_to_goal() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -10286,7 +10501,7 @@ fn search_investigate_allows_local_scene_investigation_despite_stale_remote_evid
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -10957,7 +11172,7 @@ fn search_pipeline_records_commodity_irrelevant_root_candidate_filtering() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -11011,7 +11226,7 @@ fn search_treat_wounds_uses_two_phase_pick_up_before_heal() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -11066,7 +11281,7 @@ fn search_treat_wounds_with_zero_landmarks_preserves_two_phase_plan_shape() {
         &no_landmarks,
         &execution_budget(&ProfileFixture::default()),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -11121,7 +11336,7 @@ fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
         &fixture.handlers,
         &ProfileFixture::default(),
         &fixture.recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         None,
@@ -11211,7 +11426,7 @@ fn search_produce_commodity_with_zero_landmarks_preserves_two_phase_plan_shape()
         &no_landmarks,
         &execution_budget(&ProfileFixture::default()),
         &fixture.recipes,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(1),
         None,
         None,
@@ -11278,7 +11493,7 @@ fn search_expansion_summaries_empty_when_tracing_disabled() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None, // tracing disabled
@@ -11333,7 +11548,7 @@ fn beam_truncation_visible_in_expansion_summary() {
             ..ProfileFixture::default()
         },
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut summaries),
@@ -11459,7 +11674,7 @@ fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belie
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -11551,7 +11766,7 @@ fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_cer
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -11629,7 +11844,7 @@ fn planned_plan_carries_searched_opportunity_key() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -11701,7 +11916,7 @@ fn search_trace_records_force_claim_root_candidate_outcomes() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -11781,7 +11996,7 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -11856,7 +12071,7 @@ fn fulfill_post_notice_search_finds_travel_then_post_notice_progress_barrier() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -11949,7 +12164,7 @@ fn fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -12032,7 +12247,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -12116,7 +12331,7 @@ fn search_trace_records_ask_witness_omission_when_no_stale_epistemic_subjects_ex
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(50),
         None,
         Some(&mut expansions),
@@ -12199,7 +12414,7 @@ fn search_trace_records_ask_witness_omission_when_no_witness_affordance_exists()
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(50),
         None,
         Some(&mut expansions),
@@ -12283,7 +12498,7 @@ fn search_trace_omits_trade_root_candidate_without_trade_disposition_profile() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         Some(&mut expansions),
@@ -12345,7 +12560,7 @@ fn place_scoped_blocker_prunes_candidate_at_blocked_place() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -12356,8 +12571,8 @@ fn place_scoped_blocker_prunes_candidate_at_blocked_place() {
     );
 
     // With place-scoped blocker at town: plan should NOT be found.
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: goal.key,
             place: Some(town),
@@ -12424,8 +12639,8 @@ fn place_scoped_blocker_does_not_prune_candidate_at_different_place() {
     let goal = consume_goal(CommodityKind::Bread);
     let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
 
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: goal.key,
             place: Some(field), // different place
@@ -12513,7 +12728,7 @@ fn travel_action_uses_destination_as_place_for_blocker_check() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,
@@ -12524,8 +12739,8 @@ fn travel_action_uses_destination_as_place_for_blocker_check() {
     );
 
     // With blocker at field: travel-to-field should be pruned → no plan.
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: goal.key,
             place: Some(field),
@@ -12589,8 +12804,8 @@ fn candidate_pruned_by_blocker_records_place_blocker_trace() {
     let goal = consume_goal(CommodityKind::Bread);
     let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
 
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: goal.key,
             place: Some(town),
@@ -12740,7 +12955,7 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(10),
         None,
         None,
@@ -12844,7 +13059,7 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(10),
         None,
         None,
@@ -12924,7 +13139,7 @@ fn explore_location_search_finds_travel_plan_to_target_place() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(10),
         None,
         None,
@@ -13004,7 +13219,7 @@ fn search_empty_beliefs_exploration_fallback_returns_nearest_travel_barrier() {
         &handlers,
         &ProfileFixture::default(),
         &RecipeRegistry::new(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         Tick(0),
         None,
         None,

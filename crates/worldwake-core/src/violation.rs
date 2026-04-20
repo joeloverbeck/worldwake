@@ -55,7 +55,7 @@ pub struct RecordedViolation {
 /// Records detected violations to prevent repeated reactive goal generation
 /// for the same already-noticed mismatch.
 ///
-/// Follows the same pattern as [`crate::BlockedIntentMemory`]: a `Vec` with
+/// Follows the same pattern as [`crate::BlockerMemory`]: a `Vec` with
 /// expiry-based retention and per-kind deduplication.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViolationMemory {

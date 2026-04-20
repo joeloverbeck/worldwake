@@ -9,6 +9,7 @@
 ## Problem
 
 Without an automated gate, the committed `docs/generated/scenario-coverage.md` can drift from the actual state of `scenarios/*.ron`, silently invalidating any "Landed" claim in `docs/scenario-roadmap.md` (SCEROAD-002). Design doc §9 specifies CI must diff freshly-generated vs committed content and fail on drift — matching the `scripts/profile_docs.py` and `scripts/golden_inventory.py` precedents already used in this project.
+This gate only protects structural coverage drift. It does not certify that a scenario golden still proves the intended causal branch; that validity contract remains owned by `docs/golden-e2e-testing.md` and the roadmap entries authored in SCEROAD-002.
 
 ## Assumption Reassessment (2026-04-19)
 
@@ -20,7 +21,8 @@ Without an automated gate, the committed `docs/generated/scenario-coverage.md` c
 
 1. **One aggregator, one entry point.** Reusing `scripts/verify.sh` keeps the CI surface unified — no new workflow YAML, no parallel entry point. This matches the project's current CI shape (`.github/workflows/ci.yml` calls `./scripts/verify.sh` and nothing else for workspace verification).
 2. **Ordering for fast failure.** Place the `--check` step after `cargo test --workspace` and the two `cargo clippy` steps so compiler/test errors fail first — faster feedback, cheaper CI.
-3. **No backwards-compat shim.** No prior check to migrate from.
+3. **Scope stays honest.** `scenario-coverage --check` confirms activation/doc drift only; it must not be described as a full scenario-validity gate.
+4. **No backwards-compat shim.** No prior check to migrate from.
 
 ## Verification Layers
 
@@ -65,6 +67,7 @@ Use the same `echo "[verify] ..."` pattern as the existing steps for consistency
 1. The `--check` step runs **after** `cargo test --workspace` and the two `cargo clippy` steps — compiler/test errors fail first.
 2. The step invocation matches the local authoring command exactly (`cargo run -p worldwake-cli --bin scenario-coverage -- --check`) — no divergent flag set between CI and local.
 3. `scripts/verify.sh` continues to exit non-zero on any failing step (retains `set -euo pipefail`).
+4. Ticket text and resulting script comments do not imply that `scenario-coverage --check` proves backing-golden causal validity.
 
 ## Test Plan
 

@@ -65,9 +65,9 @@ Scenarios: 6
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
 - Places: OrchardFarm
-- Primary tests: `golden_blocked_intent_memory_with_ttl_expiry`
+- Primary tests: `golden_discrepancy_memory_with_ttl_expiry`
 - Replay tests: None
-- All tests: `golden_blocked_intent_memory_with_ttl_expiry`
+- All tests: `golden_discrepancy_memory_with_ttl_expiry`
 
 **Setup**: Agent at Orchard Farm, critically hungry. ResourceSource depleted but regenerates at 1/5 ticks.
 

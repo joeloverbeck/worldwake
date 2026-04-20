@@ -1,19 +1,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CommodityKind, EntityId,
-    Quantity, Tick, UniqueItemKind,
+    Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DiscrepancyMemory, EntityId,
+    LearnedOpportunityMemory, Quantity, RepairMemory, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
     TickInputError,
 };
 
-use crate::candidate_generation::generate_candidates_with_travel_horizon;
+use crate::candidate_generation::generate_candidates_with_memories_with_travel_horizon;
 use crate::failure_handling::ExecutionFailure;
 use crate::knowledge_path::KnowledgePath;
+use crate::ranking::rank_candidates_with_memories;
 use crate::{
     AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
-    authoritative_target, clear_resolved_blockers, rank_candidates,
+    authoritative_target, clear_resolved_failures,
 };
 use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 
@@ -37,6 +38,13 @@ pub(crate) struct InFlightReconciliation<'a> {
     pub(super) replan_signals: &'a [&'a ReplanNeeded],
     pub(super) start_failures: &'a [ActionStartFailure],
     pub(super) committed_actions: &'a [CommittedAction],
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct CompletedPlanSummary {
+    pub(super) goal_key: worldwake_core::GoalKey,
+    pub(super) opportunity: worldwake_core::OpportunityKey,
+    pub(super) terminal_kind: crate::PlanTerminalKind,
 }
 
 /// Result of the read phase, preserving trace-relevant data alongside ranked candidates.
@@ -75,6 +83,7 @@ pub(crate) struct ReadPhaseResult {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn refresh_runtime_for_read_phase(
     world: &worldwake_core::World,
     scheduler: &worldwake_sim::Scheduler,
@@ -82,8 +91,46 @@ pub(super) fn refresh_runtime_for_read_phase(
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
     facility_intents: &mut ContentionIntents,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     violation_memory: &mut worldwake_core::ViolationMemory,
+    agent: EntityId,
+    replan_signals: &[&ReplanNeeded],
+    phase: ReadPhaseContext<'_>,
+    tracing: bool,
+) -> ReadPhaseResult {
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    refresh_runtime_for_read_phase_with_memories(
+        world,
+        scheduler,
+        action_defs,
+        runtime,
+        active_goal,
+        facility_intents,
+        blocked_memory,
+        &mut discrepancy_memory,
+        violation_memory,
+        &RepairMemory::default(),
+        &LearnedOpportunityMemory::default(),
+        agent,
+        replan_signals,
+        phase,
+        tracing,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn refresh_runtime_for_read_phase_with_memories(
+    world: &worldwake_core::World,
+    scheduler: &worldwake_sim::Scheduler,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    runtime: &mut AgentDecisionRuntime,
+    active_goal: Option<worldwake_core::GoalKey>,
+    facility_intents: &mut ContentionIntents,
+    blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    violation_memory: &mut worldwake_core::ViolationMemory,
+    repair_memory: &RepairMemory,
+    learned_opportunity_memory: &LearnedOpportunityMemory,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
@@ -101,7 +148,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         phase.tick,
         phase,
     );
-    clear_resolved_blockers(&view, agent, blocked_memory, phase.tick);
+    clear_resolved_failures(&view, agent, blocked_memory, discrepancy_memory, phase.tick);
     let blocked_changed_from_cleanup = *blocked_memory != before;
     let snapshot_domains =
         observation_snapshot_changed(&view, agent, active_goal, runtime, phase.recipe_registry);
@@ -144,10 +191,11 @@ pub(super) fn refresh_runtime_for_read_phase(
         runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
     }
 
-    let mut candidates = generate_candidates_with_travel_horizon(
+    let mut candidates = generate_candidates_with_memories_with_travel_horizon(
         &view,
         agent,
         blocked_memory,
+        discrepancy_memory,
         violation_memory,
         phase.recipe_registry,
         phase.tick,
@@ -173,13 +221,15 @@ pub(super) fn refresh_runtime_for_read_phase(
         .collect();
     let candidate_evidence = candidates.diagnostics.evidence.values().cloned().collect();
     let dc = crate::build_decision_context(&view, agent);
-    let outcome = rank_candidates(
+    let outcome = rank_candidates_with_memories(
         &candidates.candidates,
         &view,
         agent,
         phase.tick,
         phase.utility,
-        &dc,
+        dc,
+        repair_memory,
+        learned_opportunity_memory,
     );
 
     ReadPhaseResult {
@@ -270,7 +320,7 @@ pub(super) fn handle_facility_queue_transitions(
     view: &dyn RuntimeBeliefView,
     runtime: &AgentDecisionRuntime,
     facility_intents: &mut ContentionIntents,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     agent: EntityId,
     tick: Tick,
     phase: ReadPhaseContext<'_>,
@@ -332,7 +382,7 @@ pub(super) fn handle_facility_queue_transitions(
                     .remove(&facility)
                     .or(fallback_intent)
                 {
-                    blocked_memory.record(BlockedIntent {
+                    blocked_memory.record(Blocker {
                         blocker_key: BlockerKey {
                             goal_key: intent.goal_key,
                             place: current_place,
@@ -368,22 +418,23 @@ pub(super) fn reconcile_in_flight_state(
     active_goal: &mut Option<worldwake_core::ActiveGoal>,
     jc: &mut Option<worldwake_core::IntentionFrame>,
     facility_intents: &mut ContentionIntents,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
     reconciliation: InFlightReconciliation<'_>,
-) -> Result<(), TickInputError> {
+) -> Result<Option<CompletedPlanSummary>, TickInputError> {
     if !runtime.step_in_flight {
-        return Ok(());
+        return Ok(None);
     }
     if active_action.is_some() {
-        return Ok(());
+        return Ok(None);
     }
 
     let failed_signal = reconciliation.replan_signals.first().copied();
     let Some(step) = current_step(runtime).cloned() else {
         runtime.step_in_flight = false;
-        return Ok(());
+        return Ok(None);
     };
 
     if let Some(signal) = failed_signal {
@@ -393,12 +444,13 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             &step,
             Some(ExecutionFailure::Replan(signal)),
         )?;
-        return Ok(());
+        return Ok(None);
     }
 
     if let Some(start_failure) = matching_start_failure(&step, reconciliation.start_failures) {
@@ -408,12 +460,13 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             &step,
             Some(ExecutionFailure::Start(start_failure)),
         )?;
-        return Ok(());
+        return Ok(None);
     }
 
     let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
@@ -424,13 +477,27 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             &step,
             None,
         )?;
-        return Ok(());
+        return Ok(None);
     };
+    let completed_plan = runtime.current_plan.as_ref().and_then(|plan| {
+        let next_index = runtime.current_step_index.checked_add(1)?;
+        (next_index >= plan.steps.len()
+            && matches!(
+                plan.terminal_kind,
+                crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment
+            ))
+        .then_some(CompletedPlanSummary {
+            goal_key: plan.goal,
+            opportunity: plan.opportunity,
+            terminal_kind: plan.terminal_kind,
+        })
+    });
     let goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     reconcile_committed_facility_queue_intents(runtime, facility_intents, goal_key, &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
@@ -440,12 +507,13 @@ pub(super) fn reconcile_in_flight_state(
             active_goal.as_ref().map(|ag| ag.goal_key),
             jc,
             blocked_memory,
+            discrepancy_memory,
             facility_intents,
             agent,
             &step,
             None,
         )?;
-        return Ok(());
+        return Ok(None);
     }
 
     runtime.step_in_flight = false;
@@ -457,7 +525,7 @@ pub(super) fn reconcile_in_flight_state(
         step.op_kind,
         ctx.tick,
     );
-    Ok(())
+    Ok(completed_plan)
 }
 
 fn matching_start_failure<'a>(

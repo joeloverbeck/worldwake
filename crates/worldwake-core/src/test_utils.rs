@@ -4,13 +4,16 @@
 //! deterministic testing.
 
 use crate::{
-    ActionDefId, BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerKey,
-    BlockingFact, ClearingBaseline, CommodityKind, CommodityPurpose, CommodityValuationProfile,
+    ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
+    ClearingBaseline, CommodityKind, CommodityPurpose, CommodityValuationProfile,
     ContentionDispositionProfile, DemandMemory, DemandObservation, DemandObservationReason,
-    EdgeExperience, EntityId, GoalKey, GoalKind, MerchandiseProfile, Permille, PreferenceProfile,
-    Quantity, ReliabilityRecord, RouteExperience, Seed, SourceKey, SourceReliability,
-    StockAssignment, StockAssignmentKind, StockStoragePolicy, SubstitutePreferences, Tick,
-    TradeCategory, TradeDispositionProfile, TravelEdgeId, UtilityProfile,
+    Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EdgeExperience,
+    EntityId, GoalKey, GoalKind, LearnedOpportunityMemory, MemoryCapacityProfile,
+    MerchandiseProfile, OpportunityAnchor, OpportunityEntry, OpportunityKey, Permille,
+    PreferenceProfile, Quantity, ReliabilityRecord, RepairEntry, RepairKey, RepairMemory,
+    RouteExperience, Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind,
+    StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
+    TravelEdgeId, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU8, NonZeroU32};
@@ -179,8 +182,8 @@ pub fn sample_blocker_key() -> BlockerKey {
 }
 
 /// Returns a representative blocked intent fixture for decision-memory tests.
-pub fn sample_blocked_intent() -> BlockedIntent {
-    BlockedIntent {
+pub fn sample_blocker() -> Blocker {
+    Blocker {
         blocker_key: sample_blocker_key(),
         blocking_fact: BlockingFact::SellerOutOfStock,
         diagnostic_context: None,
@@ -197,11 +200,64 @@ pub fn sample_blocked_intent() -> BlockedIntent {
 }
 
 /// Returns a representative blocked intent memory fixture for authoritative component tests.
-pub fn sample_blocked_intent_memory() -> BlockedIntentMemory {
-    let intent = sample_blocked_intent();
+pub fn sample_blocker_memory() -> BlockerMemory {
+    let intent = sample_blocker();
     let mut intents = std::collections::BTreeMap::new();
     intents.insert(intent.blocker_key, intent);
-    BlockedIntentMemory { intents }
+    BlockerMemory { intents }
+}
+
+/// Returns a representative discrepancy memory fixture for authoritative component tests.
+pub fn sample_discrepancy_memory() -> DiscrepancyMemory {
+    let entry = DiscrepancyEntry {
+        blocker_key: sample_blocker_key(),
+        discrepancy: Discrepancy::BeliefContradicted,
+        observed_tick: Tick(12),
+        expires_tick: Tick(18),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    };
+    let mut entries = BTreeMap::new();
+    entries.insert(entry.blocker_key, entry);
+    DiscrepancyMemory { entries }
+}
+
+/// Returns a representative repair memory fixture for authoritative component tests.
+pub fn sample_repair_memory() -> RepairMemory {
+    let entry = RepairEntry {
+        repair_key: RepairKey {
+            goal_key: sample_goal_key(),
+            alternate_target: entity_id(14, 0),
+        },
+        observed_tick: Tick(13),
+        expires_tick: Tick(133),
+        success_count: 2,
+    };
+    let mut repairs = BTreeMap::new();
+    repairs.insert(entry.repair_key, entry);
+    RepairMemory { repairs }
+}
+
+/// Returns a representative learned-opportunity memory fixture for authoritative component tests.
+pub fn sample_learned_opportunity_memory() -> LearnedOpportunityMemory {
+    let entry = OpportunityEntry {
+        opportunity: OpportunityKey {
+            goal_key: sample_goal_key(),
+            anchor: OpportunityAnchor::Place(entity_id(15, 0)),
+        },
+        observed_tick: Tick(14),
+        expires_tick: Tick(74),
+        observed_at: entity_id(16, 0),
+    };
+    let mut opportunities = BTreeMap::new();
+    opportunities.insert(entry.opportunity, entry);
+    LearnedOpportunityMemory { opportunities }
+}
+
+/// Returns a representative memory-capacity profile fixture for authoritative component tests.
+pub fn sample_memory_capacity_profile() -> MemoryCapacityProfile {
+    MemoryCapacityProfile {
+        memory_capacity: 24,
+    }
 }
 
 /// Returns a representative substitute-preference fixture for trade-domain tests.

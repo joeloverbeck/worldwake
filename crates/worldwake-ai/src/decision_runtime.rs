@@ -355,8 +355,24 @@ mod tests {
             switch_margin: reasoning.switch_margin,
             planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
-            unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
+            stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
+            contradicted_belief_backoff_ticks: CognitiveProfile::default()
+                .contradicted_belief_backoff_ticks,
+            improper_state_backoff_ticks: CognitiveProfile::default().improper_state_backoff_ticks,
+            missing_observation_backoff_ticks: CognitiveProfile::default()
+                .missing_observation_backoff_ticks,
+            no_legal_binding_backoff_ticks: CognitiveProfile::default()
+                .no_legal_binding_backoff_ticks,
+            counterparty_refusal_backoff_ticks: CognitiveProfile::default()
+                .counterparty_refusal_backoff_ticks,
+            route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+            search_exhaustion_backoff_ticks: CognitiveProfile::default()
+                .search_exhaustion_backoff_ticks,
+            partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
+            repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
+            learned_opportunity_memory_ticks: CognitiveProfile::default()
+                .learned_opportunity_memory_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()

@@ -6,7 +6,7 @@
 //! structure that tracks assumptions, patience, and suspension/resume lifecycle.
 
 use crate::traits::Component;
-use crate::{CommodityKind, EntityId, GoalKey, Tick};
+use crate::{CommodityKind, EntityId, GoalKey, GoalKind, Tick};
 use serde::{Deserialize, Serialize};
 
 /// Domain-specific context carried by an intention frame.
@@ -151,12 +151,28 @@ pub struct IntentionFrame {
     pub patience_limit: u32,
 }
 
+impl IntentionFrame {
+    #[must_use]
+    pub fn expected_commodity(&self) -> Option<(CommodityKind, EntityId)> {
+        let (IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination }) =
+            self.domain
+        else {
+            return None;
+        };
+        match self.goal.kind {
+            GoalKind::AcquireCommodity { commodity, .. } => Some((commodity, destination)),
+            _ => None,
+        }
+    }
+}
+
 impl Component for IntentionFrame {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::entity_id;
+    use crate::{CommodityPurpose, GoalKind};
     use serde::{Serialize as SerializeTrait, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -232,5 +248,62 @@ mod tests {
         let b = FrameAssumption::TargetAlive(entity_id(1, 0));
         // Just verify Ord is usable — the exact order is derive-determined.
         let _ = a.cmp(&b);
+    }
+
+    fn sample_frame(domain: IntentionDomain, goal: GoalKind) -> IntentionFrame {
+        IntentionFrame {
+            goal: GoalKey::new(goal),
+            domain,
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(0),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        }
+    }
+
+    #[test]
+    fn expected_commodity_returns_pair_for_travel_and_acquire_goal() {
+        let destination = entity_id(10, 0);
+        let frame = sample_frame(
+            IntentionDomain::Travel { destination },
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            },
+        );
+
+        assert_eq!(
+            frame.expected_commodity(),
+            Some((CommodityKind::Apple, destination))
+        );
+    }
+
+    #[test]
+    fn expected_commodity_returns_none_for_non_acquisition_goal() {
+        let frame = sample_frame(
+            IntentionDomain::Travel {
+                destination: entity_id(10, 0),
+            },
+            GoalKind::Sleep,
+        );
+
+        assert_eq!(frame.expected_commodity(), None);
+    }
+
+    #[test]
+    fn expected_commodity_returns_none_for_non_travel_domain() {
+        let frame = sample_frame(
+            IntentionDomain::Care {
+                patient: entity_id(11, 0),
+            },
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            },
+        );
+
+        assert_eq!(frame.expected_commodity(), None);
     }
 }

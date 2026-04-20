@@ -11,7 +11,8 @@ use super::{
     AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
     committed_action_for_step, effective_goal_switch_margin,
     handle_recoverable_travel_step_blockage, persist_blocked_memory,
-    plan_and_validate_next_step_traced, update_exploration_counter_for_adopted_goal,
+    plan_and_validate_next_step_traced, record_learned_opportunities_from_read_phase,
+    record_repair_memory_from_completed_plan, update_exploration_counter_for_adopted_goal,
     update_frame_for_adopted_plan,
 };
 use crate::ProfileFixture;
@@ -30,19 +31,21 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-    BelievedInstitutionalClaim, BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact,
-    BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind,
-    ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
-    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DriveThresholds,
-    EntityId, EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameState,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyCostPerTick,
+    BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant,
+    ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory,
+    DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId,
+    EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameAssumption,
+    FrameState, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LoadUnits, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, ResourceSource, Seed, SuccessionLaw,
-    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
-    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
+    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
+    RecordKind, RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile,
+    TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
+    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
     build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
@@ -102,8 +105,23 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         switch_margin: reasoning.switch_margin,
         planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
         transient_block_ticks: reasoning.transient_block_ticks,
-        unknown_block_ticks: reasoning.unknown_block_ticks,
         structural_block_ticks: reasoning.structural_block_ticks,
+        stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
+        contradicted_belief_backoff_ticks: CognitiveProfile::default()
+            .contradicted_belief_backoff_ticks,
+        improper_state_backoff_ticks: CognitiveProfile::default().improper_state_backoff_ticks,
+        missing_observation_backoff_ticks: CognitiveProfile::default()
+            .missing_observation_backoff_ticks,
+        no_legal_binding_backoff_ticks: CognitiveProfile::default().no_legal_binding_backoff_ticks,
+        counterparty_refusal_backoff_ticks: CognitiveProfile::default()
+            .counterparty_refusal_backoff_ticks,
+        route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+        search_exhaustion_backoff_ticks: CognitiveProfile::default()
+            .search_exhaustion_backoff_ticks,
+        partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
+        repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
+        learned_opportunity_memory_ticks: CognitiveProfile::default()
+            .learned_opportunity_memory_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
         max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -1045,7 +1063,7 @@ fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
         .runtime_by_agent
         .entry(harness.actor)
         .or_default();
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     refresh_runtime_for_read_phase(
         &harness.world,
@@ -1737,7 +1755,7 @@ fn grant_arrival_marks_runtime_dirty_from_facility_access_snapshot() {
         Some(ActionDefId(77)),
     );
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -1852,7 +1870,7 @@ fn abandoned_queue_then_records_standard_exclusive_facility_blocker() {
 
     let blocked = harness
         .world
-        .get_component_blocked_intent_memory(harness.actor)
+        .get_component_blocker_memory(harness.actor)
         .expect("queue abandonment should persist a blocked intent immediately");
     assert_eq!(blocked.intents.len(), 1);
     let intent = blocked.intents.values().next().unwrap();
@@ -1919,7 +1937,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         Some(harvest_action),
     );
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -2023,7 +2041,7 @@ fn same_place_queue_invalidation_records_exclusive_facility_blocker() {
         .get_component_contention_intents(harness.actor)
         .cloned()
         .unwrap_or_default();
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -2101,7 +2119,7 @@ fn grant_loss_does_not_record_hard_blocker() {
         .get_component_contention_intents(harness.actor)
         .cloned()
         .unwrap_or_default();
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
@@ -2519,7 +2537,7 @@ fn recoverable_blocked_travel_step_increments_consecutive_blocked_ticks_and_forc
         dirty: crate::DirtySet::default(),
         ..crate::AgentDecisionRuntime::default()
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
 
     let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
         &view,
@@ -2598,7 +2616,7 @@ fn blocked_leg_patience_exhaustion_clears_commitment_and_records_blocker() {
         dirty: crate::DirtySet::default(),
         ..crate::AgentDecisionRuntime::default()
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let budget = ProfileFixture::default();
 
     let (handled, updated_jc) = handle_recoverable_travel_step_blockage(
@@ -3148,7 +3166,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let grounded = crate::generate_candidates(
         &view,
         harness.actor,
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         &harness.recipes,
         Tick(0),
     )
@@ -3244,7 +3262,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         PlanTerminalKind::GoalSatisfied,
     );
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let utility = harness
         .world
@@ -3455,7 +3473,7 @@ fn irrelevant_commodity_change_does_not_trigger_replan_for_sleep_goal() {
         commit_txn(txn);
     }
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -3512,7 +3530,7 @@ fn relevant_commodity_change_triggers_replan_for_consume_goal() {
         commit_txn(txn);
     }
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -3549,7 +3567,7 @@ fn no_plan_always_marks_runtime_dirty() {
     let mut runtime = crate::AgentDecisionRuntime::default();
     let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
     update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
 
     let _ = refresh_runtime_for_read_phase(
@@ -3612,7 +3630,7 @@ fn patrol_route_change_marks_runtime_dirty() {
     .unwrap();
     commit_txn(txn);
 
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let _ = refresh_runtime_for_read_phase(
         &harness.world,
@@ -4092,12 +4110,12 @@ fn persist_blocked_memory_skips_empty_unchanged_state() {
         &mut event_log,
         agent,
         Tick(2),
-        &BlockedIntentMemory::default(),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
+        &BlockerMemory::default(),
     )
     .unwrap();
 
-    assert_eq!(world.get_component_blocked_intent_memory(agent), None);
+    assert_eq!(world.get_component_blocker_memory(agent), None);
     assert_eq!(event_log.len(), 1);
 }
 
@@ -4113,15 +4131,15 @@ fn persist_blocked_memory_commits_changed_component() {
         let _ = txn.commit(&mut event_log);
         agent
     };
-    let mut blocked = BlockedIntentMemory::default();
-    blocked.record(BlockedIntent {
+    let mut blocked = BlockerMemory::default();
+    blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
             place: None,
             target: None,
             action_def: None,
         },
-        blocking_fact: BlockingFact::Unknown,
+        blocking_fact: BlockingFact::NoKnownPath,
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(7),
@@ -4134,15 +4152,12 @@ fn persist_blocked_memory_commits_changed_component() {
         &mut event_log,
         agent,
         Tick(2),
-        &BlockedIntentMemory::default(),
+        &BlockerMemory::default(),
         &blocked,
     )
     .unwrap();
 
-    assert_eq!(
-        world.get_component_blocked_intent_memory(agent),
-        Some(&blocked)
-    );
+    assert_eq!(world.get_component_blocker_memory(agent), Some(&blocked));
     assert_eq!(event_log.len(), 2);
 }
 
@@ -4722,7 +4737,7 @@ fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
     );
     let blocked = harness
         .world
-        .get_component_blocked_intent_memory(harness.actor)
+        .get_component_blocker_memory(harness.actor)
         .expect("reconciled failure should persist blocked intent memory");
     assert_eq!(blocked.intents.len(), 1);
     assert_eq!(
@@ -4757,7 +4772,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         .runtime_by_agent
         .entry(harness.actor)
         .or_default();
-    let mut blocked = BlockedIntentMemory::default();
+    let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
 
     let initial_read = refresh_runtime_for_read_phase(
@@ -5816,7 +5831,7 @@ fn tracing_disabled_produces_identical_behavior() {
     assert!(harness_no_trace.driver.trace_sink().is_none());
 }
 
-// ── S22-005: Frame exhaustion → BlockedIntent integration tests ──
+// ── S22-005: Frame exhaustion → Blocker integration tests ──
 
 #[test]
 fn check_patience_exhaustion_creates_blocked_intent() {
@@ -5835,7 +5850,7 @@ fn check_patience_exhaustion_creates_blocked_intent() {
         stalled_ticks: 5, // >= patience_limit of 5
         patience_limit: 5,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
     let budget = ProfileFixture::default();
 
@@ -5884,7 +5899,7 @@ fn check_patience_exhaustion_below_limit_returns_false() {
         stalled_ticks: 4, // < patience_limit of 5
         patience_limit: 5,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     let exhausted = check_patience_exhaustion(
@@ -5918,7 +5933,7 @@ fn patience_exhaustion_care_domain_uses_patient_as_target() {
         stalled_ticks: 10,
         patience_limit: 10,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     check_patience_exhaustion(
@@ -5953,7 +5968,7 @@ fn patience_exhaustion_generic_domain_uses_none_target() {
         stalled_ticks: 3,
         patience_limit: 3,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
+    let mut blocked_memory = BlockerMemory::default();
     let mut runtime = crate::AgentDecisionRuntime::default();
 
     check_patience_exhaustion(
@@ -5974,8 +5989,8 @@ fn patience_exhaustion_generic_domain_uses_none_target() {
 }
 
 #[test]
-fn assumption_failure_creates_blocked_intent() {
-    use super::frame::record_assumption_failure_blocked_intent;
+fn assumption_failure_creates_discrepancy_memory_entry() {
+    use super::frame::record_assumption_failure;
 
     let patient = entity(50);
     let goal = GoalKey::from(GoalKind::Sleep);
@@ -5990,28 +6005,462 @@ fn assumption_failure_creates_blocked_intent() {
         stalled_ticks: 0,
         patience_limit: 30,
     };
-    let mut blocked_memory = BlockedIntentMemory::default();
-    let budget = ProfileFixture::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let cognitive = CognitiveProfile::default();
 
-    record_assumption_failure_blocked_intent(
+    // Non-commodity assumption failures remain structural TTL suppressions.
+    // Re-perceiving the same target does not validate that the failed
+    // plan-level assumption is now resolved.
+    record_assumption_failure(
         &frame,
         Some(place),
-        &mut blocked_memory,
+        Some(patient),
+        &mut discrepancy_memory,
         Tick(5),
-        budget.structural_block_ticks,
+        cognitive.structural_block_ticks,
     );
 
-    assert_eq!(blocked_memory.intents.len(), 1);
-    let intent = blocked_memory.intents.values().next().unwrap();
-    assert_eq!(intent.blocking_fact, BlockingFact::AssumptionFailed);
-    assert_eq!(intent.blocker_key.goal_key, goal);
-    assert_eq!(intent.blocker_key.place, Some(place));
-    assert_eq!(intent.blocker_key.target, Some(patient));
-    assert!(intent.blocker_key.action_def.is_none());
-    assert_eq!(intent.observed_tick, Tick(5));
+    assert_eq!(discrepancy_memory.entries.len(), 1);
+    let entry = discrepancy_memory.entries.values().next().unwrap();
+    assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+    assert_eq!(entry.blocker_key.goal_key, goal);
+    assert_eq!(entry.blocker_key.place, Some(place));
+    assert_eq!(entry.blocker_key.target, Some(patient));
+    assert!(entry.blocker_key.action_def.is_none());
+    assert_eq!(entry.observed_tick, Tick(5));
     assert_eq!(
-        intent.expires_tick,
-        Tick(5 + u64::from(budget.structural_block_ticks))
+        entry.expires_tick,
+        Tick(5 + u64::from(cognitive.structural_block_ticks))
+    );
+    assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
+}
+
+#[test]
+fn commodity_assumption_failure_records_suppression() {
+    let mut fixture = commodity_assumption_fixture(false, false, false);
+
+    let _ = fixture.harness.step_once();
+    assert!(
+        fixture
+            .harness
+            .world
+            .get_component_discrepancy_memory(fixture.harness.actor)
+            .is_none_or(|memory| memory.entries.is_empty()),
+        "remote stale belief should defer failure until co-location"
+    );
+    assert_ne!(
+        fixture.harness.runtime().unwrap().last_frame_clear_reason,
+        Some(worldwake_core::FrameClearReason::AssumptionFailed),
+        "remote stale belief should not clear the frame before co-location"
+    );
+
+    relocate_entity(
+        &mut fixture.harness.world,
+        fixture.harness.actor,
+        fixture.destination,
+        Tick(3),
+    );
+    let _ = fixture.harness.step_once();
+
+    let entry = fixture
+        .harness
+        .world
+        .get_component_discrepancy_memory(fixture.harness.actor)
+        .expect("assumption failure should record discrepancy memory")
+        .entries
+        .values()
+        .next()
+        .expect("suppression entry should be present");
+    assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+    assert_eq!(entry.blocker_key.goal_key, fixture.goal);
+    assert_eq!(
+        entry.clearing_condition,
+        DiscrepancyClearing::CommodityAvailabilityChanged {
+            commodity: CommodityKind::Apple,
+            place: fixture.destination,
+        }
+    );
+    assert_eq!(
+        entry.expires_tick,
+        Tick(entry.observed_tick.0 + u64::from(CognitiveProfile::default().structural_block_ticks))
+    );
+    assert_eq!(
+        fixture.harness.runtime().unwrap().last_frame_clear_reason,
+        Some(worldwake_core::FrameClearReason::AssumptionFailed)
+    );
+    assert_eq!(
+        fixture
+            .harness
+            .world
+            .get_component_intention_frame(fixture.harness.actor)
+            .expect("failed frame should persist as exhausted")
+            .state,
+        FrameState::Exhausted
+    );
+}
+
+struct CommodityAssumptionFixture {
+    harness: Harness,
+    destination: EntityId,
+    goal: GoalKey,
+    stale_lot: EntityId,
+}
+
+fn commodity_assumption_fixture(
+    with_alternate_origin_lot: bool,
+    tracing: bool,
+    remove_initial_bread: bool,
+) -> CommodityAssumptionFixture {
+    let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+    if tracing {
+        harness.driver.enable_tracing();
+    }
+    let origin = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("actor should start at a place");
+    let destination = harness
+        .world
+        .topology()
+        .place_ids()
+        .find(|place| *place != origin)
+        .expect("prototype world should expose a second place");
+    if remove_initial_bread {
+        let initial_bread = harness
+            .world
+            .query_item_lot()
+            .find(|(_, lot)| lot.commodity == CommodityKind::Bread)
+            .map(|(entity, _)| entity)
+            .expect("harness should start with an owned bread lot");
+        let mut txn = new_txn(&mut harness.world, 1);
+        txn.archive_entity(initial_bread).unwrap();
+        commit_txn(txn);
+    }
+    let remote_lot = {
+        let mut txn = new_txn(&mut harness.world, 1);
+        let remote_lot = txn
+            .create_item_lot(CommodityKind::Apple, Quantity(2))
+            .unwrap();
+        txn.set_ground_location(remote_lot, destination).unwrap();
+        if with_alternate_origin_lot {
+            let local_lot = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(local_lot, origin).unwrap();
+        }
+        commit_txn(txn);
+        remote_lot
+    };
+    sync_all_beliefs(&mut harness.world, harness.actor, Tick(1));
+    relocate_entity(&mut harness.world, remote_lot, origin, Tick(2));
+
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_active_goal(
+            harness.actor,
+            worldwake_core::ActiveGoal {
+                goal_key: goal,
+                adopted_at: Tick(2),
+            },
+        )
+        .unwrap();
+        txn.set_component_intention_frame(
+            harness.actor,
+            IntentionFrame {
+                goal,
+                domain: IntentionDomain::Travel { destination },
+                assumptions: Vec::new(),
+                state: FrameState::Active,
+                established_at: Tick(2),
+                last_progress_tick: None,
+                stalled_ticks: 0,
+                patience_limit: 30,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            dirty: DirtySet::default(),
+            ..AgentDecisionRuntime::default()
+        },
+    );
+
+    CommodityAssumptionFixture {
+        harness,
+        destination,
+        goal,
+        stale_lot: remote_lot,
+    }
+}
+
+#[test]
+fn commodity_assumption_stale_defers_fresh_refutes() {
+    let mut fixture = commodity_assumption_fixture(false, true, false);
+
+    let _ = fixture.harness.step_once();
+    assert!(
+        fixture
+            .harness
+            .world
+            .get_component_discrepancy_memory(fixture.harness.actor)
+            .is_none_or(|memory| memory.entries.is_empty()),
+        "remote stale belief should defer failure until co-location"
+    );
+    assert_ne!(
+        fixture.harness.runtime().unwrap().last_frame_clear_reason,
+        Some(worldwake_core::FrameClearReason::AssumptionFailed),
+        "remote stale belief should not clear the frame before co-location"
+    );
+    let pre_arrival_trace = fixture
+        .harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled")
+        .trace_at(fixture.harness.actor, Tick(0))
+        .expect("pre-arrival trace should exist");
+    let pre_arrival_frame_transition = match &pre_arrival_trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning.frame_transition.as_ref(),
+        crate::DecisionOutcome::ActiveAction {
+            frame_transition, ..
+        } => frame_transition.as_ref(),
+        crate::DecisionOutcome::Dead => {
+            panic!("expected traced decision outcome, got Dead")
+        }
+    };
+    if let Some(frame_transition) = pre_arrival_frame_transition {
+        assert!(
+            !frame_transition.transitions.iter().any(|transition| {
+                matches!(
+                    transition,
+                    crate::decision_trace::FrameTransitionKind::Cleared {
+                        reason: worldwake_core::FrameClearReason::AssumptionFailed,
+                        ..
+                    }
+                )
+            }),
+            "remote stale belief should not emit an assumption-failed clear before co-location"
+        );
+    }
+
+    relocate_entity(
+        &mut fixture.harness.world,
+        fixture.harness.actor,
+        fixture.destination,
+        Tick(3),
+    );
+    let _ = fixture.harness.step_once();
+
+    let sink = fixture
+        .harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled");
+    assert!(sink.traces_for(fixture.harness.actor).iter().any(|trace| {
+        let frame_transition = match &trace.outcome {
+            crate::DecisionOutcome::Planning(planning) => planning.frame_transition.as_ref(),
+            crate::DecisionOutcome::ActiveAction {
+                frame_transition, ..
+            } => frame_transition.as_ref(),
+            crate::DecisionOutcome::Dead => None,
+        };
+        frame_transition.is_some_and(|frame_transition| {
+            frame_transition.transitions.iter().any(|transition| {
+                matches!(
+                    transition,
+                    crate::decision_trace::FrameTransitionKind::Cleared {
+                        reason: worldwake_core::FrameClearReason::AssumptionFailed,
+                        failed_assumption: Some(FrameAssumption::CommodityAvailableAt {
+                            commodity: CommodityKind::Apple,
+                            place,
+                        }),
+                    } if *place == fixture.destination
+                )
+            })
+        })
+    }));
+}
+
+#[test]
+fn commodity_assumption_failure_suppresses_readoption() {
+    let mut fixture = commodity_assumption_fixture(true, true, false);
+
+    let _ = fixture.harness.step_once();
+    relocate_entity(
+        &mut fixture.harness.world,
+        fixture.harness.actor,
+        fixture.destination,
+        Tick(3),
+    );
+    let _ = fixture.harness.step_once();
+
+    let discrepancy_expires_tick = fixture
+        .harness
+        .world
+        .get_component_discrepancy_memory(fixture.harness.actor)
+        .expect("assumption failure should record discrepancy memory")
+        .entries
+        .values()
+        .find(|entry| entry.blocker_key.goal_key == fixture.goal)
+        .expect("suppression entry should be present")
+        .expires_tick;
+    let window_start_tick = fixture.harness.scheduler.current_tick();
+    while fixture.harness.scheduler.current_tick() < discrepancy_expires_tick {
+        let _ = fixture.harness.step_once();
+        if let Some(plan) = fixture
+            .harness
+            .runtime()
+            .and_then(|runtime| runtime.current_plan.as_ref())
+        {
+            let current_step = plan
+                .steps
+                .get(fixture.harness.runtime().unwrap().current_step_index)
+                .expect("current plan should expose the active step");
+            let authoritative_targets = current_step
+                .targets
+                .iter()
+                .filter_map(|target| crate::authoritative_target(*target))
+                .collect::<Vec<_>>();
+            assert!(
+                !authoritative_targets.contains(&fixture.stale_lot),
+                "suppressed lot target should not be re-adopted while discrepancy is active"
+            );
+        }
+    }
+
+    let sink = fixture
+        .harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled");
+    let mut saw_active_discrepancy = false;
+    for trace in sink.traces_for(fixture.harness.actor) {
+        if trace.tick < window_start_tick || trace.tick >= discrepancy_expires_tick {
+            continue;
+        }
+        let crate::DecisionOutcome::Planning(planning) = &trace.outcome else {
+            continue;
+        };
+        if let Some(selected_plan) = planning.selection.selected_plan.as_ref()
+            && let Some(next_step) = selected_plan.next_step.as_ref()
+        {
+            assert!(
+                !next_step.targets.contains(&fixture.stale_lot),
+                "suppressed lot target should not be selected before discrepancy expiry"
+            );
+        }
+        if planning
+            .discrepancy_trace
+            .iter()
+            .any(|entry| entry.blocker_key.goal_key == fixture.goal)
+        {
+            saw_active_discrepancy = true;
+        }
+    }
+    assert!(saw_active_discrepancy);
+}
+
+#[test]
+fn fresh_local_commodity_clears_assumption_discrepancy_before_ttl_expiry() {
+    let mut fixture = commodity_assumption_fixture(true, true, false);
+
+    let _ = fixture.harness.step_once();
+    relocate_entity(
+        &mut fixture.harness.world,
+        fixture.harness.actor,
+        fixture.destination,
+        Tick(3),
+    );
+    let _ = fixture.harness.step_once();
+
+    let discrepancy_expires_tick = fixture
+        .harness
+        .world
+        .get_component_discrepancy_memory(fixture.harness.actor)
+        .expect("assumption failure should record discrepancy memory")
+        .entries
+        .values()
+        .find(|entry| entry.blocker_key.goal_key == fixture.goal)
+        .expect("suppression entry should be present")
+        .expires_tick;
+
+    let initial_bread = fixture
+        .harness
+        .world
+        .query_item_lot()
+        .find(|(_, lot)| lot.commodity == CommodityKind::Bread)
+        .map(|(entity, _)| entity)
+        .expect("harness should still have the initial bread lot");
+
+    {
+        let mut txn = new_txn(&mut fixture.harness.world, 4);
+        txn.archive_entity(initial_bread)
+            .expect("initial bread lot should be removable for focused proof");
+        txn.set_component_homeostatic_needs(
+            fixture.harness.actor,
+            HomeostaticNeeds::new(pm(950), pm(0), pm(0), pm(0), pm(0)),
+        )
+        .unwrap();
+        let fresh_lot = txn
+            .create_item_lot(CommodityKind::Apple, Quantity(2))
+            .expect("fresh local apple lot should be creatable");
+        txn.set_ground_location(fresh_lot, fixture.destination)
+            .expect("fresh local apple lot should be placeable");
+        commit_txn(txn);
+    }
+
+    let current_tick = fixture.harness.scheduler.current_tick();
+    let _ = fixture.harness.step_once();
+
+    assert!(
+        fixture
+            .harness
+            .world
+            .get_component_discrepancy_memory(fixture.harness.actor)
+            .is_none_or(|memory| !memory.entries.contains_key(&BlockerKey {
+                goal_key: fixture.goal,
+                place: Some(fixture.destination),
+                target: Some(fixture.stale_lot),
+                action_def: None,
+            })),
+        "fresh local commodity evidence should clear the stale assumption discrepancy early"
+    );
+    assert!(
+        fixture.harness.scheduler.current_tick() < discrepancy_expires_tick,
+        "fresh evidence should clear before TTL expiry"
+    );
+
+    let trace = fixture
+        .harness
+        .driver
+        .trace_sink()
+        .expect("tracing should be enabled")
+        .trace_at(fixture.harness.actor, current_tick)
+        .expect("post-refresh trace should exist");
+    let goal_reenabled = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning
+            .candidates
+            .generated
+            .iter()
+            .any(|opportunity| opportunity.goal_key == fixture.goal),
+        crate::DecisionOutcome::ActiveAction { interrupt, .. } => interrupt
+            .top_challenger
+            .as_ref()
+            .is_some_and(|goal| goal.opportunity.goal_key == fixture.goal),
+        crate::DecisionOutcome::Dead => {
+            panic!("expected Planning or ActiveAction outcome, got Dead")
+        }
+    };
+    assert!(
+        goal_reenabled,
+        "fresh local commodity should re-enable the apple goal before TTL expiry"
     );
 }
 
@@ -6027,17 +6476,15 @@ fn goal_completion_does_not_create_blocked_intent() {
     }
 
     // Check that no blocked intent was created for the completed goal.
-    let blocked_memory = harness
-        .world
-        .get_component_blocked_intent_memory(harness.actor);
+    let blocked_memory = harness.world.get_component_blocker_memory(harness.actor);
     if let Some(memory) = blocked_memory {
-        let has_patience_or_assumption = memory.intents.values().any(|intent| {
-            intent.blocking_fact == BlockingFact::PatienceExhausted
-                || intent.blocking_fact == BlockingFact::AssumptionFailed
-        });
+        let has_patience_or_assumption = memory
+            .intents
+            .values()
+            .any(|intent| intent.blocking_fact == BlockingFact::PatienceExhausted);
         assert!(
             !has_patience_or_assumption,
-            "goal completion must NOT create PatienceExhausted or AssumptionFailed blocked intents, \
+            "goal completion must NOT create PatienceExhausted blocked intents, \
                  got: {:?}",
             memory.intents
         );
@@ -6094,6 +6541,167 @@ fn affordance_trace_absent_when_tracing_disabled() {
         harness.driver.trace_sink().is_none(),
         "trace sink should be None when tracing is disabled"
     );
+}
+
+#[test]
+fn discrepancy_trace_populated_from_discrepancy_memory() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.driver.enable_tracing();
+    let first = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        place: Some(entity(10)),
+        target: Some(entity(11)),
+        action_def: Some(ActionDefId(12)),
+    };
+    let second = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        place: Some(entity(20)),
+        target: Some(entity(21)),
+        action_def: Some(ActionDefId(22)),
+    };
+    let mut memory = DiscrepancyMemory::default();
+    memory.record(DiscrepancyEntry {
+        blocker_key: first,
+        discrepancy: Discrepancy::BeliefContradicted,
+        observed_tick: Tick(0),
+        expires_tick: Tick(5),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+    memory.record(DiscrepancyEntry {
+        blocker_key: second,
+        discrepancy: Discrepancy::RouteUnknown,
+        observed_tick: Tick(0),
+        expires_tick: Tick(6),
+        clearing_condition: DiscrepancyClearing::WorldStructureChange,
+    });
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_discrepancy_memory(harness.actor, memory)
+        .expect("should set discrepancy memory");
+    commit_txn(txn);
+
+    harness.step_once();
+
+    let sink = harness.driver.trace_sink().unwrap();
+    let trace = sink
+        .trace_at(harness.actor, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+
+    assert_eq!(planning.discrepancy_trace.len(), 2);
+    assert!(planning.discrepancy_trace.iter().any(|trace| {
+        trace.discrepancy == Discrepancy::BeliefContradicted
+            && trace.blocker_key == first
+            && trace.expires_tick == Tick(5)
+    }));
+    assert!(planning.discrepancy_trace.iter().any(|trace| {
+        trace.discrepancy == Discrepancy::RouteUnknown
+            && trace.blocker_key == second
+            && trace.expires_tick == Tick(6)
+    }));
+}
+
+#[test]
+fn blocker_memory_entries_not_in_discrepancy_trace() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.driver.enable_tracing();
+    let blocker_key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        place: Some(entity(30)),
+        target: Some(entity(31)),
+        action_def: Some(ActionDefId(32)),
+    };
+    let mut memory = BlockerMemory::default();
+    memory.record(Blocker {
+        blocker_key,
+        blocking_fact: BlockingFact::SellerOutOfStock,
+        diagnostic_context: None,
+        observed_tick: Tick(0),
+        expires_tick: Tick(5),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
+    });
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_blocker_memory(harness.actor, memory)
+        .expect("should set blocker memory");
+    commit_txn(txn);
+
+    harness.step_once();
+
+    let sink = harness.driver.trace_sink().unwrap();
+    let trace = sink
+        .trace_at(harness.actor, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+
+    assert!(
+        planning.discrepancy_trace.is_empty(),
+        "blocker memory entries must not appear in discrepancy_trace: {:?}",
+        planning.discrepancy_trace
+    );
+}
+
+#[test]
+fn discrepancy_trace_excludes_expired_entries() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.driver.enable_tracing();
+    let expired_key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        place: Some(entity(40)),
+        target: Some(entity(41)),
+        action_def: Some(ActionDefId(42)),
+    };
+    let live_key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Wash),
+        place: Some(entity(43)),
+        target: Some(entity(44)),
+        action_def: Some(ActionDefId(45)),
+    };
+    let mut memory = DiscrepancyMemory::default();
+    memory.record(DiscrepancyEntry {
+        blocker_key: expired_key,
+        discrepancy: Discrepancy::MissingObservation,
+        observed_tick: Tick(0),
+        expires_tick: Tick(0),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+    memory.record(DiscrepancyEntry {
+        blocker_key: live_key,
+        discrepancy: Discrepancy::ImproperPlanningState,
+        observed_tick: Tick(0),
+        expires_tick: Tick(3),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_discrepancy_memory(harness.actor, memory)
+        .expect("should set discrepancy memory");
+    commit_txn(txn);
+
+    harness.step_once();
+
+    let sink = harness.driver.trace_sink().unwrap();
+    let trace = sink
+        .trace_at(harness.actor, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        crate::DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+
+    assert_eq!(planning.discrepancy_trace.len(), 1);
+    assert_eq!(
+        planning.discrepancy_trace[0].discrepancy,
+        Discrepancy::ImproperPlanningState
+    );
+    assert_eq!(planning.discrepancy_trace[0].blocker_key, live_key);
 }
 
 #[test]
@@ -6219,4 +6827,112 @@ fn exploration_counter_resets_when_non_explore_goal_is_adopted() {
             .consecutive_exploration_count,
         0
     );
+}
+
+#[test]
+fn completed_alternate_plan_records_repair_memory_entry() {
+    let goal = GoalKey::from(GoalKind::Sleep);
+    let successful_place = entity(91);
+    let mut repair_memory = RepairMemory::default();
+    let blocked_memory = BlockerMemory {
+        intents: BTreeMap::from([(
+            BlockerKey {
+                goal_key: goal,
+                place: Some(entity(90)),
+                target: None,
+                action_def: None,
+            },
+            Blocker {
+                blocker_key: BlockerKey {
+                    goal_key: goal,
+                    place: Some(entity(90)),
+                    target: None,
+                    action_def: None,
+                },
+                blocking_fact: BlockingFact::NoKnownPath,
+                diagnostic_context: None,
+                observed_tick: Tick(3),
+                expires_tick: Tick(40),
+                clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+                baseline_snapshot: None,
+            },
+        )]),
+    };
+
+    record_repair_memory_from_completed_plan(
+        &mut repair_memory,
+        &blocked_memory,
+        &super::CompletedPlanSummary {
+            goal_key: goal,
+            opportunity: OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(successful_place),
+            },
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+        },
+        Tick(10),
+        120,
+        MemoryCapacityProfile::default(),
+    );
+
+    let entry = repair_memory
+        .repairs
+        .get(&worldwake_core::RepairKey {
+            goal_key: goal,
+            alternate_target: successful_place,
+        })
+        .expect("repair success should be recorded");
+    assert_eq!(entry.observed_tick, Tick(10));
+    assert_eq!(entry.expires_tick, Tick(130));
+    assert_eq!(entry.success_count, 1);
+}
+
+#[test]
+fn in_transit_read_phase_records_learned_opportunity_memory_entry() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let actor_place = harness.world.effective_place(harness.actor).unwrap();
+    let mut txn = new_txn(&mut harness.world, 1);
+    txn.set_component_in_transit_on_edge(
+        harness.actor,
+        worldwake_core::InTransitOnEdge {
+            edge_id: TravelEdgeId(1),
+            origin: actor_place,
+            destination: actor_place,
+            departure_tick: Tick(1),
+            arrival_tick: Tick(3),
+        },
+    )
+    .unwrap();
+    commit_txn(txn);
+    let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
+    let mut learned = LearnedOpportunityMemory::default();
+    let learned_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Water,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+
+    record_learned_opportunities_from_read_phase(
+        &view,
+        harness.actor,
+        Some(GoalKey::from(GoalKind::Sleep)),
+        &[OpportunityKey {
+            goal_key: learned_goal,
+            anchor: OpportunityAnchor::Place(actor_place),
+        }],
+        &mut learned,
+        Tick(5),
+        60,
+        MemoryCapacityProfile::default(),
+    );
+
+    let entry = learned
+        .opportunities
+        .get(&OpportunityKey {
+            goal_key: learned_goal,
+            anchor: OpportunityAnchor::Place(actor_place),
+        })
+        .expect("in-transit discovery should be recorded");
+    assert_eq!(entry.observed_tick, Tick(5));
+    assert_eq!(entry.expires_tick, Tick(65));
+    assert_eq!(entry.observed_at, actor_place);
 }

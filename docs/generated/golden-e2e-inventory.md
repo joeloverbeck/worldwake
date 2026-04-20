@@ -43,7 +43,7 @@ Do not hand-edit it.
 - `golden_goal_invalidation_by_another_agent`
 - `golden_unrelated_commodity_change_preserves_frontier_exhaustion`
 - `golden_priority_based_interrupt`
-- `golden_blocked_intent_memory_with_ttl_expiry`
+- `golden_discrepancy_memory_with_ttl_expiry`
 - `golden_deprivation_cascade`
 - `golden_thirst_driven_acquisition`
 - `golden_wash_action`
@@ -170,7 +170,7 @@ Do not hand-edit it.
 - `golden_travel_escalation`
 - `golden_critical_bladder_local_relief`
 - `golden_agent_diversity`
-- `golden_travel_interrupt_from_bladder_escalation`
+- `golden_travel_bladder_escalation_switches_to_relief_between_legs`
 - `golden_latrine_preferred`
 - `golden_wilderness_fallback`
 - `golden_deprivation_accident`

@@ -25,8 +25,8 @@ The argument is the skill directory path. The framework automatically resolves `
 ## Checklist
 
 1. **Read the target skill** — Read the SKILL.md file at the provided path. Parse its name, description, and full content. If the exact path does not resolve, glob for `<path>*/SKILL.md` (appending wildcard + `/SKILL.md`). If that also fails, try `<path>**/SKILL.md`. If exactly one match is found, use it and note the correction. If zero or multiple matches, stop and report the error.
-2. **Read alignment documents** — Read `docs/FOUNDATIONS.md` — skip only if read earlier in this session (fully or via partial reads that cumulatively covered the document), not from memory or training knowledge. If the file exceeds the Read tool's token limit, read the first 200 lines (preamble + principle listing) using offset/limit, or read relevant sections targeted to the audit topic. Multiple partial reads that cumulatively cover the full document satisfy this requirement. System context injection of CLAUDE.md (which summarizes key principles) is acceptable as a supplement but not a replacement for reading FOUNDATIONS.md at least once per session. `CLAUDE.md` is always available via system context injection and does not need explicit reading. For meta-tooling skill targets (e.g., brainstorm, skill-audit, skill-extract-references, skill-consolidate, skill-rebalance-references, and similar process/tooling skills), this FOUNDATIONS.md read may be skipped — alignment will be N/A per Step 4.
-3. **Session reflection** — Review the current conversation context to identify the items below. If the target skill is skill-audit itself (self-audit), use session evidence from any prior audit invocation(s) in this session. The self-audit invocation provides no independent session evidence beyond confirming the skill's flow works. If no prior audit invocation exists in this session, report "No session evidence available — self-audit with no prior invocations produces no findings beyond confirming the skill's flow parses correctly." and skip steps 3-6.
+2. **Read alignment documents** — Read `docs/FOUNDATIONS.md` — skip only if read earlier in this session (fully or via partial reads that cumulatively covered the document), not from memory or training knowledge. If the file exceeds the Read tool's token limit, read the first 200 lines (preamble + principle listing) using offset/limit, or read relevant sections targeted to the audit topic. Multiple partial reads that cumulatively cover the full document satisfy this requirement. System context injection of CLAUDE.md (which summarizes key principles) is acceptable as a supplement but not a replacement for reading FOUNDATIONS.md at least once per session. `CLAUDE.md` is always available via system context injection and does not need explicit reading. For meta-tooling skill targets (e.g., brainstorm, skill-audit, skill-extract-references, skill-consolidate, skill-rebalance-references, and similar process/tooling skills), this FOUNDATIONS.md read may be skipped — alignment will be N/A per Step 4. **Criterion**: a skill counts as meta-tooling for this purpose when its job is process orchestration over specs/tickets/code rather than directly authoring content that becomes part of the simulation. Skills like reassess-spec, spec-to-tickets, post-ticket-review, and learning-audit qualify even though they touch simulation-adjacent artifacts, because the skill's output is process guidance, not simulation behavior.
+3. **Session reflection** — Review the current conversation context to identify the items below. If the target skill is skill-audit itself (self-audit), use session evidence from any prior audit invocation(s) in this session, including any follow-up implementation phases triggered by those audits — the implementation phase exercises the Follow-up implementation guardrails (tag interpretation, edit ordering, cascade handling, finding-key conventions, post-edit verification) and is valid evidence. The self-audit invocation itself provides no independent session evidence beyond confirming the skill's flow works. If no prior audit invocation exists in this session, report "No session evidence available — self-audit with no prior invocations produces no findings beyond confirming the skill's flow parses correctly." and skip steps 3-6.
    - Moments where the skill's instructions were unclear or ambiguous
    - Steps that were skipped, reordered, or worked around
    - Behaviors the skill didn't anticipate (edge cases, unexpected inputs)
@@ -36,7 +36,7 @@ The argument is the skill directory path. The framework automatically resolves `
 4. **Cross-check alignment** — For each finding from step 3, check whether the skill contradicts or fails to implement:
    - Principles from `docs/FOUNDATIONS.md` (reference by foundation number)
    - Conventions from `CLAUDE.md` (reference by section name)
-   - For meta/tooling skills that do not touch simulation design (e.g., skill-audit, skill-extract-references, skill-consolidate), note "N/A — meta-tooling skill, FOUNDATIONS principles do not apply" and move on. Reserve detailed alignment analysis for skills that govern simulation code, specs, or tickets.
+   - For meta/tooling skills that do not touch simulation design (e.g., brainstorm, skill-audit, skill-extract-references, skill-consolidate, skill-rebalance-references, and similar process/tooling skills — see Step 2 criterion for the boundary), note "N/A — meta-tooling skill, FOUNDATIONS principles do not apply" and move on. Reserve detailed alignment analysis for skills that govern simulation code, specs, or tickets.
 5. **Classify findings** — Categorize each finding into one of three buckets:
    - **Issue**: Something broken, misleading, or contradictory in the skill
    - **Improvement**: A refinement to existing behavior that would make the skill more effective
@@ -69,7 +69,7 @@ Output this structure to the conversation (do not write to a file):
 
 [If none: "No issues identified."]
 
-1. **[SEVERITY]** <title>
+1. **[I1] [SEVERITY]** <title>
    - **What happened**: <session evidence — what went wrong or was confusing>
    - **Skill gap**: <what the skill says or fails to say that caused this>
    - **Suggestion**: <how to fix the skill>
@@ -78,7 +78,7 @@ Output this structure to the conversation (do not write to a file):
 
 [If none: "No improvements identified."]
 
-1. **[SEVERITY]** <title>
+1. **[M1] [SEVERITY]** <title>
    - **Current behavior**: <what the skill currently says>
    - **Why improve**: <session evidence or reasoning>
    - **Suggestion**: <proposed change>
@@ -87,7 +87,7 @@ Output this structure to the conversation (do not write to a file):
 
 [If none: "No features identified."]
 
-1. **[SEVERITY]** <title>
+1. **[F1] [SEVERITY]** <title>
    - **What's missing**: <gap description>
    - **Why it fits**: <how this aligns with the skill's stated intent>
    - **Suggestion**: <proposed addition>
@@ -107,7 +107,7 @@ Double-check severity counts against findings before presenting. If a correction
 
 **Single-change Suggestions (no "or" alternatives)**: Each Suggestion must propose exactly one concrete change. If the audit surfaces a genuine either/or tradeoff that cannot be resolved during the audit itself, choose one direction as the primary Suggestion and list the discarded direction as an `Alternative:` sub-line beneath it (e.g., `- **Alternative**: <one-line description of the other approach>`). Follow-up implementation applies the primary unless the user explicitly names the alternative. This prevents ambiguity during "implement all" runs, where the audit executor would otherwise have to make a unilateral choice with no user input.
 
-**Optional `recommended` tag**: Append ` — recommended` to the title line of any finding you want included when the user says "implement recommended." Untagged findings are treated as optional and excluded from "implement recommended" scope (but still included when the user says "implement all"). Example: `1. **[MEDIUM]** Tighten batching threshold — recommended`. If no findings are tagged, "recommended" falls back to "all" per the follow-up-implementation rule.
+**Optional `recommended` tag**: Append ` — recommended` to the title line of any finding you want included when the user says "implement recommended." Untagged findings are treated as optional and excluded from "implement recommended" scope (but still included when the user says "implement all"). Example: `1. **[M2] [MEDIUM]** Tighten batching threshold — recommended`. If no findings are tagged, "recommended" falls back to "all" per the follow-up-implementation rule.
 
 If a finding's conclusion is that no change is needed (the current behavior is sufficient, or the gap is too minor to act on), append "— no change needed" to the Suggestion line. This marks the finding as informational and excludes it from "implement all/recommended" scope during follow-up implementation.
 
@@ -123,6 +123,8 @@ If a finding's conclusion is that no change is needed (the current behavior is s
   **Re-evaluation**: If the codebase or the target skill file changed between the audit report and the follow-up request, re-evaluate each finding against the current state. Discard obsolete findings, adapt shifted ones, and renumber survivors before applying edits.
 
   **Partial implementation**: If the user requests specific findings (e.g., "implement 1 and 3"), check whether skipped findings depend on implemented ones. If so, note the dependency and ask whether to include the dependent finding. If the user requests all findings be implemented (e.g., "implement all", "implement everything"), skip dependency checking and apply all edits in document order. If the user requests "recommended" (e.g., "implement recommended suggestions"), select only findings whose title line is tagged `— recommended`; if no findings are tagged, fall back to "all." For the "recommended" path, also run the same dependency check used for specific-findings requests — flag any untagged finding that an implemented tagged finding depends on, and ask whether to include the dependent finding. Findings that the audit report explicitly marks as "no change needed" or "no change — existing behavior is sufficient" are excluded from "all" and "recommended" scope.
+
+  **Ambiguous plural verbs**: If the request uses a plural-but-ambiguous phrasing ("implement suggestions", "apply the recommendations", "do them", "implement the findings"), default to "all" rather than "recommended." The keyword "recommended" is the only trigger for the tagged-subset path — any other plural verb that doesn't explicitly name the tag convention resolves to "all." This prevents two defensibly-equivalent interpretations from diverging across invocations.
 
   **Edit ordering**: Apply edits in document order (top to bottom) to minimize line-number shifts invalidating later edits. If applying an earlier finding renders a later finding moot (e.g., the target text no longer exists), skip the moot finding and note it in the post-edit verification as "superseded by finding N." If an Edit call fails because a prior edit changed the target text, re-read the file to find the updated text and retry with the corrected `old_string`. If an edit inserts a new numbered step, renumber all subsequent steps and verify that the output summary or other sections referencing step numbers are updated accordingly. When an edit inserts or removes a numbered item, scan preceding edits in the same batch for cross-references to the shifted numbers and fix them in the same edit or immediately after.
 

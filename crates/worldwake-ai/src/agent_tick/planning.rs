@@ -20,15 +20,17 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockedIntentMemory, CognitiveProfile, EntityId, ExecutionBudget,
-    GoalKind, IntentionFrame, Permille, Tick,
+    ActionDefId, ActiveGoal, BlockerMemory, CognitiveProfile, EntityId, ExecutionBudget, GoalKind,
+    IntentionFrame, Permille, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
     SpatialBeliefView,
 };
 
-use super::{current_step, runtime_belief_view, update_frame_for_adopted_plan};
+use super::{
+    current_step, populate_assumptions, runtime_belief_view, update_frame_for_adopted_plan,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CandidatePlanSearch {
@@ -267,7 +269,7 @@ pub(super) fn build_candidate_plans(
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
     committed_opportunity: Option<OpportunityKey>,
-    blocked_memory: &BlockedIntentMemory,
+    blocked_memory: &BlockerMemory,
     current_tick: Tick,
     cognitive: &CognitiveProfile,
     execution_budget: &ExecutionBudget,
@@ -704,11 +706,14 @@ fn has_pending_budget_retry(runtime: &AgentDecisionRuntime, current_tick: Tick) 
         .any(|entry| entry.is_retry_eligible(current_tick))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn adopt_selected_plan(
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
     ranked_candidates: &[RankedGoal],
     selected_plan: PlannedPlan,
     tick: Tick,
@@ -720,6 +725,9 @@ fn adopt_selected_plan(
         adopted_at: tick,
     });
     *jc = update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+    if let Some(frame) = jc.as_mut() {
+        frame.assumptions = populate_assumptions(frame, agent, view);
+    }
     runtime.current_plan = Some(selected_plan);
     runtime.current_step_index = 0;
     runtime.step_in_flight = false;
@@ -763,7 +771,7 @@ pub(super) fn plan_and_validate_next_step(
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
-    blocked_memory: &BlockedIntentMemory,
+    blocked_memory: &BlockerMemory,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
     side_benefit_weight: Permille,
@@ -861,6 +869,8 @@ pub(super) fn plan_and_validate_next_step(
                     active_goal,
                     jc,
                     facility_intents,
+                    &view,
+                    agent,
                     ranked_candidates,
                     selected_plan,
                     tick,
@@ -911,7 +921,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
     ranked_candidates: &[RankedGoal],
-    blocked_memory: &BlockedIntentMemory,
+    blocked_memory: &BlockerMemory,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
     side_benefit_weight: Permille,
@@ -1174,6 +1184,9 @@ pub(super) fn plan_and_validate_next_step_traced(
                 adopted_at: tick,
             });
             *jc = update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+            if let Some(frame) = jc.as_mut() {
+                frame.assumptions = populate_assumptions(frame, agent, &view);
+            }
             runtime.current_plan = Some(selected_plan);
             runtime.current_step_index = 0;
             runtime.step_in_flight = false;
@@ -1309,7 +1322,8 @@ mod tests {
         AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
         OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
-        PlannedStep, ProfileFixture, RankedGoal, build_semantics_table,
+        PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture, RankedGoal,
+        build_semantics_table,
         decision_trace::{
             CompetitionDiscount, SnapshotContinuationOutcome, SourceReliabilityDiscount,
             TargetBeliefPresence,
@@ -1321,10 +1335,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
-        CommodityPurpose, ControlSource, EventLog, ExecutionBudget, HomeostaticNeeds,
-        MerchandiseProfile, PerceptionSource, Permille, Place, Quantity, Tick, Topology,
-        TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_believed_entity_state, build_prototype_world,
+        CommodityPurpose, ContentionIntents, ControlSource, EventLog, ExecutionBudget,
+        FrameAssumption, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille, Place,
+        Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn, build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionHandlerId, ActionHandlerRegistry, ActionPayload,
@@ -1379,8 +1393,24 @@ mod tests {
             switch_margin: reasoning.switch_margin,
             planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
-            unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
+            stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
+            contradicted_belief_backoff_ticks: CognitiveProfile::default()
+                .contradicted_belief_backoff_ticks,
+            improper_state_backoff_ticks: CognitiveProfile::default().improper_state_backoff_ticks,
+            missing_observation_backoff_ticks: CognitiveProfile::default()
+                .missing_observation_backoff_ticks,
+            no_legal_binding_backoff_ticks: CognitiveProfile::default()
+                .no_legal_binding_backoff_ticks,
+            counterparty_refusal_backoff_ticks: CognitiveProfile::default()
+                .counterparty_refusal_backoff_ticks,
+            route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+            search_exhaustion_backoff_ticks: CognitiveProfile::default()
+                .search_exhaustion_backoff_ticks,
+            partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
+            repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
+            learned_opportunity_memory_ticks: CognitiveProfile::default()
+                .learned_opportunity_memory_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -1569,6 +1599,73 @@ mod tests {
         let recipes = RecipeRegistry::new();
         let registries = build_full_action_registries(&recipes).unwrap();
         (registries.defs, registries.handlers, recipes)
+    }
+
+    #[test]
+    fn adopt_selected_plan_populates_expected_commodity_assumption_immediately() {
+        let origin = entity(91);
+        let orchard = entity(92);
+        let mut world = World::new(cargo_topology(origin, orchard)).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let (defs, _handlers, recipes) = build_full_registries();
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut runtime = AgentDecisionRuntime::default();
+        let mut active_goal = None;
+        let mut frame = None;
+        let mut facility_intents = ContentionIntents::default();
+        let ranked_candidates = vec![ranked_goal(acquire_goal(
+            CommodityKind::Apple,
+            OpportunityAnchor::Place(orchard),
+            BTreeSet::new(),
+            BTreeSet::from([orchard]),
+        ))];
+        let goal = ranked_candidates[0].grounded.key;
+        let selected_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(orchard),
+            },
+            goal,
+            vec![PlannedStep {
+                def_id: ActionDefId(1),
+                targets: vec![PlanningEntityRef::Authoritative(orchard)],
+                payload_override: None,
+                op_kind: PlannerOpKind::Travel,
+                estimated_ticks: 1,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+            }],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let view = super::runtime_belief_view(agent, &world, &scheduler, &defs, &recipes);
+
+        super::adopt_selected_plan(
+            &mut runtime,
+            &mut active_goal,
+            &mut frame,
+            &mut facility_intents,
+            &view,
+            agent,
+            &ranked_candidates,
+            selected_plan,
+            Tick(5),
+        );
+
+        let frame = frame.expect("adopting a plan should create an intention frame");
+        assert!(
+            frame
+                .assumptions
+                .contains(&FrameAssumption::CommodityAvailableAt {
+                    commodity: CommodityKind::Apple,
+                    place: orchard,
+                })
+        );
     }
 
     fn ranked_goal(goal: GroundedGoal) -> RankedGoal {
@@ -2168,7 +2265,7 @@ mod tests {
             agent,
             &ranked_candidates,
             None,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             Tick(1),
             &cognitive(&budget),
             &execution_budget(&budget),
@@ -2253,7 +2350,7 @@ mod tests {
             agent,
             &ranked_candidates,
             None,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             Tick(1),
             &cognitive(&budget),
             &execution_budget(&budget),
@@ -2430,7 +2527,7 @@ mod tests {
             agent,
             &ranked_candidates,
             None,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             Tick(1),
             &cognitive(&budget),
             &execution_budget(&budget),
@@ -2676,7 +2773,7 @@ mod tests {
             &mut facility_intents,
             agent,
             &ranked_candidates,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             worldwake_core::Permille::new(0).unwrap(),
             worldwake_core::Permille::new(0).unwrap(),
             worldwake_core::Permille::new(100).unwrap(),
@@ -2854,7 +2951,7 @@ mod tests {
             agent,
             &ranked_candidates,
             None,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             Tick(1),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
@@ -3014,7 +3111,7 @@ mod tests {
             agent,
             &ranked_candidates,
             None,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             Tick(10),
             &cognitive(&budget),
             &execution_budget(&budget),
@@ -3493,7 +3590,7 @@ mod tests {
             agent,
             &ranked_candidates,
             None,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
@@ -3601,7 +3698,7 @@ mod tests {
             agent,
             &ranked_candidates,
             None,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,
@@ -3682,7 +3779,7 @@ mod tests {
             agent,
             &ranked_candidates,
             None,
-            &worldwake_core::BlockedIntentMemory::default(),
+            &worldwake_core::BlockerMemory::default(),
             Tick(10),
             &cognitive(&ProfileFixture {
                 snapshot_travel_horizon: 4,

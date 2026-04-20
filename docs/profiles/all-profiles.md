@@ -12,6 +12,7 @@ Always applied to every agent with defaults. Scenario definitions may override i
 - [ArtifactPostingProfile](#artifactpostingprofile) — Per-agent defaults for artifact TTL when posting notices and bounties.
 - [CognitiveProfile](#cognitiveprofile) — Stable per-agent cognitive reasoning parameters used by the AI layer.
 - [CommunicationProfile](#communicationprofile) — Per-agent parameters controlling communication acceptance by class.
+- [DriveEscalationProfile](#driveescalationprofile) — Per-agent escalation profile for sustained critical homeostatic needs.
 - [EpistemicDispositionProfile](#epistemicdispositionprofile) — Per-agent parameters governing deliberate epistemic behavior.
 - [ExplorationProfile](#explorationprofile) — Stable per-agent parameters governing need-driven exploration pressure.
 - [IntentionDispositionProfile](#intentiondispositionprofile) — Per-agent disposition profile governing intention frame patience and commitment switch behavior across all domains.
@@ -29,6 +30,7 @@ Applied only when the scenario definition includes them. Agents without these pr
 - [CommodityValuationProfile](#commodityvaluationprofile) — Stable per-agent limits for bounded indirect commodity valuation.
 - [ContentionDispositionProfile](#contentiondispositionprofile) — Per-agent tolerance for waiting in generalized contention queues.
 - [DisposalProfile](#disposalprofile) — Stable per-agent parameters governing when inventory disposal becomes worthwhile.
+- [DiversificationProfile](#diversificationprofile) — Per-agent parameters governing proactive diversification exploration.
 - [JusticeDispositionProfile](#justicedispositionprofile) — Per-agent parameters governing accusation and punishment behavior.
 - [MerchandiseProfile](#merchandiseprofile) — Concrete merchant sale intent for an agent.
 - [PatrolProfile](#patrolprofile) — Stable per-agent parameters that shape patrol behavior.
@@ -42,6 +44,7 @@ Applied only when the scenario definition includes them. Agents without these pr
 
 Attached to non-agent entities (places, offices, etc.) or not referenced in the agent spawn path.
 
+- [MemoryCapacityProfile](#memorycapacityprofile) — (no description)
 - [OfficeForceProfile](#officeforceprofile) — Explicit force-succession timing policy attached to force-law offices.
 - [PlaceVisibilityProfile](#placevisibilityprofile) — Environmental visibility parameters attached to place entities.
 
@@ -82,8 +85,18 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `switch_margin` | `Permille` | Utility margin a new goal must exceed over the current goal to trigger a goal switch during execution. (default: `Permille::new_unchecked(100)`) |
 | `planning_switch_margin` | `Permille` | Utility margin a challenger plan must exceed over the current plan to trigger a plan switch. (default: `Permille::new_unchecked(150)`) |
 | `transient_block_ticks` | `u32` | Ticks before a transiently blocked goal is re-evaluated. (default: `20`) |
-| `unknown_block_ticks` | `u32` | Ticks before a goal blocked for unknown reasons is re-evaluated. (default: `5`) |
 | `structural_block_ticks` | `u32` | Ticks before a structurally blocked goal (no valid plan exists) is re-evaluated. (default: `200`) |
+| `stale_belief_backoff_ticks` | `u32` | TTL for stale-belief discrepancies before retry. (default: `default_stale_belief_backoff_ticks()`) |
+| `contradicted_belief_backoff_ticks` | `u32` | TTL for contradicted-belief discrepancies before retry. (default: `default_contradicted_belief_backoff_ticks()`) |
+| `improper_state_backoff_ticks` | `u32` | TTL for planner-state discrepancies before retry. (default: `default_improper_state_backoff_ticks()`) |
+| `missing_observation_backoff_ticks` | `u32` | TTL for missing-observation discrepancies before retry. (default: `default_missing_observation_backoff_ticks()`) |
+| `no_legal_binding_backoff_ticks` | `u32` | TTL for legal-binding discrepancies before retry. (default: `default_no_legal_binding_backoff_ticks()`) |
+| `counterparty_refusal_backoff_ticks` | `u32` | TTL for counterparty-refusal discrepancies before retry. (default: `default_counterparty_refusal_backoff_ticks()`) |
+| `route_unknown_backoff_ticks` | `u32` | TTL for route-unknown discrepancies before retry. (default: `default_route_unknown_backoff_ticks()`) |
+| `search_exhaustion_backoff_ticks` | `u32` | TTL for search-budget-exhaustion discrepancies before retry. (default: `default_search_exhaustion_backoff_ticks()`) |
+| `partial_drift_backoff_ticks` | `u32` | TTL for partial-execution-drift discrepancies before retry. (default: `default_partial_drift_backoff_ticks()`) |
+| `repair_memory_ticks` | `u32` | Ticks a successful repair remains ranking-relevant before expiring. (default: `default_repair_memory_ticks()`) |
+| `learned_opportunity_memory_ticks` | `u32` | Ticks a learned opportunity remains ranking-relevant before expiring. (default: `default_learned_opportunity_memory_ticks()`) |
 | `initial_cooldown_ticks` | `u32` | Base cooldown ticks after a goal fails before the agent retries it. (default: `4`) |
 | `max_cooldown_ticks` | `u32` | Maximum cooldown ticks after repeated failures (exponential backoff cap). (default: `64`) |
 | `max_snapshot_entities_per_place` | `u16` | Maximum entities included per place in the planner's world snapshot. (default: `50`) |
@@ -105,6 +118,21 @@ Per-agent parameters controlling communication acceptance by class.
 | `alarm_acceptance` | `Permille` | Probability of accepting alarm-class communications (urgent safety warnings). (default: `Permille::new_unchecked(950)`) |
 | `testimony_acceptance` | `Permille` | Probability of accepting testimony-class communications (direct observations from others). (default: `Permille::new_unchecked(800)`) |
 | `gossip_acceptance` | `Permille` | Probability of accepting gossip-class communications (secondhand social information). (default: `Permille::new_unchecked(600)`) |
+
+---
+
+## DriveEscalationProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/drive_escalation_profile.rs:38`
+
+Per-agent escalation profile for sustained critical homeostatic needs.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `per_need` | `BTreeMap<HomeostaticNeedId, DriveEscalationParams>` | Per-need overrides. Missing entries fall back to `default_per_need`. |
+| `default_per_need` | `DriveEscalationParams` | *(undocumented)* |
 
 ---
 
@@ -165,7 +193,7 @@ Per-agent disposition profile governing intention frame patience and commitment 
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/needs.rs:84`
+**Source**: `crates/worldwake-core/src/needs.rs:117`
 
 Per-agent physiology parameters that drive metabolism and recovery.
 
@@ -211,7 +239,7 @@ Per-agent parameters controlling how obligation-class goals decay after repeated
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2398`
+**Source**: `crates/worldwake-core/src/belief.rs:2458`
 
 Per-agent parameters controlling belief retention and observation quality.
 
@@ -253,7 +281,7 @@ Per-agent experience-based route and source preference parameters.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2450`
+**Source**: `crates/worldwake-core/src/belief.rs:2510`
 
 Per-agent parameters controlling what information an agent relays and accepts.
 
@@ -331,6 +359,27 @@ Stable per-agent parameters governing when inventory disposal becomes worthwhile
 | Field | Type | Description |
 |-------|------|-------------|
 | `capacity_strain_threshold` | `Permille` | Carry capacity usage fraction above which the agent considers disposing of low-value items. (default: `Permille::new_unchecked(800)`) |
+
+---
+
+## DiversificationProfile
+
+**Category**: Optional (scenario-specified only)
+
+**Source**: `crates/worldwake-core/src/diversification.rs:6`
+
+Per-agent parameters governing proactive diversification exploration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `base_curiosity` | `Permille` | *(undocumented)* (default: `Permille::new_unchecked(400)`) |
+| `comfort_threshold` | `Permille` | *(undocumented)* (default: `Permille::new_unchecked(450)`) |
+| `curiosity_buildup_rate` | `Permille` | *(undocumented)* (default: `Permille::new_unchecked(5)`) |
+| `exploration_cooldown_ticks` | `u32` | *(undocumented)* (default: `60`) |
+| `familiarity_per_visit` | `Permille` | *(undocumented)* (default: `Permille::new_unchecked(150)`) |
+| `familiarity_recovery_per_tick` | `Permille` | *(undocumented)* (default: `Permille::new_unchecked(2)`) |
+| `familiarity_floor` | `Permille` | *(undocumented)* (default: `Permille::new_unchecked(50)`) |
+| `max_exploration_hops` | `u16` | *(undocumented)* (default: `3`) |
 
 ---
 
@@ -474,6 +523,18 @@ Per-agent parameters governing investigation behavior. Enables agent diversity (
 | `violation_memory_retention_ticks` | `u32` | How many ticks before a recorded violation expires from memory. |
 | `investigation_motive_weight` | `Permille` | Base motive weight for investigation goals. |
 | `ownership_motive_bonus` | `Permille` | Additional motive when the agent owns the missing entity. |
+
+---
+
+## MemoryCapacityProfile
+
+**Category**: Non-agent / special-purpose
+
+**Source**: `crates/worldwake-core/src/memory_capacity_profile.rs:5`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `memory_capacity` | `u32` | *(undocumented)* (default: `default_memory_capacity()`) |
 
 ---
 

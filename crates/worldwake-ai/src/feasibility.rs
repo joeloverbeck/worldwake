@@ -1,13 +1,12 @@
 //! Cheap feasibility pre-check for goal candidates.
 //!
 //! Estimates whether a goal is locally actionable before committing full GOAP
-//! search budget. Uses only `GoalBeliefView`, `BlockedIntentMemory`, and
+//! search budget. Uses only `GoalBeliefView`, `BlockerMemory`, and
 //! `IntentionFrame` — never authoritative world state.
 
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    BlockedIntentMemory, CommodityKind, EntityId, FrameState, GoalKind, IntentionFrame, Quantity,
-    Tick,
+    BlockerMemory, CommodityKind, EntityId, FrameState, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::GoalBeliefView;
 
@@ -35,7 +34,7 @@ pub fn feasibility_hint(
     view: &dyn GoalBeliefView,
     agent: EntityId,
     goal: &RankedGoal,
-    blocked_memory: &BlockedIntentMemory,
+    blocked_memory: &BlockerMemory,
     current_frame: Option<&IntentionFrame>,
     current_tick: Tick,
 ) -> FeasibilityHint {
@@ -73,7 +72,7 @@ fn check_exhausted_frame(
 /// return `Unlikely`.
 fn check_blocker_memory(
     goal: &RankedGoal,
-    blocked_memory: &BlockedIntentMemory,
+    blocked_memory: &BlockerMemory,
     current_tick: Tick,
 ) -> Option<FeasibilityHint> {
     let has_live_blocker = blocked_memory.intents.values().any(|intent| {
@@ -274,7 +273,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ArtifactPostingContext, BeliefConfidencePolicy, BlockedIntent, BlockerKey, BlockingFact,
+        ArtifactPostingContext, BeliefConfidencePolicy, Blocker, BlockerKey, BlockingFact,
         BountyTarget, BountyTerms, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
         IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile, NoticeTopic,
@@ -537,8 +536,8 @@ mod tests {
         g
     }
 
-    fn empty_blocked_memory() -> BlockedIntentMemory {
-        BlockedIntentMemory::default()
+    fn empty_blocked_memory() -> BlockerMemory {
+        BlockerMemory::default()
     }
 
     fn make_frame(goal_key: GoalKey, state: FrameState) -> IntentionFrame {
@@ -554,8 +553,8 @@ mod tests {
         }
     }
 
-    fn make_blocker(goal_key: GoalKey, expires: Tick) -> BlockedIntent {
-        BlockedIntent {
+    fn make_blocker(goal_key: GoalKey, expires: Tick) -> Blocker {
+        Blocker {
             blocker_key: BlockerKey {
                 goal_key,
                 place: None,

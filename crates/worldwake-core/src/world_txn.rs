@@ -1990,7 +1990,7 @@ mod tests {
     use super::WorldTxn;
     use crate::{
         AcquisitionExhaustionTracker, AgentBeliefStore, ArtifactPostingProfile, BeliefStoreDiff,
-        BelievedEntityState, BelievedInstitutionalClaim, BlockedIntentMemory, CognitiveProfile,
+        BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory, CognitiveProfile,
         CommunicationProfile, DemandMemory, DisposalProfile, DriveEscalationProfile,
         EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, FactionData,
         FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
@@ -2001,7 +2001,7 @@ mod tests {
         TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
-            sample_blocked_intent_memory, sample_demand_memory, sample_merchandise_profile,
+            sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
             sample_utility_profile,
         },
@@ -4966,31 +4966,31 @@ mod tests {
     }
 
     #[test]
-    fn set_component_blocked_intent_memory_records_component_delta_and_updates_world_on_commit() {
+    fn set_component_blocker_memory_records_component_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before: BlockedIntentMemory = sample_blocked_intent_memory();
+        let before: BlockerMemory = sample_blocker_memory();
         let mut after = before.clone();
         for intent in after.intents.values_mut() {
             intent.expires_tick = Tick(21);
         }
         world
-            .insert_component_blocked_intent_memory(agent, before.clone())
+            .insert_component_blocker_memory(agent, before.clone())
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.set_component_blocked_intent_memory(agent, after.clone())
+        txn.set_component_blocker_memory(agent, after.clone())
             .unwrap();
 
         assert_eq!(
             txn.deltas(),
             &[StateDelta::Component(ComponentDelta::Set {
                 entity: agent,
-                component_kind: ComponentKind::BlockedIntentMemory,
-                before: Some(ComponentValue::BlockedIntentMemory(before)),
-                after: ComponentValue::BlockedIntentMemory(after.clone()),
+                component_kind: ComponentKind::BlockerMemory,
+                before: Some(ComponentValue::BlockerMemory(before)),
+                after: ComponentValue::BlockerMemory(after.clone()),
             })]
         );
 
@@ -4999,10 +4999,7 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas().len(), 1);
-        assert_eq!(
-            world.get_component_blocked_intent_memory(agent),
-            Some(&after)
-        );
+        assert_eq!(world.get_component_blocker_memory(agent), Some(&after));
     }
 
     #[test]
@@ -5675,25 +5672,25 @@ mod tests {
     }
 
     #[test]
-    fn clear_component_blocked_intent_memory_records_removed_delta_and_updates_world_on_commit() {
+    fn clear_component_blocker_memory_records_removed_delta_and_updates_world_on_commit() {
         let mut world = World::new(test_topology()).unwrap();
         let agent = world
             .create_agent("Aster", ControlSource::Ai, Tick(1))
             .unwrap();
-        let before = sample_blocked_intent_memory();
+        let before = sample_blocker_memory();
         world
-            .insert_component_blocked_intent_memory(agent, before.clone())
+            .insert_component_blocker_memory(agent, before.clone())
             .unwrap();
 
         let mut txn = new_txn(&mut world);
-        txn.clear_component_blocked_intent_memory(agent).unwrap();
+        txn.clear_component_blocker_memory(agent).unwrap();
 
         assert_eq!(
             txn.deltas(),
             &[StateDelta::Component(ComponentDelta::Removed {
                 entity: agent,
-                component_kind: ComponentKind::BlockedIntentMemory,
-                before: ComponentValue::BlockedIntentMemory(before),
+                component_kind: ComponentKind::BlockerMemory,
+                before: ComponentValue::BlockerMemory(before),
             })]
         );
 
@@ -5702,7 +5699,7 @@ mod tests {
         let record = log.get(event_id).unwrap();
 
         assert_eq!(record.state_deltas().len(), 1);
-        assert_eq!(world.get_component_blocked_intent_memory(agent), None);
+        assert_eq!(world.get_component_blocker_memory(agent), None);
     }
 
     #[test]

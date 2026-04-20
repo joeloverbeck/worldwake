@@ -4,9 +4,10 @@ use crate::{
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
-    BlockedIntent, BlockedIntentMemory, BlockerKey, BlockingFact, CognitiveProfile,
-    ContentionIntents, EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain,
-    IntentionFrame, Permille, SuspensionReason, Tick,
+    Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, CommodityKind,
+    ContentionIntents, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
+    EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame,
+    Permille, Quantity, SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -136,7 +137,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
     frame: Option<&IntentionFrame>,
     runtime: &mut AgentDecisionRuntime,
     active_goal: Option<worldwake_core::GoalKey>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     facility_intents: &mut ContentionIntents,
     agent: EntityId,
     step: &PlannedStep,
@@ -171,7 +172,7 @@ pub(super) fn handle_recoverable_travel_step_blockage(
                 .map(|plan| plan.goal)
                 .expect("active frame travel must retain a current goal")
         });
-        blocked_memory.record(BlockedIntent {
+        blocked_memory.record(Blocker {
             blocker_key: BlockerKey {
                 goal_key,
                 place: blocked_leg_target(step),
@@ -210,9 +211,66 @@ pub(super) enum AssumptionEvalResult {
     /// A recoverable assumption failed — frame should be suspended.
     RecoverableFailure(SuspensionReason),
     /// A critical assumption failed — frame should be exhausted.
-    CriticalFailure,
+    CriticalFailure(FrameAssumption),
     /// Evaluation was deferred (contains `NoCriticalThreat` that needs ranked candidates).
     Deferred,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum AvailabilityVerdict {
+    Believed,
+    Refuted,
+    UnknownOrStale,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn assess_commodity_availability(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    commodity: CommodityKind,
+    place: EntityId,
+) -> AvailabilityVerdict {
+    if view.effective_place(agent) == Some(place) {
+        let found_local_match = view.entities_at(place).into_iter().any(|entity| {
+            view.item_lot_commodity(entity) == Some(commodity)
+                || view.resource_source(entity).is_some_and(|source| {
+                    source.commodity == commodity && source.available_quantity > Quantity(0)
+                })
+        });
+        return if found_local_match {
+            AvailabilityVerdict::Believed
+        } else {
+            AvailabilityVerdict::Refuted
+        };
+    }
+
+    let Some(store) = view.agent_belief_store(agent) else {
+        return AvailabilityVerdict::UnknownOrStale;
+    };
+
+    let mut saw_place_belief = false;
+    for state in store.known_entities.values() {
+        if state.last_known_place != Some(place) {
+            continue;
+        }
+        saw_place_belief = true;
+        let believed_source = state.resource_source.as_ref().is_some_and(|source| {
+            source.commodity == commodity && source.available_quantity > Quantity(0)
+        });
+        let believed_inventory = state
+            .last_known_inventory
+            .get(&commodity)
+            .copied()
+            .unwrap_or(Quantity(0))
+            > Quantity(0);
+        if believed_source || believed_inventory {
+            return AvailabilityVerdict::Believed;
+        }
+    }
+
+    let _ = saw_place_belief;
+    AvailabilityVerdict::UnknownOrStale
 }
 
 /// Populate assumptions for an intention frame based on its domain and the
@@ -220,19 +278,23 @@ pub(super) enum AssumptionEvalResult {
 /// method on `IntentionFrame`) to keep `worldwake-core` free of `BeliefView`
 /// dependencies.
 pub(super) fn populate_assumptions(
-    domain: &IntentionDomain,
+    frame: &IntentionFrame,
     agent: EntityId,
     view: &dyn RuntimeBeliefView,
 ) -> Vec<FrameAssumption> {
+    let domain = &frame.domain;
     let current_place = view.effective_place(agent);
     match *domain {
         IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination } => {
-            let mut assumptions = Vec::with_capacity(1);
+            let mut assumptions = Vec::with_capacity(2);
             if let Some(from) = current_place {
                 assumptions.push(FrameAssumption::RouteExists {
                     from,
                     to: destination,
                 });
+            }
+            if let Some((commodity, place)) = frame.expected_commodity() {
+                assumptions.push(FrameAssumption::CommodityAvailableAt { commodity, place });
             }
             assumptions
         }
@@ -274,10 +336,10 @@ pub(super) fn populate_assumptions(
 /// `NoCriticalThreat` is skipped (returns `Deferred` if it was the only
 /// assumption that could fail). If `Some`, it is evaluated immediately.
 ///
-/// `CommodityAvailableAt` is stubbed as always-true (future work).
 pub(super) fn evaluate_assumptions(
     assumptions: &[FrameAssumption],
     view: &dyn RuntimeBeliefView,
+    agent: EntityId,
     ranked_candidates: Option<&[RankedGoal]>,
 ) -> AssumptionEvalResult {
     let mut has_deferred = false;
@@ -286,7 +348,7 @@ pub(super) fn evaluate_assumptions(
         match *assumption {
             FrameAssumption::TargetAlive(entity) => {
                 if !view.is_alive(entity) {
-                    return AssumptionEvalResult::CriticalFailure;
+                    return AssumptionEvalResult::CriticalFailure(*assumption);
                 }
             }
             FrameAssumption::RouteExists { from, to } => {
@@ -310,8 +372,14 @@ pub(super) fn evaluate_assumptions(
                     has_deferred = true;
                 }
             }
-            FrameAssumption::CommodityAvailableAt { .. } => {
-                // Stubbed as always-true — future work.
+            FrameAssumption::CommodityAvailableAt { commodity, place } => {
+                match assess_commodity_availability(view, agent, commodity, place) {
+                    AvailabilityVerdict::Believed => {}
+                    AvailabilityVerdict::Refuted => {
+                        return AssumptionEvalResult::CriticalFailure(*assumption);
+                    }
+                    AvailabilityVerdict::UnknownOrStale => has_deferred = true,
+                }
             }
         }
     }
@@ -331,7 +399,7 @@ pub(super) fn apply_assumption_result(
     runtime: &mut AgentDecisionRuntime,
 ) -> IntentionFrame {
     match result {
-        AssumptionEvalResult::CriticalFailure => {
+        AssumptionEvalResult::CriticalFailure(_) => {
             runtime.last_frame_clear_reason = Some(FrameClearReason::AssumptionFailed);
             IntentionFrame {
                 state: FrameState::Exhausted,
@@ -361,7 +429,7 @@ pub(super) fn apply_assumption_result(
 }
 
 /// Extract the domain-specific target entity for a `BlockerKey` from an
-/// `IntentionDomain`. Used when creating `BlockedIntent`s on frame exhaustion
+/// `IntentionDomain`. Used when creating `Blocker`s on frame exhaustion
 /// (patience or assumption failure).
 pub(super) fn frame_blocker_target(domain: &IntentionDomain) -> Option<EntityId> {
     match *domain {
@@ -375,7 +443,7 @@ pub(super) fn frame_blocker_target(domain: &IntentionDomain) -> Option<EntityId>
 }
 
 /// Check whether a frame's `stalled_ticks` has reached `patience_limit` after an
-/// increment. If so, record a `BlockedIntent` with `PatienceExhausted`,
+/// increment. If so, record a `Blocker` with `PatienceExhausted`,
 /// transition the frame to `Exhausted`, clear the plan, and return `true`.
 ///
 /// The caller must have already incremented `frame.stalled_ticks`. This
@@ -384,7 +452,7 @@ pub(super) fn frame_blocker_target(domain: &IntentionDomain) -> Option<EntityId>
 pub(super) fn check_patience_exhaustion(
     frame: &IntentionFrame,
     agent_place: Option<EntityId>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocked_memory: &mut BlockerMemory,
     facility_intents: &mut ContentionIntents,
     runtime: &mut AgentDecisionRuntime,
     tick: Tick,
@@ -393,7 +461,7 @@ pub(super) fn check_patience_exhaustion(
     if frame.stalled_ticks < frame.patience_limit {
         return false;
     }
-    blocked_memory.record(BlockedIntent {
+    blocked_memory.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: frame.goal,
             place: agent_place,
@@ -416,28 +484,45 @@ pub(super) fn check_patience_exhaustion(
     true
 }
 
-/// Record a `BlockedIntent` with `AssumptionFailed` for a frame whose critical
-/// assumption has failed.
-pub(super) fn record_assumption_failure_blocked_intent(
+/// Record a typed discrepancy for a frame whose critical assumption has
+/// failed. Pre-S109 this path emitted `BlockingFact::AssumptionFailed`
+/// recorded with `BlockerClearingCondition::TtlOnly` and a TTL of
+/// `structural_block_ticks` (200 by default). The S109 migration must
+/// preserve that structural suppression window, but commodity-availability
+/// failures also need a place-level clearing path so fresh local evidence can
+/// unblock the goal before TTL expiry. Other assumption failures remain
+/// TTL-only because re-perceiving the same target does not prove that the
+/// failed plan-level assumption is now resolved.
+pub(super) fn record_assumption_failure(
     frame: &IntentionFrame,
     agent_place: Option<EntityId>,
-    blocked_memory: &mut BlockedIntentMemory,
+    blocker_target: Option<EntityId>,
+    discrepancy_memory: &mut DiscrepancyMemory,
     tick: Tick,
     structural_block_ticks: u32,
 ) {
-    blocked_memory.record(BlockedIntent {
+    let target = blocker_target.or_else(|| frame_blocker_target(&frame.domain));
+    let clearing_condition = frame
+        .expected_commodity()
+        .map_or(DiscrepancyClearing::TtlExpiry, |(commodity, place)| {
+            DiscrepancyClearing::CommodityAvailabilityChanged { commodity, place }
+        });
+    let discrepancy = if target.is_some() {
+        Discrepancy::BeliefContradicted
+    } else {
+        Discrepancy::PartialExecutionDrift
+    };
+    discrepancy_memory.record(DiscrepancyEntry {
         blocker_key: BlockerKey {
             goal_key: frame.goal,
             place: agent_place,
-            target: frame_blocker_target(&frame.domain),
+            target,
             action_def: None,
         },
-        blocking_fact: BlockingFact::AssumptionFailed,
-        diagnostic_context: None,
+        discrepancy,
         observed_tick: tick,
         expires_tick: tick + u64::from(structural_block_ticks),
-        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
-        baseline_snapshot: None,
+        clearing_condition,
     });
 }
 
@@ -452,10 +537,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BeliefConfidencePolicy, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDispositionProfile, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
+        DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
+        IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        PerceptionSource, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -469,6 +555,10 @@ mod tests {
         alive: BTreeSet<EntityId>,
         places: BTreeMap<EntityId, EntityId>,
         routes: BTreeSet<(EntityId, EntityId)>,
+        entities_at: BTreeMap<EntityId, Vec<EntityId>>,
+        item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        resource_sources: BTreeMap<EntityId, ResourceSource>,
+        belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
     }
 
     impl MockBeliefView {
@@ -477,6 +567,10 @@ mod tests {
                 alive: BTreeSet::new(),
                 places: BTreeMap::new(),
                 routes: BTreeSet::new(),
+                entities_at: BTreeMap::new(),
+                item_lot_commodities: BTreeMap::new(),
+                resource_sources: BTreeMap::new(),
+                belief_stores: BTreeMap::new(),
             }
         }
     }
@@ -532,8 +626,8 @@ mod tests {
         fn is_in_transit(&self, _entity: EntityId) -> bool {
             false
         }
-        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at.get(&place).cloned().unwrap_or_default()
         }
         fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
@@ -581,6 +675,9 @@ mod tests {
             _agent: EntityId,
         ) -> Option<IntentionDispositionProfile> {
             None
+        }
+        fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+            self.belief_stores.get(&agent)
         }
     }
 
@@ -655,8 +752,8 @@ mod tests {
         fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
             Quantity(0)
         }
-        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
-            None
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.item_lot_commodities.get(&entity).copied()
         }
         fn item_lot_consumable_profile(
             &self,
@@ -685,8 +782,8 @@ mod tests {
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
-        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
-            None
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
         }
         fn has_production_job(&self, _entity: EntityId) -> bool {
             false
@@ -744,6 +841,101 @@ mod tests {
         }
     }
 
+    fn observed_entity_state(place: EntityId) -> BelievedEntityState {
+        let mut state = BelievedEntityState::single_observation_defaults(
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
+        state.last_known_place = Some(place);
+        state
+    }
+
+    fn store_with_known_entity(entity: EntityId, state: BelievedEntityState) -> AgentBeliefStore {
+        let mut store = AgentBeliefStore::new();
+        store.known_entities.insert(entity, state);
+        store
+    }
+
+    #[test]
+    fn assess_commodity_availability_co_located_lot_returns_believed() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let lot = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![lot]);
+        view.item_lot_commodities.insert(lot, CommodityKind::Apple);
+
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::Believed);
+    }
+
+    #[test]
+    fn assess_commodity_availability_co_located_resource_source_returns_believed() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let source = make_entity(21);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(5),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::Believed);
+    }
+
+    #[test]
+    fn assess_commodity_availability_co_located_no_match_returns_refuted() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let lot = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![lot]);
+        view.item_lot_commodities.insert(lot, CommodityKind::Bread);
+
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::Refuted);
+    }
+
+    #[test]
+    fn assess_commodity_availability_belief_backed_lot_returns_believed() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let remembered_lot = make_entity(30);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, make_entity(11));
+        let mut state = observed_entity_state(place);
+        state
+            .last_known_inventory
+            .insert(CommodityKind::Apple, Quantity(2));
+        view.belief_stores
+            .insert(agent, store_with_known_entity(remembered_lot, state));
+
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::Believed);
+    }
+
+    #[test]
+    fn assess_commodity_availability_no_belief_returns_unknown_or_stale() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, make_entity(11));
+
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::UnknownOrStale);
+    }
+
     // ── populate_assumptions tests ──
 
     #[test]
@@ -754,9 +946,12 @@ mod tests {
         let mut view = MockBeliefView::new();
         view.alive.insert(agent);
         view.places.insert(agent, place_a);
+        let frame = make_frame(
+            IntentionDomain::Travel { destination: dest },
+            FrameState::Active,
+        );
 
-        let assumptions =
-            populate_assumptions(&IntentionDomain::Travel { destination: dest }, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(
             assumptions,
             vec![FrameAssumption::RouteExists {
@@ -777,8 +972,9 @@ mod tests {
         view.alive.insert(patient);
         view.places.insert(agent, place_a);
         view.places.insert(patient, place_b);
+        let frame = make_frame(IntentionDomain::Care { patient }, FrameState::Active);
 
-        let assumptions = populate_assumptions(&IntentionDomain::Care { patient }, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(
             assumptions,
             vec![
@@ -801,15 +997,15 @@ mod tests {
         view.alive.insert(agent);
         view.alive.insert(ward);
         view.places.insert(agent, place_a);
-
-        let assumptions = populate_assumptions(
-            &IntentionDomain::Escort {
+        let frame = make_frame(
+            IntentionDomain::Escort {
                 ward,
                 destination: dest,
             },
-            agent,
-            &view,
+            FrameState::Active,
         );
+
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(
             assumptions,
             vec![
@@ -830,9 +1026,12 @@ mod tests {
         let mut view = MockBeliefView::new();
         view.alive.insert(agent);
         view.places.insert(agent, place_a);
+        let frame = make_frame(
+            IntentionDomain::Errand { destination: dest },
+            FrameState::Active,
+        );
 
-        let assumptions =
-            populate_assumptions(&IntentionDomain::Errand { destination: dest }, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(
             assumptions,
             vec![FrameAssumption::RouteExists {
@@ -846,9 +1045,48 @@ mod tests {
     fn populate_generic_produces_no_critical_threat() {
         let agent = make_entity(0);
         let view = MockBeliefView::new();
+        let frame = make_frame(IntentionDomain::Generic, FrameState::Active);
 
-        let assumptions = populate_assumptions(&IntentionDomain::Generic, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view);
         assert_eq!(assumptions, vec![FrameAssumption::NoCriticalThreat]);
+    }
+
+    #[test]
+    fn populate_travel_with_acquire_commodity_produces_route_and_commodity() {
+        let agent = make_entity(0);
+        let place_a = make_entity(10);
+        let dest = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        view.places.insert(agent, place_a);
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            domain: IntentionDomain::Travel { destination: dest },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(0),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        };
+
+        let assumptions = populate_assumptions(&frame, agent, &view);
+        assert_eq!(
+            assumptions,
+            vec![
+                FrameAssumption::RouteExists {
+                    from: place_a,
+                    to: dest,
+                },
+                FrameAssumption::CommodityAvailableAt {
+                    commodity: CommodityKind::Apple,
+                    place: dest,
+                },
+            ]
+        );
     }
 
     // ── evaluate_assumptions tests ──
@@ -861,9 +1099,14 @@ mod tests {
         let result = evaluate_assumptions(
             &[FrameAssumption::TargetAlive(dead_entity)],
             &view,
+            make_entity(0),
             Some(&[]),
         );
-        assert_eq!(result, AssumptionEvalResult::CriticalFailure);
+        assert!(matches!(
+            result,
+            AssumptionEvalResult::CriticalFailure(FrameAssumption::TargetAlive(entity))
+                if entity == dead_entity
+        ));
     }
 
     #[test]
@@ -875,6 +1118,7 @@ mod tests {
         let result = evaluate_assumptions(
             &[FrameAssumption::RouteExists { from, to }],
             &view,
+            make_entity(0),
             Some(&[]),
         );
         assert_eq!(
@@ -891,6 +1135,7 @@ mod tests {
         let result = evaluate_assumptions(
             &[FrameAssumption::NoCriticalThreat],
             &view,
+            make_entity(0),
             Some(&candidates),
         );
         assert_eq!(
@@ -914,6 +1159,7 @@ mod tests {
                 FrameAssumption::RouteExists { from, to },
             ],
             &view,
+            make_entity(0),
             Some(&[]),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
@@ -923,20 +1169,114 @@ mod tests {
     fn no_critical_threat_without_candidates_returns_deferred() {
         let view = MockBeliefView::new();
 
-        let result = evaluate_assumptions(&[FrameAssumption::NoCriticalThreat], &view, None);
+        let result = evaluate_assumptions(
+            &[FrameAssumption::NoCriticalThreat],
+            &view,
+            make_entity(0),
+            None,
+        );
         assert_eq!(result, AssumptionEvalResult::Deferred);
     }
 
     #[test]
-    fn commodity_available_at_stubbed_as_pass() {
-        let view = MockBeliefView::new();
+    fn evaluate_commodity_available_at_returns_critical_failure_when_refuted() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let lot = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![lot]);
+        view.item_lot_commodities.insert(lot, CommodityKind::Bread);
 
         let result = evaluate_assumptions(
             &[FrameAssumption::CommodityAvailableAt {
-                commodity: CommodityKind::Grain,
-                place: make_entity(10),
+                commodity: CommodityKind::Apple,
+                place,
             }],
             &view,
+            agent,
+            Some(&[]),
+        );
+        assert_eq!(
+            result,
+            AssumptionEvalResult::CriticalFailure(FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            })
+        );
+    }
+
+    #[test]
+    fn evaluate_commodity_available_at_returns_all_pass_when_believed() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let lot = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, make_entity(11));
+        let mut state = observed_entity_state(place);
+        state
+            .last_known_inventory
+            .insert(CommodityKind::Apple, Quantity(2));
+        view.belief_stores
+            .insert(agent, store_with_known_entity(lot, state));
+
+        let result = evaluate_assumptions(
+            &[FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            }],
+            &view,
+            agent,
+            Some(&[]),
+        );
+        assert_eq!(result, AssumptionEvalResult::AllPass);
+    }
+
+    #[test]
+    fn evaluate_commodity_available_at_returns_deferred_when_unknown() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, make_entity(11));
+
+        let result = evaluate_assumptions(
+            &[FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            }],
+            &view,
+            agent,
+            Some(&[]),
+        );
+        assert_eq!(result, AssumptionEvalResult::Deferred);
+    }
+
+    #[test]
+    fn evaluate_commodity_available_at_co_located_resource_source_returns_all_pass() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let source = make_entity(21);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(5),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let result = evaluate_assumptions(
+            &[FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            }],
+            &view,
+            agent,
             Some(&[]),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
@@ -956,7 +1296,7 @@ mod tests {
 
         let result = apply_assumption_result(
             &frame,
-            &AssumptionEvalResult::CriticalFailure,
+            &AssumptionEvalResult::CriticalFailure(FrameAssumption::TargetAlive(make_entity(99))),
             Tick(5),
             &mut runtime,
         );
@@ -1204,5 +1544,172 @@ mod tests {
     #[test]
     fn frame_blocker_target_generic_returns_none() {
         assert_eq!(frame_blocker_target(&IntentionDomain::Generic), None);
+    }
+
+    // ── Regression: record_assumption_failure suppression duration ──────
+    //
+    // Pre-S109 this path emitted `BlockingFact::AssumptionFailed` recorded
+    // with `BlockerClearingCondition::TtlOnly` and a TTL of
+    // `structural_block_ticks` (200 by default). The S109 typed-discrepancy
+    // migration must preserve that effective suppression duration while still
+    // allowing commodity-availability failures to clear on fresh local
+    // reavailability. These tests pin the TTL and clearing condition against
+    // accidental regression in either direction.
+
+    fn assumption_failure_frame(domain: IntentionDomain) -> IntentionFrame {
+        IntentionFrame {
+            goal: GoalKey::from(GoalKind::Sleep),
+            domain,
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(0),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        }
+    }
+
+    fn structural_block_ticks_default() -> u32 {
+        worldwake_core::CognitiveProfile::default().structural_block_ticks
+    }
+
+    #[test]
+    fn record_assumption_failure_uses_structural_block_ticks_with_target() {
+        let target = make_entity(7);
+        let agent_place = make_entity(1);
+        let frame = assumption_failure_frame(IntentionDomain::Care { patient: target });
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(50);
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(
+            &frame,
+            Some(agent_place),
+            Some(target),
+            &mut memory,
+            tick,
+            ttl,
+        );
+
+        let entry = memory
+            .entries
+            .values()
+            .next()
+            .expect("entry recorded with target");
+        assert_eq!(entry.expires_tick, Tick(tick.0 + u64::from(ttl)));
+        assert_eq!(
+            entry.clearing_condition,
+            worldwake_core::DiscrepancyClearing::TtlExpiry,
+            "with-target assumption failure must clear by TTL, not on \
+             ReobservationOf — re-perceiving the target does not validate \
+             that the failed plan-level assumption is now resolved"
+        );
+        assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+        assert_eq!(entry.blocker_key.target, Some(target));
+        assert_eq!(entry.blocker_key.place, Some(agent_place));
+    }
+
+    #[test]
+    fn record_assumption_failure_for_expected_commodity_clears_on_reavailability() {
+        let destination = make_entity(7);
+        let source = make_entity(11);
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(0),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        };
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(50);
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(
+            &frame,
+            Some(destination),
+            Some(source),
+            &mut memory,
+            tick,
+            ttl,
+        );
+
+        let entry = memory
+            .entries
+            .values()
+            .next()
+            .expect("entry recorded with commodity expectation");
+        assert_eq!(entry.expires_tick, Tick(tick.0 + u64::from(ttl)));
+        assert_eq!(
+            entry.clearing_condition,
+            worldwake_core::DiscrepancyClearing::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Apple,
+                place: destination,
+            }
+        );
+        assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+        assert_eq!(entry.blocker_key.target, Some(source));
+        assert_eq!(entry.blocker_key.place, Some(destination));
+    }
+
+    #[test]
+    fn record_assumption_failure_uses_structural_block_ticks_without_target() {
+        let agent_place = make_entity(1);
+        let frame = assumption_failure_frame(IntentionDomain::Generic);
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(75);
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(&frame, Some(agent_place), None, &mut memory, tick, ttl);
+
+        let entry = memory
+            .entries
+            .values()
+            .next()
+            .expect("entry recorded without target");
+        assert_eq!(entry.expires_tick, Tick(tick.0 + u64::from(ttl)));
+        assert_eq!(
+            entry.clearing_condition,
+            worldwake_core::DiscrepancyClearing::TtlExpiry
+        );
+        assert_eq!(entry.discrepancy, Discrepancy::PartialExecutionDrift);
+        assert_eq!(entry.blocker_key.target, None);
+    }
+
+    #[test]
+    fn record_assumption_failure_overwrites_prior_entry_for_same_key() {
+        let target = make_entity(11);
+        let agent_place = make_entity(2);
+        let frame = assumption_failure_frame(IntentionDomain::Care { patient: target });
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(
+            &frame,
+            Some(agent_place),
+            Some(target),
+            &mut memory,
+            Tick(10),
+            ttl,
+        );
+        record_assumption_failure(
+            &frame,
+            Some(agent_place),
+            Some(target),
+            &mut memory,
+            Tick(40),
+            ttl,
+        );
+
+        // Same blocker_key (goal/place/target) → second record replaces first.
+        assert_eq!(memory.entries.len(), 1);
+        let entry = memory.entries.values().next().unwrap();
+        assert_eq!(entry.observed_tick, Tick(40));
+        assert_eq!(entry.expires_tick, Tick(40 + u64::from(ttl)));
     }
 }

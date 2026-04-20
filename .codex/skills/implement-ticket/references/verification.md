@@ -14,6 +14,7 @@ How to verify implementation at the right boundary (Step 6).
 - If a canonical interface is realized through a forwarding layer, prove both the consumer-facing call and the forwarding path.
 - Check that focused selectors actually match new/changed test names.
 - Check that focused selectors isolate the owned proof surface closely enough for the ticket. Substring filters may lawfully run extra tests; when exactness matters, prefer the narrowest truthful selector rather than treating any nonzero match as precise proof.
+- Check that every drafted verification command is syntactically valid on the live toolchain before trusting or copying it into closeout. In particular, do not preserve ticket-drafted `cargo test` commands that try to bundle multiple unrelated filters or otherwise use an invalid CLI shape; split them into truthful runnable commands during reassessment/closeout.
 - Prefer separate `cargo test` invocations per selector over combining exact test names in one command.
 - For Rust tickets, format the owned files before final broad verification. Prefer formatting only the owned files; if a broader formatter is necessary in a dirty worktree, inspect formatter spillover immediately and restore unrelated files.
 - Run multiple `cargo test` or `cargo clippy` commands sequentially when they share the same build profile -- lock contention makes parallel same-profile runs unreliable. Different profiles (e.g., `cargo test` vs `cargo clippy`) are logically safe to overlap, but the shared target directory can still serialize them; prefer parallel runs only when the extra waiting is acceptable.
@@ -29,9 +30,13 @@ How to verify implementation at the right boundary (Step 6).
 - When new registered actions or systems cause broad failures, triage for catalog-order drift, completeness assertions, and registry-expansion fallout before assuming the feature's runtime logic is broken.
 - If a focused failing proof exposes a real production contradiction in a ticket marked test-only, update the ticket sections that define scope before continuing.
 - When a ticket fixes a repeated pattern across multiple call sites, run a post-implementation pattern sweep (e.g., grep for the unfixed pattern) to confirm no sites were missed.
+- For shared renames of types, modules, or generated accessor families that cross crate boundaries, prefer an early `cargo test --workspace --no-run` pass after the first broad patch and before focused tests; use that compile-only run to enumerate missed downstream rename fallout, then rerun it after fixes before moving on.
+- When focused verification asserts over a derived trace/report collection sourced from `BTreeMap`, `BTreeSet`, or another canonical-key-ordered carrier, do not assume insertion order. Either assert the canonical sorted order explicitly or assert content/membership instead of positional order.
 - When workspace-wide verification fails on files outside the ticket's owned surface (e.g., untracked binaries, pre-existing lint failures), verify the failure is unrelated by running scoped to the ticket's owned crates. Record the pre-existing failure and the scoped-pass result in the ticket Outcome.
 - When broader verification is blocked by a pre-existing unrelated dirty or untracked file, non-semantic lint/format cleanup needed to complete CI-style verification is acceptable, but still record that file as unrelated pre-existing fallout and do not imply the unrelated feature work was completed.
 - When broader verification fails on a golden in the same domain or planner path as the ticket's owned behavior, do one contract-level triage pass before labeling it unrelated.
+- When the ticket explicitly owns broad proof like `cargo test --workspace`, same-domain fallout in adjacent crates can still be current-ticket scope even if the drafted file list was single-crate. Observer/report goldens, cross-crate harness fixtures, and nearby domain-specific integration tests should be triaged as potentially owned fallout before being labeled unrelated.
+- When a touched doc or artifact declares itself generated, prefer rerunning the owning generator and treat the regenerated output as the owned verification path rather than hand-editing the generated file. Add that generator command to the ticket's verification record.
 
 ```bash
 cargo test -p <affected-crate> <test_name>

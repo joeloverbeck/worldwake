@@ -69,7 +69,7 @@ pub use decision_trace::{
 };
 pub use dirty_set::DirtySet;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
-pub use failure_handling::{PlanFailureContext, clear_resolved_blockers, handle_plan_failure};
+pub use failure_handling::{PlanFailureContext, clear_resolved_failures, handle_plan_failure};
 pub use feasibility::{FeasibilityHint, feasibility_hint};
 pub use goal_dispatch_decl::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
 pub use goal_dispatch_key::GoalDispatchKey;
@@ -129,7 +129,6 @@ pub struct ProfileFixture {
     pub max_prerequisite_locations: u8,
     pub switch_margin: worldwake_core::Permille,
     pub transient_block_ticks: u32,
-    pub unknown_block_ticks: u32,
     pub structural_block_ticks: u32,
     pub initial_cooldown_ticks: u32,
     pub max_cooldown_ticks: u32,
@@ -147,7 +146,6 @@ impl Default for ProfileFixture {
             max_prerequisite_locations: 3,
             switch_margin: worldwake_core::Permille::new_unchecked(100),
             transient_block_ticks: 20,
-            unknown_block_ticks: 5,
             structural_block_ticks: 200,
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,

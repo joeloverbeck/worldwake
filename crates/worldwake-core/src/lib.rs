@@ -28,7 +28,8 @@ pub mod action_domain;
 pub mod allocator;
 pub mod bandit_camp;
 pub mod belief;
-pub mod blocked_intent;
+pub mod belief_claim_key;
+pub mod blocker_memory;
 pub mod canonical;
 pub mod cause;
 pub mod cognitive_profile;
@@ -42,6 +43,7 @@ pub mod contention;
 pub mod control;
 pub mod crime;
 pub mod delta;
+pub mod discrepancy;
 pub mod disposal;
 pub mod diversification;
 pub mod drive_escalation_profile;
@@ -66,7 +68,9 @@ pub mod intention;
 pub mod intention_disposition;
 pub mod intention_frame;
 pub mod items;
+pub mod learned_opportunity_memory;
 pub mod load;
+pub mod memory_capacity_profile;
 pub mod needs;
 pub mod numerics;
 pub mod obligation;
@@ -76,6 +80,7 @@ pub mod patrol;
 pub mod production;
 pub mod pursuit;
 pub mod relations;
+pub mod repair_memory;
 pub mod rights;
 pub mod social_artifact;
 pub mod test_utils;
@@ -110,9 +115,10 @@ pub use belief::{
     social_observation_is_redundant_for_listener, social_observation_is_relayable,
     tell_subject_is_directly_observable_by_listener, to_shared_belief_snapshot,
 };
-pub use blocked_intent::{
-    BlockedIntent, BlockedIntentMemory, BlockerClearingCondition, BlockerDiagnostic, BlockerKey,
-    BlockingFact, ClearingBaseline,
+pub use belief_claim_key::BeliefClaimKey;
+pub use blocker_memory::{
+    Blocker, BlockerClearingCondition, BlockerDiagnostic, BlockerKey, BlockerMemory, BlockingFact,
+    ClearingBaseline,
 };
 pub use canonical::{
     CanonicalError, StateHash, canonical_bytes, hash_bytes, hash_event_log, hash_serializable,
@@ -141,6 +147,7 @@ pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
     RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
 };
+pub use discrepancy::{Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory};
 pub use disposal::DisposalProfile;
 pub use diversification::{DiversificationProfile, LastProactiveExplorationTick};
 pub use drive_escalation_profile::{
@@ -188,10 +195,12 @@ pub use items::{
     ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
     UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
 };
+pub use learned_opportunity_memory::{LearnedOpportunityMemory, OpportunityEntry};
 pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,
     load_of_unique_item_kind, load_per_unit, remaining_container_capacity,
 };
+pub use memory_capacity_profile::MemoryCapacityProfile;
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
@@ -208,6 +217,7 @@ pub use production::{
 };
 pub use pursuit::PursuitProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
+pub use repair_memory::{RepairEntry, RepairKey, RepairMemory};
 pub use rights::{EffectiveRight, RightKind};
 pub use social_artifact::{
     ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile, ArtifactState,

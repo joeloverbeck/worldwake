@@ -1317,6 +1317,15 @@ impl GoalKindPlannerExt for GoalKind {
 
     fn is_satisfied(&self, state: &PlanningState<'_>) -> bool {
         let actor = state.snapshot().actor();
+        let holds_concrete_commodity = |commodity: CommodityKind| {
+            state
+                .direct_possessions_ref(PlanningEntityRef::Authoritative(actor))
+                .into_iter()
+                .any(|entity| {
+                    state.item_lot_commodity_ref(entity) == Some(commodity)
+                        && state.commodity_quantity_ref(entity, commodity) > Quantity(0)
+                })
+        };
         match self {
             GoalKind::ConsumeOwnedCommodity { commodity } => {
                 let Some(needs) = state.homeostatic_needs(actor) else {
@@ -1334,9 +1343,8 @@ impl GoalKindPlannerExt for GoalKind {
                 })
             }
             GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
-                CommodityPurpose::SelfConsume
-                | CommodityPurpose::Restock
-                | CommodityPurpose::RecipeInput(_) => {
+                CommodityPurpose::SelfConsume => holds_concrete_commodity(*commodity),
+                CommodityPurpose::Restock | CommodityPurpose::RecipeInput(_) => {
                     state.commodity_quantity(actor, *commodity) > Quantity(0)
                 }
             },
@@ -2548,8 +2556,8 @@ mod tests {
     use worldwake_core::{
         ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState, AskWitnessMemory,
         AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        BelievedInstitutionalClaim, BlockedIntentMemory, BodyCostPerTick, BountyTarget,
-        BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        BelievedInstitutionalClaim, BlockerMemory, BodyCostPerTick, BountyTarget, BountyTerms,
+        CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, DemandObservationReason, DeprivationExposure, DisposalProfile,
         DriveEscalationProfile, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
         EpistemicSubject, ExecutionBudget, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
@@ -2587,8 +2595,24 @@ mod tests {
             switch_margin: reasoning.switch_margin,
             planning_switch_margin: CognitiveProfile::default().planning_switch_margin,
             transient_block_ticks: reasoning.transient_block_ticks,
-            unknown_block_ticks: reasoning.unknown_block_ticks,
             structural_block_ticks: reasoning.structural_block_ticks,
+            stale_belief_backoff_ticks: CognitiveProfile::default().stale_belief_backoff_ticks,
+            contradicted_belief_backoff_ticks: CognitiveProfile::default()
+                .contradicted_belief_backoff_ticks,
+            improper_state_backoff_ticks: CognitiveProfile::default().improper_state_backoff_ticks,
+            missing_observation_backoff_ticks: CognitiveProfile::default()
+                .missing_observation_backoff_ticks,
+            no_legal_binding_backoff_ticks: CognitiveProfile::default()
+                .no_legal_binding_backoff_ticks,
+            counterparty_refusal_backoff_ticks: CognitiveProfile::default()
+                .counterparty_refusal_backoff_ticks,
+            route_unknown_backoff_ticks: CognitiveProfile::default().route_unknown_backoff_ticks,
+            search_exhaustion_backoff_ticks: CognitiveProfile::default()
+                .search_exhaustion_backoff_ticks,
+            partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
+            repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
+            learned_opportunity_memory_ticks: CognitiveProfile::default()
+                .learned_opportunity_memory_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -2615,7 +2639,7 @@ mod tests {
         handlers: &worldwake_sim::ActionHandlerRegistry,
         reasoning: &ProfileFixture,
         recipes: &RecipeRegistry,
-        blocked: &BlockedIntentMemory,
+        blocked: &BlockerMemory,
         current_tick: Tick,
         binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
         expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
@@ -6002,6 +6026,26 @@ mod tests {
     }
 
     #[test]
+    fn acquire_self_consume_goal_is_not_satisfied_by_aggregate_quantity_without_held_lot() {
+        let (view, actor, _seller) = base_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
+        let state = PlanningState::new(&snapshot).with_commodity_quantity(
+            actor,
+            CommodityKind::Apple,
+            Quantity(1),
+        );
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        };
+
+        assert!(
+            !goal.is_satisfied(&state),
+            "self-consume acquisition must require a concrete held commodity lot, not only aggregate quantity"
+        );
+    }
+
+    #[test]
     fn loot_goal_step_transfers_believed_corpse_inventory_and_satisfies_goal() {
         let (mut view, actor, _seller) = base_view();
         let corpse = entity(30);
@@ -9060,7 +9104,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(5),
             None,
             None,
@@ -9143,7 +9187,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(5),
             None,
             None,
@@ -9220,7 +9264,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(5),
             None,
             None,
@@ -9273,7 +9317,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(5),
             None,
             None,
@@ -9364,7 +9408,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(5),
             None,
             None,
@@ -9451,7 +9495,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             None,
             None,
@@ -9533,7 +9577,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             None,
             None,
@@ -9619,7 +9663,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             None,
             None,
@@ -9718,7 +9762,7 @@ mod tests {
             &handlers,
             &ProfileFixture::default(),
             &RecipeRegistry::new(),
-            &BlockedIntentMemory::default(),
+            &BlockerMemory::default(),
             Tick(0),
             None,
             None,
