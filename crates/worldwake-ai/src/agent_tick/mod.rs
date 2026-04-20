@@ -46,9 +46,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents,
-    ControlSource, EntityId, ExecutionBudget, IntentionFrame, LastProactiveExplorationTick,
-    LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, RepairEntry, RepairKey,
-    RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    ControlSource, DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
+    IntentionFrame, LastProactiveExplorationTick, LearnedOpportunityMemory, OpportunityAnchor,
+    OpportunityEntry, PendingEvent, RepairEntry, RepairKey, RepairMemory, Tick, VisibilitySpec,
+    WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -221,6 +222,30 @@ pub(super) struct AgentTickContext<'a> {
     pub(super) cognitive: &'a CognitiveProfile,
     pub(super) execution_budget: &'a ExecutionBudget,
     pub(super) tick: Tick,
+}
+
+pub(super) fn emit_decision_event(
+    event_log: &mut worldwake_core::EventLog,
+    tick: Tick,
+    agent: EntityId,
+    tag: EventTag,
+    decision_payload: DecisionEventPayload,
+) {
+    let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
+        tick,
+        cause: CauseRef::SystemTick(tick),
+        actor_id: Some(agent),
+        action_name: None,
+        target_ids: Vec::new(),
+        evidence: Vec::new(),
+        place_id: None,
+        state_deltas: Vec::new(),
+        observed_entities: BTreeMap::new(),
+        visibility: VisibilitySpec::Hidden,
+        witness_data: WitnessData::default(),
+        tags: BTreeSet::from([tag]),
+        decision_payload: Some(decision_payload),
+    }));
 }
 
 impl AutonomousController for AgentTickDriver {
@@ -740,6 +765,7 @@ fn process_agent(
             pending_tracker_increments,
         ) = plan_and_validate_next_step_traced(
             ctx.world,
+            ctx.event_log,
             ctx.scheduler,
             runtime,
             &mut current_active_goal,

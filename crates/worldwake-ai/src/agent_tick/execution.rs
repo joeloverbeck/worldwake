@@ -1,10 +1,14 @@
 use super::active_action::handle_current_step_failure;
 use super::observation::update_runtime_observation_snapshot;
-use super::{AgentTickContext, handle_recoverable_travel_step_blockage, runtime_belief_view};
+use super::{
+    AgentTickContext, emit_decision_event, handle_recoverable_travel_step_blockage,
+    runtime_belief_view,
+};
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockerMemory, CauseRef, ContentionIntents, DiscrepancyMemory, EntityId,
-    LearnedOpportunityMemory, RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    ActiveGoal, BlockerRecordedPayload, BlockerMemory, CauseRef, ContentionIntents,
+    DecisionEventPayload, DiscrepancyMemory, EntityId, EventTag, LearnedOpportunityMemory,
+    RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
 
@@ -309,6 +313,14 @@ pub(super) fn persist_blocked_memory(
     before: &BlockerMemory,
     after: &BlockerMemory,
 ) -> Result<(), TickInputError> {
+    let changed_entries = after
+        .intents
+        .iter()
+        .filter_map(|(key, blocker)| match before.intents.get(key) {
+            Some(existing) if existing == blocker => None,
+            _ => Some(*blocker),
+        })
+        .collect::<Vec<_>>();
     let existing = world.get_component_blocker_memory(agent);
     if existing == Some(after)
         || (existing.is_none() && before == after && after.intents.is_empty())
@@ -328,6 +340,21 @@ pub(super) fn persist_blocked_memory(
     txn.set_component_blocker_memory(agent, after.clone())
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
+    for blocker in changed_entries {
+        emit_decision_event(
+            event_log,
+            tick,
+            agent,
+            EventTag::BlockerRecorded,
+            DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+                agent,
+                blocker_key: blocker.blocker_key,
+                discrepancy: None,
+                blocking_fact: Some(blocker.blocking_fact),
+                expires_tick: blocker.expires_tick,
+            }),
+        );
+    }
     Ok(())
 }
 
@@ -339,6 +366,14 @@ pub(super) fn persist_discrepancy_memory(
     before: &DiscrepancyMemory,
     after: &DiscrepancyMemory,
 ) -> Result<(), TickInputError> {
+    let changed_entries = after
+        .entries
+        .iter()
+        .filter_map(|(key, entry)| match before.entries.get(key) {
+            Some(existing) if existing == entry => None,
+            _ => Some(*entry),
+        })
+        .collect::<Vec<_>>();
     let existing = world.get_component_discrepancy_memory(agent);
     if existing == Some(after)
         || (existing.is_none() && before == after && after.entries.is_empty())
@@ -358,6 +393,21 @@ pub(super) fn persist_discrepancy_memory(
     txn.set_component_discrepancy_memory(agent, after.clone())
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
+    for entry in changed_entries {
+        emit_decision_event(
+            event_log,
+            tick,
+            agent,
+            EventTag::BlockerRecorded,
+            DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+                agent,
+                blocker_key: entry.blocker_key,
+                discrepancy: Some(entry.discrepancy),
+                blocking_fact: None,
+                expires_tick: entry.expires_tick,
+            }),
+        );
+    }
     Ok(())
 }
 

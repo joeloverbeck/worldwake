@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DiscrepancyMemory, EntityId,
+    Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DecisionEventPayload,
+    DiscrepancyMemory, EntityId, ExpectationMismatchPayload, EventTag,
     LearnedOpportunityMemory, Quantity, RepairMemory, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
@@ -20,8 +21,8 @@ use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 
 use super::{
     AgentTickContext, advance_completed_step, apply_step_materialization_bindings,
-    committed_action_for_step, current_step, handle_current_step_failure, plan_finished,
-    runtime_belief_view,
+    committed_action_for_step, current_step, emit_decision_event, handle_current_step_failure,
+    plan_finished, runtime_belief_view,
 };
 
 #[derive(Clone, Copy)]
@@ -80,6 +81,32 @@ pub(crate) struct ReadPhaseResult {
     /// Need-specific tracker resets detected during candidate generation.
     pub(super) pending_acquisition_exhaustion_resets:
         std::collections::BTreeSet<worldwake_core::HomeostaticNeedId>,
+}
+
+fn emit_expectation_mismatch(
+    event_log: &mut worldwake_core::EventLog,
+    tick: Tick,
+    agent: EntityId,
+    goal_key: worldwake_core::GoalKey,
+    step_index: usize,
+    step: &PlannedStep,
+) {
+    emit_decision_event(
+        event_log,
+        tick,
+        agent,
+        EventTag::ExpectationMismatch,
+        DecisionEventPayload::ExpectationMismatch(ExpectationMismatchPayload {
+            agent,
+            goal_key,
+            step_index: step_index.try_into().expect("step index exceeds u16"),
+            expected_materializations: step
+                .expected_materializations
+                .iter()
+                .map(|expected| expected.tag)
+                .collect(),
+        }),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -501,6 +528,16 @@ pub(super) fn reconcile_in_flight_state(
     let goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
     reconcile_committed_facility_queue_intents(runtime, facility_intents, goal_key, &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
+        if let Some(goal_key) = goal_key {
+            emit_expectation_mismatch(
+                ctx.event_log,
+                ctx.tick,
+                agent,
+                goal_key,
+                runtime.current_step_index,
+                &step,
+            );
+        }
         handle_current_step_failure(
             ctx,
             runtime,
@@ -761,15 +798,17 @@ pub(super) fn unique_item_signature(
 
 #[cfg(test)]
 mod tests {
-    use super::reinstate_current_plan_candidate;
+    use super::{emit_expectation_mismatch, reinstate_current_plan_candidate};
     use crate::{
-        AgentDecisionRuntime, CommodityPurpose, GroundedGoal, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef,
+        AgentDecisionRuntime, CommodityPurpose, ExpectedMaterialization, GroundedGoal,
+        HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlanningEntityRef,
         candidate_generation::{CandidateGenerationDiagnostics, CandidateGenerationResult},
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor,
+        ActionDefId, DecisionEventPayload, EntityId, EventLog, EventTag, EventView, GoalKey,
+        GoalKind, MaterializationTag, OpportunityAnchor, CommodityKind,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -908,5 +947,42 @@ mod tests {
         assert_eq!(candidates.candidates.len(), 1);
         assert_eq!(candidates.candidates[0].key, GoalKey::from(GoalKind::Sleep));
         assert!(candidates.diagnostics.evidence.is_empty());
+    }
+
+    #[test]
+    fn emit_expectation_mismatch_records_expected_tags_and_step_index() {
+        let mut event_log = EventLog::new();
+        let agent = entity(4);
+        let goal_key = GoalKey::from(GoalKind::Sleep);
+        let step = PlannedStep {
+            def_id: ActionDefId(7),
+            targets: Vec::new(),
+            payload_override: None,
+            op_kind: PlannerOpKind::Craft,
+            estimated_ticks: 2,
+            is_materialization_barrier: false,
+            expected_materializations: vec![ExpectedMaterialization {
+                hypothetical_id: HypotheticalEntityId(3),
+                tag: MaterializationTag::SplitOffLot,
+            }],
+        };
+
+        emit_expectation_mismatch(&mut event_log, worldwake_core::Tick(12), agent, goal_key, 5, &step);
+
+        let events = event_log.events_by_tag(EventTag::ExpectationMismatch);
+        assert_eq!(events.len(), 1);
+        let payload = event_log
+            .get(events[0])
+            .and_then(|record| record.decision_payload())
+            .expect("expectation mismatch event should carry payload");
+        assert_eq!(
+            payload,
+            &DecisionEventPayload::ExpectationMismatch(worldwake_core::ExpectationMismatchPayload {
+                agent,
+                goal_key,
+                step_index: 5,
+                expected_materializations: vec![MaterializationTag::SplitOffLot],
+            })
+        );
     }
 }

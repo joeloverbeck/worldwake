@@ -10,7 +10,7 @@ use super::planning::{
 use super::{
     AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
     committed_action_for_step, effective_goal_switch_margin,
-    handle_recoverable_travel_step_blockage, persist_blocked_memory,
+    handle_recoverable_travel_step_blockage, persist_blocked_memory, persist_discrepancy_memory,
     plan_and_validate_next_step_traced, record_learned_opportunities_from_read_phase,
     record_repair_memory_from_completed_plan, update_exploration_counter_for_adopted_goal,
     update_frame_for_adopted_plan,
@@ -31,12 +31,13 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-    BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyCostPerTick,
-    BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant,
-    ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory,
-    DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId,
-    EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameAssumption,
+    BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockerRecordedPayload,
+    BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CognitiveProfile,
+    CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue,
+    ControlSource, DeadAt, DecisionEventPayload, DemandMemory, DemandObservation,
+    DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
+    DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, EventLog,
+    EventPayload, EventTag, EventView, ExecutionBudget, ExplorationProfile, FrameAssumption,
     FrameState, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
     KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
@@ -1974,8 +1975,10 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
     let mut jc = None;
     let mut active_goal = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
+    let mut event_log = EventLog::new();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,
+        &mut event_log,
         &harness.scheduler,
         &mut runtime,
         &mut active_goal,
@@ -3315,6 +3318,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,
+        &mut harness.event_log,
         &harness.scheduler,
         &mut runtime,
         &mut active_goal_state,
@@ -3420,6 +3424,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let mut jc2 = None;
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,
+        &mut harness.event_log,
         &harness.scheduler,
         &mut runtime,
         &mut active_goal_state,
@@ -4160,7 +4165,80 @@ fn persist_blocked_memory_commits_changed_component() {
     .unwrap();
 
     assert_eq!(world.get_component_blocker_memory(agent), Some(&blocked));
-    assert_eq!(event_log.len(), 2);
+    assert_eq!(event_log.len(), 3);
+    let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
+    assert_eq!(blocker_events.len(), 1);
+    assert_eq!(
+        event_log
+            .get(blocker_events[0])
+            .and_then(|record| record.decision_payload()),
+        Some(&DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+            agent,
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                place: None,
+                target: None,
+                action_def: None,
+            },
+            discrepancy: None,
+            blocking_fact: Some(BlockingFact::NoKnownPath),
+            expires_tick: Tick(7),
+        }))
+    );
+}
+
+#[test]
+fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let mut event_log = EventLog::new();
+    let place = world.topology().place_ids().next().unwrap();
+    let agent = {
+        let mut txn = new_txn(&mut world, 1);
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(agent, place).unwrap();
+        let _ = txn.commit(&mut event_log);
+        agent
+    };
+    let key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        place: Some(place),
+        target: None,
+        action_def: None,
+    };
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    discrepancy_memory.record(DiscrepancyEntry {
+        blocker_key: key,
+        discrepancy: Discrepancy::BeliefContradicted,
+        observed_tick: Tick(2),
+        expires_tick: Tick(9),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+
+    persist_discrepancy_memory(
+        &mut world,
+        &mut event_log,
+        agent,
+        Tick(2),
+        &DiscrepancyMemory::default(),
+        &discrepancy_memory,
+    )
+    .unwrap();
+
+    assert_eq!(world.get_component_discrepancy_memory(agent), Some(&discrepancy_memory));
+    let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
+    assert_eq!(blocker_events.len(), 1);
+    assert_eq!(
+        event_log
+            .get(blocker_events[0])
+            .and_then(|record| record.decision_payload()),
+        Some(&DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+            agent,
+            blocker_key: key,
+            discrepancy: Some(Discrepancy::BeliefContradicted),
+            blocking_fact: None,
+            expires_tick: Tick(9),
+        }))
+    );
 }
 
 #[test]
@@ -4804,6 +4882,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let (_, initial_valid, initial_continued, _, initial_selection, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
+            &mut harness.event_log,
             &harness.scheduler,
             runtime,
             &mut active_goal_state,
@@ -4893,6 +4972,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let (continued_step, continued_valid, plan_continued, _, continuation_selection, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
+            &mut harness.event_log,
             &harness.scheduler,
             runtime,
             &mut active_goal_state,

@@ -20,8 +20,9 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockerMemory, CognitiveProfile, EntityId, ExecutionBudget, GoalKind,
-    IntentionFrame, Permille, Tick,
+    ActionDefId, ActiveGoal, BlockerMemory, CognitiveProfile, DecisionEventPayload, EntityId,
+    EventLog, EventTag, ExecutionBudget, GoalCommittedPayload, GoalKind, GoalRejectionReason,
+    IntentionFrame, Permille, PlanAdoptedPayload, RejectedAlternativeSummary, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
@@ -29,7 +30,8 @@ use worldwake_sim::{
 };
 
 use super::{
-    current_step, populate_assumptions, runtime_belief_view, update_frame_for_adopted_plan,
+    current_step, emit_decision_event, populate_assumptions, runtime_belief_view,
+    update_frame_for_adopted_plan,
 };
 
 #[derive(Clone, Debug)]
@@ -706,6 +708,85 @@ fn has_pending_budget_retry(runtime: &AgentDecisionRuntime, current_tick: Tick) 
         .any(|entry| entry.is_retry_eligible(current_tick))
 }
 
+fn score_gap(committed_motive: u32, rejected_motive: u32) -> i32 {
+    let gap = i64::from(committed_motive) - i64::from(rejected_motive);
+    gap.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+fn build_rejected_alternatives(
+    ranked_candidates: &[RankedGoal],
+    committed_goal: worldwake_core::GoalKey,
+    committed_motive: u32,
+    max_alternatives: u8,
+) -> Vec<RejectedAlternativeSummary> {
+    let mut rejected = ranked_candidates
+        .iter()
+        .filter(|candidate| candidate.grounded.key != committed_goal)
+        .map(|candidate| (candidate.motive_score, candidate.grounded.key))
+        .collect::<Vec<_>>();
+    rejected.sort_unstable_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    rejected.truncate(usize::from(max_alternatives));
+    rejected
+        .into_iter()
+        .map(|(rejected_motive, goal_key)| RejectedAlternativeSummary {
+            goal_key,
+            rejection_reason: GoalRejectionReason::LowerMotive,
+            score_gap: score_gap(committed_motive, rejected_motive),
+        })
+        .collect()
+}
+
+fn emit_plan_selection_events(
+    event_log: &mut EventLog,
+    tick: Tick,
+    agent: EntityId,
+    ranked_candidates: &[RankedGoal],
+    selected_plan: &PlannedPlan,
+    max_alternatives: u8,
+) {
+    let committed = ranked_candidates
+        .iter()
+        .find(|candidate| candidate.grounded.key == selected_plan.goal)
+        .expect("selected plan must map to a ranked goal");
+    emit_decision_event(
+        event_log,
+        tick,
+        agent,
+        EventTag::GoalCommitted,
+        DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+            agent,
+            goal_key: selected_plan.goal,
+            motive_score: committed.motive_score,
+            rejected_alternatives: build_rejected_alternatives(
+                ranked_candidates,
+                selected_plan.goal,
+                committed.motive_score,
+                max_alternatives,
+            ),
+        }),
+    );
+    emit_decision_event(
+        event_log,
+        tick,
+        agent,
+        EventTag::PlanAdopted,
+        DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
+            agent,
+            goal_key: selected_plan.goal,
+            plan_step_count: selected_plan
+                .steps
+                .len()
+                .try_into()
+                .expect("plan step count exceeds u16"),
+        }),
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 fn adopt_selected_plan(
     runtime: &mut AgentDecisionRuntime,
@@ -764,6 +845,7 @@ fn clear_current_plan(
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
 pub(super) fn plan_and_validate_next_step(
     world: &worldwake_core::World,
+    event_log: &mut EventLog,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
@@ -864,6 +946,14 @@ pub(super) fn plan_and_validate_next_step(
                     frame_switch_margin,
                 },
             ) {
+                emit_plan_selection_events(
+                    event_log,
+                    tick,
+                    agent,
+                    ranked_candidates,
+                    &selected_plan,
+                    cognitive.decision_history_alternatives,
+                );
                 adopt_selected_plan(
                     runtime,
                     active_goal,
@@ -914,6 +1004,7 @@ pub(super) fn plan_and_validate_next_step(
 )]
 pub(super) fn plan_and_validate_next_step_traced(
     world: &worldwake_core::World,
+    event_log: &mut EventLog,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
@@ -938,6 +1029,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     if !tracing {
         let (step, valid) = plan_and_validate_next_step(
             world,
+            event_log,
             scheduler,
             runtime,
             active_goal,
@@ -1125,7 +1217,15 @@ pub(super) fn plan_and_validate_next_step_traced(
                 default_switch_margin,
                 frame_switch_margin,
             },
-        ) {
+            ) {
+            emit_plan_selection_events(
+                event_log,
+                tick,
+                agent,
+                ranked_candidates,
+                &selected_plan,
+                cognitive.decision_history_alternatives,
+            );
             let selected_goal = selected_plan.goal;
             let selected_opportunity = selected_plan.opportunity;
             let selected_plan_source = determine_selected_plan_source(
@@ -1335,10 +1435,12 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
-        CommodityPurpose, ContentionIntents, ControlSource, EventLog, ExecutionBudget,
-        FrameAssumption, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille, Place,
-        Quantity, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn, build_believed_entity_state, build_prototype_world,
+        CommodityPurpose, ContentionIntents, ControlSource, DecisionEventPayload, EventLog,
+        EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
+        GoalRejectionReason, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille,
+        Place, PlanAdoptedPayload, Quantity, Tick, Topology, TravelEdge, TravelEdgeId,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionHandlerId, ActionHandlerRegistry, ActionPayload,
@@ -1680,6 +1782,129 @@ mod tests {
             competition_discount: None,
             feasibility: FeasibilityHint::Likely,
         }
+    }
+
+    #[test]
+    fn emit_plan_selection_events_records_commit_then_adoption_with_truncation() {
+        let selected_goal = GoalKey::from(GoalKind::Sleep);
+        let runner_up = GoalKey::from(GoalKind::Wash);
+        let third = GoalKey::from(GoalKind::Relieve);
+        let fourth = GoalKey::from(GoalKind::ReduceDanger);
+        let ranked_candidates = vec![
+            RankedGoal {
+                grounded: GroundedGoal {
+                    key: selected_goal,
+                    anchor: OpportunityAnchor::None,
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::High,
+                motive_score: 120,
+                provenance: None,
+                source_reliability_discount: None,
+                competition_discount: None,
+                feasibility: FeasibilityHint::Likely,
+            },
+            RankedGoal {
+                grounded: GroundedGoal {
+                    key: runner_up,
+                    anchor: OpportunityAnchor::None,
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::High,
+                motive_score: 110,
+                provenance: None,
+                source_reliability_discount: None,
+                competition_discount: None,
+                feasibility: FeasibilityHint::Likely,
+            },
+            RankedGoal {
+                grounded: GroundedGoal {
+                    key: third,
+                    anchor: OpportunityAnchor::None,
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::High,
+                motive_score: 90,
+                provenance: None,
+                source_reliability_discount: None,
+                competition_discount: None,
+                feasibility: FeasibilityHint::Likely,
+            },
+            RankedGoal {
+                grounded: GroundedGoal {
+                    key: fourth,
+                    anchor: OpportunityAnchor::None,
+                    evidence_entities: BTreeSet::new(),
+                    evidence_places: BTreeSet::new(),
+                },
+                priority_class: GoalPriorityClass::High,
+                motive_score: 80,
+                provenance: None,
+                source_reliability_discount: None,
+                competition_discount: None,
+                feasibility: FeasibilityHint::Likely,
+            },
+        ];
+        let selected_plan =
+            PlannedPlan::new(opportunity(selected_goal), selected_goal, vec![PlannedStep {
+                def_id: ActionDefId(1),
+                targets: Vec::new(),
+                payload_override: None,
+                op_kind: PlannerOpKind::Sleep,
+                estimated_ticks: 1,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+            }], PlanTerminalKind::GoalSatisfied);
+        let mut event_log = EventLog::new();
+        let agent = entity(1);
+        let tick = Tick(9);
+
+        super::emit_plan_selection_events(
+            &mut event_log,
+            tick,
+            agent,
+            &ranked_candidates,
+            &selected_plan,
+            2,
+        );
+
+        let tick_events = event_log.events_at_tick(tick);
+        assert_eq!(tick_events.len(), 2);
+        let commit = event_log.get(tick_events[0]).unwrap();
+        let adopt = event_log.get(tick_events[1]).unwrap();
+        assert!(commit.tags().contains(&EventTag::GoalCommitted));
+        assert!(adopt.tags().contains(&EventTag::PlanAdopted));
+        assert_eq!(
+            commit.decision_payload(),
+            Some(&DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                agent,
+                goal_key: selected_goal,
+                motive_score: 120,
+                rejected_alternatives: vec![
+                    worldwake_core::RejectedAlternativeSummary {
+                        goal_key: runner_up,
+                        rejection_reason: GoalRejectionReason::LowerMotive,
+                        score_gap: 10,
+                    },
+                    worldwake_core::RejectedAlternativeSummary {
+                        goal_key: third,
+                        rejection_reason: GoalRejectionReason::LowerMotive,
+                        score_gap: 30,
+                    },
+                ],
+            }))
+        );
+        assert_eq!(
+            adopt.decision_payload(),
+            Some(&DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
+                agent,
+                goal_key: selected_goal,
+                plan_step_count: 1,
+            }))
+        );
     }
 
     fn bread_recipe_registry() -> (RecipeRegistry, worldwake_core::RecipeId) {
@@ -2766,8 +2991,10 @@ mod tests {
         let mut frame = None;
         let mut facility_intents = worldwake_core::ContentionIntents::default();
 
+        let mut event_log = EventLog::new();
         let (_, _, _, plan_search_trace, _, _) = super::plan_and_validate_next_step_traced(
             &world,
+            &mut event_log,
             &scheduler,
             &mut runtime,
             &mut active_goal,

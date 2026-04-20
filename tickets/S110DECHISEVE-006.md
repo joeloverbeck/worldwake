@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — observer binary only; no simulation state or action behavior affected
-**Deps**: S110DECHISEVE-004 (emission must be wired before the observer has decision events to render)
+**Deps**: archive/tickets/S110DECHISEVE-004.md (the first foundations-honest emission slice must be archived before the observer snapshot can rely on live decision events)
 
 ## Problem
 
