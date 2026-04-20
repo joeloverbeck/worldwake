@@ -99,7 +99,7 @@
                 fatigue_rate: 1,
                 bladder_rate: 1,
                 dirtiness_rate: 0,
-                rest_efficiency: 5,
+                rest_efficiency: 1,
                 starvation_tolerance_ticks: 480,
                 dehydration_tolerance_ticks: 220,
                 exhaustion_collapse_ticks: 120,
@@ -126,6 +126,6 @@
         (name: "Dry Well", workstation: Well, location: "Dry Camp"),
     ],
     resource_sources: [
-        (commodity: Water, location: "Dry Camp", facility: "Dry Well", regeneration_ticks_per_unit: 3, capacity: 20),
+        (commodity: Water, location: "Dry Camp", facility: "Dry Well", regeneration_ticks_per_unit: 120, capacity: 1),
     ],
 )

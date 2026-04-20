@@ -2376,7 +2376,8 @@ fn place_anchored_acquire_search_does_not_retarget_sibling_place_lot() {
     view.effective_places.insert(orchard_apple, orchard);
     view.entities_at.insert(home, vec![home_apple]);
     view.entities_at.insert(orchard, vec![actor, orchard_apple]);
-    view.lot_commodities.insert(home_apple, CommodityKind::Apple);
+    view.lot_commodities
+        .insert(home_apple, CommodityKind::Apple);
     view.lot_commodities
         .insert(orchard_apple, CommodityKind::Apple);
     view.consumable_profiles.insert(
@@ -2467,7 +2468,8 @@ fn place_anchored_acquire_search_does_not_escape_blocked_local_lot_to_sibling_pl
     view.effective_places.insert(orchard_apple, orchard);
     view.entities_at.insert(home, vec![home_apple]);
     view.entities_at.insert(orchard, vec![actor, orchard_apple]);
-    view.lot_commodities.insert(home_apple, CommodityKind::Apple);
+    view.lot_commodities
+        .insert(home_apple, CommodityKind::Apple);
     view.lot_commodities
         .insert(orchard_apple, CommodityKind::Apple);
     view.consumable_profiles.insert(

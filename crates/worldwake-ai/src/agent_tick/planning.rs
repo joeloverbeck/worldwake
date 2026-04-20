@@ -28,7 +28,9 @@ use worldwake_sim::{
     SpatialBeliefView,
 };
 
-use super::{current_step, populate_assumptions, runtime_belief_view, update_frame_for_adopted_plan};
+use super::{
+    current_step, populate_assumptions, runtime_belief_view, update_frame_for_adopted_plan,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct CandidatePlanSearch {
@@ -1656,12 +1658,14 @@ mod tests {
         );
 
         let frame = frame.expect("adopting a plan should create an intention frame");
-        assert!(frame.assumptions.contains(
-            &FrameAssumption::CommodityAvailableAt {
-                commodity: CommodityKind::Apple,
-                place: orchard,
-            }
-        ));
+        assert!(
+            frame
+                .assumptions
+                .contains(&FrameAssumption::CommodityAvailableAt {
+                    commodity: CommodityKind::Apple,
+                    place: orchard,
+                })
+        );
     }
 
     fn ranked_goal(goal: GroundedGoal) -> RankedGoal {

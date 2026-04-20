@@ -139,7 +139,9 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
         if let Some(probes) = falsification_probes.as_mut() {
             probes
                 .observe_tick(&h, &agents, tick)
-                .unwrap_or_else(|err| panic!("survival baseline falsification probe failed: {err}"));
+                .unwrap_or_else(|err| {
+                    panic!("survival baseline falsification probe failed: {err}")
+                });
         }
 
         if h.world.effective_place(explorer) == Some(fertile_fields) {

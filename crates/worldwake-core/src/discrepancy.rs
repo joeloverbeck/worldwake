@@ -36,8 +36,12 @@ pub struct DiscrepancyEntry {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum DiscrepancyClearing {
     TtlExpiry,
-    ReobservationOf { target: EntityId },
-    BeliefUpdate { claim_key: BeliefClaimKey },
+    ReobservationOf {
+        target: EntityId,
+    },
+    BeliefUpdate {
+        claim_key: BeliefClaimKey,
+    },
     CommodityAvailabilityChanged {
         commodity: CommodityKind,
         place: EntityId,

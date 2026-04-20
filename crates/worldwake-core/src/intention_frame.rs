@@ -154,8 +154,8 @@ pub struct IntentionFrame {
 impl IntentionFrame {
     #[must_use]
     pub fn expected_commodity(&self) -> Option<(CommodityKind, EntityId)> {
-        let (IntentionDomain::Travel { destination }
-        | IntentionDomain::Errand { destination }) = self.domain
+        let (IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination }) =
+            self.domain
         else {
             return None;
         };

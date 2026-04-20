@@ -73,8 +73,7 @@ pub fn handle_plan_failure(
         context.agent,
         &blocker_key,
         context.failed_step,
-    )
-    {
+    ) {
         blocker_key.target = None;
     }
 
@@ -820,10 +819,7 @@ fn derive_clearing_condition(
                         (blocker_key.goal_key.commodity, blocker_key.place)
                 {
                     return (
-                        BlockerClearingCondition::CommodityAvailabilityChanged {
-                            commodity,
-                            place,
-                        },
+                        BlockerClearingCondition::CommodityAvailabilityChanged { commodity, place },
                         None,
                     );
                 }
@@ -906,9 +902,7 @@ fn derive_discrepancy_clearing(
             | Discrepancy::BeliefContradicted
             | Discrepancy::MissingObservation
     );
-    if target_reobservation_resolves
-        && let Some(target) = blocker_key.target
-    {
+    if target_reobservation_resolves && let Some(target) = blocker_key.target {
         return DiscrepancyClearing::ReobservationOf { target };
     }
 

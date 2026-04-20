@@ -4,8 +4,8 @@ use crate::{
 };
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
-    Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, ContentionIntents,
-    CommodityKind, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
+    Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, CommodityKind,
+    ContentionIntents, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
     EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame,
     Permille, Quantity, SuspensionReason, Tick,
 };
@@ -502,12 +502,11 @@ pub(super) fn record_assumption_failure(
     structural_block_ticks: u32,
 ) {
     let target = blocker_target.or_else(|| frame_blocker_target(&frame.domain));
-    let clearing_condition =
-        frame
-            .expected_commodity()
-            .map_or(DiscrepancyClearing::TtlExpiry, |(commodity, place)| {
-                DiscrepancyClearing::CommodityAvailabilityChanged { commodity, place }
-            });
+    let clearing_condition = frame
+        .expected_commodity()
+        .map_or(DiscrepancyClearing::TtlExpiry, |(commodity, place)| {
+            DiscrepancyClearing::CommodityAvailabilityChanged { commodity, place }
+        });
     let discrepancy = if target.is_some() {
         Discrepancy::BeliefContradicted
     } else {
@@ -843,8 +842,10 @@ mod tests {
     }
 
     fn observed_entity_state(place: EntityId) -> BelievedEntityState {
-        let mut state =
-            BelievedEntityState::single_observation_defaults(Tick(0), PerceptionSource::DirectObservation);
+        let mut state = BelievedEntityState::single_observation_defaults(
+            Tick(0),
+            PerceptionSource::DirectObservation,
+        );
         state.last_known_place = Some(place);
         state
     }
@@ -865,8 +866,7 @@ mod tests {
         view.entities_at.insert(place, vec![lot]);
         view.item_lot_commodities.insert(lot, CommodityKind::Apple);
 
-        let verdict =
-            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
         assert_eq!(verdict, AvailabilityVerdict::Believed);
     }
 
@@ -889,8 +889,7 @@ mod tests {
             },
         );
 
-        let verdict =
-            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
         assert_eq!(verdict, AvailabilityVerdict::Believed);
     }
 
@@ -904,8 +903,7 @@ mod tests {
         view.entities_at.insert(place, vec![lot]);
         view.item_lot_commodities.insert(lot, CommodityKind::Bread);
 
-        let verdict =
-            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
         assert_eq!(verdict, AvailabilityVerdict::Refuted);
     }
 
@@ -923,8 +921,7 @@ mod tests {
         view.belief_stores
             .insert(agent, store_with_known_entity(remembered_lot, state));
 
-        let verdict =
-            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
         assert_eq!(verdict, AvailabilityVerdict::Believed);
     }
 
@@ -935,8 +932,7 @@ mod tests {
         let mut view = MockBeliefView::new();
         view.places.insert(agent, make_entity(11));
 
-        let verdict =
-            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        let verdict = assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
         assert_eq!(verdict, AvailabilityVerdict::UnknownOrStale);
     }
 
@@ -1586,7 +1582,14 @@ mod tests {
         let tick = Tick(50);
         let ttl = structural_block_ticks_default();
 
-        record_assumption_failure(&frame, Some(agent_place), Some(target), &mut memory, tick, ttl);
+        record_assumption_failure(
+            &frame,
+            Some(agent_place),
+            Some(target),
+            &mut memory,
+            tick,
+            ttl,
+        );
 
         let entry = memory
             .entries
@@ -1627,7 +1630,14 @@ mod tests {
         let tick = Tick(50);
         let ttl = structural_block_ticks_default();
 
-        record_assumption_failure(&frame, Some(destination), Some(source), &mut memory, tick, ttl);
+        record_assumption_failure(
+            &frame,
+            Some(destination),
+            Some(source),
+            &mut memory,
+            tick,
+            ttl,
+        );
 
         let entry = memory
             .entries
@@ -1679,8 +1689,22 @@ mod tests {
         let mut memory = worldwake_core::DiscrepancyMemory::default();
         let ttl = structural_block_ticks_default();
 
-        record_assumption_failure(&frame, Some(agent_place), Some(target), &mut memory, Tick(10), ttl);
-        record_assumption_failure(&frame, Some(agent_place), Some(target), &mut memory, Tick(40), ttl);
+        record_assumption_failure(
+            &frame,
+            Some(agent_place),
+            Some(target),
+            &mut memory,
+            Tick(10),
+            ttl,
+        );
+        record_assumption_failure(
+            &frame,
+            Some(agent_place),
+            Some(target),
+            &mut memory,
+            Tick(40),
+            ttl,
+        );
 
         // Same blocker_key (goal/place/target) → second record replaces first.
         assert_eq!(memory.entries.len(), 1);

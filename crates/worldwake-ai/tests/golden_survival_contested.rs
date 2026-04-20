@@ -216,7 +216,9 @@ fn run_survival_contested() -> SurvivalContestedObservation {
         if let Some(probes) = falsification_probes.as_mut() {
             probes
                 .observe_tick(&h, &agents, tick)
-                .unwrap_or_else(|err| panic!("survival contested falsification probe failed: {err}"));
+                .unwrap_or_else(|err| {
+                    panic!("survival contested falsification probe failed: {err}")
+                });
         }
 
         for agent in &north_agents {

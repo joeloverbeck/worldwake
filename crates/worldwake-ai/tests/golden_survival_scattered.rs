@@ -159,7 +159,9 @@ fn run_survival_scattered() -> SurvivalScatteredObservation {
         if let Some(probes) = falsification_probes.as_mut() {
             probes
                 .observe_tick(&h, &agents, tick)
-                .unwrap_or_else(|err| panic!("survival scattered falsification probe failed: {err}"));
+                .unwrap_or_else(|err| {
+                    panic!("survival scattered falsification probe failed: {err}")
+                });
         }
 
         if let Some(place) = h.world.effective_place(isolated_agent)

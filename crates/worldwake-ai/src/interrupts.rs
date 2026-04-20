@@ -67,7 +67,8 @@ pub fn evaluate_interrupt(
             if penalty_interrupt_trigger(&challenger.grounded.key.kind)
                 == Some(InterruptTrigger::CriticalSurvival)
                 && effective_active_goal.is_some_and(|goal| {
-                    penalty_interrupt_trigger(&goal.kind) == Some(InterruptTrigger::CriticalSurvival)
+                    penalty_interrupt_trigger(&goal.kind)
+                        == Some(InterruptTrigger::CriticalSurvival)
                 })
             {
                 InterruptDecision::NoInterrupt

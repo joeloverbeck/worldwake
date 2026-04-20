@@ -16,8 +16,7 @@ use candidates::search_candidate_from_planner;
 use candidates::search_candidates;
 use candidates::{
     CandidateFilterTraceSinks, CandidateSearchContext, CandidateTraceSinks, CommodityFilterContext,
-    SearchCandidate, apply_commodity_relevance_filter_with_expansion_trace,
-    candidate_action_place,
+    SearchCandidate, apply_commodity_relevance_filter_with_expansion_trace, candidate_action_place,
     search_candidates_from_affordance, search_candidates_with_expansion_trace, unsupported_goal,
     update_expansion_candidate_outcome, update_root_candidate_outcome,
 };

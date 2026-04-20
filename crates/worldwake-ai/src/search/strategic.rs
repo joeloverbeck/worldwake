@@ -220,8 +220,8 @@ fn missing_commodities(
         GoalKind::TreatWounds { .. } => (state.commodity_quantity(actor, CommodityKind::Medicine)
             == Quantity(0))
         .then_some(CommodityKind::Medicine)
-            .into_iter()
-            .collect(),
+        .into_iter()
+        .collect(),
         GoalKind::ProduceCommodity { recipe_id } => recipes
             .get(recipe_id)
             .into_iter()
