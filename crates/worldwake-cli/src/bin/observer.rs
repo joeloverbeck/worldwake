@@ -24,8 +24,8 @@ use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario
 use worldwake_core::{
     ActionInterruptReasonTag, AgentBeliefStore, CommodityKind, DeadAt, DeathCause,
     DecisionEventPayload, EntityId, EntityKind, EventId, EventView, GoalAbandonReason,
-    HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, PlanInvalidationReason,
-    Quantity, RecipeId, ReplanReason, Tick, WorkstationTag,
+    HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, PlanInvalidationReason, Quantity,
+    RecipeId, ReplanReason, Tick, WorkstationTag,
 };
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
@@ -436,7 +436,10 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
             }
         ),
         DecisionEventPayload::PlanAdopted(inner) => {
-            format!("goal={:?} steps={}", inner.goal_key.kind, inner.plan_step_count)
+            format!(
+                "goal={:?} steps={}",
+                inner.goal_key.kind, inner.plan_step_count
+            )
         }
         DecisionEventPayload::PlanInvalidated(inner) => format!(
             "goal={:?} reason={}",
@@ -445,16 +448,11 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
         ),
         DecisionEventPayload::ExpectationMismatch(inner) => format!(
             "goal={:?} step={} expected={:?}",
-            inner.goal_key.kind,
-            inner.step_index,
-            inner.expected_materializations
+            inner.goal_key.kind, inner.step_index, inner.expected_materializations
         ),
         DecisionEventPayload::RepairApplied(inner) => format!(
             "goal={:?} step={} kind={:?} target={:?}",
-            inner.goal_key.kind,
-            inner.step_index,
-            inner.repair_kind,
-            inner.substitute_target
+            inner.goal_key.kind, inner.step_index, inner.repair_kind, inner.substitute_target
         ),
         DecisionEventPayload::ReplanTriggered(inner) => format!(
             "goal={:?} reason={}",
@@ -506,10 +504,16 @@ fn format_plan_invalidation_reason(reason: &PlanInvalidationReason) -> String {
 fn format_replan_reason(reason: &ReplanReason) -> String {
     match reason {
         ReplanReason::PlanInvalidated { reason } => {
-            format!("PlanInvalidated({})", format_plan_invalidation_reason(reason))
+            format!(
+                "PlanInvalidated({})",
+                format_plan_invalidation_reason(reason)
+            )
         }
         ReplanReason::ActionInterrupted { reason } => {
-            format!("ActionInterrupted({})", format_action_interrupt_reason(*reason))
+            format!(
+                "ActionInterrupted({})",
+                format_action_interrupt_reason(*reason)
+            )
         }
         ReplanReason::ActionStartFailed => "ActionStartFailed".to_string(),
         ReplanReason::BlockingFactRecorded { blocking_fact } => {
@@ -3943,7 +3947,7 @@ mod tests {
         ANOMALY_ROLLING_WINDOW_TICKS, AgentStats, Anomaly, AnomalyKind, BehavioralTransition,
         NeedsSample, PlanAttemptTrace, PlanSearchOutcome, affordance_change_snapshots,
         behavioral_transitions, committed_travel_ticks, compute_maintenance_rates,
-        decision_payload_summary, death_summary_line, detect_acute_need_spike, detect_anomalies,
+        death_summary_line, decision_payload_summary, detect_acute_need_spike, detect_anomalies,
         detect_geographic_convergence, detect_maintenance_starvation, detect_recipe_monoculture,
         failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
@@ -3968,16 +3972,15 @@ mod tests {
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
         ActionDefId, AgentBeliefStore, BeliefClaimKey, BelievedEntityState, BlockerKey,
-        BlockerRecordedPayload, BodyCostPerTick, CauseRef, CommodityKind,
-        CommodityPurpose, ControlSource, DeadAt, DeathCause, DecisionEventPayload,
-        DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId, EntityKind, EventLog,
-        EventPayload, EventTag, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload,
-        GoalKey, GoalKind, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
-        GoalSuspendedPayload, GoalSwitchReason, HomeostaticNeedId, KnownRecipes,
-        MetabolismProfile, OpportunityAnchor, PendingEvent, Permille, PlanAdoptedPayload,
-        PlanInvalidatedPayload, PlanInvalidationReason, PrototypePlace, Quantity, RecipeId,
-        ResourceSource, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_prototype_world, prototype_place_entity,
+        BlockerRecordedPayload, BodyCostPerTick, CauseRef, CommodityKind, CommodityPurpose,
+        ControlSource, DeadAt, DeathCause, DecisionEventPayload, DriveThresholds, EmitterTag,
+        EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload, EventTag,
+        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
+        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
+        GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, OpportunityAnchor,
+        PendingEvent, Permille, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
+        PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -4233,14 +4236,12 @@ mod tests {
             8,
             agent,
             EventTag::ExpectationMismatch,
-            DecisionEventPayload::ExpectationMismatch(
-                worldwake_core::ExpectationMismatchPayload {
-                    agent,
-                    goal_key: acquire_goal,
-                    step_index: 1,
-                    expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
-                },
-            ),
+            DecisionEventPayload::ExpectationMismatch(worldwake_core::ExpectationMismatchPayload {
+                agent,
+                goal_key: acquire_goal,
+                step_index: 1,
+                expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
+            }),
         );
         emit_decision_event(
             &mut log,
@@ -5036,7 +5037,10 @@ mod tests {
 
         assert!(out.contains("## Section 3 — Decision History"));
         assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
-        assert_eq!(out.lines().filter(|line| line.starts_with("| ")).count(), 12);
+        assert_eq!(
+            out.lines().filter(|line| line.starts_with("| ")).count(),
+            12
+        );
         for event_name in [
             "GoalOffered",
             "GoalSuppressed",
@@ -5050,7 +5054,10 @@ mod tests {
             "ReplanTriggered",
             "BlockerRecorded",
         ] {
-            assert!(out.contains(event_name), "missing event row for {event_name}");
+            assert!(
+                out.contains(event_name),
+                "missing event row for {event_name}"
+            );
         }
         assert!(out.contains("Guard Theron"));
         assert!(out.contains("goal=ProduceCommodity { recipe_id: RecipeId(3) } motive=420 alts=1"));
@@ -5058,8 +5065,8 @@ mod tests {
 
     #[test]
     fn decision_payload_summary_is_single_line_for_goal_committed() {
-        let summary = decision_payload_summary(&DecisionEventPayload::GoalCommitted(
-            GoalCommittedPayload {
+        let summary =
+            decision_payload_summary(&DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 motive_score: 420,
@@ -5071,8 +5078,7 @@ mod tests {
                     rejection_reason: GoalRejectionReason::LowerMotive,
                     score_gap: 17,
                 }],
-            },
-        ));
+            }));
 
         assert_eq!(summary, "goal=Sleep motive=420 alts=1");
         assert!(!summary.contains('\n'));
