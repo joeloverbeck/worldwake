@@ -73,6 +73,9 @@ pub struct CognitiveProfile {
     /// tactical search guidance.
     #[serde(default = "default_use_ff_heuristic")]
     pub use_ff_heuristic: bool,
+    /// Maximum number of rejected alternatives recorded in decision history events.
+    #[serde(default = "default_decision_history_alternatives")]
+    pub decision_history_alternatives: u8,
 }
 
 impl Default for CognitiveProfile {
@@ -104,6 +107,7 @@ impl Default for CognitiveProfile {
             max_snapshot_entities_per_place: 50,
             landmark_extraction_depth: 4,
             use_ff_heuristic: default_use_ff_heuristic(),
+            decision_history_alternatives: default_decision_history_alternatives(),
         }
     }
 }
@@ -116,6 +120,10 @@ const fn default_max_candidates_per_expansion() -> u16 {
 
 const fn default_use_ff_heuristic() -> bool {
     true
+}
+
+const fn default_decision_history_alternatives() -> u8 {
+    5
 }
 
 const fn default_stale_belief_backoff_ticks() -> u32 {
@@ -216,6 +224,7 @@ mod tests {
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
         assert_eq!(profile.landmark_extraction_depth, 4);
         assert!(profile.use_ff_heuristic);
+        assert_eq!(profile.decision_history_alternatives, 5);
     }
 
     #[test]
@@ -247,6 +256,7 @@ mod tests {
             max_snapshot_entities_per_place: 75,
             landmark_extraction_depth: 5,
             use_ff_heuristic: false,
+            decision_history_alternatives: 8,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
@@ -273,6 +283,29 @@ mod tests {
         let profile: CognitiveProfile = from_str(&without_field).unwrap();
 
         assert!(profile.use_ff_heuristic);
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_decision_history_alternatives() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                decision_history_alternatives: 9,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_field = serialized
+            .lines()
+            .filter(|line| !line.contains("decision_history_alternatives"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_field).unwrap();
+
+        assert_eq!(
+            profile.decision_history_alternatives,
+            super::default_decision_history_alternatives()
+        );
     }
 
     #[test]

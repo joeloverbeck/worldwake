@@ -1,6 +1,6 @@
 # S110DECHISEVE-003: CognitiveProfile decision_history_alternatives field
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `CognitiveProfile` component gains one new field; serde default handles save/scenario round-trip
@@ -13,7 +13,7 @@ S110's `GoalCommittedPayload::rejected_alternatives` list must be bounded to kee
 ## Assumption Reassessment (2026-04-20)
 
 1. `CognitiveProfile` is defined at `crates/worldwake-core/src/cognitive_profile.rs:6` and derives `Copy + Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Serialize + Deserialize`. Every existing field with a serde-default uses `#[serde(default = "default_<field>")]` with a dedicated `const fn` constructor — the ticket follows that established convention. Existing tests `cognitive_profile_roundtrips_through_bincode` and `cognitive_profile_deserialization_defaults_*` (at `cognitive_profile.rs:259` onward) verify that missing fields in serialized input deserialize to the default; the new field must be covered by an analogous test.
-2. Existing consumers that construct `CognitiveProfile` with explicit literals (not `..CognitiveProfile::default()` spread): ~20 sites across `crates/worldwake-cli/src/scenario/lints.rs`, `crates/worldwake-cli/src/handlers/persistence.rs`, `crates/worldwake-sim/src/per_agent_belief_view.rs`, `crates/worldwake-ai/src/agent_tick/planning.rs` (test fixtures), `crates/worldwake-ai/src/agent_tick/tests.rs`, `crates/worldwake-ai/src/goal_model.rs` (test fixtures), `crates/worldwake-ai/src/search/tests.rs`, `crates/worldwake-ai/tests/golden_exploration.rs`, `crates/worldwake-ai/tests/golden_ai_decisions.rs`, and `crates/worldwake-ai/tests/conformance_execution_budget.rs`. Each needs `decision_history_alternatives: 5` (or the same default value) added. Workspace also has 148 `..CognitiveProfile::default()` spread uses which need no change because the new field inherits its default.
+2. Existing consumers that construct `CognitiveProfile` with explicit literals fall into two groups on the live branch: partial override sites that already use `..CognitiveProfile::default()` (for example `crates/worldwake-cli/src/scenario/lints.rs`, `crates/worldwake-cli/src/handlers/persistence.rs`, `crates/worldwake-sim/src/per_agent_belief_view.rs`, `crates/worldwake-ai/tests/golden_exploration.rs`, `crates/worldwake-ai/tests/golden_ai_decisions.rs`, and `crates/worldwake-ai/tests/conformance_execution_budget.rs`) and full explicit literals that enumerate every field (for example `crates/worldwake-core/src/delta.rs`, `crates/worldwake-ai/src/search/tests.rs`, `crates/worldwake-ai/src/agent_tick/tests.rs`, `crates/worldwake-ai/src/agent_tick/planning.rs`, `crates/worldwake-ai/src/goal_model.rs`, `crates/worldwake-ai/src/failure_handling.rs`, and `crates/worldwake-ai/src/decision_runtime.rs`). Only the full explicit literals need a new `decision_history_alternatives` entry; spread-based sites inherit the new default unchanged.
 3. Shared abstraction boundary under audit: the `CognitiveProfile` component wire format. Adding a field with `#[serde(default)]` preserves forward-compat deserialization from save-format 33 data — RON scenarios and saved state that predate this field still load correctly. The field is a single `u8`, so wire-size growth is one byte per agent.
 
 ## Architecture Check
@@ -78,18 +78,13 @@ In `cognitive_profile_roundtrips_through_bincode` (line 222), add `decision_hist
 ## Files to Touch
 
 - `crates/worldwake-core/src/cognitive_profile.rs` (modify — field, `Default` impl, default fn, two tests)
-- `crates/worldwake-cli/src/scenario/lints.rs` (modify — literal construction site)
-- `crates/worldwake-cli/src/handlers/persistence.rs` (modify — literal construction site)
-- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — literal construction site, test fixture)
-- `crates/worldwake-ai/src/search/tests.rs` (modify)
-- `crates/worldwake-ai/src/goal_model.rs` (modify — test fixture)
-- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify)
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — test fixture)
-- `crates/worldwake-ai/tests/golden_exploration.rs` (modify — two construction sites)
-- `crates/worldwake-ai/tests/golden_ai_decisions.rs` (modify)
-- `crates/worldwake-ai/tests/conformance_execution_budget.rs` (modify — three construction sites)
-
-Other sites may exist — implementer must grep `CognitiveProfile {` and cover every site that does not use `..CognitiveProfile::default()`.
+- `crates/worldwake-core/src/delta.rs` (modify — full explicit `CognitiveProfile` sample in delta round-trip coverage)
+- `crates/worldwake-ai/src/search/tests.rs` (modify — full explicit test helper literal)
+- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — full explicit test helper literal)
+- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — full explicit test helper literal)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — full explicit test helper literal)
+- `crates/worldwake-ai/src/failure_handling.rs` (modify — full explicit test helper literal)
+- `crates/worldwake-ai/src/decision_runtime.rs` (modify — full explicit test helper literal)
 
 ## Out of Scope
 
@@ -126,3 +121,21 @@ Other sites may exist — implementer must grep `CognitiveProfile {` and cover e
 1. `cargo test -p worldwake-core cognitive_profile` — targeted, covers the field-level tests.
 2. `cargo test --workspace` — confirms every literal construction site compiles.
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-20.
+
+- Added `CognitiveProfile::decision_history_alternatives: u8` in [cognitive_profile.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/cognitive_profile.rs) with `#[serde(default = "default_decision_history_alternatives")]`, a dedicated default constructor, and `Default` value `5`.
+- Extended the existing core tests so `cognitive_profile_default_matches_split_defaults` asserts the new default, `cognitive_profile_roundtrips_through_bincode` exercises a non-default value, and `cognitive_profile_deserialization_defaults_decision_history_alternatives` proves missing serialized input resolves to the default.
+- Updated the real full-literal fallout sites that enumerate every `CognitiveProfile` field: [delta.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/delta.rs), [search/tests.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/tests.rs), [agent_tick/tests.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/tests.rs), [agent_tick/planning.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/agent_tick/planning.rs), [goal_model.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/goal_model.rs), [failure_handling.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/failure_handling.rs), and [decision_runtime.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/decision_runtime.rs).
+
+## Deviations
+
+- The original ticket overestimated the compile fallout in spread-based `CognitiveProfile { ..CognitiveProfile::default() }` sites and underestimated the number of full explicit literals. The landed scope followed the live code shape instead: only full explicit literals needed edits, and that set included `crates/worldwake-core/src/delta.rs`, `crates/worldwake-ai/src/failure_handling.rs`, and `crates/worldwake-ai/src/decision_runtime.rs` in addition to the initially listed AI test helpers.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core cognitive_profile`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

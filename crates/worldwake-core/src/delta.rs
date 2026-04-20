@@ -601,6 +601,7 @@ mod tests {
                 max_snapshot_entities_per_place: 60,
                 landmark_extraction_depth: 3,
                 use_ff_heuristic: true,
+                decision_history_alternatives: 5,
             }),
             ComponentValue::ExplorationProfile(ExplorationProfile {
                 curiosity_weight: Permille::new(650).unwrap(),

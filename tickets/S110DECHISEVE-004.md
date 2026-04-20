@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — 9 integration points across `worldwake-ai` emit new `EventTag` + `DecisionEventPayload` pairs inline at existing decision sites
-**Deps**: archive/tickets/S110DECHISEVE-002.md (`EventTag` variants, `DecisionEventPayload`, and `EventPayload::decision_payload` field must exist), S110DECHISEVE-003 (`CognitiveProfile::decision_history_alternatives` must exist for `GoalCommittedPayload` truncation)
+**Deps**: archive/tickets/S110DECHISEVE-002.md (`EventTag` variants, `DecisionEventPayload`, and `EventPayload::decision_payload` field must exist), archive/tickets/S110DECHISEVE-003.md (`CognitiveProfile::decision_history_alternatives` must exist for `GoalCommittedPayload` truncation)
 
 ## Problem
 

@@ -1417,6 +1417,8 @@ mod tests {
                 .max_snapshot_entities_per_place,
             landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
             use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
+            decision_history_alternatives: CognitiveProfile::default()
+                .decision_history_alternatives,
         }
     }
 
