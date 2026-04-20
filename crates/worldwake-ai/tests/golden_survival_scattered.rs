@@ -116,6 +116,7 @@ fn run_survival_scattered() -> SurvivalScatteredObservation {
     )
     .clone();
     let agents = named_agents(&h);
+    let mut falsification_probes = commodity_assumption_falsification_probes_from_env();
     let food_places = food_place_ids(&def);
     let isolated_agent = *agents
         .get("Agent B")
@@ -153,6 +154,13 @@ fn run_survival_scattered() -> SurvivalScatteredObservation {
 
     for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
+        let tick = Tick(u64::from(tick_num));
+
+        if let Some(probes) = falsification_probes.as_mut() {
+            probes
+                .observe_tick(&h, &agents, tick)
+                .unwrap_or_else(|err| panic!("survival scattered falsification probe failed: {err}"));
+        }
 
         if let Some(place) = h.world.effective_place(isolated_agent)
             && food_places.contains(&place)
@@ -165,7 +173,6 @@ fn run_survival_scattered() -> SurvivalScatteredObservation {
             .expect("action tracing should be enabled");
 
         for (agent_name, agent) in &agents {
-            let tick = Tick(u64::from(tick_num));
             let needs = h
                 .world
                 .get_component_homeostatic_needs(*agent)

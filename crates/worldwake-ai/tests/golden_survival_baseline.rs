@@ -96,6 +96,7 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
     let contract =
         expect_survival_health_contract(def.survival_health_contract.as_ref(), "survival baseline");
     let agents = named_agents(&h);
+    let mut falsification_probes = commodity_assumption_falsification_probes_from_env();
     let fertile_fields = scenario_place_id(&def, "Fertile Fields");
     let explorer = *agents
         .get("Agent B")
@@ -133,6 +134,13 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
 
     for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
+        let tick = Tick(u64::from(tick_num));
+
+        if let Some(probes) = falsification_probes.as_mut() {
+            probes
+                .observe_tick(&h, &agents, tick)
+                .unwrap_or_else(|err| panic!("survival baseline falsification probe failed: {err}"));
+        }
 
         if h.world.effective_place(explorer) == Some(fertile_fields) {
             explorer_reached_fertile_fields = true;
@@ -143,7 +151,6 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
             .expect("action tracing should be enabled");
 
         for (agent_name, agent) in &agents {
-            let tick = Tick(u64::from(tick_num));
             let needs = h
                 .world
                 .get_component_homeostatic_needs(*agent)

@@ -150,6 +150,7 @@ fn run_survival_contested() -> SurvivalContestedObservation {
     )
     .clone();
     let agents = named_agents(&h);
+    let mut falsification_probes = commodity_assumption_falsification_probes_from_env();
     let food_places = food_place_ids(&def);
     let place_name_by_id: BTreeMap<EntityId, String> = def
         .places
@@ -210,6 +211,13 @@ fn run_survival_contested() -> SurvivalContestedObservation {
 
     for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
+        let tick = Tick(u64::from(tick_num));
+
+        if let Some(probes) = falsification_probes.as_mut() {
+            probes
+                .observe_tick(&h, &agents, tick)
+                .unwrap_or_else(|err| panic!("survival contested falsification probe failed: {err}"));
+        }
 
         for agent in &north_agents {
             if let Some(place) = h.world.effective_place(*agent)
@@ -231,7 +239,6 @@ fn run_survival_contested() -> SurvivalContestedObservation {
             .expect("action tracing should be enabled");
 
         for (agent_name, agent) in &agents {
-            let tick = Tick(u64::from(tick_num));
             let needs = h
                 .world
                 .get_component_homeostatic_needs(*agent)
