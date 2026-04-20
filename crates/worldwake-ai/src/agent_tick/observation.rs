@@ -50,6 +50,8 @@ pub(crate) struct CompletedPlanSummary {
 
 /// Result of the read phase, preserving trace-relevant data alongside ranked candidates.
 pub(crate) struct ReadPhaseResult {
+    /// Candidate offers emitted during generation in generation order.
+    pub(super) offered: Vec<crate::candidate_generation::CandidateOfferDiagnostic>,
     pub(super) ranked: Vec<RankedGoal>,
     /// Generated candidate keys (before ranking filter).
     pub(super) generated_keys: Vec<worldwake_core::OpportunityKey>,
@@ -62,8 +64,8 @@ pub(crate) struct ReadPhaseResult {
     pub(super) places_reachable: u32,
     /// Aggregate kept-place count after belief gating across acquisition-place searches.
     pub(super) places_after_belief_filter: u32,
-    /// Goals suppressed by situational conditions.
-    pub(super) suppressed: Vec<worldwake_core::GoalKey>,
+    /// Candidate opportunities suppressed before commitment.
+    pub(super) suppressed: Vec<crate::candidate_generation::CandidateSuppressionDiagnostic>,
     /// Goals with zero motive score.
     pub(super) zero_motive: Vec<worldwake_core::GoalKey>,
     /// Political goals omitted before emission due to hard gates.
@@ -260,13 +262,18 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     );
 
     ReadPhaseResult {
+        offered: candidates.diagnostics.offers,
         ranked: outcome.ranked,
         generated_keys,
         candidate_evidence,
         fully_blocked_desires: candidates.diagnostics.fully_blocked_desires,
         places_reachable: candidates.diagnostics.places_reachable,
         places_after_belief_filter: candidates.diagnostics.places_after_belief_filter,
-        suppressed: outcome.suppressed,
+        suppressed: {
+            let mut suppressed = candidates.diagnostics.suppressed;
+            suppressed.extend(outcome.suppressed);
+            suppressed
+        },
         zero_motive: outcome.zero_motive,
         omitted_political: candidates.diagnostics.omitted_political,
         omitted_bandit: candidates.diagnostics.omitted_bandit,

@@ -36,11 +36,13 @@ use worldwake_core::{
     CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue,
     ControlSource, DeadAt, DecisionEventPayload, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
-    DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, EventLog,
-    EventPayload, EventTag, EventView, ExecutionBudget, ExplorationProfile, FrameAssumption,
-    FrameState, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
+    DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
+    EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary,
+    ExecutionBudget, ExplorationProfile, FrameAssumption, FrameState, GoalOfferedPayload,
+    GoalRejectionReason, GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDispositionProfile, IntentionDomain, IntentionFrame, KnownRecipes,
+    LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
     MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
     PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
     RecordKind, RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile,
@@ -4238,6 +4240,75 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
             blocking_fact: None,
             expires_tick: Tick(9),
         }))
+    );
+}
+
+#[test]
+fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_provenance() {
+    let (mut harness, seller, origin, _destination, bread) = hungry_acquisition_harness();
+    let goal_key = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    run_same_place_observation(&mut harness, Tick(1), origin, seller);
+    run_same_place_observation(&mut harness, Tick(1), origin, bread);
+    let mut memory = BlockerMemory::default();
+    memory.record(Blocker {
+        blocker_key: BlockerKey {
+            goal_key,
+            place: Some(origin),
+            target: None,
+            action_def: None,
+        },
+        blocking_fact: BlockingFact::NoKnownSeller,
+        diagnostic_context: None,
+        observed_tick: Tick(0),
+        expires_tick: Tick(10),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
+    });
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_blocker_memory(harness.actor, memory)
+        .expect("should seed blocker memory");
+    commit_txn(txn);
+
+    harness.step_once();
+
+    let offered = harness.event_log.events_by_tag(EventTag::GoalOffered);
+    let suppressed = harness.event_log.events_by_tag(EventTag::GoalSuppressed);
+    assert!(
+        offered.iter().any(|event_id| {
+            harness
+                .event_log
+                .get(*event_id)
+                .and_then(|record| record.decision_payload())
+                == Some(&DecisionEventPayload::GoalOffered(GoalOfferedPayload {
+                    agent: harness.actor,
+                    goal_key,
+                    emitter: EmitterTag::HomeostaticNeeds,
+                    source_evidence: EvidenceSummary {
+                        evidence_kind_counts: BTreeMap::from([
+                            (EvidenceKindTag::HomeostaticPressure, 1),
+                            (EvidenceKindTag::PerceptionObservation, 1),
+                        ]),
+                    },
+                }))
+        }),
+        "expected acquire-candidate offer payload in GoalOffered events"
+    );
+    assert!(
+        suppressed.iter().any(|event_id| {
+            harness
+                .event_log
+                .get(*event_id)
+                .and_then(|record| record.decision_payload())
+                == Some(&DecisionEventPayload::GoalSuppressed(GoalSuppressedPayload {
+                    agent: harness.actor,
+                    goal_key,
+                    reason: GoalRejectionReason::SuppressedByBlocker,
+                }))
+        }),
+        "expected acquire-candidate blocker suppression payload in GoalSuppressed events"
     );
 }
 

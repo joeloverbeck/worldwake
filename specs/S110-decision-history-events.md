@@ -12,7 +12,7 @@ Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
 
 - `worldwake-core` — new `EventTag` variants (`event_tag.rs`); new `DecisionEventPayload` sum enum and component payload structs (new `decision_event_payload.rs`); `EventPayload` gains an `Option<DecisionEventPayload>` field; relocate `MaterializationTag` from `worldwake-sim` to `worldwake-core` so core-owned payloads can reference it without violating crate layering; `CognitiveProfile` gains `decision_history_alternatives`.
 - `worldwake-sim` — re-export `MaterializationTag` from `worldwake-core` for backwards source compatibility with existing AI-crate and systems-crate consumers; no new behavior.
-- `worldwake-ai` — emit the new events at goal-commit, goal-reject, plan-adopt, plan-invalidate, expectation-mismatch, repair-apply, blocker-record, replan-trigger call sites; build `DecisionEventPayload` values from existing trace data at emission time.
+- `worldwake-ai` — emit the new events at goal-commit, goal-reject, plan-adopt, plan-invalidate, expectation-mismatch, repair-apply, blocker-record, and replan-trigger call sites; build `DecisionEventPayload` values from authoritative candidate-generation / ranking diagnostics plus runtime seam data at emission time.
 - `worldwake-cli` — observer "Decision History" section renders the new events.
 
 ## Dependencies
@@ -276,8 +276,7 @@ All types derive `Clone + Debug + Eq + PartialEq + Serialize + Deserialize`; the
 
 Representative emission call sites (final wiring at implementation time):
 
-- `candidate_generation.rs` (one call per emitted offer) → `EventTag::GoalOffered` + `GoalOfferedPayload`
-- `ranking.rs::rank_candidates` / `rank_candidates_with_memories` → `EventTag::GoalSuppressed` + `GoalSuppressedPayload` (when an offer is filtered before scoring). The `rejected_alternatives` list is captured at commit, not here.
+- `candidate_generation.rs` / `ranking.rs` (authoritative provenance capture into diagnostics), then `agent_tick/mod.rs` (event-log emission seam) → `EventTag::GoalOffered` + `GoalOfferedPayload` and `EventTag::GoalSuppressed` + `GoalSuppressedPayload`. The `rejected_alternatives` list is captured at commit, not here.
 - `agent_tick/planning.rs` (post-ranking commit path) → `EventTag::GoalCommitted` + `GoalCommittedPayload` with the captured alternatives
 - `agent_tick/planning.rs` (successful plan build) → `EventTag::PlanAdopted` + `PlanAdoptedPayload`
 - `goal_switching.rs` / `agent_tick` goal-switch path → `EventTag::GoalSuspended` / `EventTag::GoalAbandoned` + matching payloads

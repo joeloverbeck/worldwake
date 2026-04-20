@@ -1,6 +1,6 @@
 # S110DECHISEVE-007: Candidate offer and suppression provenance for decision events
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — candidate-generation/runtime plumbing to expose authoritative `GoalOffered` and `GoalSuppressed` payload causes
@@ -14,8 +14,8 @@
 
 1. `crates/worldwake-ai/src/candidate_generation.rs::emit_candidate_with_trace` knows the concrete candidate-emission site, but today it does not surface an authoritative `EmitterTag` to any caller that owns `EventLog`.
 2. Candidate blocker/discrepancy suppression happens in `candidate_generation.rs::{filter_suppressed_candidates,find_matching_suppression}` before ranking, while ranking-level suppression comes from `crates/worldwake-ai/src/goal_policy.rs::evaluate_suppression`.
-3. The core enum `GoalRejectionReason` currently covers blocker/discrepancy/contention classes but not generic stress-policy suppression. Any implementation must either extend the schema honestly or narrow the emitted scope explicitly.
-4. Shared abstraction boundary under audit: candidate-generation diagnostics returned to `agent_tick/observation.rs`.
+3. The core enum `GoalRejectionReason` currently covers blocker/discrepancy/contention classes but not generic stress-policy suppression, and the core `EmitterTag` / `EvidenceKindTag` families are also narrower than the live candidate-generation emitter inventory. This ticket must widen the core schema honestly instead of inferring lossy fallback categories from `GoalKind`.
+4. Shared abstraction boundary under audit: candidate-generation and ranking diagnostics carried through `refresh_runtime_for_read_phase_with_memories(...)` into the `agent_tick/mod.rs` orchestration layer that owns `ctx.event_log`.
 
 ## Architecture Check
 
@@ -36,17 +36,18 @@ Surface enough data from candidate-generation emit sites to construct `GoalOffer
 
 ### 2. Add typed suppression provenance
 
-Surface blocker/discrepancy/contention suppression reasons directly from candidate generation, and reassess whether stress-policy suppression needs a new core enum variant or a narrowed event scope.
+Surface blocker/discrepancy suppression reasons directly from candidate generation, surface stress-policy suppression from ranking, and widen the core schema as needed so every emitted `GoalSuppressed` reason comes from a concrete live classifier.
 
 ### 3. Emit `GoalOffered` and `GoalSuppressed`
 
-Once the provenance exists, emit those events from the first `agent_tick` layer that owns both the diagnostics and `EventLog`.
+Once the provenance exists, emit those events from the `agent_tick/mod.rs` read-phase orchestration seam that owns both the returned diagnostics and `EventLog`.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify)
-- `crates/worldwake-ai/src/agent_tick/observation.rs` (modify)
-- `crates/worldwake-core/src/decision_event_payload.rs` (modify if schema correction is required)
+- `crates/worldwake-ai/src/ranking.rs` (modify)
+- `crates/worldwake-ai/src/agent_tick/{observation,mod}.rs` (modify)
+- `crates/worldwake-core/src/decision_event_payload.rs` (modify — schema correction required)
 
 ## Out of Scope
 
@@ -78,3 +79,24 @@ Once the provenance exists, emit those events from the first `agent_tick` layer 
 1. `cargo test -p worldwake-ai candidate_generation`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-20.
+
+1. Widened the core decision-history schema in `crates/worldwake-core/src/decision_event_payload.rs` so live candidate-generation emitters and evidence families have authoritative tags, and added `GoalRejectionReason::SuppressedByStressPolicy` for ranking-level suppression.
+2. Extended candidate-generation diagnostics in `crates/worldwake-ai/src/candidate_generation.rs` to carry authoritative offer provenance (`EmitterTag`, `EvidenceSummary`) and typed suppression reasons from blocker/discrepancy filtering.
+3. Extended ranking suppression output in `crates/worldwake-ai/src/ranking.rs` so stress-policy suppression is surfaced as explicit decision-event provenance instead of being reconstructed later from goal kind.
+4. Carried offer/suppression diagnostics through `crates/worldwake-ai/src/agent_tick/observation.rs` and emitted `GoalOffered` / `GoalSuppressed` from the real `EventLog` seam in `crates/worldwake-ai/src/agent_tick/mod.rs`.
+5. Added focused tests in `crates/worldwake-ai/src/candidate_generation.rs`, `crates/worldwake-ai/src/ranking.rs`, and `crates/worldwake-ai/src/agent_tick/tests.rs` proving offer provenance, stress-policy suppression, and runtime event emission for a blocked acquire candidate.
+
+## Verification Result
+
+Passed on 2026-04-20:
+
+1. `cargo test -p worldwake-ai candidate_generation::tests::diagnostics_record_offer_emitter_and_blocker_suppression_reason -- --exact`
+2. `cargo test -p worldwake-ai ranking::tests::suppressed_candidates_record_stress_policy_reason -- --exact`
+3. `cargo test -p worldwake-ai agent_tick::tests::read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_provenance -- --exact`
+4. `cargo test -p worldwake-ai`
+5. `cargo test --workspace`
+6. `cargo clippy --workspace --all-targets -- -D warnings`

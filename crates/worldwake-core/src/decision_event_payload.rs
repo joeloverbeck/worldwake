@@ -31,9 +31,22 @@ pub struct GoalOfferedPayload {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum EmitterTag {
     HomeostaticNeeds,
-    ObligationExecution,
+    Production,
+    Enterprise,
+    Disposal,
+    Bounty,
+    ArtifactPosting,
+    Combat,
+    Crime,
+    Social,
+    Patrol,
+    Political,
+    RecordedViolation,
+    Search,
+    Escort,
     Exploration,
-    LearnedOpportunity,
+    ProactiveExploration,
+    ExpectationViolation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -44,8 +57,14 @@ pub struct EvidenceSummary {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum EvidenceKindTag {
     HomeostaticPressure,
+    SelfKnowledge,
     PerceptionObservation,
     InstitutionalRecord,
+    RecordedViolation,
+    ExpectationRecord,
+    ExplorationPressure,
+    PatrolRoute,
+    EnterpriseState,
     LearnedOpportunity,
 }
 
@@ -77,6 +96,7 @@ pub enum GoalRejectionReason {
     FeasibilityProbeFailed,
     SuppressedByBlocker,
     SuppressedByDiscrepancy,
+    SuppressedByStressPolicy,
     SuppressedByContentionPreempt,
     ArbitrationLost,
     SwitchMarginInsufficient,

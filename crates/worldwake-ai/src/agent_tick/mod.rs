@@ -47,9 +47,9 @@ use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents,
     ControlSource, DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
-    IntentionFrame, LastProactiveExplorationTick, LearnedOpportunityMemory, OpportunityAnchor,
-    OpportunityEntry, PendingEvent, RepairEntry, RepairKey, RepairMemory, Tick, VisibilitySpec,
-    WitnessData, WorldTxn,
+    GoalOfferedPayload, GoalSuppressedPayload, IntentionFrame, LastProactiveExplorationTick,
+    LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, PendingEvent, RepairEntry,
+    RepairKey, RepairMemory, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -246,6 +246,42 @@ pub(super) fn emit_decision_event(
         tags: BTreeSet::from([tag]),
         decision_payload: Some(decision_payload),
     }));
+}
+
+fn emit_candidate_decision_events(
+    event_log: &mut worldwake_core::EventLog,
+    tick: Tick,
+    agent: EntityId,
+    offers: &[crate::candidate_generation::CandidateOfferDiagnostic],
+    suppressions: &[crate::candidate_generation::CandidateSuppressionDiagnostic],
+) {
+    for offer in offers {
+        emit_decision_event(
+            event_log,
+            tick,
+            agent,
+            EventTag::GoalOffered,
+            DecisionEventPayload::GoalOffered(GoalOfferedPayload {
+                agent,
+                goal_key: offer.opportunity.goal_key,
+                emitter: offer.emitter,
+                source_evidence: offer.source_evidence.clone(),
+            }),
+        );
+    }
+    for suppression in suppressions {
+        emit_decision_event(
+            event_log,
+            tick,
+            agent,
+            EventTag::GoalSuppressed,
+            DecisionEventPayload::GoalSuppressed(GoalSuppressedPayload {
+                agent,
+                goal_key: suppression.opportunity.goal_key,
+                reason: suppression.reason,
+            }),
+        );
+    }
 }
 
 impl AutonomousController for AgentTickDriver {
@@ -588,6 +624,13 @@ fn process_agent(
         },
         tracing,
     );
+    emit_candidate_decision_events(
+        ctx.event_log,
+        tick,
+        agent,
+        &read_result.offered,
+        &read_result.suppressed,
+    );
     record_learned_opportunities_from_read_phase(
         &runtime_belief_view(
             agent,
@@ -893,7 +936,11 @@ fn process_agent(
                     .and_then(|(winner, runner_up)| {
                         crate::ranking::explain_ranked_goal_order(winner, runner_up)
                     }),
-                suppressed: read_result.suppressed,
+                suppressed: read_result
+                    .suppressed
+                    .iter()
+                    .map(|suppression| suppression.opportunity.goal_key)
+                    .collect(),
                 zero_motive: read_result.zero_motive,
                 omitted_political: read_result.omitted_political,
                 omitted_bandit: read_result.omitted_bandit,

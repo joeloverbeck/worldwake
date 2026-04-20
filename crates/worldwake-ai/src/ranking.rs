@@ -27,7 +27,7 @@ use worldwake_core::{
     ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor, OpportunityKey,
     PerceptionSource, Permille, Quantity, RepairKey, RepairMemory, RightKind, SourceKey, TellTopic,
     ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
-    failure_ratio_permille,
+    failure_ratio_permille, GoalRejectionReason,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -37,7 +37,7 @@ pub struct RankingOutcome {
     /// Ranked goals after all filters (sorted by ranking order).
     pub ranked: Vec<RankedGoal>,
     /// Goals that were suppressed by situational conditions (danger/self-care pressure).
-    pub suppressed: Vec<GoalKey>,
+    pub(crate) suppressed: Vec<crate::candidate_generation::CandidateSuppressionDiagnostic>,
     /// Goals that passed suppression but had zero motive score.
     pub zero_motive: Vec<GoalKey>,
 }
@@ -134,7 +134,13 @@ pub(crate) fn rank_candidates_with_memories(
             evaluate_suppression(&candidate.key.kind, &context.decision_context),
             GoalPolicyOutcome::Available
         ) {
-            suppressed.push(candidate.key);
+            suppressed.push(crate::candidate_generation::CandidateSuppressionDiagnostic {
+                opportunity: OpportunityKey {
+                    goal_key: candidate.key,
+                    anchor: candidate.anchor,
+                },
+                reason: GoalRejectionReason::SuppressedByStressPolicy,
+            });
             continue;
         }
         let provenance = goal_ranking_provenance(candidate, &context);
@@ -2038,7 +2044,7 @@ mod tests {
         DeprivationKind, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
         DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
         ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
         InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile,
         LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, MultiplierPermille,
         NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
@@ -4019,6 +4025,37 @@ mod tests {
             repair_memory,
             learned_opportunity_memory,
         )
+    }
+
+    #[test]
+    fn suppressed_candidates_record_stress_policy_reason() {
+        let agent = entity(1);
+        let corpse = entity(2);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
+        );
+
+        let outcome = rank(
+            &[goal(GoalKind::LootCorpse { corpse })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(outcome.ranked.is_empty());
+        assert_eq!(
+            outcome.suppressed,
+            vec![crate::candidate_generation::CandidateSuppressionDiagnostic {
+                opportunity: worldwake_core::OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::LootCorpse { corpse }),
+                    anchor: OpportunityAnchor::None,
+                },
+                reason: GoalRejectionReason::SuppressedByStressPolicy,
+            }]
+        );
     }
 
     #[test]
