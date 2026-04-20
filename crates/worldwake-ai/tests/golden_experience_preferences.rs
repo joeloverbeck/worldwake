@@ -253,6 +253,7 @@ fn emit_combat_event(
         visibility: VisibilitySpec::SamePlace,
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([EventTag::Combat]),
+        decision_payload: None,
     }));
 }
 

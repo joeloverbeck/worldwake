@@ -807,6 +807,7 @@ fn emit_discovery_event(
             potential_witnesses: BTreeSet::from([context.observer]),
         },
         tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+        decision_payload: None,
     }));
 }
 
@@ -1340,6 +1341,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
+            decision_payload: None,
         }));
     }
 
@@ -2257,6 +2259,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -2610,6 +2613,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Trade]),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([3; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -2681,6 +2685,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social]),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([5; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -2749,6 +2754,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social, EventTag::Transfer]),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([6; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -2823,6 +2829,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Crime, EventTag::Transfer]),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([0x41; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -2900,6 +2907,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Political]),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -2981,6 +2989,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social, EventTag::Coercion]),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3058,6 +3067,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([bystander, direct_witness]),
             },
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([9; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3126,6 +3136,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([direct_witness, bystander]),
             },
             tags: BTreeSet::from([EventTag::Social]),
+            decision_payload: None,
         });
 
         assert_eq!(
@@ -3154,6 +3165,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([direct_witness, bystander]),
             },
             tags: BTreeSet::from([EventTag::Social, EventTag::Transfer]),
+            decision_payload: None,
         });
         assert_eq!(
             social_kind(&obligation_pending),
@@ -3176,6 +3188,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([direct_witness, bystander]),
             },
             tags: BTreeSet::from([EventTag::Social, EventTag::Coercion]),
+            decision_payload: None,
         });
         assert_eq!(
             social_kind(&coercion_pending),
@@ -3232,6 +3245,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([4; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3337,6 +3351,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4670,6 +4685,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([20; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4764,6 +4780,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([21; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4860,6 +4877,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([22; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4958,6 +4976,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
             tick: Tick(3),
@@ -4972,6 +4991,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([24; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -5098,6 +5118,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([23; 32]));
         let action_defs = ActionDefRegistry::new();

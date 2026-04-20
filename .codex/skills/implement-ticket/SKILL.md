@@ -13,6 +13,8 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 Load `references/ticket-classification.md`.
 
+If the ticket primarily introduces a shared schema, payload, enum, save-format bump, or other substrate that sibling tickets will populate or render later, classify it as `schema-only / staged substrate` during intake. For that ticket shape, reassess the carrier contract, derive/trait surface, constructor fallout, save/replay/version boundaries, and focused round-trip coverage first. Expect existing emitters/builders to keep populating the new surface with `None`/empty/default values until the later sibling ticket wires runtime use, and record that staged state explicitly in closeout instead of implying the new schema is already live.
+
 ### 1. Load the ticket context
 
 1. Read the target ticket file.
@@ -28,6 +30,7 @@ Load `references/ticket-classification.md`.
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
 When a ticket adds a runtime report, forensic surface, or other derived read-model type, verify the requested trait/derive surface up front on the live branch rather than trusting the ticket sketch. Check whether every nested field already satisfies the promised bounds (`Clone`, `Eq`, `Serialize`, `Deserialize`, etc.), and treat missing derives or stale field shapes as current-ticket scope before finalizing the file list.
+When a ticket adds a field to a shared record, payload, or schema type, sweep any live trait/view/builder/wrapper surfaces that expose or mirror that record (for example `*View` traits, report rows, pending-record wrappers, or renderer inputs). If leaving those surfaces unchanged would make the new field unreachable or dishonest through the current abstraction boundary, extend them in the same ticket instead of treating the field addition as self-contained.
 
 When a system ticket claims a new event-log, trace, or transition carrier, verify first whether the live canonical carrier is already ordinary `WorldTxn` event payload fields (`action_name`, tags, targets, visibility, witness data) before planning a new structured event path.
 
@@ -89,6 +92,8 @@ For doc-only or compile-time regression tickets, use this compact scope checklis
 ### 5. Implement with Worldwake discipline
 
 Load `references/implementation-discipline.md` when reassessment shows a non-mechanical, shared-surface, or otherwise higher-risk change that needs extra guardrails. For straightforward small/local tickets whose reassessment already proved the edit path is mechanical, you may proceed without loading that reference.
+
+For repo-wide struct-literal or constructor fallout caused by a shared field addition, target exact constructor matches first (for example `EventPayload {` rather than a looser nearby-field pattern), then immediately re-scan touched files for accidental edits in same-shaped blocks before moving on to verification. Treat this cleanup pass as part of the implementation step, not optional polish after tests fail.
 
 ### 6. Verify at the right boundary
 

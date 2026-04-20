@@ -93,6 +93,8 @@ If all tickets are independent, state this once rather than repeating `None` in 
 
 **Wait for user approval or adjustments.** Do not write files until the user confirms.
 
+**Auto mode interaction**: When auto mode is active and Step 2 validation surfaced no Issues (no stale references, no missing files, no renamed symbols, no deferred reassessment findings), auto-approve the summary table and proceed to Step 5. Announce the auto-approval inline (e.g., "Auto mode: no Issues surfaced in Step 2, proceeding to Step 5"). If Step 2 surfaced any Issue, the wait-for-user gate applies even in auto mode.
+
 ### Step 5: Write Ticket Files
 
 For each approved ticket, write a file to `tickets/<NAMESPACE>-<NNN>.md` using the **exact structure** from `tickets/_TEMPLATE.md`.
@@ -105,7 +107,12 @@ Every ticket MUST include:
 - **Engine Changes**: None or list of affected areas
 - **Deps**: Other tickets or specs this depends on
 - **Problem**: What user-facing or architecture problem this solves
-- **Assumption Reassessment**: Assumptions validated against current code (use today's date). Include items 1-3 from the template (always required) plus any domain-specific items from items 4-15 that match the ticket's scope. Omit inapplicable items silently — do not pad with "N/A" boilerplate. Renumber the surviving items sequentially (1, 2, 3, …) — do not preserve gaps from the template; items 1–3 are always required; items 4–15 are a menu, not a fill-in form. For tickets that modify behavior tested by existing focused/unit tests, grep the target module's `#[cfg(test)]` block for test names exercising the changed function or type. Name existing tests in the Assumption Reassessment and adjust the Test Plan accordingly (see `docs/precision-rules.md` Rule 3). For pure structural refactoring tickets (no behavioral changes, no new actions/components), items 1-3 may be satisfied concisely by confirming: (a) the symbols being moved exist at stated locations, (b) the impl block count matches the spec's claim, (c) the shared boundary is the trait/struct under edit. Items 4-15 are typically all inapplicable for structural refactors. For observer-only, CLI-only, or tooling-only specs (no engine changes, no simulation state mutations), items 1-3 are typically sufficient — items 4-15 apply only when the ticket touches simulation runtime, planning, or action systems. When a spec proposes refactoring an existing function to delegate to a new superset method, verify that the delegation doesn't widen the original function's semantic contract. If the new method returns values for inputs the original explicitly handled as `None` or didn't cover, the refactoring must preserve the original's narrower scope — delegate only for the overlapping subset and document which goals/variants are intentionally excluded from delegation
+- **Assumption Reassessment**: Assumptions validated against current code (use today's date). Include items 1-3 from the template (always required) plus any domain-specific items from items 4-15 that match the ticket's scope. Omit inapplicable items silently — do not pad with "N/A" boilerplate.
+  - **Renumber surviving items sequentially starting from 4**: items 1–3 are always required; items 4–15 are a menu, not a fill-in form. After selecting which menu items apply, renumber them sequentially — do not preserve the template's gaps. Example: if template items 1, 2, 3, and 14 apply to the ticket, the produced ticket lists them as `1, 2, 3, 4` (the former item-14 body becomes item 4). Lists like `1, 2, 3, 14` or `1, 2, 3, 5, 15` are malformed output and will need rework.
+  - For tickets that modify behavior tested by existing focused/unit tests, grep the target module's `#[cfg(test)]` block for test names exercising the changed function or type. Name existing tests in the Assumption Reassessment and adjust the Test Plan accordingly (see `docs/precision-rules.md` Rule 3).
+  - For pure structural refactoring tickets (no behavioral changes, no new actions/components), items 1-3 may be satisfied concisely by confirming: (a) the symbols being moved exist at stated locations, (b) the impl block count matches the spec's claim, (c) the shared boundary is the trait/struct under edit. Items 4-15 are typically all inapplicable for structural refactors.
+  - For observer-only, CLI-only, or tooling-only specs (no engine changes, no simulation state mutations), items 1-3 are typically sufficient — items 4-15 apply only when the ticket touches simulation runtime, planning, or action systems.
+  - When a spec proposes refactoring an existing function to delegate to a new superset method, verify that the delegation doesn't widen the original function's semantic contract. If the new method returns values for inputs the original explicitly handled as `None` or didn't cover, the refactoring must preserve the original's narrower scope — delegate only for the overlapping subset and document which goals/variants are intentionally excluded from delegation.
 - **Architecture Check**: Why this approach is clean, how it preserves agnostic boundaries
 - **Verification Layers**: Map each invariant to its proof surface (for mixed-layer or cross-system tickets: decision trace, action trace, event-log delta, authoritative world state)
 - **What to Change**: Numbered sections with specific implementation details
@@ -118,7 +125,13 @@ Every ticket MUST include:
   - **New/Modified Tests**: Paths with rationale
   - **Commands**: Targeted test commands and full suite verification
 
-Write all ticket files in parallel — send **one assistant message containing one Write tool call per ticket**, not N sequential messages. Each ticket file write is independent because each creates a new file. After the parallel batch returns, verify every ticket file was created. If any Write call failed (typo in path, permissions error, or other I/O failure), retry that ticket with the corrected argument immediately — do not proceed to Step 6 until all ticket files exist at their intended paths.
+#### Batch All Write Calls in One Message
+
+Send **one assistant message containing one Write tool call per ticket**, not N sequential messages. Each ticket file write is independent because each creates a new file, so they can run concurrently. A single message with N Write calls costs one round-trip; N sequential messages cost N round-trips. Compose every ticket's full content first, then emit all Write calls in one batch.
+
+For spec decompositions producing large tickets (individual contents >5KB), the rule still applies — the composition cost is paid once regardless of message count, so the latency saving is the dominant factor.
+
+After the parallel batch returns, verify every ticket file was created. If any Write call failed (typo in path, permissions error, or other I/O failure), retry that ticket with the corrected argument immediately — do not proceed to Step 6 until all ticket files exist at their intended paths.
 
 ### Step 6: Final Summary
 

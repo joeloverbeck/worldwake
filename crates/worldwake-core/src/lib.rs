@@ -42,6 +42,7 @@ pub mod conservation;
 pub mod contention;
 pub mod control;
 pub mod crime;
+pub mod decision_event_payload;
 pub mod delta;
 pub mod discrepancy;
 pub mod disposal;
@@ -143,6 +144,13 @@ pub use control::ControlSource;
 pub use crime::{
     JusticeDispositionProfile, PunishmentFineSelectionTrace, PunishmentFineStartFailureTrace,
     PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
+};
+pub use decision_event_payload::{
+    BlockerRecordedPayload, DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary,
+    ExpectationMismatchPayload, GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload,
+    GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, PlanAdoptedPayload,
+    PlanInvalidatedPayload, PlanInvalidationReason, RejectedAlternativeSummary,
+    RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,

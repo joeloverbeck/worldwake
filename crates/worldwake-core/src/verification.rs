@@ -546,6 +546,7 @@ mod tests {
                 visibility: VisibilitySpec::SamePlace,
                 witness_data: WitnessData::default(),
                 tags: empty_tags(),
+                decision_payload: None,
             },
         )
     }

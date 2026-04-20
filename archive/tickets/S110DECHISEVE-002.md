@@ -1,6 +1,6 @@
 # S110DECHISEVE-002: EventTag variants, DecisionEventPayload types, and EventPayload decision_payload field
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `EventTag` (worldwake-core) extended with 11 variants; new `DecisionEventPayload` module in core; `EventPayload` gains `decision_payload: Option<DecisionEventPayload>` field; `SAVE_FORMAT_VERSION` bump
@@ -178,3 +178,21 @@ In `crates/worldwake-core/src/decision_event_payload.rs` `#[cfg(test)]` block, a
 2. `cargo test -p worldwake-sim save_load` — confirms the version bump is coherent with save/load tests.
 3. `cargo test --workspace` — confirms no consumer construction site is missed.
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+- Completion date: 2026-04-20
+- Added [decision_event_payload.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/decision_event_payload.rs) with the `DecisionEventPayload` sum enum plus all S110 component payload structs and helper enums in `worldwake-core`, then exported the schema from [lib.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/lib.rs).
+- Extended [event_tag.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/event_tag.rs) with the 11 decision-history `EventTag` variants and updated the stable variant list/count tests to cover them.
+- Extended [event_record.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-core/src/event_record.rs) so `EventPayload` now carries `decision_payload: Option<DecisionEventPayload>`, and exposed that field through `EventView::decision_payload()` so the shared event-view abstraction can actually read the new schema.
+- Updated every direct `EventPayload { ... }` construction site found in the workspace to set `decision_payload: None`, preserving current runtime behavior until the emission wiring lands in ticket 004.
+- Bumped [save_load.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-sim/src/save_load.rs) `SAVE_FORMAT_VERSION` from `33` to `34` so the serialized event shape change is explicit and old saves fail fast with version mismatch.
+- Landed the required bincode round-trip coverage for the new decision payload schema and for `EventPayload` carrying a decision payload.
+- Deviation from the original ticket wording: `PlanInvalidationReason` could not honestly derive `Hash` on the live branch because the nested core types it carries (`BeliefClaimKey`, `Discrepancy`, `GoalKey`) do not currently implement `Hash`. The enum still derives `Copy + Clone + Eq + Ord + Serialize + Deserialize`, and no current consumer requires hashing.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo test -p worldwake-sim save_load`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

@@ -1,9 +1,8 @@
 //! Immutable append-only event payloads.
 
-use crate::WoundId;
 use crate::{
-    CauseRef, EventTag, MismatchKind, ObservedEntitySnapshot, StateDelta, VisibilitySpec,
-    WitnessData,
+    CauseRef, DecisionEventPayload, EventTag, MismatchKind, ObservedEntitySnapshot, StateDelta,
+    VisibilitySpec, WitnessData, WoundId,
 };
 use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
@@ -22,6 +21,7 @@ pub trait EventView {
     fn visibility(&self) -> VisibilitySpec;
     fn witness_data(&self) -> &WitnessData;
     fn tags(&self) -> &BTreeSet<EventTag>;
+    fn decision_payload(&self) -> Option<&DecisionEventPayload>;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -56,6 +56,7 @@ pub struct EventPayload {
     pub visibility: VisibilitySpec,
     pub witness_data: WitnessData,
     pub tags: BTreeSet<EventTag>,
+    pub decision_payload: Option<DecisionEventPayload>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -112,6 +113,10 @@ impl EventView for PendingEvent {
     fn tags(&self) -> &BTreeSet<EventTag> {
         &self.payload.tags
     }
+
+    fn decision_payload(&self) -> Option<&DecisionEventPayload> {
+        self.payload.decision_payload.as_ref()
+    }
 }
 
 impl EventView for EventRecord {
@@ -162,6 +167,10 @@ impl EventView for EventRecord {
     fn tags(&self) -> &BTreeSet<EventTag> {
         &self.payload.tags
     }
+
+    fn decision_payload(&self) -> Option<&DecisionEventPayload> {
+        self.payload.decision_payload.as_ref()
+    }
 }
 
 impl PendingEvent {
@@ -204,7 +213,8 @@ mod tests {
     use super::{EventPayload, EventRecord, EventView, EvidenceRef, PendingEvent};
     use crate::MismatchKind;
     use crate::{
-        CauseRef, ComponentDelta, ComponentKind, ComponentValue, EventTag, QuantityDelta,
+        CauseRef, ComponentDelta, ComponentKind, ComponentValue, DecisionEventPayload, EmitterTag,
+        EventTag, EvidenceKindTag, EvidenceSummary, GoalOfferedPayload, QuantityDelta,
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta, VisibilitySpec,
         WitnessData,
     };
@@ -278,6 +288,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([entity(2), entity(10)]),
             },
             tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
+            decision_payload: None,
         });
 
         assert_eq!(pending.payload.tick, Tick(9));
@@ -296,6 +307,7 @@ mod tests {
             pending.payload.tags.iter().copied().collect::<Vec<_>>(),
             vec![EventTag::WorldMutation, EventTag::System]
         );
+        assert!(pending.decision_payload().is_none());
     }
 
     #[test]
@@ -327,6 +339,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([entity(2), entity(10)]),
             },
             tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
+            decision_payload: None,
         })
         .into_record(EventId(4));
 
@@ -347,6 +360,7 @@ mod tests {
             record.payload.tags.iter().copied().collect::<Vec<_>>(),
             vec![EventTag::WorldMutation, EventTag::System]
         );
+        assert!(record.decision_payload().is_none());
     }
 
     #[test]
@@ -364,6 +378,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         })
         .into_record(EventId(0));
 
@@ -422,6 +437,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
             },
             tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
+            decision_payload: None,
         });
 
         let bytes = bincode::serialize(&pending).unwrap();
@@ -503,6 +519,7 @@ mod tests {
             visibility: VisibilitySpec::ParticipantsOnly,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Discovery]),
+            decision_payload: None,
         });
 
         assert_eq!(
@@ -573,6 +590,7 @@ mod tests {
             visibility: VisibilitySpec::ParticipantsOnly,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Discovery]),
+            decision_payload: None,
         });
 
         assert_eq!(
@@ -640,6 +658,7 @@ mod tests {
                 visibility: VisibilitySpec::ParticipantsOnly,
                 witness_data: WitnessData::default(),
                 tags: BTreeSet::from([EventTag::Discovery]),
+                decision_payload: None,
             },
         );
 
@@ -697,6 +716,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::WorldMutation]),
+            decision_payload: None,
         });
 
         let bytes = bincode::serialize(&pending).unwrap();
@@ -754,6 +774,7 @@ mod tests {
                     potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
                 },
                 tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
+                decision_payload: None,
             },
         );
 
@@ -808,6 +829,7 @@ mod tests {
                     potential_witnesses: BTreeSet::from([entity(3)]),
                 },
                 tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+                decision_payload: None,
             },
         );
 
@@ -826,5 +848,39 @@ mod tests {
                 },
             }]
         );
+    }
+
+    #[test]
+    fn event_payload_roundtrips_with_decision_payload() {
+        let payload = EventPayload {
+            tick: Tick(30),
+            cause: CauseRef::SystemTick(Tick(30)),
+            actor_id: Some(entity(1)),
+            action_name: Some("plan".to_string()),
+            target_ids: vec![entity(2)],
+            evidence: Vec::new(),
+            place_id: Some(entity(3)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::GoalOffered]),
+            decision_payload: Some(DecisionEventPayload::GoalOffered(GoalOfferedPayload {
+                agent: entity(1),
+                goal_key: crate::test_utils::sample_goal_key(),
+                emitter: EmitterTag::HomeostaticNeeds,
+                source_evidence: EvidenceSummary {
+                    evidence_kind_counts: BTreeMap::from([(
+                        EvidenceKindTag::HomeostaticPressure,
+                        1,
+                    )]),
+                },
+            })),
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: EventPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
     }
 }

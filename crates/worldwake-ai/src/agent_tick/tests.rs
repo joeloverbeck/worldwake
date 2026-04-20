@@ -1114,6 +1114,7 @@ fn run_same_place_observation(
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
     let active_actions = std::collections::BTreeMap::new();
     perception_system(SystemExecutionContext {

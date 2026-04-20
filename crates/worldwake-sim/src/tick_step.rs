@@ -927,6 +927,7 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
         visibility: VisibilitySpec::Hidden,
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([EventTag::System]),
+        decision_payload: None,
     }));
 }
 

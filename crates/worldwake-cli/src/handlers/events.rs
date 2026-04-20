@@ -328,6 +328,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::System]),
+            decision_payload: None,
         });
         sim.event_log_mut().emit(pending)
     }
@@ -346,6 +347,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::ActionStarted]),
+            decision_payload: None,
         });
         sim.event_log_mut().emit(pending)
     }
@@ -425,6 +427,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::ActionCommitted]),
+            decision_payload: None,
         });
         let event_id = sim.event_log_mut().emit(pending);
 
@@ -447,6 +450,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         });
 
         assert_eq!(
