@@ -127,7 +127,7 @@ pub use canonical::{
     hash_world,
 };
 pub use cause::CauseRef;
-pub use cognitive_profile::CognitiveProfile;
+pub use cognitive_profile::{CognitiveProfile, PortfolioSlotWeights};
 pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};
 pub use communication::{CommunicationClass, CommunicationProfile, classify_communication};
 pub use component_tables::ComponentTables;

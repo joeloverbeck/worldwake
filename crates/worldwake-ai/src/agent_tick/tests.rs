@@ -44,12 +44,13 @@ use worldwake_core::{
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
     KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
     MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
-    PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
-    RecordKind, RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed,
-    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
-    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
-    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    WoundList, build_believed_entity_state, build_prototype_world,
+    PerceptionSource, Permille, Place, PortfolioSlotWeights, Quantity, QueuedContentionIntent,
+    RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind, RepairMemory,
+    ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
+    ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
+    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
+    build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -132,6 +133,7 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         decision_history_alternatives: CognitiveProfile::default().decision_history_alternatives,
+        slot_weights: PortfolioSlotWeights::default(),
     }
 }
 

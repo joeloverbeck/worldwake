@@ -29,12 +29,13 @@ use worldwake_core::{
     EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeedId,
     HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
     MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute, PerceptionSource, Permille, Place,
-    PlaceTag, ProofRequirement, PrototypePlace, Quantity, RecipeId, RecordedViolation,
-    ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange, Topology,
-    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, ViolationDispositionProfile,
-    ViolationId, ViolationKind, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-    World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
-    build_prototype_world, prototype_place_entity, test_utils::sample_trade_disposition_profile,
+    PlaceTag, PortfolioSlotWeights, ProofRequirement, PrototypePlace, Quantity, RecipeId,
+    RecordedViolation, ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange,
+    Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
+    ViolationDispositionProfile, ViolationId, ViolationKind, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    build_believed_entity_state, build_prototype_world, prototype_place_entity,
+    test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, CombatBeliefView, ControlBeliefView,
@@ -81,6 +82,7 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         decision_history_alternatives: CognitiveProfile::default().decision_history_alternatives,
+        slot_weights: PortfolioSlotWeights::default(),
     }
 }
 

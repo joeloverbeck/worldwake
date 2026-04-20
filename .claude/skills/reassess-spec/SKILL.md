@@ -103,7 +103,9 @@ Extract every concrete codebase reference from the spec:
 - **Code examples** (inline code blocks showing API usage, precondition lists, struct definitions) — extract for fidelity checking against actual source
 - **Scenario and test configuration files** referenced by the spec (RON scenarios, test fixtures, seed values) — extract profile/parameter values the spec's claims depend on
 
-Build a validation checklist. For specs with >15 references, prefer `TodoWrite` to track the checklist per reference, marking each `validated | drifted | missing`; the external surface catches references that mental tracking can silently drop. For ≤15 references, mental tracking is acceptable. Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
+Build a validation checklist. For specs with >15 references, use `TodoWrite` to track the checklist per reference, marking each `validated | drifted | missing`; the external surface catches references that mental tracking can silently drop[^mental-tracking]. Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
+
+[^mental-tracking]: For specs with ≤15 references, mental tracking is acceptable because the working set fits in short-term audit scope. Above that threshold, the external surface is required — batched Grep coverage can mask a silently-dropped reference that only surfaces at post-apply grep (or not at all).
 
 For investigation/bugfix specs (type e, investigation/bugfix subtype), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist. Structured root-cause tracing:
 
@@ -171,6 +173,8 @@ Example rows for each tier:
 | I3 (recommendation-changing) | `grep -n "#[cfg(test)]"` at claimed line | boundary has moved; the targeted function is now runtime, not test-only — re-present to user before applying |
 
 The `Finding` column tier tag (`evidence-refining`, `recommendation-changing`) is required only when the pre-apply check detects a mismatch with the finding. Rows that confirm the finding exactly as written may use the compact descriptive form shown in the first example table (`I1`, `I2`, `M3`, optionally with a brief parenthetical anchor).
+
+For findings resolved by delegated-question reasoning against FOUNDATIONS (rather than by a codebase symbol check — common for design-decision findings where Q3's answer was "you decide based on FOUNDATIONS"), cite the principle(s) applied and the chosen option in the `Check` column; `Result` names the option the reasoning selected. Example row: `| M2 | FND-21 + FND-28 + FND-20 reasoning; Q3 delegated | selected option (a): subsume `prioritize_same_goal_replan_candidates` into commitment slot — stable-commitment + no-parallel-path + bounded-search all favor (a) |`.
 
 **Bundled-answer consistency check**: When a single user response resolves multiple interdependent questions (e.g., "1) a, 2) b, 3) a" in one message), verify before building the verification table that the combined answers are internally consistent — no contradictory routing (the same symbol referenced by two answers is routed to the same destination), no dangling type references (a type referenced in one answer is defined by another), no split-brain conditions (a decision in one answer does not leave a remnant addressed by a different answer). Flag any detected contradiction as a recommendation-changing mismatch and re-present the affected findings for a follow-up round before proceeding.
 
