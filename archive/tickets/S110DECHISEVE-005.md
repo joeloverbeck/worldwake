@@ -1,0 +1,98 @@
+# S110DECHISEVE-005: Event-log replay invariance for decision events
+
+**Status**: COMPLETED
+**Priority**: MEDIUM
+**Effort**: Small
+**Engine Changes**: None — test-only; extends the existing `save_load.rs` serialization harness
+**Deps**: archive/tickets/S110DECHISEVE-004.md (the first foundations-honest emission slice must be archived before replay coverage extends over live decision events)
+
+## Problem
+
+S110 adds new `EventTag` variants and `decision_payload` data to the authoritative append-only log. Worldwake already has a replay invariant: given an event log, replay reproduces the same agenda transitions as the live run. This ticket adds a focused integration test that proves replay still satisfies this invariant after decision events are added — specifically, that `EventPayload::decision_payload` bincode-round-trips without loss and replay-decoded events have byte-identical payloads to the live-run events. Since S110 does not mutate any world state on decision emission (events are record-only), the invariant reduces to "decoding must not fail and payloads must round-trip." The test is a safety net covering the schema change, not a semantic change, and it can now target the full current live decision-event family directly.
+
+## Assumption Reassessment (2026-04-20)
+
+1. `save_load.rs` tests at `crates/worldwake-sim/src/save_load.rs` already exercise full-save round-trip with `SAVE_FORMAT_VERSION`. The new test should piggyback on the same round-trip surface — serialize a full `SimulationState` containing decision events in its `EventLog`, deserialize, and assert equality.
+2. Archived tickets 004, 007, 008, and 010 now land the live emission slice for `GoalCommitted`, `PlanAdopted`, `ExpectationMismatch`, `BlockerRecorded`, `GoalOffered`, `GoalSuppressed`, `GoalSuspended`, `GoalAbandoned`, `PlanInvalidated`, richer `ReplanTriggered`, and the full current `RepairApplied` family (`AlternateTarget`, `AlternateMerchant`, `AlternateRecipe`, `AlternateRoute`). Replay coverage can now target live-emitted variants directly unless a focused fixture is still cleaner for proof isolation.
+3. Shared abstraction boundary under audit: the `EventLog` wire format including `decision_payload`. Replay invariance here means: `bincode::serialize(&event_log) → bincode::deserialize::<EventLog>(…)` produces a byte-equal `EventLog` after ticket 002's `SAVE_FORMAT_VERSION` bump lands, and every `decision_payload: Some(…)` field survives the round trip with field equality. No world-state re-simulation is required (S110 adds no world-state mutations), and synthetic fixtures are acceptable for deferred variants whose runtime emission is not live yet.
+4. No failing golden motivates this ticket. It is a safety net for the schema change.
+
+## Architecture Check
+
+1. Replay-invariance testing that piggybacks on the existing save/load round-trip surface is cleaner than building a new replay oracle. The save/load path is the canonical serialization contract for `EventLog`; replay that decodes through the same path is guaranteed to be consistent with persisted state.
+2. No new abstractions — the test uses the existing `save_to_bytes` / `load_from_bytes` surface and the existing scenario loader. FND-28 preserved (no backwards-compat); the test exercises the current single-format path.
+
+## Verification Layers
+
+1. Bincode round-trip of `EventLog` with populated decision events → the new test asserts `event_log == deserialize(serialize(event_log))` byte-for-byte.
+2. Decision-event preservation across round-trip → assert that after round-trip, for every event with `decision_payload: Some(…)`, the payload variant and every field match the pre-round-trip value.
+6. Single-layer ticket (serialization invariance only) — no decision-trace, action-trace, or belief-view mapping. The invariant is a pure wire-format check.
+
+## What to Change
+
+### 1. Add replay-invariance test
+
+Add to `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` block:
+
+```rust
+#[test]
+fn save_to_bytes_roundtrip_preserves_decision_event_payloads() {
+    // 1. Start from the existing populated save/load fixture state.
+    // 2. Append one synthetic event per DecisionEventPayload variant.
+    // 3. Round-trip through save_to_bytes/load_from_bytes.
+    // 4. Assert full SimulationState equality plus per-payload byte equality.
+}
+```
+
+The implemented test uses the existing `populated_state()` save/load fixture and appends a synthetic event for each currently live `DecisionEventPayload` variant. No scenario execution or replay re-simulation is needed because the invariant under test is serialization equality, not simulation correctness.
+
+### 2. Assert per-variant decision-payload survival
+
+Within the test, iterate the decision-event tags already present on the round-tripped `EventLog`, collect each `decision_payload: Some(…)`, and compare payload-for-payload between pre- and post-round-trip. Keep the explicit bincode-equality assertion in addition to structural equality so the bytes path is exercised directly.
+
+## Files to Touch
+
+- `crates/worldwake-sim/src/save_load.rs` (modify — add `#[cfg(test)]` test) or `crates/worldwake-sim/tests/replay_decision_events.rs` (new — if extracted to a dedicated integration test file)
+
+## Out of Scope
+
+- Full-simulation replay equivalence (re-simulating from the event log and comparing end state). S110 does not change any world-state mutation, so re-simulation equivalence is already guaranteed by existing replay infrastructure and is not a claim this ticket reopens.
+- Cross-version migration testing. Ticket 002 bumps `SAVE_FORMAT_VERSION`; old saves fail with `SaveError::VersionMismatch`. No migration path is in scope.
+- Agenda-transition comparison across live vs. replayed runs. S110 is record-only; agenda transitions are driven by authoritative state, not by decision events. The invariant is weaker than S110's broad design-goal statement allowed for (the spec notes this: "reduces to decoding must not fail").
+
+## Acceptance Criteria
+
+### Tests That Must Pass
+
+1. New test `save_to_bytes_roundtrip_preserves_decision_event_payloads` passes.
+2. All existing `save_load` tests continue to pass at `SAVE_FORMAT_VERSION = 34`.
+3. `cargo test -p worldwake-sim save_load` — targeted.
+4. `cargo test --workspace`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
+
+### Invariants
+
+1. `bincode::serialize(&event_log) → bincode::deserialize::<EventLog>(…)` is the identity function for any `EventLog` containing any mix of `decision_payload: Some(…)` and `decision_payload: None` events.
+2. No decision-event variant produces a serialization error or decoding error under the current format version.
+
+## Test Plan
+
+### New/Modified Tests
+
+1. `crates/worldwake-sim/src/save_load.rs` — new round-trip test covering all 11 `DecisionEventPayload` variants at least once.
+
+### Commands
+
+1. `cargo test -p worldwake-sim save_load`
+2. `cargo test --workspace`
+3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-20. Added `save_to_bytes_roundtrip_preserves_decision_event_payloads` in `crates/worldwake-sim/src/save_load.rs`, built on the existing `populated_state()` fixture. The test appends one synthetic event per `DecisionEventPayload` variant to the authoritative `EventLog`, round-trips the full `SimulationState` through `save_to_bytes` / `load_from_bytes`, asserts full-state equality, then separately asserts per-payload structural equality and bincode byte equality for every decision event.
+
+## Verification Result
+
+- `cargo test -p worldwake-sim save_load`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`

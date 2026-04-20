@@ -50,18 +50,18 @@ fn anomaly_headers_of_kind<'a>(report: &'a str, kind: &str) -> Vec<&'a str> {
         .collect()
 }
 
-fn section_three(report: &str) -> &str {
+fn anomaly_section(report: &str) -> &str {
     let start = report
-        .find("## Section 3 — Anomaly Flags")
-        .expect("section 3 start");
+        .find("## Section 4 — Anomaly Flags")
+        .expect("section 4 start");
     let end = report[start..]
-        .find("## Section 4 —")
+        .find("## Section 5 —")
         .map_or(report.len(), |offset| start + offset);
     &report[start..end]
 }
 
 fn anomaly_block<'a>(report: &'a str, kind: &str) -> &'a str {
-    let section = section_three(report);
+    let section = anomaly_section(report);
     let header = section
         .lines()
         .find(|line| line.starts_with("### Anomaly ") && line.contains(kind))
@@ -110,7 +110,7 @@ fn maintenance_starvation_fires_on_wash_gap() {
     );
     let blocks = anomaly_headers_of_kind(&report, "MAINTENANCE_STARVATION");
     assert_eq!(blocks.len(), 2);
-    let section = section_three(&report);
+    let section = anomaly_section(&report);
     assert!(section.contains("Mira"));
     assert!(section.contains("Noor"));
     assert!(section.contains("accumulated"));
@@ -129,8 +129,8 @@ fn stuck_detector_excludes_wash_travel_cycle() {
     assert_eq!(
         count_anomalies_of_kind(&report, "STUCK_AGENT"),
         0,
-        "wash+travel cycle must not register as stuck; Section 3:\n{}",
-        section_three(&report),
+        "wash+travel cycle must not register as stuck; anomaly section:\n{}",
+        anomaly_section(&report),
     );
 }
 

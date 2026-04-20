@@ -1589,6 +1589,7 @@ mod tests {
                 visibility: VisibilitySpec::Hidden,
                 witness_data: WitnessData::default(),
                 tags: tags.iter().copied().collect::<BTreeSet<_>>(),
+                decision_payload: None,
             },
         ))
     }

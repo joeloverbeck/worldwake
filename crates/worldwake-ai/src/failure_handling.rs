@@ -40,7 +40,7 @@ pub fn handle_plan_failure(
     discrepancy_memory: &mut DiscrepancyMemory,
     facility_intents: &mut ContentionIntents,
     cognitive: &CognitiveProfile,
-) {
+) -> FailureClassification {
     runtime.current_plan = None;
     if jc.is_some() {
         runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::PlanFailed);
@@ -77,7 +77,7 @@ pub fn handle_plan_failure(
         blocker_key.target = None;
     }
 
-    match classification {
+    let recorded = match classification {
         FailureClassification::Blocker(blocking_fact) => {
             let expires_tick =
                 context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
@@ -92,6 +92,7 @@ pub fn handle_plan_failure(
                 clearing_condition,
                 baseline_snapshot,
             });
+            FailureClassification::Blocker(blocking_fact)
         }
         FailureClassification::Discrepancy(discrepancy) => {
             let expires_tick =
@@ -107,9 +108,11 @@ pub fn handle_plan_failure(
                     context.execution_failure,
                 ),
             });
+            FailureClassification::Discrepancy(discrepancy)
         }
-    }
+    };
     runtime.dirty.insert(DirtySet::REPLAN_SIGNAL);
+    recorded
 }
 
 pub fn clear_resolved_failures(
@@ -1693,6 +1696,8 @@ mod tests {
                 .max_snapshot_entities_per_place,
             landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
             use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
+            decision_history_alternatives: CognitiveProfile::default()
+                .decision_history_alternatives,
         }
     }
 

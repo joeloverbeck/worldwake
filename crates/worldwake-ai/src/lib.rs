@@ -42,9 +42,10 @@ mod theft;
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
-    AgentDecisionRuntime, ExhaustionEntry, ExhaustionRetryState, FramePlanRelation,
-    FrameRuntimeSnapshot, MaterializationBindings, classify_frame_plan_relation,
-    frame_runtime_snapshot, frame_travel_destination, has_active_frame_travel, has_frame,
+    AcceptedRepairProvenance, AgentDecisionRuntime, ExhaustionEntry, ExhaustionRetryState,
+    FramePlanRelation, FrameRuntimeSnapshot, MaterializationBindings, PendingRepairContext,
+    classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
+    has_active_frame_travel, has_frame,
 };
 pub use decision_trace::{
     ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,

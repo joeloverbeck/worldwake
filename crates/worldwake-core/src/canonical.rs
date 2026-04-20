@@ -125,6 +125,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: std::collections::BTreeSet::from([EventTag::System]),
+            decision_payload: None,
         }));
         log
     }
@@ -277,6 +278,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: std::collections::BTreeSet::from([EventTag::System]),
+            decision_payload: None,
         }));
 
         assert_ne!(

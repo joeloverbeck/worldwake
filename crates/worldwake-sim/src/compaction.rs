@@ -59,6 +59,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: std::collections::BTreeSet::from([EventTag::WorldMutation]),
+            decision_payload: None,
         })
     }
 

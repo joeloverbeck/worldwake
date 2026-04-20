@@ -10,7 +10,7 @@ use super::planning::{
 use super::{
     AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
     committed_action_for_step, effective_goal_switch_margin,
-    handle_recoverable_travel_step_blockage, persist_blocked_memory,
+    handle_recoverable_travel_step_blockage, persist_blocked_memory, persist_discrepancy_memory,
     plan_and_validate_next_step_traced, record_learned_opportunities_from_read_phase,
     record_repair_memory_from_completed_plan, update_exploration_counter_for_adopted_goal,
     update_frame_for_adopted_plan,
@@ -19,7 +19,7 @@ use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
-    AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
+    AcceptedRepairProvenance, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
     ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
     GoalKind, GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
     PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
@@ -31,22 +31,25 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-    BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyCostPerTick,
-    BodyPart, CarryCapacity, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant,
-    ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory,
-    DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
-    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId,
-    EntityKind, EventLog, EventPayload, ExecutionBudget, ExplorationProfile, FrameAssumption,
-    FrameState, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockerRecordedPayload,
+    BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CognitiveProfile,
+    CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue,
+    ControlSource, DeadAt, DecisionEventPayload, DemandMemory, DemandObservation,
+    DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
+    DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
+    EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
+    ExplorationProfile, FrameAssumption, FrameClearReason, FrameState, GoalAbandonReason,
+    GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
     KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
     MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
     PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
-    RecordKind, RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile,
-    TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind,
-    UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker,
-    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
-    build_believed_entity_state, build_prototype_world,
+    RecordKind, RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed,
+    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
+    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    WoundList, build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -128,6 +131,7 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
             .max_snapshot_entities_per_place,
         landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
+        decision_history_alternatives: CognitiveProfile::default().decision_history_alternatives,
     }
 }
 
@@ -1114,6 +1118,7 @@ fn run_same_place_observation(
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            decision_payload: None,
         }));
     let active_actions = std::collections::BTreeMap::new();
     perception_system(SystemExecutionContext {
@@ -1972,8 +1977,10 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
     let mut jc = None;
     let mut active_goal = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
+    let mut event_log = EventLog::new();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,
+        &mut event_log,
         &harness.scheduler,
         &mut runtime,
         &mut active_goal,
@@ -3313,6 +3320,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,
+        &mut harness.event_log,
         &harness.scheduler,
         &mut runtime,
         &mut active_goal_state,
@@ -3418,6 +3426,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let mut jc2 = None;
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &harness.world,
+        &mut harness.event_log,
         &harness.scheduler,
         &mut runtime,
         &mut active_goal_state,
@@ -4158,7 +4167,158 @@ fn persist_blocked_memory_commits_changed_component() {
     .unwrap();
 
     assert_eq!(world.get_component_blocker_memory(agent), Some(&blocked));
-    assert_eq!(event_log.len(), 2);
+    assert_eq!(event_log.len(), 3);
+    let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
+    assert_eq!(blocker_events.len(), 1);
+    assert_eq!(
+        event_log
+            .get(blocker_events[0])
+            .and_then(|record| record.decision_payload()),
+        Some(&DecisionEventPayload::BlockerRecorded(
+            BlockerRecordedPayload {
+                agent,
+                blocker_key: BlockerKey {
+                    goal_key: GoalKey::from(GoalKind::Sleep),
+                    place: None,
+                    target: None,
+                    action_def: None,
+                },
+                discrepancy: None,
+                blocking_fact: Some(BlockingFact::NoKnownPath),
+                expires_tick: Tick(7),
+            }
+        ))
+    );
+}
+
+#[test]
+fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let mut event_log = EventLog::new();
+    let place = world.topology().place_ids().next().unwrap();
+    let agent = {
+        let mut txn = new_txn(&mut world, 1);
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        txn.set_ground_location(agent, place).unwrap();
+        let _ = txn.commit(&mut event_log);
+        agent
+    };
+    let key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::Sleep),
+        place: Some(place),
+        target: None,
+        action_def: None,
+    };
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    discrepancy_memory.record(DiscrepancyEntry {
+        blocker_key: key,
+        discrepancy: Discrepancy::BeliefContradicted,
+        observed_tick: Tick(2),
+        expires_tick: Tick(9),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+
+    persist_discrepancy_memory(
+        &mut world,
+        &mut event_log,
+        agent,
+        Tick(2),
+        &DiscrepancyMemory::default(),
+        &discrepancy_memory,
+    )
+    .unwrap();
+
+    assert_eq!(
+        world.get_component_discrepancy_memory(agent),
+        Some(&discrepancy_memory)
+    );
+    let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
+    assert_eq!(blocker_events.len(), 1);
+    assert_eq!(
+        event_log
+            .get(blocker_events[0])
+            .and_then(|record| record.decision_payload()),
+        Some(&DecisionEventPayload::BlockerRecorded(
+            BlockerRecordedPayload {
+                agent,
+                blocker_key: key,
+                discrepancy: Some(Discrepancy::BeliefContradicted),
+                blocking_fact: None,
+                expires_tick: Tick(9),
+            }
+        ))
+    );
+}
+
+#[test]
+fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_provenance() {
+    let (mut harness, seller, origin, _destination, bread) = hungry_acquisition_harness();
+    let goal_key = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    run_same_place_observation(&mut harness, Tick(1), origin, seller);
+    run_same_place_observation(&mut harness, Tick(1), origin, bread);
+    let mut memory = BlockerMemory::default();
+    memory.record(Blocker {
+        blocker_key: BlockerKey {
+            goal_key,
+            place: Some(origin),
+            target: None,
+            action_def: None,
+        },
+        blocking_fact: BlockingFact::NoKnownSeller,
+        diagnostic_context: None,
+        observed_tick: Tick(0),
+        expires_tick: Tick(10),
+        clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+        baseline_snapshot: None,
+    });
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_blocker_memory(harness.actor, memory)
+        .expect("should seed blocker memory");
+    commit_txn(txn);
+
+    harness.step_once();
+
+    let offered = harness.event_log.events_by_tag(EventTag::GoalOffered);
+    let suppressed = harness.event_log.events_by_tag(EventTag::GoalSuppressed);
+    assert!(
+        offered.iter().any(|event_id| {
+            harness
+                .event_log
+                .get(*event_id)
+                .and_then(|record| record.decision_payload())
+                == Some(&DecisionEventPayload::GoalOffered(GoalOfferedPayload {
+                    agent: harness.actor,
+                    goal_key,
+                    emitter: EmitterTag::HomeostaticNeeds,
+                    source_evidence: EvidenceSummary {
+                        evidence_kind_counts: BTreeMap::from([
+                            (EvidenceKindTag::HomeostaticPressure, 1),
+                            (EvidenceKindTag::PerceptionObservation, 1),
+                        ]),
+                    },
+                }))
+        }),
+        "expected acquire-candidate offer payload in GoalOffered events"
+    );
+    assert!(
+        suppressed.iter().any(|event_id| {
+            harness
+                .event_log
+                .get(*event_id)
+                .and_then(|record| record.decision_payload())
+                == Some(&DecisionEventPayload::GoalSuppressed(
+                    GoalSuppressedPayload {
+                        agent: harness.actor,
+                        goal_key,
+                        reason: GoalRejectionReason::SuppressedByBlocker,
+                    },
+                ))
+        }),
+        "expected acquire-candidate blocker suppression payload in GoalSuppressed events"
+    );
 }
 
 #[test]
@@ -4802,6 +4962,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let (_, initial_valid, initial_continued, _, initial_selection, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
+            &mut harness.event_log,
             &harness.scheduler,
             runtime,
             &mut active_goal_state,
@@ -4891,6 +5052,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let (continued_step, continued_valid, plan_continued, _, continuation_selection, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
+            &mut harness.event_log,
             &harness.scheduler,
             runtime,
             &mut active_goal_state,
@@ -5759,6 +5921,50 @@ fn trace_dead_agent() {
     assert!(
         matches!(traces[0].outcome, crate::DecisionOutcome::Dead),
         "dead agent should produce Dead outcome"
+    );
+}
+
+#[test]
+fn dead_agent_emits_goal_abandoned_with_death_reason() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    harness.step_once();
+    let goal_key = harness
+        .world
+        .get_component_active_goal(harness.actor)
+        .expect("agent should have an active goal after first tick")
+        .goal_key;
+
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_dead_at(
+            harness.actor,
+            DeadAt {
+                tick: Tick(1),
+                cause: worldwake_core::DeathCause::CombatWounds,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    harness.step_once();
+
+    let abandoned = harness.event_log.events_by_tag(EventTag::GoalAbandoned);
+    assert!(
+        abandoned.iter().any(|event_id| {
+            harness
+                .event_log
+                .get(*event_id)
+                .and_then(|record| record.decision_payload())
+                == Some(&DecisionEventPayload::GoalAbandoned(GoalAbandonedPayload {
+                    agent: harness.actor,
+                    goal_key,
+                    reason: GoalAbandonReason::FrameCleared {
+                        reason: FrameClearReason::Death,
+                    },
+                }))
+        }),
+        "expected dead-agent cleanup to emit GoalAbandoned with FrameClearReason::Death"
     );
 }
 
@@ -6832,48 +7038,36 @@ fn exploration_counter_resets_when_non_explore_goal_is_adopted() {
 #[test]
 fn completed_alternate_plan_records_repair_memory_entry() {
     let goal = GoalKey::from(GoalKind::Sleep);
+    let agent = entity(7);
     let successful_place = entity(91);
     let mut repair_memory = RepairMemory::default();
-    let blocked_memory = BlockerMemory {
-        intents: BTreeMap::from([(
-            BlockerKey {
-                goal_key: goal,
-                place: Some(entity(90)),
-                target: None,
-                action_def: None,
-            },
-            Blocker {
-                blocker_key: BlockerKey {
-                    goal_key: goal,
-                    place: Some(entity(90)),
-                    target: None,
-                    action_def: None,
-                },
-                blocking_fact: BlockingFact::NoKnownPath,
-                diagnostic_context: None,
-                observed_tick: Tick(3),
-                expires_tick: Tick(40),
-                clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
-                baseline_snapshot: None,
-            },
-        )]),
-    };
+    let mut event_log = EventLog::new();
 
-    record_repair_memory_from_completed_plan(
+    if let Some(payload) = record_repair_memory_from_completed_plan(
         &mut repair_memory,
-        &blocked_memory,
+        Some(AcceptedRepairProvenance {
+            goal_key: goal,
+            repair_kind: RepairKind::AlternateTarget,
+            substitute_target: Some(successful_place),
+        }),
         &super::CompletedPlanSummary {
             goal_key: goal,
-            opportunity: OpportunityKey {
-                goal_key: goal,
-                anchor: OpportunityAnchor::Place(successful_place),
-            },
             terminal_kind: PlanTerminalKind::GoalSatisfied,
+            step_index: 2,
         },
+        agent,
         Tick(10),
         120,
         MemoryCapacityProfile::default(),
-    );
+    ) {
+        super::emit_decision_event(
+            &mut event_log,
+            Tick(10),
+            agent,
+            EventTag::RepairApplied,
+            DecisionEventPayload::RepairApplied(payload),
+        );
+    }
 
     let entry = repair_memory
         .repairs
@@ -6885,6 +7079,115 @@ fn completed_alternate_plan_records_repair_memory_entry() {
     assert_eq!(entry.observed_tick, Tick(10));
     assert_eq!(entry.expires_tick, Tick(130));
     assert_eq!(entry.success_count, 1);
+    let events = event_log.events_by_tag(EventTag::RepairApplied);
+    assert_eq!(events.len(), 1);
+    let payload = event_log
+        .get(events[0])
+        .and_then(|record| record.decision_payload())
+        .expect("repair-applied event should carry payload");
+    assert_eq!(
+        payload,
+        &DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+            agent,
+            goal_key: goal,
+            step_index: 2,
+            repair_kind: RepairKind::AlternateTarget,
+            substitute_target: Some(successful_place),
+        })
+    );
+}
+
+#[test]
+fn completed_alternate_merchant_plan_emits_without_recording_target_memory() {
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let merchant = entity(92);
+    let mut repair_memory = RepairMemory::default();
+
+    let payload = record_repair_memory_from_completed_plan(
+        &mut repair_memory,
+        Some(AcceptedRepairProvenance {
+            goal_key: goal,
+            repair_kind: RepairKind::AlternateMerchant,
+            substitute_target: Some(merchant),
+        }),
+        &super::CompletedPlanSummary {
+            goal_key: goal,
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+            step_index: 3,
+        },
+        entity(7),
+        Tick(10),
+        120,
+        MemoryCapacityProfile::default(),
+    )
+    .expect("merchant repairs should emit from accepted provenance");
+
+    assert!(repair_memory.repairs.is_empty());
+    assert_eq!(payload.repair_kind, RepairKind::AlternateMerchant);
+    assert_eq!(payload.substitute_target, Some(merchant));
+}
+
+#[test]
+fn completed_alternate_recipe_plan_emits_without_substitute_target() {
+    let goal = GoalKey::from(GoalKind::ProduceCommodity {
+        recipe_id: RecipeId(4),
+    });
+    let mut repair_memory = RepairMemory::default();
+
+    let payload = record_repair_memory_from_completed_plan(
+        &mut repair_memory,
+        Some(AcceptedRepairProvenance {
+            goal_key: goal,
+            repair_kind: RepairKind::AlternateRecipe,
+            substitute_target: None,
+        }),
+        &super::CompletedPlanSummary {
+            goal_key: goal,
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+            step_index: 1,
+        },
+        entity(8),
+        Tick(11),
+        120,
+        MemoryCapacityProfile::default(),
+    )
+    .expect("recipe repairs should emit from accepted provenance");
+
+    assert!(repair_memory.repairs.is_empty());
+    assert_eq!(payload.repair_kind, RepairKind::AlternateRecipe);
+    assert_eq!(payload.substitute_target, None);
+}
+
+#[test]
+fn completed_alternate_route_plan_emits_without_substitute_target() {
+    let goal = GoalKey::from(GoalKind::Sleep);
+    let mut repair_memory = RepairMemory::default();
+
+    let payload = record_repair_memory_from_completed_plan(
+        &mut repair_memory,
+        Some(AcceptedRepairProvenance {
+            goal_key: goal,
+            repair_kind: RepairKind::AlternateRoute,
+            substitute_target: None,
+        }),
+        &super::CompletedPlanSummary {
+            goal_key: goal,
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+            step_index: 4,
+        },
+        entity(9),
+        Tick(12),
+        120,
+        MemoryCapacityProfile::default(),
+    )
+    .expect("route repairs should emit from accepted provenance");
+
+    assert!(repair_memory.repairs.is_empty());
+    assert_eq!(payload.repair_kind, RepairKind::AlternateRoute);
+    assert_eq!(payload.substitute_target, None);
 }
 
 #[test]

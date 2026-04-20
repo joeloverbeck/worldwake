@@ -306,6 +306,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags,
+            decision_payload: None,
         })
     }
 

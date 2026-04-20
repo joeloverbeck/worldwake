@@ -28,15 +28,16 @@ use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
-    EntityId, EntityKind, ExpectationOutcome, ExpectationRecord, ExpectationState,
-    ExplorationMotivation, GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
-    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordKind, RewardSource,
-    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
-    UtilityProfile, ViolationId, ViolationKind, ViolationMemory, WorkstationTag,
-    classify_communication, current_institutional_belief_topics, load_per_unit,
+    EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationOutcome,
+    ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey, GoalKind,
+    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+    OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
+    ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
+    Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
+    ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
+    current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -160,6 +161,8 @@ struct GenerationContext<'a> {
 
 #[derive(Default)]
 pub(crate) struct CandidateGenerationDiagnostics {
+    pub offers: Vec<CandidateOfferDiagnostic>,
+    pub suppressed: Vec<CandidateSuppressionDiagnostic>,
     pub omitted_political: Vec<PoliticalCandidateOmission>,
     pub omitted_bandit: Vec<BanditCandidateOmission>,
     pub omitted_social: Vec<SocialCandidateOmission>,
@@ -168,6 +171,19 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
     pub places_reachable: u32,
     pub places_after_belief_filter: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CandidateOfferDiagnostic {
+    pub opportunity: OpportunityKey,
+    pub emitter: EmitterTag,
+    pub source_evidence: EvidenceSummary,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CandidateSuppressionDiagnostic {
+    pub opportunity: OpportunityKey,
+    pub reason: GoalRejectionReason,
 }
 
 pub(crate) struct CandidateGenerationResult {
@@ -189,6 +205,24 @@ pub(crate) struct PendingViolationRecord {
     pub kind: ViolationKind,
     pub observed_tick: Tick,
     pub ttl: u32,
+}
+
+fn evidence_summary(kinds: &[(EvidenceKindTag, u16)]) -> EvidenceSummary {
+    EvidenceSummary {
+        evidence_kind_counts: kinds
+            .iter()
+            .copied()
+            .filter(|(_, count)| *count > 0)
+            .collect(),
+    }
+}
+
+fn single_evidence(kind: EvidenceKindTag) -> EvidenceSummary {
+    evidence_summary(&[(kind, 1)])
+}
+
+fn combined_evidence(primary: EvidenceKindTag, secondary: EvidenceKindTag) -> EvidenceSummary {
+    evidence_summary(&[(primary, 1), (secondary, 1)])
 }
 
 #[must_use]
@@ -355,11 +389,19 @@ fn filter_suppressed_candidates(
         if let Some(suppression) =
             find_matching_suppression(&candidate, blocked, discrepancies, current_tick)
         {
-            blocked_by_goal.entry(candidate.key).or_default().push((
-                OpportunityKey {
-                    goal_key: candidate.key,
-                    anchor: candidate.anchor,
+            let opportunity = OpportunityKey {
+                goal_key: candidate.key,
+                anchor: candidate.anchor,
+            };
+            diagnostics.suppressed.push(CandidateSuppressionDiagnostic {
+                opportunity,
+                reason: match suppression {
+                    SuppressionMatch::Discrepancy => GoalRejectionReason::SuppressedByDiscrepancy,
+                    SuppressionMatch::Blocker(_) => GoalRejectionReason::SuppressedByBlocker,
                 },
+            });
+            blocked_by_goal.entry(candidate.key).or_default().push((
+                opportunity,
                 match suppression {
                     SuppressionMatch::Discrepancy => None,
                     SuppressionMatch::Blocker(detail) => Some(detail),
@@ -572,6 +614,11 @@ fn emit_bounty_candidates(
                 emit_candidate_with_trace(
                     candidates,
                     diagnostics,
+                    EmitterTag::Bounty,
+                    combined_evidence(
+                        EvidenceKindTag::InstitutionalRecord,
+                        EvidenceKindTag::PerceptionObservation,
+                    ),
                     GoalKind::FulfillBounty { bounty: *bounty },
                     OpportunityAnchor::Entity(*bounty),
                     evidence,
@@ -631,6 +678,11 @@ fn emit_bounty_candidates(
                 emit_candidate_with_trace(
                     candidates,
                     diagnostics,
+                    EmitterTag::Bounty,
+                    combined_evidence(
+                        EvidenceKindTag::InstitutionalRecord,
+                        EvidenceKindTag::PerceptionObservation,
+                    ),
                     GoalKind::FulfillBounty { bounty: *bounty },
                     OpportunityAnchor::Entity(*bounty),
                     evidence,
@@ -738,6 +790,8 @@ fn emit_bounty_posting_candidates(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::ArtifactPosting,
+            single_evidence(EvidenceKindTag::InstitutionalRecord),
             GoalKind::PostBounty {
                 posting: ArtifactPostingContext {
                     posting_place,
@@ -823,6 +877,11 @@ fn emit_notice_posting_candidates(
     emit_candidate_with_trace(
         candidates,
         diagnostics,
+        EmitterTag::ArtifactPosting,
+        combined_evidence(
+            EvidenceKindTag::SelfKnowledge,
+            EvidenceKindTag::PerceptionObservation,
+        ),
         GoalKind::PostNotice {
             posting: ArtifactPostingContext {
                 posting_place,
@@ -935,6 +994,8 @@ fn emit_patrol_candidates(
     emit_candidate_with_trace(
         candidates,
         diagnostics,
+        EmitterTag::Patrol,
+        single_evidence(EvidenceKindTag::PatrolRoute),
         GoalKind::Patrol { place },
         OpportunityAnchor::Place(place),
         Evidence::with_place(place),
@@ -1009,6 +1070,11 @@ fn emit_accusation_candidates(
                 emit_candidate_with_trace(
                     candidates,
                     diagnostics,
+                    EmitterTag::Crime,
+                    combined_evidence(
+                        EvidenceKindTag::RecordedViolation,
+                        EvidenceKindTag::InstitutionalRecord,
+                    ),
                     GoalKind::Accuse {
                         crime_register: *crime_register,
                         accused,
@@ -1133,6 +1199,8 @@ fn emit_punishment_candidates(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Crime,
+            single_evidence(EvidenceKindTag::InstitutionalRecord),
             GoalKind::PunishAccused {
                 office,
                 accused,
@@ -1355,6 +1423,8 @@ fn emit_social_candidates(
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
+                EmitterTag::Social,
+                single_evidence(EvidenceKindTag::PerceptionObservation),
                 GoalKind::ShareBelief {
                     listener,
                     topic,
@@ -1430,6 +1500,11 @@ fn emit_regroup_with_faction_goals(
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
+                EmitterTag::Social,
+                combined_evidence(
+                    EvidenceKindTag::InstitutionalRecord,
+                    EvidenceKindTag::PerceptionObservation,
+                ),
                 GoalKind::EstablishBanditCamp { faction },
                 OpportunityAnchor::Place(rally_place),
                 evidence,
@@ -1473,6 +1548,8 @@ fn emit_regroup_with_faction_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Social,
+            single_evidence(EvidenceKindTag::InstitutionalRecord),
             GoalKind::RegroupWithFaction { faction },
             OpportunityAnchor::Place(rally_place),
             evidence,
@@ -1783,6 +1860,8 @@ fn emit_claim_office_candidate(
     emit_candidate_with_trace(
         candidates,
         diagnostics,
+        EmitterTag::Political,
+        single_evidence(EvidenceKindTag::InstitutionalRecord),
         GoalKind::ClaimOffice { office },
         OpportunityAnchor::Entity(office),
         evidence,
@@ -1882,6 +1961,8 @@ fn emit_support_candidate_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Political,
+            single_evidence(EvidenceKindTag::InstitutionalRecord),
             GoalKind::SupportCandidateForOffice { office, candidate },
             OpportunityAnchor::Entity(office),
             evidence,
@@ -1990,6 +2071,8 @@ fn emit_engage_hostile_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::EngageHostile { target: *target },
             OpportunityAnchor::Entity(*target),
             evidence,
@@ -2151,6 +2234,8 @@ fn emit_remote_engage_hostile_targets(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::EngageHostile { target },
             OpportunityAnchor::Entity(target),
             evidence,
@@ -2200,6 +2285,8 @@ fn emit_raid_target_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::RaidTarget { target: *target },
             OpportunityAnchor::Entity(*target),
             evidence,
@@ -2385,6 +2472,8 @@ fn emit_remote_raid_targets(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::RaidTarget { target },
             OpportunityAnchor::Entity(target),
             evidence,
@@ -2487,6 +2576,8 @@ fn emit_exploration_candidates(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Exploration,
+            single_evidence(EvidenceKindTag::ExplorationPressure),
             GoalKind::ExploreLocation {
                 target_place,
                 motivating_need: ExplorationMotivation::NeedDriven(need_id),
@@ -2562,6 +2653,8 @@ fn emit_proactive_exploration_candidates(
     emit_candidate_with_trace(
         candidates,
         diagnostics,
+        EmitterTag::ProactiveExploration,
+        single_evidence(EvidenceKindTag::ExplorationPressure),
         GoalKind::ExploreLocation {
             target_place,
             motivating_need: ExplorationMotivation::Proactive,
@@ -2608,6 +2701,12 @@ fn emit_need_driven_candidates(
         {
             emit_candidate(
                 candidates,
+                diagnostics,
+                EmitterTag::HomeostaticNeeds,
+                combined_evidence(
+                    EvidenceKindTag::HomeostaticPressure,
+                    EvidenceKindTag::PerceptionObservation,
+                ),
                 GoalKind::ConsumeOwnedCommodity { commodity },
                 OpportunityAnchor::None,
                 evidence,
@@ -2660,6 +2759,11 @@ fn emit_need_driven_candidates(
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
+                EmitterTag::HomeostaticNeeds,
+                combined_evidence(
+                    EvidenceKindTag::HomeostaticPressure,
+                    EvidenceKindTag::PerceptionObservation,
+                ),
                 GoalKind::AcquireCommodity {
                     commodity,
                     purpose: CommodityPurpose::SelfConsume,
@@ -2693,6 +2797,8 @@ fn emit_sleep_goal(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::HomeostaticNeeds,
+            single_evidence(EvidenceKindTag::HomeostaticPressure),
             GoalKind::Sleep,
             OpportunityAnchor::None,
             Evidence::with_entity(ctx.agent),
@@ -2722,6 +2828,8 @@ fn emit_relieve_goal(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::HomeostaticNeeds,
+            single_evidence(EvidenceKindTag::HomeostaticPressure),
             GoalKind::Relieve,
             OpportunityAnchor::None,
             Evidence::with_entity(ctx.agent),
@@ -2763,6 +2871,11 @@ fn emit_wash_goal(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::HomeostaticNeeds,
+            combined_evidence(
+                EvidenceKindTag::HomeostaticPressure,
+                EvidenceKindTag::PerceptionObservation,
+            ),
             GoalKind::Wash,
             OpportunityAnchor::Place(candidate_place),
             evidence,
@@ -2885,6 +2998,11 @@ fn emit_reduce_danger_goal(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            combined_evidence(
+                EvidenceKindTag::SelfKnowledge,
+                EvidenceKindTag::PerceptionObservation,
+            ),
             GoalKind::ReduceDanger,
             ctx.place
                 .map_or(OpportunityAnchor::None, OpportunityAnchor::Place),
@@ -2916,6 +3034,8 @@ fn emit_care_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            single_evidence(EvidenceKindTag::SelfKnowledge),
             GoalKind::TreatWounds { patient: ctx.agent },
             OpportunityAnchor::None,
             evidence,
@@ -2950,6 +3070,8 @@ fn emit_care_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::TreatWounds { patient: entity },
             OpportunityAnchor::Entity(entity),
             evidence,
@@ -3085,6 +3207,11 @@ fn emit_produce_goals(
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
+                EmitterTag::Production,
+                combined_evidence(
+                    EvidenceKindTag::EnterpriseState,
+                    EvidenceKindTag::PerceptionObservation,
+                ),
                 GoalKind::ProduceCommodity { recipe_id },
                 OpportunityAnchor::Place(candidate_place),
                 evidence,
@@ -3161,6 +3288,11 @@ fn emit_restock_goals(
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
+                EmitterTag::Enterprise,
+                combined_evidence(
+                    EvidenceKindTag::EnterpriseState,
+                    EvidenceKindTag::PerceptionObservation,
+                ),
                 GoalKind::RestockCommodity { commodity },
                 OpportunityAnchor::Place(candidate_place),
                 evidence,
@@ -3236,6 +3368,11 @@ fn emit_sell_goals(
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
+                EmitterTag::Enterprise,
+                combined_evidence(
+                    EvidenceKindTag::EnterpriseState,
+                    EvidenceKindTag::PerceptionObservation,
+                ),
                 GoalKind::SellCommodity { commodity },
                 OpportunityAnchor::Place(current_place),
                 evidence,
@@ -3260,6 +3397,8 @@ fn emit_sell_goals(
             emit_candidate_with_trace(
                 candidates,
                 diagnostics,
+                EmitterTag::Enterprise,
+                single_evidence(EvidenceKindTag::EnterpriseState),
                 GoalKind::SellCommodity { commodity },
                 OpportunityAnchor::Place(home_place),
                 evidence,
@@ -3322,6 +3461,11 @@ fn emit_move_cargo_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Enterprise,
+            combined_evidence(
+                EvidenceKindTag::EnterpriseState,
+                EvidenceKindTag::PerceptionObservation,
+            ),
             GoalKind::MoveCargo {
                 commodity,
                 destination,
@@ -3360,7 +3504,7 @@ fn deliverable_quantity(
 
 fn emit_disposal_candidates(
     candidates: &mut Vec<GroundedGoal>,
-    _diagnostics: &mut CandidateGenerationDiagnostics,
+    diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
     let Some(contract) = free_carry_capacity_contract_from_view(ctx.view, ctx.agent) else {
@@ -3387,6 +3531,9 @@ fn emit_disposal_candidates(
 
         emit_candidate(
             candidates,
+            diagnostics,
+            EmitterTag::Disposal,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::FreeCarryCapacity,
             OpportunityAnchor::Entity(item),
             Evidence::with_entity(item),
@@ -3431,6 +3578,8 @@ fn emit_loot_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::LootCorpse { corpse },
             OpportunityAnchor::Entity(corpse),
             evidence,
@@ -3491,6 +3640,8 @@ fn emit_bury_goals(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Combat,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::BuryCorpse {
                 corpse,
                 burial_site,
@@ -3568,6 +3719,8 @@ fn emit_theft_candidates(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Crime,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::StealItem { target_item: item },
             OpportunityAnchor::Entity(item),
             evidence,
@@ -3613,8 +3766,12 @@ fn belief_provenance_for_contributors(
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_candidate(
     candidates: &mut Vec<GroundedGoal>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    emitter: EmitterTag,
+    source_evidence: EvidenceSummary,
     kind: GoalKind,
     anchor: OpportunityAnchor,
     evidence: Evidence,
@@ -3626,6 +3783,14 @@ fn emit_candidate(
     }
 
     let key = GoalKey::from(kind);
+    diagnostics.offers.push(CandidateOfferDiagnostic {
+        opportunity: OpportunityKey {
+            goal_key: key,
+            anchor,
+        },
+        emitter,
+        source_evidence,
+    });
     candidates.push(GroundedGoal {
         key,
         anchor,
@@ -3701,6 +3866,8 @@ fn emit_search_candidates(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Search,
+            single_evidence(EvidenceKindTag::ExpectationRecord),
             GoalKind::SearchForMissing {
                 subject: record.subject,
                 last_seen: last_seen_place,
@@ -3727,6 +3894,8 @@ fn emit_search_candidates(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Search,
+            single_evidence(EvidenceKindTag::ExpectationRecord),
             GoalKind::ReportMissing {
                 subject: record.subject,
                 to_office: None,
@@ -3800,6 +3969,8 @@ fn emit_report_found_candidates(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Search,
+            single_evidence(EvidenceKindTag::ExpectationRecord),
             GoalKind::ReportFound {
                 subject: record.subject,
                 expectation_id: record.id,
@@ -3917,6 +4088,8 @@ fn emit_escort_candidates(
         emit_candidate_with_trace(
             candidates,
             diagnostics,
+            EmitterTag::Escort,
+            single_evidence(EvidenceKindTag::PerceptionObservation),
             GoalKind::EscortToSafety {
                 subject,
                 destination,
@@ -4117,6 +4290,8 @@ fn emit_violation_goal(
     emit_candidate_with_trace(
         candidates,
         diagnostics,
+        EmitterTag::ExpectationViolation,
+        single_evidence(EvidenceKindTag::RecordedViolation),
         GoalKind::InvestigateViolation {
             violation_id,
             place: investigation_place,
@@ -4127,9 +4302,12 @@ fn emit_violation_goal(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_candidate_with_trace(
     candidates: &mut Vec<GroundedGoal>,
     diagnostics: &mut CandidateGenerationDiagnostics,
+    emitter: EmitterTag,
+    source_evidence: EvidenceSummary,
     kind: GoalKind,
     anchor: OpportunityAnchor,
     evidence: Evidence,
@@ -4144,6 +4322,11 @@ fn emit_candidate_with_trace(
         goal_key: key,
         anchor,
     };
+    diagnostics.offers.push(CandidateOfferDiagnostic {
+        opportunity,
+        emitter,
+        source_evidence,
+    });
     candidates.push(GroundedGoal {
         key,
         anchor,
@@ -5280,7 +5463,8 @@ pub(crate) fn relieved_needs_for_commodity(
 mod tests {
     use super::{
         AcquisitionSearchOptions, BeliefGateOptions, CandidateGenerationDiagnostics,
-        GenerationContext, belief_gated_places, deliverable_quantity, emit_produce_goals,
+        CandidateOfferDiagnostic, CandidateSuppressionDiagnostic, GenerationContext,
+        belief_gated_places, combined_evidence, deliverable_quantity, emit_produce_goals,
         emit_restock_goals, filter_suppressed_candidates, generate_candidates,
         generate_candidates_with_travel_horizon, proactive_curiosity_pressure,
         proactive_familiarity, proactive_novelty,
@@ -5303,19 +5487,20 @@ mod tests {
         BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
         CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
         DemandObservationReason, Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile,
-        DiversificationProfile, DriveThresholds, EffectiveRight, EligibilityRule, EntityId,
-        EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
-        ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile, GoalKey,
-        GoalKind, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        NoticeTopic, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource,
-        Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
-        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
-        RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
-        SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic,
-        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        DiversificationProfile, DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag,
+        EntityId, EntityKind, EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis,
+        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+        GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
+        OpportunityAnchor, OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
+        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
+        ResourceSource, RewardSource, RightKind, SharedTellState, SocialObservation,
+        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
+        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
@@ -8242,6 +8427,81 @@ mod tests {
         assert!(
             result.diagnostics.fully_blocked_desires.is_empty(),
             "a surviving sibling opportunity must suppress the desire-level diagnostic"
+        );
+    }
+
+    #[test]
+    fn diagnostics_record_offer_emitter_and_blocker_suppression_reason() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let goal_key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let opportunity = OpportunityKey {
+            goal_key,
+            anchor: OpportunityAnchor::Place(place),
+        };
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.register_seller(place, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            blocker_key: BlockerKey {
+                goal_key,
+                place: Some(place),
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::NoKnownSeller,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(8),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(2),
+            6,
+            false,
+        );
+
+        assert!(
+            result.candidates.is_empty(),
+            "blocked acquire candidate should not survive generation"
+        );
+        assert_eq!(
+            result.diagnostics.offers,
+            vec![CandidateOfferDiagnostic {
+                opportunity,
+                emitter: EmitterTag::HomeostaticNeeds,
+                source_evidence: combined_evidence(
+                    EvidenceKindTag::HomeostaticPressure,
+                    EvidenceKindTag::PerceptionObservation,
+                ),
+            }]
+        );
+        assert_eq!(
+            result.diagnostics.suppressed,
+            vec![CandidateSuppressionDiagnostic {
+                opportunity,
+                reason: GoalRejectionReason::SuppressedByBlocker,
+            }]
         );
     }
 

@@ -394,6 +394,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::System]),
+            decision_payload: None,
         }));
     }
 

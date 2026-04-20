@@ -1,10 +1,11 @@
 use worldwake_core::{
-    ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents, DiscrepancyMemory,
-    EntityId, FrameState, IntentionFrame, Permille, Tick,
+    ActionInterruptReasonTag, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile,
+    ContentionIntents, DiscrepancyMemory, EntityId, FrameState, IntentionFrame, Permille,
+    ReplanReason, Tick,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, Interruptibility, PerAgentBeliefView, RuntimeBeliefView,
-    SchedulerActionRuntime, TickInputError,
+    AbortReason, ActionHandlerRegistry, InterruptReason, Interruptibility, PerAgentBeliefView,
+    RuntimeBeliefView, SchedulerActionRuntime, TickInputError,
 };
 
 use super::frame::progress_op_kinds;
@@ -14,11 +15,11 @@ use super::{
     persist_discrepancy_memory, selection_candidates,
 };
 use crate::DirtySet;
-use crate::failure_handling::ExecutionFailure;
+use crate::failure_handling::{ExecutionFailure, FailureClassification};
 use crate::{
-    AgentDecisionRuntime, DecisionContext, InterruptDecision, PlanFailureContext, PlanTerminalKind,
-    PlannedStep, RankedGoal, classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure,
-    has_frame,
+    AgentDecisionRuntime, DecisionContext, InterruptDecision, PendingRepairContext,
+    PlanFailureContext, PlanTerminalKind, PlannedStep, RankedGoal, classify_frame_plan_relation,
+    evaluate_interrupt, handle_plan_failure, has_frame,
 };
 
 pub(super) fn active_action_for_agent(
@@ -276,7 +277,7 @@ pub(super) fn handle_current_step_failure(
     agent: EntityId,
     step: &PlannedStep,
     execution_failure: Option<ExecutionFailure<'_>>,
-) -> Result<(), TickInputError> {
+) -> Result<ReplanReason, TickInputError> {
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
     let cognitive = ctx.cognitive;
@@ -289,7 +290,17 @@ pub(super) fn handle_current_step_failure(
             .map(|plan| plan.goal)
             .expect("failed step must have a current goal")
     });
-    handle_plan_failure(
+    if let Some(failed_plan) = runtime.current_plan.clone() {
+        runtime.pending_repair_context = Some(PendingRepairContext {
+            failed_plan,
+            failed_step_index: runtime
+                .current_step_index
+                .try_into()
+                .expect("failed repair step index exceeds u16"),
+        });
+    }
+    runtime.accepted_repair = None;
+    let classification = handle_plan_failure(
         &PlanFailureContext {
             view: &view,
             agent,
@@ -305,6 +316,7 @@ pub(super) fn handle_current_step_failure(
         facility_intents,
         cognitive,
     );
+    let replan_reason = map_replan_reason(execution_failure, classification);
     runtime.step_in_flight = false;
     runtime.current_step_index = 0;
     persist_blocked_memory(
@@ -322,18 +334,61 @@ pub(super) fn handle_current_step_failure(
         tick,
         &DiscrepancyMemory::default(),
         discrepancy_memory,
-    )
+    )?;
+    Ok(replan_reason)
+}
+
+fn map_replan_reason(
+    execution_failure: Option<ExecutionFailure<'_>>,
+    classification: FailureClassification,
+) -> ReplanReason {
+    match execution_failure {
+        Some(ExecutionFailure::Replan(signal)) => match &signal.reason {
+            AbortReason::Interrupted { kind, .. } => ReplanReason::ActionInterrupted {
+                reason: map_interrupt_reason(*kind),
+            },
+            AbortReason::CommitConditionFailed { .. } | AbortReason::ExternalAbort { .. } => {
+                map_failure_classification(classification)
+            }
+        },
+        Some(ExecutionFailure::Start(_)) => ReplanReason::ActionStartFailed,
+        None => map_failure_classification(classification),
+    }
+}
+
+fn map_failure_classification(classification: FailureClassification) -> ReplanReason {
+    match classification {
+        FailureClassification::Blocker(blocking_fact) => {
+            ReplanReason::BlockingFactRecorded { blocking_fact }
+        }
+        FailureClassification::Discrepancy(discrepancy) => {
+            ReplanReason::DiscrepancyRecorded { discrepancy }
+        }
+    }
+}
+
+fn map_interrupt_reason(reason: InterruptReason) -> ActionInterruptReasonTag {
+    match reason {
+        InterruptReason::DangerNearby => ActionInterruptReasonTag::DangerNearby,
+        InterruptReason::Reprioritized => ActionInterruptReasonTag::Reprioritized,
+        InterruptReason::Other => ActionInterruptReasonTag::Other,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::should_build_interrupt_plans;
+    use super::{map_replan_reason, should_build_interrupt_plans};
+    use crate::failure_handling::{ExecutionFailure, FailureClassification};
     use crate::{AgentDecisionRuntime, PlannedPlan, PlannedStep};
     use worldwake_core::{
         ActionDefId, ActiveGoal, EntityId, GoalKey, GoalKind, IntentionFrame, OpportunityAnchor,
-        Tick,
+        ReplanReason, Tick,
     };
-    use worldwake_sim::Interruptibility;
+    use worldwake_sim::{
+        AbortReason, ActionInstanceId, ActionStartFailure, ActionStartFailureReason,
+        InterruptReason, Interruptibility, ReplanNeeded, RequestAttemptTrace, RequestBindingKind,
+        RequestProvenance, ResolvedRequestTrace,
+    };
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -390,5 +445,60 @@ mod tests {
             None,
             Option::<&IntentionFrame>::None,
         ));
+    }
+
+    fn sample_replan_needed(reason: AbortReason) -> ReplanNeeded {
+        ReplanNeeded {
+            agent: entity(1),
+            failed_action_def: ActionDefId(7),
+            failed_instance: ActionInstanceId(9),
+            reason,
+            tick: Tick(3),
+        }
+    }
+
+    fn sample_start_failure() -> ActionStartFailure {
+        ActionStartFailure {
+            tick: Tick(3),
+            actor: entity(1),
+            def_id: ActionDefId(7),
+            request: ResolvedRequestTrace {
+                attempt: RequestAttemptTrace {
+                    input_sequence_no: 1,
+                    provenance: RequestProvenance::AiPlan,
+                },
+                binding: RequestBindingKind::BestEffortFallback,
+            },
+            reason: ActionStartFailureReason::PreconditionFailed("blocked".to_string()),
+        }
+    }
+
+    #[test]
+    fn interrupt_replan_reason_preserves_interrupt_cause() {
+        let signal = sample_replan_needed(AbortReason::interrupted(InterruptReason::Reprioritized));
+
+        let reason = map_replan_reason(
+            Some(ExecutionFailure::Replan(&signal)),
+            FailureClassification::Discrepancy(worldwake_core::Discrepancy::ImproperPlanningState),
+        );
+
+        assert_eq!(
+            reason,
+            ReplanReason::ActionInterrupted {
+                reason: worldwake_core::ActionInterruptReasonTag::Reprioritized,
+            }
+        );
+    }
+
+    #[test]
+    fn start_failure_replan_reason_stays_distinct_from_failure_classification() {
+        let start_failure = sample_start_failure();
+
+        let reason = map_replan_reason(
+            Some(ExecutionFailure::Start(&start_failure)),
+            FailureClassification::Blocker(worldwake_core::BlockingFact::NoKnownPath),
+        );
+
+        assert_eq!(reason, ReplanReason::ActionStartFailed);
     }
 }

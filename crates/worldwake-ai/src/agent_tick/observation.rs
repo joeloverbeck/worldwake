@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DiscrepancyMemory, EntityId,
-    LearnedOpportunityMemory, Quantity, RepairMemory, Tick, UniqueItemKind,
+    Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DecisionEventPayload,
+    DiscrepancyMemory, EntityId, EventTag, ExpectationMismatchPayload, GoalKey,
+    LearnedOpportunityMemory, PlanInvalidationReason, Quantity, RepairMemory, ReplanReason, Tick,
+    UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -20,8 +22,8 @@ use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 
 use super::{
     AgentTickContext, advance_completed_step, apply_step_materialization_bindings,
-    committed_action_for_step, current_step, handle_current_step_failure, plan_finished,
-    runtime_belief_view,
+    committed_action_for_step, current_step, emit_decision_event, handle_current_step_failure,
+    plan_finished, runtime_belief_view,
 };
 
 #[derive(Clone, Copy)]
@@ -43,12 +45,21 @@ pub(crate) struct InFlightReconciliation<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct CompletedPlanSummary {
     pub(super) goal_key: worldwake_core::GoalKey,
-    pub(super) opportunity: worldwake_core::OpportunityKey,
     pub(super) terminal_kind: crate::PlanTerminalKind,
+    pub(super) step_index: u16,
+}
+
+#[derive(Default)]
+pub(crate) struct ReconciliationResult {
+    pub(super) completed_plan: Option<CompletedPlanSummary>,
+    pub(super) plan_invalidation: Option<(GoalKey, PlanInvalidationReason)>,
+    pub(super) replan_trigger: Option<(GoalKey, ReplanReason)>,
 }
 
 /// Result of the read phase, preserving trace-relevant data alongside ranked candidates.
 pub(crate) struct ReadPhaseResult {
+    /// Candidate offers emitted during generation in generation order.
+    pub(super) offered: Vec<crate::candidate_generation::CandidateOfferDiagnostic>,
     pub(super) ranked: Vec<RankedGoal>,
     /// Generated candidate keys (before ranking filter).
     pub(super) generated_keys: Vec<worldwake_core::OpportunityKey>,
@@ -61,8 +72,8 @@ pub(crate) struct ReadPhaseResult {
     pub(super) places_reachable: u32,
     /// Aggregate kept-place count after belief gating across acquisition-place searches.
     pub(super) places_after_belief_filter: u32,
-    /// Goals suppressed by situational conditions.
-    pub(super) suppressed: Vec<worldwake_core::GoalKey>,
+    /// Candidate opportunities suppressed before commitment.
+    pub(super) suppressed: Vec<crate::candidate_generation::CandidateSuppressionDiagnostic>,
     /// Goals with zero motive score.
     pub(super) zero_motive: Vec<worldwake_core::GoalKey>,
     /// Political goals omitted before emission due to hard gates.
@@ -80,6 +91,32 @@ pub(crate) struct ReadPhaseResult {
     /// Need-specific tracker resets detected during candidate generation.
     pub(super) pending_acquisition_exhaustion_resets:
         std::collections::BTreeSet<worldwake_core::HomeostaticNeedId>,
+}
+
+fn emit_expectation_mismatch(
+    event_log: &mut worldwake_core::EventLog,
+    tick: Tick,
+    agent: EntityId,
+    goal_key: worldwake_core::GoalKey,
+    step_index: usize,
+    step: &PlannedStep,
+) {
+    emit_decision_event(
+        event_log,
+        tick,
+        agent,
+        EventTag::ExpectationMismatch,
+        DecisionEventPayload::ExpectationMismatch(ExpectationMismatchPayload {
+            agent,
+            goal_key,
+            step_index: step_index.try_into().expect("step index exceeds u16"),
+            expected_materializations: step
+                .expected_materializations
+                .iter()
+                .map(|expected| expected.tag)
+                .collect(),
+        }),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -233,13 +270,18 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     );
 
     ReadPhaseResult {
+        offered: candidates.diagnostics.offers,
         ranked: outcome.ranked,
         generated_keys,
         candidate_evidence,
         fully_blocked_desires: candidates.diagnostics.fully_blocked_desires,
         places_reachable: candidates.diagnostics.places_reachable,
         places_after_belief_filter: candidates.diagnostics.places_after_belief_filter,
-        suppressed: outcome.suppressed,
+        suppressed: {
+            let mut suppressed = candidates.diagnostics.suppressed;
+            suppressed.extend(outcome.suppressed);
+            suppressed
+        },
         zero_motive: outcome.zero_motive,
         omitted_political: candidates.diagnostics.omitted_political,
         omitted_bandit: candidates.diagnostics.omitted_bandit,
@@ -423,25 +465,30 @@ pub(super) fn reconcile_in_flight_state(
     active_action: Option<&worldwake_sim::ActionInstance>,
     agent: EntityId,
     reconciliation: InFlightReconciliation<'_>,
-) -> Result<Option<CompletedPlanSummary>, TickInputError> {
+) -> Result<ReconciliationResult, TickInputError> {
     if !runtime.step_in_flight {
-        return Ok(None);
+        return Ok(ReconciliationResult::default());
     }
     if active_action.is_some() {
-        return Ok(None);
+        return Ok(ReconciliationResult::default());
     }
 
     let failed_signal = reconciliation.replan_signals.first().copied();
     let Some(step) = current_step(runtime).cloned() else {
         runtime.step_in_flight = false;
-        return Ok(None);
+        return Ok(ReconciliationResult::default());
     };
+    let goal_key = active_goal
+        .as_ref()
+        .map(|ag| ag.goal_key)
+        .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
+        .expect("in-flight step must have a current goal");
 
     if let Some(signal) = failed_signal {
-        handle_current_step_failure(
+        let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
-            active_goal.as_ref().map(|ag| ag.goal_key),
+            Some(goal_key),
             jc,
             blocked_memory,
             discrepancy_memory,
@@ -450,14 +497,18 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             Some(ExecutionFailure::Replan(signal)),
         )?;
-        return Ok(None);
+        return Ok(ReconciliationResult {
+            completed_plan: None,
+            plan_invalidation: None,
+            replan_trigger: Some((goal_key, replan_reason)),
+        });
     }
 
     if let Some(start_failure) = matching_start_failure(&step, reconciliation.start_failures) {
-        handle_current_step_failure(
+        let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
-            active_goal.as_ref().map(|ag| ag.goal_key),
+            Some(goal_key),
             jc,
             blocked_memory,
             discrepancy_memory,
@@ -466,15 +517,19 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             Some(ExecutionFailure::Start(start_failure)),
         )?;
-        return Ok(None);
+        return Ok(ReconciliationResult {
+            completed_plan: None,
+            plan_invalidation: None,
+            replan_trigger: Some((goal_key, replan_reason)),
+        });
     }
 
     let Some(committed_action) = committed_action_for_step(&step, reconciliation.committed_actions)
     else {
-        handle_current_step_failure(
+        let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
-            active_goal.as_ref().map(|ag| ag.goal_key),
+            Some(goal_key),
             jc,
             blocked_memory,
             discrepancy_memory,
@@ -483,7 +538,11 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             None,
         )?;
-        return Ok(None);
+        return Ok(ReconciliationResult {
+            completed_plan: None,
+            plan_invalidation: None,
+            replan_trigger: Some((goal_key, replan_reason)),
+        });
     };
     let completed_plan = runtime.current_plan.as_ref().and_then(|plan| {
         let next_index = runtime.current_step_index.checked_add(1)?;
@@ -494,17 +553,33 @@ pub(super) fn reconcile_in_flight_state(
             ))
         .then_some(CompletedPlanSummary {
             goal_key: plan.goal,
-            opportunity: plan.opportunity,
             terminal_kind: plan.terminal_kind,
+            step_index: runtime
+                .current_step_index
+                .try_into()
+                .expect("step index exceeds u16"),
         })
     });
-    let goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
-    reconcile_committed_facility_queue_intents(runtime, facility_intents, goal_key, &step);
+    reconcile_committed_facility_queue_intents(runtime, facility_intents, Some(goal_key), &step);
     if apply_step_materialization_bindings(runtime, &step, &committed_action.outcome).is_err() {
-        handle_current_step_failure(
+        emit_expectation_mismatch(
+            ctx.event_log,
+            ctx.tick,
+            agent,
+            goal_key,
+            runtime.current_step_index,
+            &step,
+        );
+        let invalidation_reason = PlanInvalidationReason::ExpectationMismatch {
+            step_index: runtime
+                .current_step_index
+                .try_into()
+                .expect("step index exceeds u16"),
+        };
+        let _ = handle_current_step_failure(
             ctx,
             runtime,
-            active_goal.as_ref().map(|ag| ag.goal_key),
+            Some(goal_key),
             jc,
             blocked_memory,
             discrepancy_memory,
@@ -513,7 +588,16 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             None,
         )?;
-        return Ok(None);
+        return Ok(ReconciliationResult {
+            completed_plan: None,
+            plan_invalidation: Some((goal_key, invalidation_reason)),
+            replan_trigger: Some((
+                goal_key,
+                ReplanReason::PlanInvalidated {
+                    reason: invalidation_reason,
+                },
+            )),
+        });
     }
 
     runtime.step_in_flight = false;
@@ -525,7 +609,11 @@ pub(super) fn reconcile_in_flight_state(
         step.op_kind,
         ctx.tick,
     );
-    Ok(completed_plan)
+    Ok(ReconciliationResult {
+        completed_plan,
+        plan_invalidation: None,
+        replan_trigger: None,
+    })
 }
 
 fn matching_start_failure<'a>(
@@ -761,15 +849,17 @@ pub(super) fn unique_item_signature(
 
 #[cfg(test)]
 mod tests {
-    use super::reinstate_current_plan_candidate;
+    use super::{emit_expectation_mismatch, reinstate_current_plan_candidate};
     use crate::{
-        AgentDecisionRuntime, CommodityPurpose, GroundedGoal, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef,
+        AgentDecisionRuntime, CommodityPurpose, ExpectedMaterialization, GroundedGoal,
+        HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlanningEntityRef,
         candidate_generation::{CandidateGenerationDiagnostics, CandidateGenerationResult},
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor,
+        ActionDefId, CommodityKind, DecisionEventPayload, EntityId, EventLog, EventTag, EventView,
+        GoalKey, GoalKind, MaterializationTag, OpportunityAnchor,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -908,5 +998,51 @@ mod tests {
         assert_eq!(candidates.candidates.len(), 1);
         assert_eq!(candidates.candidates[0].key, GoalKey::from(GoalKind::Sleep));
         assert!(candidates.diagnostics.evidence.is_empty());
+    }
+
+    #[test]
+    fn emit_expectation_mismatch_records_expected_tags_and_step_index() {
+        let mut event_log = EventLog::new();
+        let agent = entity(4);
+        let goal_key = GoalKey::from(GoalKind::Sleep);
+        let step = PlannedStep {
+            def_id: ActionDefId(7),
+            targets: Vec::new(),
+            payload_override: None,
+            op_kind: PlannerOpKind::Craft,
+            estimated_ticks: 2,
+            is_materialization_barrier: false,
+            expected_materializations: vec![ExpectedMaterialization {
+                hypothetical_id: HypotheticalEntityId(3),
+                tag: MaterializationTag::SplitOffLot,
+            }],
+        };
+
+        emit_expectation_mismatch(
+            &mut event_log,
+            worldwake_core::Tick(12),
+            agent,
+            goal_key,
+            5,
+            &step,
+        );
+
+        let events = event_log.events_by_tag(EventTag::ExpectationMismatch);
+        assert_eq!(events.len(), 1);
+        let payload = event_log
+            .get(events[0])
+            .and_then(|record| record.decision_payload())
+            .expect("expectation mismatch event should carry payload");
+        assert_eq!(
+            payload,
+            &DecisionEventPayload::ExpectationMismatch(
+                worldwake_core::ExpectationMismatchPayload {
+                    agent,
+                    goal_key,
+                    step_index: 5,
+                    expected_materializations: vec![MaterializationTag::SplitOffLot],
+                }
+            )
+        );
     }
 }

@@ -42,6 +42,7 @@ pub mod conservation;
 pub mod contention;
 pub mod control;
 pub mod crime;
+pub mod decision_event_payload;
 pub mod delta;
 pub mod discrepancy;
 pub mod disposal;
@@ -70,6 +71,7 @@ pub mod intention_frame;
 pub mod items;
 pub mod learned_opportunity_memory;
 pub mod load;
+pub mod materialization_tag;
 pub mod memory_capacity_profile;
 pub mod needs;
 pub mod numerics;
@@ -143,6 +145,15 @@ pub use crime::{
     JusticeDispositionProfile, PunishmentFineSelectionTrace, PunishmentFineStartFailureTrace,
     PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
 };
+pub use decision_event_payload::{
+    ActionInterruptReasonTag, BlockerRecordedPayload, DecisionEventPayload, EmitterTag,
+    EvidenceKindTag, EvidenceSummary, ExpectationMismatchPayload, GoalAbandonReason,
+    GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload, GoalRejectionReason,
+    GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, PlanAdoptedPayload,
+    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
+    RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+    ReplanTriggeredPayload,
+};
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
     RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
@@ -200,6 +211,7 @@ pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,
     load_of_unique_item_kind, load_per_unit, remaining_container_capacity,
 };
+pub use materialization_tag::MaterializationTag;
 pub use memory_capacity_profile::MemoryCapacityProfile;
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,

@@ -177,6 +177,7 @@ impl<'w> WorldTxn<'w> {
             visibility: self.visibility,
             witness_data: self.witness_data,
             tags: self.tags,
+            decision_payload: None,
         })
     }
 

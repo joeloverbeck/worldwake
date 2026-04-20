@@ -4,6 +4,7 @@ use crate::{
     TradeAcceptance,
 };
 use serde::{Deserialize, Serialize};
+pub use worldwake_core::MaterializationTag;
 use worldwake_core::{
     ActionDefId, CommodityKind, EntityId, EventLog, HeardBeliefDisposition, Quantity, TellTopic,
     World, WorldTxn,
@@ -32,11 +33,6 @@ impl CommitOutcome {
 pub struct Materialization {
     pub tag: MaterializationTag,
     pub entity: EntityId,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub enum MaterializationTag {
-    SplitOffLot,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
