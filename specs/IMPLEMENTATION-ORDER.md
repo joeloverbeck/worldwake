@@ -352,7 +352,7 @@ S108 ✅ archived               S111 ✅ archived
          │       ├── S112 (soft dep on S109)
          │       └── S113 (soft dep on S109)
          │
-         └── S122 (hard dep on S109)
+         └── S122 ✅ archived
 ```
 
 ### Active Execution Steps
@@ -374,10 +374,10 @@ S108 ✅ archived               S111 ✅ archived
   - soft depends on S109 for `BeliefStatus::Contradicted` alignment
 
 **Wave 3 adjunct** (Phase 8 critical-path closer):
-- **S122**: Frame Assumption — Commodity Availability — implement `FrameAssumption::CommodityAvailableAt` evaluation against the agent's belief store and FND-14A same-tick co-located perception; populate the assumption when an `IntentionDomain::Travel` frame's committed goal is `AcquireCommodity`. Closes the FND-21 / FND-15 / FND-17 feedback gap exposed by the S109 typed-taxonomy split: agents whose plan depends on commodity availability at a specific place revise the intention when local perception refutes the belief, gaining the post-S109 `record_assumption_failure` suppression that lets alternative plans win ranking. Without S122, the survival baseline / contested / scattered goldens overshoot their authored `max_authored_critical_run_ticks` because no architectural path invalidates the stale belief that drove the broken plan.
-  - hard depends on S109 (consumes the post-correction `record_assumption_failure` TTL/clearing semantics)
-  - soft depends on S110 (assumption failures emit `EventTag::AssumptionFailed` when the variant lands)
-  - soft depends on S113 (consumes `BeliefValue::confidence` if landed; falls back to crisp belief queries otherwise)
+- **S122**: ✅ COMPLETED — archived at [archive/specs/S122-frame-assumption-commodity-availability.md](/home/joeloverbeck/projects/worldwake/archive/specs/S122-frame-assumption-commodity-availability.md). Landed the live `FrameAssumption::CommodityAvailableAt` path end to end: goal-derived assumption population, belief/co-location evaluation, failed-assumption trace payloads, survival-golden/falsification-harness proof, and the adjacent survival-path cleanup needed to make the S122 contradiction chain honest in long-run goldens.
+  - hard depended on S109 (consumed the post-correction `record_assumption_failure` TTL/clearing semantics)
+  - soft relationship with S110 remains historical only; S122 itself still did not add a new decision-history `EventTag`
+  - soft relationship with S113 remains optional; the landed path uses the live belief surface without requiring the envelope layer first
 
 ### Phase 8 Gate
 
@@ -393,7 +393,7 @@ S108 ✅ archived               S111 ✅ archived
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 
-- Note: Wave 1 is complete. The remaining Phase 8 work is S110, S112, S113, and S122.
+- Note: Wave 1 and the S122 adjunct are complete. The remaining Phase 8 work is S110, S112, and S113.
 
 ---
 

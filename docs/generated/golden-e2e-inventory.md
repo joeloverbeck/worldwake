@@ -170,7 +170,7 @@ Do not hand-edit it.
 - `golden_travel_escalation`
 - `golden_critical_bladder_local_relief`
 - `golden_agent_diversity`
-- `golden_travel_interrupt_from_bladder_escalation`
+- `golden_travel_bladder_escalation_switches_to_relief_between_legs`
 - `golden_latrine_preferred`
 - `golden_wilderness_fallback`
 - `golden_deprivation_accident`

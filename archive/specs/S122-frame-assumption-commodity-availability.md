@@ -1,12 +1,14 @@
 # S122: Frame Assumption — Commodity Availability
 
+**Status**: COMPLETED
+
 ## Summary
 
 Close the FND-21 / FND-15 / FND-17 feedback gap that prevents agents from revising commodity-acquisition intentions when local observation contradicts the belief that justified them. `FrameAssumption::CommodityAvailableAt { commodity, place }` is already declared in `crates/worldwake-core/src/intention_frame.rs` (variant on `FrameAssumption`), but the `populate_assumptions` arms in `crates/worldwake-ai/src/agent_tick/frame.rs` never add it to any frame, and the `evaluate_assumptions` arm for that variant is stubbed as always-true (the "Stubbed as always-true — future work" comment is in the stub arm of `evaluate_assumptions`). With the assumption inert, an agent whose plan is `Travel(P) → pick_up(L)` for an apple lot `L` at place `P` has no architectural path to discover that `L` is empty, missing, or inaccessible: the plan completes vacuously, the next tick re-plans the same broken plan, and the agent oscillates indefinitely. This spec implements `CommodityAvailableAt` end to end — goal-derived population in `populate_assumptions` (which already runs at the start of every agent tick on a non-Exhausted frame), evaluation against the agent's belief store with FND-14A same-tick co-located perception, integration with the existing assumption-failure routing landed by S109's TYPDISTAX-004 correction, and validation through unit, integration, and survival-golden coverage.
 
 ## Phase and Status
 
-Phase 8 Adjunct: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8 Adjunct: Belief-First Continual Planning Foundation. Status: Completed.
 
 ## Crates
 
@@ -339,3 +341,17 @@ A reasonable ticket split, in implementation order:
 - **S122FRMASMCAVL-005**: Falsification probes #16, #17, #18. The no-assumption-loss and no-spurious-failure invariants land as opt-in validators in the survival-golden harness.
 
 The implementing agent must reassess the spec and these ticket boundaries against the live codebase before starting (per `docs/precision-rules.md` and the per-ticket reassessment rule), and may rebalance the split if the actual code surface differs from the spec assumptions.
+
+## Outcome
+
+- **Completion date**: 2026-04-20
+- **What changed**: Landed the full `FrameAssumption::CommodityAvailableAt` path across the S122 ticket family: `IntentionFrame::expected_commodity()`, assumption population for acquisition travel/errand frames, live evaluation against the agent belief surface plus FND-14A co-located perception, failed-assumption identity in frame-clear traces, and opt-in falsification probes in the survival golden harness. The acceptance work also exposed and fixed adjacent planner/runtime behavior that had been masking the S122 loop in survival goldens, and the final stale follow-on goldens were reassessed to honest live proof seams.
+- **Deviations from original plan**: The spec's core production contract landed, but the final proof surface required two follow-on golden reassessments (`AIDECREG-002`, `AIPATREG-001`, `AITRAVREG-001`) because broader same-crate reruns exposed stale golden assumptions outside the direct S122 production slice. The final travel-physiology regression resolved as a test-only proof-seam rewrite rather than a production interrupt change.
+- **Verification results**:
+  1. `cargo test -p worldwake-core --lib intention_frame`
+  2. `cargo test -p worldwake-ai --lib`
+  3. `cargo test --release -p worldwake-ai --test golden_survival_baseline all_agents_survive_1440_ticks -- --ignored --test-threads=1`
+  4. `WORLDWAKE_FALSIFICATION_PROBES=1 cargo test --release -p worldwake-ai --test golden_survival_baseline -- --ignored --test-threads=1`
+  5. `WORLDWAKE_FALSIFICATION_PROBES=1 cargo test --release -p worldwake-ai --test golden_survival_contested -- --ignored --test-threads=1`
+  6. `WORLDWAKE_FALSIFICATION_PROBES=1 cargo test --release -p worldwake-ai --test golden_survival_scattered -- --ignored --test-threads=1`
+  7. `cargo clippy --workspace --all-targets -- -D warnings`

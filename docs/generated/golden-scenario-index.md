@@ -1126,7 +1126,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: One agent at EastFieldTrail (outdoor: Trail + Field) with high travel_bladder_multiplier (pm(800)) and initial bladder near critical threshold (pm(850)). EastFieldTrail is outdoor so relieve_wilderness is locally available. The agent relieves locally without needing to travel.
 
-**Proves**: The AI detects critical bladder pressure and acts on GoalKind::Relieve via locally available relieve_wilderness at an outdoor place. This proves the weaker invariant: critical bladder → immediate local relief. The stronger travel-interrupt invariant is covered by golden_travel_interrupt_from_bladder_escalation.
+**Proves**: The AI detects critical bladder pressure and acts on GoalKind::Relieve via locally available relieve_wilderness at an outdoor place. This proves the weaker invariant: critical bladder -> immediate local relief. The stronger travel escalation invariant is covered by golden_travel_bladder_escalation_switches_to_relief_between_legs.
 
 **Cross-system chain**: high bladder pressure -> Relieve goal ranked highest -> relieve_wilderness available locally -> agent relieves without travel.
 
@@ -1145,7 +1145,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: identical hunger pressure -> same AcquireCommodity goal -> same travel route -> different body cost overrides from different MetabolismProfiles -> divergent bladder values after same travel duration.
 
-### Scenario 61: Travel Interrupt from Bladder Escalation
+### Scenario 61: Travel Bladder Escalation Switches To Relief Between Legs
 
 - Source: `golden_travel_physiology.rs:517`
 - Systems: Needs, AI, Travel, Production
@@ -1154,11 +1154,11 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 - Places: VillageSquare, SouthGate, EastFieldTrail, OrchardFarm
 - Principles: 8, 20, 22, 26
 
-**Setup**: One agent at VillageSquare (indoor: Village tag only, no wilderness relief, no latrine). Hunger at pm(800) (High priority, threshold >= 750) drives travel toward OrchardFarm. Bladder starts at pm(799) (Medium priority, threshold >= 600 and < 800 High). Hunger outranks Relieve initially (High > Medium). bladder_rate=70, travel_bladder_multiplier=900 → travel body cost = 70*900/1000 = 63/tick additional, total 133/tick during travel. First leg: VillageSquare → SouthGate (2 ticks). After tick 0 systems run: bladder = 799 + 133 = 932 (Critical! >= 930). At tick 1, AI evaluates interrupt: Relieve at Critical priority vs active travel (InterruptibleWithPenalty). interrupt_with_penalty fires → travel aborted. Agent returned to VillageSquare (origin). Agent replans for Relieve, travels to PublicLatrine (1 tick) or finds another relief path.
+**Setup**: One agent at VillageSquare (indoor: Village tag only, no wilderness relief, no latrine). Hunger at pm(800) (High priority) drives travel toward OrchardFarm. Bladder starts at pm(799). `bladder_rate=70`, `travel_bladder_multiplier=900` -> travel body cost = `70*900/1000 = 63` additional, total `133/tick` during travel. The first travel leg crosses the critical bladder threshold after one tick of travel.
 
-**Proves**: Travel body cost escalation causes bladder to cross the critical threshold during a single travel leg. The interrupt system detects critical survival pressure and aborts the InterruptibleWithPenalty travel action mid-leg. The agent replans for GoalKind::Relieve and performs a relief action. This is the stronger invariant missing from golden_critical_bladder_local_relief, which only proves local relief.
+**Proves**: Travel body cost escalation can make `Relieve` the critical top challenger during active travel, but the live interrupt policy does not rotate mid-action between self-care goals on `InterruptibleWithPenalty`. Instead, the current travel leg finishes, the next planning seam selects `Relieve`, and the agent performs a relief action.
 
-**Cross-system chain**: hunger pressure (High) -> AcquireCommodity goal -> travel plan to OrchardFarm -> travel body cost override (133/tick) applied -> needs system escalates bladder past critical (799+133=932) after 1 tick -> interrupt fires CriticalSurvival -> travel aborted -> agent replans for Relieve -> relief action committed.
+**Cross-system chain**: hunger pressure -> AcquireCommodity travel starts -> travel body cost raises bladder past critical during travel -> `Relieve` becomes the critical challenger while travel remains active -> no mid-leg self-care interrupt occurs -> next planning seam selects `Relieve` -> relief action commits.
 
 ### Scenario 62: Latrine Preferred — toilet at Latrine place
 

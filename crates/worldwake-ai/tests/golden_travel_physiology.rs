@@ -216,7 +216,8 @@ fn golden_travel_escalation() {
 //   GoalKind::Relieve via locally available relieve_wilderness at
 //   an outdoor place. This proves the weaker invariant: critical
 //   bladder → immediate local relief. The stronger travel-interrupt
-//   invariant is covered by golden_travel_interrupt_from_bladder_escalation.
+//   invariant is covered by
+//   golden_travel_bladder_escalation_switches_to_relief_between_legs.
 //
 // Chain: high bladder pressure -> Relieve goal ranked highest ->
 //   relieve_wilderness available locally -> agent relieves without travel.
@@ -514,7 +515,7 @@ fn golden_agent_diversity() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 61: Travel Interrupt from Bladder Escalation
+// Scenario 61: Travel Bladder Escalation Switches To Relief Between Legs
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI, Travel, Production
@@ -524,35 +525,28 @@ fn golden_agent_diversity() {
 // Principles: 8, 20, 22, 26
 //
 // Setup: One agent at VillageSquare (indoor: Village tag only, no
-//   wilderness relief, no latrine). Hunger at pm(800) (High priority,
-//   threshold >= 750) drives travel toward OrchardFarm. Bladder starts
-//   at pm(799) (Medium priority, threshold >= 600 and < 800 High).
-//   Hunger outranks Relieve initially (High > Medium).
-//   bladder_rate=70, travel_bladder_multiplier=900 → travel body cost
+//   wilderness relief, no latrine). Hunger at pm(800) (High priority)
+//   drives travel toward OrchardFarm. Bladder starts at pm(799).
+//   bladder_rate=70, travel_bladder_multiplier=900 -> travel body cost
 //   = 70*900/1000 = 63/tick additional, total 133/tick during travel.
-//   First leg: VillageSquare → SouthGate (2 ticks). After tick 0
-//   systems run: bladder = 799 + 133 = 932 (Critical! >= 930).
-//   At tick 1, AI evaluates interrupt: Relieve at Critical priority
-//   vs active travel (InterruptibleWithPenalty). interrupt_with_penalty
-//   fires → travel aborted. Agent returned to VillageSquare (origin).
-//   Agent replans for Relieve, travels to PublicLatrine (1 tick) or
-//   finds another relief path.
+//   The first travel leg crosses the critical bladder threshold after
+//   one tick of travel.
 //
-// Proves: Travel body cost escalation causes bladder to cross the
-//   critical threshold during a single travel leg. The interrupt system
-//   detects critical survival pressure and aborts the InterruptibleWithPenalty
-//   travel action mid-leg. The agent replans for GoalKind::Relieve and
-//   performs a relief action. This is the stronger invariant missing from
-//   golden_critical_bladder_local_relief, which only proves local relief.
+// Proves: Travel body cost escalation can make `Relieve` the critical
+//   top challenger during active travel, but the live interrupt policy
+//   does not rotate mid-action between self-care goals on
+//   `InterruptibleWithPenalty`. Instead, the current travel leg finishes,
+//   the next planning seam selects `Relieve`, and the agent performs a
+//   relief action. This is the first honest live seam for this scenario.
 //
-// Chain: hunger pressure (High) -> AcquireCommodity goal -> travel plan
-//   to OrchardFarm -> travel body cost override (133/tick) applied ->
-//   needs system escalates bladder past critical (799+133=932) after
-//   1 tick -> interrupt fires CriticalSurvival -> travel aborted ->
-//   agent replans for Relieve -> relief action committed.
+// Chain: hunger pressure -> AcquireCommodity travel starts ->
+//   travel body cost raises bladder past critical during travel ->
+//   `Relieve` becomes the critical challenger while travel remains active ->
+//   no mid-leg self-care interrupt occurs -> next planning seam selects
+//   `Relieve` -> relief action commits.
 
 #[test]
-fn golden_travel_interrupt_from_bladder_escalation() {
+fn golden_travel_bladder_escalation_switches_to_relief_between_legs() {
     let mut h = GoldenHarness::new(Seed([93; 32]));
     h.enable_action_tracing();
     h.driver.enable_tracing();
@@ -638,39 +632,90 @@ fn golden_travel_interrupt_from_bladder_escalation() {
         .trace_sink()
         .expect("decision tracing should be enabled");
     let traces = decision_sink.traces_for(agent);
-    let critical_survival_interrupt_during_travel = traces.iter().any(|trace| {
-        if let worldwake_ai::DecisionOutcome::ActiveAction { ref interrupt, .. } = trace.outcome {
-            matches!(
+    let trace_summaries = traces
+        .iter()
+        .map(|trace| format!("tick {}: {}", trace.tick.0, trace.outcome.summary()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let saw_critical_relieve_challenger_during_travel = traces.iter().any(|trace| {
+        let worldwake_ai::DecisionOutcome::ActiveAction {
+            action_name,
+            interrupt,
+            ..
+        } = &trace.outcome
+        else {
+            return false;
+        };
+        action_name == "travel"
+            && interrupt.decision == worldwake_ai::InterruptDecision::NoInterrupt
+            && interrupt.top_challenger.as_ref().is_some_and(|goal| {
+                matches!(
+                    goal.opportunity.goal_key.kind,
+                    worldwake_core::GoalKind::Relieve
+                ) && goal.priority_class == worldwake_ai::GoalPriorityClass::Critical
+            })
+    });
+    assert!(
+        saw_critical_relieve_challenger_during_travel,
+        "travel should remain active on at least one tick where Relieve is already the critical top challenger.\nDecision traces:\n{trace_summaries}"
+    );
+
+    let saw_mid_leg_interrupt = traces.iter().any(|trace| {
+        let worldwake_ai::DecisionOutcome::ActiveAction {
+            action_name,
+            interrupt,
+            ..
+        } = &trace.outcome
+        else {
+            return false;
+        };
+        action_name == "travel"
+            && matches!(
                 interrupt.decision,
                 worldwake_ai::InterruptDecision::InterruptForReplan {
                     trigger: worldwake_ai::InterruptTrigger::CriticalSurvival,
                 }
             )
-        } else {
-            false
-        }
     });
     assert!(
-        critical_survival_interrupt_during_travel,
-        "CriticalSurvival interrupt should have fired during active travel"
+        !saw_mid_leg_interrupt,
+        "travel should not be interrupted mid-leg for a competing self-care goal under the live penalty-interrupt policy.\nDecision traces:\n{trace_summaries}"
     );
 
-    // --- Verification Layer 3: Relieve goal appeared after interrupt ---
-    let relieve_appeared = traces.iter().any(|trace| {
-        if let worldwake_ai::DecisionOutcome::Planning(ref p) = trace.outcome {
-            p.candidates.ranked.iter().any(|c| {
+    // --- Verification Layer 3: the next planning seam selects Relieve ---
+    let relieve_selected_after_travel = traces.windows(2).any(|pair| {
+        let first = &pair[0];
+        let second = &pair[1];
+        let worldwake_ai::DecisionOutcome::ActiveAction {
+            action_name,
+            interrupt,
+            ..
+        } = &first.outcome
+        else {
+            return false;
+        };
+        if action_name != "travel"
+            || interrupt.decision != worldwake_ai::InterruptDecision::NoInterrupt
+            || !interrupt.top_challenger.as_ref().is_some_and(|goal| {
                 matches!(
-                    c.opportunity.goal_key.kind,
+                    goal.opportunity.goal_key.kind,
                     worldwake_core::GoalKind::Relieve
-                )
+                ) && goal.priority_class == worldwake_ai::GoalPriorityClass::Critical
             })
-        } else {
-            false
+        {
+            return false;
         }
+        let worldwake_ai::DecisionOutcome::Planning(planning) = &second.outcome else {
+            return false;
+        };
+        matches!(
+            planning.selection.selected_goal().map(|goal| goal.kind),
+            Some(worldwake_core::GoalKind::Relieve)
+        )
     });
     assert!(
-        relieve_appeared,
-        "GoalKind::Relieve should have appeared in decision trace after travel interrupt"
+        relieve_selected_after_travel,
+        "the first honest recovery seam should select Relieve on the planning tick after travel continues through a critical self-care challenge.\nDecision traces:\n{trace_summaries}"
     );
 
     // --- Verification Layer 4: Relief action committed ---
