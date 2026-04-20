@@ -324,7 +324,7 @@ Emission-volume note: every candidate offer emits `GoalOffered`. In high-candida
 
 ### D6: Event-log replay invariance
 
-Add a replay test: given an event log containing the new decision events, replay must produce the same agenda transitions (committed goal sequence, suspended set, discrepancy memory contents) as the live run. Since S110 adds tags/payloads only — it does not change any world-state mutation — this reduces to "decoding must not fail and `decision_payload` round-trips." The test wires through `crates/worldwake-sim/src/replay_execution.rs` / `replay_state.rs`, reusing the existing replay harness. The invariance check is a safety net, not a semantic change.
+Add a focused save/load round-trip test: given a persisted `SimulationState` whose `EventLog` contains the new decision events, decoding must preserve the log and every `decision_payload` byte-for-byte. Since S110 adds tags/payloads only — it does not change any world-state mutation — the honest invariance check reduces to "decoding must not fail and `decision_payload` round-trips." The landed proof uses the existing `crates/worldwake-sim/src/save_load.rs` harness (`save_to_bytes` / `load_from_bytes`) rather than `replay_execution.rs`, because the save/load path is the canonical persisted serialization boundary for this schema change.
 
 ### D7: Observer integration
 
@@ -374,7 +374,7 @@ None. The new events attach to the event log, not to agent components. `Cognitiv
 
 ### Integration tests
 
-5. Replay: a recorded event log round-trips — the sequence of commit / reject / invalidate events matches the live run's agenda transitions exactly.
+5. Save/load serialization: a persisted `SimulationState` containing decision events round-trips without loss, and every `decision_payload` survives decode with byte-identical content.
 6. Existing golden trace (e.g., `golden_healer_acquires_remote_ground_medicine_for_patient`) — confirm the event log contains the expected `GoalCommitted`, `PlanAdopted`, `ActionStarted`, `ActionCommitted` sequence.
 7. A revalidation golden — confirm the event log contains `PlanInvalidated` with the correct `PlanInvalidationReason`.
 8. A blocker golden — confirm `BlockerRecorded` fires with the typed discrepancy (`DiscrepancyMemory` path) and with a `BlockingFact` (`BlockerMemory` contention-loss path).

@@ -1,6 +1,6 @@
 use crate::{
-    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, Discrepancy, EntityId,
-    FrameAssumption, FrameClearReason, GoalKey, MaterializationTag, SuspensionReason, Tick,
+    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, Discrepancy, EntityId, FrameAssumption,
+    FrameClearReason, GoalKey, MaterializationTag, SuspensionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

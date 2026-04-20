@@ -14,9 +14,9 @@ use crate::plan_selection::SelectionCandidatePlan;
 use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
 use crate::{
     AcceptedRepairProvenance, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
-    ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, RankedGoal, authoritative_target,
-    build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step, select_best_plan,
+    ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
+    RankedGoal, authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
+    revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -726,12 +726,8 @@ fn build_rejected_alternatives(
         .filter(|candidate| candidate.grounded.key != committed_goal)
         .map(|candidate| (candidate.motive_score, candidate.grounded.key))
         .collect::<Vec<_>>();
-    rejected.sort_unstable_by(|left, right| {
-        right
-            .0
-            .cmp(&left.0)
-            .then_with(|| left.1.cmp(&right.1))
-    });
+    rejected
+        .sort_unstable_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
     rejected.truncate(usize::from(max_alternatives));
     rejected
         .into_iter()
@@ -1342,7 +1338,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                 default_switch_margin,
                 frame_switch_margin,
             },
-            ) {
+        ) {
             emit_plan_selection_events(
                 event_log,
                 tick,
@@ -1560,8 +1556,8 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
-        CommodityPurpose, ContentionIntents, ControlSource, DecisionEventPayload, EventLog,
-        EntityId, EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
+        CommodityPurpose, ContentionIntents, ControlSource, DecisionEventPayload, EntityId,
+        EventLog, EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
         GoalRejectionReason, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille,
         Place, PlanAdoptedPayload, Quantity, RepairKind, Tick, Topology, TravelEdge, TravelEdgeId,
         VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
@@ -1986,9 +1982,12 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
 
-        let repair =
-            super::classify_accepted_repair(&runtime_with_failed_plan(failed_plan), &selected_plan, &recipes)
-                .expect("merchant replacement should classify as a repair");
+        let repair = super::classify_accepted_repair(
+            &runtime_with_failed_plan(failed_plan),
+            &selected_plan,
+            &recipes,
+        )
+        .expect("merchant replacement should classify as a repair");
 
         assert_eq!(repair.goal_key, goal);
         assert_eq!(repair.repair_kind, RepairKind::AlternateMerchant);
@@ -2047,9 +2046,12 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
 
-        let repair =
-            super::classify_accepted_repair(&runtime_with_failed_plan(failed_plan), &selected_plan, &recipes)
-                .expect("recipe replacement should classify as a repair");
+        let repair = super::classify_accepted_repair(
+            &runtime_with_failed_plan(failed_plan),
+            &selected_plan,
+            &recipes,
+        )
+        .expect("recipe replacement should classify as a repair");
 
         assert_eq!(repair.goal_key, selected_goal);
         assert_eq!(repair.repair_kind, RepairKind::AlternateRecipe);
@@ -2085,9 +2087,12 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
 
-        let repair =
-            super::classify_accepted_repair(&runtime_with_failed_plan(failed_plan), &selected_plan, &recipes)
-                .expect("route replacement should classify as a repair");
+        let repair = super::classify_accepted_repair(
+            &runtime_with_failed_plan(failed_plan),
+            &selected_plan,
+            &recipes,
+        )
+        .expect("route replacement should classify as a repair");
 
         assert_eq!(repair.goal_key, goal);
         assert_eq!(repair.repair_kind, RepairKind::AlternateRoute);
@@ -2170,8 +2175,10 @@ mod tests {
                 feasibility: FeasibilityHint::Likely,
             },
         ];
-        let selected_plan =
-            PlannedPlan::new(opportunity(selected_goal), selected_goal, vec![PlannedStep {
+        let selected_plan = PlannedPlan::new(
+            opportunity(selected_goal),
+            selected_goal,
+            vec![PlannedStep {
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
                 payload_override: None,
@@ -2179,7 +2186,9 @@ mod tests {
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
-            }], PlanTerminalKind::GoalSatisfied);
+            }],
+            PlanTerminalKind::GoalSatisfied,
+        );
         let mut event_log = EventLog::new();
         let agent = entity(1);
         let tick = Tick(9);

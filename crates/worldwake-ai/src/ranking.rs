@@ -22,12 +22,12 @@ use worldwake_core::{
     CommunicationClass, DeprivationExposure, DiversificationProfile, DriveEscalationProfile,
     DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
     ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille, NoticeTopic,
-    ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, Permille, Quantity, RepairKey, RepairMemory, RightKind, SourceKey, TellTopic,
-    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
-    failure_ratio_permille, GoalRejectionReason,
+    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille,
+    NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, Permille, Quantity, RepairKey, RepairMemory, RightKind,
+    SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence,
+    escalation_multiplier, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -134,13 +134,15 @@ pub(crate) fn rank_candidates_with_memories(
             evaluate_suppression(&candidate.key.kind, &context.decision_context),
             GoalPolicyOutcome::Available
         ) {
-            suppressed.push(crate::candidate_generation::CandidateSuppressionDiagnostic {
-                opportunity: OpportunityKey {
-                    goal_key: candidate.key,
-                    anchor: candidate.anchor,
+            suppressed.push(
+                crate::candidate_generation::CandidateSuppressionDiagnostic {
+                    opportunity: OpportunityKey {
+                        goal_key: candidate.key,
+                        anchor: candidate.anchor,
+                    },
+                    reason: GoalRejectionReason::SuppressedByStressPolicy,
                 },
-                reason: GoalRejectionReason::SuppressedByStressPolicy,
-            });
+            );
             continue;
         }
         let provenance = goal_ranking_provenance(candidate, &context);
@@ -2044,16 +2046,16 @@ mod tests {
         DeprivationKind, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
         DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
         ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, JusticeDispositionProfile,
-        LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile, MultiplierPermille,
-        NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
-        OpportunityAnchor, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
-        PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation,
-        ReliabilityRecord, ResourceSource, RewardSource, RightKind, RouteExperience, SourceKey,
-        SourceReliability, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
-        WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
+        GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+        JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
+        ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
+        PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity,
+        RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
+        RouteExperience, SourceKey, SourceReliability, TellTopic, TheftDispositionProfile,
+        TheftFacts, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        ViolationId, ViolationKind, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -4048,13 +4050,15 @@ mod tests {
         assert!(outcome.ranked.is_empty());
         assert_eq!(
             outcome.suppressed,
-            vec![crate::candidate_generation::CandidateSuppressionDiagnostic {
-                opportunity: worldwake_core::OpportunityKey {
-                    goal_key: GoalKey::from(GoalKind::LootCorpse { corpse }),
-                    anchor: OpportunityAnchor::None,
-                },
-                reason: GoalRejectionReason::SuppressedByStressPolicy,
-            }]
+            vec![
+                crate::candidate_generation::CandidateSuppressionDiagnostic {
+                    opportunity: worldwake_core::OpportunityKey {
+                        goal_key: GoalKey::from(GoalKind::LootCorpse { corpse }),
+                        anchor: OpportunityAnchor::None,
+                    },
+                    reason: GoalRejectionReason::SuppressedByStressPolicy,
+                }
+            ]
         );
     }
 

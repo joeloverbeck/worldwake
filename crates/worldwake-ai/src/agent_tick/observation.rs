@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DecisionEventPayload,
-    DiscrepancyMemory, EntityId, ExpectationMismatchPayload, EventTag, GoalKey,
+    DiscrepancyMemory, EntityId, EventTag, ExpectationMismatchPayload, GoalKey,
     LearnedOpportunityMemory, PlanInvalidationReason, Quantity, RepairMemory, ReplanReason, Tick,
     UniqueItemKind,
 };
@@ -858,8 +858,8 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, DecisionEventPayload, EntityId, EventLog, EventTag, EventView, GoalKey,
-        GoalKind, MaterializationTag, OpportunityAnchor, CommodityKind,
+        ActionDefId, CommodityKind, DecisionEventPayload, EntityId, EventLog, EventTag, EventView,
+        GoalKey, GoalKind, MaterializationTag, OpportunityAnchor,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -1018,7 +1018,14 @@ mod tests {
             }],
         };
 
-        emit_expectation_mismatch(&mut event_log, worldwake_core::Tick(12), agent, goal_key, 5, &step);
+        emit_expectation_mismatch(
+            &mut event_log,
+            worldwake_core::Tick(12),
+            agent,
+            goal_key,
+            5,
+            &step,
+        );
 
         let events = event_log.events_by_tag(EventTag::ExpectationMismatch);
         assert_eq!(events.len(), 1);
@@ -1028,12 +1035,14 @@ mod tests {
             .expect("expectation mismatch event should carry payload");
         assert_eq!(
             payload,
-            &DecisionEventPayload::ExpectationMismatch(worldwake_core::ExpectationMismatchPayload {
-                agent,
-                goal_key,
-                step_index: 5,
-                expected_materializations: vec![MaterializationTag::SplitOffLot],
-            })
+            &DecisionEventPayload::ExpectationMismatch(
+                worldwake_core::ExpectationMismatchPayload {
+                    agent,
+                    goal_key,
+                    step_index: 5,
+                    expected_materializations: vec![MaterializationTag::SplitOffLot],
+                }
+            )
         );
     }
 }

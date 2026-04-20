@@ -19,12 +19,11 @@ use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
-    AcceptedRepairProvenance, AgentDecisionRuntime, CommodityPurpose, DirtySet,
-    ExhaustionBaseline, ExhaustionInvalidationCondition, ExpectedMaterialization,
-    FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
-    OpportunityAnchor, OpportunityKey, PlanTerminalKind, PlannedPlan, PlannedStep,
-    PlannerOpKind, PlanningEntityRef, RankedGoal, RankedGoalProvenance,
-    SelectedPlanReplacementKind, build_semantics_table,
+    AcceptedRepairProvenance, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
+    ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
+    GoalKind, GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
+    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
+    RankedGoalProvenance, SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -38,20 +37,19 @@ use worldwake_core::{
     ControlSource, DeadAt, DecisionEventPayload, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
     DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
-    EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary,
-    ExecutionBudget, ExplorationProfile, FrameAssumption, FrameClearReason, FrameState,
-    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason,
-    GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile,
-    IntentionDomain, IntentionFrame, KnownRecipes, LearnedOpportunityMemory, LoadUnits,
-    MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
-    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
-    RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
-    Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
-    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, Wound, WoundCause, WoundId, WoundList,
-    build_believed_entity_state, build_prototype_world,
+    EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
+    ExplorationProfile, FrameAssumption, FrameClearReason, FrameState, GoalAbandonReason,
+    GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
+    KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
+    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, Quantity, QueuedContentionIntent, RecipeId, RecordData,
+    RecordKind, RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed,
+    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
+    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    WoundList, build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -4176,18 +4174,20 @@ fn persist_blocked_memory_commits_changed_component() {
         event_log
             .get(blocker_events[0])
             .and_then(|record| record.decision_payload()),
-        Some(&DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
-            agent,
-            blocker_key: BlockerKey {
-                goal_key: GoalKey::from(GoalKind::Sleep),
-                place: None,
-                target: None,
-                action_def: None,
-            },
-            discrepancy: None,
-            blocking_fact: Some(BlockingFact::NoKnownPath),
-            expires_tick: Tick(7),
-        }))
+        Some(&DecisionEventPayload::BlockerRecorded(
+            BlockerRecordedPayload {
+                agent,
+                blocker_key: BlockerKey {
+                    goal_key: GoalKey::from(GoalKind::Sleep),
+                    place: None,
+                    target: None,
+                    action_def: None,
+                },
+                discrepancy: None,
+                blocking_fact: Some(BlockingFact::NoKnownPath),
+                expires_tick: Tick(7),
+            }
+        ))
     );
 }
 
@@ -4228,20 +4228,25 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
     )
     .unwrap();
 
-    assert_eq!(world.get_component_discrepancy_memory(agent), Some(&discrepancy_memory));
+    assert_eq!(
+        world.get_component_discrepancy_memory(agent),
+        Some(&discrepancy_memory)
+    );
     let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
     assert_eq!(blocker_events.len(), 1);
     assert_eq!(
         event_log
             .get(blocker_events[0])
             .and_then(|record| record.decision_payload()),
-        Some(&DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
-            agent,
-            blocker_key: key,
-            discrepancy: Some(Discrepancy::BeliefContradicted),
-            blocking_fact: None,
-            expires_tick: Tick(9),
-        }))
+        Some(&DecisionEventPayload::BlockerRecorded(
+            BlockerRecordedPayload {
+                agent,
+                blocker_key: key,
+                discrepancy: Some(Discrepancy::BeliefContradicted),
+                blocking_fact: None,
+                expires_tick: Tick(9),
+            }
+        ))
     );
 }
 
@@ -4304,11 +4309,13 @@ fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_prove
                 .event_log
                 .get(*event_id)
                 .and_then(|record| record.decision_payload())
-                == Some(&DecisionEventPayload::GoalSuppressed(GoalSuppressedPayload {
-                    agent: harness.actor,
-                    goal_key,
-                    reason: GoalRejectionReason::SuppressedByBlocker,
-                }))
+                == Some(&DecisionEventPayload::GoalSuppressed(
+                    GoalSuppressedPayload {
+                        agent: harness.actor,
+                        goal_key,
+                        reason: GoalRejectionReason::SuppressedByBlocker,
+                    },
+                ))
         }),
         "expected acquire-candidate blocker suppression payload in GoalSuppressed events"
     );

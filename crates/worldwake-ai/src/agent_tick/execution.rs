@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockerRecordedPayload, BlockerMemory, CauseRef, ContentionIntents,
+    ActiveGoal, BlockerMemory, BlockerRecordedPayload, CauseRef, ContentionIntents,
     DecisionEventPayload, DiscrepancyMemory, EntityId, EventTag, LearnedOpportunityMemory,
     RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };

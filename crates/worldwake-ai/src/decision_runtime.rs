@@ -305,8 +305,8 @@ mod tests {
     use worldwake_core::ActionDefId;
     use worldwake_core::{
         BodyPart, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
-        HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity, RepairKind,
-        Tick, UniqueItemKind, Wound, WoundCause, WoundId,
+        HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity, RepairKind, Tick,
+        UniqueItemKind, Wound, WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -600,7 +600,10 @@ mod tests {
         assert_eq!(decoded.dirty, runtime.dirty);
         assert_eq!(decoded.last_priority_class, runtime.last_priority_class);
         assert_eq!(decoded.dead_cleanup_done, runtime.dead_cleanup_done);
-        assert_eq!(decoded.pending_repair_context, runtime.pending_repair_context);
+        assert_eq!(
+            decoded.pending_repair_context,
+            runtime.pending_repair_context
+        );
         assert_eq!(decoded.accepted_repair, runtime.accepted_repair);
     }
 

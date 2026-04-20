@@ -1,9 +1,9 @@
 # S110DECHISEVE-005: Event-log replay invariance for decision events
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
-**Engine Changes**: None — test-only; exercises existing `replay_execution.rs` / `replay_state.rs` harness
+**Engine Changes**: None — test-only; extends the existing `save_load.rs` serialization harness
 **Deps**: archive/tickets/S110DECHISEVE-004.md (the first foundations-honest emission slice must be archived before replay coverage extends over live decision events)
 
 ## Problem
@@ -12,7 +12,7 @@ S110 adds new `EventTag` variants and `decision_payload` data to the authoritati
 
 ## Assumption Reassessment (2026-04-20)
 
-1. Replay harness lives at `crates/worldwake-sim/src/replay_execution.rs` and `crates/worldwake-sim/src/replay_state.rs`. `save_load.rs` tests at `crates/worldwake-sim/src/save_load.rs:654` onward already exercise full-save round-trip with `SAVE_FORMAT_VERSION`. The new test piggybacks on the same round-trip surface — serialize a full `EventLog` containing decision events, deserialize, and assert equality.
+1. `save_load.rs` tests at `crates/worldwake-sim/src/save_load.rs` already exercise full-save round-trip with `SAVE_FORMAT_VERSION`. The new test should piggyback on the same round-trip surface — serialize a full `SimulationState` containing decision events in its `EventLog`, deserialize, and assert equality.
 2. Archived tickets 004, 007, 008, and 010 now land the live emission slice for `GoalCommitted`, `PlanAdopted`, `ExpectationMismatch`, `BlockerRecorded`, `GoalOffered`, `GoalSuppressed`, `GoalSuspended`, `GoalAbandoned`, `PlanInvalidated`, richer `ReplanTriggered`, and the full current `RepairApplied` family (`AlternateTarget`, `AlternateMerchant`, `AlternateRecipe`, `AlternateRoute`). Replay coverage can now target live-emitted variants directly unless a focused fixture is still cleaner for proof isolation.
 3. Shared abstraction boundary under audit: the `EventLog` wire format including `decision_payload`. Replay invariance here means: `bincode::serialize(&event_log) → bincode::deserialize::<EventLog>(…)` produces a byte-equal `EventLog` after ticket 002's `SAVE_FORMAT_VERSION` bump lands, and every `decision_payload: Some(…)` field survives the round trip with field equality. No world-state re-simulation is required (S110 adds no world-state mutations), and synthetic fixtures are acceptable for deferred variants whose runtime emission is not live yet.
 4. No failing golden motivates this ticket. It is a safety net for the schema change.
@@ -32,24 +32,23 @@ S110 adds new `EventTag` variants and `decision_payload` data to the authoritati
 
 ### 1. Add replay-invariance test
 
-Add to `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` block (or a new test file `crates/worldwake-sim/tests/replay_decision_events.rs` if test scope warrants it — implementer chooses based on test-harness boundary preference at implementation time):
+Add to `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` block:
 
 ```rust
 #[test]
-fn event_log_with_decision_events_roundtrips_through_save_load() {
-    // 1. Run survival-baseline.ron for N ticks (or construct a synthetic EventLog
-    //    with at least one event per DecisionEventPayload variant).
-    // 2. Serialize the full SaveableRuntime via `save_to_bytes`.
-    // 3. Deserialize via `load_from_bytes`.
-    // 4. Assert round-trip equality on the EventLog and on every decision_payload.
+fn save_to_bytes_roundtrip_preserves_decision_event_payloads() {
+    // 1. Start from the existing populated save/load fixture state.
+    // 2. Append one synthetic event per DecisionEventPayload variant.
+    // 3. Round-trip through save_to_bytes/load_from_bytes.
+    // 4. Assert full SimulationState equality plus per-payload byte equality.
 }
 ```
 
-The test uses the scenario-loader path already exercised by existing tests. A synthetic `EventLog` constructed in-test is an acceptable alternative if scenario execution in a sim-crate test is harness-heavy — the invariant under test is serialization equality, not simulation correctness.
+The implemented test uses the existing `populated_state()` save/load fixture and appends a synthetic event for each currently live `DecisionEventPayload` variant. No scenario execution or replay re-simulation is needed because the invariant under test is serialization equality, not simulation correctness.
 
 ### 2. Assert per-variant decision-payload survival
 
-Within the test, iterate `event_log.events()` (or equivalent accessor), filter to events where `decision_payload.is_some()`, and compare payload-for-payload between pre- and post-round-trip. Use a helper that asserts bincode-equality rather than structural-equality via `Eq` alone — this catches any ordering issues in collections inside payloads (e.g., `EvidenceSummary::evidence_kind_counts: BTreeMap<…>` is already `Ord`-stable but the assertion should still exercise the bytes path).
+Within the test, iterate the decision-event tags already present on the round-tripped `EventLog`, collect each `decision_payload: Some(…)`, and compare payload-for-payload between pre- and post-round-trip. Keep the explicit bincode-equality assertion in addition to structural equality so the bytes path is exercised directly.
 
 ## Files to Touch
 
@@ -65,7 +64,7 @@ Within the test, iterate `event_log.events()` (or equivalent accessor), filter t
 
 ### Tests That Must Pass
 
-1. New test `event_log_with_decision_events_roundtrips_through_save_load` passes.
+1. New test `save_to_bytes_roundtrip_preserves_decision_event_payloads` passes.
 2. All existing `save_load` tests continue to pass at `SAVE_FORMAT_VERSION = 34`.
 3. `cargo test -p worldwake-sim save_load` — targeted.
 4. `cargo test --workspace`
@@ -80,10 +79,20 @@ Within the test, iterate `event_log.events()` (or equivalent accessor), filter t
 
 ### New/Modified Tests
 
-1. `crates/worldwake-sim/src/save_load.rs` or `crates/worldwake-sim/tests/replay_decision_events.rs` — new round-trip test covering all 11 `DecisionEventPayload` variants at least once.
+1. `crates/worldwake-sim/src/save_load.rs` — new round-trip test covering all 11 `DecisionEventPayload` variants at least once.
 
 ### Commands
 
-1. `cargo test -p worldwake-sim replay_decision_events` (or `save_load` if in-file) — targeted.
+1. `cargo test -p worldwake-sim save_load`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-20. Added `save_to_bytes_roundtrip_preserves_decision_event_payloads` in `crates/worldwake-sim/src/save_load.rs`, built on the existing `populated_state()` fixture. The test appends one synthetic event per `DecisionEventPayload` variant to the authoritative `EventLog`, round-trips the full `SimulationState` through `save_to_bytes` / `load_from_bytes`, asserts full-state equality, then separately asserts per-payload structural equality and bincode byte equality for every decision event.
+
+## Verification Result
+
+- `cargo test -p worldwake-sim save_load`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`

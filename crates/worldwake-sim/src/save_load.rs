@@ -195,13 +195,21 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, BelievedActivity, BelievedEntityState,
-        BodyCostPerTick, CauseRef, ClaimId, ClaimValue, CommodityKind, ControlSource,
-        EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload, ExpectationBasis,
-        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, PendingEvent, PerceptionSource, Quantity,
-        ReservationId, Seed, StateHash, Tick, TickRange, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        ActionDefId, ActionDomain, AgentBeliefStore, BeliefClaimKey, BelievedActivity,
+        BelievedEntityState, BlockerKey, BlockerRecordedPayload, BlockingFact, BodyCostPerTick,
+        CauseRef, ClaimId, ClaimValue, CommodityKind, CommodityPurpose, ControlSource,
+        DecisionEventPayload, Discrepancy, EmitterTag, EntityBeliefAspect, EntityBeliefClaim,
+        EntityId, EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary,
+        ExpectationBasis, ExpectationId, ExpectationMismatchPayload, ExpectationRecord,
+        ExpectationState, ExpectationStore, GoalAbandonReason, GoalAbandonedPayload,
+        GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload, GoalRejectionReason,
+        GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, LastSeenMemory,
+        LastSeenProvenance, LastSeenRecord, MaterializationTag, PendingEvent, PerceptionSource,
+        PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
+        PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary, RepairAppliedPayload,
+        RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId, Seed, StateHash,
+        SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -628,6 +636,195 @@ mod tests {
         ))
     }
 
+    fn decision_test_entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn decision_goal(kind: GoalKind) -> GoalKey {
+        GoalKey::from(kind)
+    }
+
+    fn append_decision_event(
+        state: &mut SimulationState,
+        tick: Tick,
+        actor: EntityId,
+        place: EntityId,
+        tag: EventTag,
+        payload: DecisionEventPayload,
+    ) {
+        let _ = state
+            .event_log_mut()
+            .emit(PendingEvent::from_payload(EventPayload {
+                tick,
+                cause: CauseRef::SystemTick(tick),
+                actor_id: Some(actor),
+                action_name: None,
+                target_ids: Vec::new(),
+                evidence: Vec::new(),
+                place_id: Some(place),
+                state_deltas: Vec::new(),
+                observed_entities: std::collections::BTreeMap::new(),
+                visibility: VisibilitySpec::Hidden,
+                witness_data: WitnessData::default(),
+                tags: std::collections::BTreeSet::from([tag]),
+                decision_payload: Some(payload),
+            }));
+    }
+
+    fn sample_decision_events(
+        actor: EntityId,
+        target: EntityId,
+        place: EntityId,
+    ) -> Vec<(EventTag, DecisionEventPayload)> {
+        let trade_goal = decision_goal(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let sleep_goal = decision_goal(GoalKind::Sleep);
+        let produce_goal = decision_goal(GoalKind::ProduceCommodity {
+            recipe_id: worldwake_core::RecipeId(7),
+        });
+        let move_goal = decision_goal(GoalKind::MoveCargo {
+            commodity: CommodityKind::Water,
+            destination: place,
+        });
+        let patrol_goal = decision_goal(GoalKind::Patrol { place });
+        let office = decision_test_entity(301);
+        let candidate = decision_test_entity(302);
+        let support_goal = decision_goal(GoalKind::SupportCandidateForOffice { office, candidate });
+        let explore_goal = decision_goal(GoalKind::ExploreLocation {
+            target_place: place,
+            motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+        });
+        let claim_key = BeliefClaimKey {
+            subject: target,
+            aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+        };
+        let blocker_key = BlockerKey {
+            goal_key: move_goal,
+            place: Some(place),
+            target: Some(target),
+            action_def: Some(ActionDefId(6)),
+        };
+
+        vec![
+            (
+                EventTag::GoalOffered,
+                DecisionEventPayload::GoalOffered(GoalOfferedPayload {
+                    agent: actor,
+                    goal_key: trade_goal,
+                    emitter: EmitterTag::Enterprise,
+                    source_evidence: EvidenceSummary {
+                        evidence_kind_counts: std::collections::BTreeMap::from([
+                            (EvidenceKindTag::LearnedOpportunity, 1),
+                            (EvidenceKindTag::PerceptionObservation, 2),
+                        ]),
+                    },
+                }),
+            ),
+            (
+                EventTag::GoalSuppressed,
+                DecisionEventPayload::GoalSuppressed(GoalSuppressedPayload {
+                    agent: actor,
+                    goal_key: sleep_goal,
+                    reason: GoalRejectionReason::SuppressedByStressPolicy,
+                }),
+            ),
+            (
+                EventTag::GoalCommitted,
+                DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                    agent: actor,
+                    goal_key: produce_goal,
+                    motive_score: 420,
+                    rejected_alternatives: vec![RejectedAlternativeSummary {
+                        goal_key: trade_goal,
+                        rejection_reason: GoalRejectionReason::LowerMotive,
+                        score_gap: 17,
+                    }],
+                }),
+            ),
+            (
+                EventTag::GoalSuspended,
+                DecisionEventPayload::GoalSuspended(GoalSuspendedPayload {
+                    agent: actor,
+                    goal_key: move_goal,
+                    reason: SuspensionReason::RouteBlocked,
+                }),
+            ),
+            (
+                EventTag::GoalAbandoned,
+                DecisionEventPayload::GoalAbandoned(GoalAbandonedPayload {
+                    agent: actor,
+                    goal_key: patrol_goal,
+                    reason: GoalAbandonReason::GoalSwitched {
+                        new_goal: explore_goal,
+                        switch_kind: GoalSwitchReason::HigherPriorityGoal,
+                    },
+                }),
+            ),
+            (
+                EventTag::PlanAdopted,
+                DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
+                    agent: actor,
+                    goal_key: trade_goal,
+                    plan_step_count: 3,
+                }),
+            ),
+            (
+                EventTag::PlanInvalidated,
+                DecisionEventPayload::PlanInvalidated(PlanInvalidatedPayload {
+                    agent: actor,
+                    goal_key: move_goal,
+                    reason: PlanInvalidationReason::BeliefUpdate { claim_key },
+                }),
+            ),
+            (
+                EventTag::ExpectationMismatch,
+                DecisionEventPayload::ExpectationMismatch(ExpectationMismatchPayload {
+                    agent: actor,
+                    goal_key: trade_goal,
+                    step_index: 1,
+                    expected_materializations: vec![MaterializationTag::SplitOffLot],
+                }),
+            ),
+            (
+                EventTag::RepairApplied,
+                DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+                    agent: actor,
+                    goal_key: support_goal,
+                    step_index: 2,
+                    repair_kind: RepairKind::AlternateMerchant,
+                    substitute_target: Some(target),
+                }),
+            ),
+            (
+                EventTag::ReplanTriggered,
+                DecisionEventPayload::ReplanTriggered(ReplanTriggeredPayload {
+                    agent: actor,
+                    goal_key: move_goal,
+                    reason: ReplanReason::PlanInvalidated {
+                        reason: PlanInvalidationReason::PursuitInvalidated {
+                            reason: PursuitInvalidationReasonTag::PlaceChanged,
+                        },
+                    },
+                }),
+            ),
+            (
+                EventTag::BlockerRecorded,
+                DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+                    agent: actor,
+                    blocker_key,
+                    discrepancy: Some(Discrepancy::RouteUnknown),
+                    blocking_fact: Some(BlockingFact::NoKnownPath),
+                    expires_tick: Tick(99),
+                }),
+            ),
+        ]
+    }
+
     struct MockRuntime {
         bytes: Vec<u8>,
     }
@@ -764,6 +961,113 @@ mod tests {
 
         assert_eq!(restored, state);
         assert_eq!(runtime_payload, Some(vec![9, 8, 7, 6]));
+    }
+
+    #[test]
+    fn save_to_bytes_roundtrip_preserves_decision_event_payloads() {
+        let (mut state, actor, target, _) = populated_state();
+        let place = state.world().topology().place_ids().next().unwrap();
+        let decision_events = sample_decision_events(actor, target, place);
+
+        for (offset, (tag, payload)) in decision_events.iter().cloned().enumerate() {
+            append_decision_event(
+                &mut state,
+                Tick(20 + u64::try_from(offset).unwrap()),
+                actor,
+                place,
+                tag,
+                payload,
+            );
+        }
+
+        let bytes = save_to_bytes(&state, None).unwrap();
+        let (restored, runtime) = load_from_bytes(&bytes).unwrap();
+
+        assert_eq!(runtime, None);
+        assert_eq!(restored, state);
+
+        for event_id in restored.event_log().events_by_tag(EventTag::GoalOffered) {
+            assert!(restored.event_log().get(*event_id).is_some());
+        }
+
+        let original_payloads: Vec<_> = state
+            .event_log()
+            .events_by_tag(EventTag::GoalOffered)
+            .iter()
+            .chain(state.event_log().events_by_tag(EventTag::GoalSuppressed))
+            .chain(state.event_log().events_by_tag(EventTag::GoalCommitted))
+            .chain(state.event_log().events_by_tag(EventTag::GoalSuspended))
+            .chain(state.event_log().events_by_tag(EventTag::GoalAbandoned))
+            .chain(state.event_log().events_by_tag(EventTag::PlanAdopted))
+            .chain(state.event_log().events_by_tag(EventTag::PlanInvalidated))
+            .chain(
+                state
+                    .event_log()
+                    .events_by_tag(EventTag::ExpectationMismatch),
+            )
+            .chain(state.event_log().events_by_tag(EventTag::RepairApplied))
+            .chain(state.event_log().events_by_tag(EventTag::ReplanTriggered))
+            .chain(state.event_log().events_by_tag(EventTag::BlockerRecorded))
+            .map(|event_id| {
+                state
+                    .event_log()
+                    .get(*event_id)
+                    .unwrap()
+                    .decision_payload()
+                    .unwrap()
+                    .clone()
+            })
+            .collect();
+        let restored_payloads: Vec<_> = restored
+            .event_log()
+            .events_by_tag(EventTag::GoalOffered)
+            .iter()
+            .chain(restored.event_log().events_by_tag(EventTag::GoalSuppressed))
+            .chain(restored.event_log().events_by_tag(EventTag::GoalCommitted))
+            .chain(restored.event_log().events_by_tag(EventTag::GoalSuspended))
+            .chain(restored.event_log().events_by_tag(EventTag::GoalAbandoned))
+            .chain(restored.event_log().events_by_tag(EventTag::PlanAdopted))
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::PlanInvalidated),
+            )
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::ExpectationMismatch),
+            )
+            .chain(restored.event_log().events_by_tag(EventTag::RepairApplied))
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::ReplanTriggered),
+            )
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::BlockerRecorded),
+            )
+            .map(|event_id| {
+                restored
+                    .event_log()
+                    .get(*event_id)
+                    .unwrap()
+                    .decision_payload()
+                    .unwrap()
+                    .clone()
+            })
+            .collect();
+
+        assert_eq!(restored_payloads, original_payloads);
+        assert_eq!(restored_payloads.len(), decision_events.len());
+
+        for (original, roundtrip) in original_payloads.iter().zip(&restored_payloads) {
+            assert_eq!(
+                bincode::serialize(roundtrip).unwrap(),
+                bincode::serialize(original).unwrap()
+            );
+        }
     }
 
     #[test]

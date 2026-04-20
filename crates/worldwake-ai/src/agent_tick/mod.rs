@@ -46,13 +46,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, ActiveGoal, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
-    DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
-    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalSuspendedPayload,
-    GoalSuppressedPayload, GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick,
-    LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, PendingEvent,
-    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
-    RepairAppliedPayload, RepairEntry, RepairKey, RepairKind, RepairMemory, ReplanReason,
-    ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget, GoalAbandonReason,
+    GoalAbandonedPayload, GoalOfferedPayload, GoalSuppressedPayload, GoalSuspendedPayload,
+    GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick, LearnedOpportunityMemory,
+    OpportunityAnchor, OpportunityEntry, PendingEvent, PlanInvalidatedPayload,
+    PlanInvalidationReason, PursuitInvalidationReasonTag, RepairAppliedPayload, RepairEntry,
+    RepairKey, RepairKind, RepairMemory, ReplanReason, ReplanTriggeredPayload, Tick,
+    VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -1319,23 +1319,23 @@ fn process_agent(
             .as_ref()
             .is_some_and(|goal| goal.goal_key == previous_goal);
         if !preserved_as_suspended && !still_active {
-            let abandon_reason = if let Some(new_goal) = current_active_goal.map(|goal| goal.goal_key)
-            {
-                GoalAbandonReason::GoalSwitched {
-                    new_goal,
-                    switch_kind: infer_goal_switch_reason(
-                        previous_goal,
+            let abandon_reason =
+                if let Some(new_goal) = current_active_goal.map(|goal| goal.goal_key) {
+                    GoalAbandonReason::GoalSwitched {
                         new_goal,
-                        &ranked_candidates,
-                    ),
-                }
-            } else if let Some(reason) = runtime.last_frame_clear_reason {
-                GoalAbandonReason::FrameCleared { reason }
-            } else {
-                GoalAbandonReason::FrameCleared {
-                    reason: FrameClearReason::LostPlan,
-                }
-            };
+                        switch_kind: infer_goal_switch_reason(
+                            previous_goal,
+                            new_goal,
+                            &ranked_candidates,
+                        ),
+                    }
+                } else if let Some(reason) = runtime.last_frame_clear_reason {
+                    GoalAbandonReason::FrameCleared { reason }
+                } else {
+                    GoalAbandonReason::FrameCleared {
+                        reason: FrameClearReason::LostPlan,
+                    }
+                };
             emit_decision_event(
                 ctx.event_log,
                 tick,

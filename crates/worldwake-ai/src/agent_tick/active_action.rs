@@ -18,8 +18,8 @@ use crate::DirtySet;
 use crate::failure_handling::{ExecutionFailure, FailureClassification};
 use crate::{
     AgentDecisionRuntime, DecisionContext, InterruptDecision, PendingRepairContext,
-    PlanFailureContext, PlanTerminalKind, PlannedStep, RankedGoal,
-    classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure, has_frame,
+    PlanFailureContext, PlanTerminalKind, PlannedStep, RankedGoal, classify_frame_plan_relation,
+    evaluate_interrupt, handle_plan_failure, has_frame,
 };
 
 pub(super) fn active_action_for_agent(
@@ -358,12 +358,12 @@ fn map_replan_reason(
 
 fn map_failure_classification(classification: FailureClassification) -> ReplanReason {
     match classification {
-        FailureClassification::Blocker(blocking_fact) => ReplanReason::BlockingFactRecorded {
-            blocking_fact,
-        },
-        FailureClassification::Discrepancy(discrepancy) => ReplanReason::DiscrepancyRecorded {
-            discrepancy,
-        },
+        FailureClassification::Blocker(blocking_fact) => {
+            ReplanReason::BlockingFactRecorded { blocking_fact }
+        }
+        FailureClassification::Discrepancy(discrepancy) => {
+            ReplanReason::DiscrepancyRecorded { discrepancy }
+        }
     }
 }
 
