@@ -7,8 +7,8 @@ use worldwake_core::{
     IntentionFrame, Tick, World,
 };
 
-pub fn commodity_assumption_falsification_probes_from_env(
-) -> Option<CommodityAssumptionFalsificationProbes> {
+pub fn commodity_assumption_falsification_probes_from_env()
+-> Option<CommodityAssumptionFalsificationProbes> {
     std::env::var("WORLDWAKE_FALSIFICATION_PROBES")
         .is_ok()
         .then(CommodityAssumptionFalsificationProbes::new)
@@ -31,10 +31,9 @@ impl CommodityAssumptionFalsificationProbes {
         agents: &BTreeMap<String, EntityId>,
         tick: Tick,
     ) -> Result<(), String> {
-        let trace_sink = harness
-            .driver
-            .trace_sink()
-            .ok_or_else(|| "decision tracing should be enabled for falsification probes".to_string())?;
+        let trace_sink = harness.driver.trace_sink().ok_or_else(|| {
+            "decision tracing should be enabled for falsification probes".to_string()
+        })?;
 
         for (agent_name, agent) in agents {
             if let Some(frame) = harness.world.get_component_intention_frame(*agent) {
@@ -54,7 +53,6 @@ impl CommodityAssumptionFalsificationProbes {
 
         Ok(())
     }
-
 }
 
 fn validate_expected_commodity_assumption(
@@ -88,8 +86,7 @@ fn validate_commodity_failure_transitions(
     for transition in transitions {
         let FrameTransitionKind::Cleared {
             reason: FrameClearReason::AssumptionFailed,
-            failed_assumption:
-                Some(FrameAssumption::CommodityAvailableAt { commodity, place }),
+            failed_assumption: Some(FrameAssumption::CommodityAvailableAt { commodity, place }),
         } = transition
         else {
             continue;
@@ -167,7 +164,11 @@ fn observed_non_colocated_frame(world: &World, agent: EntityId) -> Option<Observ
     })
 }
 
-fn place_has_local_commodity_support(world: &World, place: EntityId, commodity: CommodityKind) -> bool {
+fn place_has_local_commodity_support(
+    world: &World,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> bool {
     let mut entities = vec![place];
     entities.extend(world.ground_entities_at(place));
 
@@ -175,9 +176,11 @@ fn place_has_local_commodity_support(world: &World, place: EntityId, commodity: 
         world
             .get_component_item_lot(entity)
             .is_some_and(|lot| lot.commodity == commodity && lot.quantity.0 > 0)
-            || world.get_component_resource_source(entity).is_some_and(|source| {
-                source.commodity == commodity && source.available_quantity.0 > 0
-            })
+            || world
+                .get_component_resource_source(entity)
+                .is_some_and(|source| {
+                    source.commodity == commodity && source.available_quantity.0 > 0
+                })
     })
 }
 

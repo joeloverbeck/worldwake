@@ -804,7 +804,7 @@ fn cross_location_water_acquisition_succeeds_without_budget_exhaustion() {
 //
 // Setup: Rebuild the exact Forager Lina Eldergrove Forest substrate from `scenarios/cli-evaluation.ron` using the live place graph, Lina's scenario profile values, 8 ground Apples, 5 ground Water, and the `Eldergrove Orchard` Apple source. The run uses the scenario seed `7777` and only seeds Lina's local Eldergrove beliefs, matching the observer report's locality boundary.
 //
-// Proves: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. Late-run planning either switches away from `FreeCarryCapacity` or produces executable disposal work, eating resumes, and hunger falls within the window.
+// Proves: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. The late-run decision window now lawfully includes both planning and active-action execution ticks: when planning occurs it either switches away from `FreeCarryCapacity` or produces executable disposal work, and the overall window still shows resumed eating and falling hunger.
 //
 // Chain: Eldergrove harvest/eat/waste accumulation -> carry strain assessed from actual carried load -> no spurious `FreeCarryCapacity` loop -> lawful self-care resumes -> late eat commit -> falling hunger.
 
@@ -820,7 +820,9 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
     let mut window_selected = 0_u32;
     let mut window_zero_step = 0_u32;
     let mut window_drop_item_plans = 0_u32;
-    let mut window_traces = 0_u32;
+    let mut window_decision_traces = 0_u32;
+    let mut window_planning_traces = 0_u32;
+    let mut window_active_action_traces = 0_u32;
     let mut hunger_at_window_start = None;
 
     for tick in 0..observation_end {
@@ -834,10 +836,20 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
             continue;
         }
 
-        let Some(planning) = planning_trace_at(&h, lina, Tick(tick.into())) else {
+        let Some(trace) = h
+            .driver
+            .trace_sink()
+            .and_then(|sink| sink.trace_at(lina, Tick(tick.into())))
+        else {
             continue;
         };
-        window_traces += 1;
+        window_decision_traces += 1;
+
+        let DecisionOutcome::Planning(planning) = &trace.outcome else {
+            window_active_action_traces += 1;
+            continue;
+        };
+        window_planning_traces += 1;
 
         if planning
             .selection
@@ -883,16 +895,20 @@ fn degenerate_zero_step_loop_blocks_actionable_goals() {
         });
 
     assert!(
-        window_traces >= 80,
-        "expected decision traces throughout the late-run pathology window, saw {window_traces}"
+        window_decision_traces == observation_end.saturating_sub(observation_start),
+        "expected one decision trace per late-run tick, saw {window_decision_traces} over window [{observation_start}, {observation_end})"
+    );
+    assert!(
+        window_planning_traces + window_active_action_traces == window_decision_traces,
+        "late-run traces should be fully accounted for by planning or active-action execution; planning={window_planning_traces} active_action={window_active_action_traces} total={window_decision_traces}"
     );
     assert!(
         window_zero_step == 0,
-        "expected no repeated 0-step FreeCarryCapacity plans in the late-run cli-evaluation Lina window, saw {window_zero_step} zero-step attempts across {window_traces} traced ticks"
+        "expected no repeated 0-step FreeCarryCapacity plans in the late-run cli-evaluation Lina window, saw {window_zero_step} zero-step attempts across {window_planning_traces} planning ticks"
     );
     assert!(
         window_selected == 0 || window_drop_item_plans > 0,
-        "late-run FreeCarryCapacity should either disappear as a selected goal or produce executable DropItem plans; selections={window_selected} drop_item_plans={window_drop_item_plans}"
+        "late-run FreeCarryCapacity should either disappear as a selected goal or produce executable DropItem plans; selections={window_selected} drop_item_plans={window_drop_item_plans} planning_ticks={window_planning_traces} active_action_ticks={window_active_action_traces}"
     );
     assert!(
         late_eat_commit,
