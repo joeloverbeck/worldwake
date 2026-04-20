@@ -45,7 +45,6 @@ pub(crate) struct InFlightReconciliation<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct CompletedPlanSummary {
     pub(super) goal_key: worldwake_core::GoalKey,
-    pub(super) opportunity: worldwake_core::OpportunityKey,
     pub(super) terminal_kind: crate::PlanTerminalKind,
     pub(super) step_index: u16,
 }
@@ -554,7 +553,6 @@ pub(super) fn reconcile_in_flight_state(
             ))
         .then_some(CompletedPlanSummary {
             goal_key: plan.goal,
-            opportunity: plan.opportunity,
             terminal_kind: plan.terminal_kind,
             step_index: runtime
                 .current_step_index

@@ -17,9 +17,9 @@ use super::{
 use crate::DirtySet;
 use crate::failure_handling::{ExecutionFailure, FailureClassification};
 use crate::{
-    AgentDecisionRuntime, DecisionContext, InterruptDecision, PlanFailureContext, PlanTerminalKind,
-    PlannedStep, RankedGoal, classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure,
-    has_frame,
+    AgentDecisionRuntime, DecisionContext, InterruptDecision, PendingRepairContext,
+    PlanFailureContext, PlanTerminalKind, PlannedStep, RankedGoal,
+    classify_frame_plan_relation, evaluate_interrupt, handle_plan_failure, has_frame,
 };
 
 pub(super) fn active_action_for_agent(
@@ -290,6 +290,16 @@ pub(super) fn handle_current_step_failure(
             .map(|plan| plan.goal)
             .expect("failed step must have a current goal")
     });
+    if let Some(failed_plan) = runtime.current_plan.clone() {
+        runtime.pending_repair_context = Some(PendingRepairContext {
+            failed_plan,
+            failed_step_index: runtime
+                .current_step_index
+                .try_into()
+                .expect("failed repair step index exceeds u16"),
+        });
+    }
+    runtime.accepted_repair = None;
     let classification = handle_plan_failure(
         &PlanFailureContext {
             view: &view,

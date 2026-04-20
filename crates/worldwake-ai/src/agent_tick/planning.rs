@@ -13,8 +13,9 @@ use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
 use crate::{
-    AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionRetryState, OpportunityKey,
-    PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics, RankedGoal, authoritative_target,
+    AcceptedRepairProvenance, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
+    ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep,
+    PlannerOpSemantics, RankedGoal, authoritative_target,
     build_planning_snapshot_with_blocked_facility_uses, revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,11 +23,12 @@ use std::time::Instant;
 use worldwake_core::{
     ActionDefId, ActiveGoal, BlockerMemory, CognitiveProfile, DecisionEventPayload, EntityId,
     EventLog, EventTag, ExecutionBudget, GoalCommittedPayload, GoalKind, GoalRejectionReason,
-    IntentionFrame, Permille, PlanAdoptedPayload, RejectedAlternativeSummary, Tick,
+    IntentionFrame, OpportunityAnchor, Permille, PlanAdoptedPayload, RejectedAlternativeSummary,
+    RepairKind, Tick,
 };
 use worldwake_sim::{
-    ActionHandlerRegistry, GoalBeliefView, RecipeRegistry, RuntimeBeliefView, Scheduler,
-    SpatialBeliefView,
+    ActionHandlerRegistry, ActionPayload, GoalBeliefView, RecipeRegistry, RuntimeBeliefView,
+    Scheduler, SpatialBeliefView,
 };
 
 use super::{
@@ -787,6 +789,124 @@ fn emit_plan_selection_events(
     );
 }
 
+fn opportunity_anchor_entity(anchor: OpportunityAnchor) -> Option<EntityId> {
+    match anchor {
+        OpportunityAnchor::Place(entity) | OpportunityAnchor::Entity(entity) => Some(entity),
+        OpportunityAnchor::None => None,
+    }
+}
+
+fn plans_share_repair_intent(
+    failed_plan: &PlannedPlan,
+    selected_plan: &PlannedPlan,
+    recipe_registry: &RecipeRegistry,
+) -> bool {
+    failed_plan.goal == selected_plan.goal
+        || failed_plan
+            .goal
+            .kind
+            .target_commodity(recipe_registry)
+            .zip(selected_plan.goal.kind.target_commodity(recipe_registry))
+            .is_some_and(|(failed, selected)| failed == selected)
+}
+
+fn repair_trade_counterparty(plan: &PlannedPlan) -> Option<EntityId> {
+    plan.steps
+        .iter()
+        .find(|step| step.op_kind == crate::PlannerOpKind::Trade)
+        .and_then(|step| {
+            step.payload_override
+                .as_ref()
+                .and_then(ActionPayload::as_trade)
+                .map(|payload| payload.counterparty)
+                .or_else(|| step.targets.first().copied().and_then(authoritative_target))
+        })
+}
+
+fn repair_route_signature(plan: &PlannedPlan) -> Vec<EntityId> {
+    plan.steps
+        .iter()
+        .filter(|step| step.op_kind == crate::PlannerOpKind::Travel)
+        .filter_map(|step| step.targets.first().copied().and_then(authoritative_target))
+        .collect()
+}
+
+fn classify_accepted_repair(
+    runtime: &AgentDecisionRuntime,
+    selected_plan: &PlannedPlan,
+    recipe_registry: &RecipeRegistry,
+) -> Option<AcceptedRepairProvenance> {
+    let pending = runtime.pending_repair_context.as_ref()?;
+    let failed_plan = &pending.failed_plan;
+    if !plans_share_repair_intent(failed_plan, selected_plan, recipe_registry) {
+        return None;
+    }
+
+    match (&failed_plan.goal.kind, &selected_plan.goal.kind) {
+        (
+            GoalKind::ProduceCommodity {
+                recipe_id: failed_recipe,
+            },
+            GoalKind::ProduceCommodity {
+                recipe_id: selected_recipe,
+            },
+        ) if failed_recipe != selected_recipe
+            && failed_plan
+                .goal
+                .kind
+                .target_commodity(recipe_registry)
+                .zip(selected_plan.goal.kind.target_commodity(recipe_registry))
+                .is_some() =>
+        {
+            return Some(AcceptedRepairProvenance {
+                goal_key: selected_plan.goal,
+                repair_kind: RepairKind::AlternateRecipe,
+                substitute_target: None,
+            });
+        }
+        _ => {}
+    }
+
+    if let (Some(failed_counterparty), Some(selected_counterparty)) = (
+        repair_trade_counterparty(failed_plan),
+        repair_trade_counterparty(selected_plan),
+    ) && failed_counterparty != selected_counterparty
+    {
+        return Some(AcceptedRepairProvenance {
+            goal_key: selected_plan.goal,
+            repair_kind: RepairKind::AlternateMerchant,
+            substitute_target: Some(selected_counterparty),
+        });
+    }
+
+    if failed_plan.opportunity.anchor != selected_plan.opportunity.anchor
+        && let Some(substitute_target) = opportunity_anchor_entity(selected_plan.opportunity.anchor)
+    {
+        return Some(AcceptedRepairProvenance {
+            goal_key: selected_plan.goal,
+            repair_kind: RepairKind::AlternateTarget,
+            substitute_target: Some(substitute_target),
+        });
+    }
+
+    let failed_route = repair_route_signature(failed_plan);
+    let selected_route = repair_route_signature(selected_plan);
+    if !failed_route.is_empty()
+        && !selected_route.is_empty()
+        && failed_route != selected_route
+        && failed_plan.opportunity.anchor == selected_plan.opportunity.anchor
+        && repair_trade_counterparty(failed_plan) == repair_trade_counterparty(selected_plan)
+    {
+        return Some(AcceptedRepairProvenance {
+            goal_key: selected_plan.goal,
+            repair_kind: RepairKind::AlternateRoute,
+            substitute_target: None,
+        });
+    }
+
+    None
+}
+
 #[allow(clippy::too_many_arguments)]
 fn adopt_selected_plan(
     runtime: &mut AgentDecisionRuntime,
@@ -797,10 +917,13 @@ fn adopt_selected_plan(
     agent: EntityId,
     ranked_candidates: &[RankedGoal],
     selected_plan: PlannedPlan,
+    recipe_registry: &RecipeRegistry,
     tick: Tick,
 ) {
     runtime.materialization_bindings.clear();
     facility_intents.intents.clear();
+    runtime.accepted_repair = classify_accepted_repair(runtime, &selected_plan, recipe_registry);
+    runtime.pending_repair_context = None;
     *active_goal = Some(ActiveGoal {
         goal_key: selected_plan.goal,
         adopted_at: tick,
@@ -837,6 +960,7 @@ fn clear_current_plan(
     runtime.current_plan = None;
     runtime.current_step_index = 0;
     runtime.step_in_flight = false;
+    runtime.accepted_repair = None;
     runtime.last_priority_class = ranked_candidates
         .first()
         .map(|candidate| candidate.priority_class);
@@ -963,6 +1087,7 @@ pub(super) fn plan_and_validate_next_step(
                     agent,
                     ranked_candidates,
                     selected_plan,
+                    recipe_registry,
                     tick,
                 );
             } else {
@@ -1436,9 +1561,9 @@ mod tests {
     use worldwake_core::{
         ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
         CommodityPurpose, ContentionIntents, ControlSource, DecisionEventPayload, EventLog,
-        EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
+        EntityId, EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
         GoalRejectionReason, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille,
-        Place, PlanAdoptedPayload, Quantity, Tick, Topology, TravelEdge, TravelEdgeId,
+        Place, PlanAdoptedPayload, Quantity, RepairKind, Tick, Topology, TravelEdge, TravelEdgeId,
         VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
         build_prototype_world,
     };
@@ -1758,6 +1883,7 @@ mod tests {
             agent,
             &ranked_candidates,
             selected_plan,
+            &recipes,
             Tick(5),
         );
 
@@ -1770,6 +1896,202 @@ mod tests {
                     place: orchard,
                 })
         );
+    }
+
+    fn travel_step(destination: EntityId) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(1),
+            targets: vec![PlanningEntityRef::Authoritative(destination)],
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }
+    }
+
+    fn trade_step(counterparty: EntityId) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(2),
+            targets: vec![PlanningEntityRef::Authoritative(counterparty)],
+            payload_override: Some(ActionPayload::Trade(worldwake_sim::TradeActionPayload {
+                counterparty,
+                sale_lot: entity(600),
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
+            })),
+            op_kind: PlannerOpKind::Trade,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }
+    }
+
+    fn craft_step(recipe_id: worldwake_core::RecipeId) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(3),
+            targets: vec![PlanningEntityRef::Authoritative(entity(700))],
+            payload_override: Some(ActionPayload::Craft(worldwake_sim::CraftActionPayload {
+                recipe_id,
+                required_workstation_tag: WorkstationTag::Mill,
+                inputs: vec![(CommodityKind::Grain, Quantity(2))],
+                outputs: vec![(CommodityKind::Bread, Quantity(1))],
+                required_tool_kinds: Vec::new(),
+            })),
+            op_kind: PlannerOpKind::Craft,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+        }
+    }
+
+    fn runtime_with_failed_plan(plan: PlannedPlan) -> AgentDecisionRuntime {
+        AgentDecisionRuntime {
+            pending_repair_context: Some(crate::PendingRepairContext {
+                failed_plan: plan,
+                failed_step_index: 0,
+            }),
+            ..AgentDecisionRuntime::default()
+        }
+    }
+
+    #[test]
+    fn classify_accepted_repair_prefers_alternate_merchant_over_anchor_change() {
+        let (_defs, _handlers, recipes) = build_full_registries();
+        let market_a = entity(201);
+        let market_b = entity(202);
+        let seller_a = entity(301);
+        let seller_b = entity(302);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let failed_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(market_a),
+            },
+            goal,
+            vec![travel_step(market_a), trade_step(seller_a)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let selected_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(market_b),
+            },
+            goal,
+            vec![travel_step(market_b), trade_step(seller_b)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        let repair =
+            super::classify_accepted_repair(&runtime_with_failed_plan(failed_plan), &selected_plan, &recipes)
+                .expect("merchant replacement should classify as a repair");
+
+        assert_eq!(repair.goal_key, goal);
+        assert_eq!(repair.repair_kind, RepairKind::AlternateMerchant);
+        assert_eq!(repair.substitute_target, Some(seller_b));
+    }
+
+    #[test]
+    fn classify_accepted_repair_detects_alternate_recipe_for_same_output() {
+        let mut recipes = RecipeRegistry::new();
+        let recipe_a = recipes.register(RecipeDefinition {
+            name: "Bake Bread".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(2))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(3).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(1).unwrap(),
+            ),
+        });
+        let recipe_b = recipes.register(RecipeDefinition {
+            name: "Bake Bread Fast".to_string(),
+            inputs: vec![(CommodityKind::Grain, Quantity(1))],
+            outputs: vec![(CommodityKind::Bread, Quantity(1))],
+            work_ticks: NonZeroU32::new(2).unwrap(),
+            required_workstation_tag: Some(WorkstationTag::Mill),
+            required_tool_kinds: Vec::new(),
+            body_cost_per_tick: BodyCostPerTick::new(
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(1).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(1).unwrap(),
+            ),
+        });
+        let failed_goal = GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: recipe_a,
+        });
+        let selected_goal = GoalKey::from(GoalKind::ProduceCommodity {
+            recipe_id: recipe_b,
+        });
+        let failed_plan = PlannedPlan::new(
+            opportunity(failed_goal),
+            failed_goal,
+            vec![craft_step(recipe_a)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let selected_plan = PlannedPlan::new(
+            opportunity(selected_goal),
+            selected_goal,
+            vec![craft_step(recipe_b)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        let repair =
+            super::classify_accepted_repair(&runtime_with_failed_plan(failed_plan), &selected_plan, &recipes)
+                .expect("recipe replacement should classify as a repair");
+
+        assert_eq!(repair.goal_key, selected_goal);
+        assert_eq!(repair.repair_kind, RepairKind::AlternateRecipe);
+        assert_eq!(repair.substitute_target, None);
+    }
+
+    #[test]
+    fn classify_accepted_repair_detects_alternate_route_for_same_anchor() {
+        let (_defs, _handlers, recipes) = build_full_registries();
+        let market = entity(401);
+        let waypoint_a = entity(402);
+        let waypoint_b = entity(403);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let failed_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(market),
+            },
+            goal,
+            vec![travel_step(waypoint_a), travel_step(market)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let selected_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(market),
+            },
+            goal,
+            vec![travel_step(waypoint_b), travel_step(market)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        let repair =
+            super::classify_accepted_repair(&runtime_with_failed_plan(failed_plan), &selected_plan, &recipes)
+                .expect("route replacement should classify as a repair");
+
+        assert_eq!(repair.goal_key, goal);
+        assert_eq!(repair.repair_kind, RepairKind::AlternateRoute);
+        assert_eq!(repair.substitute_target, None);
     }
 
     fn ranked_goal(goal: GroundedGoal) -> RankedGoal {

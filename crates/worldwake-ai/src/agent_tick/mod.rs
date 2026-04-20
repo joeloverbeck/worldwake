@@ -38,15 +38,15 @@ use crate::decision_trace::{
     SelectionTrace,
 };
 use crate::{
-    AgentDecisionRuntime, PlannerOpSemantics, authoritative_target, build_semantics_table,
-    frame_runtime_snapshot,
+    AcceptedRepairProvenance, AgentDecisionRuntime, PlannerOpSemantics, authoritative_target,
+    build_semantics_table, frame_runtime_snapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents,
-    ControlSource, DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
+    ActionDefId, ActiveGoal, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
+    DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
     GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalSuspendedPayload,
     GoalSuppressedPayload, GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick,
     LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, PendingEvent,
@@ -575,6 +575,8 @@ fn process_agent(
             runtime.step_in_flight = false;
             runtime.dirty = crate::DirtySet::default();
             runtime.materialization_bindings.clear();
+            runtime.pending_repair_context = None;
+            runtime.accepted_repair = None;
             runtime.dead_cleanup_done = true;
             update_runtime_observation_snapshot(&view, agent, runtime);
             persist_intention_frame(
@@ -634,7 +636,7 @@ fn process_agent(
     if let Some(summary) = reconciliation.completed_plan
         && let Some(payload) = record_repair_memory_from_completed_plan(
             &mut repair_memory,
-            &blocked_memory,
+            runtime.accepted_repair.take(),
             &summary,
             agent,
             tick,
@@ -1403,58 +1405,48 @@ fn process_agent(
 
 fn record_repair_memory_from_completed_plan(
     repair_memory: &mut RepairMemory,
-    blocked_memory: &BlockerMemory,
+    accepted_repair: Option<AcceptedRepairProvenance>,
     summary: &CompletedPlanSummary,
     agent: EntityId,
     current_tick: Tick,
     ttl_ticks: u32,
     memory_capacity: worldwake_core::MemoryCapacityProfile,
 ) -> Option<RepairAppliedPayload> {
-    let alternate_target = match summary.opportunity.anchor {
-        OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place) => place,
-        OpportunityAnchor::None => return None,
-    };
+    let accepted_repair = accepted_repair?;
     if !matches!(
         summary.terminal_kind,
         crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment
     ) {
         return None;
     }
-    let has_prior_alternate_context = blocked_memory.intents.values().any(|blocker| {
-        blocker.expires_tick > current_tick
-            && blocker.blocker_key.goal_key == summary.goal_key
-            && blocker
-                .blocker_key
-                .target
-                .or(blocker.blocker_key.place)
-                .is_some_and(|blocked| blocked != alternate_target)
-    });
-    if !has_prior_alternate_context {
+    if accepted_repair.goal_key != summary.goal_key {
         return None;
     }
-
-    let repair_key = RepairKey {
-        goal_key: summary.goal_key,
-        alternate_target,
-    };
-    let success_count = repair_memory
-        .repairs
-        .get(&repair_key)
-        .filter(|entry| entry.expires_tick > current_tick)
-        .map_or(1, |entry| entry.success_count.saturating_add(1));
-    repair_memory.record(RepairEntry {
-        repair_key,
-        observed_tick: current_tick,
-        expires_tick: Tick(current_tick.0 + u64::from(ttl_ticks)),
-        success_count,
-    });
-    repair_memory.enforce_capacity(&memory_capacity);
+    if accepted_repair.repair_kind == RepairKind::AlternateTarget {
+        let alternate_target = accepted_repair.substitute_target?;
+        let repair_key = RepairKey {
+            goal_key: summary.goal_key,
+            alternate_target,
+        };
+        let success_count = repair_memory
+            .repairs
+            .get(&repair_key)
+            .filter(|entry| entry.expires_tick > current_tick)
+            .map_or(1, |entry| entry.success_count.saturating_add(1));
+        repair_memory.record(RepairEntry {
+            repair_key,
+            observed_tick: current_tick,
+            expires_tick: Tick(current_tick.0 + u64::from(ttl_ticks)),
+            success_count,
+        });
+        repair_memory.enforce_capacity(&memory_capacity);
+    }
     Some(RepairAppliedPayload {
         agent,
         goal_key: summary.goal_key,
         step_index: summary.step_index,
-        repair_kind: RepairKind::AlternateTarget,
-        substitute_target: Some(alternate_target),
+        repair_kind: accepted_repair.repair_kind,
+        substitute_target: accepted_repair.substitute_target,
     })
 }
 

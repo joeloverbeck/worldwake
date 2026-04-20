@@ -19,11 +19,12 @@ use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
-    AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
-    ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
-    GoalKind, GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
-    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
-    RankedGoalProvenance, SelectedPlanReplacementKind, build_semantics_table,
+    AcceptedRepairProvenance, AgentDecisionRuntime, CommodityPurpose, DirtySet,
+    ExhaustionBaseline, ExhaustionInvalidationCondition, ExpectedMaterialization,
+    FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
+    OpportunityAnchor, OpportunityKey, PlanTerminalKind, PlannedPlan, PlannedStep,
+    PlannerOpKind, PlanningEntityRef, RankedGoal, RankedGoalProvenance,
+    SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -7034,40 +7035,16 @@ fn completed_alternate_plan_records_repair_memory_entry() {
     let successful_place = entity(91);
     let mut repair_memory = RepairMemory::default();
     let mut event_log = EventLog::new();
-    let blocked_memory = BlockerMemory {
-        intents: BTreeMap::from([(
-            BlockerKey {
-                goal_key: goal,
-                place: Some(entity(90)),
-                target: None,
-                action_def: None,
-            },
-            Blocker {
-                blocker_key: BlockerKey {
-                    goal_key: goal,
-                    place: Some(entity(90)),
-                    target: None,
-                    action_def: None,
-                },
-                blocking_fact: BlockingFact::NoKnownPath,
-                diagnostic_context: None,
-                observed_tick: Tick(3),
-                expires_tick: Tick(40),
-                clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
-                baseline_snapshot: None,
-            },
-        )]),
-    };
 
     if let Some(payload) = record_repair_memory_from_completed_plan(
         &mut repair_memory,
-        &blocked_memory,
+        Some(AcceptedRepairProvenance {
+            goal_key: goal,
+            repair_kind: RepairKind::AlternateTarget,
+            substitute_target: Some(successful_place),
+        }),
         &super::CompletedPlanSummary {
             goal_key: goal,
-            opportunity: OpportunityKey {
-                goal_key: goal,
-                anchor: OpportunityAnchor::Place(successful_place),
-            },
             terminal_kind: PlanTerminalKind::GoalSatisfied,
             step_index: 2,
         },
@@ -7111,6 +7088,99 @@ fn completed_alternate_plan_records_repair_memory_entry() {
             substitute_target: Some(successful_place),
         })
     );
+}
+
+#[test]
+fn completed_alternate_merchant_plan_emits_without_recording_target_memory() {
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let merchant = entity(92);
+    let mut repair_memory = RepairMemory::default();
+
+    let payload = record_repair_memory_from_completed_plan(
+        &mut repair_memory,
+        Some(AcceptedRepairProvenance {
+            goal_key: goal,
+            repair_kind: RepairKind::AlternateMerchant,
+            substitute_target: Some(merchant),
+        }),
+        &super::CompletedPlanSummary {
+            goal_key: goal,
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+            step_index: 3,
+        },
+        entity(7),
+        Tick(10),
+        120,
+        MemoryCapacityProfile::default(),
+    )
+    .expect("merchant repairs should emit from accepted provenance");
+
+    assert!(repair_memory.repairs.is_empty());
+    assert_eq!(payload.repair_kind, RepairKind::AlternateMerchant);
+    assert_eq!(payload.substitute_target, Some(merchant));
+}
+
+#[test]
+fn completed_alternate_recipe_plan_emits_without_substitute_target() {
+    let goal = GoalKey::from(GoalKind::ProduceCommodity {
+        recipe_id: RecipeId(4),
+    });
+    let mut repair_memory = RepairMemory::default();
+
+    let payload = record_repair_memory_from_completed_plan(
+        &mut repair_memory,
+        Some(AcceptedRepairProvenance {
+            goal_key: goal,
+            repair_kind: RepairKind::AlternateRecipe,
+            substitute_target: None,
+        }),
+        &super::CompletedPlanSummary {
+            goal_key: goal,
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+            step_index: 1,
+        },
+        entity(8),
+        Tick(11),
+        120,
+        MemoryCapacityProfile::default(),
+    )
+    .expect("recipe repairs should emit from accepted provenance");
+
+    assert!(repair_memory.repairs.is_empty());
+    assert_eq!(payload.repair_kind, RepairKind::AlternateRecipe);
+    assert_eq!(payload.substitute_target, None);
+}
+
+#[test]
+fn completed_alternate_route_plan_emits_without_substitute_target() {
+    let goal = GoalKey::from(GoalKind::Sleep);
+    let mut repair_memory = RepairMemory::default();
+
+    let payload = record_repair_memory_from_completed_plan(
+        &mut repair_memory,
+        Some(AcceptedRepairProvenance {
+            goal_key: goal,
+            repair_kind: RepairKind::AlternateRoute,
+            substitute_target: None,
+        }),
+        &super::CompletedPlanSummary {
+            goal_key: goal,
+            terminal_kind: PlanTerminalKind::GoalSatisfied,
+            step_index: 4,
+        },
+        entity(9),
+        Tick(12),
+        120,
+        MemoryCapacityProfile::default(),
+    )
+    .expect("route repairs should emit from accepted provenance");
+
+    assert!(repair_memory.repairs.is_empty());
+    assert_eq!(payload.repair_kind, RepairKind::AlternateRoute);
+    assert_eq!(payload.substitute_target, None);
 }
 
 #[test]

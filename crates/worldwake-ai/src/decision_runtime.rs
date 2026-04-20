@@ -5,9 +5,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
-    HomeostaticNeeds, IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity, Tick,
-    UniqueItemKind, Wound,
+    ActionDefId, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState, GoalKey,
+    HomeostaticNeeds, IntentionDomain, IntentionFrame, OpportunityKey, PatrolRoute, Quantity,
+    RepairKind, Tick, UniqueItemKind, Wound,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -54,6 +54,19 @@ impl MaterializationBindings {
     pub fn clear(&mut self) {
         self.hypothetical_to_authoritative.clear();
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PendingRepairContext {
+    pub failed_plan: PlannedPlan,
+    pub failed_step_index: u16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AcceptedRepairProvenance {
+    pub goal_key: GoalKey,
+    pub repair_kind: RepairKind,
+    pub substitute_target: Option<EntityId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -164,6 +177,10 @@ pub struct AgentDecisionRuntime {
     /// concrete local fact changes; `BudgetRetryPending` entries keep the goal
     /// eligible for the next compatible planning pass.
     pub exhaustion_cache: std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
+    #[serde(default)]
+    pub pending_repair_context: Option<PendingRepairContext>,
+    #[serde(default)]
+    pub accepted_repair: Option<AcceptedRepairProvenance>,
 }
 
 impl AgentDecisionRuntime {
@@ -273,9 +290,10 @@ pub fn classify_frame_plan_relation(
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentDecisionRuntime, ExhaustionEntry, ExhaustionRetryState, FramePlanRelation,
-        MaterializationBindings, classify_frame_plan_relation, frame_runtime_snapshot,
-        frame_travel_destination, has_active_frame_travel, has_frame,
+        AcceptedRepairProvenance, AgentDecisionRuntime, ExhaustionEntry, ExhaustionRetryState,
+        FramePlanRelation, MaterializationBindings, PendingRepairContext,
+        classify_frame_plan_relation, frame_runtime_snapshot, frame_travel_destination,
+        has_active_frame_travel, has_frame,
     };
     use crate::{
         CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
@@ -287,8 +305,8 @@ mod tests {
     use worldwake_core::ActionDefId;
     use worldwake_core::{
         BodyPart, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
-        HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity, Tick,
-        UniqueItemKind, Wound, WoundCause, WoundId,
+        HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity, RepairKind,
+        Tick, UniqueItemKind, Wound, WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -400,6 +418,8 @@ mod tests {
         assert!(runtime.last_commodity_signature.is_empty());
         assert!(runtime.last_unique_item_signature.is_empty());
         assert_eq!(runtime.last_patrol_route, None);
+        assert_eq!(runtime.pending_repair_context, None);
+        assert_eq!(runtime.accepted_repair, None);
         assert!(
             runtime
                 .materialization_bindings
@@ -499,6 +519,18 @@ mod tests {
                     (HypotheticalEntityId(6), entity(7)),
                 ]),
             },
+            pending_repair_context: Some(PendingRepairContext {
+                failed_plan: sample_plan(vec![sample_step(3, PlannerOpKind::Travel)]),
+                failed_step_index: 0,
+            }),
+            accepted_repair: Some(AcceptedRepairProvenance {
+                goal_key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                }),
+                repair_kind: RepairKind::AlternateMerchant,
+                substitute_target: Some(entity(99)),
+            }),
             dead_cleanup_done: false,
             exhaustion_cache: BTreeMap::from([(
                 OpportunityKey {
@@ -568,6 +600,8 @@ mod tests {
         assert_eq!(decoded.dirty, runtime.dirty);
         assert_eq!(decoded.last_priority_class, runtime.last_priority_class);
         assert_eq!(decoded.dead_cleanup_done, runtime.dead_cleanup_done);
+        assert_eq!(decoded.pending_repair_context, runtime.pending_repair_context);
+        assert_eq!(decoded.accepted_repair, runtime.accepted_repair);
     }
 
     #[test]

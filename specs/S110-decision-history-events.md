@@ -254,9 +254,9 @@ pub enum RepairKind {
     AlternateRoute,
     AlternateMerchant,
     AlternateRecipe,
-    // `AlternateTarget` is the first live emitted slice. Richer repair kinds
-    // require additional authoritative runtime provenance and are tracked
-    // separately after `S110DECHISEVE-009`.
+    // Live emission classifies repair kinds from authoritative failed-plan
+    // capture plus accepted replacement-plan structure, then emits from the
+    // completion seam after the repaired plan succeeds.
 }
 
 pub struct ReplanTriggeredPayload {
@@ -316,7 +316,7 @@ Representative emission call sites (final wiring at implementation time):
 - `agent_tick/mod.rs` frame-transition path → `EventTag::GoalSuspended` / `EventTag::GoalAbandoned` + matching payloads
 - `agent_tick/observation.rs` reconciliation results returned into `agent_tick/mod.rs` → `EventTag::PlanInvalidated` + `PlanInvalidatedPayload`
 - `plan_revalidation.rs` / action execution (step expectation check — pre-S114 fires on explicit `expected_materializations` mismatches; S114 widens the trigger set) → `EventTag::ExpectationMismatch` + `ExpectationMismatchPayload`
-- `agent_tick/mod.rs::record_repair_memory_from_completed_plan` (successful alternate-target repair-memory recording seam) → `EventTag::RepairApplied` + `RepairAppliedPayload` for the first live `AlternateTarget` slice; richer repair kinds widen from later authoritative provenance work
+- `agent_tick/active_action.rs::handle_current_step_failure` (failed-plan capture seam), `agent_tick/planning.rs::adopt_selected_plan` (accepted repair classification seam), then `agent_tick/mod.rs::record_repair_memory_from_completed_plan` (successful completion/emission seam) → `EventTag::RepairApplied` + `RepairAppliedPayload`
 - `failure_handling.rs` / memory-record call sites (both `DiscrepancyMemory` and `BlockerMemory` recording points) → `EventTag::BlockerRecorded` + `BlockerRecordedPayload`
 - `agent_tick/active_action.rs`, `agent_tick/execution.rs`, and observation-driven invalidation paths returned into `agent_tick/mod.rs` → `EventTag::ReplanTriggered` + `ReplanTriggeredPayload`
 
