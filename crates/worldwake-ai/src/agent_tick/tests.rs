@@ -45,11 +45,11 @@ use worldwake_core::{
     IntentionDomain, IntentionFrame, KnownRecipes, LearnedOpportunityMemory, LoadUnits,
     MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile,
     PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairMemory, ResourceSource, Seed,
-    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
-    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
-    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    WoundList,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
+    RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic,
+    Tick, ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
+    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, WoundList,
     build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
@@ -7030,8 +7030,10 @@ fn exploration_counter_resets_when_non_explore_goal_is_adopted() {
 #[test]
 fn completed_alternate_plan_records_repair_memory_entry() {
     let goal = GoalKey::from(GoalKind::Sleep);
+    let agent = entity(7);
     let successful_place = entity(91);
     let mut repair_memory = RepairMemory::default();
+    let mut event_log = EventLog::new();
     let blocked_memory = BlockerMemory {
         intents: BTreeMap::from([(
             BlockerKey {
@@ -7057,7 +7059,7 @@ fn completed_alternate_plan_records_repair_memory_entry() {
         )]),
     };
 
-    record_repair_memory_from_completed_plan(
+    if let Some(payload) = record_repair_memory_from_completed_plan(
         &mut repair_memory,
         &blocked_memory,
         &super::CompletedPlanSummary {
@@ -7067,11 +7069,21 @@ fn completed_alternate_plan_records_repair_memory_entry() {
                 anchor: OpportunityAnchor::Place(successful_place),
             },
             terminal_kind: PlanTerminalKind::GoalSatisfied,
+            step_index: 2,
         },
+        agent,
         Tick(10),
         120,
         MemoryCapacityProfile::default(),
-    );
+    ) {
+        super::emit_decision_event(
+            &mut event_log,
+            Tick(10),
+            agent,
+            EventTag::RepairApplied,
+            DecisionEventPayload::RepairApplied(payload),
+        );
+    }
 
     let entry = repair_memory
         .repairs
@@ -7083,6 +7095,22 @@ fn completed_alternate_plan_records_repair_memory_entry() {
     assert_eq!(entry.observed_tick, Tick(10));
     assert_eq!(entry.expires_tick, Tick(130));
     assert_eq!(entry.success_count, 1);
+    let events = event_log.events_by_tag(EventTag::RepairApplied);
+    assert_eq!(events.len(), 1);
+    let payload = event_log
+        .get(events[0])
+        .and_then(|record| record.decision_payload())
+        .expect("repair-applied event should carry payload");
+    assert_eq!(
+        payload,
+        &DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+            agent,
+            goal_key: goal,
+            step_index: 2,
+            repair_kind: RepairKind::AlternateTarget,
+            substitute_target: Some(successful_place),
+        })
+    );
 }
 
 #[test]

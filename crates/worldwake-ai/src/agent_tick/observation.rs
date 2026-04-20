@@ -47,6 +47,7 @@ pub(crate) struct CompletedPlanSummary {
     pub(super) goal_key: worldwake_core::GoalKey,
     pub(super) opportunity: worldwake_core::OpportunityKey,
     pub(super) terminal_kind: crate::PlanTerminalKind,
+    pub(super) step_index: u16,
 }
 
 #[derive(Default)]
@@ -555,6 +556,10 @@ pub(super) fn reconcile_in_flight_state(
             goal_key: plan.goal,
             opportunity: plan.opportunity,
             terminal_kind: plan.terminal_kind,
+            step_index: runtime
+                .current_step_index
+                .try_into()
+                .expect("step index exceeds u16"),
         })
     });
     reconcile_committed_facility_queue_intents(runtime, facility_intents, Some(goal_key), &step);

@@ -50,9 +50,9 @@ use worldwake_core::{
     GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalSuspendedPayload,
     GoalSuppressedPayload, GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick,
     LearnedOpportunityMemory, OpportunityAnchor, OpportunityEntry, PendingEvent,
-    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, RepairEntry,
-    RepairKey, RepairMemory, ReplanReason, ReplanTriggeredPayload, Tick, VisibilitySpec,
-    WitnessData, WorldTxn,
+    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
+    RepairAppliedPayload, RepairEntry, RepairKey, RepairKind, RepairMemory, ReplanReason,
+    ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -288,6 +288,21 @@ fn emit_replan_triggered(
             goal_key,
             reason,
         }),
+    );
+}
+
+fn emit_repair_applied(
+    event_log: &mut worldwake_core::EventLog,
+    tick: Tick,
+    agent: EntityId,
+    payload: RepairAppliedPayload,
+) {
+    emit_decision_event(
+        event_log,
+        tick,
+        agent,
+        EventTag::RepairApplied,
+        DecisionEventPayload::RepairApplied(payload),
     );
 }
 
@@ -616,15 +631,18 @@ fn process_agent(
     if let Some((goal_key, reason)) = reconciliation.replan_trigger.clone() {
         emit_replan_triggered(ctx.event_log, tick, agent, goal_key, reason);
     }
-    if let Some(summary) = reconciliation.completed_plan {
-        record_repair_memory_from_completed_plan(
+    if let Some(summary) = reconciliation.completed_plan
+        && let Some(payload) = record_repair_memory_from_completed_plan(
             &mut repair_memory,
             &blocked_memory,
             &summary,
+            agent,
             tick,
             cognitive.repair_memory_ticks,
             memory_capacity,
-        );
+        )
+    {
+        emit_repair_applied(ctx.event_log, tick, agent, payload);
     }
 
     // Detect progress recorded during reconciliation (advance_completed_step).
@@ -1387,19 +1405,20 @@ fn record_repair_memory_from_completed_plan(
     repair_memory: &mut RepairMemory,
     blocked_memory: &BlockerMemory,
     summary: &CompletedPlanSummary,
+    agent: EntityId,
     current_tick: Tick,
     ttl_ticks: u32,
     memory_capacity: worldwake_core::MemoryCapacityProfile,
-) {
+) -> Option<RepairAppliedPayload> {
     let alternate_target = match summary.opportunity.anchor {
         OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place) => place,
-        OpportunityAnchor::None => return,
+        OpportunityAnchor::None => return None,
     };
     if !matches!(
         summary.terminal_kind,
         crate::PlanTerminalKind::GoalSatisfied | crate::PlanTerminalKind::CombatCommitment
     ) {
-        return;
+        return None;
     }
     let has_prior_alternate_context = blocked_memory.intents.values().any(|blocker| {
         blocker.expires_tick > current_tick
@@ -1411,7 +1430,7 @@ fn record_repair_memory_from_completed_plan(
                 .is_some_and(|blocked| blocked != alternate_target)
     });
     if !has_prior_alternate_context {
-        return;
+        return None;
     }
 
     let repair_key = RepairKey {
@@ -1430,6 +1449,13 @@ fn record_repair_memory_from_completed_plan(
         success_count,
     });
     repair_memory.enforce_capacity(&memory_capacity);
+    Some(RepairAppliedPayload {
+        agent,
+        goal_key: summary.goal_key,
+        step_index: summary.step_index,
+        repair_kind: RepairKind::AlternateTarget,
+        substitute_target: Some(alternate_target),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
