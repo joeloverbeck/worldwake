@@ -2,7 +2,7 @@
 
 ## Summary
 
-Close the FND-21 / FND-15 / FND-17 feedback gap that prevents agents from revising commodity-acquisition intentions when local observation contradicts the belief that justified them. `FrameAssumption::CommodityAvailableAt { commodity, place }` is already declared in `crates/worldwake-core/src/intention_frame.rs:69`, but `populate_assumptions` never adds it to any frame and `evaluate_assumptions` stubs it as always-true ("future work" comment at `crates/worldwake-ai/src/agent_tick/frame.rs:278`). With the assumption inert, an agent whose plan is `Travel(P) → pick_up(L)` for an apple lot `L` at place `P` has no architectural path to discover that `L` is empty, missing, or inaccessible: the plan completes vacuously, the next tick re-plans the same broken plan, and the agent oscillates indefinitely. This spec implements `CommodityAvailableAt` end to end — population from the goal context at frame establishment, evaluation against the agent's belief store with FND-14A same-tick co-located perception, integration with the existing assumption-failure routing landed by S109's TYPDISTAX-004 correction, and validation through unit, integration, and survival-golden coverage.
+Close the FND-21 / FND-15 / FND-17 feedback gap that prevents agents from revising commodity-acquisition intentions when local observation contradicts the belief that justified them. `FrameAssumption::CommodityAvailableAt { commodity, place }` is already declared in `crates/worldwake-core/src/intention_frame.rs` (variant on `FrameAssumption`), but the `populate_assumptions` arms in `crates/worldwake-ai/src/agent_tick/frame.rs` never add it to any frame, and the `evaluate_assumptions` arm for that variant is stubbed as always-true (the "Stubbed as always-true — future work" comment is in the stub arm of `evaluate_assumptions`). With the assumption inert, an agent whose plan is `Travel(P) → pick_up(L)` for an apple lot `L` at place `P` has no architectural path to discover that `L` is empty, missing, or inaccessible: the plan completes vacuously, the next tick re-plans the same broken plan, and the agent oscillates indefinitely. This spec implements `CommodityAvailableAt` end to end — goal-derived population in `populate_assumptions` (which already runs at the start of every agent tick on a non-Exhausted frame), evaluation against the agent's belief store with FND-14A same-tick co-located perception, integration with the existing assumption-failure routing landed by S109's TYPDISTAX-004 correction, and validation through unit, integration, and survival-golden coverage.
 
 ## Phase and Status
 
@@ -10,14 +10,14 @@ Phase 8 Adjunct: Belief-First Continual Planning Foundation. Status: Draft.
 
 ## Crates
 
-- `worldwake-ai` — `populate_assumptions` extension to add `CommodityAvailableAt` from `IntentionDomain::Travel` frames whose committed goal is `AcquireCommodity`; `evaluate_assumptions` implementation reading the agent's belief store and FND-14A co-located perception
-- `worldwake-sim` — read-only belief-view accessor that answers "does the agent believe there is at least one accessible source of `commodity` at `place`?" without leaking ownership/access semantics that FND-14A explicitly excludes
+- `worldwake-ai` — `populate_assumptions` extension to add `CommodityAvailableAt` from `IntentionDomain::Travel` frames whose committed goal is `AcquireCommodity`; `evaluate_assumptions` implementation reading the agent's belief store and FND-14A co-located perception; private helper `assess_commodity_availability` (free function in `agent_tick/frame.rs`) composing the existing `EconomicBeliefView` and `FacilityBeliefView` accessors via `&dyn RuntimeBeliefView`; `AssumptionEvalResult::CriticalFailure` widened to carry the failed `FrameAssumption` so the trace surface (D6) can name `(commodity, place)`.
+- `worldwake-sim` — no new trait method. The new helper composes the existing `EconomicBeliefView::local_controlled_lots_for` and `FacilityBeliefView::resource_sources_at` accessors over `RuntimeBeliefView`, which already aggregates both supertraits.
 - `worldwake-core` — no schema change (`FrameAssumption::CommodityAvailableAt` already exists). One added derived helper for `IntentionFrame::expected_commodity` that surfaces the goal-derived `(commodity, place)` pair when the frame's domain is `Travel { destination }` and the committed goal is an `AcquireCommodity` variant. No new component.
 
 ## Dependencies
 
 - S109 (Typed Discrepancy Taxonomy) — **landed** in this PR. The post-correction `record_assumption_failure` (TTL=`structural_block_ticks`, `TtlExpiry` clearing) is the suppression path this spec relies on. Hard.
-- S110 (Decision History Events) — soft. When `EventTag::AssumptionFailed { kind: CommodityAvailableAt, ... }` lands in the authoritative event log, S122's failures are inspectable through that channel. S122 records the discrepancy with or without S110's event variant; the event variant is additive.
+- S110 (Decision History Events) — soft. S110 introduces decision-history `EventTag` variants (e.g., `BlockerRecorded`) and corresponding payload structs. When S110 lands, the existing `record_assumption_failure` recording site can emit a typed event carrying the assumption identity and contradicting belief, making S122's failures inspectable through the authoritative event log. S122 itself does not add any `EventTag` variant; the event-log path is purely additive once S110 ships.
 - S113 (Belief Envelope) — soft. If `BeliefValue<T>` envelope lands first, the evaluator can read confidence directly; if not, the evaluator falls back to existing crisp-value belief queries. The two variants land identical FOUNDATIONS-aligned semantics.
 - S114 (Plan Step Guards) — independent. S114 introduces step-level guards; S122 introduces frame-level assumptions. They share the discrepancy-routing surface but do not collide on the assumption type.
 
@@ -40,7 +40,7 @@ This violates FND-21 directly: *"Agents must monitor the assumptions beneath an 
 2. Local observation that contradicts the assumption (the agent arrived at the place and perceived no accessible source of the commodity) must transition the assumption to `CriticalFailure`, triggering the post-S109 typed discrepancy with `structural_block_ticks` suppression.
 3. The evaluator reads only the agent's belief store and FND-14A same-tick co-located perception of physical properties (item-lot commodity, resource-source presence). It does not read social/relational facts (ownership, effective rights, jurisdiction, possessor identity) — those require explicit belief entries per FND-14A.
 4. Suppression is the dampener (FND-11). The `structural_block_ticks` TTL is the physical timeout; clearing happens through TTL expiry or through new authoritative belief evidence about the place. No invisible cap, no cliff.
-5. The assumption is established when the frame is established and persists across the frame's lifetime. It is not re-derived on every tick from the goal — that would fail FND-3 ("derived summaries are caches, never truth").
+5. The assumption participates in the existing per-tick `populate_assumptions` refresh pattern that already runs at the start of every agent tick on a non-Exhausted frame (`agent_tick/mod.rs`, where `frame.assumptions = populate_assumptions(...)` rebuilds the vec each tick). For `CommodityAvailableAt` the `(commodity, place)` pair is derived from the frame's stable committed goal, so per-tick refresh is idempotent and produces the same value across ticks. This keeps `frame.assumptions` uniformly a derived cache (FND-27, FND-3) — the authoritative source remains `frame.goal` plus current world state — rather than promoting any single variant to one-shot stored authority (which would create a special-case path against FND-28).
 6. The evaluator generalizes across the existing acquisition surfaces: pickup of open lots, harvest from resource sources. Container-bound goods and seller-mediated commodities are out of scope (deferred to a follow-up when seller-mediated frames exercise the path).
 7. No new authoritative state. `FrameAssumption::CommodityAvailableAt` is already in the type system; this spec wires it to its source (population) and sink (evaluation).
 
@@ -69,10 +69,10 @@ This violates FND-21 directly: *"Agents must monitor the assumptions beneath an 
 | FND-22 (Agent Diversity Through Concrete Variation) | The evaluator reads each agent's own belief store and (S113-aware) confidence threshold. Agents with different perception fidelity, observation buffer capacity, or staleness penalties evaluate the same place differently. No homogenization. |
 | FND-22A (Learning, Habits, and Preference Shifts Are Concrete State) | The recorded discrepancy from a failed assumption is concrete per-agent learned state with explicit acquisition (failure event), explicit decay (TTL), and explicit replacement (re-evaluation on next belief refresh). |
 | FND-26 (Systems Interact Through State, Not Through Each Other) | Perception writes belief state. AI reads belief state. No imperative call from perception to AI. The assumption evaluator is a pure read-side computation over belief state plus FND-14A perception. |
-| FND-27 (Derived Summaries Are Caches, Never Truth) | The `bool` returned by the evaluator is a per-tick computation. Nothing is cached across ticks. The authoritative state is the belief store. |
-| FND-28 (No Backward Compatibility in Live Authority Paths) | The current "stub returns always-true" code path is removed, not preserved alongside the real implementation. |
-| FND-29 (Debuggability Is a Product Feature) | The decision trace records why an assumption failed (which `(commodity, place)`, what the belief said, and which discrepancy class was recorded). The "why did the agent stop pursuing the apple at Fertile Fields?" question becomes answerable from the trace alone. |
-| FND-29A (Causal History Is Authoritative, Append-Only, Queryable) | Recording the discrepancy emits `EventTag::BlockerRecorded` (S110) with the assumption identity and contradicting belief. The assumption failure is a historical event, not a transient log line. |
+| FND-27 (Derived Summaries Are Caches, Never Truth) | The `bool`/`AvailabilityVerdict` returned by the evaluator is a per-tick computation. The `frame.assumptions` vec is rebuilt each tick by `populate_assumptions`; nothing about the assumption identity is cached across ticks beyond what is recomputable from `frame.goal` plus current world state. The authoritative source is the belief store and (for FND-14A co-located reads) the entities at the agent's current place. |
+| FND-28 (No Backward Compatibility in Live Authority Paths) | The current "stub returns always-true" code path is removed, not preserved alongside the real implementation. The existing test that pins the stubbed behavior (`commodity_available_at_stubbed_as_pass`) is deleted with it. |
+| FND-29 (Debuggability Is a Product Feature) | `AssumptionEvalResult::CriticalFailure` is widened to carry the failed `FrameAssumption`, so `emit_assumption_transitions` can record `(commodity, place)` in the cleared-frame transition. The decision-trace summary then names which `(commodity, place)` failed, what the belief said, and which discrepancy class was recorded. The "why did the agent stop pursuing the apple at Fertile Fields?" question becomes answerable from the trace alone. |
+| FND-29A (Causal History Is Authoritative, Append-Only, Queryable) | S122 records the discrepancy via the existing `record_assumption_failure` path (`DiscrepancyMemory::record`) — append-style write under the typed `Discrepancy::BeliefContradicted` / `PartialExecutionDrift` taxonomy from S109. S122 itself does **not** add a new `EventTag` variant; when S110 lands and adds `EventTag::BlockerRecorded` (or equivalent decision-history events), the same recording site will emit the new variant and the assumption failure will land in the authoritative event log. The S110 dependency is soft. |
 
 ## FND-01 Section H: Causal Hooks
 
@@ -85,7 +85,7 @@ This violates FND-21 directly: *"Agents must monitor the assumptions beneath an 
 
 ### D1: `IntentionFrame::expected_commodity` derived helper
 
-In `crates/worldwake-core/src/intention_frame.rs`, add a derived (non-stored) accessor:
+In `crates/worldwake-core/src/intention_frame.rs`, add a derived (non-stored) accessor. `intention_frame.rs` already imports `GoalKey`; add `GoalKind` to the same `use crate::{...}` line so the match below resolves.
 
 ```rust
 impl IntentionFrame {
@@ -97,7 +97,8 @@ impl IntentionFrame {
     /// (Care, Escort, non-acquisition Travel, Generic).
     pub fn expected_commodity(&self) -> Option<(CommodityKind, EntityId)> {
         let destination = match self.domain {
-            IntentionDomain::Travel { destination } => destination,
+            IntentionDomain::Travel { destination }
+            | IntentionDomain::Errand { destination } => destination,
             _ => return None,
         };
         match self.goal.kind {
@@ -108,11 +109,11 @@ impl IntentionFrame {
 }
 ```
 
-This is a pure derived view over already-stored fields (FND-27). It is *not* called per tick in evaluation; `populate_assumptions` calls it once at frame establishment.
+This is a pure derived view over already-stored fields (FND-27). `populate_assumptions` calls it each tick (per the per-tick refresh pattern documented in Design Goal 5); for a stable goal the result is stable, so the per-tick call is idempotent.
 
 ### D2: `populate_assumptions` extension
 
-In `crates/worldwake-ai/src/agent_tick/frame.rs::populate_assumptions`, the `IntentionDomain::Travel { destination }` arm gains a `CommodityAvailableAt` assumption when the committed goal expects a commodity:
+In `crates/worldwake-ai/src/agent_tick/frame.rs::populate_assumptions`, the `IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination }` arm gains a `CommodityAvailableAt` assumption when the committed goal expects a commodity. Since `populate_assumptions` is called every tick on a non-Exhausted frame from `process_agent` (`agent_tick/mod.rs:501`), the new push runs each tick and produces the same `(commodity, place)` for a stable goal — see Design Goal 5 for the FND-27/FND-3 framing.
 
 ```rust
 IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination } => {
@@ -121,69 +122,50 @@ IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination 
         assumptions.push(FrameAssumption::RouteExists { from, to: destination });
     }
     // S122: add commodity-availability assumption when the frame serves an
-    // acquisition goal. The frame parameter is added below; the populate
-    // signature is widened minimally to accept the active goal context.
-    if let Some((commodity, place)) = expected_commodity_for_domain(domain, active_goal) {
+    // acquisition goal. The active GoalKey is needed to read the goal's kind.
+    if let Some((commodity, place)) = expected_commodity_for_frame(frame) {
         assumptions.push(FrameAssumption::CommodityAvailableAt { commodity, place });
     }
     assumptions
 }
 ```
 
-The current signature `populate_assumptions(domain, agent, view)` is widened to also accept the active `GoalKey` (or, equivalently, an `&IntentionFrame` from the caller post-D1). The Care / Escort / Generic arms are unchanged.
+The current signature `populate_assumptions(domain: &IntentionDomain, agent: EntityId, view: &dyn RuntimeBeliefView)` is widened to take the full `frame: &IntentionFrame` (which carries both the domain and the committed `goal: GoalKey`), so the helper can call `frame.expected_commodity()` from D1. The single call site at `mod.rs:501` is updated to pass `frame` instead of `&frame.domain`. The Care / Escort / Generic arms are unchanged.
+
+Note: `IntentionDomain::Errand` is currently unreached in production frame creation — every production frame is constructed with `IntentionDomain::Travel` or `IntentionDomain::Generic` (see `update_frame_for_adopted_plan`, `failure_handling.rs`, `decision_runtime.rs`, `plan_selection.rs`, `interrupts.rs`). The `Errand` arm extension is for parity with the existing `Travel | Errand` match pattern; production behavior change is currently confined to `Travel` frames.
 
 ### D3: `evaluate_assumptions` implementation for `CommodityAvailableAt`
 
-Replace the "stubbed as always-true (future work)" arm in `evaluate_assumptions` with an actual evaluator:
+Replace the "stubbed as always-true" arm in `evaluate_assumptions` with an actual evaluator:
 
 ```rust
 FrameAssumption::CommodityAvailableAt { commodity, place } => {
     match assess_commodity_availability(view, agent, commodity, place) {
         AvailabilityVerdict::Believed => continue,
-        AvailabilityVerdict::Refuted => return AssumptionEvalResult::CriticalFailure,
+        AvailabilityVerdict::Refuted => {
+            return AssumptionEvalResult::CriticalFailure(*assumption);
+        }
         AvailabilityVerdict::UnknownOrStale => has_deferred = true,
     }
 }
 ```
 
-`assess_commodity_availability` is a private helper that:
+The other `CriticalFailure`-returning arms (`TargetAlive`) are also widened to pass the failed assumption through (`CriticalFailure(*assumption)`), so the variant is uniformly payload-bearing rather than special-casing only `CommodityAvailableAt`.
 
-1. If the agent is co-located with `place` (FND-14A applies), reads authoritative-but-perception-equivalent state for the place's item lots and resource sources of `commodity`. If at least one is present and accessible-by-perception (open ground lot, viable resource source not blocked), returns `Believed`. If the place was perceived this tick AND no source of `commodity` is present, returns `Refuted`.
-2. If the agent is not co-located, reads the agent's `AgentBeliefStore` for `place`. If the belief store records at least one `BelievedEntityState` whose `last_known_place == Some(place)` and whose `resource_source.commodity == Some(commodity)` OR `commodity == Some(commodity)` for an item lot, with confidence above the agent's `claim_confidence_threshold`, returns `Believed`.
-3. If the place is in the belief store but no entry contradicts or supports the assumption, returns `UnknownOrStale` (will defer until next perception updates).
-4. If the agent has no belief about `place` at all, returns `UnknownOrStale`.
+`assess_commodity_availability` is a private free function in `agent_tick/frame.rs` (not a trait method — see D4) that:
+
+1. **Co-located case (FND-14A applies).** If `view.effective_place(agent) == Some(place)`, the helper reads authoritative-but-perception-equivalent state directly: it iterates `view.entities_at(place)`, checks each entity for `view.item_lot_commodity(entity) == Some(commodity)` (open ground lot of `commodity`) or `view.resource_source(entity).map(|s| s.commodity) == Some(commodity)` with `available_quantity > Quantity(0)` (viable resource source). If at least one match is present and accessible-by-perception (open ground lot, viable resource source not depleted), returns `Believed`. If the place was perceived this tick AND no source of `commodity` is present, returns `Refuted`.
+2. **Not-co-located case (belief-backed).** The helper reads `view.agent_belief_store(agent)?.known_entities`. For each `(entity_id, BelievedEntityState)` where `state.last_known_place == Some(place)`, the entity supports the assumption if EITHER (a) `state.resource_source.as_ref().map(|s| s.commodity) == Some(commodity)` AND `state.resource_source.as_ref().map(|s| s.available_quantity) > Some(Quantity(0))` (a believed viable resource source), OR (b) `state.last_known_inventory.get(&commodity).copied().unwrap_or(Quantity(0)) > Quantity(0)` (a believed lot or container believed to hold the commodity). Freshness of the belief is captured by the existing `last_observed_tick()` accessor on `BelievedEntityState`; the helper uses that with the agent's `PerceptionProfile.claim_confidence_threshold` and `BeliefConfidencePolicy` only as a future-S113 refinement — the initial implementation may take any matching `BelievedEntityState` as `Believed`. (Note: `BelievedEntityState` itself has no top-level `confidence` field; per-claim confidence lives in `AgentBeliefStore.entity_claims`. A confidence gate that reads claims is a refinement, not a launch requirement.)
+3. If the place has at least one belief entry but no entry supports the assumption, returns `UnknownOrStale` (will defer until next perception updates).
+4. If the agent has no belief about any entity at `place`, returns `UnknownOrStale`.
 
 `UnknownOrStale` deferring is correct per FND-16 — the agent is allowed to retain an intention based on stale belief; the assumption fails only when the agent has *fresh, refuting* evidence.
 
-### D4: Belief-view accessor for "accessible commodity source at place"
+Social/relational facts (ownership, custody, access rights) are deliberately excluded per FND-14A. The helper answers "is there a perceivable physical source of `commodity` at `place`," not "is the agent allowed to take it." Container-bound goods and seller-listed commodities are out of scope per Non-Goals.
 
-In `crates/worldwake-sim/src/belief_view.rs`, add a read-only accessor on the appropriate sub-trait (likely `EconomicBeliefView`):
+### D4: Private helper `assess_commodity_availability` in `agent_tick/frame.rs`
 
-```rust
-/// Returns true if the agent believes there is at least one accessible
-/// source of `commodity` at `place` — an item lot directly believed to be
-/// at `place` (open ground or container the agent can perceive lawfully)
-/// or a viable resource source for `commodity` at `place`. FND-14A applies
-/// when the agent is co-located with `place`: same-tick perception of
-/// item-lot commodity, resource-source presence, and workstation tags is
-/// belief-equivalent. Social/relational facts (ownership, custody, access
-/// rights) are excluded; this accessor cannot answer "is the agent
-/// allowed to take it" — that requires explicit social belief entries.
-fn believes_commodity_accessible_at(
-    &self,
-    agent: EntityId,
-    commodity: CommodityKind,
-    place: EntityId,
-) -> bool;
-```
-
-The implementation lives in `PerAgentBeliefView` / `RuntimeBeliefView` and consumes the existing `entities_at`, `item_lot_commodity`, and `resource_sources_at` accessors. The default trait implementation returns `false` so test mocks need not implement it.
-
-### D5: Wire D1–D4 through `evaluate_assumptions`
-
-The existing `evaluate_assumptions` signature is widened to accept the agent identity (it already has `view`). The new arm calls `assess_commodity_availability` which calls `view.believes_commodity_accessible_at(agent, commodity, place)` for the not-co-located case and reads the same accessor for the co-located case (where FND-14A already collapses world-state and belief-equivalent perception).
-
-`AvailabilityVerdict` is a private enum local to `frame.rs`:
+No new trait method on the `BeliefView` family. The helper `assess_commodity_availability` is added as a private free function in `crates/worldwake-ai/src/agent_tick/frame.rs`, taking `&dyn RuntimeBeliefView`:
 
 ```rust
 enum AvailabilityVerdict {
@@ -191,15 +173,72 @@ enum AvailabilityVerdict {
     Refuted,
     UnknownOrStale,
 }
+
+fn assess_commodity_availability(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    commodity: CommodityKind,
+    place: EntityId,
+) -> AvailabilityVerdict {
+    // Co-located case (FND-14A): read perception-equivalent world state via
+    // EntityBeliefView/InventoryBeliefView/FacilityBeliefView accessors.
+    // Not-co-located case: read agent_belief_store(agent) per D3 step 2.
+    // Detailed logic per D3.
+}
 ```
+
+Rationale for placement: the not-co-located case calls `view.agent_belief_store(agent)` (`SocialBeliefView`), the co-located case calls `view.entities_at(place)` (`SpatialBeliefView`), `view.item_lot_commodity(entity)` (`InventoryBeliefView`), and `view.resource_source(entity)` / `view.resource_sources_at(place, commodity)` (`FacilityBeliefView`). A default trait method on `EconomicBeliefView` cannot compose across `FacilityBeliefView` / `InventoryBeliefView` / `SpatialBeliefView` / `SocialBeliefView` without supertrait bounds, and adding the method to `RuntimeBeliefView` (which already aggregates all five) leaks an AI-private composition into the runtime trait surface. Keeping the helper as a free function in `frame.rs` matches the pattern already used by `frame_blocker_target` and `assumption_failure_frame` (test-side helper), avoids the "default returns `false`" anti-pattern for mock test views, and confines the helper to the only crate that needs it.
+
+`AvailabilityVerdict` is a private enum local to `frame.rs`.
+
+### D5: Wire D1–D4 through `evaluate_assumptions`
+
+The existing `evaluate_assumptions` signature is `(assumptions: &[FrameAssumption], view: &dyn RuntimeBeliefView, ranked_candidates: Option<&[RankedGoal]>)` — it does **not** currently take `agent: EntityId`. The signature is widened to `(assumptions, view, agent, ranked_candidates)`. The two call sites in `crates/worldwake-ai/src/agent_tick/mod.rs` must both be updated:
+
+1. **Pre-planning evaluation** at `mod.rs:502` (the `evaluate_assumptions(&frame.assumptions, &view, None)` call inside the per-tick `should_eval` block).
+2. **Deferred `NoCriticalThreat` evaluation** at `mod.rs:599` (the `evaluate_assumptions(&[FrameAssumption::NoCriticalThreat], &view, Some(&ranked_candidates))` call).
+
+The new `CommodityAvailableAt` arm calls `assess_commodity_availability(view, agent, commodity, place)` (the free function from D4) for both co-located and not-co-located cases — the helper internally branches on whether `view.effective_place(agent) == Some(place)`.
+
+`AssumptionEvalResult::CriticalFailure` is widened to carry the failed `FrameAssumption`:
+
+```rust
+pub(super) enum AssumptionEvalResult {
+    AllPass,
+    RecoverableFailure(SuspensionReason),
+    CriticalFailure(FrameAssumption), // was: CriticalFailure
+    Deferred,
+}
+```
+
+The existing `TargetAlive` arm in `evaluate_assumptions` is updated to return `CriticalFailure(*assumption)` (passing the `FrameAssumption::TargetAlive(entity)` through), keeping the variant uniformly payload-bearing.
+
+`apply_assumption_result` continues to pattern-match on the variant; the new payload is read by `emit_assumption_transitions` for D6.
 
 ### D6: Decision trace surface
 
-The existing `FrameTransitionTrace` and `PlanningPipelineTrace::frame_transition` already carry assumption-failure transitions. S122 adds the `(commodity, place)` payload to the trace summary so `decision_outcome.summary()` answers "the agent abandoned this plan because it now believes there is no Apple at Fertile Fields." This is purely a trace-string extension; no new field on `IntentionFrame`.
+`emit_assumption_transitions` (in `crates/worldwake-ai/src/agent_tick/mod.rs`) currently emits `FrameTransitionKind::Cleared { reason: FrameClearReason::AssumptionFailed }` on `CriticalFailure`, which carries no per-assumption identity. S122 widens that emission to consume the `FrameAssumption` payload now carried by `AssumptionEvalResult::CriticalFailure(FrameAssumption)` (per D5):
+
+```rust
+AssumptionEvalResult::CriticalFailure(failed) => {
+    ft.push(FrameTransitionKind::Cleared {
+        reason: FrameClearReason::AssumptionFailed,
+    });
+    // S122: surface the failed assumption identity in the trace summary
+    // by widening FrameTransitionKind::Exhausted (or a new Cleared payload
+    // field — see implementation note below) to carry the FrameAssumption.
+}
+```
+
+Implementation note: the simplest landing path is to widen `FrameTransitionKind::Exhausted { stalled_ticks, patience_limit, blocked_intent_recorded }` (in `crates/worldwake-ai/src/decision_trace.rs`) with an additional `assumption: Option<FrameAssumption>` field, OR to add a sibling field `failed_assumption: Option<FrameAssumption>` to `FrameTransitionKind::Cleared`. Either keeps the public trace shape backward-compatible at the source level (existing code paths pass `None`); both surface the new data through `format_frame_transition_kind` so `decision_outcome.summary()` answers "the agent abandoned this plan because it now believes there is no Apple at Fertile Fields."
+
+No new field on `IntentionFrame`. The trace payload travels with the transition record, not with the frame itself.
 
 ### D7: Removal of "future work" stub
 
-The `// CommodityAvailableAt is stubbed as always-true (future work).` comment and the corresponding always-true arm in `evaluate_assumptions` are deleted, not aliased. FND-28: dead paths leave with the live path's arrival.
+The `// Stubbed as always-true — future work.` comment and the corresponding always-true arm in `evaluate_assumptions` (currently in `agent_tick/frame.rs`) are deleted, not aliased. FND-28: dead paths leave with the live path's arrival.
+
+The existing unit test `commodity_available_at_stubbed_as_pass` (in `agent_tick/frame.rs#[cfg(test)]`) is also deleted, since its assertion (`AllPass` for an unevaluable assumption against an empty mock view) becomes incorrect once the real evaluator runs — the new behavior is to return `Deferred` for an empty belief view that cannot resolve `(commodity, place)`. Deletion is part of D7, not a separate test-cleanup deliverable.
 
 ## SystemFn Integration
 
@@ -215,11 +254,11 @@ No new ECS component. `FrameAssumption::CommodityAvailableAt` is a value variant
 
 ## Cross-System Interactions
 
-- **Perception ↔ assumption evaluation**: Perception writes the agent's `AgentBeliefStore` from local observation. The S122 evaluator reads that store. State-mediated; no direct call. (FND-26.)
-- **Frame establishment ↔ assumption population**: `update_frame_for_adopted_plan` (in `frame.rs`) creates the new `IntentionFrame`. `populate_assumptions` is called during establishment. The `expected_commodity` derived helper is the pure-read bridge between goal and assumption.
-- **Assumption failure ↔ discrepancy memory**: `record_assumption_failure` (post-S109 correction) records the typed `Discrepancy::BeliefContradicted` (target present) or `PartialExecutionDrift` (target absent) with TTL=`structural_block_ticks` and `TtlExpiry` clearing. State-mediated through `DiscrepancyMemory`.
-- **Discrepancy memory ↔ candidate generation**: Existing post-S109 path. `find_matching_suppression` and `goal_is_suppressed` already consult `DiscrepancyMemory` when filtering candidates. No new wiring.
-- **S110 event log ↔ assumption failure**: When `EventTag::AssumptionFailed` lands (S110 follow-up), the assumption identity and refuting belief are recorded. S122 emits the discrepancy regardless; the event variant is additive.
+- **Perception ↔ assumption evaluation**: Perception writes the agent's `AgentBeliefStore` from local observation (`crates/worldwake-systems/src/perception.rs`). The S122 evaluator reads that store via `view.agent_belief_store(agent)`. State-mediated; no direct call. (FND-26.)
+- **Per-tick assumption refresh**: `populate_assumptions` is invoked from `process_agent` in `crates/worldwake-ai/src/agent_tick/mod.rs` (line 501) at the start of every agent tick when a non-Exhausted frame is present. `update_frame_for_adopted_plan` itself does **not** call `populate_assumptions`; it constructs the frame with `assumptions: Vec::new()` and the next per-tick refresh fills it in. For S122, the `expected_commodity` derived helper from D1 is the pure-read bridge between the frame's stable committed goal and the per-tick refreshed assumption.
+- **Assumption failure ↔ discrepancy memory**: `record_assumption_failure` (post-S109 correction, `agent_tick/frame.rs`) records the typed `Discrepancy::BeliefContradicted` (target present) or `PartialExecutionDrift` (target absent) with TTL=`structural_block_ticks` and `TtlExpiry` clearing. State-mediated through `DiscrepancyMemory`. S122 reuses this path verbatim — no new recording site.
+- **Discrepancy memory ↔ candidate generation**: Existing post-S109 path. `find_matching_suppression` and `goal_is_suppressed` (`crates/worldwake-ai/src/candidate_generation.rs`) already consult `DiscrepancyMemory` when filtering candidates. No new wiring.
+- **S110 event log ↔ assumption failure (forward-looking)**: S122 itself does **not** add or emit any new `EventTag` variant. When S110 (`specs/S110-decision-history-events.md`, currently Draft) lands and adds `EventTag::BlockerRecorded` (or equivalent decision-history events), the existing `record_assumption_failure` site will gain an event-log emission and S122's failures will become inspectable through the authoritative event log. The S110 dependency is soft.
 
 ## Profile-Driven Parameters
 
@@ -251,8 +290,9 @@ No new profile fields. No magic numbers.
 
 ### Migration tests
 
-12. **Existing assumption coverage unchanged.** All pre-S122 unit tests for `populate_assumptions` and `evaluate_assumptions` (Care domain, RouteExists, NoCriticalThreat, TargetAlive) continue to pass without modification.
-13. **Stub removal.** Compile-time check: the `// CommodityAvailableAt is stubbed as always-true (future work).` comment is gone. No alias function. (Verified by absence at the line cited; a doc-test is not necessary.)
+12. **Existing assumption coverage unchanged.** All pre-S122 unit tests for `populate_assumptions` (Care, Escort, Travel, Errand, Generic — five tests) continue to pass without modification. The pre-S122 `evaluate_assumptions` tests for `RouteExists`, `NoCriticalThreat`, and `TargetAlive` continue to pass after the `AssumptionEvalResult::CriticalFailure(FrameAssumption)` widening; the `TargetAlive` tests are updated to assert `CriticalFailure(FrameAssumption::TargetAlive(_))` instead of bare `CriticalFailure`.
+13. **Stub removal.** Compile-time check: the `// Stubbed as always-true — future work.` comment is gone, the always-true match arm is gone, and the existing unit test `commodity_available_at_stubbed_as_pass` (in `agent_tick/frame.rs#[cfg(test)]`) is gone. No alias function. (Verified by grep over the test module after implementation: `grep -n "commodity_available_at_stubbed_as_pass" crates/worldwake-ai/src/agent_tick/frame.rs` returns zero matches.)
+13a. **No new `EventTag` variant.** Compile-time check: `git diff` against `crates/worldwake-core/src/event_tag.rs` shows zero changes. S122 lands without coupling to S110's event-log additions; the recording path is `DiscrepancyMemory::record` only.
 
 ### Golden-test extension
 
@@ -292,10 +332,10 @@ Verification target:
 
 A reasonable ticket split, in implementation order:
 
-- **S122FRMASMCAVL-001**: D1 (`IntentionFrame::expected_commodity`) + D4 (belief-view accessor `believes_commodity_accessible_at`). Pure-read substrate, no wiring. Unit coverage for accessor across co-located / not-co-located / belief-only paths.
-- **S122FRMASMCAVL-002**: D2 (population in `populate_assumptions`) + D7 (stub removal). Unit coverage for population happy path, non-acquisition skip, non-Travel skip.
-- **S122FRMASMCAVL-003**: D3, D5 (evaluation arm with `AvailabilityVerdict`). Unit coverage for the four verdict cases (Believed / Refuted / UnknownOrStale / co-location resource-source). Integration test #9 (failure-to-suppression).
-- **S122FRMASMCAVL-004**: D6 (decision-trace summary extension) + integration tests #10, #11. Survival-baseline / contested / scattered re-run; if green, the golden CI gate clears.
+- **S122FRMASMCAVL-001**: D1 (`IntentionFrame::expected_commodity`) + D4 (private free function `assess_commodity_availability` in `agent_tick/frame.rs`, including the local `AvailabilityVerdict` enum). Pure-read substrate, no wiring beyond importing `GoalKind` into `intention_frame.rs`. Unit coverage for the helper across co-located item-lot, co-located resource-source, not-co-located belief-backed, and unknown/stale paths.
+- **S122FRMASMCAVL-002**: D2 (population in `populate_assumptions`, signature widened to take `&IntentionFrame`) + D7 (stub removal, including deletion of the `commodity_available_at_stubbed_as_pass` test). Unit coverage for population happy path, non-acquisition skip, non-Travel skip.
+- **S122FRMASMCAVL-003**: D3 + D5 (evaluation arm using the helper from D4; widening `AssumptionEvalResult::CriticalFailure` to carry `FrameAssumption`; updating both `evaluate_assumptions` call sites at `mod.rs:502` and `mod.rs:599`; updating the existing `TargetAlive` arm to return `CriticalFailure(*assumption)`). Unit coverage for the four verdict cases (Believed / Refuted / UnknownOrStale / co-location resource-source). Integration test #9 (failure-to-suppression).
+- **S122FRMASMCAVL-004**: D6 (extending `FrameTransitionKind::Cleared` or `Exhausted` with the failed-assumption payload, then surfacing it through `format_frame_transition_kind` and `decision_outcome.summary()`) + integration tests #10, #11. Survival-baseline / contested / scattered re-run; if green, the golden CI gate clears.
 - **S122FRMASMCAVL-005**: Falsification probes #16, #17, #18. The no-assumption-loss and no-spurious-failure invariants land as opt-in validators in the survival-golden harness.
 
 The implementing agent must reassess the spec and these ticket boundaries against the live codebase before starting (per `docs/precision-rules.md` and the per-ticket reassessment rule), and may rebalance the split if the actual code surface differs from the spec assumptions.

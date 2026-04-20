@@ -5,9 +5,9 @@ use crate::{
 use crate::{GoalPriorityClass, RankedGoal};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, ContentionIntents,
-    Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityId,
-    FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame, Permille,
-    SuspensionReason, Tick,
+    CommodityKind, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
+    EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame,
+    Permille, Quantity, SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -214,6 +214,63 @@ pub(super) enum AssumptionEvalResult {
     CriticalFailure,
     /// Evaluation was deferred (contains `NoCriticalThreat` that needs ranked candidates).
     Deferred,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum AvailabilityVerdict {
+    Believed,
+    Refuted,
+    UnknownOrStale,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn assess_commodity_availability(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    commodity: CommodityKind,
+    place: EntityId,
+) -> AvailabilityVerdict {
+    if view.effective_place(agent) == Some(place) {
+        let found_local_match = view.entities_at(place).into_iter().any(|entity| {
+            view.item_lot_commodity(entity) == Some(commodity)
+                || view.resource_source(entity).is_some_and(|source| {
+                    source.commodity == commodity && source.available_quantity > Quantity(0)
+                })
+        });
+        return if found_local_match {
+            AvailabilityVerdict::Believed
+        } else {
+            AvailabilityVerdict::Refuted
+        };
+    }
+
+    let Some(store) = view.agent_belief_store(agent) else {
+        return AvailabilityVerdict::UnknownOrStale;
+    };
+
+    let mut saw_place_belief = false;
+    for state in store.known_entities.values() {
+        if state.last_known_place != Some(place) {
+            continue;
+        }
+        saw_place_belief = true;
+        let believed_source = state.resource_source.as_ref().is_some_and(|source| {
+            source.commodity == commodity && source.available_quantity > Quantity(0)
+        });
+        let believed_inventory = state
+            .last_known_inventory
+            .get(&commodity)
+            .copied()
+            .unwrap_or(Quantity(0))
+            > Quantity(0);
+        if believed_source || believed_inventory {
+            return AvailabilityVerdict::Believed;
+        }
+    }
+
+    let _ = saw_place_belief;
+    AvailabilityVerdict::UnknownOrStale
 }
 
 /// Populate assumptions for an intention frame based on its domain and the
@@ -470,10 +527,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BeliefConfidencePolicy, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        InTransitOnEdge, IntentionDispositionProfile, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
+        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
+        IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        PerceptionSource, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -487,6 +545,10 @@ mod tests {
         alive: BTreeSet<EntityId>,
         places: BTreeMap<EntityId, EntityId>,
         routes: BTreeSet<(EntityId, EntityId)>,
+        entities_at: BTreeMap<EntityId, Vec<EntityId>>,
+        item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        resource_sources: BTreeMap<EntityId, ResourceSource>,
+        belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
     }
 
     impl MockBeliefView {
@@ -495,6 +557,10 @@ mod tests {
                 alive: BTreeSet::new(),
                 places: BTreeMap::new(),
                 routes: BTreeSet::new(),
+                entities_at: BTreeMap::new(),
+                item_lot_commodities: BTreeMap::new(),
+                resource_sources: BTreeMap::new(),
+                belief_stores: BTreeMap::new(),
             }
         }
     }
@@ -550,8 +616,8 @@ mod tests {
         fn is_in_transit(&self, _entity: EntityId) -> bool {
             false
         }
-        fn entities_at(&self, _place: EntityId) -> Vec<EntityId> {
-            Vec::new()
+        fn entities_at(&self, place: EntityId) -> Vec<EntityId> {
+            self.entities_at.get(&place).cloned().unwrap_or_default()
         }
         fn adjacent_places(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
@@ -599,6 +665,9 @@ mod tests {
             _agent: EntityId,
         ) -> Option<IntentionDispositionProfile> {
             None
+        }
+        fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+            self.belief_stores.get(&agent)
         }
     }
 
@@ -673,8 +742,8 @@ mod tests {
         fn commodity_quantity(&self, _holder: EntityId, _kind: CommodityKind) -> Quantity {
             Quantity(0)
         }
-        fn item_lot_commodity(&self, _entity: EntityId) -> Option<CommodityKind> {
-            None
+        fn item_lot_commodity(&self, entity: EntityId) -> Option<CommodityKind> {
+            self.item_lot_commodities.get(&entity).copied()
         }
         fn item_lot_consumable_profile(
             &self,
@@ -703,8 +772,8 @@ mod tests {
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {
             None
         }
-        fn resource_source(&self, _entity: EntityId) -> Option<ResourceSource> {
-            None
+        fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
+            self.resource_sources.get(&entity).cloned()
         }
         fn has_production_job(&self, _entity: EntityId) -> bool {
             false
@@ -760,6 +829,104 @@ mod tests {
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         }
+    }
+
+    fn observed_entity_state(place: EntityId) -> BelievedEntityState {
+        let mut state =
+            BelievedEntityState::single_observation_defaults(Tick(0), PerceptionSource::DirectObservation);
+        state.last_known_place = Some(place);
+        state
+    }
+
+    fn store_with_known_entity(entity: EntityId, state: BelievedEntityState) -> AgentBeliefStore {
+        let mut store = AgentBeliefStore::new();
+        store.known_entities.insert(entity, state);
+        store
+    }
+
+    #[test]
+    fn assess_commodity_availability_co_located_lot_returns_believed() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let lot = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![lot]);
+        view.item_lot_commodities.insert(lot, CommodityKind::Apple);
+
+        let verdict =
+            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::Believed);
+    }
+
+    #[test]
+    fn assess_commodity_availability_co_located_resource_source_returns_believed() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let source = make_entity(21);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(5),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let verdict =
+            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::Believed);
+    }
+
+    #[test]
+    fn assess_commodity_availability_co_located_no_match_returns_refuted() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let lot = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![lot]);
+        view.item_lot_commodities.insert(lot, CommodityKind::Bread);
+
+        let verdict =
+            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::Refuted);
+    }
+
+    #[test]
+    fn assess_commodity_availability_belief_backed_lot_returns_believed() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let remembered_lot = make_entity(30);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, make_entity(11));
+        let mut state = observed_entity_state(place);
+        state
+            .last_known_inventory
+            .insert(CommodityKind::Apple, Quantity(2));
+        view.belief_stores
+            .insert(agent, store_with_known_entity(remembered_lot, state));
+
+        let verdict =
+            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::Believed);
+    }
+
+    #[test]
+    fn assess_commodity_availability_no_belief_returns_unknown_or_stale() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, make_entity(11));
+
+        let verdict =
+            assess_commodity_availability(&view, agent, CommodityKind::Apple, place);
+        assert_eq!(verdict, AvailabilityVerdict::UnknownOrStale);
     }
 
     // ── populate_assumptions tests ──

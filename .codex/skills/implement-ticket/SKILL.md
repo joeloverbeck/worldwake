@@ -19,6 +19,7 @@ Load `references/ticket-classification.md`.
 2. Read every directly relevant reference (specs, docs, code symbols, test files).
 3. When the user supplies a glob, shorthand, or obvious near-match typo, confirm the exact live file path before reading or relying on it.
 4. When the ticket name implies a numbered family or the user cites a parent spec, search for sibling tickets in the same family and confirm whether adjacent missing substrate is already owned elsewhere before broadening or narrowing the current ticket.
+   When the parent spec is broader than the active ticket and sibling tickets already own adjacent deliverables, treat that sibling decomposition as the live implementation boundary unless reassessment proves the split is obsolete.
 5. Check whether the active ticket file is tracked or untracked in the current worktree. Untracked ticket drafts are valid active state, but they will not appear in ordinary `git diff` output. Keep this in mind during diffs, close-out evidence, and follow-up ticket reporting throughout the workflow.
 6. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
 
