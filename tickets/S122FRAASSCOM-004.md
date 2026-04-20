@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `FrameTransitionKind::Cleared` gains `failed_assumption: Option<FrameAssumption>` field; `format_frame_transition_kind` surfaces the payload in the trace summary; integration tests #10 (suppression prevents re-adoption) and #11 (stale defers, fresh refutes) land; survival goldens (`baseline`, `contested`, `scattered`) re-run as the architectural acceptance gate.
-**Deps**: S122FRAASSCOM-003
+**Deps**: archive/tickets/S122FRAASSCOM-003.md
 
 ## Problem
 

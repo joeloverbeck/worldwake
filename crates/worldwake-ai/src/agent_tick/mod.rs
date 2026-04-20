@@ -499,7 +499,7 @@ fn process_agent(
             );
             let frame = current_frame.as_mut().unwrap();
             frame.assumptions = populate_assumptions(frame, agent, &view);
-            let eval = evaluate_assumptions(&frame.assumptions, &view, None);
+            let eval = evaluate_assumptions(&frame.assumptions, &view, agent, None);
             if !matches!(eval, AssumptionEvalResult::Deferred) {
                 let pre_state = current_frame.as_ref().unwrap().state;
                 current_frame = Some(apply_assumption_result(
@@ -509,7 +509,7 @@ fn process_agent(
                     runtime,
                 ));
                 emit_assumption_transitions(&pre_state, &eval, tick, &mut frame_transitions);
-                if matches!(eval, AssumptionEvalResult::CriticalFailure) {
+                if matches!(eval, AssumptionEvalResult::CriticalFailure(_)) {
                     // Create blocked intent so the agent doesn't immediately
                     // re-adopt the same goal after assumption failure. The
                     // structural block-ticks TTL preserves the pre-S109
@@ -605,6 +605,7 @@ fn process_agent(
                     action_defs,
                     recipe_registry,
                 ),
+                agent,
                 Some(&ranked_candidates),
             );
             if matches!(
@@ -1314,7 +1315,7 @@ fn emit_assumption_transitions(
                 tick,
             });
         }
-        AssumptionEvalResult::CriticalFailure => {
+        AssumptionEvalResult::CriticalFailure(_) => {
             ft.push(FrameTransitionKind::Cleared {
                 reason: FrameClearReason::AssumptionFailed,
             });

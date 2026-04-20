@@ -211,7 +211,7 @@ pub(super) enum AssumptionEvalResult {
     /// A recoverable assumption failed — frame should be suspended.
     RecoverableFailure(SuspensionReason),
     /// A critical assumption failed — frame should be exhausted.
-    CriticalFailure,
+    CriticalFailure(FrameAssumption),
     /// Evaluation was deferred (contains `NoCriticalThreat` that needs ranked candidates).
     Deferred,
 }
@@ -336,10 +336,10 @@ pub(super) fn populate_assumptions(
 /// `NoCriticalThreat` is skipped (returns `Deferred` if it was the only
 /// assumption that could fail). If `Some`, it is evaluated immediately.
 ///
-/// `CommodityAvailableAt` is stubbed as always-true (future work).
 pub(super) fn evaluate_assumptions(
     assumptions: &[FrameAssumption],
     view: &dyn RuntimeBeliefView,
+    agent: EntityId,
     ranked_candidates: Option<&[RankedGoal]>,
 ) -> AssumptionEvalResult {
     let mut has_deferred = false;
@@ -348,7 +348,7 @@ pub(super) fn evaluate_assumptions(
         match *assumption {
             FrameAssumption::TargetAlive(entity) => {
                 if !view.is_alive(entity) {
-                    return AssumptionEvalResult::CriticalFailure;
+                    return AssumptionEvalResult::CriticalFailure(*assumption);
                 }
             }
             FrameAssumption::RouteExists { from, to } => {
@@ -372,8 +372,14 @@ pub(super) fn evaluate_assumptions(
                     has_deferred = true;
                 }
             }
-            FrameAssumption::CommodityAvailableAt { .. } => {
-                // Stubbed as always-true — future work.
+            FrameAssumption::CommodityAvailableAt { commodity, place } => {
+                match assess_commodity_availability(view, agent, commodity, place) {
+                    AvailabilityVerdict::Believed => {}
+                    AvailabilityVerdict::Refuted => {
+                        return AssumptionEvalResult::CriticalFailure(*assumption);
+                    }
+                    AvailabilityVerdict::UnknownOrStale => has_deferred = true,
+                }
             }
         }
     }
@@ -393,7 +399,7 @@ pub(super) fn apply_assumption_result(
     runtime: &mut AgentDecisionRuntime,
 ) -> IntentionFrame {
     match result {
-        AssumptionEvalResult::CriticalFailure => {
+        AssumptionEvalResult::CriticalFailure(_) => {
             runtime.last_frame_clear_reason = Some(FrameClearReason::AssumptionFailed);
             IntentionFrame {
                 state: FrameState::Exhausted,
@@ -1096,9 +1102,14 @@ mod tests {
         let result = evaluate_assumptions(
             &[FrameAssumption::TargetAlive(dead_entity)],
             &view,
+            make_entity(0),
             Some(&[]),
         );
-        assert_eq!(result, AssumptionEvalResult::CriticalFailure);
+        assert!(matches!(
+            result,
+            AssumptionEvalResult::CriticalFailure(FrameAssumption::TargetAlive(entity))
+                if entity == dead_entity
+        ));
     }
 
     #[test]
@@ -1110,6 +1121,7 @@ mod tests {
         let result = evaluate_assumptions(
             &[FrameAssumption::RouteExists { from, to }],
             &view,
+            make_entity(0),
             Some(&[]),
         );
         assert_eq!(
@@ -1126,6 +1138,7 @@ mod tests {
         let result = evaluate_assumptions(
             &[FrameAssumption::NoCriticalThreat],
             &view,
+            make_entity(0),
             Some(&candidates),
         );
         assert_eq!(
@@ -1149,6 +1162,7 @@ mod tests {
                 FrameAssumption::RouteExists { from, to },
             ],
             &view,
+            make_entity(0),
             Some(&[]),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
@@ -1158,20 +1172,114 @@ mod tests {
     fn no_critical_threat_without_candidates_returns_deferred() {
         let view = MockBeliefView::new();
 
-        let result = evaluate_assumptions(&[FrameAssumption::NoCriticalThreat], &view, None);
+        let result = evaluate_assumptions(
+            &[FrameAssumption::NoCriticalThreat],
+            &view,
+            make_entity(0),
+            None,
+        );
         assert_eq!(result, AssumptionEvalResult::Deferred);
     }
 
     #[test]
-    fn commodity_available_at_stubbed_as_pass() {
-        let view = MockBeliefView::new();
+    fn evaluate_commodity_available_at_returns_critical_failure_when_refuted() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let lot = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![lot]);
+        view.item_lot_commodities.insert(lot, CommodityKind::Bread);
 
         let result = evaluate_assumptions(
             &[FrameAssumption::CommodityAvailableAt {
-                commodity: CommodityKind::Grain,
-                place: make_entity(10),
+                commodity: CommodityKind::Apple,
+                place,
             }],
             &view,
+            agent,
+            Some(&[]),
+        );
+        assert_eq!(
+            result,
+            AssumptionEvalResult::CriticalFailure(FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            })
+        );
+    }
+
+    #[test]
+    fn evaluate_commodity_available_at_returns_all_pass_when_believed() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let lot = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, make_entity(11));
+        let mut state = observed_entity_state(place);
+        state
+            .last_known_inventory
+            .insert(CommodityKind::Apple, Quantity(2));
+        view.belief_stores
+            .insert(agent, store_with_known_entity(lot, state));
+
+        let result = evaluate_assumptions(
+            &[FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            }],
+            &view,
+            agent,
+            Some(&[]),
+        );
+        assert_eq!(result, AssumptionEvalResult::AllPass);
+    }
+
+    #[test]
+    fn evaluate_commodity_available_at_returns_deferred_when_unknown() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, make_entity(11));
+
+        let result = evaluate_assumptions(
+            &[FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            }],
+            &view,
+            agent,
+            Some(&[]),
+        );
+        assert_eq!(result, AssumptionEvalResult::Deferred);
+    }
+
+    #[test]
+    fn evaluate_commodity_available_at_co_located_resource_source_returns_all_pass() {
+        let agent = make_entity(0);
+        let place = make_entity(10);
+        let source = make_entity(21);
+        let mut view = MockBeliefView::new();
+        view.places.insert(agent, place);
+        view.entities_at.insert(place, vec![source]);
+        view.resource_sources.insert(
+            source,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(3),
+                max_quantity: Quantity(5),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        );
+
+        let result = evaluate_assumptions(
+            &[FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place,
+            }],
+            &view,
+            agent,
             Some(&[]),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
@@ -1191,7 +1299,7 @@ mod tests {
 
         let result = apply_assumption_result(
             &frame,
-            &AssumptionEvalResult::CriticalFailure,
+            &AssumptionEvalResult::CriticalFailure(FrameAssumption::TargetAlive(make_entity(99))),
             Tick(5),
             &mut runtime,
         );

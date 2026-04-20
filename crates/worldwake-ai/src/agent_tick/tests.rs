@@ -6038,6 +6038,127 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
 }
 
 #[test]
+fn commodity_assumption_failure_records_suppression() {
+    let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+    let origin = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("actor should start at a place");
+    let destination = harness
+        .world
+        .topology()
+        .place_ids()
+        .find(|place| *place != origin)
+        .expect("prototype world should expose a second place");
+    let remote_lot = {
+        let mut txn = new_txn(&mut harness.world, 1);
+        let remote_lot = txn
+            .create_item_lot(CommodityKind::Apple, Quantity(2))
+            .unwrap();
+        txn.set_ground_location(remote_lot, destination).unwrap();
+        commit_txn(txn);
+        remote_lot
+    };
+    sync_all_beliefs(&mut harness.world, harness.actor, Tick(1));
+    relocate_entity(&mut harness.world, remote_lot, origin, Tick(2));
+
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_active_goal(
+            harness.actor,
+            worldwake_core::ActiveGoal {
+                goal_key: goal,
+                adopted_at: Tick(2),
+            },
+        )
+        .unwrap();
+        txn.set_component_intention_frame(
+            harness.actor,
+            IntentionFrame {
+                goal,
+                domain: IntentionDomain::Travel { destination },
+                assumptions: Vec::new(),
+                state: FrameState::Active,
+                established_at: Tick(2),
+                last_progress_tick: None,
+                stalled_ticks: 0,
+                patience_limit: 30,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            dirty: DirtySet::default(),
+            ..AgentDecisionRuntime::default()
+        },
+    );
+
+    let _ = harness.step_once();
+    assert!(
+        harness
+            .world
+            .get_component_discrepancy_memory(harness.actor)
+            .is_none_or(|memory| memory.entries.is_empty()),
+        "remote stale belief should defer failure until co-location"
+    );
+    assert!(
+        !matches!(
+            harness
+                .world
+                .get_component_intention_frame(harness.actor)
+                .expect("frame should still exist before arrival")
+                .state,
+            FrameState::Exhausted
+        ),
+        "pre-arrival remote belief should not exhaust the frame"
+    );
+    assert_ne!(
+        harness.runtime().unwrap().last_frame_clear_reason,
+        Some(worldwake_core::FrameClearReason::AssumptionFailed),
+        "remote stale belief should not clear the frame before co-location"
+    );
+
+    relocate_entity(&mut harness.world, harness.actor, destination, Tick(3));
+    let _ = harness.step_once();
+
+    let entry = harness
+        .world
+        .get_component_discrepancy_memory(harness.actor)
+        .expect("assumption failure should record discrepancy memory")
+        .entries
+        .values()
+        .next()
+        .expect("suppression entry should be present");
+    assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+    assert_eq!(entry.blocker_key.goal_key, goal);
+    assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
+    assert_eq!(
+        entry.expires_tick,
+        Tick(entry.observed_tick.0 + u64::from(CognitiveProfile::default().structural_block_ticks))
+    );
+    assert_eq!(
+        harness.runtime().unwrap().last_frame_clear_reason,
+        Some(worldwake_core::FrameClearReason::AssumptionFailed)
+    );
+    assert_eq!(
+        harness
+            .world
+            .get_component_intention_frame(harness.actor)
+            .expect("failed frame should persist as exhausted")
+            .state,
+        FrameState::Exhausted
+    );
+}
+
+#[test]
 fn goal_completion_does_not_create_blocked_intent() {
     // A standard hungry agent that eats bread → goal completes normally.
     // No blocked intent should be created for the completed goal.

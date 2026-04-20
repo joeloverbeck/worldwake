@@ -1,6 +1,6 @@
 # S122FRAASSCOM-003: Evaluation arm + `CriticalFailure` payload widening + stub removal
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `evaluate_assumptions` signature widened to take `agent: EntityId`; `AssumptionEvalResult::CriticalFailure` widened from unit variant to `CriticalFailure(FrameAssumption)`; existing `TargetAlive` arm updated to pass payload; `apply_assumption_result`, `emit_assumption_transitions`, both call sites at `mod.rs:502/599`, and 6 affected test sites all updated; stub comment + always-true arm + `commodity_available_at_stubbed_as_pass` test removed.
@@ -167,6 +167,26 @@ With substrate (001) and population (002) in place, the assumption is being adde
 ### Commands
 
 1. `cargo test -p worldwake-ai --lib agent_tick::frame`
-2. `cargo test -p worldwake-ai --lib agent_tick::tests commodity_assumption_failure_records_suppression`
+2. `cargo test -p worldwake-ai commodity_assumption_failure_records_suppression --lib`
 3. `cargo test -p worldwake-ai`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-20.
+
+- Widened `AssumptionEvalResult::CriticalFailure` to carry `FrameAssumption`, updated `evaluate_assumptions` to take `agent: EntityId`, and replaced the `CommodityAvailableAt` always-true stub with the real `assess_commodity_availability` verdict mapping in `crates/worldwake-ai/src/agent_tick/frame.rs`.
+- Updated both `evaluate_assumptions` call sites and the `CriticalFailure` pattern matches in `crates/worldwake-ai/src/agent_tick/mod.rs`, keeping the failure payload available for S122FRAASSCOM-004 without surfacing it in traces yet.
+- Migrated the affected frame tests, deleted `commodity_available_at_stubbed_as_pass`, added 4 focused `CommodityAvailableAt` evaluator tests, and added `commodity_assumption_failure_records_suppression` in `crates/worldwake-ai/src/agent_tick/tests.rs` to prove the co-located refutation -> discrepancy-memory suppression chain end to end.
+
+## Deviations
+
+- The integration test seeds a live `ActiveGoal` + `IntentionFrame` directly, then drives the real `process_agent` pre-planning evaluator across remote-believed and co-located-refuted ticks. This preserves the load-bearing contract under test while avoiding unrelated planner-selection instability in the assertion surface.
+- The active ticket file remains untracked in this worktree, so close-out evidence for the ticket body itself does not appear in ordinary tracked-file git diffs.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib agent_tick::frame`
+- Passed `cargo test -p worldwake-ai commodity_assumption_failure_records_suppression --lib`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
