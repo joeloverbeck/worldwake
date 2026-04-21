@@ -1,12 +1,14 @@
 # S113: Planner-Facing Belief Envelope
 
+**Status**: COMPLETED
+
 ## Summary
 
 Introduce `BeliefValue<T>` and `BeliefSet<T>` read-model wrappers and expose three new planner-facing belief-store accessors that surface confidence, freshness, status (`Certain` / `Probable` / `Stale` / `Disputed`), with `Contradicted` retained in the end-state taxonomy once claim-level refutation carriage lands. Today the planner has no belief-store accessor for "where do I believe target X is?", "which entities do I believe are at remote place P?", or "how much commodity Q do I believe is at place P?" — existing accessors (`entities_at`, `locally_observed_entities_at`, `commodity_quantity`, `locally_observed_commodity_quantity`) read world state or same-tick perception (FND-14A), and `pursuit_belief.rs::last_known_place` is a single-slot pursuit target, not a general query. Agents therefore cannot plan from remote rumor or stale testimony, and they cannot reason "act now vs. verify first" because the signals the planner sees do not carry confidence. This spec adds three scoped belief-envelope accessors; route / ownership / office-holder / institutional-fact envelope exposure is deferred.
 
 ## Phase and Status
 
-Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8: Belief-First Continual Planning Foundation. Status: Completed 2026-04-21.
 
 ## Crates
 
@@ -277,4 +279,29 @@ Agent diversity (FND-22) continues to flow through these existing parameters: ag
 
 ## Outcome
 
-To be filled in at completion.
+Completed 2026-04-21.
+
+- Landed the belief-envelope foundation in the archived `S113BELENV-001` through `S113BELENV-006` ticket chain:
+  - `BeliefValue<T>`, `BeliefSet<T>`, and planner-facing envelope accessors
+  - planner/runtime consumers in ranking, revalidation, feasibility probe, and remote-target emission
+  - `BeliefSnapshot` / `BeliefStatusTag` payload schema on decision-history events
+  - live claim-level refutation carriage so `BeliefStatus::Contradicted` is now derived honestly
+  - scenario-backed stale-envelope golden coverage
+- The live implementation split the work across six bounded tickets rather than landing the whole spec in one change, and some producer population remains intentionally narrower than the original broad spec sketch:
+  - `BlockerRecordedPayload.belief_snapshot` has live producer wiring on the landed target-belief branches
+  - `PlanInvalidatedPayload.belief_snapshot` schema landed, but broad live producer population remains deferred until a concrete producer seam needs it
+  - the stale-envelope golden proved the strongest honest `survival-scattered` seam rather than a generic motive-scaling story, because that scenario does not lawfully exercise the `RaidTarget` ranking path
+- The spec remained active during the ticket wave and was updated incrementally to reflect staged `Contradicted` rollout and the narrowed golden proof seam before archival.
+
+Verification results:
+
+- `cargo test -p worldwake-core`
+- `cargo test -p worldwake-sim`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- focused ticket-level proofs across `decision_event_payload`, `save_load`, `belief_view`, `candidate_generation`, `plan_revalidation`, `feasibility_probe`, `failure_handling`, and the ignored `golden_survival_scattered` stale-envelope regression
+
+Not run as part of the archived S113 handoff:
+
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `./scripts/verify.sh`

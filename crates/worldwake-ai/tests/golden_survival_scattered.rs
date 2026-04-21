@@ -14,8 +14,14 @@ use worldwake_ai::{
     SurvivalForensicExtractor,
 };
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
-use worldwake_core::{DriveThresholds, EntityId, GoalKind, Tick};
-use worldwake_sim::ActionTraceKind;
+use worldwake_core::{
+    AgentBeliefStore, DriveThresholds, EntityBeliefAspect, EntityBeliefClaim, EntityId, GoalKind,
+    PerceptionProfile, PerceptionSource, Tick, build_believed_entity_state,
+    effective_claim_confidence,
+};
+use worldwake_sim::{
+    ActionTraceKind, GoalBeliefView, PerAgentBeliefView, belief_view::BeliefStatus,
+};
 
 const SURVIVAL_TICKS: u32 = 1440;
 
@@ -106,6 +112,21 @@ fn food_place_ids(def: &ScenarioDef) -> Vec<EntityId> {
         .iter()
         .map(|name| scenario_place_id(def, name))
         .collect()
+}
+
+fn first_tick_where_claim_becomes_stale(
+    claim: &EntityBeliefClaim,
+    profile: &PerceptionProfile,
+) -> Tick {
+    let threshold = profile.claim_confidence_threshold.value();
+    let mut tick = claim.acquired_tick.0;
+    loop {
+        let current_tick = Tick(tick);
+        if effective_claim_confidence(claim, current_tick, &profile.confidence_policy) < threshold {
+            return current_tick;
+        }
+        tick += 1;
+    }
 }
 
 fn run_survival_scattered() -> SurvivalScatteredObservation {
@@ -470,4 +491,121 @@ fn no_stuck_idle_windows_with_elevated_needs() {
         "survival scattered",
         &observation.stuck_idle_windows,
     );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 168: Seeded Target-Location Belief Decays To Stale Without Refresh
+// ---------------------------------------------------------------------------
+//
+// Systems: Perception, Belief Envelope
+// GoalKinds: none (envelope-surfacing proof only)
+// ActionDomains: none
+// Places: scenario-authored scattered topology
+// Principles: 14, 15, 31
+//
+// Setup: Load the authored `survival-scattered.ron` scenario, seed one
+// pre-run direct-observation belief for Agent A about Agent B's location at
+// tick 0, and read that same scenario-backed belief store through the live
+// `PerAgentBeliefView` seam at two ticks:
+// - the acquisition tick
+// - the first tick where effective confidence falls below the acting agent's
+//   `claim_confidence_threshold`
+//
+// Isolation: this proof intentionally does not step the simulation. Any live
+// tick step could lawfully refresh the target via perception and would change
+// the branch under test. The invariant here is envelope decay, not candidate
+// selection or action execution.
+//
+// Proves: the same seeded target-location belief reads as `Certain` at the
+// acquisition tick and as `Stale` once its effective confidence decays below
+// the agent's `claim_confidence_threshold`, without any perception refresh.
+//
+// Chain: seeded pre-run observation fixture -> later-tick envelope projection
+// through `believed_target_location(...)` -> `Certain` to `Stale` transition at
+// the computed threshold crossing.
+#[test]
+#[ignore = "CI-only: scenario-backed belief-envelope regression; run via golden-survival workflow"]
+fn seeded_target_location_belief_decays_to_stale_without_refresh() {
+    let (mut h, _def) = load_survival_scattered_harness();
+    let agents = named_agents(&h);
+    let observer = *agents
+        .get("Agent A")
+        .expect("scenario should include Agent A");
+    let target = *agents
+        .get("Agent B")
+        .expect("scenario should include Agent B");
+    let target_place = h
+        .world
+        .effective_place(target)
+        .expect("target should start at an authored place");
+
+    let profile = *h
+        .world
+        .get_component_perception_profile(observer)
+        .expect("scenario agents should have perception profiles");
+    let seeded = build_believed_entity_state(
+        &h.world,
+        target,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    )
+    .expect("seed fixture should build a target snapshot from the authored scenario");
+    assert_eq!(
+        seeded.last_known_place,
+        Some(target_place),
+        "seed fixture should capture Agent B's authored starting place"
+    );
+    let mut belief_store = h
+        .world
+        .get_component_agent_belief_store(observer)
+        .cloned()
+        .unwrap_or_else(AgentBeliefStore::new);
+    belief_store.import_entity_snapshot(target, &seeded, Tick(0), &profile.confidence_policy);
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_agent_belief_store(observer, belief_store.clone())
+        .expect("golden harness should keep belief stores writable");
+    commit_txn(txn, &mut h.event_log);
+    let location_claim = belief_store
+        .get_entity_claims(&target)
+        .expect("seeded target should have stored entity claims")
+        .iter()
+        .find(|claim| {
+            claim.aspect == EntityBeliefAspect::Location && claim.refuted_at_tick.is_none()
+        })
+        .expect("seeded target should have an active location claim")
+        .clone();
+
+    let fresh_view = PerAgentBeliefView::new_at_tick(
+        observer,
+        location_claim.acquired_tick,
+        &h.world,
+        &belief_store,
+    );
+    let fresh_envelope = fresh_view.believed_target_location(observer, target);
+    assert_eq!(fresh_envelope.value, Some(target_place));
+    assert_eq!(
+        fresh_envelope.status,
+        BeliefStatus::Certain,
+        "seeded direct observation should begin above the stale threshold"
+    );
+
+    let stale_tick = first_tick_where_claim_becomes_stale(&location_claim, &profile);
+    let stale_view = PerAgentBeliefView::new_at_tick(observer, stale_tick, &h.world, &belief_store);
+    let stale_envelope = stale_view.believed_target_location(observer, target);
+
+    assert_eq!(
+        h.scheduler.current_tick(),
+        Tick(0),
+        "stale-envelope proof should avoid live simulation steps that could refresh the target"
+    );
+    assert!(stale_tick > location_claim.acquired_tick);
+    assert_eq!(stale_envelope.value, Some(target_place));
+    assert_eq!(stale_envelope.status, BeliefStatus::Stale);
+    assert!(
+        stale_envelope.confidence < profile.claim_confidence_threshold,
+        "stale target-location belief should fall below claim_confidence_threshold: confidence={} threshold={}",
+        stale_envelope.confidence.value(),
+        profile.claim_confidence_threshold.value()
+    );
+    assert_eq!(stale_envelope.acquired_tick, location_claim.acquired_tick);
 }
