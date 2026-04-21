@@ -14,6 +14,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 Load `references/ticket-classification.md`.
 
 If the ticket primarily introduces a shared schema, payload, enum, save-format bump, or other substrate that sibling tickets will populate or render later, classify it as `schema-only / staged substrate` during intake. For that ticket shape, reassess the carrier contract, derive/trait surface, constructor fallout, save/replay/version boundaries, and focused round-trip coverage first. Expect existing emitters/builders to keep populating the new surface with `None`/empty/default values until the later sibling ticket wires runtime use, and record that staged state explicitly in closeout instead of implying the new schema is already live.
+If that staged ticket lands a new read-only wrapper or view type, check the repo's trait/lint expectations for the full surface early (for example iterator helpers that also need `IntoIterator for &Type`, or similar pedantic companion impls) instead of waiting for final CI-shaped clippy fallout to reveal the missing piece.
 If that staged ticket introduces a mirrored enum or record in one crate to represent a type owned by another crate, explicitly identify the nearest lawful proof seam that can see both sides and prove parity there (for example variant set, ordinal/serialization bytes, or other wire-format equivalence). Do not assume same-named mirrors stay aligned without an explicit check.
 
 ### 1. Load the ticket context

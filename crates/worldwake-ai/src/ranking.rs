@@ -42,11 +42,72 @@ pub struct RankingOutcome {
     pub zero_motive: Vec<GoalKey>,
 }
 
+/// A read-only view over `RankedGoal`s ordered by the authoritative preference
+/// defined in `ranking::compare_ranked_goals`.
+#[derive(Clone, Copy, Debug)]
+pub struct OrderedRanked<'a> {
+    slice: &'a [RankedGoal],
+}
+
+impl<'a> OrderedRanked<'a> {
+    fn new(slice: &'a [RankedGoal]) -> Self {
+        Self { slice }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_sorted_for_test(slice: &'a [RankedGoal]) -> Self {
+        Self { slice }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.slice.is_empty()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.slice.len()
+    }
+
+    #[must_use]
+    pub fn first(&self) -> Option<&RankedGoal> {
+        self.slice.first()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, RankedGoal> {
+        self.slice.iter()
+    }
+
+    #[must_use]
+    pub fn as_slice(&self) -> &[RankedGoal] {
+        self.slice
+    }
+
+    pub fn find(&self, pred: impl Fn(&RankedGoal) -> bool) -> Option<&RankedGoal> {
+        self.slice.iter().find(|goal| pred(goal))
+    }
+}
+
+impl<'b> IntoIterator for &'b OrderedRanked<'_> {
+    type Item = &'b RankedGoal;
+    type IntoIter = std::slice::Iter<'b, RankedGoal>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl RankingOutcome {
     /// Consume the outcome, returning only the ranked goals.
     #[must_use]
     pub fn into_ranked(self) -> Vec<RankedGoal> {
         self.ranked
+    }
+
+    /// Borrow the outcome's ranked goals as an ordered read-only view.
+    #[must_use]
+    pub fn ordered(&self) -> OrderedRanked<'_> {
+        OrderedRanked::new(self.ranked.as_slice())
     }
 }
 
@@ -181,6 +242,14 @@ pub(crate) fn rank_candidates_with_memories(
         suppressed,
         zero_motive,
     }
+}
+
+/// Sort a `Vec<RankedGoal>` by authoritative preference and return a view
+/// borrowing the sorted storage.
+#[must_use]
+pub fn sort_in_place(ranked: &mut Vec<RankedGoal>) -> OrderedRanked<'_> {
+    ranked.sort_unstable_by(compare_ranked_goals);
+    OrderedRanked::new(ranked.as_slice())
 }
 
 fn ranked_priority_class(
@@ -7188,6 +7257,132 @@ mod tests {
             competition_discount: None,
             feasibility,
         }
+    }
+
+    #[test]
+    fn ordered_ranked_exposes_len_and_first_in_sorted_order() {
+        use crate::feasibility::FeasibilityHint;
+
+        let ranked = vec![
+            make_ranked_goal(
+                GoalKind::Sleep,
+                GoalPriorityClass::Critical,
+                900,
+                FeasibilityHint::Likely,
+            ),
+            make_ranked_goal(
+                GoalKind::Wash,
+                GoalPriorityClass::High,
+                500,
+                FeasibilityHint::Likely,
+            ),
+            make_ranked_goal(
+                GoalKind::Patrol { place: entity(50) },
+                GoalPriorityClass::Low,
+                100,
+                FeasibilityHint::Likely,
+            ),
+        ];
+
+        let ordered = super::OrderedRanked::from_sorted_for_test(&ranked);
+
+        assert!(!ordered.is_empty());
+        assert_eq!(ordered.len(), 3);
+        assert_eq!(ordered.first(), Some(&ranked[0]));
+        assert_eq!(ordered.iter().cloned().collect::<Vec<_>>(), ranked);
+    }
+
+    #[test]
+    fn ordered_ranked_find_returns_first_match() {
+        use crate::feasibility::FeasibilityHint;
+
+        let ranked = vec![
+            make_ranked_goal(
+                GoalKind::Wash,
+                GoalPriorityClass::Critical,
+                900,
+                FeasibilityHint::Likely,
+            ),
+            make_ranked_goal(
+                GoalKind::Sleep,
+                GoalPriorityClass::High,
+                700,
+                FeasibilityHint::Likely,
+            ),
+            make_ranked_goal(
+                GoalKind::Sleep,
+                GoalPriorityClass::Low,
+                300,
+                FeasibilityHint::Likely,
+            ),
+        ];
+
+        let ordered = super::OrderedRanked::from_sorted_for_test(&ranked);
+        let found = ordered.find(|goal| matches!(goal.grounded.key.kind, GoalKind::Sleep));
+
+        assert_eq!(found, Some(&ranked[1]));
+    }
+
+    #[test]
+    fn sort_in_place_matches_ranker_output() {
+        let agent = entity(1);
+        let orchard = entity(2);
+        let well = entity(3);
+        let camp = entity(4);
+        let view = base_view(agent);
+        let candidates = vec![
+            goal_at_place(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                orchard,
+            ),
+            goal_at_place(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                well,
+            ),
+            goal_at_place(GoalKind::Sleep, camp),
+        ];
+
+        let expected = rank(&candidates, &view, agent, current_tick(), &utility()).into_ranked();
+        let mut actual = expected.iter().rev().cloned().collect::<Vec<_>>();
+        let ordered = super::sort_in_place(&mut actual);
+
+        assert_eq!(ordered.as_slice(), expected.as_slice());
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn ranking_outcome_ordered_reflects_ranked_field() {
+        let agent = entity(1);
+        let orchard = entity(2);
+        let well = entity(3);
+        let view = base_view(agent);
+        let candidates = vec![
+            goal_at_place(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                orchard,
+            ),
+            goal_at_place(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                well,
+            ),
+            goal_at_place(GoalKind::Wash, orchard),
+        ];
+
+        let outcome = rank(&candidates, &view, agent, current_tick(), &utility());
+
+        assert_eq!(outcome.ordered().as_slice(), outcome.ranked.as_slice());
     }
 
     #[test]
