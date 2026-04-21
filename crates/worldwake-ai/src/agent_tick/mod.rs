@@ -268,6 +268,7 @@ fn emit_plan_invalidated(
             agent,
             goal_key,
             reason,
+            belief_snapshot: None,
         }),
     );
 }

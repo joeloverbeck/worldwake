@@ -379,6 +379,7 @@ pub(super) fn persist_blocked_memory(
                 discrepancy: None,
                 blocking_fact: Some(blocker.blocking_fact),
                 expires_tick: blocker.expires_tick,
+                belief_snapshot: None,
             }),
         );
     }
@@ -432,6 +433,7 @@ pub(super) fn persist_discrepancy_memory(
                 discrepancy: Some(entry.discrepancy),
                 blocking_fact: None,
                 expires_tick: entry.expires_tick,
+                belief_snapshot: None,
             }),
         );
     }

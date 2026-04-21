@@ -4229,6 +4229,7 @@ mod tests {
                         aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
                     },
                 },
+                belief_snapshot: None,
             }),
         );
         emit_decision_event(
@@ -4285,6 +4286,7 @@ mod tests {
                 discrepancy: Some(worldwake_core::Discrepancy::RouteUnknown),
                 blocking_fact: None,
                 expires_tick: Tick(99),
+                belief_snapshot: None,
             }),
         );
 

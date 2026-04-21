@@ -147,13 +147,13 @@ pub use crime::{
     PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
 };
 pub use decision_event_payload::{
-    ActionInterruptReasonTag, BlockerRecordedPayload, DecisionEventPayload, EmitterTag,
-    EvidenceKindTag, EvidenceSummary, ExpectationMismatchPayload, GoalAbandonReason,
-    GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload, GoalRejectionReason,
-    GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, PlanAdoptedPayload,
-    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
-    RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-    ReplanTriggeredPayload,
+    ActionInterruptReasonTag, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
+    DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary, ExpectationMismatchPayload,
+    GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload,
+    GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
+    PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
+    PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
+    ReplanReason, ReplanTriggeredPayload,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,

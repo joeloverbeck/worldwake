@@ -21,7 +21,7 @@ Implementation note: foundational ticket `S113BELENV-001` lands the non-contradi
 - S109 (Typed Discrepancy Taxonomy, archived) — reuses `Discrepancy::BeliefStale` and `Discrepancy::BeliefContradicted` for feasibility-probe and revalidation rejection reasons. Soft.
 - S112 (Portfolio Planning, archived) — S112's `FeasibilityVerdict::RejectedBeforeSearch { reason }` gains envelope-driven triggers; the information-gathering slot consumes envelope confidence to decide whether to activate. Soft.
 - S108 (Per-Action Binding Strictness, archived) — revalidation of identity-bound steps gains a `BeliefStatus::Contradicted` short-circuit. Soft.
-- S110 (Decision History Events, archived) — `BlockerRecordedPayload` and `PlanInvalidatedPayload` (in `crates/worldwake-core/src/decision_event_payload.rs`) gain an optional `belief_snapshot` field so belief-driven invalidations/blockers are reconstructible. Soft.
+- S110 (Decision History Events, archived) — `BlockerRecordedPayload` and `PlanInvalidatedPayload` (in `crates/worldwake-core/src/decision_event_payload.rs`) gain an optional `belief_snapshot` field so belief-driven invalidations/blockers can carry frozen envelope metadata. Soft.
 
 ## Design Goals
 
@@ -209,10 +209,10 @@ pub enum BeliefStatusTag {
 
 Extend the two belief-referencing payloads:
 
-- `BlockerRecordedPayload` (at `decision_event_payload.rs:250-256`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. Populated when the blocker's `discrepancy` is `BeliefStale` or `BeliefContradicted`; `None` for non-belief-driven blockers.
-- `PlanInvalidatedPayload` (at `decision_event_payload.rs:144-178`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. Populated when the `PlanInvalidationReason` variant represents a belief-driven invalidation (specific variants enumerated during ticket decomposition after S109's `Discrepancy` mapping is traced). `None` for non-belief invalidations.
+- `BlockerRecordedPayload` (at `decision_event_payload.rs:250-256`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. `S113BELENV-002` owns the schema addition plus save-format bump; live population for `BeliefStale` / `BeliefContradicted` blocker sites lands later once the envelope consumers are wired. Until then, runtime emitters lawfully write `None`.
+- `PlanInvalidatedPayload` (at `decision_event_payload.rs:144-178`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. `S113BELENV-002` owns the schema addition plus save-format bump; live population for belief-driven invalidation variants lands later once the producer sites are wired. Until then, runtime emitters lawfully write `None`.
 
-Both fields use `#[serde(default)]` for save/replay compatibility — existing serialized payloads deserialize with `belief_snapshot: None`.
+Because Worldwake's save format is positionally serialized with `bincode`, adding either field requires a save-format bump rather than relying on `#[serde(default)]` for old-save compatibility. The `#[serde(default)]` remains useful for any intra-head decode path that omits the field, but it is not a cross-version migration mechanism.
 
 This makes "why did the agent act on stale belief X?" and "why did the plan invalidate?" answerable from the event log alone.
 
@@ -269,7 +269,7 @@ Agent diversity (FND-22) continues to flow through these existing parameters: ag
 10. Ranking: motive score for an acquisition goal tied to a `Stale` belief is scaled down proportional to effective confidence.
 11. Feasibility probe (S112): identity-bound target with `status == Stale` → probe returns `FeasibilityVerdict::RejectedBeforeSearch { reason: Discrepancy::BeliefStale }`.
 12. Plan revalidation: identity-bound step whose target-presence envelope returns `status == Contradicted` fails revalidation with `Discrepancy::BeliefContradicted`.
-13. Decision-trace payload: a `Stale`-driven blocker emits a `BlockerRecordedPayload` with `belief_snapshot: Some(...)` carrying the captured `confidence` and `BeliefStatusTag::Stale`.
+13. Decision-trace payload: once the producer wiring lands, a `Stale`-driven blocker emits a `BlockerRecordedPayload` with `belief_snapshot: Some(...)` carrying the captured `confidence` and `BeliefStatusTag::Stale`. `S113BELENV-002` lands the payload schema; population is a later ticket.
 
 ### Golden test extension
 

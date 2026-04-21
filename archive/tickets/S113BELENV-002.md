@@ -1,9 +1,9 @@
 # S113BELENV-002: `BeliefSnapshot` on decision-event payloads + save-format bump
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — decision-event payloads (`worldwake-core/src/decision_event_payload.rs`), save format version (`worldwake-sim/src/save_load.rs`), 14 payload construction sites across 6 files
+**Engine Changes**: Yes — decision-event payloads (`worldwake-core/src/decision_event_payload.rs`), save format version (`worldwake-sim/src/save_load.rs`), 9 payload construction sites across 6 files
 **Deps**: archive/tickets/S113BELENV-001.md
 
 ## Problem
@@ -14,7 +14,7 @@ D6 adds an optional `BeliefSnapshot` to `BlockerRecordedPayload` and `PlanInvali
 
 ## Assumption Reassessment (2026-04-21)
 
-1. `BlockerRecordedPayload` is defined at `crates/worldwake-core/src/decision_event_payload.rs:250-256` with fields `agent`, `blocker_key`, `discrepancy: Option<Discrepancy>`, `blocking_fact: Option<BlockingFact>`, `expires_tick`. `PlanInvalidatedPayload` is defined at the same file, lines 144-178, with fields `agent`, `goal_key`, `reason: PlanInvalidationReason`. Construction-site grep (`BlockerRecordedPayload {` / `PlanInvalidatedPayload {`) finds 14 sites across 6 production files: `decision_event_payload.rs` (4), `worldwake-ai/src/agent_tick/mod.rs` (1), `worldwake-ai/src/agent_tick/execution.rs` (2), `worldwake-ai/src/agent_tick/tests.rs` (2), `worldwake-cli/src/bin/observer.rs` (2), `worldwake-sim/src/save_load.rs` (2). Plus 3 matches in `archive/` (not construction sites).
+1. `BlockerRecordedPayload` is defined at `crates/worldwake-core/src/decision_event_payload.rs:254-259` with fields `agent`, `blocker_key`, `discrepancy: Option<Discrepancy>`, `blocking_fact: Option<BlockingFact>`, `expires_tick`. `PlanInvalidatedPayload` is defined at the same file, lines 144-148, with fields `agent`, `goal_key`, `reason: PlanInvalidationReason`. Construction-site grep (`BlockerRecordedPayload {` / `PlanInvalidatedPayload {`) currently finds 9 live sites across 6 files: `decision_event_payload.rs` (2 test fixtures), `worldwake-ai/src/agent_tick/mod.rs` (1), `worldwake-ai/src/agent_tick/execution.rs` (2), `worldwake-ai/src/agent_tick/tests.rs` (2), `worldwake-cli/src/bin/observer.rs` (2), and `worldwake-sim/src/save_load.rs` (2). Some sites are test/helper fixtures rather than production emitters, but they are still current-ticket fallout because the shared payload shape changes.
 2. `SAVE_FORMAT_VERSION = 34` at `crates/worldwake-sim/src/save_load.rs:6`. Serialization uses `bincode` (line 86: `bincode::serialize`, line 139: `bincode::deserialize`). **Bincode is positional — adding a field to a serialized struct breaks backward compatibility regardless of `#[serde(default)]`.** The save format must bump to 35 for this change; the old format cannot be round-tripped in place. Shared abstraction boundary under audit: the decision-event payload schema (append-only history) and the save format version contract.
 3. The spec (S113) does not currently mention the save-format bump explicitly; this ticket makes it an in-scope consequence of D6. Adding it later as a separate ticket would leave an intermediate state where saves written with S113 code cannot be loaded by pre-S113 code without an error — preferable to bump in the same ticket so the version boundary and the schema change co-commit.
 6. This is an event-log / save-format ticket — intended verification layer is focused unit tests (payload construction, serialization round-trip) plus `event-log delta` coverage where existing S110 tests exercise these payloads.
@@ -33,7 +33,7 @@ D6 adds an optional `BeliefSnapshot` to `BlockerRecordedPayload` and `PlanInvali
 1. Payload construction with `Some(BeliefSnapshot { .. })` and `None` → focused unit tests in `decision_event_payload.rs` `#[cfg(test)]`.
 2. Serialization round-trip through `bincode::serialize` / `bincode::deserialize` with the new field → focused unit test in `save_load.rs`.
 3. `SAVE_FORMAT_VERSION = 35` asserted at compile time + load test that rejects version-34 payloads cleanly (existing `save_load.rs` version-mismatch path is the proof surface) → event-log-delta / save-load layer.
-4. Pre-existing observer display of payloads is not broken by the new optional field → focused runtime test in `crates/worldwake-cli/src/bin/observer.rs` tests if present, otherwise visual confirmation via a trace run (noted as follow-up if no automated coverage exists).
+4. Pre-existing observer display of payloads is not broken by the new optional field → focused existing `observer.rs` fixture/test coverage is the honest proof seam; no new binary display change is required while all constructors still emit `belief_snapshot: None`.
 5. Single layer-group: persistence + payload shape. Higher-layer integrations (AI reading the snapshot back) are out of scope — follow-up work once the snapshot is populated by T003.
 
 ## What to Change
@@ -89,18 +89,18 @@ pub struct BlockerRecordedPayload {
 
 Same pattern — add `belief_snapshot: Option<BeliefSnapshot>` with `#[serde(default)]` at the end of the struct. Populate only when the `reason: PlanInvalidationReason` variant represents a belief-driven invalidation. The specific variants that carry a snapshot are enumerated in T003 when those variants actually produce snapshots; in this ticket every construction site simply sets `belief_snapshot: None`.
 
-### 4. Update all 14 construction sites
+### 4. Update all live construction sites
 
 Each site adds `belief_snapshot: None` to the payload literal. File list (confirmed via grep):
 
-- `crates/worldwake-core/src/decision_event_payload.rs` — 4 sites (likely test fixtures and/or default constructors)
+- `crates/worldwake-core/src/decision_event_payload.rs` — 2 fixture sites
 - `crates/worldwake-ai/src/agent_tick/mod.rs` — 1 site
 - `crates/worldwake-ai/src/agent_tick/execution.rs` — 2 sites
 - `crates/worldwake-ai/src/agent_tick/tests.rs` — 2 sites
 - `crates/worldwake-cli/src/bin/observer.rs` — 2 sites
 - `crates/worldwake-sim/src/save_load.rs` — 2 sites
 
-Total: 14 sites. Workspace must build cleanly after each file's edits — prefer editing all payload constructors for a given payload type in one pass.
+Total: 11 literal-field additions across 9 payload-construction sites in 6 files. Workspace must build cleanly after each file's edits — prefer editing all payload constructors for a given payload type in one pass.
 
 ### 5. Bump `SAVE_FORMAT_VERSION` to 35
 
@@ -120,10 +120,11 @@ Add to `decision_event_payload.rs` `#[cfg(test)]`:
 2. `BlockerRecordedPayload` constructed with `belief_snapshot: None` round-trips through `bincode`.
 3. `PlanInvalidatedPayload` same two cases.
 4. `BeliefStatusTag` serialization produces stable, compact encoding (no magic-string dependency on variant names — bincode uses ordinal indexes).
+5. `BeliefStatusTag` stays ordinal-compatible with `worldwake-sim::belief_view::BeliefStatus`; prove this from a `worldwake-sim` test that compares serialized variant bytes across the mirrored enums.
 
 Add to `save_load.rs` `#[cfg(test)]` (or the relevant existing version-handling test):
 
-5. Full save/load round-trip after the bump — confirm `SAVE_FORMAT_VERSION == 35` and that a payload containing `Some(BeliefSnapshot)` survives serialization.
+6. Full save/load round-trip after the bump — confirm `SAVE_FORMAT_VERSION == 35` and that a payload containing `Some(BeliefSnapshot)` survives serialization.
 
 ## Files to Touch
 
@@ -133,7 +134,7 @@ Add to `save_load.rs` `#[cfg(test)]` (or the relevant existing version-handling 
 - `crates/worldwake-ai/src/agent_tick/execution.rs` (modify — 2 construction sites)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — 2 construction sites)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — 2 construction sites)
-- `crates/worldwake-sim/src/save_load.rs` (modify — 2 construction sites, `SAVE_FORMAT_VERSION` bump, round-trip test)
+- `crates/worldwake-sim/src/save_load.rs` (modify — 2 construction sites, `SAVE_FORMAT_VERSION` bump, round-trip tests including enum-parity proof)
 
 ## Out of Scope
 
@@ -146,7 +147,7 @@ Add to `save_load.rs` `#[cfg(test)]` (or the relevant existing version-handling 
 
 ### Tests That Must Pass
 
-1. All 5 new unit tests in §6 above pass.
+1. All 6 new unit tests in §6 above pass.
 2. `cargo test -p worldwake-core decision_event_payload` passes.
 3. `cargo test -p worldwake-sim save_load` passes with `SAVE_FORMAT_VERSION == 35`.
 4. Full existing suite: `cargo test --workspace` (ensures no construction-site omission broke a distant test).
@@ -155,14 +156,14 @@ Add to `save_load.rs` `#[cfg(test)]` (or the relevant existing version-handling 
 
 1. `SAVE_FORMAT_VERSION` is bumped atomically with the schema change — no intermediate state in which version 34 code can deserialize version-35 payloads or vice versa (P28).
 2. `belief_snapshot: None` is the lawful default for all non-belief-driven blockers and invalidations; the append-only event log preserves this historically (P29A).
-3. `BeliefStatusTag` in core and `BeliefStatus` in sim have identical variant sets and ordinals — drift between them would break round-trip fidelity. Verified by the round-trip test fixtures.
+3. `BeliefStatusTag` in core and `BeliefStatus` in sim have identical variant sets and ordinals — drift between them would break round-trip fidelity. Verified by an explicit serialized-byte parity test.
 
 ## Test Plan
 
 ### New/Modified Tests
 
 1. `crates/worldwake-core/src/decision_event_payload.rs` `#[cfg(test)]` — 4 new round-trip unit tests per §6 items 1–4.
-2. `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` — 1 new save-format round-trip test per §6 item 5; update any existing version-bump assertions to `35`.
+2. `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` — 2 focused tests: one save-format round-trip with `Some(BeliefSnapshot)`, plus one serialized-byte parity test for `BeliefStatusTag` vs `BeliefStatus`; update any existing version-bump assertions to `35`.
 
 ### Commands
 
@@ -171,3 +172,33 @@ Add to `save_load.rs` `#[cfg(test)]` (or the relevant existing version-handling 
 3. `cargo test --workspace` (full suite — catches construction-site omissions across crates).
 4. `cargo clippy --workspace --all-targets -- -D warnings` (CI parity).
 5. `./scripts/verify.sh` before PR.
+
+## Outcome
+
+Implemented on 2026-04-21.
+
+- Added `BeliefSnapshot` and core-local `BeliefStatusTag` to `worldwake-core` and re-exported both through `lib.rs`.
+- Extended `PlanInvalidatedPayload` and `BlockerRecordedPayload` with `#[serde(default)] pub belief_snapshot: Option<BeliefSnapshot>`.
+- Updated all live payload construction sites to compile against the new schema; runtime emitters currently set `belief_snapshot: None`, while focused fixtures/save tests exercise `Some(...)`.
+- Bumped `SAVE_FORMAT_VERSION` from `34` to `35` in the same change as the payload-schema update.
+- Added focused round-trip coverage in `decision_event_payload.rs` for `Some(...)` / `None` on both payload types.
+- Added `save_load.rs` coverage proving full save/load round-trip with `Some(BeliefSnapshot)` and explicit serialized-byte parity between `BeliefStatusTag` and `worldwake-sim::belief_view::BeliefStatus`.
+
+Deviations from the original ticket draft:
+
+- Reassessment corrected the construction-site count from `14` to `9` live sites across `6` files; the implemented scope follows the live branch rather than the stale draft count.
+- The ordinal-compatibility proof for `BeliefStatusTag` vs `BeliefStatus` landed in `worldwake-sim/src/save_load.rs`, which is the only lawful layer that can see both enums without violating crate boundaries.
+
+## Verification Result
+
+Passed:
+
+1. `cargo test -p worldwake-core decision_event_payload`
+2. `cargo test -p worldwake-sim save_load`
+3. `cargo fmt --all`
+4. `cargo test --workspace`
+
+Not run:
+
+1. `cargo clippy --workspace --all-targets -- -D warnings`
+2. `./scripts/verify.sh`

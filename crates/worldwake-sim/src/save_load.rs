@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 34;
+pub const SAVE_FORMAT_VERSION: u32 = 35;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -184,6 +184,7 @@ mod tests {
     use super::{
         SAVE_FORMAT_VERSION, SAVE_MAGIC, SaveError, load, load_from_bytes, save, save_to_bytes,
     };
+    use crate::belief_view::BeliefStatus;
     use crate::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
         ActionPayload, ActionState, ActionStatus, ControllerState, DeterministicRng, InputKind,
@@ -195,21 +196,21 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, BeliefClaimKey, BelievedActivity,
-        BelievedEntityState, BlockerKey, BlockerRecordedPayload, BlockingFact, BodyCostPerTick,
-        CauseRef, ClaimId, ClaimValue, CommodityKind, CommodityPurpose, ControlSource,
-        DecisionEventPayload, Discrepancy, EmitterTag, EntityBeliefAspect, EntityBeliefClaim,
-        EntityId, EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary,
-        ExpectationBasis, ExpectationId, ExpectationMismatchPayload, ExpectationRecord,
-        ExpectationState, ExpectationStore, GoalAbandonReason, GoalAbandonedPayload,
-        GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload, GoalRejectionReason,
-        GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, MaterializationTag, PendingEvent, PerceptionSource,
-        PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
-        PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary, RepairAppliedPayload,
-        RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId, Seed, StateHash,
-        SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn, build_prototype_world,
+        ActionDefId, ActionDomain, AgentBeliefStore, BeliefClaimKey, BeliefSnapshot,
+        BeliefStatusTag, BelievedActivity, BelievedEntityState, BlockerKey, BlockerRecordedPayload,
+        BlockingFact, BodyCostPerTick, CauseRef, ClaimId, ClaimValue, CommodityKind,
+        CommodityPurpose, ControlSource, DecisionEventPayload, Discrepancy, EmitterTag,
+        EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload, EventTag,
+        EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
+        ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
+        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
+        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
+        GoalSwitchReason, LastSeenMemory, LastSeenProvenance, LastSeenRecord, MaterializationTag,
+        PendingEvent, PerceptionSource, PlanAdoptedPayload, PlanInvalidatedPayload,
+        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary,
+        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
+        Seed, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -779,6 +780,11 @@ mod tests {
                     agent: actor,
                     goal_key: move_goal,
                     reason: PlanInvalidationReason::BeliefUpdate { claim_key },
+                    belief_snapshot: Some(BeliefSnapshot {
+                        confidence: worldwake_core::Permille::new(375).unwrap(),
+                        status: BeliefStatusTag::Stale,
+                        acquired_tick: Tick(14),
+                    }),
                 }),
             ),
             (
@@ -820,6 +826,11 @@ mod tests {
                     discrepancy: Some(Discrepancy::RouteUnknown),
                     blocking_fact: Some(BlockingFact::NoKnownPath),
                     expires_tick: Tick(99),
+                    belief_snapshot: Some(BeliefSnapshot {
+                        confidence: worldwake_core::Permille::new(650).unwrap(),
+                        status: BeliefStatusTag::Probable,
+                        acquired_tick: Tick(18),
+                    }),
                 }),
             ),
         ]
@@ -1066,6 +1077,24 @@ mod tests {
             assert_eq!(
                 bincode::serialize(roundtrip).unwrap(),
                 bincode::serialize(original).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn belief_status_tag_serialization_matches_belief_status_ordinals() {
+        let pairs = [
+            (BeliefStatus::Certain, BeliefStatusTag::Certain),
+            (BeliefStatus::Probable, BeliefStatusTag::Probable),
+            (BeliefStatus::Stale, BeliefStatusTag::Stale),
+            (BeliefStatus::Disputed, BeliefStatusTag::Disputed),
+            (BeliefStatus::Contradicted, BeliefStatusTag::Contradicted),
+        ];
+
+        for (sim_status, core_status) in pairs {
+            assert_eq!(
+                bincode::serialize(&sim_status).unwrap(),
+                bincode::serialize(&core_status).unwrap()
             );
         }
     }

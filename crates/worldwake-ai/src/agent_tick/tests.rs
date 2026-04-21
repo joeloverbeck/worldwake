@@ -4191,6 +4191,7 @@ fn persist_blocked_memory_commits_changed_component() {
                 discrepancy: None,
                 blocking_fact: Some(BlockingFact::NoKnownPath),
                 expires_tick: Tick(7),
+                belief_snapshot: None,
             }
         ))
     );
@@ -4250,6 +4251,7 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
                 discrepancy: Some(Discrepancy::BeliefContradicted),
                 blocking_fact: None,
                 expires_tick: Tick(9),
+                belief_snapshot: None,
             }
         ))
     );

@@ -1,6 +1,6 @@
 use crate::{
     ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, Discrepancy, EntityId, FrameAssumption,
-    FrameClearReason, GoalKey, MaterializationTag, SuspensionReason, Tick,
+    FrameClearReason, GoalKey, MaterializationTag, Permille, SuspensionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -140,11 +140,32 @@ pub struct PlanAdoptedPayload {
     pub plan_step_count: u16,
 }
 
+/// Frozen belief-envelope metadata captured at the moment a belief-driven
+/// blocker or invalidation is written to the decision event log.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BeliefSnapshot {
+    pub confidence: Permille,
+    pub status: BeliefStatusTag,
+    pub acquired_tick: Tick,
+}
+
+/// Core-side historical-record mirror of `worldwake-sim::BeliefStatus`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum BeliefStatusTag {
+    Certain,
+    Probable,
+    Stale,
+    Disputed,
+    Contradicted,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PlanInvalidatedPayload {
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub reason: PlanInvalidationReason,
+    #[serde(default)]
+    pub belief_snapshot: Option<BeliefSnapshot>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -257,18 +278,20 @@ pub struct BlockerRecordedPayload {
     pub discrepancy: Option<Discrepancy>,
     pub blocking_fact: Option<BlockingFact>,
     pub expires_tick: Tick,
+    #[serde(default)]
+    pub belief_snapshot: Option<BeliefSnapshot>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionInterruptReasonTag, BlockerRecordedPayload, DecisionEventPayload, EmitterTag,
-        EvidenceKindTag, EvidenceSummary, ExpectationMismatchPayload, GoalAbandonReason,
-        GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload, GoalRejectionReason,
-        GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, PlanAdoptedPayload,
-        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
-        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-        ReplanTriggeredPayload,
+        ActionInterruptReasonTag, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
+        DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary,
+        ExpectationMismatchPayload, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload,
+        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
+        GoalSwitchReason, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
+        PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
+        ReplanReason, ReplanTriggeredPayload,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
@@ -297,6 +320,14 @@ mod tests {
                     (EvidenceKindTag::PerceptionObservation, 1),
                 ]),
             },
+        }
+    }
+
+    fn sample_belief_snapshot() -> BeliefSnapshot {
+        BeliefSnapshot {
+            confidence: crate::Permille::new(425).unwrap(),
+            status: BeliefStatusTag::Stale,
+            acquired_tick: Tick(17),
         }
     }
 
@@ -342,6 +373,7 @@ mod tests {
                 reason: PlanInvalidationReason::PursuitInvalidated {
                     reason: PursuitInvalidationReasonTag::PlaceChanged,
                 },
+                belief_snapshot: Some(sample_belief_snapshot()),
             }),
             DecisionEventPayload::ExpectationMismatch(ExpectationMismatchPayload {
                 agent: entity_id(9, 0),
@@ -371,6 +403,7 @@ mod tests {
                 discrepancy: Some(Discrepancy::BeliefContradicted),
                 blocking_fact: Some(BlockingFact::TargetGone),
                 expires_tick: Tick(99),
+                belief_snapshot: None,
             }),
         ]
     }
@@ -391,6 +424,8 @@ mod tests {
         assert_value_bounds::<GoalAbandonReason>();
         assert_copy_value_bounds::<GoalSwitchReason>();
         assert_value_bounds::<PlanAdoptedPayload>();
+        assert_value_bounds::<BeliefSnapshot>();
+        assert_copy_value_bounds::<BeliefStatusTag>();
         assert_value_bounds::<PlanInvalidatedPayload>();
         assert_value_bounds::<PlanInvalidationReason>();
         assert_copy_value_bounds::<PursuitInvalidationReasonTag>();
@@ -420,6 +455,80 @@ mod tests {
         let roundtrip: EvidenceSummary = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, summary);
+    }
+
+    #[test]
+    fn blocker_recorded_payload_roundtrips_with_belief_snapshot_some() {
+        let payload = BlockerRecordedPayload {
+            agent: entity_id(1, 0),
+            blocker_key: sample_blocker_key(),
+            discrepancy: Some(Discrepancy::BeliefStale),
+            blocking_fact: Some(BlockingFact::NoKnownPath),
+            expires_tick: Tick(33),
+            belief_snapshot: Some(sample_belief_snapshot()),
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: BlockerRecordedPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn blocker_recorded_payload_roundtrips_with_belief_snapshot_none() {
+        let payload = BlockerRecordedPayload {
+            agent: entity_id(1, 0),
+            blocker_key: sample_blocker_key(),
+            discrepancy: Some(Discrepancy::BeliefStale),
+            blocking_fact: Some(BlockingFact::NoKnownPath),
+            expires_tick: Tick(33),
+            belief_snapshot: None,
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: BlockerRecordedPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn plan_invalidated_payload_roundtrips_with_belief_snapshot_some() {
+        let payload = PlanInvalidatedPayload {
+            agent: entity_id(1, 0),
+            goal_key: sample_goal_key(),
+            reason: PlanInvalidationReason::BeliefUpdate {
+                claim_key: BeliefClaimKey {
+                    subject: entity_id(2, 0),
+                    aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+                },
+            },
+            belief_snapshot: Some(sample_belief_snapshot()),
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: PlanInvalidatedPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn plan_invalidated_payload_roundtrips_with_belief_snapshot_none() {
+        let payload = PlanInvalidatedPayload {
+            agent: entity_id(1, 0),
+            goal_key: sample_goal_key(),
+            reason: PlanInvalidationReason::BeliefUpdate {
+                claim_key: BeliefClaimKey {
+                    subject: entity_id(2, 0),
+                    aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+                },
+            },
+            belief_snapshot: None,
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: PlanInvalidatedPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
     }
 
     #[test]
