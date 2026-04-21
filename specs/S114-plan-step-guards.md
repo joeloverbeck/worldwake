@@ -2,7 +2,7 @@
 
 ## Summary
 
-Annotate each `PlannedStep` with explicit *guards* (required-believed-facts, minimum-confidence thresholds, invalidators) and *expectations* (expected observations the step should produce). Revalidation and in-flight monitoring read guards to classify drift as irrelevant, repairable, plan-invalidating, or goal-changing — not just "affordance still matches." Expectation mismatches emit `EventTag::ExpectationMismatch` (S110), feed `DiscrepancyMemory` (S109), and become the primary signal for future PolicyPlan branching. Scoped to four core guard/expectation kinds (immediate / state / informed / regression); danger-spike, counterparty-unwilling, resource-partial, partial-execution-drift kinds are deferred.
+Annotate each `PlannedStep` with explicit *guards* (required-believed-facts, minimum-confidence thresholds, invalidators) and *expectations* (expected observations the step should produce). Revalidation reads guards to classify drift as irrelevant, repairable, plan-invalidating, or goal-changing — not just "affordance still matches." Expectations persist across tick boundaries by reusing the existing `ExpectationStore` / `ExpectationRecord` infrastructure (extended with a new `ExpectationBasis::PlanStepCompletion` variant); the existing `check_overdue_expectations` SystemFn is widened to emit `EventTag::ExpectationMismatch` on state transitions. Guard templates and expectation templates live on `ActionDef` as serializable declarative specs; closures are never stored. Scoped to four core guard/expectation kinds (immediate / state / informed / regression); danger-spike, counterparty-unwilling, resource-partial, partial-execution-drift kinds are deferred.
 
 ## Phase and Status
 
@@ -10,40 +10,65 @@ Phase 9: Belief-First Continual Planning Structural. Status: Draft.
 
 ## Crates
 
-- `worldwake-ai` — `PlannedStep` extension with `guard: Option<PlanGuard>` and `expectations: Vec<PlanExpectation>`; revalidation upgrade in `plan_revalidation.rs`; guard/expectation construction in planner
-- `worldwake-core` — `PlanGuard`, `PlanExpectation`, `ExpectationKind` types shared between planning and sim
-- `worldwake-sim` — step-execution observers emit `ExpectationMismatch` when guards fail mid-step
+- `worldwake-core` — `ExpectationKind` + `ExpectationKindTag`, `StatePredicate`, `ObservationPredicate` types; new `ExpectationBasis::PlanStepCompletion { step_index, kind_tag }` variant; widen `ExpectationMismatchPayload` per FND-28.
+- `worldwake-ai` — `PlanGuard`, `PlanExpectation` runtime-only types attached to `PlannedStep`; accessor methods on `PlannedStep`; guard/expectation construction at plan-build time; revalidation upgrade in `plan_revalidation.rs`; plan-adoption writes `ExpectationRecord`s into the agent's `ExpectationStore`.
+- `worldwake-sim` — `ActionDef` gains `guard_template: Option<GuardTemplateSpec>` and `expectation_template: Vec<ExpectationTemplateSpec>` fields (declarative data; serializable). No new SystemFn.
+- `worldwake-systems` — widen existing `check_overdue_expectations` in `expectation_check.rs` to emit `EventTag::ExpectationMismatch` + route through `record_discrepancy` on plan-step expectation overdue transitions.
 
 ## Dependencies
 
-- S109 (Typed Discrepancy Taxonomy) — expectation mismatches record typed discrepancies.
-- S110 (Decision History Events) — `ExpectationMismatch` event variant exists.
-- S113 (Belief Envelope) — guards reference `BeliefValue::confidence`.
+- S109 (Typed Discrepancy Taxonomy) — **landed** at `archive/specs/S109-typed-discrepancy-taxonomy.md`. Reuses `Discrepancy::{BeliefStale, BeliefContradicted, MissingObservation, PartialExecutionDrift}` plus `DiscrepancyMemory` / `BlockerMemory`.
+- S110 (Decision History Events) — **landed** at `archive/specs/S110-decision-history-events.md`. Reuses `EventTag::ExpectationMismatch`, `EventTag::BlockerRecorded`, `PlanInvalidationReason::ExpectationMismatch`, and widens the pre-declared `ExpectationMismatchPayload` in place (FND-28 — see D7).
+- S113 (Belief Envelope) — **landed** at `archive/specs/S113-belief-envelope.md`. Guards read `BeliefValue::{value, confidence, status}` through envelope accessors (`believed_target_location`, `believed_commodity_stock`, `believed_entities_at`).
 
 ## Design Goals
 
 - Revalidation classifies drift precisely: a merchant's restock is irrelevant to a `TravelTo(destination)` step; it invalidates a `Purchase(merchant)` step only if a guard referenced that merchant's stock.
-- Expectation monitoring catches the "agent arrived, target gone" failure *before* the action starts, not at handler time. The `BeliefStale` belief → `ExpectationMismatch` → `Discrepancy::BeliefStale` pipeline replaces ad-hoc `BlockingFact::AssumptionFailed` traps.
+- Expectation monitoring catches the "agent arrived, target gone" failure *before* the action starts, not at handler time. The envelope-driven `BeliefContradicted` / `BeliefStale` pipeline (S113) replaces ad-hoc `BlockingFact::AssumptionFailed` traps.
 - Scoped guard kinds. Four core kinds cover ~80% of current failure pathways; the remaining kinds land when Phase 10 scenarios surface them.
+- Reuse the existing expectation infrastructure. The `ExpectationStore`/`ExpectationRecord`/`ExpectationCheck` trio already ships as of earlier phases; S114 extends that surface rather than standing up a parallel one.
+- Declarative, serializable action authoring. Guard and expectation templates are data types on `ActionDef`, not closures, so `ActionDef` continues to round-trip through save/load.
 
 ## Non-Goals
 
 - Full PolicyPlan branching. Guards and expectations are the substrate branches will read, but this spec keeps plans linear.
-- Automatic repair on guard failure. S114 records the mismatch and returns `PlanInvalidated`; the existing `handle_plan_failure` path decides whether to replan.
+- Automatic repair on guard failure. S114 records the mismatch and returns an invalidation; the existing `handle_plan_failure` path decides whether to replan.
 - Step-level contract generation by the planner from first principles. Guards and expectations are authored per-action-kind (in each action's registration) plus narrow planner-side augmentations.
+- A new `ActivePlan` ECS component or `step_expectation_state` field. Runtime plan state lives on `AgentDecisionRuntime::current_plan` (runtime-only, `crates/worldwake-ai/src/decision_runtime.rs:152`); persistent per-step expectations are `ExpectationRecord` entries in the agent's existing `ExpectationStore`.
+- A new `expectation_monitor_system` SystemFn or a new `PlanInvalidationReason::GuardBreach` variant. `SystemId::ExpectationCheck` (`crates/worldwake-sim/src/system_manifest.rs:121`) is the authoritative tick-phase hook, and `PlanInvalidationReason::ExpectationMismatch { step_index }` is the authoritative invalidation variant.
+- Route-known envelope accessor. `RequiredFact::RouteKnown` is defined for completeness but lands as a no-op (always-`false` short-circuit on `RouteKnown` guard construction) until a follow-up spec adds a `believed_route_known` envelope accessor — route envelope exposure is explicitly deferred by S113.
 
 ## FOUNDATIONS Alignment
 
 | Principle | How Satisfied |
 |-----------|---------------|
-| FND-16 (Uncertainty / Contradiction First-Class) | Guards read belief confidence. A step that requires `confidence ≥ 700` fails fast when the underlying belief decayed. |
-| FND-17 (Surprise Comes From Violated Expectation) | Expectations encode what the agent *expected* to observe. Mismatch is the authoritative surprise signal, not a noise-level log. |
+| FND-16 (Uncertainty / Contradiction First-Class) | Guards read `BeliefValue::confidence`. A step that requires `confidence ≥ 700` fails fast when the underlying belief decayed. Guard breaches classify through S109's typed discrepancies. |
+| FND-17 (Surprise Comes From Violated Expectation) | Expectations encode what the agent *expected* to observe. `EventTag::ExpectationMismatch` (S110) is the authoritative surprise signal. |
 | FND-20 (Resource-Bounded Practical Reasoning) | Revalidation short-circuits on guard failure before running affordance matching. Irrelevant drift is ignored cheaply. |
+| FND-26 (Systems Interact Through State) | Guard checks and expectation monitoring read authoritative state (belief store, blocker memory, event log) and the existing `ExpectationStore` component — never a direct cross-system call. |
+| FND-28 (No Backward Compatibility) | `ExpectationMismatchPayload` is widened in place per S110's pre-declaration. Old event-log decoding fails — no shim. |
 | FND-29A (Causal History) | Expectation mismatches are recorded events (S110), preserving the "what did the agent expect that didn't happen?" audit trail. |
 
 ## Deliverables
 
-### D1: `PlanGuard` and `PlanExpectation` types
+### D1: `PlanGuard`, `PlanExpectation`, and `ExpectationKind` types
+
+**Core-side (`crates/worldwake-core`)** — serializable, Copy-safe where viable:
+
+```rust
+/// Tag form of `ExpectationKind` that persists inside `ExpectationBasis` —
+/// intentionally payload-free so `ExpectationBasis` and `ExpectationRecord`
+/// retain their current `Copy` derives.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ExpectationKindTag {
+    Immediate,
+    State,
+    Informed,
+    Regression,
+}
+```
+
+**AI-crate side (`crates/worldwake-ai`)** — runtime-only, attached to `PlannedStep`. No `Copy` requirement because `PlannedStep` itself is not `Copy`:
 
 ```rust
 pub struct PlanGuard {
@@ -55,19 +80,26 @@ pub struct PlanGuard {
 pub enum RequiredFact {
     TargetPresent { target: EntityId, at_place: EntityId },
     CommodityAvailable { place: EntityId, kind: CommodityKind, min_quantity: Quantity },
+    /// Evaluated as a no-op (`false` short-circuit) until a follow-up spec
+    /// lands `believed_route_known` on the belief envelope. Route envelope
+    /// exposure is explicitly deferred by S113.
     RouteKnown { from: EntityId, to: EntityId },
     ResourceAccess { resource: EntityId, agent_holds_permission: bool },
 }
 
 pub enum Invalidator {
-    /// Belief about `target` drops below min_confidence or is contradicted.
+    /// Belief about a specific claim drops below min_confidence or is
+    /// contradicted. `claim: BeliefClaimKey` is the S109 key.
     BeliefStatusChange { claim: BeliefClaimKey },
     /// Target entity moved away from `at_place`.
     TargetMoved { target: EntityId },
     /// Commodity stock at `place` drops below `min_quantity`.
     CommodityDepleted { place: EntityId, kind: CommodityKind },
-    /// Blocker memory records a new suppressive entry for this goal/place/target.
-    NewBlockerRecorded,
+    /// Blocker memory records a new suppressive entry matching
+    /// (goal_key, place, target) after `baseline_tick`. The baseline is
+    /// captured at plan-adoption time; the invalidator fires if any
+    /// `BlockerMemory` entry with `observed_tick > baseline_tick` matches.
+    NewBlockerRecorded { baseline_tick: Tick },
 }
 
 pub struct PlanExpectation {
@@ -88,153 +120,343 @@ pub enum ExpectationKind {
     /// tool we picked up earlier is still in inventory).
     Regression { predicate: StatePredicate },
 }
+
+pub enum StatePredicate {
+    CommodityAtPlaceAtLeast { place: EntityId, kind: CommodityKind, quantity: Quantity },
+    EntityAtPlace { entity: EntityId, place: EntityId },
+    ActorHoldsCommodity { kind: CommodityKind, min_quantity: Quantity },
+    ClaimEstablished { claim: BeliefClaimKey },
+}
+
+pub enum ObservationPredicate {
+    EntityPerceivedAtPlace { entity: EntityId, place: EntityId },
+    EvidencePerceived { kind: EvidenceKind, place: EntityId },
+}
 ```
 
-### D2: `PlannedStep` extension
+`StatePredicate` and `ObservationPredicate` live in `worldwake-core` (co-located with `ExpectationKindTag`) because the richer `ExpectationKind` — which carries them — sits on the runtime `PlannedStep`, but `StatePredicate` is also referenced from the widened `ExpectationMismatchPayload` (D7) and must therefore be core-owned and serializable. All fields are `EntityId` / `CommodityKind` / `Quantity` / `BeliefClaimKey` — Copy primitives.
 
-Extend the existing `PlannedStep` in `crates/worldwake-ai/src/planner_ops.rs` with `guard: Option<PlanGuard>` and `expectations: Vec<PlanExpectation>`. `expected_materializations` (the current field) stays as the concrete post-action materialization tag set but is now a subset of `expectations` expressed as `ExpectationKind::State`.
+**Derive propagation**: `ExpectationKind` is *not* `Copy` (contains enum payloads that own no variable-length data, but future predicate extensions may). `PlanGuard` and `PlanExpectation` are `Clone + Debug + Eq + PartialEq` only — they never enter the save-load path because `PlannedStep` is runtime-only.
 
-### D3: Guard authoring
+### D2: `PlannedStep` extension and accessor methods
 
-Each `ActionDef` registration site declares its default guard and expectation template:
+Extend `PlannedStep` in `crates/worldwake-ai/src/planner_ops.rs:814` with:
 
 ```rust
-actions.register(ActionDef {
+pub struct PlannedStep {
+    // ... existing 7 fields unchanged ...
+    pub guard: Option<PlanGuard>,
+    pub expectations: Vec<PlanExpectation>,
+}
+```
+
+`expected_materializations: Vec<ExpectedMaterialization>` stays as-is; conceptually it is a subset of `expectations` expressed as `ExpectationKind::State { predicate: CommodityAtPlaceAtLeast | ... }`, but the two carry different information (`ExpectedMaterialization` binds `HypotheticalEntityId`, `PlanExpectation` is a plain predicate). S114 keeps both; future work may unify.
+
+Add an `impl PlannedStep` block with accessors used by guard/expectation construction at plan-build time:
+
+```rust
+impl PlannedStep {
+    pub fn primary_target(&self) -> Option<EntityId> {
+        self.targets.first().and_then(PlanningEntityRef::entity)
+    }
+    pub fn target_place(&self) -> Option<EntityId> { /* ... */ }
+    pub fn target_claim(&self) -> Option<BeliefClaimKey> { /* ... */ }
+    pub fn expected_complete_tick(&self, start_tick: Tick) -> Tick {
+        Tick(start_tick.0.saturating_add(self.estimated_ticks as u64))
+    }
+}
+```
+
+Each returns `Option<_>` where the field may be absent (untargeted actions, planner-synthesized payloads). Guard/expectation construction (D3) handles `None` by omitting the corresponding `RequiredFact`/`Invalidator`.
+
+### D3: Declarative guard / expectation authoring on `ActionDef`
+
+Each `ActionDef` registration gains two optional declarative specs (serializable data, not closures):
+
+```rust
+// In crates/worldwake-sim/src/action_def.rs, alongside the existing 17 fields:
+pub struct ActionDef {
     // ... existing fields ...
-    binding_strictness: BindingStrictness::ExactIdentity,
-    guard_template: |step| PlanGuard {
-        required_facts: vec![
-            RequiredFact::TargetPresent {
-                target: step.primary_target(),
-                at_place: step.target_place(),
-            },
-        ],
-        min_confidence: Permille::new(500),
-        invalidators: vec![
-            Invalidator::TargetMoved { target: step.primary_target() },
-            Invalidator::BeliefStatusChange { claim: step.target_claim() },
-        ],
-    },
-    expectation_template: |step| vec![
-        PlanExpectation {
-            kind: ExpectationKind::Immediate {
-                event_tag: EventTag::ActionCommitted,
-            },
-            observe_by: Some(step.expected_complete_tick()),
-        },
-    ],
-});
+    pub guard_template: Option<GuardTemplateSpec>,
+    pub expectation_template: Vec<ExpectationTemplateSpec>,
+}
+
+pub struct GuardTemplateSpec {
+    pub required_facts: Vec<RequiredFactSpec>,
+    pub min_confidence: Permille,
+    pub invalidators: Vec<InvalidatorSpec>,
+}
+
+pub enum RequiredFactSpec {
+    TargetPresent,                     // bind from step.primary_target() + step.target_place()
+    CommodityAvailable { min_quantity: Quantity }, // bind place+kind from payload
+    RouteKnown,                        // bind from step.targets
+    ResourceAccess,                    // bind resource from step.primary_target()
+}
+
+pub enum InvalidatorSpec {
+    TargetMoved,                       // bind target
+    BeliefStatusChange,                // bind claim from step.target_claim()
+    CommodityDepleted { min_quantity: Quantity },
+    NewBlockerRecorded,                // baseline_tick bound at plan-adoption
+}
+
+pub struct ExpectationTemplateSpec {
+    pub kind_tag: ExpectationKindTag,
+    pub observe_by_offset: Option<u32>, // None = by step completion
+    pub event_tag: Option<EventTag>,    // required when kind_tag == Immediate
+    pub state_predicate_spec: Option<StatePredicateSpec>,  // required when kind_tag ∈ {State, Regression}
+    pub observation_predicate_spec: Option<ObservationPredicateSpec>, // required when kind_tag == Informed
+}
+// StatePredicateSpec / ObservationPredicateSpec mirror their core predicate
+// enums but carry binding-source tags instead of resolved EntityIds, e.g.
+// `CommodityAtPlaceAtLeast { place_source: PlaceSource::StepTargetPlace, kind_source: KindSource::PayloadCommodity, quantity_source: QuantitySource::Literal(Quantity) }`.
 ```
 
-The planner instantiates the template per step from the ranked goal's evidence and beliefs. Authoring is per-action-kind, not per-step; the template computes concrete fields from the step's bound targets.
-
-### D4: Revalidation upgrade
-
-`plan_revalidation.rs::revalidate_next_step` gains a guard-check pass before affordance matching:
+The AI crate owns a pure function:
 
 ```rust
-pub fn revalidate_next_step(...) -> RevalidationOutcome {
-    let step = &plan.steps[next_idx];
+// crates/worldwake-ai/src/plan_guard_build.rs
+pub fn build_plan_guard(
+    def: &ActionDef,
+    step: &PlannedStep,
+    adoption_tick: Tick,
+) -> Option<PlanGuard>;
 
-    // 1. Guard check
+pub fn build_plan_expectations(
+    def: &ActionDef,
+    step: &PlannedStep,
+    adoption_tick: Tick,
+) -> Vec<PlanExpectation>;
+```
+
+The functions translate `GuardTemplateSpec` / `ExpectationTemplateSpec` into concrete `PlanGuard` / `Vec<PlanExpectation>` by resolving binding-source tags against `step.primary_target()`, `step.target_place()`, `step.target_claim()`, and any payload override. This preserves `ActionDef`'s `Serialize + Deserialize` derives — closures are never stored.
+
+### D4: Persist plan-step expectations through `ExpectationStore`
+
+Extend `ExpectationBasis` in `crates/worldwake-core/src/expectation.rs:22` with a new `Copy`-safe variant (preserves the existing `Copy` derive on both `ExpectationBasis` and `ExpectationRecord`):
+
+```rust
+pub enum ExpectationBasis {
+    DutyAssignment { office: EntityId },
+    DeliveryCommitment { commodity: CommodityKind, quantity: Quantity },
+    RoutineReturn,
+    EscortObligation { charge: EntityId },
+    SocialPromise,
+    /// NEW: a plan step expects completion by `deadline_tick`. The rich
+    /// `PlanExpectation` (with its `StatePredicate` / `ObservationPredicate`)
+    /// lives on the runtime `PlannedStep`; the monitor cross-references by
+    /// `(step_index, kind_tag)` against the agent's current plan.
+    PlanStepCompletion { step_index: u16, kind_tag: ExpectationKindTag },
+}
+```
+
+At plan adoption, the AI crate writes one `ExpectationRecord` per `PlanExpectation` with:
+
+- `owner` = the acting agent
+- `subject` = the step's primary target (or the agent itself if untargeted)
+- `expected_place` = the step's target place (or the agent's current place)
+- `deadline_tick` = `step.expected_complete_tick(adoption_tick)` adjusted by the agent's `expectation_tolerance_ticks`
+- `grace_ticks` = derived from the profile tolerance
+- `basis` = `ExpectationBasis::PlanStepCompletion { step_index, kind_tag }`
+- `state` = `ExpectationState::Active`
+
+When the plan is replaced or the step completes successfully, the adoption-time records are resolved (`ExpectationState::Resolved { outcome: Fulfilled }`) or expired (`ExpectationState::Expired`) explicitly through a new AI-crate helper `clear_plan_step_expectations(agent, plan_id)`.
+
+**Cross-crate exhaustive-match update**: `ExpectationBasis` is matched exhaustively in `crates/worldwake-ai/src/ranking.rs:1133-1135`. Adding the new variant requires a match arm — for ranking, `PlanStepCompletion` contributes no ranking-relevant weight and maps to `0` (plan-step expectations are agent-internal, not overdue-social-obligation-grade). Other sites (`per_agent_belief_view.rs`, `save_load.rs`, `expectation_check.rs` tests, golden tests, `search_actions.rs`, `report_actions.rs`, `ask_about_person_actions.rs`) currently construct specific variants and do not exhaustively match — no cascade edit required at those sites.
+
+### D5: Revalidation upgrade — guard-check pass
+
+`plan_revalidation.rs::revalidate_next_step` (`crates/worldwake-ai/src/plan_revalidation.rs:14`) currently returns `bool`. To surface the specific invalidation reason to the caller without plumbing an out-parameter through every call site, introduce a companion helper:
+
+```rust
+/// Drop-in boolean form, preserved for callers that only need pass/fail.
+/// Internally delegates to `classify_revalidation`.
+pub fn revalidate_next_step(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    step: &PlannedStep,
+    bindings: &MaterializationBindings,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+) -> bool {
+    classify_revalidation(view, actor, step, bindings, registry, handlers).is_valid()
+}
+
+pub enum RevalidationOutcome {
+    Valid,
+    Invalidated { reason: PlanInvalidationReason },
+}
+
+pub fn classify_revalidation(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    step: &PlannedStep,
+    bindings: &MaterializationBindings,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+) -> RevalidationOutcome {
+    // 1. Guard check (NEW)
     if let Some(guard) = &step.guard {
-        if let Some(breach) = check_guard(guard, agent_beliefs, blocker_memory, current_tick) {
+        if let Some(invalidator) = check_guard(view, actor, guard) {
             return RevalidationOutcome::Invalidated {
-                reason: PlanInvalidationReason::GuardBreach(breach),
+                reason: PlanInvalidationReason::ExpectationMismatch {
+                    step_index: /* from caller context */,
+                },
             };
         }
     }
-
     // 2. Existing affordance match (S108 strictness-aware)
-    match requested_affordance_matches(...) { ... }
-}
-```
-
-`GuardBreach` carries the specific `Invalidator` that tripped. `PlanInvalidatedPayload` (S110) records the breach for the event log.
-
-### D5: In-flight expectation monitoring
-
-A new `expectation_monitor_system` runs at tick-end after action commitments have been recorded:
-
-```rust
-pub fn expectation_monitor_system(world: &mut World, event_log: &mut EventLog, tick: Tick) {
-    for agent in agents_with_active_plans(world) {
-        let plan = world.get::<ActivePlan>(agent);
-        let committed_step = plan.current_step();
-        for expectation in &committed_step.expectations {
-            if let Some(deadline) = expectation.observe_by {
-                if tick > deadline {
-                    let observed = check_expectation(world, agent, expectation);
-                    if !observed {
-                        emit_expectation_mismatch(event_log, agent, plan.id, expectation);
-                        record_discrepancy(world, agent, expectation);
-                    }
-                }
-            }
-        }
+    if requested_affordance_matches(...) {
+        RevalidationOutcome::Valid
+    } else {
+        RevalidationOutcome::Invalidated { reason: PlanInvalidationReason::TargetGone { ... } }
     }
 }
 ```
 
-This is the first SystemFn added by the Phase 8–9 planner sequence. Placed late in the tick order (after action-commit and belief-update).
+`PlanInvalidationReason::ExpectationMismatch` is reused (defined at `decision_event_payload.rs:179`). No new `GuardBreach` variant is introduced — the richer invalidator detail (which specific `Invalidator` fired) is carried in the widened `ExpectationMismatchPayload` (D7) when the event is emitted downstream.
 
-### D6: Discrepancy recording on mismatch
+Call sites of the existing `revalidate_next_step` continue to compile unchanged. New consumers that need the reason call `classify_revalidation` directly.
 
-When an expectation times out without being met:
+### D6: Widen `check_overdue_expectations` to emit `ExpectationMismatch` events
 
-- `ExpectationKind::Immediate` mismatch → `Discrepancy::PartialExecutionDrift`
-- `ExpectationKind::State` mismatch → `Discrepancy::BeliefContradicted` (the agent believed the step would produce state X; world says otherwise)
-- `ExpectationKind::Informed` mismatch → `Discrepancy::MissingObservation`
-- `ExpectationKind::Regression` mismatch → `Discrepancy::BeliefContradicted`
+`crates/worldwake-systems/src/expectation_check.rs::check_overdue_expectations` currently transitions `ExpectationState::Active → Overdue` silently (commits the store update without an event tag specific to plan-step mismatch). Widen it so that when a record whose basis is `ExpectationBasis::PlanStepCompletion { step_index, kind_tag }` transitions to `Overdue`:
 
-Each records into `DiscrepancyMemory` with class-specific TTL (S109) and emits `EventTag::ExpectationMismatch` + `EventTag::BlockerRecorded` (S110).
+1. Resolve the step via the agent's `AgentDecisionRuntime::current_plan` (read-only access through a new belief-view accessor on `RuntimeBeliefView`). If the plan is absent or `step_index` is out of range, mark the record `Expired` (stale — the plan moved on) and skip emission.
+2. Emit `EventTag::ExpectationMismatch` with a widened `ExpectationMismatchPayload` (D7) carrying the `kind_tag`, the step index, and the `Invalidator`-analogue diagnostic.
+3. Route through S109's `classify_discrepancy` to record into `DiscrepancyMemory` / `BlockerMemory` by `ExpectationKind` class:
+   - `ExpectationKind::Immediate` mismatch → `Discrepancy::PartialExecutionDrift`
+   - `ExpectationKind::State` mismatch → `Discrepancy::BeliefContradicted`
+   - `ExpectationKind::Informed` mismatch → `Discrepancy::MissingObservation`
+   - `ExpectationKind::Regression` mismatch → `Discrepancy::BeliefContradicted`
+4. Set the record state to `Resolved { outcome: ReturnedLate }` (or a new outcome variant if none fits — implementation time chooses; this spec does not mandate a new outcome).
+
+The existing non-plan expectations (`DutyAssignment`, `DeliveryCommitment`, `RoutineReturn`, `EscortObligation`, `SocialPromise`) are unchanged by D6.
+
+Per the Non-Goals, no new SystemFn is introduced. The placement claim "the first SystemFn added by the Phase 8–9 planner sequence" from the prior draft is removed — `SystemId::ExpectationCheck` is the hook, and it already exists at `system_manifest.rs:121` (pre-Phase 8).
+
+### D7: Widen `ExpectationMismatchPayload` (FND-28)
+
+S110 pre-declared that S114 would widen this payload in place (`archive/specs/S110-decision-history-events.md:237-244`). Current shape at `crates/worldwake-core/src/decision_event_payload.rs:213-218`:
+
+```rust
+pub struct ExpectationMismatchPayload {
+    pub agent: EntityId,
+    pub goal_key: GoalKey,
+    pub step_index: u16,
+    pub expected_materializations: Vec<MaterializationTag>,
+}
+```
+
+Widened:
+
+```rust
+pub struct ExpectationMismatchPayload {
+    pub agent: EntityId,
+    pub goal_key: GoalKey,
+    pub step_index: u16,
+    pub expected_materializations: Vec<MaterializationTag>,
+    /// NEW: which of the four expectation kinds failed. `None` when the
+    /// mismatch was detected pre-S114-style via `expected_materializations`
+    /// alone and no `PlanStepCompletion` record was present.
+    pub expectation_kind: Option<ExpectationKindTag>,
+    /// NEW: the breached guard invalidator when the mismatch fired through
+    /// revalidation's guard-check pass, or the unmet state predicate when
+    /// the mismatch fired through `check_overdue_expectations`.
+    pub mismatch_detail: Option<MismatchDetail>,
+}
+
+pub enum MismatchDetail {
+    GuardInvalidator(InvalidatorTag),
+    StateUnmet { predicate: StatePredicate },
+    ObservationMissing { predicate: ObservationPredicate },
+}
+
+/// Tag-only form of `Invalidator` — serializable, discards `EntityId` /
+/// `Tick` detail (that detail lives on the rich runtime `Invalidator`).
+pub enum InvalidatorTag {
+    BeliefStatusChange,
+    TargetMoved,
+    CommodityDepleted,
+    NewBlockerRecorded,
+}
+```
+
+No backward-compat decode path (FND-28). Save files and event logs pre-dating S114 are not decodable after this spec lands.
+
+### D8: Authoritative-to-AI Impact Rule walkthrough
+
+Per CLAUDE.md's Authoritative-to-AI Impact Rule, D5 gates step execution and therefore counts as a precondition change. Coverage:
+
+1. `get_affordances` — **pass** (guards gate revalidation, not affordance discovery).
+2. `generate_candidates` — **confirmed at ticket time**: emitters that would produce candidates duplicating a `NewBlockerRecorded` invalidator's suppression key must consult `BlockerMemory` as already required by S109; no new emitter logic required by S114 directly.
+3. `search_plan` — **pass** (guards evaluate post-search; terminal ordering and barrier logic unchanged).
+4. `BestEffort` action start — **confirmed at ticket time**: the start path invokes `classify_revalidation` (new seam) rather than `revalidate_next_step`'s boolean form so that a guard breach routes through `handle_plan_failure` with the specific `PlanInvalidationReason::ExpectationMismatch`.
+5. `handle_plan_failure` — **pass** (replanning already handles `PlanInvalidationReason::ExpectationMismatch { step_index }`; no new arm needed).
+6. Payload revalidation — **confirmed at ticket time**: for actions that use planner-synthesized payloads, the guard-check pass runs *before* `requested_affordance_matches`'s `with_payload_override_validator` delegation, so payload revalidation semantics are unchanged.
+7. Golden tests — **must stay green**: existing `golden_planner_pathology`, `golden_survival_*`, and `golden_portfolio_planning` suites must pass; V7 (below) is the new coverage.
 
 ## FND-01 Section H: Causal Hooks
 
-1. **Information-path analysis**: Guards read the agent's belief store (local). Expectations read event-log tags and observations. No cross-agent information flow introduced.
-2. **Positive-feedback analysis**: A guard that always breaches → plan always invalidates → replan → same guard breaches. Dampener: the repeat is recorded as `Discrepancy` with TTL; the goal is suppressed until TTL expires. Loops cannot run faster than `min(TTL)` for the relevant discrepancy class.
-3. **Concrete dampeners**: Discrepancy TTL per class (S109). Additionally, guard templates bound `min_confidence` to a finite floor (per-action-kind), so a guard cannot require impossible certainty.
-4. **Stored state vs. derived read-model**: Guards are authored templates (static metadata on `ActionDef`). `PlanGuard` instances attached to `PlannedStep` are derived per-plan. Expectation monitoring produces event-log entries (authoritative) and memory updates (authoritative).
+1. **Information-path analysis**: Guards read the agent's own belief store (local, FND-14/14A) and the agent's own `BlockerMemory` (local, per S109). Expectations read the authoritative append-only event log (state, FND-26) and the agent's own `ExpectationStore` (local). No cross-agent information flow introduced. `ExpectationRecord`s written at plan-adoption time and read by `check_overdue_expectations` both live on the same agent — the monitor never queries another agent's store.
+2. **Positive-feedback analysis**: A guard that always breaches → plan always invalidates → replan → same guard breaches. Dampener: S109's per-class discrepancy TTL (`stale_belief_backoff_ticks`, `contradicted_belief_backoff_ticks`, etc.) suppresses the goal until TTL expires. Loops cannot run faster than `min(TTL)` for the relevant discrepancy class.
+3. **Concrete dampeners**: S109 discrepancy TTLs per class. Additionally, `GuardTemplateSpec::min_confidence` is a `Permille` (bounded [0, 1000]) with per-agent `guard_min_confidence_ceiling` so a guard cannot require impossible certainty.
+4. **Stored state vs. derived read-model**:
+   - **Authoritative stored state**: `ExpectationRecord` entries inside `ExpectationStore` components (written at plan adoption, updated by `check_overdue_expectations`), and the event-log entries emitted on mismatch. `ActionDef::guard_template` / `expectation_template` are authored design-time data, saved through the existing `ActionDef` serialization path.
+   - **Runtime-only**: `PlanGuard` and `Vec<PlanExpectation>` on `PlannedStep`, held by `AgentDecisionRuntime::current_plan`; rebuilt at plan-adoption time by `build_plan_guard` / `build_plan_expectations`. `MismatchDetail` is captured into the event log at mismatch time, then becomes authoritative historical state.
 
 ## SystemFn Integration
 
-**New SystemFn**: `expectation_monitor_system`. Placement: tick-phase order after `commit_actions` and `perception`, before `belief_decay`. Runs once per tick per active agent with a live plan.
+**No new SystemFn.** `SystemId::ExpectationCheck` (`crates/worldwake-sim/src/system_manifest.rs:121`) is the authoritative hook, and its backing function `check_overdue_expectations` (`crates/worldwake-systems/src/expectation_check.rs`) is widened per D6. Tick-phase order is unchanged: `Perception → ExpectationCheck → EvidenceDecay → ItemDecay → Patrol → Compaction`.
 
 ## Component Registration
 
-- `ActivePlan` (existing or runtime-generated) gains a `step_expectation_state` field tracking per-step expectation observation status. Runtime-generated; exempt from scenario authoring per spec-drafting-rules.md §5.
+No new ECS components.
+
+- `ExpectationStore` already exists on `EntityKind::Agent` (universal, runtime-generated per spec-drafting-rules.md §5 — memory-style component that starts empty and accumulates from plan adoption / duty assignment / delivery commitment).
+- `CognitiveProfile` (universal, applied via `spawn_agent()`) gains two new fields per Profile-Driven Parameters below.
+- `ActionDef` gains `guard_template` and `expectation_template` fields. `ActionDef` is not an ECS component — it is a design-time record in `ActionDefRegistry`. No scenario contract update required (action registrations are compiled in, not scenario-authored).
 
 ## Cross-System Interactions
 
-- **Planner ↔ action registry**: Planner reads each `ActionDef`'s guard/expectation templates at plan-build time.
-- **Revalidation ↔ memory**: Revalidation reads `DiscrepancyMemory` and `BlockerMemory` to evaluate invalidators.
-- **Expectation monitor ↔ event log**: Monitor reads action-commit events and emits mismatch events.
-- **Expectation monitor ↔ discrepancy memory**: Monitor writes typed discrepancies on mismatch.
+- **Planner ↔ action registry**: Planner reads each `ActionDef`'s `guard_template` / `expectation_template` at plan-build time via `build_plan_guard` / `build_plan_expectations` (pure functions).
+- **Planner ↔ ExpectationStore**: Plan adoption writes `ExpectationRecord`s with `ExpectationBasis::PlanStepCompletion`. Plan completion or replacement clears them.
+- **Revalidation ↔ memory**: `classify_revalidation` reads the envelope (S113) plus `BlockerMemory` (S109) to evaluate invalidators.
+- **ExpectationCheck ↔ event log**: Widened `check_overdue_expectations` reads the agent's `current_plan` via a new read-only belief-view accessor and emits `EventTag::ExpectationMismatch` with the widened `ExpectationMismatchPayload`.
+- **ExpectationCheck ↔ discrepancy memory**: The monitor routes mismatches through S109's `classify_discrepancy` into `DiscrepancyMemory` / `BlockerMemory` by kind.
 
 ## Profile-Driven Parameters
 
 | Parameter | Profile | Type | Default | Purpose |
 |-----------|---------|------|---------|---------|
-| `expectation_tolerance_ticks` | `CognitiveProfile` | `u32` | 2 | Slack added to `observe_by` deadlines per agent |
-| `guard_min_confidence_override` | `CognitiveProfile` | `Permille` | `Permille::new(0)` | Per-agent floor that guard `min_confidence` cannot exceed (a less careful agent can act on weaker beliefs) |
+| `expectation_tolerance_ticks` | `CognitiveProfile` | `u32` | 2 | Slack added to `ExpectationRecord::deadline_tick` for plan-step expectations (maps to `grace_ticks` on the record) |
+| `guard_min_confidence_ceiling` | `CognitiveProfile` | `Permille` | `Permille::new(1000)` | Per-agent ceiling: effective `min_confidence = min(guard.min_confidence, profile.ceiling)`. Lower ceilings let less careful agents act on weaker beliefs. |
+
+Per spec-drafting-rules.md §5, both fields land on the universal `CognitiveProfile` component (already registered on every agent via `spawn_agent()` at `crates/worldwake-cli/src/scenario/mod.rs:421`) and require `#[serde(default = "...")]` so existing scenarios deserialize.
 
 ## Validation and Falsification
 
 ### Unit tests
 
-1. Guard with `TargetPresent` invalidator fires when belief-store shows target moved.
-2. Guard with `min_confidence: 700` fails when `BeliefValue::confidence` is 500.
+1. Guard with `TargetPresent` required fact fires `TargetMoved` invalidator when belief-store envelope returns a different `at_place`.
+2. Guard with `min_confidence: Permille::new(700)` fails when `BeliefValue::confidence` is `Permille::new(500)`.
 3. Irrelevant drift (unrelated merchant restock) does not trigger any guard invalidator.
-4. Expectation `ExpectationKind::Immediate` with `observe_by = tick+5` fires mismatch at tick+6 if no `ActionCommitted` event landed.
+4. `ExpectationKind::Immediate` with `observe_by = tick+5` fires `ExpectationMismatch` at tick+6 if no `ActionCommitted` event landed for the step.
+5. `build_plan_guard` translates a `GuardTemplateSpec::TargetPresent` binding into a concrete `RequiredFact::TargetPresent` using `step.primary_target()` and `step.target_place()`.
+6. `build_plan_guard` returns `None` when `ActionDef::guard_template` is `None`.
+7. `ExpectationBasis::PlanStepCompletion` variant round-trips through `bincode` with other variants unchanged.
+8. `ActionDef` with and without `guard_template = Some(...)` both round-trip through `bincode` and the existing registry load path.
 
 ### Integration tests
 
-5. Existing target-gone golden: with guards, the `BeliefContradicted` replan path is taken, not the `AssumptionFailed` fallback.
-6. Survival scenarios pass: no increase in false-positive guard breaches on trivial paths (eat, sleep, wash).
+9. Existing target-gone golden: with guards, the `Discrepancy::BeliefContradicted` replan path is taken (S109), not the `AssumptionFailed` fallback.
+10. Survival scenarios pass: no increase in false-positive guard breaches on trivial paths (eat, sleep, wash). Specifically `golden_survival_baseline`, `golden_survival_scattered`, `golden_survival_contested` stay green.
+11. `check_overdue_expectations` unit tests continue to pass (existing `RoutineReturn`-basis coverage) and gain a new test that a `PlanStepCompletion` basis transitions `Active → Overdue` and emits `ExpectationMismatch`.
 
 ### Golden test
 
-7. New scenario: agent plans to purchase from merchant A; merchant A departs before arrival. Guard breach fires on arrival tick; `ExpectationMismatch` event appears in event log; `DiscrepancyMemory` records `BeliefContradicted`; agent replans within 2 ticks.
+12. New scenario: agent plans to purchase from merchant A; merchant A departs before arrival. Piggybacks on S113's identity-bound target-location envelope (S113 test 12). Guard breach fires on arrival tick via `classify_revalidation`; `ExpectationMismatch` event appears in event log with `expectation_kind: Some(ExpectationKindTag::State)` and `mismatch_detail: Some(GuardInvalidator(TargetMoved))`; `DiscrepancyMemory` records `Discrepancy::BeliefContradicted`; agent replans within 2 ticks.
 
 ## Outcome
 

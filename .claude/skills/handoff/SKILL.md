@@ -20,7 +20,7 @@ Manual only: `/handoff`
 3. **Load the content rules.** Read `references/checklist.md` before filling sections. Covers fact/guess separation, anti-goals, and what NOT to restate.
 4. **Extract from the live session.** Walk the current conversation and fill each section. Use `Unknown` or `None` when a fact is not present. Never invent.
 5. **Emit the packet in chat.** Copy-paste-ready markdown, starting at the `# RESUME PACKET` header. No preamble, no closing commentary — just the packet.
-6. **Offer to save.** After emitting, ask once: "Save to `.claude/handoffs/latest.md` and a timestamped file?" If yes, write both (`latest.md` overwritten; timestamped file named `YYYY-MM-DDTHHMMSSZ-<slug>.md`).
+6. **Offer to save.** After emitting, ask once: "Save to `.claude/handoffs/latest.md` and a timestamped file?" If yes, write both (`latest.md` overwritten; timestamped file named `YYYY-MM-DDTHHMMSSZ-<slug>.md`). Slug format: kebab-case, ≤40 chars, summarizes the primary task (e.g., `s114-reassess-and-skill-audit`, `observer-perf-triage`). Avoid dates and filler words like "session" or "work".
 
 ## Rules (short)
 

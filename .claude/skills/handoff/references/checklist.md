@@ -32,7 +32,7 @@ Apply all of these when filling the template. If a rule and the user's ask confl
 ## Formatting
 
 - No code excerpts beyond a single line for a tiny quote.
-- No raw command logs. Summarize with `command → pass/fail/exit-N` in §12.
+- No raw command logs. In §12, list cargo/behavioral test commands plus any explicit verification commands the user asked you to run — not routine Read/Grep tool calls or pre-apply anchor checks. Summarize each with `command → pass/fail/exit-N`.
 - Prefer file paths, symbols, IDs, and commands over prose description.
 - Keep each section under ~10 lines of content. If a section grows beyond that, the packet is becoming literary — tighten.
 - Use fenced blocks only for §6 (workspace snapshot) and §16 (paste prompt).
