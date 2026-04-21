@@ -115,6 +115,8 @@ fn emit_expectation_mismatch(
                 .iter()
                 .map(|expected| expected.tag)
                 .collect(),
+            expectation_kind: None,
+            mismatch_detail: None,
         }),
     );
 }
@@ -1049,6 +1051,8 @@ mod tests {
                     goal_key,
                     step_index: 5,
                     expected_materializations: vec![MaterializationTag::SplitOffLot],
+                    expectation_kind: None,
+                    mismatch_detail: None,
                 }
             )
         );

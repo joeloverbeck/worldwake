@@ -1,6 +1,7 @@
 use crate::{
-    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, Discrepancy, EntityId, FrameAssumption,
-    FrameClearReason, GoalKey, MaterializationTag, Permille, SuspensionReason, Tick,
+    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, Discrepancy, EntityId,
+    ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey, MaterializationTag,
+    MismatchDetail, Permille, SuspensionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -215,6 +216,8 @@ pub struct ExpectationMismatchPayload {
     pub goal_key: GoalKey,
     pub step_index: u16,
     pub expected_materializations: Vec<MaterializationTag>,
+    pub expectation_kind: Option<ExpectationKindTag>,
+    pub mismatch_detail: Option<MismatchDetail>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -295,7 +298,8 @@ mod tests {
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
-        FrameAssumption, FrameClearReason, MaterializationTag, SuspensionReason, Tick,
+        ExpectationKindTag, FrameAssumption, FrameClearReason, InvalidatorTag, MaterializationTag,
+        MismatchDetail, ObservationPredicate, SuspensionReason, Tick,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -380,6 +384,18 @@ mod tests {
                 goal_key: sample_goal_key(),
                 step_index: 1,
                 expected_materializations: vec![MaterializationTag::SplitOffLot],
+                expectation_kind: None,
+                mismatch_detail: None,
+            }),
+            DecisionEventPayload::ExpectationMismatch(ExpectationMismatchPayload {
+                agent: entity_id(9, 1),
+                goal_key: sample_goal_key(),
+                step_index: 2,
+                expected_materializations: vec![MaterializationTag::SplitOffLot],
+                expectation_kind: Some(ExpectationKindTag::State),
+                mismatch_detail: Some(MismatchDetail::GuardInvalidator(
+                    InvalidatorTag::TargetMoved,
+                )),
             }),
             DecisionEventPayload::RepairApplied(RepairAppliedPayload {
                 agent: entity_id(10, 0),
@@ -436,6 +452,42 @@ mod tests {
         assert_value_bounds::<ReplanReason>();
         assert_copy_value_bounds::<ActionInterruptReasonTag>();
         assert_value_bounds::<BlockerRecordedPayload>();
+    }
+
+    #[test]
+    fn expectation_mismatch_payload_supports_populated_and_empty_optional_fields() {
+        let empty = ExpectationMismatchPayload {
+            agent: entity_id(20, 0),
+            goal_key: sample_goal_key(),
+            step_index: 3,
+            expected_materializations: vec![MaterializationTag::SplitOffLot],
+            expectation_kind: None,
+            mismatch_detail: None,
+        };
+        let populated = ExpectationMismatchPayload {
+            agent: entity_id(21, 0),
+            goal_key: sample_goal_key(),
+            step_index: 4,
+            expected_materializations: vec![MaterializationTag::SplitOffLot],
+            expectation_kind: Some(ExpectationKindTag::Informed),
+            mismatch_detail: Some(MismatchDetail::ObservationMissing {
+                predicate: ObservationPredicate::EntityPerceivedAtPlace {
+                    entity: entity_id(22, 0),
+                    place: entity_id(23, 0),
+                },
+            }),
+        };
+
+        let encoded_empty = bincode::serialize(&empty).expect("empty payload should serialize");
+        let encoded_populated =
+            bincode::serialize(&populated).expect("populated payload should serialize");
+        let decoded_empty: ExpectationMismatchPayload =
+            bincode::deserialize(&encoded_empty).expect("empty payload should deserialize");
+        let decoded_populated: ExpectationMismatchPayload =
+            bincode::deserialize(&encoded_populated).expect("populated payload should deserialize");
+
+        assert_eq!(decoded_empty, empty);
+        assert_eq!(decoded_populated, populated);
     }
 
     #[test]

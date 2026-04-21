@@ -1,6 +1,6 @@
 # S114PLASTGUA-005: Widen ExpectationMismatchPayload with expectation_kind and mismatch_detail
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `ExpectationMismatchPayload` fields widened per FND-28; `SAVE_FORMAT_VERSION` bump.
@@ -30,10 +30,10 @@ S110 pre-declared that S114 would widen `ExpectationMismatchPayload` in place (`
 
 ## Verification Layers
 
-1. Type contract (`ExpectationMismatchPayload` widened fields compile) → `cargo check -p worldwake-core` + dependent crates.
-2. All 5 construction sites updated (no compile error post-widening) → `cargo build --workspace` succeeds.
-3. Existing tests continue to pass with `expectation_kind: None, mismatch_detail: None` on pre-S114 emission paths → `cargo test -p worldwake-core decision_event_payload`, `cargo test -p worldwake-ai agent_tick::observation`.
-4. Save-format-bump contract → existing `load_format_errors_on_outdated_save` at `save_load.rs:1120` asserts the new value rejects prior saves.
+1. Type contract (`ExpectationMismatchPayload` widened fields compile across the live shared boundary) → `cargo test -p worldwake-core decision_event_payload`, `cargo test -p worldwake-ai agent_tick::observation`, and `cargo test -p worldwake-sim save_load`.
+2. All 5 construction sites updated (no compile or lint fallout post-widening) → focused exact tests plus `cargo clippy --workspace --all-targets -- -D warnings`.
+3. Existing pre-S114 emission paths continue to record `expectation_kind: None, mismatch_detail: None` → `cargo test -p worldwake-ai agent_tick::observation`.
+4. Save-format-bump contract → `cargo test -p worldwake-sim save_load`, including `load_rejects_wrong_version`.
 5. Single-layer ticket: event-log wire format only. Behavioral population of the new fields arrives in tickets 007 (guard-breach path) and 009 (overdue-expectation path).
 
 ## What to Change
@@ -109,13 +109,34 @@ In `crates/worldwake-sim/src/save_load.rs:6`, increment by 1 (relative to whatev
 
 ### New/Modified Tests
 
-1. `crates/worldwake-core/src/decision_event_payload.rs` (modified test at ~line 378) — add populated-detail case.
+1. `crates/worldwake-core/src/decision_event_payload.rs` (new focused test plus updated round-trip fixture) — prove populated-detail and `None` cases.
 2. `crates/worldwake-ai/src/agent_tick/observation.rs` (modified test at ~line 1043) — field-update to new shape.
 3. `crates/worldwake-sim/src/save_load.rs` (modified test at ~line 794) — field-update.
 
 ### Commands
 
 1. `cargo test -p worldwake-core decision_event_payload`
-2. `cargo test -p worldwake-ai agent_tick`
+2. `cargo test -p worldwake-ai agent_tick::observation`
 3. `cargo test -p worldwake-sim save_load`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-22.
+
+- Widened `ExpectationMismatchPayload` in `crates/worldwake-core/src/decision_event_payload.rs` with optional `expectation_kind` and `mismatch_detail` fields, keeping the existing `DecisionEventPayload::ExpectationMismatch` carrier unchanged.
+- Updated all five explicit `ExpectationMismatchPayload { ... }` construction sites to enumerate `expectation_kind: None` and `mismatch_detail: None`, preserving the current pre-S114 materialization-only emission behavior until tickets 007 and 009 populate those fields.
+- Bumped `SAVE_FORMAT_VERSION` in `crates/worldwake-sim/src/save_load.rs` from `38` to `39` so the widened event payload remains an in-place FND-28 save-format change with no backward-compat decode path.
+- Added focused core coverage that round-trips `ExpectationMismatchPayload` both with both optional fields empty and with both populated.
+- Tracking note: `tickets/S114PLASTGUA-005.md` was tracked in this worktree before archival review. This post-ticket-review pass archives it and records the resulting tracked-state outcome in the review report.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib decision_event_payload::tests::expectation_mismatch_payload_supports_populated_and_empty_optional_fields -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::observation::tests::emit_expectation_mismatch_records_expected_tags_and_step_index -- --exact`
+- Passed `cargo test -p worldwake-sim --lib save_load::tests::save_to_bytes_roundtrip_preserves_decision_event_payloads -- --exact`
+- Passed `cargo test -p worldwake-sim --lib save_load::tests::load_rejects_wrong_version -- --exact`
+- Passed `cargo test -p worldwake-core decision_event_payload`
+- Passed `cargo test -p worldwake-ai agent_tick::observation`
+- Passed `cargo test -p worldwake-sim save_load`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

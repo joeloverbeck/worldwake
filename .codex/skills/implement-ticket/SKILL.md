@@ -7,6 +7,8 @@ description: "Implement or reassess a Worldwake ticket. Use when asked to work f
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. If that doc does not cover the exact planner boundary under audit, record the gap and fall back to the landed implementation/spec/ticket chain instead of treating the contract as unknowable. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase. Do not stop at intermediate reassessment or partial fallout; continue until the ticket is completed, fully verified, or blocked by a user decision that requires 1-3-1.
 
+Cargo commands are an explicit exception to the repo's general parallel-read/tool-call habit: run Cargo sequentially throughout this workflow, including `cargo test ... -- --list`, focused tests, compile-only passes, broad crate/workspace tests, and clippy runs. Do not launch multiple Cargo commands in parallel unless the user explicitly asks for that tradeoff.
+
 ## Workflow
 
 ### 0. Classify ticket shape and pick the right path
