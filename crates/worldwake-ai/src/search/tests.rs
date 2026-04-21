@@ -72,6 +72,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         search_exhaustion_backoff_ticks: CognitiveProfile::default()
             .search_exhaustion_backoff_ticks,
         partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
+        expectation_tolerance_ticks: CognitiveProfile::default().expectation_tolerance_ticks,
+        guard_min_confidence_ceiling: CognitiveProfile::default().guard_min_confidence_ceiling,
         repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
         learned_opportunity_memory_ticks: CognitiveProfile::default()
             .learned_opportunity_memory_ticks,

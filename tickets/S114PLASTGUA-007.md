@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `RevalidationOutcome` enum; new `classify_revalidation` fn; refactored `revalidate_next_step`; wired into `BestEffort` action start.
-**Deps**: S114PLASTGUA-002, S114PLASTGUA-003
+**Deps**: `archive/tickets/S114PLASTGUA-002.md`, `tickets/S114PLASTGUA-003.md`
 
 ## Problem
 

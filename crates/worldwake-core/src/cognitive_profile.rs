@@ -70,6 +70,12 @@ pub struct CognitiveProfile {
     /// TTL for partial-execution-drift discrepancies before retry.
     #[serde(default = "default_partial_drift_backoff_ticks")]
     pub partial_drift_backoff_ticks: u32,
+    /// Grace window before a plan-step expectation is treated as overdue.
+    #[serde(default = "default_expectation_tolerance_ticks")]
+    pub expectation_tolerance_ticks: u32,
+    /// Per-agent cap on the minimum confidence required for plan-step guards.
+    #[serde(default = "default_guard_min_confidence_ceiling")]
+    pub guard_min_confidence_ceiling: Permille,
     /// Ticks a successful repair remains ranking-relevant before expiring.
     #[serde(default = "default_repair_memory_ticks")]
     pub repair_memory_ticks: u32,
@@ -120,6 +126,8 @@ impl Default for CognitiveProfile {
             route_unknown_backoff_ticks: default_route_unknown_backoff_ticks(),
             search_exhaustion_backoff_ticks: default_search_exhaustion_backoff_ticks(),
             partial_drift_backoff_ticks: default_partial_drift_backoff_ticks(),
+            expectation_tolerance_ticks: default_expectation_tolerance_ticks(),
+            guard_min_confidence_ceiling: default_guard_min_confidence_ceiling(),
             repair_memory_ticks: default_repair_memory_ticks(),
             learned_opportunity_memory_ticks: default_learned_opportunity_memory_ticks(),
             initial_cooldown_ticks: 4,
@@ -183,6 +191,14 @@ const fn default_partial_drift_backoff_ticks() -> u32 {
     4
 }
 
+const fn default_expectation_tolerance_ticks() -> u32 {
+    2
+}
+
+const fn default_guard_min_confidence_ceiling() -> Permille {
+    Permille::new_unchecked(1000)
+}
+
 const fn default_repair_memory_ticks() -> u32 {
     120
 }
@@ -239,6 +255,11 @@ mod tests {
         assert_eq!(profile.route_unknown_backoff_ticks, 200);
         assert_eq!(profile.search_exhaustion_backoff_ticks, 100);
         assert_eq!(profile.partial_drift_backoff_ticks, 4);
+        assert_eq!(profile.expectation_tolerance_ticks, 2);
+        assert_eq!(
+            profile.guard_min_confidence_ceiling,
+            crate::Permille::new(1000).unwrap()
+        );
         assert_eq!(profile.repair_memory_ticks, 120);
         assert_eq!(profile.learned_opportunity_memory_ticks, 60);
         assert_eq!(profile.initial_cooldown_ticks, 4);
@@ -272,6 +293,8 @@ mod tests {
             route_unknown_backoff_ticks: 201,
             search_exhaustion_backoff_ticks: 101,
             partial_drift_backoff_ticks: 5,
+            expectation_tolerance_ticks: 7,
+            guard_min_confidence_ceiling: crate::Permille::new(875).unwrap(),
             repair_memory_ticks: 144,
             learned_opportunity_memory_ticks: 88,
             initial_cooldown_ticks: 6,
@@ -422,6 +445,52 @@ mod tests {
         assert_eq!(
             profile.learned_opportunity_memory_ticks,
             CognitiveProfile::default().learned_opportunity_memory_ticks
+        );
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_expectation_tolerance_ticks() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                expectation_tolerance_ticks: 9,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_field = serialized
+            .lines()
+            .filter(|line| !line.contains("expectation_tolerance_ticks"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_field).unwrap();
+
+        assert_eq!(
+            profile.expectation_tolerance_ticks,
+            super::default_expectation_tolerance_ticks()
+        );
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_guard_min_confidence_ceiling() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                guard_min_confidence_ceiling: crate::Permille::new(700).unwrap(),
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_field = serialized
+            .lines()
+            .filter(|line| !line.contains("guard_min_confidence_ceiling"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_field).unwrap();
+
+        assert_eq!(
+            profile.guard_min_confidence_ceiling,
+            super::default_guard_min_confidence_ceiling()
         );
     }
 

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — plan-adoption path writes `ExpectationRecord`s into the agent's `ExpectationStore`; new `clear_plan_step_expectations` helper invoked on plan replacement / step completion.
-**Deps**: S114PLASTGUA-002, S114PLASTGUA-003, S114PLASTGUA-004, S114PLASTGUA-006
+**Deps**: `archive/tickets/S114PLASTGUA-002.md`, `tickets/S114PLASTGUA-003.md`, `tickets/S114PLASTGUA-004.md`, `tickets/S114PLASTGUA-006.md`
 
 ## Problem
 

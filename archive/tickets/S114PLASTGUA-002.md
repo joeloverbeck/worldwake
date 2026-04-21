@@ -1,6 +1,6 @@
 # S114PLASTGUA-002: CognitiveProfile expectation-tolerance + guard-confidence-ceiling fields
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — two new `CognitiveProfile` fields (universal agent component); `SAVE_FORMAT_VERSION` bump.
@@ -30,7 +30,7 @@ S114's plan-adoption path (ticket 008) needs `expectation_tolerance_ticks` to se
 1. Field-default contract (defaults match spec) → focused unit test `cognitive_profile_default_matches_split_defaults`.
 2. Round-trip serialization (bincode byte-for-byte) → focused unit test `cognitive_profile_roundtrips_through_bincode`.
 3. Scenario-deserialization opt-in (omitted fields fall back to defaults) → two new `cognitive_profile_deserialization_defaults_*` tests mirroring existing pattern.
-4. Save-format-bump contract (SAVE_FORMAT_VERSION=37) → existing outdated-save-load failure test at `save_load.rs:1122` continues to pass after bump.
+4. Save-format-bump contract (SAVE_FORMAT_VERSION=37) → existing wrong-version rejection test `load_rejects_wrong_version` at `save_load.rs:1116` continues to pass after bump.
 5. Single-layer (core-crate data model only); no downstream behavior change in this ticket — consumers arrive in tickets 007 and 008.
 
 ## What to Change
@@ -76,12 +76,19 @@ Mirror the existing `cognitive_profile_deserialization_defaults_*` pattern for b
 
 ### 5. Bump `SAVE_FORMAT_VERSION`
 
-In `crates/worldwake-sim/src/save_load.rs:6`, change `36` → `37`. The existing `load_format_errors_on_outdated_save` test at `save_load.rs:1120` picks up the new value automatically via `SAVE_FORMAT_VERSION - 1`.
+In `crates/worldwake-sim/src/save_load.rs:6`, change `36` → `37`. The existing `load_rejects_wrong_version` test at `save_load.rs:1116` picks up the new value automatically via `SAVE_FORMAT_VERSION - 1`.
 
 ## Files to Touch
 
 - `crates/worldwake-core/src/cognitive_profile.rs` (modify)
+- `crates/worldwake-core/src/delta.rs` (modify — explicit `ComponentValue::CognitiveProfile` fixture fallout)
 - `crates/worldwake-sim/src/save_load.rs` (modify — version bump)
+- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — explicit `CognitiveProfile` fixture fallout)
+- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — explicit `CognitiveProfile` fixture fallout)
+- `crates/worldwake-ai/src/decision_runtime.rs` (modify — explicit `CognitiveProfile` fixture fallout)
+- `crates/worldwake-ai/src/failure_handling.rs` (modify — explicit `CognitiveProfile` fixture fallout)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — explicit `CognitiveProfile` fixture fallout)
+- `crates/worldwake-ai/src/search/tests.rs` (modify — explicit `CognitiveProfile` fixture fallout)
 
 ## Out of Scope
 
@@ -95,7 +102,7 @@ In `crates/worldwake-sim/src/save_load.rs:6`, change `36` → `37`. The existing
 1. `cognitive_profile_default_matches_split_defaults` — updated assertions for both new fields.
 2. `cognitive_profile_roundtrips_through_bincode` — literal includes both new fields with non-default values.
 3. Two new `cognitive_profile_deserialization_defaults_*` tests for opt-in fallback of each new field.
-4. `load_format_errors_on_outdated_save` at `save_load.rs:1120` passes against the new `SAVE_FORMAT_VERSION=37`.
+4. `load_rejects_wrong_version` at `save_load.rs:1116` passes against the new `SAVE_FORMAT_VERSION=37`.
 5. Existing suite: `cargo test -p worldwake-core cognitive_profile` and `cargo test -p worldwake-sim save_load` stay green.
 
 ### Invariants
@@ -117,3 +124,27 @@ In `crates/worldwake-sim/src/save_load.rs:6`, change `36` → `37`. The existing
 1. `cargo test -p worldwake-core cognitive_profile`
 2. `cargo test -p worldwake-sim save_load`
 3. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-21.
+
+- Added `expectation_tolerance_ticks` and `guard_min_confidence_ceiling` to `CognitiveProfile` with spec-matching serde defaults, `Default` wiring, round-trip coverage, and omitted-field fallback coverage.
+- Bumped `SAVE_FORMAT_VERSION` from `36` to `37` for the serialized `CognitiveProfile` shape change.
+- Absorbed explicit `CognitiveProfile` fixture fallout in `worldwake-core` and `worldwake-ai` that broadened verification exposed.
+
+## Deviations
+
+- The live save-load rejection proof on this branch is `load_rejects_wrong_version`, not the ticket's drafted `load_format_errors_on_outdated_save`; the ticket now records the honest live test seam.
+- Reassessment started as a core+sim substrate ticket, but broadened verification truthfully widened the landed patch set to same-domain explicit `CognitiveProfile` literals in `worldwake-ai` and `worldwake-core/src/delta.rs`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib cognitive_profile::tests::cognitive_profile_default_matches_split_defaults -- --exact`
+- Passed `cargo test -p worldwake-core --lib cognitive_profile::tests::cognitive_profile_roundtrips_through_bincode -- --exact`
+- Passed `cargo test -p worldwake-core --lib cognitive_profile::tests::cognitive_profile_deserialization_defaults_expectation_tolerance_ticks -- --exact`
+- Passed `cargo test -p worldwake-core --lib cognitive_profile::tests::cognitive_profile_deserialization_defaults_guard_min_confidence_ceiling -- --exact`
+- Passed `cargo test -p worldwake-sim --lib save_load::tests::load_rejects_wrong_version -- --exact`
+- Passed `cargo test -p worldwake-core cognitive_profile`
+- Passed `cargo test -p worldwake-sim save_load`
+- Passed `./scripts/verify.sh`
