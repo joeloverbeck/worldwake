@@ -18,7 +18,7 @@ use crate::{
     AcceptedRepairProvenance, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
     ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
     RankedGoal, authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
-    revalidate_next_step, select_best_plan,
+    ranking::OrderedRanked, revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -229,7 +229,7 @@ pub(super) fn summarize_selected_plan(
 }
 
 fn selected_plan_value(
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     selected_plan: &PlannedPlan,
     side_benefit_weight: Permille,
 ) -> Option<PlanValue> {
@@ -339,7 +339,7 @@ pub(super) fn build_candidate_plans(
     world: &worldwake_core::World,
     scheduler: &Scheduler,
     agent: worldwake_core::EntityId,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     committed_opportunity: Option<OpportunityKey>,
     discrepancy_memory: &DiscrepancyMemory,
     blocked_memory: &BlockerMemory,
@@ -355,7 +355,7 @@ pub(super) fn build_candidate_plans(
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
 ) -> CandidatePlanningPass {
     let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
-    let admitted_candidates: Vec<_> = ranked_candidates
+    let mut admitted_candidates: Vec<_> = ranked_candidates
         .iter()
         .filter(|c| {
             opportunity_admitted_by_exhaustion(
@@ -369,6 +369,7 @@ pub(super) fn build_candidate_plans(
         })
         .cloned()
         .collect();
+    let admitted_candidates = crate::ranking::sort_in_place(&mut admitted_candidates);
     let probe_context = feasibility_probe::ProbeContext {
         belief_view: &view,
         discrepancy_memory,
@@ -452,7 +453,8 @@ pub(super) fn build_candidate_plans(
     }
 
     let admitted_by_opportunity = admitted_candidates
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|ranked| {
             (
                 OpportunityKey {
@@ -651,10 +653,10 @@ pub(super) fn selection_candidates(plans: &[CandidatePlanSearch]) -> Vec<Selecti
         .collect()
 }
 
-fn ranked_goal_for_opportunity(
-    ranked_candidates: &[RankedGoal],
+fn ranked_goal_for_opportunity<'a>(
+    ranked_candidates: &'a OrderedRanked<'a>,
     opportunity: OpportunityKey,
-) -> Option<&RankedGoal> {
+) -> Option<&'a RankedGoal> {
     ranked_candidates.iter().find(|candidate| {
         candidate.grounded.key == opportunity.goal_key
             && candidate.grounded.anchor == opportunity.anchor
@@ -663,7 +665,7 @@ fn ranked_goal_for_opportunity(
 
 fn summarize_snapshot_continuation(
     current_opportunity: OpportunityKey,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     planning_switch_margin: Permille,
 ) -> SnapshotContinuationTrace {
     let top = ranked_candidates.first();
@@ -711,7 +713,7 @@ fn summarize_snapshot_continuation(
 fn try_continue_snapshot_plan(
     view: &impl RuntimeBeliefView,
     runtime: &mut AgentDecisionRuntime,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     planning_switch_margin: Permille,
     agent: worldwake_core::EntityId,
     action_defs: &worldwake_sim::ActionDefRegistry,
@@ -853,7 +855,7 @@ fn score_gap(committed_motive: u32, rejected_motive: u32) -> i32 {
 }
 
 fn build_rejected_alternatives(
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     portfolio: &Portfolio,
     committed_goal: worldwake_core::GoalKey,
     committed_motive: u32,
@@ -928,7 +930,7 @@ fn emit_plan_selection_events(
     event_log: &mut EventLog,
     tick: Tick,
     agent: EntityId,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     portfolio: &Portfolio,
     selected_plan: &PlannedPlan,
     max_alternatives: u8,
@@ -1098,7 +1100,7 @@ fn adopt_selected_plan(
     facility_intents: &mut worldwake_core::ContentionIntents,
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     selected_plan: PlannedPlan,
     recipe_registry: &RecipeRegistry,
     tick: Tick,
@@ -1131,7 +1133,7 @@ fn clear_current_plan(
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
 ) {
     if jc.is_some() {
         runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::LostPlan);
@@ -1159,7 +1161,7 @@ pub(super) fn plan_and_validate_next_step(
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     discrepancy_memory: &DiscrepancyMemory,
     blocked_memory: &BlockerMemory,
     default_switch_margin: Permille,
@@ -1322,7 +1324,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     discrepancy_memory: &DiscrepancyMemory,
     blocked_memory: &BlockerMemory,
     default_switch_margin: Permille,
@@ -1771,6 +1773,10 @@ mod tests {
         GoalKey::from(GoalKind::ConsumeOwnedCommodity { commodity })
     }
 
+    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+        crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
+    }
+
     fn consume_opportunity(commodity: CommodityKind, anchor: OpportunityAnchor) -> OpportunityKey {
         OpportunityKey {
             goal_key: consume_goal(commodity),
@@ -2075,7 +2081,7 @@ mod tests {
             &mut facility_intents,
             &view,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             selected_plan,
             &recipes,
             Tick(5),
@@ -2395,7 +2401,7 @@ mod tests {
             &mut event_log,
             tick,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             &Portfolio {
                 slots: BTreeMap::new(),
             },
@@ -2463,7 +2469,7 @@ mod tests {
         }
 
         let posting_place = entity(40);
-        let ranked = vec![
+        let mut ranked = vec![
             ranked_slot_goal(GoalKind::Sleep, 900, OpportunityAnchor::None),
             ranked_slot_goal(
                 GoalKind::PostNotice {
@@ -2488,6 +2494,7 @@ mod tests {
                 OpportunityAnchor::Place(entity(41)),
             ),
         ];
+        let ranked = crate::ranking::sort_in_place(&mut ranked);
         let portfolio = super::assemble_portfolio(&ranked, None, |_| FeasibilityVerdict::Plausible);
         let plausible_slots = portfolio
             .plausible_slots_by_score(&worldwake_core::PortfolioSlotWeights::default())
@@ -2630,7 +2637,7 @@ mod tests {
             &mut event_log,
             tick,
             entity(1),
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             &portfolio,
             &selected_plan,
             4,
@@ -2924,9 +2931,12 @@ mod tests {
                 feasibility: FeasibilityHint::Likely,
             },
         ];
-        let plan_value =
-            selected_plan_value(&ranked_candidates, &plan, Permille::new(100).unwrap())
-                .expect("selected plan should resolve to ranked primary motive");
+        let plan_value = selected_plan_value(
+            &ordered(&ranked_candidates),
+            &plan,
+            Permille::new(100).unwrap(),
+        )
+        .expect("selected plan should resolve to ranked primary motive");
 
         let summary =
             summarize_selected_plan(&plan, 0, &ActionDefRegistry::new(), None, &plan_value);
@@ -3029,10 +3039,10 @@ mod tests {
         };
         let trace = summarize_snapshot_continuation(
             current,
-            &[
+            &ordered(&[
                 ranked_goal_with_score(top, GoalPriorityClass::High, 900),
                 ranked_goal_with_score(current, GoalPriorityClass::High, 800),
-            ],
+            ]),
             Permille::new(150).unwrap(),
         );
 
@@ -3058,10 +3068,10 @@ mod tests {
         };
         let trace = summarize_snapshot_continuation(
             current,
-            &[
+            &ordered(&[
                 ranked_goal_with_score(top, GoalPriorityClass::High, 950),
                 ranked_goal_with_score(current, GoalPriorityClass::High, 800),
-            ],
+            ]),
             Permille::new(150).unwrap(),
         );
 
@@ -3087,10 +3097,10 @@ mod tests {
         };
         let trace = summarize_snapshot_continuation(
             current,
-            &[
+            &ordered(&[
                 ranked_goal_with_score(top, GoalPriorityClass::Critical, 820),
                 ranked_goal_with_score(current, GoalPriorityClass::High, 1000),
-            ],
+            ]),
             Permille::new(300).unwrap(),
         );
 
@@ -3116,7 +3126,7 @@ mod tests {
         };
         let trace = summarize_snapshot_continuation(
             current,
-            &[ranked_goal_with_score(top, GoalPriorityClass::High, 900)],
+            &ordered(&[ranked_goal_with_score(top, GoalPriorityClass::High, 900)]),
             Permille::new(150).unwrap(),
         );
 
@@ -3144,10 +3154,10 @@ mod tests {
         };
         let trace = summarize_snapshot_continuation(
             current,
-            &[
+            &ordered(&[
                 ranked_goal_with_score(top, GoalPriorityClass::High, 801),
                 ranked_goal_with_score(current, GoalPriorityClass::High, 800),
-            ],
+            ]),
             Permille::ZERO,
         );
 
@@ -3243,7 +3253,7 @@ mod tests {
             &world,
             &scheduler,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             None,
             &worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),
@@ -3333,7 +3343,7 @@ mod tests {
             &world,
             &scheduler,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             None,
             &worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),
@@ -3430,7 +3440,7 @@ mod tests {
             &world,
             &scheduler,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             None,
             &worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),
@@ -3682,7 +3692,7 @@ mod tests {
             &mut frame,
             &mut facility_intents,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             &worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),
             worldwake_core::Permille::new(0).unwrap(),
@@ -3994,7 +4004,7 @@ mod tests {
             &world,
             &scheduler,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             None,
             &worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),
@@ -4472,7 +4482,7 @@ mod tests {
             &world,
             &scheduler,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             None,
             &worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),
@@ -4581,7 +4591,7 @@ mod tests {
             &world,
             &scheduler,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             None,
             &worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),
@@ -4663,7 +4673,7 @@ mod tests {
             &world,
             &scheduler,
             agent,
-            &ranked_candidates,
+            &ordered(&ranked_candidates),
             None,
             &worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),

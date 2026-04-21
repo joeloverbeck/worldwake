@@ -1094,9 +1094,13 @@ fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
     .ranked
 }
 
-fn has_goal(ranked: &[RankedGoal], goal: GoalKind) -> bool {
+fn has_goal(ranked: &crate::ranking::OrderedRanked<'_>, goal: GoalKind) -> bool {
     let key = GoalKey::from(goal);
     ranked.iter().any(|candidate| candidate.grounded.key == key)
+}
+
+fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+    crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
 }
 
 fn run_same_place_observation(
@@ -1989,7 +1993,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         &mut jc,
         &mut facility_intents,
         harness.actor,
-        std::slice::from_ref(&goal),
+        &ordered(std::slice::from_ref(&goal)),
         &worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         ProfileFixture::default().switch_margin,
@@ -3330,7 +3334,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &mut jc,
         &mut facility_intents,
         harness.actor,
-        &ranked,
+        &ordered(&ranked),
         &worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         budget.switch_margin,
@@ -3437,7 +3441,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &mut jc2,
         &mut facility_intents,
         harness.actor,
-        &ranked_after_pickup,
+        &ordered(&ranked_after_pickup),
         &worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         budget.switch_margin,
@@ -3740,7 +3744,8 @@ fn trace_planning_outcome_includes_patrol_route_provenance() {
 fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
     let (mut harness, seller, origin, _destination, bread) = hungry_acquisition_harness();
 
-    let before = ranked_goals_at(&mut harness, Tick(1));
+    let mut before = ranked_goals_at(&mut harness, Tick(1));
+    let before = crate::ranking::sort_in_place(&mut before);
     assert!(!has_goal(
         &before,
         GoalKind::AcquireCommodity {
@@ -3771,7 +3776,8 @@ fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
     assert!(belief.alive);
     assert_eq!(belief.source, PerceptionSource::DirectObservation);
 
-    let after = ranked_goals_at(&mut harness, Tick(2));
+    let mut after = ranked_goals_at(&mut harness, Tick(2));
+    let after = crate::ranking::sort_in_place(&mut after);
     assert!(has_goal(
         &after,
         GoalKind::AcquireCommodity {
@@ -3824,7 +3830,8 @@ fn stale_current_place_lot_belief_does_not_emit_consume_owned_goal() {
         .unwrap();
     commit_txn(txn);
 
-    let ranked = ranked_goals_at(&mut harness, Tick(2));
+    let mut ranked = ranked_goals_at(&mut harness, Tick(2));
+    let ranked = crate::ranking::sort_in_place(&mut ranked);
     assert!(
         !has_goal(
             &ranked,
@@ -3848,7 +3855,8 @@ fn unseen_seller_relocation_preserves_stale_acquisition_belief() {
     assert_eq!(harness.world.effective_place(seller), Some(destination));
     assert_eq!(view.effective_place(seller), Some(origin));
 
-    let ranked = ranked_goals_at(&mut harness, Tick(3));
+    let mut ranked = ranked_goals_at(&mut harness, Tick(3));
+    let ranked = crate::ranking::sort_in_place(&mut ranked);
     assert!(
         !has_goal(
             &ranked,
@@ -3896,7 +3904,8 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
     let (mut harness, seller, _local_witness, _origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
-    let before = ranked_goals_at(&mut harness, Tick(1));
+    let mut before = ranked_goals_at(&mut harness, Tick(1));
+    let before = crate::ranking::sort_in_place(&mut before);
     assert!(has_goal(
         &before,
         GoalKind::AcquireCommodity {
@@ -3914,7 +3923,9 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
         Some(destination)
     );
 
-    let after_retention_without_refresh = ranked_goals_at(&mut harness, Tick(10));
+    let mut after_retention_without_refresh = ranked_goals_at(&mut harness, Tick(10));
+    let after_retention_without_refresh =
+        crate::ranking::sort_in_place(&mut after_retention_without_refresh);
     assert!(has_goal(
         &after_retention_without_refresh,
         GoalKind::AcquireCommodity {
@@ -3938,7 +3949,8 @@ fn perception_refresh_preserves_remote_seller_belief_above_activation_threshold(
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
-    let before = ranked_goals_at(&mut harness, Tick(1));
+    let mut before = ranked_goals_at(&mut harness, Tick(1));
+    let before = crate::ranking::sort_in_place(&mut before);
     assert!(has_goal(
         &before,
         GoalKind::AcquireCommodity {
@@ -3983,7 +3995,8 @@ fn perception_refresh_evicts_remote_acquisition_belief_below_activation_threshol
     let (mut harness, seller, local_witness, origin, destination, _bread) =
         stale_remote_acquisition_harness();
 
-    let before = ranked_goals_at(&mut harness, Tick(1));
+    let mut before = ranked_goals_at(&mut harness, Tick(1));
+    let before = crate::ranking::sort_in_place(&mut before);
     assert!(has_goal(
         &before,
         GoalKind::AcquireCommodity {
@@ -4016,7 +4029,8 @@ fn perception_refresh_evicts_remote_acquisition_belief_below_activation_threshol
         .expect("same-place witness should be observed during refresh");
     assert_eq!(local_belief.last_known_place, Some(origin));
 
-    let after = ranked_goals_at(&mut harness, Tick(50));
+    let mut after = ranked_goals_at(&mut harness, Tick(50));
+    let after = crate::ranking::sort_in_place(&mut after);
     assert!(
         !has_goal(
             &after,
@@ -5049,7 +5063,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             &mut jc,
             &mut facility_intents,
             harness.actor,
-            &initial_read.ranked,
+            &ordered(&initial_read.ranked),
             &worldwake_core::DiscrepancyMemory::default(),
             &blocked,
             budget.switch_margin,
@@ -5140,7 +5154,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             &mut jc2,
             &mut facility_intents,
             harness.actor,
-            &continuation_read.ranked,
+            &ordered(&continuation_read.ranked),
             &worldwake_core::DiscrepancyMemory::default(),
             &blocked,
             budget.switch_margin,

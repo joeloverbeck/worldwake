@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — visibility demotions in `worldwake-ai::ranking` (`compare_ranked_goals`: `pub(crate)` → file-private; `RankingOutcome.ranked`: `pub` → `pub(crate)`) + new build-time falsification tests
-**Deps**: S123PREORDAUT-002
+**Deps**: archive/tickets/S123PREORDAUT-002.md
 
 ## Problem
 

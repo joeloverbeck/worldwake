@@ -1,10 +1,25 @@
 # S123PREORDAUT-002: Migrate call sites from &[RankedGoal] to &OrderedRanked<'_>
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — mechanical parameter migration across 8 production files + 1 test-helper in `worldwake-ai` (no behaviour change; signatures only)
 **Deps**: archive/tickets/S123PREORDAUT-001.md
+
+## Outcome
+
+- Migrated the remaining `worldwake-ai` ordered-ranking consumer surface from raw `&[RankedGoal]` / `Option<&[RankedGoal]>` to `&OrderedRanked<'_>` / `Option<&OrderedRanked<'_>>` across `plan_selection.rs`, `side_benefit.rs`, `interrupts.rs`, `agent_tick/{active_action,frame,planning,portfolio,mod}.rs`, and the in-tree helper in `agent_tick/tests.rs`.
+- Replaced the post-feasibility `sort_by(compare_ranked_goals)` in `agent_tick/mod.rs` with `ranking::sort_in_place(&mut ranked_candidates)` and threaded the ordered view through interrupt evaluation, planning, tracing, and goal-switch inference. The deferred `NoCriticalThreat` assumption now also evaluates against an ordered view before feasibility mutation, then the authoritative post-feasibility re-sort rebuilds the ordered view for the rest of the tick.
+- Updated non-`ranking.rs` tests to construct ordered fixtures through `sort_in_place` or `OrderedRanked::from_sorted_for_test`, preserving the production invariant without widening the public construction surface.
+
+## Verification Result
+
+- Passed `cargo fmt --all`
+- Passed `cargo test --workspace --no-run`
+- Passed `cargo test -p worldwake-ai --test golden_portfolio_planning`
+- Passed `cargo test -p worldwake-ai --test golden_ai_decisions`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
 
 ## Problem
 

@@ -18,8 +18,8 @@ use crate::DirtySet;
 use crate::failure_handling::{ExecutionFailure, FailureClassification};
 use crate::{
     AgentDecisionRuntime, DecisionContext, InterruptDecision, PendingRepairContext,
-    PlanFailureContext, PlanTerminalKind, PlannedStep, RankedGoal, classify_frame_plan_relation,
-    evaluate_interrupt, handle_plan_failure, has_frame,
+    PlanFailureContext, PlanTerminalKind, PlannedStep, classify_frame_plan_relation,
+    evaluate_interrupt, handle_plan_failure, has_frame, ranking::OrderedRanked,
 };
 
 pub(super) fn active_action_for_agent(
@@ -56,7 +56,7 @@ pub(super) fn handle_active_action_phase(
     blocked_memory: &mut BlockerMemory,
     discrepancy_memory: &mut DiscrepancyMemory,
     agent: EntityId,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     active_action: &worldwake_sim::ActionInstance,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
