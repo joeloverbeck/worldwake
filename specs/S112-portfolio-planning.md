@@ -211,7 +211,7 @@ pub struct PortfolioSlotTrace {
 }
 ```
 
-`GoalRejectionReason::FeasibilityProbeFailed` already exists in `crates/worldwake-core/src/decision_event_payload.rs:96` and is currently unused. This deliverable *begins using* that variant in `GoalCommittedPayload::rejected_alternatives` for slots rejected by the probe, surfacing probe verdicts on the authoritative decision-history event log (S110) alongside the `PortfolioTrace` in the optional decision-trace sink.
+`GoalRejectionReason::FeasibilityProbeFailed` already exists in `crates/worldwake-core/src/decision_event_payload.rs:96` and is currently unused. Ticket 004 lands only the staged `PortfolioTrace` sink on `PlanningPipelineTrace`; ticket 005 begins using that variant in `GoalCommittedPayload::rejected_alternatives` for slots rejected by the probe, surfacing probe verdicts on the authoritative decision-history event log (S110) alongside the populated `PortfolioTrace`.
 
 ## FND-01 Section H: Causal Hooks
 

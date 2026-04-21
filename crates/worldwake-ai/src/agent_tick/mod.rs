@@ -1149,6 +1149,7 @@ fn process_agent(
                     same_goal_trace: None,
                 }),
                 selection,
+                portfolio: None,
                 execution: execution_trace.unwrap_or(ExecutionTrace {
                     enqueued_step: None,
                     revalidation_passed: None,
