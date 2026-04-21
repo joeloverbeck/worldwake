@@ -37,13 +37,13 @@ Scenarios: 3
 
 **Setup**: Rebuild the exact Forager Lina Eldergrove Forest substrate from `scenarios/cli-evaluation.ron` using the live place graph, Lina's scenario profile values, 8 ground Apples, 5 ground Water, and the `Eldergrove Orchard` Apple source. The run uses the scenario seed `7777` and only seeds Lina's local Eldergrove beliefs, matching the observer report's locality boundary.
 
-**Proves**: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. Late-run planning either switches away from `FreeCarryCapacity` or produces executable disposal work, eating resumes, and hunger falls within the window.
+**Proves**: After the real waste-accumulation phase from the cli-evaluation scenario, Lina no longer enters the observer-reported degenerate loop. The late-run decision window now lawfully includes both planning and active-action execution ticks: when planning occurs it either switches away from `FreeCarryCapacity` or produces executable disposal work, and the overall window still shows resumed eating and falling hunger.
 
 **Cross-system chain**: Eldergrove harvest/eat/waste accumulation -> carry strain assessed from actual carried load -> no spurious `FreeCarryCapacity` loop -> lawful self-care resumes -> late eat commit -> falling hunger.
 
 ### Scenario 144: Obligation satiation allows survival needs to override posting
 
-- Source: `golden_planner_pathology.rs:908`
+- Source: `golden_planner_pathology.rs:928`
 - Systems: Social artifact actions, Needs, AI, Perception
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs

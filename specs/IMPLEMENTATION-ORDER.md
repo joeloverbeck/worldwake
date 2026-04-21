@@ -349,8 +349,8 @@ S108 ✅ archived               S111 ✅ archived
          │
          ├── S110 ✅ archived (soft dep on S109)
          │       │
-         │       ├── S112 (soft dep on S109)
-         │       └── S113 (soft dep on S109)
+         │       ├── S112 ✅ archived (soft dep on S109)
+         │       └── S113 (soft dep on S109, soft dep on S112)
          │
          └── S122 ✅ archived
 ```
@@ -368,10 +368,11 @@ S108 ✅ archived               S111 ✅ archived
   - soft depended on S109 for the `Discrepancy` payload carried by `BlockerRecorded`
 
 **Wave 3** (after Wave 2):
-- **S112**: Portfolio Planning with Feasibility Probes — replace flat top-N selection with 4-slot portfolio (survival / commitment / economic / information) gated by cheap feasibility probes; low-confidence agents activate the information slot.
-  - soft depends on S109 for probe reading of discrepancy/blocker memories
+- **S112**: ✅ COMPLETED — archived at [archive/specs/S112-portfolio-planning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S112-portfolio-planning.md). Landed the portfolio substrate and probe integration ticket wave (`S112PORPLAN-002` through `S112PORPLAN-006`): deterministic survival / commitment / economic slot assembly, staged `PortfolioTrace`, feasibility-probe rejection surfacing through decision history, portfolio-led search ordering with `GoalPriorityClass` still gating slot winners, and the generated golden-doc-backed end-to-end proof of rejected `Sleep` and `ReportMissing` slots ahead of plausible `Bake Bread` production.
+  - soft depended on S109 for probe reading of discrepancy/blocker memories
 - **S113**: Planner-Facing Belief Envelope — `BeliefValue<T>` / `BeliefSet<T>` wrappers on target-presence / believed-location / believed-stock queries; surface confidence, freshness, status (Certain/Probable/Stale/Disputed/Contradicted), and alternatives.
   - soft depends on S109 for `BeliefStatus::Contradicted` alignment
+  - soft depends on S112 for the still-deferred information slot consumer
 
 **Wave 3 adjunct** (Phase 8 critical-path closer):
 - **S122**: ✅ COMPLETED — archived at [archive/specs/S122-frame-assumption-commodity-availability.md](/home/joeloverbeck/projects/worldwake/archive/specs/S122-frame-assumption-commodity-availability.md). Landed the live `FrameAssumption::CommodityAvailableAt` path end to end: goal-derived assumption population, belief/co-location evaluation, failed-assumption trace payloads, survival-golden/falsification-harness proof, and the adjacent survival-path cleanup needed to make the S122 contradiction chain honest in long-run goldens.
@@ -385,15 +386,15 @@ S108 ✅ archived               S111 ✅ archived
 - [ ] Wave 1 specs implemented and passing golden E2E tests
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
+- [x] Portfolio planning golden (infeasible top-N + feasible lower slot) passes
 - [ ] Every `ActionDef` registration has explicit `BindingStrictness` (compile-time coverage)
 - [x] No remaining `BlockingFact::Unknown` or `AssumptionFailed` variants (migrated to typed `Discrepancy`)
 - [x] Authoritative decision history events surfaced in observer "Decision History" section for `survival-baseline.ron`
-- [ ] Portfolio planning golden (infeasible top-N + feasible lower slot) passes
 - [ ] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 
-- Note: Wave 1, S110, and the S122 adjunct are complete. The remaining Phase 8 work is S112 and S113.
+- Note: Wave 1, Wave 2, S112, and the S122 adjunct are complete. The remaining Phase 8 work is S113.
 
 ---
 

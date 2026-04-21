@@ -1,5 +1,7 @@
 # S112: Portfolio Planning with Feasibility Probes
 
+**Status**: COMPLETED
+
 ## Summary
 
 Replace flat top-N candidate selection (`max_candidates_to_plan`, default 2) with a small *portfolio* — a diversified agenda slice composed of: the best urgent survival goal, the best current commitment or obligation, and the best feasible background economic goal. Before committing full tactical search budget, each slot runs a cheap feasibility probe (belief-grounded target reachability, BestEffort affordance existence check, discrepancy-memory filter). Slots that fail the probe are dropped; remaining slots lead the search order by priority class first and score-weighted slot priority second, with later admitted ranked opportunities still eligible behind those slot winners until the normal search-attempt cap stops the pass. This prevents the pathology where the top two candidates are infeasible but the third is trivial — today the agent wastes a tick and looks stuck.
@@ -8,7 +10,7 @@ An information-gathering slot is *deferred to S113*: that slot requires a per-be
 
 ## Phase and Status
 
-Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8: Belief-First Continual Planning Foundation. Status: Completed.
 
 ## Crates
 
@@ -273,8 +275,26 @@ Once S113 lands, an `information: Permille` field (default `Permille::new(600)`)
 
 ## Outcome
 
+Completed: 2026-04-21
+
 Landed in `worldwake-ai` as a portfolio-led planning loop integration. `prioritize_same_goal_replan_candidates` is removed, `PlanningPipelineTrace::portfolio` is populated during planning ticks, and probe-rejected portfolio slots now surface `GoalRejectionReason::FeasibilityProbeFailed` in `GoalCommittedPayload::rejected_alternatives`.
 
 The live integration keeps one truthful deviation from the earlier draft: plausible slot winners lead the searched opportunity order, but remaining admitted ranked opportunities still stay eligible behind them until `max_candidates_to_plan` stops the pass. Within the slot-winner front of that order, higher `GoalPriorityClass` preempts lower-priority commitments before weighted slot score breaks equal-priority ties. This preserves the staged slot substrate and same-goal continuation contract while avoiding a second candidate-admission path.
 
 The landed probe/planning boundary also adds a narrow same-place harvest guard to prevent stale local acquisition beliefs from producing immediately-invalid first steps that would otherwise record spurious contradicted-belief memory before a feasible fallback can win.
+
+Deviations from original plan:
+
+- The shipped portfolio remains a three-slot surface on the live branch. The earlier four-slot draft kept the information slot deferred to S113 because the planner still lacks the belief-envelope carrier that slot requires.
+- The end-to-end golden proof for the completed ticket wave narrowed to the strongest honest live seam: rejected `Sleep` and `ReportMissing` slots ahead of plausible `Bake Bread` production, rather than the earlier commodity-only sketch.
+
+Verification results:
+
+- `cargo test -p worldwake-ai --lib agent_tick::portfolio::tests`
+- `cargo test -p worldwake-ai --lib feasibility_probe::tests`
+- `cargo test -p worldwake-ai decision_trace`
+- `cargo test -p worldwake-ai agent_tick::planning`
+- `cargo test -p worldwake-ai --test golden_portfolio_planning`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`

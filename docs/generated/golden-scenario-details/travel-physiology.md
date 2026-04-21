@@ -37,13 +37,13 @@ Scenarios: 10
 
 **Setup**: One agent at EastFieldTrail (outdoor: Trail + Field) with high travel_bladder_multiplier (pm(800)) and initial bladder near critical threshold (pm(850)). EastFieldTrail is outdoor so relieve_wilderness is locally available. The agent relieves locally without needing to travel.
 
-**Proves**: The AI detects critical bladder pressure and acts on GoalKind::Relieve via locally available relieve_wilderness at an outdoor place. This proves the weaker invariant: critical bladder -> immediate local relief. The stronger travel escalation invariant is covered by golden_travel_bladder_escalation_switches_to_relief_between_legs.
+**Proves**: The AI detects critical bladder pressure and acts on GoalKind::Relieve via locally available relieve_wilderness at an outdoor place. This proves the weaker invariant: critical bladder → immediate local relief. The stronger travel-interrupt invariant is covered by golden_travel_bladder_escalation_switches_to_relief_between_legs.
 
 **Cross-system chain**: high bladder pressure -> Relieve goal ranked highest -> relieve_wilderness available locally -> agent relieves without travel.
 
 ### Scenario 60: Agent Diversity in Travel Escalation
 
-- Source: `golden_travel_physiology.rs:340`
+- Source: `golden_travel_physiology.rs:341`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -61,7 +61,7 @@ Scenarios: 10
 
 ### Scenario 61: Travel Bladder Escalation Switches To Relief Between Legs
 
-- Source: `golden_travel_physiology.rs:517`
+- Source: `golden_travel_physiology.rs:518`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Relieve, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs, Production
@@ -71,15 +71,15 @@ Scenarios: 10
 - Replay tests: None
 - All tests: `golden_travel_bladder_escalation_switches_to_relief_between_legs`
 
-**Setup**: One agent at VillageSquare (indoor: Village tag only, no wilderness relief, no latrine). Hunger at pm(800) (High priority) drives travel toward OrchardFarm. Bladder starts at pm(799). `bladder_rate=70`, `travel_bladder_multiplier=900` -> travel body cost = `70*900/1000 = 63` additional, total `133/tick` during travel. The first travel leg crosses the critical bladder threshold after one tick of travel.
+**Setup**: One agent at VillageSquare (indoor: Village tag only, no wilderness relief, no latrine). Hunger at pm(800) (High priority) drives travel toward OrchardFarm. Bladder starts at pm(799). bladder_rate=70, travel_bladder_multiplier=900 -> travel body cost = 70*900/1000 = 63/tick additional, total 133/tick during travel. The first travel leg crosses the critical bladder threshold after one tick of travel.
 
-**Proves**: Travel body cost escalation can make `Relieve` the critical top challenger during active travel, but the live interrupt policy does not rotate mid-action between self-care goals on `InterruptibleWithPenalty`. Instead, the current travel leg finishes, the next planning seam selects `Relieve`, and the agent performs a relief action.
+**Proves**: Travel body cost escalation can make `Relieve` the critical top challenger during active travel, but the live interrupt policy does not rotate mid-action between self-care goals on `InterruptibleWithPenalty`. Instead, the current travel leg finishes, the next planning seam selects `Relieve`, and the agent performs a relief action. This is the first honest live seam for this scenario.
 
 **Cross-system chain**: hunger pressure -> AcquireCommodity travel starts -> travel body cost raises bladder past critical during travel -> `Relieve` becomes the critical challenger while travel remains active -> no mid-leg self-care interrupt occurs -> next planning seam selects `Relieve` -> relief action commits.
 
 ### Scenario 62: Latrine Preferred — toilet at Latrine place
 
-- Source: `golden_travel_physiology.rs:690`
+- Source: `golden_travel_physiology.rs:735`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -97,7 +97,7 @@ Scenarios: 10
 
 ### Scenario 63: Wilderness Fallback — relieve_wilderness at outdoor place
 
-- Source: `golden_travel_physiology.rs:867`
+- Source: `golden_travel_physiology.rs:912`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -115,7 +115,7 @@ Scenarios: 10
 
 ### Scenario 64: Deprivation Accident — no relief option available
 
-- Source: `golden_travel_physiology.rs:1043`
+- Source: `golden_travel_physiology.rs:1088`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -133,7 +133,7 @@ Scenarios: 10
 
 ### Scenario 65: Witness Observation — co-located agent perceives wilderness relief
 
-- Source: `golden_travel_physiology.rs:1202`
+- Source: `golden_travel_physiology.rs:1247`
 - Systems: Needs, AI, Perception
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -151,7 +151,7 @@ Scenarios: 10
 
 ### Scenario 66: No Witness — isolated agent produces no social consequences
 
-- Source: `golden_travel_physiology.rs:1412`
+- Source: `golden_travel_physiology.rs:1457`
 - Systems: Needs, AI, Perception
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -169,7 +169,7 @@ Scenarios: 10
 
 ### Scenario 67: Need Continuity — cross-path bladder and dirtiness invariants
 
-- Source: `golden_travel_physiology.rs:1604`
+- Source: `golden_travel_physiology.rs:1649`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs

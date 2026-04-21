@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 1: Goal Invalidation by Another Agent
 
-- Source: `golden_ai_decisions.rs:27`
+- Source: `golden_ai_decisions.rs:28`
 - Systems: Needs, Production, Travel, AI
 - GoalKinds: ConsumeOwnedCommodity, AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Travel, Production
@@ -24,7 +24,7 @@ Scenarios: 6
 
 ### Scenario 1b: Unrelated Commodity Change Preserves Frontier Exhaustion
 
-- Source: `golden_ai_decisions.rs:128`
+- Source: `golden_ai_decisions.rs:129`
 - Systems: Needs, AI, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -42,7 +42,7 @@ Scenarios: 6
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:315`
+- Source: `golden_ai_decisions.rs:316`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -58,26 +58,26 @@ Scenarios: 6
 
 **Cross-system chain**: Metabolism tick -> need escalation -> interrupt evaluation -> goal switch -> action termination -> new action start.
 
-### Scenario 5: Blocked Intent Memory with TTL Expiry
+### Scenario 5: Local Depleted Source Regenerates Without Spurious Failure Memory
 
-- Source: `golden_ai_decisions.rs:428`
+- Source: `golden_ai_decisions.rs:429`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
 - Places: OrchardFarm
-- Primary tests: `golden_discrepancy_memory_with_ttl_expiry`
+- Primary tests: `golden_local_depleted_source_regenerates_without_spurious_failure_memory`
 - Replay tests: None
-- All tests: `golden_discrepancy_memory_with_ttl_expiry`
+- All tests: `golden_local_depleted_source_regenerates_without_spurious_failure_memory`
 
 **Setup**: Agent at Orchard Farm, critically hungry. ResourceSource depleted but regenerates at 1/5 ticks.
 
-**Proves**: Depleted source blocks harvest. Resource regeneration restores apples over time. Agent eventually harvests.
+**Proves**: Direct local observation of a depleted source does not create spurious blocker or discrepancy memory before any failed harvest step. Resource regeneration restores apples over time. Agent eventually harvests.
 
 **Cross-system chain**: Depleted resource -> failed plan -> resource regeneration ticks -> successful harvest.
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:547`
+- Source: `golden_ai_decisions.rs:558`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -94,7 +94,7 @@ Scenarios: 6
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1385`
+- Source: `golden_ai_decisions.rs:1396`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

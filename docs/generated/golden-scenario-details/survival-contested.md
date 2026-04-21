@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_contested.rs:373`
+- Source: `golden_survival_contested.rs:382`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -25,7 +25,7 @@ Scenarios: 6
 
 ### Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_contested.rs:422`
+- Source: `golden_survival_contested.rs:431`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -43,7 +43,7 @@ Scenarios: 6
 
 ### Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
 
-- Source: `golden_survival_contested.rs:457`
+- Source: `golden_survival_contested.rs:466`
 - Systems: AI, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Needs, Travel, Production
@@ -61,7 +61,7 @@ Scenarios: 6
 
 ### Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
 
-- Source: `golden_survival_contested.rs:501`
+- Source: `golden_survival_contested.rs:510`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -79,7 +79,7 @@ Scenarios: 6
 
 ### Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_contested.rs:538`
+- Source: `golden_survival_contested.rs:547`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -97,7 +97,7 @@ Scenarios: 6
 
 ### Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_contested.rs:572`
+- Source: `golden_survival_contested.rs:581`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production

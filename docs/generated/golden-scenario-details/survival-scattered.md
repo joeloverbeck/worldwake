@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_scattered.rs:292`
+- Source: `golden_survival_scattered.rs:301`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 154: Scattered Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_scattered.rs:334`
+- Source: `golden_survival_scattered.rs:343`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -43,7 +43,7 @@ Scenarios: 5
 
 ### Scenario 155: Isolated Agent Reaches A Food Source From Ravine Shelter
 
-- Source: `golden_survival_scattered.rs:368`
+- Source: `golden_survival_scattered.rs:377`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 156: Scattered Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_scattered.rs:400`
+- Source: `golden_survival_scattered.rs:409`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -79,7 +79,7 @@ Scenarios: 5
 
 ### Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_scattered.rs:434`
+- Source: `golden_survival_scattered.rs:443`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
