@@ -79,6 +79,7 @@ pub mod obligation;
 pub mod observation_context;
 pub mod offices;
 pub mod patrol;
+pub mod plan_step_guards;
 pub mod production;
 pub mod pursuit;
 pub mod relations;
@@ -224,6 +225,9 @@ pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
 pub use patrol::{PatrolProfile, PatrolRoute};
+pub use plan_step_guards::{
+    ExpectationKindTag, InvalidatorTag, MismatchDetail, ObservationPredicate, StatePredicate,
+};
 pub use production::{
     CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,

@@ -421,7 +421,7 @@ S114 (hard deps on S109, S110, S113)
 ### Active Execution Steps
 
 **Wave 1**:
-- **S114**: Plan Step Guards and Expectation Monitoring — annotate `PlannedStep` with `PlanGuard` (required facts, min confidence, invalidators) and `PlanExpectation` (immediate / state / informed / regression); new `expectation_monitor_system` SystemFn; guard breaches emit `ExpectationMismatch` events and typed discrepancies.
+- **S114**: Plan Step Guards and Expectation Monitoring — annotate `PlannedStep` with `PlanGuard` (required facts, min confidence, invalidators) and `PlanExpectation` (immediate / state / informed / regression); reuse the existing `SystemId::ExpectationCheck` hook plus a new AI-side overdue-mismatch step rather than adding a new `expectation_monitor_system`; `RequiredFact::RouteKnown` binds to the existing `route_exists(...)` belief-view seam, so no separate route-known adjunct spec is required.
 
 **Wave 2** (after Wave 1):
 - **S115**: Agenda Manager with Goal Lifecycle — `AgendaState` with `committed`/`pending`/`suspended` entries, each with origin, freshness, revival trigger, kill condition; rename `GroundedGoal` → `GoalOffer`, `RankedGoal` → `AgendaEntry`; new `agenda_tick_system` SystemFn; margin-based commit (S74) reads the agenda manager. Now also owns the *feasibility-rejection lifecycle classifier* (D4A) that decodes S112's `RejectedBeforeSearch { reason }` into `Satisfied` / `InfeasibleUntil { trigger }` / `Dead` lifecycle states, replacing the S112-era `search_order` special case that kept rejected committed opportunities in the search queue.

@@ -11,9 +11,9 @@ Phase 9: Belief-First Continual Planning Structural. Status: Draft.
 ## Crates
 
 - `worldwake-core` — `ExpectationKind` + `ExpectationKindTag`, `StatePredicate`, `ObservationPredicate` types; new `ExpectationBasis::PlanStepCompletion { step_index, kind_tag }` variant; widen `ExpectationMismatchPayload` per FND-28.
-- `worldwake-ai` — `PlanGuard`, `PlanExpectation` runtime-only types attached to `PlannedStep`; accessor methods on `PlannedStep`; guard/expectation construction at plan-build time; revalidation upgrade in `plan_revalidation.rs`; plan-adoption writes `ExpectationRecord`s into the agent's `ExpectationStore`.
+- `worldwake-ai` — `PlanGuard`, `PlanExpectation` runtime-only types attached to `PlannedStep`; accessor methods on `PlannedStep`; guard/expectation construction at plan-build time; revalidation upgrade in `plan_revalidation.rs`; plan-adoption writes `ExpectationRecord`s into the agent's `ExpectationStore`; new AI-side tick step (D6) reads `PlanStepCompletion`-basis `Overdue` records, emits `EventTag::ExpectationMismatch`, and routes through `classify_discrepancy`.
 - `worldwake-sim` — `ActionDef` gains `guard_template: Option<GuardTemplateSpec>` and `expectation_template: Vec<ExpectationTemplateSpec>` fields (declarative data; serializable). No new SystemFn.
-- `worldwake-systems` — widen existing `check_overdue_expectations` in `expectation_check.rs` to emit `EventTag::ExpectationMismatch` + route through `record_discrepancy` on plan-step expectation overdue transitions.
+- `worldwake-systems` — existing `check_overdue_expectations` in `expectation_check.rs` gains only the mechanical changes required by the new `ExpectationBasis` variant (exhaustive-match arms if any); it does **not** reach into AI-crate types or emit plan-step-specific events. Plan-step interpretation lives in worldwake-ai per D6.
 
 ## Dependencies
 
@@ -36,7 +36,7 @@ Phase 9: Belief-First Continual Planning Structural. Status: Draft.
 - Step-level contract generation by the planner from first principles. Guards and expectations are authored per-action-kind (in each action's registration) plus narrow planner-side augmentations.
 - A new `ActivePlan` ECS component or `step_expectation_state` field. Runtime plan state lives on `AgentDecisionRuntime::current_plan` (runtime-only, `crates/worldwake-ai/src/decision_runtime.rs:152`); persistent per-step expectations are `ExpectationRecord` entries in the agent's existing `ExpectationStore`.
 - A new `expectation_monitor_system` SystemFn or a new `PlanInvalidationReason::GuardBreach` variant. `SystemId::ExpectationCheck` (`crates/worldwake-sim/src/system_manifest.rs:121`) is the authoritative tick-phase hook, and `PlanInvalidationReason::ExpectationMismatch { step_index }` is the authoritative invalidation variant.
-- Route-known envelope accessor. `RequiredFact::RouteKnown` is defined for completeness but lands as a no-op (always-`false` short-circuit on `RouteKnown` guard construction) until a follow-up spec adds a `believed_route_known` envelope accessor — route envelope exposure is explicitly deferred by S113.
+- Confidence-bearing route-belief envelopes. `RequiredFact::RouteKnown` uses the existing `RuntimeBeliefView::route_exists(from, to)` public-topology seam for boolean reachability. This spec does not add a separate confidence/status envelope for route knowledge; if future planning work needs stale/disputed route beliefs rather than boolean route existence, that narrower extension should be scoped then.
 
 ## FOUNDATIONS Alignment
 
@@ -80,9 +80,10 @@ pub struct PlanGuard {
 pub enum RequiredFact {
     TargetPresent { target: EntityId, at_place: EntityId },
     CommodityAvailable { place: EntityId, kind: CommodityKind, min_quantity: Quantity },
-    /// Evaluated as a no-op (`false` short-circuit) until a follow-up spec
-    /// lands `believed_route_known` on the belief envelope. Route envelope
-    /// exposure is explicitly deferred by S113.
+    /// Boolean route reachability already exists on `RuntimeBeliefView`
+    /// through `route_exists(from, to)`, which exposes public topology
+    /// without granting remote entity omniscience. This variant does not
+    /// require a separate S113-style belief envelope.
     RouteKnown { from: EntityId, to: EntityId },
     ResourceAccess { resource: EntityId, agent_holds_permission: bool },
 }
@@ -319,22 +320,28 @@ pub fn classify_revalidation(
 
 Call sites of the existing `revalidate_next_step` continue to compile unchanged. New consumers that need the reason call `classify_revalidation` directly.
 
-### D6: Widen `check_overdue_expectations` to emit `ExpectationMismatch` events
+### D6: Plan-step mismatch emission + discrepancy classification (AI-side tick step)
 
-`crates/worldwake-systems/src/expectation_check.rs::check_overdue_expectations` currently transitions `ExpectationState::Active → Overdue` silently (commits the store update without an event tag specific to plan-step mismatch). Widen it so that when a record whose basis is `ExpectationBasis::PlanStepCompletion { step_index, kind_tag }` transitions to `Overdue`:
+The widening of plan-step expectation overdue handling splits along the `Active → Overdue` seam so it respects the one-way `ai → systems → sim → core` crate dependency graph:
 
-1. Resolve the step via the agent's `AgentDecisionRuntime::current_plan` (read-only access through a new belief-view accessor on `RuntimeBeliefView`). If the plan is absent or `step_index` is out of range, mark the record `Expired` (stale — the plan moved on) and skip emission.
+**Sim-side (unchanged scope).** `crates/worldwake-systems/src/expectation_check.rs::check_overdue_expectations` continues to own the generic `ExpectationState::Active → Overdue` transition for *every* basis variant including `PlanStepCompletion`. It stays in worldwake-systems, stays driven by `SystemId::ExpectationCheck`, and does **not** reach into AI-crate types. No new belief-view accessor is added to `RuntimeBeliefView`. S114 contributes no change to this function's body beyond whatever is mechanically required by the new `ExpectationBasis` variant (exhaustive matches, if any).
+
+**AI-side (new tick step).** Add a new per-agent tick step in worldwake-ai that runs after sim's `ExpectationCheck` phase completes. It iterates the agent's `ExpectationStore`, filters to records where `basis == ExpectationBasis::PlanStepCompletion { step_index, kind_tag }` and `state == Overdue`, and for each:
+
+1. Resolve the step via `AgentDecisionRuntime::current_plan` (direct in-crate access — no trait indirection). If the plan is absent or `step_index` is out of range, transition the record to `Expired` (stale — the plan moved on) and skip emission.
 2. Emit `EventTag::ExpectationMismatch` with a widened `ExpectationMismatchPayload` (D7) carrying the `kind_tag`, the step index, and the `Invalidator`-analogue diagnostic.
-3. Route through S109's `classify_discrepancy` to record into `DiscrepancyMemory` / `BlockerMemory` by `ExpectationKind` class:
+3. Route through `classify_discrepancy` (currently private in `crates/worldwake-ai/src/failure_handling.rs:133`; promote to `pub(crate)` or move to a shared AI-crate helper module so the new tick step can call it) to record into `DiscrepancyMemory` / `BlockerMemory` by `ExpectationKind` class:
    - `ExpectationKind::Immediate` mismatch → `Discrepancy::PartialExecutionDrift`
    - `ExpectationKind::State` mismatch → `Discrepancy::BeliefContradicted`
    - `ExpectationKind::Informed` mismatch → `Discrepancy::MissingObservation`
    - `ExpectationKind::Regression` mismatch → `Discrepancy::BeliefContradicted`
-4. Set the record state to `Resolved { outcome: ReturnedLate }` (or a new outcome variant if none fits — implementation time chooses; this spec does not mandate a new outcome).
+4. Transition the record to `ExpectationState::Resolved { outcome: ReturnedLate }` (implementation time may introduce a new outcome variant if none fits; this spec does not mandate one).
 
-The existing non-plan expectations (`DutyAssignment`, `DeliveryCommitment`, `RoutineReturn`, `EscortObligation`, `SocialPromise`) are unchanged by D6.
+Natural placement: a new module alongside `crates/worldwake-ai/src/agent_tick/observation.rs` (e.g., `agent_tick/plan_step_expectations.rs`), invoked from the agent tick entry point after observation gathering and before planning. Exact placement is implementation-time; the constraint is "same tick, after sim's ExpectationCheck transitions records to Overdue, before the agent re-plans on the fresh discrepancy".
 
-Per the Non-Goals, no new SystemFn is introduced. The placement claim "the first SystemFn added by the Phase 8–9 planner sequence" from the prior draft is removed — `SystemId::ExpectationCheck` is the hook, and it already exists at `system_manifest.rs:121` (pre-Phase 8).
+The existing non-plan expectations (`DutyAssignment`, `DeliveryCommitment`, `RoutineReturn`, `EscortObligation`, `SocialPromise`) are unchanged by D6. Sim's `check_overdue_expectations` continues to own their `Active → Overdue` transitions exactly as today; only `PlanStepCompletion`-basis records grow the AI-side follow-on step.
+
+**Architectural rationale.** This mirrors D4's plan-adoption wiring: the AI crate owns plan-specific interpretation and writes/reads its own `ExpectationRecord`s; sim owns only the generic state transition. The invariant "worldwake-systems does not depend on worldwake-ai" is preserved. No new SystemFn in the sim manifest; `SystemId::ExpectationCheck` (`crates/worldwake-sim/src/system_manifest.rs:121`) remains the sole sim-side hook.
 
 ### D7: Widen `ExpectationMismatchPayload` (FND-28)
 
@@ -403,12 +410,12 @@ Per CLAUDE.md's Authoritative-to-AI Impact Rule, D5 gates step execution and the
 2. **Positive-feedback analysis**: A guard that always breaches → plan always invalidates → replan → same guard breaches. Dampener: S109's per-class discrepancy TTL (`stale_belief_backoff_ticks`, `contradicted_belief_backoff_ticks`, etc.) suppresses the goal until TTL expires. Loops cannot run faster than `min(TTL)` for the relevant discrepancy class.
 3. **Concrete dampeners**: S109 discrepancy TTLs per class. Additionally, `GuardTemplateSpec::min_confidence` is a `Permille` (bounded [0, 1000]) with per-agent `guard_min_confidence_ceiling` so a guard cannot require impossible certainty.
 4. **Stored state vs. derived read-model**:
-   - **Authoritative stored state**: `ExpectationRecord` entries inside `ExpectationStore` components (written at plan adoption, updated by `check_overdue_expectations`), and the event-log entries emitted on mismatch. `ActionDef::guard_template` / `expectation_template` are authored design-time data, saved through the existing `ActionDef` serialization path.
+   - **Authoritative stored state**: `ExpectationRecord` entries inside `ExpectationStore` components (written at plan adoption by the AI crate; transitioned to `Overdue` by sim's `check_overdue_expectations`; transitioned to `Resolved { ReturnedLate }` / `Expired` by the AI-side D6 tick step), and the event-log entries emitted on mismatch. `ActionDef::guard_template` / `expectation_template` are authored design-time data, saved through the existing `ActionDef` serialization path.
    - **Runtime-only**: `PlanGuard` and `Vec<PlanExpectation>` on `PlannedStep`, held by `AgentDecisionRuntime::current_plan`; rebuilt at plan-adoption time by `build_plan_guard` / `build_plan_expectations`. `MismatchDetail` is captured into the event log at mismatch time, then becomes authoritative historical state.
 
 ## SystemFn Integration
 
-**No new SystemFn.** `SystemId::ExpectationCheck` (`crates/worldwake-sim/src/system_manifest.rs:121`) is the authoritative hook, and its backing function `check_overdue_expectations` (`crates/worldwake-systems/src/expectation_check.rs`) is widened per D6. Tick-phase order is unchanged: `Perception → ExpectationCheck → EvidenceDecay → ItemDecay → Patrol → Compaction`.
+**No new SystemFn.** `SystemId::ExpectationCheck` (`crates/worldwake-sim/src/system_manifest.rs:121`) remains the sole sim-side hook for expectation-record lifecycle; its backing function `check_overdue_expectations` keeps its current scope (generic `Active → Overdue` state transition for every basis). Tick-phase order is unchanged: `Perception → ExpectationCheck → EvidenceDecay → ItemDecay → Patrol → Compaction`. The D6 interpretation of `PlanStepCompletion`-basis overdue records (step resolution, event emission, discrepancy classification, `Resolved`/`Expired` transition) runs inside the AI agent-tick sequence — per-agent, after sim phases complete — and is not a registered SystemFn.
 
 ## Component Registration
 
@@ -423,8 +430,9 @@ No new ECS components.
 - **Planner ↔ action registry**: Planner reads each `ActionDef`'s `guard_template` / `expectation_template` at plan-build time via `build_plan_guard` / `build_plan_expectations` (pure functions).
 - **Planner ↔ ExpectationStore**: Plan adoption writes `ExpectationRecord`s with `ExpectationBasis::PlanStepCompletion`. Plan completion or replacement clears them.
 - **Revalidation ↔ memory**: `classify_revalidation` reads the envelope (S113) plus `BlockerMemory` (S109) to evaluate invalidators.
-- **ExpectationCheck ↔ event log**: Widened `check_overdue_expectations` reads the agent's `current_plan` via a new read-only belief-view accessor and emits `EventTag::ExpectationMismatch` with the widened `ExpectationMismatchPayload`.
-- **ExpectationCheck ↔ discrepancy memory**: The monitor routes mismatches through S109's `classify_discrepancy` into `DiscrepancyMemory` / `BlockerMemory` by kind.
+- **Sim `ExpectationCheck` ↔ state**: `check_overdue_expectations` transitions `Active → Overdue` for every basis including `PlanStepCompletion`; no reach into AI-crate types, no emission.
+- **AI tick step ↔ event log**: The new AI-side tick step (D6) iterates `PlanStepCompletion`-basis `Overdue` records, resolves the step via `AgentDecisionRuntime::current_plan`, and emits `EventTag::ExpectationMismatch` with the widened `ExpectationMismatchPayload`.
+- **AI tick step ↔ discrepancy memory**: The same AI-side step routes mismatches through `classify_discrepancy` (AI-crate helper) into `DiscrepancyMemory` / `BlockerMemory` by `ExpectationKind` class, then transitions the record to `Resolved { outcome: ReturnedLate }` or `Expired`.
 
 ## Profile-Driven Parameters
 

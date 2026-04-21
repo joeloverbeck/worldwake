@@ -24,6 +24,7 @@ mod institutional_queries;
 pub mod interrupts;
 pub mod knowledge_path;
 pub mod perf_telemetry;
+pub mod plan_guard;
 pub mod plan_revalidation;
 pub mod plan_selection;
 pub mod planner_duration_contract;
@@ -85,6 +86,7 @@ pub use goal_policy::{
 };
 pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
+pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_revalidation::{is_pursuit_plan_invalid, revalidate_next_step};
 pub use plan_selection::{SelectionPolicy, select_best_plan};
 pub use planner_duration_contract::PlannerDurationDependency;
