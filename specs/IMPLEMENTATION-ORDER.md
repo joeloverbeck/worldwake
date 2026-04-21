@@ -353,7 +353,7 @@ S108 ✅ archived               S111 ✅ archived
          │       │
          │       ├── S112 ✅ archived (soft dep on S109)
          │       │       │
-         │       │       └── S123 (hard dep on S112's public signatures)
+         │       │       └── S123 ✅ archived (hard dep on S112's public signatures)
          │       └── S113 ✅ archived (soft dep on S109, soft dep on S112)
          │
          └── S122 ✅ archived
@@ -383,7 +383,7 @@ S108 ✅ archived               S111 ✅ archived
   - hard depended on S109 (consumed the post-correction `record_assumption_failure` TTL/clearing semantics)
   - soft relationship with S110 remains historical only; S122 itself still did not add a new decision-history `EventTag`
   - soft relationship with S113 remains optional; the landed path uses the live belief surface without requiring the envelope layer first
-- **S123**: Preference-Ordering Authority — `OrderedRanked<'a>` newtype over `&[RankedGoal]` constructible only inside `ranking`; migrate all `&[RankedGoal]` parameter sites; demote `compare_ranked_goals` to file-private; compile-fail doctests and a grep regression to prevent parallel comparator re-introduction. Net-new structural invariant spec motivated by the S112 portfolio-planning regression post-mortem — the parallel `agent_tick::portfolio::compare_ranked_goals` that silently disagreed with `ranking::compare_ranked_goals` on motive-score ties, and the slot-first `search_order` construction that preferred lower-motive survival candidates over higher-motive non-survival candidates, together broke `golden-survival / baseline`. Fixes in the S112 PR closed the behaviour; S123 closes the architectural surface that allowed the divergence to exist.
+- **S123**: ✅ COMPLETED — archived at [archive/specs/S123-preference-ordering-authority.md](/home/joeloverbeck/projects/worldwake/archive/specs/S123-preference-ordering-authority.md). Landed the final preference-ordering authority lock: `compare_ranked_goals` is now file-private, `RankingOutcome.ranked` is `pub(crate)`, `ranking.rs` carries compile-fail doctests for external visibility fences, and the new grep regression prevents any parallel `fn compare_ranked_goals` definition from reappearing under `worldwake-ai/src/`.
   - hard depends on S112 (post-S112 call-site surface is the migration target)
   - soft relationship with S74 (`explain_ranked_goal_order` stays the public "why X outranked Y" surface)
 
@@ -398,11 +398,11 @@ S108 ✅ archived               S111 ✅ archived
 - [x] No remaining `BlockingFact::Unknown` or `AssumptionFailed` variants (migrated to typed `Discrepancy`)
 - [x] Authoritative decision history events surfaced in observer "Decision History" section for `survival-baseline.ron`
 - [x] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
-- [ ] S123 implemented: `OrderedRanked` migration complete; `compare_ranked_goals` file-private; compile-fail doctests and grep regression pass; no parallel comparator definition reachable in-crate
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
-- [ ] `cargo test --workspace` passing
+- [x] S123 implemented: `OrderedRanked` migration complete; `compare_ranked_goals` file-private; compile-fail doctests and grep regression pass; no parallel comparator definition reachable in-crate
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [x] `cargo test --workspace` passing
 
-- Note: Wave 1, Wave 2, Wave 3, and the S122 adjunct are complete. The remaining Phase 8 work is the S123 adjunct.
+- Note: Wave 1, Wave 2, Wave 3, the S122 adjunct, and the S123 adjunct are complete.
 
 ---
 

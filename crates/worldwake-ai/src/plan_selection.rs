@@ -1,8 +1,7 @@
 use crate::{
     AgentDecisionRuntime, FramePlanRelation, GoalKey, GoalPriorityClass, PlanValue, PlannedPlan,
-    RankedGoal, classify_frame_plan_relation,
-    frame_switch_policy::compare_relation_aware_goal_switch, goal_switching::GoalSwitchKind,
-    side_benefit::build_plan_value,
+    classify_frame_plan_relation, frame_switch_policy::compare_relation_aware_goal_switch,
+    goal_switching::GoalSwitchKind, ranking::OrderedRanked, side_benefit::build_plan_value,
 };
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -23,7 +22,7 @@ pub struct SelectionPolicy {
 }
 
 pub fn select_best_plan(
-    candidates: &[RankedGoal],
+    candidates: &OrderedRanked<'_>,
     plans: &[SelectionCandidatePlan],
     active_goal: Option<GoalKey>,
     current: &AgentDecisionRuntime,
@@ -227,6 +226,10 @@ mod tests {
         Permille::new(100).unwrap()
     }
 
+    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+        crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
+    }
+
     fn route_switch_margin() -> Permille {
         Permille::new(300).unwrap()
     }
@@ -308,7 +311,7 @@ mod tests {
         ];
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             None,
             &AgentDecisionRuntime::default(),
@@ -367,7 +370,7 @@ mod tests {
         ];
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             None,
             &AgentDecisionRuntime::default(),
@@ -433,7 +436,7 @@ mod tests {
         ];
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             None,
             &AgentDecisionRuntime::default(),
@@ -487,7 +490,7 @@ mod tests {
         };
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(current_goal),
             &runtime,
@@ -523,7 +526,7 @@ mod tests {
         ];
 
         let first = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             None,
             &AgentDecisionRuntime::default(),
@@ -532,7 +535,7 @@ mod tests {
         )
         .unwrap();
         let second = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             None,
             &AgentDecisionRuntime::default(),
@@ -589,7 +592,7 @@ mod tests {
         ];
 
         let selected = select_best_plan(
-            &[
+            &ordered(&[
                 candidates[0].clone(),
                 candidates[1].clone(),
                 RankedGoal {
@@ -601,7 +604,7 @@ mod tests {
                     },
                     ..candidates[2].clone()
                 },
-            ],
+            ]),
             &plans,
             None,
             &AgentDecisionRuntime::default(),
@@ -661,7 +664,7 @@ mod tests {
         ];
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             None,
             &AgentDecisionRuntime::default(),
@@ -739,7 +742,7 @@ mod tests {
         };
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(current_goal),
             &runtime,
@@ -804,7 +807,7 @@ mod tests {
         };
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(goal),
             &runtime,
@@ -847,7 +850,7 @@ mod tests {
         };
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(eat_goal),
             &runtime,
@@ -887,7 +890,7 @@ mod tests {
         };
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(eat_goal),
             &runtime,
@@ -923,7 +926,7 @@ mod tests {
         };
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(eat_goal),
             &runtime,
@@ -993,7 +996,7 @@ mod tests {
         };
 
         let conservative = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(current_goal),
             &runtime,
@@ -1005,7 +1008,7 @@ mod tests {
         )
         .unwrap();
         let permissive = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(current_goal),
             &runtime,
@@ -1061,7 +1064,7 @@ mod tests {
         };
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(current_goal),
             &runtime,
@@ -1168,7 +1171,7 @@ mod tests {
         };
 
         let selected = select_best_plan(
-            &candidates,
+            &ordered(&candidates),
             &plans,
             Some(committed_goal),
             &runtime,

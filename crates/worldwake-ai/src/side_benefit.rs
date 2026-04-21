@@ -1,4 +1,7 @@
-use crate::{GoalPriorityClass, PlannedPlan, PlannerOpKind, PlanningEntityRef, RankedGoal};
+use crate::{
+    GoalPriorityClass, PlannedPlan, PlannerOpKind, PlanningEntityRef, RankedGoal,
+    ranking::OrderedRanked,
+};
 use std::collections::BTreeSet;
 use worldwake_core::{EntityId, GoalKey, OpportunityAnchor, Permille};
 
@@ -21,7 +24,7 @@ pub struct PlanValue {
 #[must_use]
 pub fn detect_side_benefits(
     plan: &PlannedPlan,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     primary_goal_key: &GoalKey,
     side_benefit_weight: Permille,
 ) -> Vec<SideBenefit> {
@@ -76,7 +79,7 @@ pub fn build_plan_value(
     plan: PlannedPlan,
     priority_class: GoalPriorityClass,
     primary_motive: u32,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     side_benefit_weight: Permille,
 ) -> PlanValue {
     let side_benefits =
@@ -193,6 +196,10 @@ mod tests {
         )
     }
 
+    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+        crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
+    }
+
     #[test]
     fn detect_side_benefits_matches_candidate_place_on_plan_path() {
         let market = entity(10);
@@ -220,7 +227,7 @@ mod tests {
 
         let benefits = detect_side_benefits(
             &plan,
-            &candidates,
+            &ordered(&candidates),
             &primary_goal,
             Permille::new(100).unwrap(),
         );
@@ -273,7 +280,7 @@ mod tests {
 
         let benefits = detect_side_benefits(
             &plan,
-            &candidates,
+            &ordered(&candidates),
             &primary_goal,
             Permille::new(100).unwrap(),
         );
@@ -327,7 +334,7 @@ mod tests {
 
         let benefits = detect_side_benefits(
             &plan,
-            &candidates,
+            &ordered(&candidates),
             &primary_goal,
             Permille::new(100).unwrap(),
         );
@@ -380,7 +387,7 @@ mod tests {
             plan.clone(),
             GoalPriorityClass::High,
             1_000,
-            &candidates,
+            &ordered(&candidates),
             Permille::new(500).unwrap(),
         );
 
@@ -427,8 +434,12 @@ mod tests {
             400,
         )];
 
-        let benefits =
-            detect_side_benefits(&plan, &candidates, &primary_goal, Permille::new(0).unwrap());
+        let benefits = detect_side_benefits(
+            &plan,
+            &ordered(&candidates),
+            &primary_goal,
+            Permille::new(0).unwrap(),
+        );
 
         assert!(benefits.is_empty());
     }

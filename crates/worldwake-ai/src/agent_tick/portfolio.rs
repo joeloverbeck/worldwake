@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::goal_model::RankedGoal;
+use crate::{goal_model::RankedGoal, ranking::OrderedRanked};
 use worldwake_core::{
     CommodityPurpose, Discrepancy, GoalKind, OpportunityKey, PortfolioSlotWeights,
 };
@@ -32,7 +32,7 @@ pub(crate) enum FeasibilityVerdict {
 }
 
 pub(crate) fn assemble_portfolio(
-    ranked: &[RankedGoal],
+    ranked: &OrderedRanked<'_>,
     committed: Option<OpportunityKey>,
     probe: impl Fn(&RankedGoal) -> FeasibilityVerdict,
 ) -> Portfolio {
@@ -95,7 +95,7 @@ impl Portfolio {
 }
 
 fn select_commitment_candidate<'a>(
-    ranked: &'a [RankedGoal],
+    ranked: &'a OrderedRanked<'_>,
     selected: &BTreeSet<OpportunityKey>,
     committed: Option<OpportunityKey>,
 ) -> Option<&'a RankedGoal> {
@@ -125,7 +125,7 @@ fn select_commitment_candidate<'a>(
 /// systematically prefer a lower-ranked goal — a regression against FND-14
 /// (belief-first planning) and the ranking contract.
 fn select_best_candidate<'a>(
-    ranked: &'a [RankedGoal],
+    ranked: &'a OrderedRanked<'_>,
     selected: &BTreeSet<OpportunityKey>,
     predicate: impl Fn(&GoalKind) -> bool,
 ) -> Option<&'a RankedGoal> {
@@ -226,6 +226,7 @@ mod tests {
         GoalPriorityClass,
         feasibility::FeasibilityHint,
         goal_model::{GroundedGoal, RankedGoal},
+        ranking,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
@@ -288,11 +289,12 @@ mod tests {
         // by `ranking::compare_ranked_goals` (highest-preference first) before
         // handing the list to `assemble_portfolio`. Pass candidates in that
         // pre-sorted order here.
-        let ranked = vec![
+        let mut ranked = vec![
             ranked_goal(GoalKind::Sleep, 600, OpportunityAnchor::None),
             ranked_goal(GoalKind::Relieve, 500, OpportunityAnchor::None),
             ranked_goal(GoalKind::Wash, 400, OpportunityAnchor::None),
         ];
+        let ranked = ranking::sort_in_place(&mut ranked);
 
         let portfolio = assemble_portfolio(&ranked, None, |_| FeasibilityVerdict::Plausible);
 
@@ -321,7 +323,8 @@ mod tests {
             OpportunityAnchor::Place(entity(3)),
         );
         let committed = Some(opportunity_key(&committed_goal));
-        let ranked = vec![higher_motive, committed_goal.clone()];
+        let mut ranked = vec![higher_motive, committed_goal.clone()];
+        let ranked = ranking::sort_in_place(&mut ranked);
 
         let portfolio = assemble_portfolio(&ranked, committed, |_| FeasibilityVerdict::Plausible);
 
@@ -337,7 +340,7 @@ mod tests {
 
     #[test]
     fn commitment_slot_falls_back_to_highest_obligation_when_commitment_unranked() {
-        let ranked = vec![
+        let mut ranked = vec![
             ranked_goal(
                 GoalKind::ReportFound {
                     subject: entity(7),
@@ -352,6 +355,7 @@ mod tests {
                 OpportunityAnchor::Place(entity(11)),
             ),
         ];
+        let ranked = ranking::sort_in_place(&mut ranked);
         let missing_commitment = Some(OpportunityKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
             anchor: OpportunityAnchor::None,
@@ -376,7 +380,7 @@ mod tests {
 
     #[test]
     fn self_consume_acquire_populates_survival_slot() {
-        let ranked = vec![
+        let mut ranked = vec![
             ranked_goal(
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
@@ -394,6 +398,7 @@ mod tests {
                 OpportunityAnchor::Place(entity(22)),
             ),
         ];
+        let ranked = ranking::sort_in_place(&mut ranked);
 
         let portfolio = assemble_portfolio(&ranked, None, |_| FeasibilityVerdict::Plausible);
 
@@ -481,7 +486,7 @@ mod tests {
         // so Critical Relieve leads High-priority apple even though apple has
         // the higher raw motive. Tests that feed `assemble_portfolio` must
         // preserve that sort order because the portfolio trusts the list.
-        let ranked = vec![
+        let mut ranked = vec![
             ranked_goal_with_priority(
                 GoalKind::Relieve,
                 GoalPriorityClass::Critical,
@@ -498,6 +503,7 @@ mod tests {
                 OpportunityAnchor::Place(entity(40)),
             ),
         ];
+        let ranked = ranking::sort_in_place(&mut ranked);
 
         let portfolio = assemble_portfolio(&ranked, None, |_| FeasibilityVerdict::Plausible);
         let survival = portfolio

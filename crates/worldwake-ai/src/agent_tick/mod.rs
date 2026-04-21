@@ -40,7 +40,7 @@ use crate::decision_trace::{
 };
 use crate::{
     AcceptedRepairProvenance, AgentDecisionRuntime, PlannerOpSemantics, authoritative_target,
-    build_semantics_table, frame_runtime_snapshot,
+    build_semantics_table, frame_runtime_snapshot, ranking::OrderedRanked,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -331,7 +331,7 @@ fn map_pursuit_invalidation_reason(
 fn infer_goal_switch_reason(
     previous_goal: worldwake_core::GoalKey,
     new_goal: worldwake_core::GoalKey,
-    ranked_candidates: &[crate::RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
 ) -> GoalSwitchReason {
     let previous = ranked_candidates
         .iter()
@@ -814,7 +814,7 @@ fn process_agent(
             &read_result.pending_acquisition_exhaustion_resets,
         )?;
     }
-    let ranked_candidates = read_result.ranked;
+    let mut ranked_candidates = read_result.ranked;
 
     // ── Deferred NoCriticalThreat evaluation ──
     // Now that ranked candidates are available, evaluate NoCriticalThreat
@@ -827,6 +827,7 @@ fn process_agent(
             .iter()
             .any(|a| matches!(a, worldwake_core::FrameAssumption::NoCriticalThreat));
         if has_no_critical_threat {
+            let ordered = crate::ranking::sort_in_place(&mut ranked_candidates);
             let deferred_eval = evaluate_assumptions(
                 &[worldwake_core::FrameAssumption::NoCriticalThreat],
                 &runtime_belief_view(
@@ -837,7 +838,7 @@ fn process_agent(
                     recipe_registry,
                 ),
                 agent,
-                Some(&ranked_candidates),
+                Some(&ordered),
             );
             if matches!(
                 deferred_eval,
@@ -861,7 +862,6 @@ fn process_agent(
     }
 
     // ── Feasibility annotation and re-sort ──
-    let mut ranked_candidates = ranked_candidates;
     {
         let view = runtime_belief_view(
             agent,
@@ -880,8 +880,8 @@ fn process_agent(
                 tick,
             );
         }
-        ranked_candidates.sort_by(crate::ranking::compare_ranked_goals);
     }
+    let ordered = crate::ranking::sort_in_place(&mut ranked_candidates);
 
     let active_action = active_action_for_agent(ctx, agent);
     let frame_switch_margin = {
@@ -909,7 +909,7 @@ fn process_agent(
             &mut blocked_memory,
             &mut discrepancy_memory,
             agent,
-            &ranked_candidates,
+            &ordered,
             &active_action,
             default_switch_margin,
             frame_switch_margin,
@@ -940,10 +940,10 @@ fn process_agent(
             let action_name = action_defs
                 .get(active_action.def_id)
                 .map_or_else(|| "unknown".to_owned(), |def| def.name.clone());
-            let top_challenger = ranked_candidates.first().map(summarize_ranked_goal);
+            let top_challenger = ordered.first().map(summarize_ranked_goal);
             let top_challenger_comparison = active_goal_before_interrupt.and_then(|current_goal| {
-                let challenger = ranked_candidates.first()?;
-                let current = ranked_candidates
+                let challenger = ordered.first()?;
+                let current = ordered
                     .iter()
                     .find(|candidate| candidate.grounded.key == current_goal)?;
                 crate::ranking::explain_ranked_goal_order(challenger, current)
@@ -991,7 +991,7 @@ fn process_agent(
             &mut current_frame,
             &mut current_facility_intents,
             agent,
-            &ranked_candidates,
+            &ordered,
             &discrepancy_memory,
             &blocked_memory,
             default_switch_margin,
@@ -1103,16 +1103,12 @@ fn process_agent(
                 fully_blocked_desires: read_result.fully_blocked_desires,
                 places_reachable: read_result.places_reachable,
                 places_after_belief_filter: read_result.places_after_belief_filter,
-                ranked: ranked_candidates
-                    .iter()
-                    .map(summarize_ranked_goal)
-                    .collect(),
-                top_ranked_comparison: ranked_candidates
-                    .first()
-                    .zip(ranked_candidates.get(1))
-                    .and_then(|(winner, runner_up)| {
+                ranked: ordered.iter().map(summarize_ranked_goal).collect(),
+                top_ranked_comparison: ordered.first().zip(ordered.as_slice().get(1)).and_then(
+                    |(winner, runner_up)| {
                         crate::ranking::explain_ranked_goal_order(winner, runner_up)
-                    }),
+                    },
+                ),
                 suppressed: read_result
                     .suppressed
                     .iter()
@@ -1328,11 +1324,7 @@ fn process_agent(
                 if let Some(new_goal) = current_active_goal.map(|goal| goal.goal_key) {
                     GoalAbandonReason::GoalSwitched {
                         new_goal,
-                        switch_kind: infer_goal_switch_reason(
-                            previous_goal,
-                            new_goal,
-                            &ranked_candidates,
-                        ),
+                        switch_kind: infer_goal_switch_reason(previous_goal, new_goal, &ordered),
                     }
                 } else if let Some(reason) = runtime.last_frame_clear_reason {
                     GoalAbandonReason::FrameCleared { reason }

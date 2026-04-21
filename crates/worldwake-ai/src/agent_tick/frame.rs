@@ -2,7 +2,7 @@ use crate::{
     AgentDecisionRuntime, DirtySet, FrameRuntimeSnapshot, PatrolRouteSnapshotTrace, PlannedStep,
     PlannerOpKind, authoritative_target, classify_frame_plan_relation, has_active_frame_travel,
 };
-use crate::{GoalPriorityClass, RankedGoal};
+use crate::{GoalPriorityClass, ranking::OrderedRanked};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, CommodityKind,
     ContentionIntents, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
@@ -340,7 +340,7 @@ pub(super) fn evaluate_assumptions(
     assumptions: &[FrameAssumption],
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
-    ranked_candidates: Option<&[RankedGoal]>,
+    ranked_candidates: Option<&OrderedRanked<'_>>,
 ) -> AssumptionEvalResult {
     let mut has_deferred = false;
 
@@ -841,6 +841,10 @@ mod tests {
         }
     }
 
+    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+        crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
+    }
+
     fn observed_entity_state(place: EntityId) -> BelievedEntityState {
         let mut state = BelievedEntityState::single_observation_defaults(
             Tick(0),
@@ -1100,7 +1104,7 @@ mod tests {
             &[FrameAssumption::TargetAlive(dead_entity)],
             &view,
             make_entity(0),
-            Some(&[]),
+            Some(&ordered(&[])),
         );
         assert!(matches!(
             result,
@@ -1119,7 +1123,7 @@ mod tests {
             &[FrameAssumption::RouteExists { from, to }],
             &view,
             make_entity(0),
-            Some(&[]),
+            Some(&ordered(&[])),
         );
         assert_eq!(
             result,
@@ -1136,7 +1140,7 @@ mod tests {
             &[FrameAssumption::NoCriticalThreat],
             &view,
             make_entity(0),
-            Some(&candidates),
+            Some(&ordered(&candidates)),
         );
         assert_eq!(
             result,
@@ -1160,7 +1164,7 @@ mod tests {
             ],
             &view,
             make_entity(0),
-            Some(&[]),
+            Some(&ordered(&[])),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
     }
@@ -1195,7 +1199,7 @@ mod tests {
             }],
             &view,
             agent,
-            Some(&[]),
+            Some(&ordered(&[])),
         );
         assert_eq!(
             result,
@@ -1227,7 +1231,7 @@ mod tests {
             }],
             &view,
             agent,
-            Some(&[]),
+            Some(&ordered(&[])),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
     }
@@ -1246,7 +1250,7 @@ mod tests {
             }],
             &view,
             agent,
-            Some(&[]),
+            Some(&ordered(&[])),
         );
         assert_eq!(result, AssumptionEvalResult::Deferred);
     }
@@ -1277,7 +1281,7 @@ mod tests {
             }],
             &view,
             agent,
-            Some(&[]),
+            Some(&ordered(&[])),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
     }

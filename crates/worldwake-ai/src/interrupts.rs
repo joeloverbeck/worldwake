@@ -5,6 +5,7 @@ use crate::{
     goal_policy::{FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{GoalSwitchKind, compare_goal_switch},
     plan_selection::SelectionCandidatePlan,
+    ranking::OrderedRanked,
 };
 use std::collections::BTreeMap;
 use worldwake_core::{IntentionFrame, Permille};
@@ -32,7 +33,7 @@ pub fn evaluate_interrupt(
     active_goal: Option<GoalKey>,
     jc: Option<&IntentionFrame>,
     current_action_interruptibility: Interruptibility,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     planned_candidates: Option<&[SelectionCandidatePlan]>,
     plan_valid: bool,
     default_switch_margin: Permille,
@@ -132,7 +133,7 @@ fn interrupt_freely(
     runtime: &AgentDecisionRuntime,
     jc: Option<&IntentionFrame>,
     challenger: &RankedGoal,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
     planned_candidates: Option<&[SelectionCandidatePlan]>,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
@@ -219,7 +220,7 @@ fn interrupt_freely(
 fn relation_aware_interrupt_candidate<'a>(
     active_goal: Option<GoalKey>,
     jc: Option<&IntentionFrame>,
-    ranked_candidates: &'a [RankedGoal],
+    ranked_candidates: &'a OrderedRanked<'_>,
     planned_candidates: Option<&'a [SelectionCandidatePlan]>,
     current_class: GoalPriorityClass,
     current_motive: Option<u32>,
@@ -275,10 +276,10 @@ fn relation_aware_interrupt_candidate<'a>(
     None
 }
 
-fn best_challenger(
+fn best_challenger<'a>(
     current_goal: Option<GoalKey>,
-    ranked_candidates: &[RankedGoal],
-) -> Option<&RankedGoal> {
+    ranked_candidates: &'a OrderedRanked<'a>,
+) -> Option<&'a RankedGoal> {
     ranked_candidates
         .iter()
         .find(|candidate| Some(candidate.grounded.key) != current_goal)
@@ -287,7 +288,7 @@ fn best_challenger(
 fn current_priority(
     active_goal: Option<GoalKey>,
     runtime: &AgentDecisionRuntime,
-    ranked_candidates: &[RankedGoal],
+    ranked_candidates: &OrderedRanked<'_>,
 ) -> Option<(GoalPriorityClass, Option<u32>)> {
     if let Some(current_goal) = active_goal
         && let Some(current) = ranked_candidates
@@ -378,6 +379,10 @@ mod tests {
         }
     }
 
+    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+        crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
+    }
+
     #[test]
     fn non_interruptible_actions_ignore_even_critical_challengers() {
         let current_goal = GoalKind::RestockCommodity {
@@ -393,7 +398,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::NonInterruptible,
-            &challengers,
+            &ordered(&challengers),
             None,
             true,
             default_switch_margin(),
@@ -419,7 +424,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
-            &challengers,
+            &ordered(&challengers),
             None,
             true,
             default_switch_margin(),
@@ -450,7 +455,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
-            &challengers,
+            &ordered(&challengers),
             None,
             true,
             default_switch_margin(),
@@ -471,11 +476,11 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
-            &[ranked(
+            &ordered(&[ranked(
                 GoalKind::ReduceDanger,
                 GoalPriorityClass::Critical,
                 1_000,
-            )],
+            )]),
             None,
             false,
             default_switch_margin(),
@@ -501,7 +506,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
-            &challengers,
+            &ordered(&challengers),
             None,
             false,
             default_switch_margin(),
@@ -533,7 +538,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
-            &challengers,
+            &ordered(&challengers),
             None,
             true,
             default_switch_margin(),
@@ -564,7 +569,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
-            &challengers,
+            &ordered(&challengers),
             None,
             true,
             default_switch_margin(),
@@ -597,7 +602,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::FreelyInterruptible,
-            &challengers,
+            &ordered(&challengers),
             None,
             true,
             default_switch_margin(),
@@ -681,7 +686,7 @@ mod tests {
                 active_goal,
                 jc.as_ref(),
                 Interruptibility::FreelyInterruptible,
-                &below_margin,
+                &ordered(&below_margin),
                 None,
                 true,
                 default_switch_margin(),
@@ -696,7 +701,7 @@ mod tests {
                 active_goal,
                 jc.as_ref(),
                 Interruptibility::FreelyInterruptible,
-                &at_margin,
+                &ordered(&at_margin),
                 None,
                 true,
                 default_switch_margin(),
@@ -757,7 +762,7 @@ mod tests {
                 })),
                 None,
                 Interruptibility::FreelyInterruptible,
-                &no_pressure,
+                &ordered(&no_pressure),
                 None,
                 true,
                 default_switch_margin(),
@@ -781,7 +786,7 @@ mod tests {
                 })),
                 None,
                 Interruptibility::FreelyInterruptible,
-                &blocked_by_hunger,
+                &ordered(&blocked_by_hunger),
                 None,
                 true,
                 default_switch_margin(),
@@ -811,7 +816,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::FreelyInterruptible,
-            &challengers,
+            &ordered(&challengers),
             None,
             true,
             default_switch_margin(),
@@ -899,7 +904,7 @@ mod tests {
             Some(current_goal_key),
             jc.as_ref(),
             Interruptibility::FreelyInterruptible,
-            &challengers,
+            &ordered(&challengers),
             Some(&planned_candidates),
             true,
             default_switch_margin(),
@@ -911,7 +916,7 @@ mod tests {
             Some(current_goal_key),
             jc.as_ref(),
             Interruptibility::FreelyInterruptible,
-            &challengers,
+            &ordered(&challengers),
             Some(&planned_candidates),
             true,
             default_switch_margin(),
@@ -972,7 +977,7 @@ mod tests {
                 None,
                 None,
                 Interruptibility::InterruptibleWithPenalty,
-                &challengers,
+                &ordered(&challengers),
                 None,
                 true,
                 default_switch_margin(),
@@ -1005,7 +1010,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::FreelyInterruptible,
-            &challengers,
+            &ordered(&challengers),
             None,
             true,
             default_switch_margin(),
@@ -1038,7 +1043,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::FreelyInterruptible,
-            &challengers_higher,
+            &ordered(&challengers_higher),
             None,
             true,
             default_switch_margin(),
@@ -1062,7 +1067,7 @@ mod tests {
             Some(GoalKey::from(current_goal)),
             None,
             Interruptibility::InterruptibleWithPenalty,
-            &challengers_critical,
+            &ordered(&challengers_critical),
             None,
             true,
             default_switch_margin(),
@@ -1082,10 +1087,10 @@ mod tests {
             Some(GoalKey::from(raid_goal)),
             None,
             Interruptibility::FreelyInterruptible,
-            &[
+            &ordered(&[
                 ranked(raid_goal, GoalPriorityClass::Medium, 100),
                 ranked(danger_goal, GoalPriorityClass::High, 900),
-            ],
+            ]),
             None,
             true,
             default_switch_margin(),
@@ -1104,10 +1109,10 @@ mod tests {
             Some(GoalKey::from(danger_goal)),
             None,
             Interruptibility::FreelyInterruptible,
-            &[
+            &ordered(&[
                 ranked(danger_goal, GoalPriorityClass::High, 900),
                 ranked(raid_goal, GoalPriorityClass::Medium, 1000),
-            ],
+            ]),
             None,
             true,
             default_switch_margin(),
@@ -1228,7 +1233,7 @@ mod tests {
             Some(committed_goal),
             jc.as_ref(),
             Interruptibility::FreelyInterruptible,
-            &challengers,
+            &ordered(&challengers),
             Some(&planned_candidates),
             true,
             default_switch_margin(),

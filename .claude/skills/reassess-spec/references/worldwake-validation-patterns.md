@@ -135,3 +135,13 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 **Analog failure modes already covered**: Code example fidelity (3.3) catches structural mismatches in code snippets; Pseudocode dependency completeness (3.3) catches missing symbols in proposed pseudocode. Fabricated-migration fills the gap between them: it names an *explicit* failure mode where the spec's "before" side is entirely fictional, and it prescribes the grep-every-Before-signature check as the early-warning check.
 
 **Flag as CRITICAL Issue**: The spec's migration framing is false. Recommend reframing affected D-sections as net-new additions, deleting any `*_crisp` / `*_old` / shim discussion (nothing to shim), and rewriting Summary/Design Goals to describe the gap filled by the new methods rather than the migration of non-existent ones. Also reframe any consumer-migration D-section ("emitters currently check X.is_some()…") as net-new consumer integration, because consumers cannot be migrating code that never existed.
+
+## Proposed Visibility Qualifier Audit
+
+**Trigger**: Spec proposes a new type, function, or field with an explicit Rust visibility qualifier (`pub`, `pub(crate)`, `pub(super)`, `pub(in path)`) and the surrounding prose claims a specific reachability ("only from within X", "not reachable outside Y", "external crates cannot construct Z").
+
+**Verify the spec addresses**:
+
+1. The proposed qualifier's effective scope, given the host module's actual placement in the crate tree, matches the prose claim. `pub(super)` in a crate-root module is visible to the entire crate — functionally equivalent to `pub(crate)` for most intents. To restrict construction to the defining module only, the correct qualifier is no qualifier (file-private) or `pub(self)`.
+2. If the prose claims "only reachable from X" and the qualifier permits a broader scope, flag as a HIGH Issue. Recommend either tightening the qualifier or rewriting the prose to match the delivered scope.
+3. If the spec proposes a constructor that must be invoked from multiple crates (the D3-style "call sites construct the type at each site" pattern), the prose "only reachable from X" is often incompatible with the required call-site pattern. Recommend restructuring the API so the authoritative producer returns the type directly, making external construction unnecessary.
