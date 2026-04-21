@@ -2,7 +2,7 @@
 
 ## Summary
 
-Replace flat top-N candidate selection (`max_candidates_to_plan`, default 2) with a small *portfolio* — a diversified agenda slice composed of: the best urgent survival goal, the best current commitment or obligation, and the best feasible background economic goal. Before committing full tactical search budget, each slot runs a cheap feasibility probe (belief-grounded target reachability, BestEffort affordance existence check, discrepancy-memory filter). Slots that fail the probe are dropped; remaining slots proceed to full search in score-weighted order. This prevents the pathology where the top two candidates are infeasible but the third is trivial — today the agent wastes a tick and looks stuck.
+Replace flat top-N candidate selection (`max_candidates_to_plan`, default 2) with a small *portfolio* — a diversified agenda slice composed of: the best urgent survival goal, the best current commitment or obligation, and the best feasible background economic goal. Before committing full tactical search budget, each slot runs a cheap feasibility probe (belief-grounded target reachability, BestEffort affordance existence check, discrepancy-memory filter). Slots that fail the probe are dropped; remaining slots lead the search order by priority class first and score-weighted slot priority second, with later admitted ranked opportunities still eligible behind those slot winners until the normal search-attempt cap stops the pass. This prevents the pathology where the top two candidates are infeasible but the third is trivial — today the agent wastes a tick and looks stuck.
 
 An information-gathering slot is *deferred to S113*: that slot requires a per-belief confidence/freshness envelope accessor that does not yet exist. Once S113 lands, S112's portfolio gains the information slot as a follow-up.
 
@@ -97,7 +97,7 @@ If a goal ties between categories (e.g., `PostNotice` is both an obligation and 
 
 The information slot is **not categorized in this spec**. Its `SlotKind` variant is reserved (commented out in D1) and added in the S113 follow-up once a per-belief confidence accessor exists.
 
-This deliverable replaces the current `prioritize_same_goal_replan_candidates` pre-step (`crates/worldwake-ai/src/agent_tick/planning.rs:405-437`). Same-goal sibling clustering is subsumed: the commitment slot explicitly surfaces the current commitment; when it fails search, the `plausible_slots_by_score` loop moves to the next slot rather than retrying sibling anchors. Multi-anchor retry is explicitly deferred to Phase 9 per Non-Goals.
+This deliverable replaces the current `prioritize_same_goal_replan_candidates` pre-step (`crates/worldwake-ai/src/agent_tick/planning.rs`). The commitment slot now subsumes that **pre-search clustering** role by explicitly surfacing the current commitment when still ranked. The later `same_goal_trace` continuation contract documented in `docs/planner-contracts.md` remains live after portfolio admission determines the searched opportunity order. Multi-anchor retry beyond that admitted sequence is explicitly deferred to Phase 9 per Non-Goals.
 
 ### D3: Feasibility probe
 
@@ -129,26 +129,32 @@ let portfolio = assemble_portfolio(
     |ranked| feasibility_probe::probe(ranked, &probe_context),
 );
 let plausible_slots = portfolio.plausible_slots_by_score(&cognitive.slot_weights);
-for (_kind, slot) in plausible_slots
+let mut search_order = plausible_slots
+    .iter()
+    .map(|(kind, _)| portfolio.slots[kind].ranked.opportunity_key())
+    .collect::<Vec<_>>();
+for ranked in &ranked_goals {
+    if !search_order.contains(&ranked.opportunity_key()) {
+        search_order.push(ranked.opportunity_key());
+    }
+}
+for opportunity in search_order
     .iter()
     .take(usize::from(cognitive.max_candidates_to_plan))
 {
-    match try_plan(&slot.ranked, &planning_context) {
+    match try_plan(opportunity, &planning_context) {
         PlanOutcome::Success(plan) => return Some(plan),
-        PlanOutcome::Failure(discrepancy) => {
-            record_blocker_or_discrepancy(discrepancy, &slot.ranked, &mut runtime);
-            continue;
-        }
+        PlanOutcome::Failure(_) => continue,
     }
 }
 None
 ```
 
-`max_candidates_to_plan` bounds the *number of portfolio slots we actually search*, not the ranking depth. The portfolio itself may hold up to 3 slots in this spec (survival / commitment / economic); `max_candidates_to_plan = 2` means "try the top 2 plausible slots in score-weighted order."
+`max_candidates_to_plan` bounds the *number of search attempts we actually run*, not the ranking depth. The assembled portfolio still leads the order, but weaker admitted candidates can be searched later in the same pass if they fit under the normal cap. The portfolio itself may hold up to 3 slots in this spec (survival / commitment / economic); `max_candidates_to_plan = 2` means "try at most 2 opportunities after the portfolio has led the search order." Among plausible slot winners, higher `GoalPriorityClass` still preempts lower-priority commitments before the weighted slot score tie-break applies.
 
 Portfolio assembly always runs; there is no `max_candidates_to_plan = 1` bypass. The single-slot case is expressed naturally as "the top plausible slot is the only one searched."
 
-The helper `record_blocker_or_discrepancy` is new to this spec — it forwards to the existing `DiscrepancyMemory::record` or `BlockerMemory::record_blocker` paths using the `Discrepancy` returned by search failure.
+The earlier draft mentioned a `record_blocker_or_discrepancy` helper in this loop. The live `plan_and_validate_next_step*` planning path does not classify search failures or mutate blocker/discrepancy memory here, so ticket 005 integrates portfolio admission, probe rejection tracing, and `FeasibilityProbeFailed` decision-history output without adding a second blocker-recording seam.
 
 ### D5: `CognitiveProfile` extensions
 
@@ -211,7 +217,7 @@ pub struct PortfolioSlotTrace {
 }
 ```
 
-`GoalRejectionReason::FeasibilityProbeFailed` already exists in `crates/worldwake-core/src/decision_event_payload.rs:96` and is currently unused. Ticket 004 lands only the staged `PortfolioTrace` sink on `PlanningPipelineTrace`; ticket 005 begins using that variant in `GoalCommittedPayload::rejected_alternatives` for slots rejected by the probe, surfacing probe verdicts on the authoritative decision-history event log (S110) alongside the populated `PortfolioTrace`.
+`GoalRejectionReason::FeasibilityProbeFailed` already exists in `crates/worldwake-core/src/decision_event_payload.rs:96` and is currently unused. Ticket 004 lands only the staged `PortfolioTrace` sink on `PlanningPipelineTrace`; ticket 005 begins using that variant in `GoalCommittedPayload::rejected_alternatives` for slot winners rejected by the probe, surfacing probe verdicts on the authoritative decision-history event log (S110) alongside the populated `PortfolioTrace`. Later admitted fallback opportunities are still searchable in the same planning pass, but they do not create extra `PortfolioTrace` slots or `FeasibilityProbeFailed` summaries because they are not portfolio slots.
 
 ## FND-01 Section H: Causal Hooks
 
@@ -267,4 +273,8 @@ Once S113 lands, an `information: Permille` field (default `Permille::new(600)`)
 
 ## Outcome
 
-To be filled in at completion.
+Landed in `worldwake-ai` as a portfolio-led planning loop integration. `prioritize_same_goal_replan_candidates` is removed, `PlanningPipelineTrace::portfolio` is populated during planning ticks, and probe-rejected portfolio slots now surface `GoalRejectionReason::FeasibilityProbeFailed` in `GoalCommittedPayload::rejected_alternatives`.
+
+The live integration keeps one truthful deviation from the earlier draft: plausible slot winners lead the searched opportunity order, but remaining admitted ranked opportunities still stay eligible behind them until `max_candidates_to_plan` stops the pass. Within the slot-winner front of that order, higher `GoalPriorityClass` preempts lower-priority commitments before weighted slot score breaks equal-priority ties. This preserves the staged slot substrate and same-goal continuation contract while avoiding a second candidate-admission path.
+
+The landed probe/planning boundary also adds a narrow same-place harvest guard to prevent stale local acquisition beliefs from producing immediately-invalid first steps that would otherwise record spurious contradicted-belief memory before a feasible fallback can win.

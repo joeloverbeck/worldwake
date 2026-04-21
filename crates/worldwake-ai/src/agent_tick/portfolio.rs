@@ -14,10 +14,12 @@ pub(crate) enum SlotKind {
     Economic,
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct Portfolio {
     pub(crate) slots: BTreeMap<SlotKind, PortfolioSlot>,
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct PortfolioSlot {
     pub(crate) ranked: RankedGoal,
     pub(crate) feasibility: FeasibilityVerdict,
@@ -86,9 +88,7 @@ impl Portfolio {
             })
             .collect();
         slots.sort_by(|(left_kind, left_slot), (right_kind, right_slot)| {
-            weighted_score(*right_kind, right_slot, weights)
-                .cmp(&weighted_score(*left_kind, left_slot, weights))
-                .then_with(|| left_kind.cmp(right_kind))
+            compare_plausible_slots(*left_kind, left_slot, *right_kind, right_slot, *weights)
         });
         slots
     }
@@ -128,10 +128,29 @@ fn select_best_candidate<'a>(
 }
 
 fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> std::cmp::Ordering {
-    left.motive_score
-        .cmp(&right.motive_score)
+    left.priority_class
+        .cmp(&right.priority_class)
+        .then_with(|| left.motive_score.cmp(&right.motive_score))
         .then_with(|| right.grounded.key.cmp(&left.grounded.key))
         .then_with(|| right.grounded.anchor.cmp(&left.grounded.anchor))
+}
+
+fn compare_plausible_slots(
+    left_kind: SlotKind,
+    left_slot: &PortfolioSlot,
+    right_kind: SlotKind,
+    right_slot: &PortfolioSlot,
+    weights: PortfolioSlotWeights,
+) -> std::cmp::Ordering {
+    right_slot
+        .ranked
+        .priority_class
+        .cmp(&left_slot.ranked.priority_class)
+        .then_with(|| {
+            weighted_score(right_kind, right_slot, &weights)
+                .cmp(&weighted_score(left_kind, left_slot, &weights))
+        })
+        .then_with(|| left_kind.cmp(&right_kind))
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -237,6 +256,17 @@ mod tests {
             competition_discount: None,
             feasibility: FeasibilityHint::Uncertain,
         }
+    }
+
+    fn ranked_goal_with_priority(
+        kind: GoalKind,
+        priority_class: GoalPriorityClass,
+        motive_score: u32,
+        anchor: OpportunityAnchor,
+    ) -> RankedGoal {
+        let mut ranked = ranked_goal(kind, motive_score, anchor);
+        ranked.priority_class = priority_class;
+        ranked
     }
 
     fn post_notice_goal(posting_place: EntityId) -> GoalKind {
@@ -440,5 +470,70 @@ mod tests {
         assert_eq!(ordered.len(), 2);
         assert_eq!(ordered[0].0, SlotKind::Survival);
         assert_eq!(ordered[1].0, SlotKind::Economic);
+    }
+
+    #[test]
+    fn survival_slot_prefers_higher_priority_class_over_higher_motive() {
+        let ranked = vec![
+            ranked_goal_with_priority(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                },
+                GoalPriorityClass::High,
+                900,
+                OpportunityAnchor::Place(entity(40)),
+            ),
+            ranked_goal_with_priority(
+                GoalKind::Relieve,
+                GoalPriorityClass::Critical,
+                500,
+                OpportunityAnchor::None,
+            ),
+        ];
+
+        let portfolio = assemble_portfolio(&ranked, None, |_| FeasibilityVerdict::Plausible);
+        let survival = portfolio
+            .slots
+            .get(&SlotKind::Survival)
+            .expect("survival slot should be populated");
+        assert_eq!(survival.ranked.grounded.key.kind, GoalKind::Relieve);
+    }
+
+    #[test]
+    fn plausible_slots_by_score_prefers_higher_priority_class_over_weighted_score() {
+        let portfolio = Portfolio {
+            slots: BTreeMap::from([
+                (
+                    SlotKind::Survival,
+                    PortfolioSlot {
+                        ranked: ranked_goal_with_priority(
+                            GoalKind::Relieve,
+                            GoalPriorityClass::Critical,
+                            500,
+                            OpportunityAnchor::None,
+                        ),
+                        feasibility: FeasibilityVerdict::Plausible,
+                    },
+                ),
+                (
+                    SlotKind::Commitment,
+                    PortfolioSlot {
+                        ranked: ranked_goal_with_priority(
+                            post_notice_goal(entity(41)),
+                            GoalPriorityClass::High,
+                            900,
+                            OpportunityAnchor::Place(entity(41)),
+                        ),
+                        feasibility: FeasibilityVerdict::Plausible,
+                    },
+                ),
+            ]),
+        };
+
+        let ordered = portfolio.plausible_slots_by_score(&PortfolioSlotWeights::default());
+
+        assert_eq!(ordered[0].0, SlotKind::Survival);
+        assert_eq!(ordered[1].0, SlotKind::Commitment);
     }
 }

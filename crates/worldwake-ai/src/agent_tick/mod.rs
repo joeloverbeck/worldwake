@@ -27,8 +27,8 @@ use observation::{
     refresh_runtime_for_read_phase_with_memories, update_runtime_observation_snapshot,
 };
 use planning::{
-    build_candidate_plans, plan_and_validate_next_step_traced, selection_candidates,
-    summarize_ranked_goal, summarize_step,
+    build_candidate_plans, plan_and_validate_next_step_traced, summarize_ranked_goal,
+    summarize_step,
 };
 
 use crate::decision_trace::{
@@ -979,6 +979,7 @@ fn process_agent(
             plan_continued,
             plan_search_trace,
             selection_trace,
+            portfolio_trace,
             pending_tracker_increments,
         ) = plan_and_validate_next_step_traced(
             ctx.world,
@@ -990,6 +991,7 @@ fn process_agent(
             &mut current_facility_intents,
             agent,
             &ranked_candidates,
+            &discrepancy_memory,
             &blocked_memory,
             default_switch_margin,
             frame_switch_margin,
@@ -1149,7 +1151,7 @@ fn process_agent(
                     same_goal_trace: None,
                 }),
                 selection,
-                portfolio: None,
+                portfolio: portfolio_trace,
                 execution: execution_trace.unwrap_or(ExecutionTrace {
                     enqueued_step: None,
                     revalidation_passed: None,

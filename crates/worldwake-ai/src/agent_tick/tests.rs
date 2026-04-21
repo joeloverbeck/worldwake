@@ -1990,6 +1990,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         &mut facility_intents,
         harness.actor,
         std::slice::from_ref(&goal),
+        &worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         ProfileFixture::default().switch_margin,
         ProfileFixture::default().switch_margin,
@@ -3330,6 +3331,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &mut facility_intents,
         harness.actor,
         &ranked,
+        &worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         budget.switch_margin,
         budget.switch_margin,
@@ -3436,6 +3438,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &mut facility_intents,
         harness.actor,
         &ranked_after_pickup,
+        &worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         budget.switch_margin,
         budget.switch_margin,
@@ -4961,7 +4964,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
     let mut jc = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
-    let (_, initial_valid, initial_continued, _, initial_selection, _) =
+    let (_, initial_valid, initial_continued, _, initial_selection, _, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
             &mut harness.event_log,
@@ -4972,6 +4975,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             &mut facility_intents,
             harness.actor,
             &initial_read.ranked,
+            &worldwake_core::DiscrepancyMemory::default(),
             &blocked,
             budget.switch_margin,
             budget.switch_margin,
@@ -5051,7 +5055,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
 
     let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
     let mut jc2 = None;
-    let (continued_step, continued_valid, plan_continued, _, continuation_selection, _) =
+    let (continued_step, continued_valid, plan_continued, _, continuation_selection, _, _) =
         plan_and_validate_next_step_traced(
             &harness.world,
             &mut harness.event_log,
@@ -5062,6 +5066,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             &mut facility_intents,
             harness.actor,
             &continuation_read.ranked,
+            &worldwake_core::DiscrepancyMemory::default(),
             &blocked,
             budget.switch_margin,
             budget.switch_margin,

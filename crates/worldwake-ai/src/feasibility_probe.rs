@@ -3,11 +3,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::agent_tick::portfolio::FeasibilityVerdict;
+use crate::failure_handling::place_has_local_commodity_support;
 use crate::goal_model::RankedGoal;
-use crate::{GoalKindPlannerExt, PlannerOpSemantics};
+use crate::{GoalKindPlannerExt, PlannerOpKind, PlannerOpSemantics};
 use worldwake_core::{
     ActionDefId, BlockerKey, BlockerMemory, Discrepancy, DiscrepancyMemory, EntityId,
-    OpportunityAnchor, Tick,
+    GoalKind, OpportunityAnchor, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, RuntimeBeliefView, get_affordances_for_defs,
@@ -51,6 +52,10 @@ pub(crate) fn probe(ranked: &RankedGoal, context: &ProbeContext<'_>) -> Feasibil
     }
 
     if let Some(reason) = known_target_failure(ranked, context) {
+        return FeasibilityVerdict::RejectedBeforeSearch { reason };
+    }
+
+    if let Some(reason) = current_place_support_failure(ranked, context) {
         return FeasibilityVerdict::RejectedBeforeSearch { reason };
     }
 
@@ -120,6 +125,123 @@ fn known_target_failure(ranked: &RankedGoal, context: &ProbeContext<'_>) -> Opti
     }
 
     None
+}
+
+fn current_place_support_failure(
+    ranked: &RankedGoal,
+    context: &ProbeContext<'_>,
+) -> Option<Discrepancy> {
+    let (GoalKind::AcquireCommodity { commodity, .. } | GoalKind::RestockCommodity { commodity }) =
+        ranked.grounded.key.kind
+    else {
+        return None;
+    };
+    let place = match ranked.grounded.anchor {
+        OpportunityAnchor::Place(place) => Some(place),
+        OpportunityAnchor::Entity(target) => context
+            .belief_view
+            .effective_place(target)
+            .or(ranked.grounded.key.place),
+        OpportunityAnchor::None => ranked.grounded.key.place.or_else(|| {
+            let agent_place = context.agent_place?;
+            let has_local_evidence = ranked.grounded.evidence_places.contains(&agent_place)
+                || ranked
+                    .grounded
+                    .evidence_entities
+                    .iter()
+                    .copied()
+                    .any(|entity| context.belief_view.effective_place(entity) == Some(agent_place));
+            has_local_evidence.then_some(agent_place)
+        }),
+    }?;
+
+    if context.agent_place != Some(place) {
+        return None;
+    }
+
+    let local_evidence_entities = ranked
+        .grounded
+        .evidence_entities
+        .iter()
+        .copied()
+        .filter(|entity| context.belief_view.effective_place(*entity) == Some(place))
+        .collect::<Vec<_>>();
+    if !local_evidence_entities.is_empty()
+        && !local_evidence_entities
+            .iter()
+            .copied()
+            .any(|entity| entity_supports_commodity(context, entity, commodity))
+    {
+        return Some(Discrepancy::MissingObservation);
+    }
+    if !has_local_goal_affordance(ranked, context, &local_evidence_entities) {
+        return Some(Discrepancy::MissingObservation);
+    }
+
+    (!place_has_local_commodity_support(
+        context.belief_view,
+        context.agent,
+        place,
+        commodity,
+        None,
+    ))
+    .then_some(Discrepancy::MissingObservation)
+}
+
+fn entity_supports_commodity(
+    context: &ProbeContext<'_>,
+    entity: EntityId,
+    commodity: worldwake_core::CommodityKind,
+) -> bool {
+    context
+        .belief_view
+        .resource_source(entity)
+        .is_some_and(|resource| {
+            resource.commodity == commodity && resource.available_quantity > worldwake_core::Quantity(0)
+        })
+        || (context.belief_view.item_lot_commodity(entity) == Some(commodity)
+            && context.belief_view.commodity_quantity(entity, commodity) > worldwake_core::Quantity(0)
+            && context.belief_view.direct_container(entity).is_none()
+            && context.belief_view.direct_possessor(entity).is_none())
+        || context.belief_view.commodity_quantity(entity, commodity) > worldwake_core::Quantity(0)
+        || context
+            .belief_view
+            .listed_sale_lots_at(context.agent_place.unwrap_or(entity), commodity)
+            .into_iter()
+            .any(|lot| lot == entity)
+}
+
+fn has_local_goal_affordance(
+    ranked: &RankedGoal,
+    context: &ProbeContext<'_>,
+    local_evidence_entities: &[EntityId],
+) -> bool {
+    let relevant_defs = relevant_action_defs(ranked, context.semantics_table);
+    if relevant_defs.is_empty() {
+        return false;
+    }
+
+    get_affordances_for_defs(
+        context.belief_view,
+        context.agent,
+        context.action_defs,
+        context.action_handlers,
+        &relevant_defs,
+    )
+    .into_iter()
+    .filter(|affordance| {
+        context
+            .semantics_table
+            .get(&affordance.def_id)
+            .is_some_and(|semantics| semantics.op_kind != PlannerOpKind::Travel)
+    })
+    .any(|affordance| {
+        local_evidence_entities.is_empty()
+            || affordance
+                .bound_targets
+                .iter()
+                .any(|target| local_evidence_entities.contains(target))
+    })
 }
 
 fn has_relevant_affordance(ranked: &RankedGoal, context: &ProbeContext<'_>) -> bool {
@@ -422,6 +544,134 @@ mod tests {
         );
 
         assert_eq!(verdict, FeasibilityVerdict::Plausible);
+    }
+
+    #[test]
+    fn probe_rejects_place_anchored_current_place_acquire_without_local_support() {
+        let harness = ProbeHarness::sleep_only();
+        let agent = entity(1);
+        let place = entity(2);
+        let ranked = ranked_goal(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: crate::CommodityPurpose::SelfConsume,
+            },
+            OpportunityAnchor::Place(place),
+        );
+        let mut view = MockView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.places.insert(agent, place);
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(place),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(
+            verdict,
+            FeasibilityVerdict::RejectedBeforeSearch {
+                reason: Discrepancy::MissingObservation,
+            }
+        );
+    }
+
+    #[test]
+    fn probe_rejects_unanchored_current_place_acquire_without_local_support() {
+        let harness = ProbeHarness::sleep_only();
+        let agent = entity(1);
+        let place = entity(2);
+        let ranked = RankedGoal {
+            grounded: GroundedGoal {
+                key: GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: crate::CommodityPurpose::SelfConsume,
+                }
+                .into(),
+                anchor: OpportunityAnchor::None,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::from([place]),
+            },
+            priority_class: GoalPriorityClass::High,
+            motive_score: 500,
+            provenance: None,
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: FeasibilityHint::Uncertain,
+        };
+        let mut view = MockView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.places.insert(agent, place);
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(place),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(
+            verdict,
+            FeasibilityVerdict::RejectedBeforeSearch {
+                reason: Discrepancy::MissingObservation,
+            }
+        );
+    }
+
+    #[test]
+    fn probe_rejects_entity_anchored_current_place_acquire_without_local_support() {
+        let harness = ProbeHarness::sleep_only();
+        let agent = entity(1);
+        let place = entity(2);
+        let source = entity(3);
+        let ranked = ranked_goal(
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: crate::CommodityPurpose::SelfConsume,
+            },
+            OpportunityAnchor::Entity(source),
+        );
+        let mut view = MockView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(source, EntityKind::Facility);
+        view.places.insert(agent, place);
+        view.places.insert(source, place);
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(place),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(
+            verdict,
+            FeasibilityVerdict::RejectedBeforeSearch {
+                reason: Discrepancy::MissingObservation,
+            }
+        );
     }
 
     #[allow(clippy::unnecessary_wraps)]

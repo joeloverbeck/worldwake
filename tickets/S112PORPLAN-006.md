@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (golden test ticket)
-**Deps**: S112PORPLAN-005
+**Deps**: archive/tickets/S112PORPLAN-005.md
 
 ## Problem
 
