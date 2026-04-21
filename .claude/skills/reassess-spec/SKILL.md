@@ -40,7 +40,7 @@ Before beginning Steps 2-3, classify the spec:
 - **(a) New system** — introduces new components, actions, goal kinds, or information paths. Full checklist applies.
 - **(b) System extension** — extends existing components, actions, or enums without new systems. Steps 3.1-3.8 apply. 4.4 applies if any deliverable modifies action preconditions, validation functions, affordance generation, or candidate emission. Skip 3.9 if no behavioral claims about runtime readers/writers. Section H updates only for new deliverable sections.
   - **Tooling-only variant** (observer binary, CLI enhancements, diagnostic tools): Steps 3.1-3.4 fully apply. Steps 3.5-3.7 apply only if the spec extends existing types or enums; if the spec adds only new functions/structs local to the tooling binary, 3.5-3.7 are N/A. Step 3.8 (upstream spec references) still applies. Skip 3.9. Downstream consumer analysis (3.6) can be limited to the tooling binary.
-- **(c) Structural refactor** — trait/module restructuring with no behavioral changes. Skip Steps 3.5, 3.9, 4.4; Section H is N/A. Focus on symbol existence, count accuracy, and blast radius.
+- **(c) Structural refactor** — trait/module restructuring with no behavioral changes. Skip Steps 3.5, 3.9, 4.4; Section H is N/A (do not require one; if the spec authored one, preserve it unchanged unless a finding targets it directly). Focus on symbol existence, count accuracy, and blast radius.
 - **(d) Test-only** — adds golden tests, benchmarks, or test infrastructure without modifying production code.
   - Steps 3.1-3.4 apply (validate referenced paths, types, functions, dependencies).
   - Skip 3.5-3.9 (no production code changes to trace).
@@ -69,6 +69,7 @@ Before beginning Steps 2-3, classify the spec:
   - **(d)+(e)** (test triage with a bugfix): Steps 3.1-3.4 from both; 3.5-3.8 for bugfix deliverables only; 4.4 if bugfix touches candidate emission/preconditions; Section H only for bugfix deliverables.
   - **(b)+(d)** (system extension with golden tests): Full (b) checklist for production deliverables; (d) rules for test deliverables; 4.4 if any production deliverable modifies validation/emission.
   - **(b)-tooling-only + (d)** (tooling/report/observer enhancement with test-support helpers): Steps 3.1-3.4 apply fully; 3.5-3.7 apply only if the spec extends cross-crate types or enums; 3.3A applies if the spec proposes new observer/CLI output; 3.8 still applies; skip 3.9; Section H updates only for new causal hooks. Check the "Dual-Use Read-Model Types" pattern in `references/worldwake-validation-patterns.md` if the spec proposes types shared between tests and a non-test crate.
+  - **(c)+(d)** (structural refactor with compile-fail doctests or grep-regression tests): Full (c) checklist for production deliverables; (d) rules for test deliverables; Section H remains N/A.
   - **(a)+(d)** (new system with test infrastructure): Full (a) checklist; test deliverables validated per 3.1-3.4 only.
   - **(a)+(b)** (new system with migration of existing types/enums): Full (a) checklist. For migration deliverables, additionally verify existing call sites and exhaustive-match sites per 3.6 cross-crate analysis (applies rigorously even though (a) alone doesn't always trigger it) — migration deliverables need blast-radius accounting for every site that matches on the removed or renamed symbol.
 
