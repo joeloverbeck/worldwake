@@ -1197,6 +1197,33 @@ impl EntityBeliefView for PlanningState<'_> {
             .filter(|entity| self.is_dead(*entity))
             .collect()
     }
+
+    fn believed_target_location(
+        &self,
+        agent: EntityId,
+        target: EntityId,
+    ) -> worldwake_sim::belief_view::BeliefValue<Option<EntityId>> {
+        if agent != self.snapshot.actor() {
+            return worldwake_sim::belief_view::stale_default_value(None);
+        }
+
+        worldwake_sim::belief_view::project_claims_into_belief_set(
+            self.snapshot
+                .actor_belief_store
+                .get_entity_claims(&target)
+                .into_iter()
+                .flatten()
+                .filter_map(|claim| {
+                    worldwake_sim::belief_view::location_claim_value(claim)
+                        .map(|value| (claim.clone(), value))
+                }),
+            self.snapshot.current_tick,
+            self.snapshot.actor_claim_confidence_threshold,
+            &self.snapshot.actor_confidence_policy,
+        )
+        .best
+        .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(None))
+    }
 }
 
 impl ProfileBeliefView for PlanningState<'_> {
@@ -1336,6 +1363,47 @@ impl SpatialBeliefView for PlanningState<'_> {
             .map(|snapshot| snapshot.adjacent_places_with_travel_ticks.clone())
             .unwrap_or_default()
     }
+
+    fn believed_entities_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: EntityKind,
+    ) -> Vec<worldwake_sim::belief_view::BeliefValue<EntityId>> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot
+            .actor_known_entity_beliefs
+            .iter()
+            .filter_map(|(subject, state)| (state.believed_kind == Some(kind)).then_some(*subject))
+            .filter_map(|subject| {
+                let best = worldwake_sim::belief_view::project_claims_into_belief_set(
+                    self.snapshot
+                        .actor_belief_store
+                        .get_entity_claims(&subject)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|claim| {
+                            worldwake_sim::belief_view::location_claim_value(claim)
+                                .map(|value| (claim.clone(), value))
+                        }),
+                    self.snapshot.current_tick,
+                    self.snapshot.actor_claim_confidence_threshold,
+                    &self.snapshot.actor_confidence_policy,
+                )
+                .best?;
+                (best.value == Some(place)).then_some(worldwake_sim::belief_view::BeliefValue {
+                    value: subject,
+                    confidence: best.confidence,
+                    acquired_tick: best.acquired_tick,
+                    claimed_event_tick: best.claimed_event_tick,
+                    status: best.status,
+                })
+            })
+            .collect()
+    }
 }
 
 impl TemporalBeliefView for PlanningState<'_> {
@@ -1421,6 +1489,15 @@ impl SocialBeliefView for PlanningState<'_> {
         }
 
         self.snapshot.actor_known_social_observations.clone()
+    }
+
+    fn claim_confidence_threshold(&self, agent: EntityId) -> Permille {
+        assert_eq!(
+            agent,
+            self.snapshot.actor(),
+            "claim_confidence_threshold is a self-authoritative read and must only be requested for the planning actor"
+        );
+        self.snapshot.actor_claim_confidence_threshold
     }
 
     fn believed_activity_of(&self, entity: EntityId) -> Option<&worldwake_core::BelievedActivity> {
@@ -2118,6 +2195,34 @@ impl InventoryBeliefView for PlanningState<'_> {
             .map(|snapshot| snapshot.inventory.known_recipes.clone())
             .unwrap_or_default()
     }
+
+    fn believed_commodity_stock(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: CommodityKind,
+    ) -> worldwake_sim::belief_view::BeliefValue<Quantity> {
+        if agent != self.snapshot.actor() {
+            return worldwake_sim::belief_view::stale_default_value(Quantity(0));
+        }
+
+        worldwake_sim::belief_view::project_claims_into_belief_set(
+            self.snapshot
+                .actor_belief_store
+                .get_entity_claims(&place)
+                .into_iter()
+                .flatten()
+                .filter_map(|claim| {
+                    worldwake_sim::belief_view::inventory_claim_value(claim, kind)
+                        .map(|value| (claim.clone(), value))
+                }),
+            self.snapshot.current_tick,
+            self.snapshot.actor_claim_confidence_threshold,
+            &self.snapshot.actor_confidence_policy,
+        )
+        .best
+        .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(Quantity(0)))
+    }
 }
 
 impl FacilityBeliefView for PlanningState<'_> {
@@ -2181,16 +2286,18 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::ActionDomain;
     use worldwake_core::{
-        ActionDefId, ArtifactPostingProfile, BelievedActivity, BelievedEntityState,
-        BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
-        DemandObservation, DemandObservationReason, DisposalProfile, DriveThresholds, EntityId,
-        EntityKind, EpistemicDispositionProfile, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, Permille, Quantity, RecipeId,
-        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, SharedTellState,
-        SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        ViolationDispositionProfile, WorkstationTag, Wound, WoundCause, WoundId,
+        ActionDefId, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
+        BelievedActivity, BelievedEntityState, BodyCostPerTick, ClaimId, ClaimValue, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, ContentionGrant, DemandObservation,
+        DemandObservationReason, DisposalProfile, DriveThresholds, EntityBeliefAspect,
+        EntityBeliefClaim, EntityId, EntityKind, EpistemicDispositionProfile, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute,
+        PerceptionSource, Permille, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordKind, ResourceSource, SharedTellState, SuccessionLaw, TellMemoryKey, TellProfile,
+        TellTopic, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
@@ -2210,6 +2317,7 @@ mod tests {
         effective_places: BTreeMap<EntityId, EntityId>,
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
         beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+        belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
         direct_possessions: BTreeMap<EntityId, Vec<EntityId>>,
         direct_possessors: BTreeMap<EntityId, EntityId>,
         direct_containers: BTreeMap<EntityId, EntityId>,
@@ -2254,6 +2362,7 @@ mod tests {
         faction_rally_point_beliefs: BTreeMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
         support_declaration_beliefs:
             BTreeMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
+        claim_confidence_thresholds: BTreeMap<EntityId, Permille>,
         office_data: BTreeMap<EntityId, OfficeData>,
     }
 
@@ -2266,6 +2375,7 @@ mod tests {
                 effective_places: BTreeMap::new(),
                 entities_at: BTreeMap::new(),
                 beliefs: BTreeMap::new(),
+                belief_stores: BTreeMap::new(),
                 direct_possessions: BTreeMap::new(),
                 direct_possessors: BTreeMap::new(),
                 direct_containers: BTreeMap::new(),
@@ -2309,6 +2419,7 @@ mod tests {
                 office_holder_beliefs: BTreeMap::new(),
                 faction_rally_point_beliefs: BTreeMap::new(),
                 support_declaration_beliefs: BTreeMap::new(),
+                claim_confidence_thresholds: BTreeMap::new(),
                 office_data: BTreeMap::new(),
             }
         }
@@ -2469,6 +2580,17 @@ mod tests {
     impl SocialBeliefView for StubBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+
+        fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+            self.belief_stores.get(&agent)
+        }
+
+        fn claim_confidence_threshold(&self, agent: EntityId) -> Permille {
+            self.claim_confidence_thresholds
+                .get(&agent)
+                .copied()
+                .unwrap_or(Permille::ZERO)
         }
 
         fn belief_confidence_policy(
@@ -4865,5 +4987,99 @@ mod tests {
         let state = PlanningState::new(&snapshot);
 
         assert!(state.has_support_majority(office, actor));
+    }
+
+    fn sample_claim(
+        claim_id: u64,
+        subject: EntityId,
+        aspect: EntityBeliefAspect,
+        value: ClaimValue,
+        acquired_tick: u64,
+        confidence: u16,
+    ) -> EntityBeliefClaim {
+        EntityBeliefClaim {
+            claim_id: ClaimId(claim_id),
+            subject,
+            aspect,
+            value,
+            source: PerceptionSource::DirectObservation,
+            acquired_tick: Tick(acquired_tick),
+            claimed_event_tick: Some(Tick(acquired_tick)),
+            confidence: Permille::new(confidence).unwrap(),
+        }
+    }
+
+    #[test]
+    fn planning_state_projects_actor_belief_store_location_claims() {
+        let actor = entity(1);
+        let target = entity(2);
+        let place_a = entity(10);
+        let place_b = entity(11);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(target, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(target, EntityKind::Agent);
+        view.kinds.insert(place_a, EntityKind::Place);
+        view.kinds.insert(place_b, EntityKind::Place);
+        view.effective_places.insert(actor, place_a);
+        view.entities_at.insert(place_a, vec![actor]);
+        view.carry_capacities.insert(actor, LoadUnits(10));
+        view.entity_loads.insert(actor, LoadUnits(0));
+        view.claim_confidence_thresholds
+            .insert(actor, Permille::new(300).unwrap());
+
+        let mut belief_store = AgentBeliefStore::new();
+        let mut state = belief_with_activity(place_a, ActionDomain::Needs, None, 9);
+        state.believed_kind = Some(EntityKind::Agent);
+        belief_store.update_entity(target, state);
+        belief_store.record_entity_claim(sample_claim(
+            1,
+            target,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(place_a)),
+            7,
+            950,
+        ));
+        belief_store.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(2),
+            subject: target,
+            aspect: EntityBeliefAspect::Location,
+            value: ClaimValue::Place(Some(place_b)),
+            source: PerceptionSource::Report {
+                from: entity(77),
+                chain_len: 1,
+            },
+            acquired_tick: Tick(9),
+            claimed_event_tick: Some(Tick(9)),
+            confidence: Permille::new(980).unwrap(),
+        });
+        view.belief_stores.insert(actor, belief_store);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([target]),
+            &BTreeSet::from([place_a, place_b]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let location = EntityBeliefView::believed_target_location(&state, actor, target);
+
+        assert_eq!(location.value, Some(place_b));
+        assert_eq!(
+            location.status,
+            worldwake_sim::belief_view::BeliefStatus::Disputed
+        );
+        assert_eq!(location.claimed_event_tick, Some(Tick(9)));
+        assert_eq!(
+            SocialBeliefView::claim_confidence_threshold(&state, actor),
+            Permille::new(300).unwrap()
+        );
+        assert_eq!(
+            SocialBeliefView::belief_confidence_policy(&state, actor),
+            BeliefConfidencePolicy::default()
+        );
     }
 }

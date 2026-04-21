@@ -2277,7 +2277,7 @@ fn claim_dominates(left: &EntityBeliefClaim, right: &EntityBeliefClaim) -> bool 
         || left.claim_id > right.claim_id
 }
 
-fn effective_claim_confidence(
+pub fn effective_claim_confidence(
     claim: &EntityBeliefClaim,
     current_tick: Tick,
     policy: &BeliefConfidencePolicy,

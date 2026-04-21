@@ -116,6 +116,7 @@ Run the narrowest correct verification first, then broaden.
 
 Prefer sequential `cargo` verification runs unless there is a concrete reason to parallelize them; this keeps cargo-lock contention, attribution, and close-out evidence truthful.
 Do not launch multiple `cargo` commands in parallel for focused proofs or broadened verification. Run one Cargo command to completion before starting the next.
+When using exact Cargo test selectors for focused proof, confirm the real test path first with `cargo test ... -- --list` before relying on `--exact`. Bare function names often miss ordinary unit-test module paths and `src/bin/*.rs` unit tests, which can leave a command compiling the target while executing zero intended tests.
 
 Load `references/verification.md`.
 

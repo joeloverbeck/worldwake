@@ -2,29 +2,209 @@ use crate::{
     ActionDuration, ActionPayload, DurationExpr, RecipeDefinition,
     action_semantics::consultation_duration_ticks,
 };
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BeliefConfidencePolicy,
-    BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim, CognitiveProfile,
-    CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityTreatmentProfile,
-    CommodityValuationProfile, ContentionGrant, DemandObservation, DeprivationExposure,
-    DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
-    EffectiveRight, EntityId, EntityKind, ExpectationStore, ExplorationProfile, HomeostaticNeedId,
-    HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource,
-    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+    BelievedActivity, BelievedEntityState, BelievedInstitutionalClaim, ClaimValue,
+    CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+    CommodityTreatmentProfile, CommodityValuationProfile, ContentionGrant, DemandObservation,
+    DeprivationExposure, DisposalProfile, DiversificationProfile, DriveEscalationProfile,
+    DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
+    ExpectationStore, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
+    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
+    Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BeliefValue<T> {
+    pub value: T,
+    pub confidence: Permille,
+    pub acquired_tick: Tick,
+    pub claimed_event_tick: Option<Tick>,
+    pub status: BeliefStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum BeliefStatus {
+    Certain,
+    Probable,
+    Stale,
+    Disputed,
+    Contradicted,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BeliefSet<T> {
+    pub best: Option<BeliefValue<T>>,
+    pub alternatives: Vec<BeliefValue<T>>,
+}
+
+impl<T> BeliefSet<T> {
+    #[must_use]
+    pub fn certain(value: T, acquired_tick: Tick) -> Self {
+        Self {
+            best: Some(BeliefValue {
+                value,
+                confidence: Permille::new(1000).unwrap(),
+                acquired_tick,
+                claimed_event_tick: Some(acquired_tick),
+                status: BeliefStatus::Certain,
+            }),
+            alternatives: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            best: None,
+            alternatives: Vec::new(),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub fn stale_default_value<T>(value: T) -> BeliefValue<T> {
+    BeliefValue {
+        value,
+        confidence: Permille::ZERO,
+        acquired_tick: Tick(0),
+        claimed_event_tick: None,
+        status: BeliefStatus::Stale,
+    }
+}
+
+#[doc(hidden)]
+pub fn belief_status_for_effective_confidence(effective: u16, threshold: Permille) -> BeliefStatus {
+    let threshold = threshold.value();
+    let certain_floor = threshold.saturating_mul(2).min(1000);
+    if effective >= certain_floor {
+        BeliefStatus::Certain
+    } else if effective >= threshold {
+        BeliefStatus::Probable
+    } else {
+        BeliefStatus::Stale
+    }
+}
+
+#[doc(hidden)]
+pub fn project_claim_into_belief_value<T: Copy>(
+    claim: &EntityBeliefClaim,
+    value: T,
+    current_tick: Tick,
+    threshold: Permille,
+    policy: &BeliefConfidencePolicy,
+) -> BeliefValue<T> {
+    let effective = effective_claim_confidence(claim, current_tick, policy);
+    BeliefValue {
+        value,
+        confidence: Permille::new(effective).unwrap_or(Permille::ZERO),
+        acquired_tick: claim.acquired_tick,
+        claimed_event_tick: claim.claimed_event_tick,
+        status: belief_status_for_effective_confidence(effective, threshold),
+    }
+}
+
+#[doc(hidden)]
+pub fn claim_rank_key(
+    claim: &EntityBeliefClaim,
+    current_tick: Tick,
+    policy: &BeliefConfidencePolicy,
+) -> (u16, Tick, worldwake_core::ClaimId) {
+    (
+        effective_claim_confidence(claim, current_tick, policy),
+        claim.acquired_tick,
+        claim.claim_id,
+    )
+}
+
+#[doc(hidden)]
+pub fn project_claims_into_belief_set<T, I>(
+    claims: I,
+    current_tick: Tick,
+    threshold: Permille,
+    policy: &BeliefConfidencePolicy,
+) -> BeliefSet<T>
+where
+    T: Copy + Eq,
+    I: IntoIterator<Item = (EntityBeliefClaim, T)>,
+{
+    let mut projected = claims
+        .into_iter()
+        .map(|(claim, value)| {
+            (
+                claim_rank_key(&claim, current_tick, policy),
+                project_claim_into_belief_value(&claim, value, current_tick, threshold, policy),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if projected.is_empty() {
+        return BeliefSet::empty();
+    }
+
+    projected.sort_by_key(|(rank, _)| *rank);
+    let (_, mut best) = projected
+        .pop()
+        .expect("non-empty projected claims should contain a best value");
+
+    let alternatives = projected
+        .into_iter()
+        .map(|(_, value)| value)
+        .filter(|value| value.value != best.value)
+        .collect::<Vec<_>>();
+
+    if !alternatives.is_empty() {
+        best.status = BeliefStatus::Disputed;
+    }
+
+    BeliefSet {
+        best: Some(best),
+        alternatives,
+    }
+}
+
+#[doc(hidden)]
+pub fn location_claim_value(claim: &EntityBeliefClaim) -> Option<Option<EntityId>> {
+    match (&claim.aspect, &claim.value) {
+        (EntityBeliefAspect::Location, ClaimValue::Place(place)) => Some(*place),
+        _ => None,
+    }
+}
+
+#[doc(hidden)]
+pub fn inventory_claim_value(claim: &EntityBeliefClaim, kind: CommodityKind) -> Option<Quantity> {
+    match (&claim.aspect, &claim.value) {
+        (EntityBeliefAspect::Inventory(claim_kind), ClaimValue::Quantity(quantity))
+            if *claim_kind == kind =>
+        {
+            Some(*quantity)
+        }
+        _ => None,
+    }
+}
 
 pub trait GoalSpatialBeliefView {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn believed_entities_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: EntityKind,
+    ) -> Vec<BeliefValue<EntityId>> {
+        let _ = (agent, place, kind);
+        Vec::new()
+    }
     fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
         let _ = agent;
         self.entities_at(place)
@@ -95,6 +275,10 @@ pub trait GoalBeliefView {
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
         Vec::new()
+    }
+    fn claim_confidence_threshold(&self, agent: EntityId) -> Permille {
+        let _ = agent;
+        Permille::ZERO
     }
     fn discrepancy_memory(&self, agent: EntityId) -> Option<&worldwake_core::DiscrepancyMemory> {
         let _ = agent;
@@ -449,6 +633,32 @@ pub trait GoalBeliefView {
         let _ = (agent, key);
         Vec::new()
     }
+    fn believed_target_location(
+        &self,
+        agent: EntityId,
+        target: EntityId,
+    ) -> BeliefValue<Option<EntityId>> {
+        let _ = (agent, target);
+        stale_default_value(None)
+    }
+    fn believed_entities_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: EntityKind,
+    ) -> Vec<BeliefValue<EntityId>> {
+        let _ = (agent, place, kind);
+        Vec::new()
+    }
+    fn believed_commodity_stock(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: CommodityKind,
+    ) -> BeliefValue<Quantity> {
+        let _ = (agent, place, kind);
+        stale_default_value(Quantity(0))
+    }
 }
 
 pub trait ControlBeliefView {
@@ -481,6 +691,14 @@ pub trait EntityBeliefView {
     }
     fn is_incapacitated(&self, entity: EntityId) -> bool;
     fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId>;
+    fn believed_target_location(
+        &self,
+        agent: EntityId,
+        target: EntityId,
+    ) -> BeliefValue<Option<EntityId>> {
+        let _ = (agent, target);
+        stale_default_value(None)
+    }
 }
 
 pub trait ProfileBeliefView {
@@ -570,6 +788,15 @@ pub trait SpatialBeliefView {
     fn route_exists(&self, from: EntityId, to: EntityId) -> bool;
     fn in_transit_state(&self, entity: EntityId) -> Option<InTransitOnEdge>;
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
+    fn believed_entities_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: EntityKind,
+    ) -> Vec<BeliefValue<EntityId>> {
+        let _ = (agent, place, kind);
+        Vec::new()
+    }
 }
 
 pub trait TemporalBeliefView {
@@ -636,6 +863,15 @@ pub trait InventoryBeliefView {
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn load_of_entity(&self, entity: EntityId) -> Option<LoadUnits>;
     fn known_recipes(&self, agent: EntityId) -> Vec<RecipeId>;
+    fn believed_commodity_stock(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: CommodityKind,
+    ) -> BeliefValue<Quantity> {
+        let _ = (agent, place, kind);
+        stale_default_value(Quantity(0))
+    }
 }
 
 pub trait CombatBeliefView {
@@ -705,6 +941,10 @@ pub trait SocialBeliefView {
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
         Vec::new()
+    }
+    fn claim_confidence_threshold(&self, agent: EntityId) -> Permille {
+        let _ = agent;
+        Permille::ZERO
     }
     fn discrepancy_memory(&self, agent: EntityId) -> Option<&worldwake_core::DiscrepancyMemory> {
         let _ = agent;
@@ -955,6 +1195,15 @@ impl<T: SpatialBeliefView + ?Sized> GoalSpatialBeliefView for T {
         SpatialBeliefView::entities_at(self, place)
     }
 
+    fn believed_entities_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: EntityKind,
+    ) -> Vec<BeliefValue<EntityId>> {
+        SpatialBeliefView::believed_entities_at(self, agent, place, kind)
+    }
+
     fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
         SpatialBeliefView::locally_observed_entities_at(self, agent, place)
     }
@@ -1079,6 +1328,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Vec<worldwake_core::SocialObservation> {
         SocialBeliefView::known_social_observations(self, agent)
+    }
+
+    fn claim_confidence_threshold(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> worldwake_core::Permille {
+        SocialBeliefView::claim_confidence_threshold(self, agent)
     }
 
     fn discrepancy_memory(
@@ -1716,6 +1972,32 @@ where
     ) -> Vec<worldwake_core::BelievedInstitutionalClaim> {
         PoliticalBeliefView::institutional_belief_claims(self, agent, key)
     }
+
+    fn believed_target_location(
+        &self,
+        agent: worldwake_core::EntityId,
+        target: worldwake_core::EntityId,
+    ) -> BeliefValue<Option<worldwake_core::EntityId>> {
+        EntityBeliefView::believed_target_location(self, agent, target)
+    }
+
+    fn believed_entities_at(
+        &self,
+        agent: worldwake_core::EntityId,
+        place: worldwake_core::EntityId,
+        kind: worldwake_core::EntityKind,
+    ) -> Vec<BeliefValue<worldwake_core::EntityId>> {
+        GoalSpatialBeliefView::believed_entities_at(self, agent, place, kind)
+    }
+
+    fn believed_commodity_stock(
+        &self,
+        agent: worldwake_core::EntityId,
+        place: worldwake_core::EntityId,
+        kind: worldwake_core::CommodityKind,
+    ) -> BeliefValue<worldwake_core::Quantity> {
+        InventoryBeliefView::believed_commodity_stock(self, agent, place, kind)
+    }
 }
 
 #[must_use]
@@ -1907,13 +2189,34 @@ mod tests {
         SocialBeliefView,
     };
     use worldwake_core::{
-        AgentBeliefStore, CauseRef, CommodityConsumableProfile, CommodityKind, ControlSource,
-        DemandObservation, DeprivationExposure, DiversificationProfile, DriveEscalationProfile,
-        DriveThresholds, EntityId, EntityKind, EventLog, HomeostaticNeedId, HomeostaticNeeds,
-        LastProactiveExplorationTick, LoadUnits, PatrolProfile, Permille, Quantity, ResourceSource,
-        Tick, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_prototype_world,
+        AgentBeliefStore, BeliefConfidencePolicy, CauseRef, ClaimId, ClaimValue,
+        CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
+        DeprivationExposure, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
+        EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EventLog, HomeostaticNeedId,
+        HomeostaticNeeds, LastProactiveExplorationTick, LoadUnits, PatrolProfile, PerceptionSource,
+        Permille, Quantity, ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationTag, World, WorldTxn, build_prototype_world,
     };
+
+    fn sample_claim(
+        claim_id: u64,
+        subject: EntityId,
+        aspect: EntityBeliefAspect,
+        value: ClaimValue,
+        acquired_tick: u64,
+        confidence: u16,
+    ) -> EntityBeliefClaim {
+        EntityBeliefClaim {
+            claim_id: ClaimId(claim_id),
+            subject,
+            aspect,
+            value,
+            source: PerceptionSource::DirectObservation,
+            acquired_tick: Tick(acquired_tick),
+            claimed_event_tick: Some(Tick(acquired_tick)),
+            confidence: Permille::new(confidence).unwrap(),
+        }
+    }
 
     struct StubGoalBeliefView;
 
@@ -2383,5 +2686,136 @@ mod tests {
             GoalBeliefView::last_proactive_exploration_tick(&view, actor),
             Some(Tick(42))
         );
+    }
+
+    #[test]
+    fn belief_status_for_effective_confidence_uses_threshold_bands() {
+        let threshold = Permille::new(300).unwrap();
+
+        assert_eq!(
+            super::belief_status_for_effective_confidence(650, threshold),
+            super::BeliefStatus::Certain
+        );
+        assert_eq!(
+            super::belief_status_for_effective_confidence(300, threshold),
+            super::BeliefStatus::Probable
+        );
+        assert_eq!(
+            super::belief_status_for_effective_confidence(299, threshold),
+            super::BeliefStatus::Stale
+        );
+    }
+
+    #[test]
+    fn project_claims_into_belief_set_marks_disputed_when_alternative_values_survive() {
+        let subject = EntityId {
+            slot: 41,
+            generation: 0,
+        };
+        let set = super::project_claims_into_belief_set(
+            [
+                (
+                    sample_claim(
+                        1,
+                        subject,
+                        EntityBeliefAspect::Location,
+                        ClaimValue::Place(Some(EntityId {
+                            slot: 10,
+                            generation: 0,
+                        })),
+                        7,
+                        950,
+                    ),
+                    Some(EntityId {
+                        slot: 10,
+                        generation: 0,
+                    }),
+                ),
+                (
+                    sample_claim(
+                        2,
+                        subject,
+                        EntityBeliefAspect::Location,
+                        ClaimValue::Place(Some(EntityId {
+                            slot: 11,
+                            generation: 0,
+                        })),
+                        9,
+                        975,
+                    ),
+                    Some(EntityId {
+                        slot: 11,
+                        generation: 0,
+                    }),
+                ),
+            ],
+            Tick(10),
+            Permille::new(300).unwrap(),
+            &BeliefConfidencePolicy::default(),
+        );
+
+        assert_eq!(
+            set.best.as_ref().map(|best| best.value),
+            Some(Some(EntityId {
+                slot: 11,
+                generation: 0,
+            }))
+        );
+        assert_eq!(
+            set.best.as_ref().map(|best| best.status),
+            Some(super::BeliefStatus::Disputed)
+        );
+        assert_eq!(set.alternatives.len(), 1);
+        assert_eq!(
+            set.alternatives[0].value,
+            Some(EntityId {
+                slot: 10,
+                generation: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn project_claims_into_belief_set_deduplicates_same_value_alternatives() {
+        let subject = EntityId {
+            slot: 42,
+            generation: 0,
+        };
+        let set = super::project_claims_into_belief_set(
+            [
+                (
+                    sample_claim(
+                        1,
+                        subject,
+                        EntityBeliefAspect::Inventory(CommodityKind::Bread),
+                        ClaimValue::Quantity(Quantity(3)),
+                        8,
+                        960,
+                    ),
+                    Quantity(3),
+                ),
+                (
+                    sample_claim(
+                        2,
+                        subject,
+                        EntityBeliefAspect::Inventory(CommodityKind::Bread),
+                        ClaimValue::Quantity(Quantity(3)),
+                        9,
+                        980,
+                    ),
+                    Quantity(3),
+                ),
+            ],
+            Tick(10),
+            Permille::new(300).unwrap(),
+            &BeliefConfidencePolicy::default(),
+        );
+
+        assert_eq!(set.best.as_ref().map(|best| best.value), Some(Quantity(3)));
+        assert_eq!(
+            set.best.as_ref().map(|best| best.status),
+            Some(super::BeliefStatus::Certain)
+        );
+        assert!(set.alternatives.is_empty());
     }
 }

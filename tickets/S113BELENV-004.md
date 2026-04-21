@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — candidate emission for remote-target goals (`worldwake-ai/src/candidate_generation.rs`)
-**Deps**: S113BELENV-001
+**Deps**: archive/tickets/S113BELENV-001.md, S113BELENV-006
 
 ## Problem
 
@@ -15,7 +15,7 @@ Candidate emitters that fire for **remote** targets — targets the agent is not
 
 Today these emitters gate on whether the agent *has* a belief about the target at all, not on whether that belief is fresh, decayed, or refuted. The planner can emit an engage-hostile goal against a target whose last known location is two hundred ticks stale, alongside a fresh one — and ranking has no confidence signal to separate them until T003 lands. Worse, a contradicted belief (a later observation refuted the target's presence at the remembered place) still gates the emitter open.
 
-This ticket instruments both emitters with envelope-aware gating, following the spec's contract: skip on `Contradicted`, emit on `Stale` (the agent may still want to plan a verification step), and proceed normally on `Certain`/`Probable`. It establishes the pattern for other emitters to adopt in follow-up tickets.
+This ticket instruments both emitters with envelope-aware gating. After `S113BELENV-006` lands explicit contradiction carriage, the contract is: skip on `Contradicted`, emit on `Stale` (the agent may still want to plan a verification step), and proceed normally on `Certain`/`Probable`. It establishes the pattern for other emitters to adopt in follow-up tickets.
 
 ## Assumption Reassessment (2026-04-21)
 
@@ -25,7 +25,7 @@ This ticket instruments both emitters with envelope-aware gating, following the 
 5. This is a planner-candidate-generation layer ticket. The exact current operator/affordance surface the scenario depends on is belief-view reads on target location. Skipping on `Contradicted` and continuing on `Stale` affect *whether a candidate is emitted*, not *how* the goal is later planned — so the emitter change is narrow and cannot cascade into search-plan assumptions.
 6. AI regression — intended verification layer is candidate-generation focused/unit coverage. `cargo test -p worldwake-ai candidate_generation` is the narrowest real test binary. Runtime `agent_tick` / golden coverage is out of scope (golden is T005, runtime coverage via full AI suite).
 8. No heuristic is being removed. The envelope gating is additive — non-envelope-aware branches remain for goals without belief-based target anchors. The substrate the envelope introduces (confidence, status) is new; this emitter instrumentation is the first consumer.
-13. Adjacent contradiction: no existing emitter currently uses `believed_target_location` (grep confirmed zero matches workspace-wide). The "migrate `.is_some()` checks" language from the pre-reassessment spec draft was fabricated. This ticket is therefore a first-consumer ticket, not a migration.
+13. Adjacent contradiction: no existing emitter currently uses `believed_target_location` (grep confirmed zero matches workspace-wide). The "migrate `.is_some()` checks" language from the pre-reassessment spec draft was fabricated. This ticket is therefore a first-consumer ticket, not a migration. Also, `S113BELENV-001` does not emit `Contradicted` yet because the live claim store has no refutation carrier; that branch depends on `S113BELENV-006`.
 
 ## Architecture Check
 

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — decision-event payloads (`worldwake-core/src/decision_event_payload.rs`), save format version (`worldwake-sim/src/save_load.rs`), 14 payload construction sites across 6 files
-**Deps**: S113BELENV-001
+**Deps**: archive/tickets/S113BELENV-001.md
 
 ## Problem
 

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Introduce `BeliefValue<T>` and `BeliefSet<T>` read-model wrappers and expose three new planner-facing belief-store accessors that surface confidence, freshness, status (`Certain` / `Probable` / `Stale` / `Contradicted`), and alternatives. Today the planner has no belief-store accessor for "where do I believe target X is?", "which entities do I believe are at remote place P?", or "how much commodity Q do I believe is at place P?" — existing accessors (`entities_at`, `locally_observed_entities_at`, `commodity_quantity`, `locally_observed_commodity_quantity`) read world state or same-tick perception (FND-14A), and `pursuit_belief.rs::last_known_place` is a single-slot pursuit target, not a general query. Agents therefore cannot plan from remote rumor or stale testimony, and they cannot reason "act now vs. verify first" because the signals the planner sees do not carry confidence. This spec adds three scoped belief-envelope accessors; route / ownership / office-holder / institutional-fact envelope exposure is deferred.
+Introduce `BeliefValue<T>` and `BeliefSet<T>` read-model wrappers and expose three new planner-facing belief-store accessors that surface confidence, freshness, status (`Certain` / `Probable` / `Stale` / `Disputed`), with `Contradicted` retained in the end-state taxonomy once claim-level refutation carriage lands. Today the planner has no belief-store accessor for "where do I believe target X is?", "which entities do I believe are at remote place P?", or "how much commodity Q do I believe is at place P?" — existing accessors (`entities_at`, `locally_observed_entities_at`, `commodity_quantity`, `locally_observed_commodity_quantity`) read world state or same-tick perception (FND-14A), and `pursuit_belief.rs::last_known_place` is a single-slot pursuit target, not a general query. Agents therefore cannot plan from remote rumor or stale testimony, and they cannot reason "act now vs. verify first" because the signals the planner sees do not carry confidence. This spec adds three scoped belief-envelope accessors; route / ownership / office-holder / institutional-fact envelope exposure is deferred.
 
 ## Phase and Status
 
@@ -13,6 +13,8 @@ Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
 - `worldwake-sim` — `BeliefValue<T>`, `BeliefSet<T>` types in `belief_view.rs`; three new accessor methods on `EntityBeliefView`, `SpatialBeliefView`, and `InventoryBeliefView` with forwarding through `GoalBeliefView`
 - `worldwake-ai` — consumers of the new envelope at candidate-generation, ranking, and plan-revalidation call sites; feasibility probe (S112) gains envelope-aware rejection reasons
 - `worldwake-core` — `BeliefSnapshot` addition on belief-referencing decision-event payloads (`decision_event_payload.rs`)
+
+Implementation note: foundational ticket `S113BELENV-001` lands the non-contradicted envelope projection plus staged `BeliefStatus::Contradicted` API surface. Claim-level refutation carriage needed to derive `Contradicted` honestly is deferred to `S113BELENV-006`.
 
 ## Dependencies
 
@@ -142,7 +144,7 @@ Reads `EntityBeliefAspect::Inventory(CommodityKind)` claims for the place. Compl
 `BeliefStatus` is derived at query time from stored fields plus existing per-agent parameters:
 
 1. Compute `effective = effective_claim_confidence(claim, current_tick, &profile.confidence_policy)` — the existing helper at `crates/worldwake-core/src/belief.rs:2280` applies per-tick staleness decay (`staleness_penalty_per_tick` on `BeliefConfidencePolicy`) to the stored confidence.
-2. `Contradicted` wins first: if a refutation flag is set on the claim, status is `Contradicted` regardless of other signals.
+2. `Contradicted` wins first once explicit claim-level refutation carriage exists. Foundational ticket `S113BELENV-001` does not invent this flag; follow-up ticket `S113BELENV-006` owns that derivation substrate.
 3. If multiple claims disagree in `best` vs. `alternatives`, status is `Disputed` (and the decision rule for which becomes `best` is described in D5).
 4. Otherwise, bands derived from the agent's `PerceptionProfile::claim_confidence_threshold`:
    - `effective >= claim_confidence_threshold * 2` → `Certain` (well above threshold — cap the multiplier at 1000 permille).

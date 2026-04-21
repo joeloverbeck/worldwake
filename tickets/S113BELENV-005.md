@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (test-only; exercises existing engine behavior from T001 + T003)
-**Deps**: S113BELENV-001, S113BELENV-003
+**Deps**: archive/tickets/S113BELENV-001.md, S113BELENV-003
 
 ## Problem
 

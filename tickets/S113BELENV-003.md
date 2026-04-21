@@ -4,14 +4,14 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI ranking formula, plan revalidation predicate, S112 feasibility probe rejection path
-**Deps**: S113BELENV-001
+**Deps**: archive/tickets/S113BELENV-001.md, S113BELENV-006
 
 ## Problem
 
 With envelope accessors landed (T001), three downstream consumers in `worldwake-ai` can now reason about belief confidence and status instead of treating every belief as crisp:
 
 1. **Ranking** (`motive_score` in `ranking.rs:747`) — currently discounts nothing for stale beliefs because the signal doesn't exist. Agents rank a goal tied to a fresh observation the same as one tied to an eroded rumor, which violates FND-20 (resource-bounded practical reasoning — agents should weight act-vs-verify).
-2. **Plan revalidation** (`revalidate_exact_target_step` in `plan_revalidation.rs:84`) — identity-bound steps (S108 `BindingStrictness::ExactIdentity`) currently do not short-circuit when the target-presence belief is `Contradicted`, so agents can waste a tick walking into a refuted belief.
+2. **Plan revalidation** (`revalidate_exact_target_step` in `plan_revalidation.rs:84`) — once claim-level refutation carriage lands in `S113BELENV-006`, identity-bound steps (S108 `BindingStrictness::ExactIdentity`) should short-circuit when the target-presence belief is `Contradicted`, so agents do not waste a tick walking into a refuted belief.
 3. **Feasibility probe** (`feasibility_probe.rs` + `FeasibilityVerdict` in `agent_tick/portfolio.rs:29-31`) — currently has no envelope-aware rejection for stale beliefs; S112's information-gathering slot cannot activate on the `Stale + ExactIdentity` case because the probe never emits `BeliefStale`.
 
 All three integrations are small single-function modifications that share the same pattern — read envelope, branch on `status`/`confidence`. Bundling them into one ticket keeps the pattern-establishing review in one diff.
@@ -26,7 +26,7 @@ All three integrations are small single-function modifications that share the sa
 7. Ordering contract: none of the three integrations change lifecycle ordering. Ranking scaling is a motive-score transform — the ordering rule is still "higher score first"; the scale just changes what scores are produced. Revalidation and probe add *rejection* paths, not ordering changes. Compared branches (belief-driven vs non-belief-driven ranking) are symmetric in the current architecture — they use the same scoring substrate; envelope scaling adds a multiplicative post-factor.
 8. No heuristic is being removed. The envelope-confidence multiplier is a new substrate that supplements existing motive scoring, not a replacement for an existing filter.
 9. For revalidation, the first-failure-boundary classification is **authoritative start / post-start abort** — the predicate lives inside `revalidate_exact_target_step` which runs pre-commit; the `Contradicted` return escalates to the AI layer's plan-failure handler via `Discrepancy::BeliefContradicted`. Shared runtime request path checked: `plan_revalidation.rs::revalidate_next_step` (line 14) → `revalidate_exact_target_step` (line 84). Proof surface: focused runtime coverage in plan_revalidation.rs `#[cfg(test)]` at line 228.
-13. Adjacent contradictions: none surfaced during reassessment. The `FeasibilityVerdict` enum already carries `Discrepancy` as the rejection reason, so adding a new short-circuit requires no variant widening (unlike a naive "add new variant" approach).
+13. Adjacent contradictions: `S113BELENV-001` lands `BeliefStatus::Contradicted` as staged taxonomy only; live contradiction derivation is deferred to `S113BELENV-006` because the current claim store has no explicit refutation marker. This ticket therefore depends on `S113BELENV-006` for the contradiction-driven branches and can still land stale-belief handling independently if reassessed that way later.
 
 ## Architecture Check
 
