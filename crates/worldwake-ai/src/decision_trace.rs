@@ -612,6 +612,8 @@ pub struct PursuitDiagnostic {
 pub enum PursuitOmissionReason {
     /// `pursuit_target_belief()` returned None (unknown place, dead, or co-located).
     UnknownPlace,
+    /// `believed_target_location()` marked the target-location belief as contradicted.
+    ContradictedBelief,
     /// Derived confidence below `min_location_confidence`.
     LowConfidence,
     /// Route to believed place exceeds `max_pursuit_travel_ticks`.

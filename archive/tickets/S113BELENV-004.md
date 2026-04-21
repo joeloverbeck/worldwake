@@ -1,9 +1,9 @@
 # S113BELENV-004: Remote-target emitters gain envelope reads
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
-**Engine Changes**: Yes — candidate emission for remote-target goals (`worldwake-ai/src/candidate_generation.rs`)
+**Engine Changes**: Yes — candidate emission for remote-target goals plus pursuit omission-trace honesty for contradicted target beliefs (`worldwake-ai/src/candidate_generation.rs`, `worldwake-ai/src/decision_trace.rs`)
 **Deps**: archive/tickets/S113BELENV-001.md, archive/tickets/S113BELENV-006.md
 
 ## Problem
@@ -32,12 +32,13 @@ This ticket instruments both emitters with envelope-aware gating. After `S113BEL
 1. Both emitters already read belief-view state to make emission decisions; the envelope read is a refinement of that existing read, not a new cross-system authority path (P26). No direct belief-store access, no global queries.
 2. The skip-on-`Contradicted` rule operationalizes FND-16 (contradictions first-class): agents should not plan against refuted beliefs, and the envelope makes the refutation visible. Emit-on-`Stale` preserves FND-20 (resource-bounded reasoning): the agent can still consider a stale target and optionally plan verification first.
 3. No backward-compatibility shim. The emitters did not read `believed_target_location` before (it didn't exist), so there is no prior path to preserve (P28).
+4. Live information-path split under audit: target-location provenance still has two lawful planner-adjacent carriers in this file family. After this ticket, `believed_target_location(...)` is the canonical **emission gate** for contradicted remote targets; the older `pursuit_target_belief(...)` helper remains in-scope for route, confidence, and pursuit-diagnostic provenance on non-contradicted paths. Removing that older provenance helper entirely is deferred.
 
 ## Verification Layers
 
 1. Emitter skips emission when target envelope has `status == Contradicted` → focused unit test in `candidate_generation.rs` `#[cfg(test)]` for each of the two emitters.
-2. Emitter emits normally when target envelope has `status == Certain` or `Probable` → focused unit test covering at least one band.
-3. Emitter emits when `status == Stale` (the "plan verification first" semantics) → focused unit test.
+2. Existing non-contradicted remote-pursuit tests still prove the preserved emission path for ordinary remote targets (`emitted_when_pursuit_conditions_met`, `omitted_when_confidence_too_low`, route/block checks).
+3. Pursuit omission diagnostics remain honest when the new contradicted gate fires → focused trace assertion on at least one remote emitter path.
 4. No changes to `GroundedGoal` shape, `GoalKey`, or `OpportunityAnchor` — these remain the emitter's output contract (P27, emitter-vs-ranking architecture per validation patterns).
 
 ## What to Change
@@ -48,7 +49,7 @@ In `crates/worldwake-ai/src/candidate_generation.rs` at line 2095, where the emi
 
 - Read `view.believed_target_location(agent, target)` (or the analog surface; implementer verifies whether the emitter's signature exposes `&dyn GoalBeliefView` or needs routing through its context).
 - If `envelope.status == BeliefStatus::Contradicted`, skip emission for this target (continue to the next candidate).
-- Otherwise emit as today. `Stale` does not block emission — the landed `S113BELENV-003` ranking consumer already discounts the `RaidTarget` motive score, and the agent can still plan verification.
+- Otherwise continue through the existing pursuit helper path for confidence/routing/provenance. `Stale` does not block emission — the landed `S113BELENV-003` ranking consumer already discounts the `RaidTarget` motive score, and the agent can still plan verification.
 
 ### 2. `emit_remote_raid_targets` — envelope gating
 
@@ -59,15 +60,14 @@ Same pattern applied at `candidate_generation.rs:2308`.
 Add to `candidate_generation.rs` `#[cfg(test)]` (or the nearest existing emitter-test module):
 
 1. `emit_remote_engage_hostile_targets` with a target whose envelope is `Contradicted` → no candidate emitted for that target.
-2. Same emitter with a target whose envelope is `Certain` → candidate emitted.
-3. Same emitter with a target whose envelope is `Stale` → candidate emitted.
-4. Repeat 1–3 for `emit_remote_raid_targets`.
-
-Six unit tests total. Use fixture belief views that return controlled `BeliefValue<Option<EntityId>>` for the three bands.
+2. `emit_remote_raid_targets` with a target whose envelope is `Contradicted` → no candidate emitted for that target.
+3. At least one contradicted-path test should also assert the pursuit omission trace stays honest (new contradicted omission reason instead of pretending the target place was merely unknown).
+4. Existing emitted/low-confidence/route/block tests remain the proof surface for non-contradicted remote pursuit paths; no duplicate re-tests needed if those cases still cover the preserved behavior after reassessment.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — two emitter functions + emitter-test additions)
+- `crates/worldwake-ai/src/decision_trace.rs` (modify — pursuit omission reason taxonomy gains a contradicted-belief branch so candidate traces stay truthful)
 
 ## Out of Scope
 
@@ -80,7 +80,7 @@ Six unit tests total. Use fixture belief views that return controlled `BeliefVal
 
 ### Tests That Must Pass
 
-1. Six new unit tests in §3 pass.
+1. Focused contradicted-envelope unit tests in §3 pass.
 2. `cargo test -p worldwake-ai candidate_generation` passes (existing emitter tests do not regress — the added gate only affects remote targets whose envelope is `Contradicted`).
 3. Full AI suite: `cargo test -p worldwake-ai` passes.
 
@@ -94,13 +94,40 @@ Six unit tests total. Use fixture belief views that return controlled `BeliefVal
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/candidate_generation.rs` `#[cfg(test)]` — 6 new unit tests per §3.
-2. If emitter testing lives in a dedicated `tests/` module (not inline), mirror the structure of the nearest existing emitter test.
+1. `crates/worldwake-ai/src/candidate_generation.rs` `#[cfg(test)]` — 2 new contradicted-envelope omission tests, one per remote emitter.
+2. Existing remote-pursuit tests in the same module remain the proof surface for non-contradicted emission behavior.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai candidate_generation::tests` (targeted, narrowed to the file).
-2. `cargo test -p worldwake-ai emit_remote` (keyword-narrow to both new-tests).
-3. `cargo test -p worldwake-ai` (full AI suite).
-4. `cargo clippy --workspace --all-targets -- -D warnings`.
-5. `./scripts/verify.sh` before PR.
+1. `cargo test -p worldwake-ai candidate_generation::tests::remote_raid_target_omitted_when_target_location_belief_is_contradicted -- --exact`
+2. `cargo test -p worldwake-ai candidate_generation::tests::remote_engage_hostile_omitted_when_target_location_belief_is_contradicted -- --exact`
+3. `cargo test -p worldwake-ai candidate_generation`
+4. `cargo fmt --all`
+5. `cargo test -p worldwake-ai`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+7. `./scripts/verify.sh` before PR
+
+## Outcome
+
+Implemented on 2026-04-21.
+
+- `emit_remote_engage_hostile_targets` and `emit_remote_raid_targets` now read `believed_target_location(...)` as the canonical emission gate and skip contradicted remote targets instead of treating refuted target-location beliefs like ordinary pursuit inputs.
+- The existing `pursuit_target_belief(...)` helper remains in use for route, confidence, and provenance on non-contradicted paths; this ticket does not remove that older helper.
+- `PursuitOmissionReason` now includes `ContradictedBelief`, and the raid-path focused trace proof confirms contradicted omission is recorded honestly instead of masquerading as `UnknownPlace`.
+- Test-harness fallout was absorbed in-scope: the `candidate_generation` test double now implements `believed_target_location(...)` against its seeded belief-store claims so envelope-aware emitter tests exercise the real trait contract.
+- Deviation from the earlier draft: the honest proof surface is two new contradicted-envelope regressions plus existing remote-pursuit emission tests for preserved non-contradicted behavior, not six new band-by-band tests. The live emitter change only adds a contradicted short-circuit; it does not add a new stale-only emission branch.
+
+## Verification Result
+
+Passed on 2026-04-21:
+
+1. `cargo test -p worldwake-ai candidate_generation::tests::remote_raid_target_omitted_when_target_location_belief_is_contradicted -- --exact`
+2. `cargo test -p worldwake-ai candidate_generation::tests::remote_engage_hostile_omitted_when_target_location_belief_is_contradicted -- --exact`
+3. `cargo test -p worldwake-ai candidate_generation`
+4. `cargo fmt --all`
+5. `cargo test -p worldwake-ai`
+
+Not run:
+
+1. `cargo clippy --workspace --all-targets -- -D warnings`
+2. `./scripts/verify.sh`

@@ -77,7 +77,7 @@ After adding the test, run `python3 scripts/golden_inventory.py --write --check-
 - Changes to engine code, belief storage, envelope derivation, or ranking arithmetic — all upstream in `S113BELENV-001` / `S113BELENV-003`.
 - Adding decision-trace fields or changing `BlockerRecordedPayload`/`PlanInvalidatedPayload` shapes — T002 owns payload changes.
 - Assertion on the `belief_snapshot` field of a blocker/invalidation event — `S113BELENV-003` is where the relevant blocker snapshots get populated; this ticket could add a follow-on assertion later but it is not in-scope here.
-- Candidate-gen emitter coverage for `emit_remote_*` (T004 owns that).
+- Candidate-gen emitter coverage for `emit_remote_*` ([archive/tickets/S113BELENV-004.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S113BELENV-004.md) owns that).
 
 ## Acceptance Criteria
 
