@@ -1,7 +1,5 @@
 use crate::GoalKindPlannerExt;
-use crate::agent_tick::portfolio::{
-    FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio,
-};
+use crate::agent_tick::portfolio::{FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio};
 use crate::candidate_generation::relieved_needs_for_commodity;
 use crate::decision_trace::{
     BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
@@ -876,13 +874,12 @@ fn build_rejected_alternatives(
     }
 
     let mut rejected = rejected_by_goal.into_values().collect::<Vec<_>>();
-    rejected
-        .sort_unstable_by(|left, right| {
-            right
-                .motive_score
-                .cmp(&left.motive_score)
-                .then_with(|| left.goal_key.cmp(&right.goal_key))
-        });
+    rejected.sort_unstable_by(|left, right| {
+        right
+            .motive_score
+            .cmp(&left.motive_score)
+            .then_with(|| left.goal_key.cmp(&right.goal_key))
+    });
     rejected.truncate(usize::from(max_alternatives));
     rejected
         .into_iter()
@@ -2411,7 +2408,11 @@ mod tests {
 
     #[test]
     fn portfolio_assembly_always_runs_with_max_candidates_to_plan_one() {
-        fn ranked_slot_goal(kind: GoalKind, motive_score: u32, anchor: OpportunityAnchor) -> RankedGoal {
+        fn ranked_slot_goal(
+            kind: GoalKind,
+            motive_score: u32,
+            anchor: OpportunityAnchor,
+        ) -> RankedGoal {
             RankedGoal {
                 grounded: GroundedGoal {
                     key: GoalKey::from(kind),
@@ -3746,10 +3747,14 @@ mod tests {
 
         assert_eq!(
             super::summarize_same_goal_planning_trace(
-                &[market, orchard, OpportunityKey {
-                    goal_key: sleep_goal.key,
-                    anchor: sleep_goal.anchor,
-                }],
+                &[
+                    market,
+                    orchard,
+                    OpportunityKey {
+                        goal_key: sleep_goal.key,
+                        anchor: sleep_goal.anchor,
+                    }
+                ],
                 3,
                 &plans,
             ),
@@ -3803,9 +3808,7 @@ mod tests {
                                 expires_at: Some(Tick(5)),
                                 jurisdiction: Some(entity(52)),
                             },
-                            topic: worldwake_core::NoticeTopic::ThreatWarning {
-                                place: entity(52),
-                            },
+                            topic: worldwake_core::NoticeTopic::ThreatWarning { place: entity(52) },
                         }),
                         anchor: OpportunityAnchor::Place(entity(52)),
                     },

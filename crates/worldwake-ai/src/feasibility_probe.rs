@@ -7,8 +7,8 @@ use crate::failure_handling::place_has_local_commodity_support;
 use crate::goal_model::RankedGoal;
 use crate::{GoalKindPlannerExt, PlannerOpKind, PlannerOpSemantics};
 use worldwake_core::{
-    ActionDefId, BlockerKey, BlockerMemory, Discrepancy, DiscrepancyMemory, EntityId,
-    GoalKind, OpportunityAnchor, Tick,
+    ActionDefId, BlockerKey, BlockerMemory, Discrepancy, DiscrepancyMemory, EntityId, GoalKind,
+    OpportunityAnchor, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, RuntimeBeliefView, get_affordances_for_defs,
@@ -178,14 +178,8 @@ fn current_place_support_failure(
         return Some(Discrepancy::MissingObservation);
     }
 
-    (!place_has_local_commodity_support(
-        context.belief_view,
-        context.agent,
-        place,
-        commodity,
-        None,
-    ))
-    .then_some(Discrepancy::MissingObservation)
+    (!place_has_local_commodity_support(context.belief_view, context.agent, place, commodity, None))
+        .then_some(Discrepancy::MissingObservation)
 }
 
 fn entity_supports_commodity(
@@ -197,10 +191,12 @@ fn entity_supports_commodity(
         .belief_view
         .resource_source(entity)
         .is_some_and(|resource| {
-            resource.commodity == commodity && resource.available_quantity > worldwake_core::Quantity(0)
+            resource.commodity == commodity
+                && resource.available_quantity > worldwake_core::Quantity(0)
         })
         || (context.belief_view.item_lot_commodity(entity) == Some(commodity)
-            && context.belief_view.commodity_quantity(entity, commodity) > worldwake_core::Quantity(0)
+            && context.belief_view.commodity_quantity(entity, commodity)
+                > worldwake_core::Quantity(0)
             && context.belief_view.direct_container(entity).is_none()
             && context.belief_view.direct_possessor(entity).is_none())
         || context.belief_view.commodity_quantity(entity, commodity) > worldwake_core::Quantity(0)

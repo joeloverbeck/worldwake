@@ -1112,12 +1112,12 @@ pub(crate) fn place_has_local_commodity_support(
             .entities_at(place)
             .into_iter()
             .filter(|entity| Some(*entity) != excluded_target)
-        .any(|entity| {
-            view.item_lot_commodity(entity) == Some(commodity)
-                && view.commodity_quantity(entity, commodity) > Quantity(0)
-                && view.direct_container(entity).is_none()
-                && view.direct_possessor(entity).is_none()
-        })
+            .any(|entity| {
+                view.item_lot_commodity(entity) == Some(commodity)
+                    && view.commodity_quantity(entity, commodity) > Quantity(0)
+                    && view.direct_container(entity).is_none()
+                    && view.direct_possessor(entity).is_none()
+            })
         || view
             .resource_sources_at(place, commodity)
             .into_iter()

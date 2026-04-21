@@ -7,23 +7,21 @@ use std::path::PathBuf;
 
 use golden_harness::{GoldenHarness, commit_txn, new_txn, seed_actor_local_beliefs};
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
 use worldwake_ai::{
-    AgentDecisionRuntime, AgentTickDriver, DecisionOutcome, DirtySet, PlanTerminalKind,
-    PlannedPlan,
+    AgentDecisionRuntime, AgentTickDriver, DecisionOutcome, DirtySet, PlanTerminalKind, PlannedPlan,
 };
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
     ActiveGoal, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
     DecisionEventPayload, EntityId, EventTag, EventView, ExpectationBasis, ExpectationId,
-    ExpectationRecord, ExpectationState, ExpectationStore, GoalKey, GoalKind,
-    GoalRejectionReason, OpportunityAnchor, OpportunityKey, PerceptionSource, Tick,
-    ViolationDispositionProfile,
+    ExpectationRecord, ExpectationState, ExpectationStore, GoalKey, GoalKind, GoalRejectionReason,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, Tick, ViolationDispositionProfile,
 };
-use std::num::NonZeroU32;
 use worldwake_sim::SaveableRuntime;
 
 fn scenario_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/portfolio-planning.ron")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/portfolio-planning.ron")
 }
 
 fn load_portfolio_planning_harness() -> (GoldenHarness, ScenarioDef) {
@@ -92,7 +90,13 @@ fn inject_prior_commitment(
         .runtime_by_agent
         .get(&agent)
         .expect("golden harness should preserve injected runtime");
-    assert_eq!(restored_runtime.current_plan.as_ref().map(|plan| plan.opportunity), Some(committed_opportunity));
+    assert_eq!(
+        restored_runtime
+            .current_plan
+            .as_ref()
+            .map(|plan| plan.opportunity),
+        Some(committed_opportunity)
+    );
     harness.driver.enable_tracing();
 
     let mut txn = new_txn(&mut harness.world, 0);
@@ -273,7 +277,9 @@ fn portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal() {
                 .then_some((trace.tick, planning))
         })
         .unwrap_or_else(|| {
-            panic!("scenario should commit the feasible economic goal within two ticks\n{trace_debug}")
+            panic!(
+                "scenario should commit the feasible economic goal within two ticks\n{trace_debug}"
+            )
         });
 
     assert!(
