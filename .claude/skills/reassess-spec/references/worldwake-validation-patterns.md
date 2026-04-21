@@ -119,3 +119,19 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 **Analog patterns already in repo**: `DecisionTraceSink` (`crates/worldwake-ai/src/decision_trace.rs`), `ActionTraceSink` (`crates/worldwake-sim/src/action_trace.rs`). Both are consumed by goldens AND the observer binary through runtime placement.
 
 **Flag as Issue**: Spec text that leaves placement ambiguous ("test/support or shared observer code") or picks `tests/` when observer reuse is desired. Recommend committing to runtime placement as part of the Issue finding.
+
+## Fabricated Migration Before-Signatures
+
+**Trigger**: Spec contains Before/After code blocks (or prose framing like "currently:" / "today the trait returns…" / "migrates from X to Y") that present deliverables as migrations of existing methods, signatures, or return types.
+
+**Rule**: Every "Before" signature the spec claims as existing MUST be verified by direct grep. Fabricated migrations are a distinct failure mode from "renamed/moved signature": the methods do not exist *anywhere*, and the spec's entire D-section framing is wrong. This is the scenario where the spec was drafted against an imagined API surface rather than against current code.
+
+**Verify the spec addresses**:
+
+1. For each "Before" method name cited in migration framing, grep the workspace (`rg "fn <name>\|<name>\("` across `crates/`). Zero matches outside the spec file itself = fabricated migration.
+2. When fabrication is confirmed, check whether equivalent functionality is served under a *different* name — search for the semantic capability (e.g., grep for `last_known_place` if the spec talks about target location) and cite the actual existing surface in the finding.
+3. If no equivalent exists, the deliverables are net-new additions, not migrations — the Design Goals, Summary, and D-section framing all need rewrites.
+
+**Analog failure modes already covered**: Code example fidelity (3.3) catches structural mismatches in code snippets; Pseudocode dependency completeness (3.3) catches missing symbols in proposed pseudocode. Fabricated-migration fills the gap between them: it names an *explicit* failure mode where the spec's "before" side is entirely fictional, and it prescribes the grep-every-Before-signature check as the early-warning check.
+
+**Flag as CRITICAL Issue**: The spec's migration framing is false. Recommend reframing affected D-sections as net-new additions, deleting any `*_crisp` / `*_old` / shim discussion (nothing to shim), and rewriting Summary/Design Goals to describe the gap filled by the new methods rather than the migration of non-existent ones. Also reframe any consumer-migration D-section ("emitters currently check X.is_some()…") as net-new consumer integration, because consumers cannot be migrating code that never existed.

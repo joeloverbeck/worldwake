@@ -105,7 +105,7 @@ Extract every concrete codebase reference from the spec:
 
 Build a validation checklist. For specs with >15 references, use `TodoWrite` to track the checklist per reference, marking each `validated | drifted | missing`; the external surface catches references that mental tracking can silently drop[^mental-tracking]. Prioritize references most likely to have drifted: dependency paths, function signatures, and types the spec extends. Stable types (`EntityId`, `Permille`, `Quantity`) can be spot-checked.
 
-[^mental-tracking]: For specs with ≤15 references, mental tracking is acceptable because the working set fits in short-term audit scope. Above that threshold, the external surface is required — batched Grep coverage can mask a silently-dropped reference that only surfaces at post-apply grep (or not at all).
+[^mental-tracking]: For specs with ≤15 references, mental tracking is acceptable because the working set fits in short-term audit scope. Above that threshold, the external surface is required — batched Grep coverage can mask a silently-dropped reference that only surfaces at post-apply grep (or not at all). Parallel Explore agents launched per Step 3 may serve as the external surface instead of TodoWrite when each agent's report covers a disjoint theme — the agents' report bodies are the durable record, and every reference lives inside some agent's checklist.
 
 For investigation/bugfix specs (type e, investigation/bugfix subtype), also prioritize the root-cause hypothesis: trace the claimed failure path through actual code to confirm the spec's causal narrative, not just that the referenced symbols exist. Structured root-cause tracing:
 
