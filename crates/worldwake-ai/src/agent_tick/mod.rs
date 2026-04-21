@@ -4,6 +4,7 @@ mod execution;
 mod frame;
 mod observation;
 mod planning;
+pub(crate) mod portfolio;
 use active_action::{
     active_action_for_agent, advance_completed_step, effective_goal_switch_margin,
     goal_switch_margin_details, handle_active_action_phase, handle_current_step_failure,

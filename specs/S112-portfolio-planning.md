@@ -89,9 +89,9 @@ pub(crate) enum FeasibilityVerdict {
 
 Categorization rules (evaluated at slot-assembly time, reading from already-ranked candidates):
 
-- **Survival slot**: `GoalKind::ConsumeOwnedCommodity { Survival* }`, `Sleep`, `Relieve`, `Wash`, `TreatWounds { patient == self }`, `ReduceDanger`, `FreeCarryCapacity`. `FreeCarryCapacity` is categorized unconditionally — emission (`crates/worldwake-ai/src/goal_model.rs:468-543`, `DisposalProfile`-gated) has already decided the agent is over its disposal threshold by the time the goal appears in the ranked list. Slot winner is the highest-motive survival candidate; ties broken by `GoalKey` order.
+- **Survival slot**: `GoalKind::ConsumeOwnedCommodity { Survival* }`, `AcquireCommodity { purpose: SelfConsume }`, `Sleep`, `Relieve`, `Wash`, `TreatWounds { patient == self }`, `ReduceDanger`, `FreeCarryCapacity`. `FreeCarryCapacity` is categorized unconditionally — emission (`crates/worldwake-ai/src/goal_model.rs:468-543`, `DisposalProfile`-gated) has already decided the agent is over its disposal threshold by the time the goal appears in the ranked list. Slot winner is the highest-motive survival candidate; ties broken by `GoalKey` order.
 - **Commitment slot**: picks `committed_opportunity` explicitly when that `(goal_key, anchor)` pair is still present in the ranked list. Reads `committed_opportunity: Option<OpportunityKey>` already tracked by `AgentDecisionRuntime` (`crates/worldwake-ai/src/agent_tick/planning.rs:275, 993, 1026`). If the committed opportunity is no longer ranked, the commitment slot falls back to the highest-motive candidate whose kind is an obligation goal (`PostNotice`, `PostBounty`, `ReportMissing`, `ReportFound`, warrant-adjacent). If neither applies, the slot is absent from the `Portfolio::slots` map.
-- **Economic slot**: `AcquireCommodity { purpose != Survival }`, `ConsumeOwnedCommodity { non-survival }`, `ProduceCommodity`, `SellCommodity`, `RestockCommodity`, `MoveCargo`, `EstablishBanditCamp`, faction-economic goals. If a candidate is also the survival or commitment slot winner, the economic slot picks the next-ranked economic candidate. Slot winner is the highest-motive remaining economic candidate.
+- **Economic slot**: `AcquireCommodity { purpose: Restock | RecipeInput(_) }`, `ProduceCommodity`, `SellCommodity`, `RestockCommodity`, `MoveCargo`, `EstablishBanditCamp`, faction-economic goals. If a candidate is also the survival or commitment slot winner, the economic slot picks the next-ranked economic candidate. Slot winner is the highest-motive remaining economic candidate.
 
 If a goal ties between categories (e.g., `PostNotice` is both an obligation and — with a high weight — an economic goal), the earlier `SlotKind` variant wins. This is deterministic because `SlotKind` derives `Ord`.
 
@@ -247,7 +247,7 @@ Once S113 lands, an `information: Permille` field (default `Permille::new(600)`)
 1. Survival slot always picks the highest-motive survival goal; ties broken deterministically by `GoalKey` order.
 2. Commitment slot picks `committed_opportunity` when still ranked, regardless of whether a higher-scoring obligation candidate exists this tick.
 3. Commitment slot falls back to highest-motive obligation candidate when `committed_opportunity` is no longer ranked.
-4. A ranked goal that is both survival and economic populates only survival (category priority via `SlotKind::Ord`).
+4. `AcquireCommodity { purpose: SelfConsume }` populates the survival slot while a separate restock or recipe-input acquisition remains economic.
 5. `FeasibilityVerdict::RejectedBeforeSearch` is produced when `DiscrepancyMemory::is_suppressed` returns true for the goal's `BlockerKey`.
 6. `plausible_slots_by_score` orders by `u32::from(motive_score).saturating_mul(u32::from(weight.value())) / 1000`, not raw score. Verify with a survival candidate scoring 500 × weight 1000 vs. economic 600 × weight 700: survival wins at 500 vs 420.
 7. Portfolio assembly always runs (no `max_candidates_to_plan = 1` bypass); `max_candidates_to_plan = 1` results in at most one slot being searched but the full portfolio being assembled and traced.

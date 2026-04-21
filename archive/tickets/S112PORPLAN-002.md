@@ -1,6 +1,6 @@
 # S112PORPLAN-002: Portfolio types and slot categorization
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `worldwake-ai` module `agent_tick/portfolio.rs`
@@ -17,8 +17,9 @@ Decoupling type declaration from loop integration keeps 002 independently testab
 1. Ranked candidates flow from `rank_candidates` producing `Vec<RankedGoal>` (`crates/worldwake-ai/src/goal_model.rs:2528` — fields: `grounded`, `priority_class`, `motive_score`, `feasibility`, provenance). `GoalKey::kind` (a `GoalKind` variant) is how categorization decides slot assignment. Today, the top-N path calls `prioritize_same_goal_replan_candidates` at `planning.rs:303` then `.take(max_candidates_to_plan)` — both are replaced by portfolio assembly in ticket 005.
 2. Spec S112 D1 and D2 define the types and categorization rules. Category priority via `SlotKind::Ord` is declared explicitly. `committed_opportunity: Option<OpportunityKey>` is the commitment-slot anchor (tracked on `AgentDecisionRuntime` via `planning.rs:275`).
 3. Shared boundary: `Portfolio` is a per-tick derivation (not authoritative state) per Section H item 4. `assemble_portfolio(&ranked, &probe_ctx, &cognitive)` consumes already-ranked candidates and `PortfolioSlotWeights` from ticket 001.
-4. `GoalKind` variants referenced by categorization rules all exist and are read from `crates/worldwake-core/src/goal.rs:24-121`: survival (`ConsumeOwnedCommodity`, `Sleep`, `Relieve`, `Wash`, `TreatWounds`, `ReduceDanger`, `FreeCarryCapacity`), obligations (`PostNotice`, `PostBounty`, `ReportMissing`, `ReportFound`), economic (`AcquireCommodity { purpose != Survival }`, `ProduceCommodity`, `SellCommodity`, `RestockCommodity`, `MoveCargo`, `EstablishBanditCamp`).
+4. `GoalKind` variants referenced by categorization rules all exist and are read from `crates/worldwake-core/src/goal.rs:24-121`: survival (`ConsumeOwnedCommodity`, `AcquireCommodity { purpose: SelfConsume }`, `Sleep`, `Relieve`, `Wash`, `TreatWounds`, `ReduceDanger`, `FreeCarryCapacity`), obligations (`PostNotice`, `PostBounty`, `ReportMissing`, `ReportFound`), economic (`AcquireCommodity { purpose: Restock | RecipeInput(_) }`, `ProduceCommodity`, `SellCommodity`, `RestockCommodity`, `MoveCargo`, `EstablishBanditCamp`).
 5. `FreeCarryCapacity` is a unit variant — categorization does not re-gate on capacity ratio; by the time it appears in the ranked list, emission (`DisposalProfile`-gated in `goal_model.rs:468-543`) has already decided the agent is over threshold. Spec D2 was corrected during reassessment to drop the ratio caveat.
+6. Reassessment mismatch: the drafted test `category_priority_survival_wins_over_economic` no longer maps to a truthful live overlap case once survival/economic categories are bound to the current `GoalKind` surface. The focused proof was corrected to assert the live self-care boundary instead: `AcquireCommodity { purpose: SelfConsume }` populates the survival slot while a separate restock acquire still populates economic.
 
 ## Architecture Check
 
@@ -116,7 +117,7 @@ Place in `#[cfg(test)]` block in `portfolio.rs`:
 1. `survival_slot_picks_highest_motive_survival` — two survival candidates, highest wins; tie broken by `GoalKey` order.
 2. `commitment_slot_picks_committed_opportunity_when_ranked` — committed opportunity present in ranked list wins commitment slot even when a higher-motive obligation exists.
 3. `commitment_slot_falls_back_to_highest_obligation_when_commitment_unranked` — committed opportunity absent from ranked list → highest-motive obligation candidate wins commitment.
-4. `category_priority_survival_wins_over_economic` — a candidate matching both survival and economic categories populates only survival.
+4. `self_consume_acquire_populates_survival_slot` — `AcquireCommodity { purpose: SelfConsume }` is classified into the survival slot, while a separate restock acquire remains economic.
 5. `plausible_slots_by_score_applies_weights` — survival 500 × 1000 vs. economic 600 × 700 → survival wins (500 > 420).
 
 ## Files to Touch
@@ -155,6 +156,26 @@ Place in `#[cfg(test)]` block in `portfolio.rs`:
 
 ### Commands
 
-1. `cargo test -p worldwake-ai agent_tick::portfolio`
+1. `cargo test -p worldwake-ai --lib agent_tick::portfolio::tests`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-21.
+
+- Added `crates/worldwake-ai/src/agent_tick/portfolio.rs` with the staged `Portfolio`, `SlotKind`, `PortfolioSlot`, `FeasibilityVerdict`, `assemble_portfolio`, and `plausible_slots_by_score` substrate.
+- Registered the new module in `crates/worldwake-ai/src/agent_tick/mod.rs`.
+- Kept the landed surface intentionally staged for ticket 005 by marking the new module's unused scaffolding explicitly, and preserved the ticket/spec `&PortfolioSlotWeights` API shape with narrow clippy allowances.
+
+## Deviations
+
+- Corrected the live slot-classification boundary so `AcquireCommodity { purpose: SelfConsume }` follows the existing self-care grouping used elsewhere in `worldwake-ai`; the original ticket text omitted that current live survival case.
+- Replaced the drafted survival-vs-economic overlap test with a truthful self-consume classification proof because the current live category set does not expose a lawful survival/economic overlap candidate.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib agent_tick::portfolio::tests`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
