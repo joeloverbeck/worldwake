@@ -1,12 +1,14 @@
 # S113: Planner-Facing Belief Envelope
 
+**Status**: COMPLETED
+
 ## Summary
 
-Introduce `BeliefValue<T>` and `BeliefSet<T>` read-model wrappers and expose three new planner-facing belief-store accessors that surface confidence, freshness, status (`Certain` / `Probable` / `Stale` / `Contradicted`), and alternatives. Today the planner has no belief-store accessor for "where do I believe target X is?", "which entities do I believe are at remote place P?", or "how much commodity Q do I believe is at place P?" — existing accessors (`entities_at`, `locally_observed_entities_at`, `commodity_quantity`, `locally_observed_commodity_quantity`) read world state or same-tick perception (FND-14A), and `pursuit_belief.rs::last_known_place` is a single-slot pursuit target, not a general query. Agents therefore cannot plan from remote rumor or stale testimony, and they cannot reason "act now vs. verify first" because the signals the planner sees do not carry confidence. This spec adds three scoped belief-envelope accessors; route / ownership / office-holder / institutional-fact envelope exposure is deferred.
+Introduce `BeliefValue<T>` and `BeliefSet<T>` read-model wrappers and expose three new planner-facing belief-store accessors that surface confidence, freshness, status (`Certain` / `Probable` / `Stale` / `Disputed`), with `Contradicted` retained in the end-state taxonomy once claim-level refutation carriage lands. Today the planner has no belief-store accessor for "where do I believe target X is?", "which entities do I believe are at remote place P?", or "how much commodity Q do I believe is at place P?" — existing accessors (`entities_at`, `locally_observed_entities_at`, `commodity_quantity`, `locally_observed_commodity_quantity`) read world state or same-tick perception (FND-14A), and `pursuit_belief.rs::last_known_place` is a single-slot pursuit target, not a general query. Agents therefore cannot plan from remote rumor or stale testimony, and they cannot reason "act now vs. verify first" because the signals the planner sees do not carry confidence. This spec adds three scoped belief-envelope accessors; route / ownership / office-holder / institutional-fact envelope exposure is deferred.
 
 ## Phase and Status
 
-Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8: Belief-First Continual Planning Foundation. Status: Completed 2026-04-21.
 
 ## Crates
 
@@ -14,12 +16,14 @@ Phase 8: Belief-First Continual Planning Foundation. Status: Draft.
 - `worldwake-ai` — consumers of the new envelope at candidate-generation, ranking, and plan-revalidation call sites; feasibility probe (S112) gains envelope-aware rejection reasons
 - `worldwake-core` — `BeliefSnapshot` addition on belief-referencing decision-event payloads (`decision_event_payload.rs`)
 
+Implementation note: foundational ticket `S113BELENV-001` lands the non-contradicted envelope projection plus staged `BeliefStatus::Contradicted` API surface. Claim-level refutation carriage needed to derive `Contradicted` honestly is deferred to `S113BELENV-006`.
+
 ## Dependencies
 
 - S109 (Typed Discrepancy Taxonomy, archived) — reuses `Discrepancy::BeliefStale` and `Discrepancy::BeliefContradicted` for feasibility-probe and revalidation rejection reasons. Soft.
 - S112 (Portfolio Planning, archived) — S112's `FeasibilityVerdict::RejectedBeforeSearch { reason }` gains envelope-driven triggers; the information-gathering slot consumes envelope confidence to decide whether to activate. Soft.
 - S108 (Per-Action Binding Strictness, archived) — revalidation of identity-bound steps gains a `BeliefStatus::Contradicted` short-circuit. Soft.
-- S110 (Decision History Events, archived) — `BlockerRecordedPayload` and `PlanInvalidatedPayload` (in `crates/worldwake-core/src/decision_event_payload.rs`) gain an optional `belief_snapshot` field so belief-driven invalidations/blockers are reconstructible. Soft.
+- S110 (Decision History Events, archived) — `BlockerRecordedPayload` and `PlanInvalidatedPayload` (in `crates/worldwake-core/src/decision_event_payload.rs`) gain an optional `belief_snapshot` field so belief-driven invalidations/blockers can carry frozen envelope metadata. Soft.
 
 ## Design Goals
 
@@ -142,7 +146,7 @@ Reads `EntityBeliefAspect::Inventory(CommodityKind)` claims for the place. Compl
 `BeliefStatus` is derived at query time from stored fields plus existing per-agent parameters:
 
 1. Compute `effective = effective_claim_confidence(claim, current_tick, &profile.confidence_policy)` — the existing helper at `crates/worldwake-core/src/belief.rs:2280` applies per-tick staleness decay (`staleness_penalty_per_tick` on `BeliefConfidencePolicy`) to the stored confidence.
-2. `Contradicted` wins first: if a refutation flag is set on the claim, status is `Contradicted` regardless of other signals.
+2. `Contradicted` wins first once explicit claim-level refutation carriage exists. Foundational ticket `S113BELENV-001` does not invent this flag; follow-up ticket `S113BELENV-006` owns that derivation substrate.
 3. If multiple claims disagree in `best` vs. `alternatives`, status is `Disputed` (and the decision rule for which becomes `best` is described in D5).
 4. Otherwise, bands derived from the agent's `PerceptionProfile::claim_confidence_threshold`:
    - `effective >= claim_confidence_threshold * 2` → `Certain` (well above threshold — cap the multiplier at 1000 permille).
@@ -158,7 +162,7 @@ No new `PerceptionProfile` field is introduced. The existing `claim_confidence_t
 None of the three accessors have current consumers. All integration sites are new:
 
 - `candidate_generation.rs` — existing emitters that need belief-based target-presence or remote-stock signals gain new envelope reads. Emitters use `status == Contradicted` to skip (the belief is refuted), `status == Stale` to still emit (the belief is eroded but plausible — the agent may want to plan a verification step), and `status == Certain`/`Probable` for normal emission. The specific emitters that gain new reads are identified per-GoalKind during ticket decomposition; the envelope infrastructure is introduced first.
-- `ranking.rs` — `motive_score` (currently at `ranking.rs:747`, returning `u32`) becomes envelope-confidence-aware for goals anchored on belief-based location or stock. The scaling formula is
+- `ranking.rs` — `motive_score` gains envelope-confidence-aware scaling at the strongest honest live seam: `RaidTarget` motive via target-location confidence. The scaling formula is
   ```rust
   let scaled = (motive as u64)
       .saturating_mul(confidence.value() as u64)
@@ -166,7 +170,7 @@ None of the three accessors have current consumers. All integration sites are ne
   u32::try_from(scaled).unwrap_or(u32::MAX)
   ```
   multiplying before dividing to preserve precision. `Permille::value()` returns `u16` in [0, 1000]; the `u64` lift avoids overflow on large motive values. Deterministic integer arithmetic throughout.
-- `plan_revalidation.rs` — `revalidate_exact_target_step` (around `plan_revalidation.rs:101-117`) gains a new predicate: when the step is identity-bound (S108 `BindingStrictness::ExactIdentity`), read the target-presence envelope via `believed_target_location`. If `status == Contradicted`, return failure with `Discrepancy::BeliefContradicted`. This is a new predicate insertion, not a modification of existing logic.
+- `plan_revalidation.rs` — `revalidate_exact_target_step` (around `plan_revalidation.rs:101-117`) gains a new predicate: when the step is identity-bound (S108 `BindingStrictness::ExactIdentity`), read the target-presence envelope via `believed_target_location`. If `status == Contradicted`, return `false` from the boolean revalidation seam. The discrepancy classification (`Discrepancy::BeliefContradicted` / `BeliefStale`) remains downstream in failure handling. This is a new predicate insertion, not a modification of existing logic.
 - S112 feasibility probe (`crates/worldwake-ai/src/feasibility_probe.rs`) — the probe gains envelope-aware rejection: when the target step is identity-bound and the envelope returns `status == Stale`, the probe returns `FeasibilityVerdict::RejectedBeforeSearch { reason: Discrepancy::BeliefStale }`, letting the information-gathering slot activate. `FeasibilityVerdict` at `crates/worldwake-ai/src/agent_tick/portfolio.rs:29-31` already carries the `Discrepancy` reason; no new variants are needed.
 
 Under the **Authoritative-to-AI Impact Rule** (CLAUDE.md): emitter changes in D4 modify candidate emission. Ticket decomposition must check that `get_affordances`, `generate_candidates`, `search_plan`, `BestEffort` action start, `handle_plan_failure`, and payload revalidation all remain correct; new goldens or extensions of `golden_planner_pathology` exercise the `Stale`/`Contradicted` paths.
@@ -207,10 +211,10 @@ pub enum BeliefStatusTag {
 
 Extend the two belief-referencing payloads:
 
-- `BlockerRecordedPayload` (at `decision_event_payload.rs:250-256`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. Populated when the blocker's `discrepancy` is `BeliefStale` or `BeliefContradicted`; `None` for non-belief-driven blockers.
-- `PlanInvalidatedPayload` (at `decision_event_payload.rs:144-178`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. Populated when the `PlanInvalidationReason` variant represents a belief-driven invalidation (specific variants enumerated during ticket decomposition after S109's `Discrepancy` mapping is traced). `None` for non-belief invalidations.
+- `BlockerRecordedPayload` (at `decision_event_payload.rs:250-256`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. `S113BELENV-002` owns the schema addition plus save-format bump; `S113BELENV-003` now populates this field on the target-belief `BeliefStale` / `BeliefContradicted` blocker/discrepancy branches it wired. Other runtime emitters still lawfully write `None` until their producer sites are updated.
+- `PlanInvalidatedPayload` (at `decision_event_payload.rs:144-178`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. `S113BELENV-002` owns the schema addition plus save-format bump; live population for belief-driven invalidation variants lands later once the producer sites are wired. Until then, runtime emitters lawfully write `None`.
 
-Both fields use `#[serde(default)]` for save/replay compatibility — existing serialized payloads deserialize with `belief_snapshot: None`.
+Because Worldwake's save format is positionally serialized with `bincode`, adding either field requires a save-format bump rather than relying on `#[serde(default)]` for old-save compatibility. The `#[serde(default)]` remains useful for any intra-head decode path that omits the field, but it is not a cross-version migration mechanism.
 
 This makes "why did the agent act on stale belief X?" and "why did the plan invalidate?" answerable from the event log alone.
 
@@ -267,7 +271,7 @@ Agent diversity (FND-22) continues to flow through these existing parameters: ag
 10. Ranking: motive score for an acquisition goal tied to a `Stale` belief is scaled down proportional to effective confidence.
 11. Feasibility probe (S112): identity-bound target with `status == Stale` → probe returns `FeasibilityVerdict::RejectedBeforeSearch { reason: Discrepancy::BeliefStale }`.
 12. Plan revalidation: identity-bound step whose target-presence envelope returns `status == Contradicted` fails revalidation with `Discrepancy::BeliefContradicted`.
-13. Decision-trace payload: a `Stale`-driven blocker emits a `BlockerRecordedPayload` with `belief_snapshot: Some(...)` carrying the captured `confidence` and `BeliefStatusTag::Stale`.
+13. Decision-trace payload: a `Stale`-driven target-belief blocker emits a `BlockerRecordedPayload` with `belief_snapshot: Some(...)` carrying the captured `confidence` and `BeliefStatusTag::Stale`. `S113BELENV-002` lands the payload schema; `S113BELENV-003` lands the first live producer population on the affected AI branches.
 
 ### Golden test extension
 
@@ -275,4 +279,29 @@ Agent diversity (FND-22) continues to flow through these existing parameters: ag
 
 ## Outcome
 
-To be filled in at completion.
+Completed 2026-04-21.
+
+- Landed the belief-envelope foundation in the archived `S113BELENV-001` through `S113BELENV-006` ticket chain:
+  - `BeliefValue<T>`, `BeliefSet<T>`, and planner-facing envelope accessors
+  - planner/runtime consumers in ranking, revalidation, feasibility probe, and remote-target emission
+  - `BeliefSnapshot` / `BeliefStatusTag` payload schema on decision-history events
+  - live claim-level refutation carriage so `BeliefStatus::Contradicted` is now derived honestly
+  - scenario-backed stale-envelope golden coverage
+- The live implementation split the work across six bounded tickets rather than landing the whole spec in one change, and some producer population remains intentionally narrower than the original broad spec sketch:
+  - `BlockerRecordedPayload.belief_snapshot` has live producer wiring on the landed target-belief branches
+  - `PlanInvalidatedPayload.belief_snapshot` schema landed, but broad live producer population remains deferred until a concrete producer seam needs it
+  - the stale-envelope golden proved the strongest honest `survival-scattered` seam rather than a generic motive-scaling story, because that scenario does not lawfully exercise the `RaidTarget` ranking path
+- The spec remained active during the ticket wave and was updated incrementally to reflect staged `Contradicted` rollout and the narrowed golden proof seam before archival.
+
+Verification results:
+
+- `cargo test -p worldwake-core`
+- `cargo test -p worldwake-sim`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- focused ticket-level proofs across `decision_event_payload`, `save_load`, `belief_view`, `candidate_generation`, `plan_revalidation`, `feasibility_probe`, `failure_handling`, and the ignored `golden_survival_scattered` stale-envelope regression
+
+Not run as part of the archived S113 handoff:
+
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `./scripts/verify.sh`

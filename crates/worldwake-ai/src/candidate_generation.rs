@@ -42,7 +42,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
-    listener_aware_tell_topic_selection,
+    belief_view::BeliefStatus, listener_aware_tell_topic_selection,
 };
 
 #[derive(Clone, Default)]
@@ -2121,6 +2121,32 @@ fn emit_remote_engage_hostile_targets(
         if current_attackers.contains(&target) {
             continue;
         }
+        let target_location = ctx.view.believed_target_location(ctx.agent, target);
+        if target_location.status == BeliefStatus::Contradicted {
+            if tracing {
+                if let Some(belief) = crate::pursuit_target_belief(ctx.view, ctx.agent, target) {
+                    emit_pursuit_omission_trace_with_belief(
+                        diagnostics,
+                        GoalKind::EngageHostile { target },
+                        target,
+                        &belief,
+                        target_location.confidence,
+                        &pursuit_profile,
+                        None,
+                        PursuitOmissionReason::ContradictedBelief,
+                    );
+                } else {
+                    emit_pursuit_omission_trace(
+                        diagnostics,
+                        GoalKind::EngageHostile { target },
+                        target,
+                        PursuitOmissionReason::ContradictedBelief,
+                        &pursuit_profile,
+                    );
+                }
+            }
+            continue;
+        }
 
         let Some(belief) = crate::pursuit_target_belief(ctx.view, ctx.agent, target) else {
             // No belief — emit omission trace if tracing is on.
@@ -2358,6 +2384,32 @@ fn emit_remote_raid_targets(
             .into_iter()
             .any(|f| bandit_factions.contains(&f));
         if target_in_bandit_faction {
+            continue;
+        }
+        let target_location = ctx.view.believed_target_location(ctx.agent, target);
+        if target_location.status == BeliefStatus::Contradicted {
+            if tracing {
+                if let Some(belief) = crate::pursuit_target_belief(ctx.view, ctx.agent, target) {
+                    emit_pursuit_omission_trace_with_belief(
+                        diagnostics,
+                        GoalKind::RaidTarget { target },
+                        target,
+                        &belief,
+                        target_location.confidence,
+                        &pursuit_profile,
+                        None,
+                        PursuitOmissionReason::ContradictedBelief,
+                    );
+                } else {
+                    emit_pursuit_omission_trace(
+                        diagnostics,
+                        GoalKind::RaidTarget { target },
+                        target,
+                        PursuitOmissionReason::ContradictedBelief,
+                        &pursuit_profile,
+                    );
+                }
+            }
             continue;
         }
 
@@ -5777,6 +5829,32 @@ mod tests {
 
         fn corpse_entities_at(&self, place: EntityId) -> Vec<EntityId> {
             self.corpses_at.get(&place).cloned().unwrap_or_default()
+        }
+
+        fn believed_target_location(
+            &self,
+            agent: EntityId,
+            target: EntityId,
+        ) -> worldwake_sim::belief_view::BeliefValue<Option<EntityId>> {
+            self.belief_stores
+                .get(&agent)
+                .and_then(|store| {
+                    store.get_entity_claims(&target).map(|claims| {
+                        worldwake_sim::belief_view::project_claims_into_belief_set(
+                            claims.iter().filter_map(|claim| {
+                                worldwake_sim::belief_view::location_claim_value(claim)
+                                    .map(|value| (claim.clone(), value))
+                            }),
+                            self.current_tick,
+                            worldwake_sim::SocialBeliefView::claim_confidence_threshold(
+                                self, agent,
+                            ),
+                            &worldwake_sim::SocialBeliefView::belief_confidence_policy(self, agent),
+                        )
+                    })
+                })
+                .and_then(|set| set.best)
+                .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(None))
         }
     }
 
@@ -16293,6 +16371,81 @@ mod tests {
     }
 
     #[test]
+    fn remote_raid_target_omitted_when_target_location_belief_is_contradicted() {
+        let agent = entity(1);
+        let target = entity(2);
+        let faction = entity(30);
+        let agent_place = entity(10);
+        let remote_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        view.effective_places.insert(target, remote_place);
+        view.entities_at.insert(agent_place, vec![agent]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.factions_by_member.insert(agent, vec![faction]);
+        view.bandit_factions.insert(faction);
+
+        let belief = belief_at_place(remote_place, Tick(100));
+        view.beliefs.insert(agent, vec![(target, belief.clone())]);
+
+        let mut store = AgentBeliefStore::new();
+        let policy = worldwake_core::BeliefConfidencePolicy::default();
+        store.import_entity_snapshot(target, &belief, Tick(100), &policy);
+        assert!(store.refute_entity_claims(
+            worldwake_core::BeliefClaimKey {
+                subject: target,
+                aspect: worldwake_core::EntityBeliefAspect::Location,
+            },
+            Tick(101),
+            Tick(101),
+            &policy,
+        ));
+        view.belief_stores.insert(agent, store);
+        assert_eq!(
+            worldwake_sim::EntityBeliefView::believed_target_location(&view, agent, target).status,
+            worldwake_sim::belief_view::BeliefStatus::Contradicted
+        );
+
+        view.pursuit_profiles.insert(
+            agent,
+            worldwake_core::PursuitProfile {
+                min_location_confidence: Permille::new(500).unwrap(),
+                max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
+            },
+        );
+        view.adjacent_places.insert(agent_place, vec![remote_place]);
+        view.adjacent_places.insert(remote_place, vec![agent_place]);
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(101),
+            6,
+            true,
+        );
+
+        assert!(
+            !contains_goal(&result.candidates, GoalKind::RaidTarget { target }),
+            "Remote RaidTarget should NOT be emitted when target-location belief is contradicted"
+        );
+
+        let key = GoalKey::from(GoalKind::RaidTarget { target });
+        let trace = evidence_trace_for_goal(&result.diagnostics, key);
+        assert_eq!(
+            trace.pursuit.as_ref().and_then(|pursuit| pursuit.omission),
+            Some(crate::decision_trace::PursuitOmissionReason::ContradictedBelief)
+        );
+    }
+
+    #[test]
     fn remote_engage_hostile_emitted_when_pursuit_conditions_met() {
         let agent = entity(1);
         let target = entity(2);
@@ -16381,6 +16534,69 @@ mod tests {
         assert!(
             !contains_goal(&candidates, GoalKind::EngageHostile { target }),
             "Remote EngageHostile should NOT be emitted when confidence too low"
+        );
+    }
+
+    #[test]
+    fn remote_engage_hostile_omitted_when_target_location_belief_is_contradicted() {
+        let agent = entity(1);
+        let target = entity(2);
+        let agent_place = entity(10);
+        let remote_place = entity(11);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, agent_place);
+        view.effective_places.insert(target, remote_place);
+        view.entities_at.insert(agent_place, vec![agent]);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.hostiles.insert(agent, vec![target]);
+
+        let belief = belief_at_place(remote_place, Tick(100));
+        view.beliefs.insert(agent, vec![(target, belief.clone())]);
+
+        let mut store = AgentBeliefStore::new();
+        let policy = worldwake_core::BeliefConfidencePolicy::default();
+        store.import_entity_snapshot(target, &belief, Tick(100), &policy);
+        assert!(store.refute_entity_claims(
+            worldwake_core::BeliefClaimKey {
+                subject: target,
+                aspect: worldwake_core::EntityBeliefAspect::Location,
+            },
+            Tick(101),
+            Tick(101),
+            &policy,
+        ));
+        view.belief_stores.insert(agent, store);
+        assert_eq!(
+            worldwake_sim::EntityBeliefView::believed_target_location(&view, agent, target).status,
+            worldwake_sim::belief_view::BeliefStatus::Contradicted
+        );
+
+        view.pursuit_profiles.insert(
+            agent,
+            worldwake_core::PursuitProfile {
+                min_location_confidence: Permille::new(500).unwrap(),
+                max_pursuit_travel_ticks: NonZeroU32::new(5).unwrap(),
+            },
+        );
+        view.adjacent_places.insert(agent_place, vec![remote_place]);
+        view.adjacent_places.insert(remote_place, vec![agent_place]);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(101),
+        );
+
+        assert!(
+            !contains_goal(&candidates, GoalKind::EngageHostile { target }),
+            "Remote EngageHostile should NOT be emitted when target-location belief is contradicted"
         );
     }
 

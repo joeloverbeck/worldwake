@@ -448,6 +448,7 @@ pub struct PlanningSnapshot {
     /// Belief-derived support declaration reads per office.
     pub(crate) office_support_declaration_beliefs: BTreeMap<EntityId, OfficeSupportBeliefReads>,
     pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
+    pub(crate) actor_claim_confidence_threshold: Permille,
     pub(crate) actor_tell_profile: Option<TellProfile>,
     pub(crate) actor_epistemic_profile: Option<EpistemicDispositionProfile>,
     pub(crate) actor_consultation_speed_factor: Option<Permille>,
@@ -534,6 +535,7 @@ impl PlanningSnapshot {
             build_snapshot_places(view, actor, &included_places, &entities, evidence_entities);
         let actor_known_social_observations = view.known_social_observations(actor);
         let actor_confidence_policy = view.belief_confidence_policy(actor);
+        let actor_claim_confidence_threshold = view.claim_confidence_threshold(actor);
         let content_edges = entities
             .iter()
             .filter_map(|(&entity, snapshot)| {
@@ -626,6 +628,7 @@ impl PlanningSnapshot {
                 })
                 .collect(),
             actor_confidence_policy,
+            actor_claim_confidence_threshold,
             actor_tell_profile: view.tell_profile(actor),
             actor_expectation_store: view.expectation_store(actor),
             actor_last_seen_memory: view.last_seen_memory(actor),

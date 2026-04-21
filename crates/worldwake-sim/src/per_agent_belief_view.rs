@@ -482,6 +482,32 @@ impl EntityBeliefView for PerAgentBeliefView<'_> {
             .filter(|entity| self.is_dead(*entity))
             .collect()
     }
+
+    fn believed_target_location(
+        &self,
+        agent: EntityId,
+        target: EntityId,
+    ) -> crate::belief_view::BeliefValue<Option<EntityId>> {
+        if agent != self.agent {
+            return crate::belief_view::stale_default_value(None);
+        }
+
+        crate::belief_view::project_claims_into_belief_set(
+            self.belief_store
+                .get_entity_claims(&target)
+                .into_iter()
+                .flatten()
+                .filter_map(|claim| {
+                    crate::belief_view::location_claim_value(claim)
+                        .map(|value| (claim.clone(), value))
+                }),
+            self.current_tick,
+            self.claim_confidence_threshold(agent),
+            &self.belief_confidence_policy(agent),
+        )
+        .best
+        .unwrap_or_else(|| crate::belief_view::stale_default_value(None))
+    }
 }
 
 impl ProfileBeliefView for PerAgentBeliefView<'_> {
@@ -727,6 +753,48 @@ impl SpatialBeliefView for PerAgentBeliefView<'_> {
             })
             .collect()
     }
+
+    fn believed_entities_at(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: EntityKind,
+    ) -> Vec<crate::belief_view::BeliefValue<EntityId>> {
+        if agent != self.agent {
+            return Vec::new();
+        }
+
+        let threshold = self.claim_confidence_threshold(agent);
+        let policy = self.belief_confidence_policy(agent);
+
+        self.belief_store
+            .iter_known_entities()
+            .filter_map(|(subject, state)| (state.believed_kind == Some(kind)).then_some(*subject))
+            .filter_map(|subject| {
+                let best = crate::belief_view::project_claims_into_belief_set(
+                    self.belief_store
+                        .get_entity_claims(&subject)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|claim| {
+                            crate::belief_view::location_claim_value(claim)
+                                .map(|value| (claim.clone(), value))
+                        }),
+                    self.current_tick,
+                    threshold,
+                    &policy,
+                )
+                .best?;
+                (best.value == Some(place)).then_some(crate::belief_view::BeliefValue {
+                    value: subject,
+                    confidence: best.confidence,
+                    acquired_tick: best.acquired_tick,
+                    claimed_event_tick: best.claimed_event_tick,
+                    status: best.status,
+                })
+            })
+            .collect()
+    }
 }
 
 impl TemporalBeliefView for PerAgentBeliefView<'_> {
@@ -829,6 +897,19 @@ impl SocialBeliefView for PerAgentBeliefView<'_> {
         }
 
         self.belief_store.social_observations.clone()
+    }
+
+    fn claim_confidence_threshold(&self, agent: EntityId) -> Permille {
+        assert_eq!(
+            agent, self.agent,
+            "claim_confidence_threshold is a self-authoritative read and must only be requested for the acting agent"
+        );
+        self.world
+            .get_component_perception_profile(agent)
+            .map(|profile| profile.claim_confidence_threshold)
+            .expect(
+                "acting agents must have PerceptionProfile before reading claim confidence threshold",
+            )
     }
 
     fn discrepancy_memory(&self, agent: EntityId) -> Option<&worldwake_core::DiscrepancyMemory> {
@@ -1381,6 +1462,33 @@ impl InventoryBeliefView for PerAgentBeliefView<'_> {
             .map(|known| known.recipes.iter().copied().collect())
             .unwrap_or_default()
     }
+
+    fn believed_commodity_stock(
+        &self,
+        agent: EntityId,
+        place: EntityId,
+        kind: CommodityKind,
+    ) -> crate::belief_view::BeliefValue<Quantity> {
+        if agent != self.agent {
+            return crate::belief_view::stale_default_value(Quantity(0));
+        }
+
+        crate::belief_view::project_claims_into_belief_set(
+            self.belief_store
+                .get_entity_claims(&place)
+                .into_iter()
+                .flatten()
+                .filter_map(|claim| {
+                    crate::belief_view::inventory_claim_value(claim, kind)
+                        .map(|value| (claim.clone(), value))
+                }),
+            self.current_tick,
+            self.claim_confidence_threshold(agent),
+            &self.belief_confidence_policy(agent),
+        )
+        .best
+        .unwrap_or_else(|| crate::belief_view::stale_default_value(Quantity(0)))
+    }
 }
 
 impl CombatBeliefView for PerAgentBeliefView<'_> {
@@ -1688,14 +1796,15 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingProfile, BanditFactionPolicy,
-        BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef,
-        CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
-        EdgeExperience, EffectiveRight, EntityId, EntityKind, EventLog, ExpectationBasis,
-        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
-        FactionData, FactionPurpose, HomeostaticNeedId, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile,
-        OfficeData, PerceptionProfile, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
+        BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart, CauseRef, ClaimId,
+        ClaimValue, CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
+        EdgeExperience, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId,
+        EntityKind, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
+        ExpectationStore, ExplorationProfile, FactionData, FactionPurpose, HomeostaticNeedId,
+        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
+        PerceptionSource, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
         RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
         RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
         TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
@@ -1836,6 +1945,27 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: crate::BindingStrictness::ExactIdentity,
+        }
+    }
+
+    fn sample_claim(
+        claim_id: u64,
+        subject: EntityId,
+        aspect: EntityBeliefAspect,
+        value: ClaimValue,
+        acquired_tick: u64,
+        confidence: u16,
+    ) -> EntityBeliefClaim {
+        EntityBeliefClaim {
+            claim_id: ClaimId(claim_id),
+            subject,
+            aspect,
+            value,
+            source: PerceptionSource::DirectObservation,
+            acquired_tick: Tick(acquired_tick),
+            claimed_event_tick: Some(Tick(acquired_tick)),
+            confidence: Permille::new(confidence).unwrap(),
+            refuted_at_tick: None,
         }
     }
 
@@ -4569,5 +4699,198 @@ mod tests {
         let key = InstitutionalBeliefKey::OfficeHolderOf { office };
         let result = GoalBeliefView::institutional_belief_claims(&view, other, key);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn believed_target_location_marks_disputed_when_multiple_places_are_claimed() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (home, other_place) = {
+            let mut places = world.topology().place_ids();
+            (places.next().unwrap(), places.next().unwrap())
+        };
+        let (agent, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, home).unwrap();
+            txn.set_ground_location(target, other_place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    claim_confidence_threshold: Permille::new(300).unwrap(),
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, target)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.record_entity_claim(sample_claim(
+            1,
+            target,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(home)),
+            7,
+            950,
+        ));
+        beliefs.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(2),
+            subject: target,
+            aspect: EntityBeliefAspect::Location,
+            value: ClaimValue::Place(Some(other_place)),
+            source: PerceptionSource::Report {
+                from: entity(77),
+                chain_len: 1,
+            },
+            acquired_tick: Tick(9),
+            claimed_event_tick: Some(Tick(9)),
+            confidence: Permille::new(975).unwrap(),
+            refuted_at_tick: None,
+        });
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(10), &world, &beliefs);
+        let value = EntityBeliefView::believed_target_location(&view, agent, target);
+
+        assert_eq!(value.value, Some(other_place));
+        assert_eq!(value.status, crate::belief_view::BeliefStatus::Disputed);
+        assert_eq!(value.claimed_event_tick, Some(Tick(9)));
+    }
+
+    #[test]
+    fn believed_target_location_surfaces_contradicted_when_only_refuted_claim_remains() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (home, other_place) = {
+            let mut places = world.topology().place_ids();
+            (places.next().unwrap(), places.next().unwrap())
+        };
+        let (agent, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, home).unwrap();
+            txn.set_ground_location(target, other_place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    claim_confidence_threshold: Permille::new(300).unwrap(),
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, target)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.record_entity_claim(EntityBeliefClaim {
+            refuted_at_tick: Some(Tick(9)),
+            ..sample_claim(
+                1,
+                target,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(other_place)),
+                7,
+                950,
+            )
+        });
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(10), &world, &beliefs);
+        let value = EntityBeliefView::believed_target_location(&view, agent, target);
+
+        assert_eq!(value.value, Some(other_place));
+        assert_eq!(value.status, crate::belief_view::BeliefStatus::Contradicted);
+        assert_eq!(value.claimed_event_tick, Some(Tick(7)));
+    }
+
+    #[test]
+    fn believed_entities_at_returns_claimed_entities_with_metadata() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    claim_confidence_threshold: Permille::new(300).unwrap(),
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let believed_other = entity(90);
+
+        let mut beliefs = AgentBeliefStore::new();
+        let mut state = entity_belief(place, true, 0, 9);
+        state.believed_kind = Some(EntityKind::Agent);
+        beliefs.update_entity(believed_other, state);
+        beliefs.record_entity_claim(sample_claim(
+            1,
+            believed_other,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(place)),
+            9,
+            980,
+        ));
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(10), &world, &beliefs);
+        let entities =
+            SpatialBeliefView::believed_entities_at(&view, agent, place, EntityKind::Agent);
+
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].value, believed_other);
+        assert_eq!(
+            entities[0].status,
+            crate::belief_view::BeliefStatus::Certain
+        );
+        assert_eq!(entities[0].claimed_event_tick, Some(Tick(9)));
+    }
+
+    #[test]
+    fn believed_commodity_stock_projects_place_inventory_claims() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    claim_confidence_threshold: Permille::new(300).unwrap(),
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.record_entity_claim(sample_claim(
+            1,
+            place,
+            EntityBeliefAspect::Inventory(CommodityKind::Bread),
+            ClaimValue::Quantity(Quantity(6)),
+            9,
+            920,
+        ));
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(10), &world, &beliefs);
+        let stock = InventoryBeliefView::believed_commodity_stock(
+            &view,
+            agent,
+            place,
+            CommodityKind::Bread,
+        );
+
+        assert_eq!(stock.value, Quantity(6));
+        assert_eq!(stock.status, crate::belief_view::BeliefStatus::Certain);
+        assert_eq!(stock.claimed_event_tick, Some(Tick(9)));
     }
 }

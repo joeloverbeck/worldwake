@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 88
+- Scenario blocks: 89
 - Contributing golden test files: 16
-- Associated tests: 107
+- Associated tests: 108
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -787,7 +787,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Survival And Commitment Slots
 
-- Source: `golden_portfolio_planning.rs:179`
+- Source: `golden_portfolio_planning.rs:183`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production
@@ -1042,7 +1042,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_scattered.rs:301`
+- Source: `golden_survival_scattered.rs:322`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1057,7 +1057,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 154: Scattered Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_scattered.rs:343`
+- Source: `golden_survival_scattered.rs:364`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1072,7 +1072,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 155: Isolated Agent Reaches A Food Source From Ravine Shelter
 
-- Source: `golden_survival_scattered.rs:377`
+- Source: `golden_survival_scattered.rs:398`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -1087,7 +1087,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 156: Scattered Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_scattered.rs:409`
+- Source: `golden_survival_scattered.rs:430`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -1102,7 +1102,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_scattered.rs:443`
+- Source: `golden_survival_scattered.rs:464`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1114,6 +1114,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
+
+### Scenario 168: Seeded Target-Location Belief Decays To Stale Without Refresh
+
+- Source: `golden_survival_scattered.rs:497`
+- Systems: Perception, Belief Envelope
+- GoalKinds: none (envelope-surfacing proof only)
+- ActionDomains: none
+- Places: scenario-authored scattered topology
+- Principles: 14, 15, 31
+
+**Setup**: Load the authored `survival-scattered.ron` scenario, seed one
+
+**Proves**: the same seeded target-location belief reads as `Certain` at the
+
+**Cross-system chain**: seeded pre-run observation fixture -> later-tick envelope projection
 
 ### Scenario 58: Travel Need Escalation
 

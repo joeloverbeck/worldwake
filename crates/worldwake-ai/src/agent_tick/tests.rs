@@ -4191,6 +4191,7 @@ fn persist_blocked_memory_commits_changed_component() {
                 discrepancy: None,
                 blocking_fact: Some(BlockingFact::NoKnownPath),
                 expires_tick: Tick(7),
+                belief_snapshot: None,
             }
         ))
     );
@@ -4250,9 +4251,83 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
                 discrepancy: Some(Discrepancy::BeliefContradicted),
                 blocking_fact: None,
                 expires_tick: Tick(9),
+                belief_snapshot: None,
             }
         ))
     );
+}
+
+#[test]
+fn persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrepancy() {
+    let mut world = World::new(build_prototype_world()).unwrap();
+    let mut event_log = EventLog::new();
+    let place = world.topology().place_ids().next().unwrap();
+    let agent = {
+        let mut txn = new_txn(&mut world, 1);
+        let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
+        txn.set_ground_location(agent, place).unwrap();
+        txn.set_ground_location(target, place).unwrap();
+        let _ = txn.commit(&mut event_log);
+        sync_selected_beliefs(
+            &mut world,
+            agent,
+            &[target],
+            Tick(2),
+            PerceptionSource::DirectObservation,
+        );
+        (agent, target)
+    };
+    let (agent, target) = agent;
+
+    let key = BlockerKey {
+        goal_key: GoalKey::from(GoalKind::RaidTarget { target }),
+        place: Some(place),
+        target: Some(target),
+        action_def: Some(ActionDefId(1)),
+    };
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    discrepancy_memory.record(DiscrepancyEntry {
+        blocker_key: key,
+        discrepancy: Discrepancy::BeliefStale,
+        observed_tick: Tick(80),
+        expires_tick: Tick(90),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+
+    persist_discrepancy_memory(
+        &mut world,
+        &mut event_log,
+        agent,
+        Tick(80),
+        &DiscrepancyMemory::default(),
+        &discrepancy_memory,
+    )
+    .unwrap();
+
+    let blocker_events = event_log.events_by_tag(EventTag::BlockerRecorded);
+    assert_eq!(blocker_events.len(), 1);
+    let belief_view = PerAgentBeliefView::from_world_at_tick(agent, Tick(80), &world);
+    let expected = belief_view.believed_target_location(agent, target);
+    let payload = event_log
+        .get(blocker_events[0])
+        .and_then(|record| record.decision_payload())
+        .expect("expected blocker recorded payload");
+    match payload {
+        DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+            belief_snapshot, ..
+        }) => {
+            assert_eq!(
+                *belief_snapshot,
+                Some(worldwake_core::BeliefSnapshot {
+                    confidence: expected.confidence,
+                    status: worldwake_core::BeliefStatusTag::Stale,
+                    acquired_tick: expected.acquired_tick,
+                })
+            );
+        }
+        other => panic!("unexpected payload: {other:?}"),
+    }
 }
 
 #[test]

@@ -112,10 +112,11 @@ pub use belief::{
     SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
     ToldBeliefMemory, belief_confidence, build_believed_entity_state,
     build_observed_entity_snapshot, current_institutional_belief_topics,
-    institutional_claim_same_memory_lane, institutional_claim_subject_entity,
-    institutional_knowledge_chain_len, recipient_knowledge_status, share_equivalent,
-    social_observation_is_redundant_for_listener, social_observation_is_relayable,
-    tell_subject_is_directly_observable_by_listener, to_shared_belief_snapshot,
+    effective_claim_confidence, institutional_claim_same_memory_lane,
+    institutional_claim_subject_entity, institutional_knowledge_chain_len,
+    recipient_knowledge_status, share_equivalent, social_observation_is_redundant_for_listener,
+    social_observation_is_relayable, tell_subject_is_directly_observable_by_listener,
+    to_shared_belief_snapshot,
 };
 pub use belief_claim_key::BeliefClaimKey;
 pub use blocker_memory::{
@@ -146,13 +147,13 @@ pub use crime::{
     PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
 };
 pub use decision_event_payload::{
-    ActionInterruptReasonTag, BlockerRecordedPayload, DecisionEventPayload, EmitterTag,
-    EvidenceKindTag, EvidenceSummary, ExpectationMismatchPayload, GoalAbandonReason,
-    GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload, GoalRejectionReason,
-    GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, PlanAdoptedPayload,
-    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
-    RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-    ReplanTriggeredPayload,
+    ActionInterruptReasonTag, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
+    DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary, ExpectationMismatchPayload,
+    GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload,
+    GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
+    PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
+    PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
+    ReplanReason, ReplanTriggeredPayload,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,

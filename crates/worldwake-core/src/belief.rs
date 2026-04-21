@@ -1,9 +1,9 @@
 //! Authoritative belief and perception state for E14.
 
 use crate::{
-    ActionDomain, BelievedInstitutionalClaim, ClaimId, ClaimValue, CommodityKind, Component,
-    EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    ActionDomain, BeliefClaimKey, BelievedInstitutionalClaim, ClaimId, ClaimValue, CommodityKind,
+    Component, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
     WorkstationTag, World, Wound,
     institutional::MissingPersonReportStatus,
@@ -82,12 +82,39 @@ impl AgentBeliefStore {
         }) {
             return;
         }
+        if source_kind(&claim.source) == SourceKind::Direct {
+            refute_conflicting_claims_for_direct_observation(claims, &claim);
+        }
         claims.retain(|existing| {
             existing.aspect != claim.aspect
                 || source_kind(&existing.source) != new_kind
                 || !claim_dominates(&claim, existing)
+                || existing.value != claim.value
         });
         claims.push(claim);
+    }
+
+    pub fn refute_entity_claims(
+        &mut self,
+        claim_key: BeliefClaimKey,
+        refuted_at_tick: Tick,
+        current_tick: Tick,
+        policy: &BeliefConfidencePolicy,
+    ) -> bool {
+        let Some(claims) = self.entity_claims.get_mut(&claim_key.subject) else {
+            return false;
+        };
+        let mut changed = false;
+        for claim in claims.iter_mut() {
+            if claim.aspect == claim_key.aspect && claim.refuted_at_tick.is_none() {
+                claim.refuted_at_tick = Some(refuted_at_tick);
+                changed = true;
+            }
+        }
+        if changed {
+            self.refresh_entity_summary_from_claims(claim_key.subject, current_tick, policy);
+        }
+        changed
     }
 
     pub fn update_entity(&mut self, id: EntityId, state: BelievedEntityState) {
@@ -155,6 +182,7 @@ impl AgentBeliefStore {
                 acquired_tick: current_tick,
                 claimed_event_tick,
                 confidence,
+                refuted_at_tick: None,
             });
         }
         self.refresh_entity_summary_from_claims(subject, current_tick, policy);
@@ -300,8 +328,9 @@ impl AgentBeliefStore {
             };
             let len_before = claims.len();
             claims.retain(|claim| {
-                effective_claim_confidence(claim, current_tick, &profile.confidence_policy)
-                    >= claim_confidence_threshold
+                claim_is_refuted(claim)
+                    || effective_claim_confidence(claim, current_tick, &profile.confidence_policy)
+                        >= claim_confidence_threshold
             });
             if claims.len() != len_before {
                 changed_entities.push(*entity);
@@ -341,8 +370,9 @@ impl AgentBeliefStore {
             );
             base.saturating_add(boost) >= entity_activation_threshold
         });
-        self.entity_claims
-            .retain(|entity, _| self.known_entities.contains_key(entity));
+        self.entity_claims.retain(|entity, claims| {
+            self.known_entities.contains_key(entity) || claims.iter().any(claim_is_refuted)
+        });
     }
 
     pub fn enforce_conversation_memory(&mut self, profile: &TellProfile, current_tick: Tick) {
@@ -888,6 +918,7 @@ impl AgentBeliefStore {
             acquired_tick: current_tick,
             claimed_event_tick,
             confidence: belief_confidence(&source, 0, policy),
+            refuted_at_tick: None,
         });
         self.refresh_entity_summary_from_claims(subject, current_tick, policy);
     }
@@ -926,6 +957,7 @@ impl AgentBeliefStore {
                 acquired_tick: observed_tick,
                 claimed_event_tick: Some(observed_tick),
                 confidence,
+                refuted_at_tick: None,
             });
         }
     }
@@ -2122,7 +2154,7 @@ pub fn derive_entity_summary(
 ) -> Option<BelievedEntityState> {
     let mut winners = BTreeMap::<EntityBeliefAspect, &EntityBeliefClaim>::new();
 
-    for claim in claims {
+    for claim in claims.iter().filter(|claim| !claim_is_refuted(claim)) {
         match winners.entry(claim.aspect) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(claim);
@@ -2209,6 +2241,10 @@ pub fn derive_entity_summary(
     Some(summary)
 }
 
+fn claim_is_refuted(claim: &EntityBeliefClaim) -> bool {
+    claim.refuted_at_tick.is_some()
+}
+
 fn preserve_believed_kind(prior: Option<&BelievedEntityState>, summary: &mut BelievedEntityState) {
     if summary.believed_kind.is_none() {
         summary.believed_kind = prior.and_then(|state| state.believed_kind);
@@ -2277,7 +2313,27 @@ fn claim_dominates(left: &EntityBeliefClaim, right: &EntityBeliefClaim) -> bool 
         || left.claim_id > right.claim_id
 }
 
-fn effective_claim_confidence(
+fn refute_conflicting_claims_for_direct_observation(
+    claims: &mut [EntityBeliefClaim],
+    refuting_claim: &EntityBeliefClaim,
+) {
+    let refuted_at_tick = refuting_claim
+        .claimed_event_tick
+        .unwrap_or(refuting_claim.acquired_tick);
+    for existing in claims.iter_mut() {
+        if existing.subject != refuting_claim.subject
+            || existing.aspect != refuting_claim.aspect
+            || existing.value == refuting_claim.value
+            || claim_is_refuted(existing)
+            || !claim_dominates(refuting_claim, existing)
+        {
+            continue;
+        }
+        existing.refuted_at_tick = Some(refuted_at_tick);
+    }
+}
+
+pub fn effective_claim_confidence(
     claim: &EntityBeliefClaim,
     current_tick: Tick,
     policy: &BeliefConfidencePolicy,
@@ -2722,6 +2778,7 @@ mod tests {
             acquired_tick: Tick(acquired_tick),
             claimed_event_tick: None,
             confidence: Permille::new(confidence).unwrap(),
+            refuted_at_tick: None,
         }
     }
 
@@ -3292,6 +3349,7 @@ mod tests {
                 acquired_tick: Tick(9),
                 claimed_event_tick: Some(Tick(1)),
                 confidence: Permille::new(900).unwrap(),
+                refuted_at_tick: None,
             },
             EntityBeliefClaim {
                 claim_id: ClaimId(2),
@@ -3302,6 +3360,7 @@ mod tests {
                 acquired_tick: Tick(7),
                 claimed_event_tick: Some(Tick(7)),
                 confidence: Permille::new(830).unwrap(),
+                refuted_at_tick: None,
             },
         ];
 
@@ -3312,7 +3371,51 @@ mod tests {
     }
 
     #[test]
-    fn record_entity_claim_replaces_dominated_same_source_same_aspect() {
+    fn derive_entity_summary_ignores_refuted_claims() {
+        let claims = vec![
+            EntityBeliefClaim {
+                refuted_at_tick: Some(Tick(9)),
+                ..sample_claim(
+                    1,
+                    240,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(entity(10))),
+                    PerceptionSource::DirectObservation,
+                    7,
+                    980,
+                )
+            },
+            sample_claim(
+                2,
+                240,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(entity(11))),
+                PerceptionSource::Report {
+                    from: entity(3),
+                    chain_len: 1,
+                },
+                8,
+                780,
+            ),
+            sample_claim(
+                3,
+                240,
+                EntityBeliefAspect::Alive,
+                ClaimValue::Bool(true),
+                PerceptionSource::DirectObservation,
+                8,
+                950,
+            ),
+        ];
+
+        let summary = derive_entity_summary(&claims, Tick(10), &policy()).unwrap();
+
+        assert_eq!(summary.last_known_place, Some(entity(11)));
+        assert_eq!(summary.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn record_entity_claim_refutes_conflicting_direct_claims_on_same_aspect() {
         let subject = entity(44);
         let mut store = AgentBeliefStore::new();
 
@@ -3336,9 +3439,48 @@ mod tests {
         ));
 
         let claims = &store.entity_claims[&subject];
+        assert_eq!(claims.len(), 2);
+        assert_eq!(claims[0].value, ClaimValue::Place(Some(entity(10))));
+        assert_eq!(claims[0].refuted_at_tick, Some(Tick(8)));
+        assert_eq!(claims[1].value, ClaimValue::Place(Some(entity(11))));
+        assert_eq!(claims[1].refuted_at_tick, None);
+
+        store.refresh_entity_summary_from_claims(subject, Tick(8), &policy());
+        assert_eq!(
+            store.get_entity(&subject).unwrap().last_known_place,
+            Some(entity(11))
+        );
+    }
+
+    #[test]
+    fn record_entity_claim_replaces_dominated_same_value_direct_claims() {
+        let subject = entity(144);
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_claim(sample_claim(
+            1,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::DirectObservation,
+            7,
+            950,
+        ));
+        store.record_entity_claim(sample_claim(
+            2,
+            subject.slot,
+            EntityBeliefAspect::Location,
+            ClaimValue::Place(Some(entity(10))),
+            PerceptionSource::DirectObservation,
+            8,
+            950,
+        ));
+
+        let claims = &store.entity_claims[&subject];
         assert_eq!(claims.len(), 1);
-        assert_eq!(claims[0].value, ClaimValue::Place(Some(entity(11))));
+        assert_eq!(claims[0].value, ClaimValue::Place(Some(entity(10))));
         assert_eq!(claims[0].acquired_tick, Tick(8));
+        assert_eq!(claims[0].refuted_at_tick, None);
     }
 
     #[test]
@@ -3421,6 +3563,7 @@ mod tests {
             acquired_tick: Tick(8),
             claimed_event_tick: Some(Tick(8)),
             confidence: Permille::new(780).unwrap(),
+            refuted_at_tick: None,
         });
         store.record_entity_claim(EntityBeliefClaim {
             claim_id: ClaimId(2),
@@ -3434,6 +3577,7 @@ mod tests {
             acquired_tick: Tick(9),
             claimed_event_tick: Some(Tick(2)),
             confidence: Permille::new(600).unwrap(),
+            refuted_at_tick: None,
         });
 
         let claims = &store.entity_claims[&subject];
@@ -5703,6 +5847,27 @@ mod tests {
     }
 
     #[test]
+    fn entity_belief_claim_roundtrips_refuted_at_tick_through_bincode() {
+        let claim = EntityBeliefClaim {
+            refuted_at_tick: Some(Tick(19)),
+            ..sample_claim(
+                1,
+                1,
+                EntityBeliefAspect::Alive,
+                ClaimValue::Bool(true),
+                PerceptionSource::DirectObservation,
+                7,
+                950,
+            )
+        };
+
+        let bytes = bincode::serialize(&claim).unwrap();
+        let roundtrip: EntityBeliefClaim = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, claim);
+    }
+
+    #[test]
     fn belief_confidence_policy_roundtrips_through_bincode() {
         let policy = BeliefConfidencePolicy {
             direct_observation_base: Permille::new(920).unwrap(),
@@ -7176,6 +7341,7 @@ mod tests {
             acquired_tick: tick,
             claimed_event_tick: Some(tick),
             confidence: Permille::new(800).unwrap(),
+            refuted_at_tick: None,
         }
     }
 

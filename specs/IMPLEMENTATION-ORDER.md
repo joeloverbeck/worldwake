@@ -354,7 +354,7 @@ S108 ✅ archived               S111 ✅ archived
          │       ├── S112 ✅ archived (soft dep on S109)
          │       │       │
          │       │       └── S123 (hard dep on S112's public signatures)
-         │       └── S113 (soft dep on S109, soft dep on S112)
+         │       └── S113 ✅ archived (soft dep on S109, soft dep on S112)
          │
          └── S122 ✅ archived
 ```
@@ -374,7 +374,7 @@ S108 ✅ archived               S111 ✅ archived
 **Wave 3** (after Wave 2):
 - **S112**: ✅ COMPLETED — archived at [archive/specs/S112-portfolio-planning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S112-portfolio-planning.md). Landed the portfolio substrate and probe integration ticket wave (`S112PORPLAN-002` through `S112PORPLAN-006`): deterministic survival / commitment / economic slot assembly, staged `PortfolioTrace`, feasibility-probe rejection surfacing through decision history, portfolio-led search ordering with `GoalPriorityClass` still gating slot winners, and the generated golden-doc-backed end-to-end proof of rejected `Sleep` and `ReportMissing` slots ahead of plausible `Bake Bread` production.
   - soft depended on S109 for probe reading of discrepancy/blocker memories
-- **S113**: Planner-Facing Belief Envelope — `BeliefValue<T>` / `BeliefSet<T>` wrappers on target-presence / believed-location / believed-stock queries; surface confidence, freshness, status (Certain/Probable/Stale/Disputed/Contradicted), and alternatives.
+- **S113**: ✅ COMPLETED — archived at [archive/specs/S113-belief-envelope.md](/home/joeloverbeck/projects/worldwake/archive/specs/S113-belief-envelope.md). Landed the belief-envelope substrate and consumer wave across the archived `S113BELENV-001` through `S113BELENV-006` ticket chain: `BeliefValue<T>` / `BeliefSet<T>`, planner-facing target-location / entities-at / commodity-stock envelope reads, decision-history belief snapshots, live contradiction derivation from stored refutation provenance, and the scenario-backed stale-envelope golden proof.
   - soft depends on S109 for `BeliefStatus::Contradicted` alignment
   - soft depends on S112 for the still-deferred information slot consumer
 
@@ -397,12 +397,12 @@ S108 ✅ archived               S111 ✅ archived
 - [ ] Every `ActionDef` registration has explicit `BindingStrictness` (compile-time coverage)
 - [x] No remaining `BlockingFact::Unknown` or `AssumptionFailed` variants (migrated to typed `Discrepancy`)
 - [x] Authoritative decision history events surfaced in observer "Decision History" section for `survival-baseline.ron`
-- [ ] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
+- [x] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
 - [ ] S123 implemented: `OrderedRanked` migration complete; `compare_ranked_goals` file-private; compile-fail doctests and grep regression pass; no parallel comparator definition reachable in-crate
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 
-- Note: Wave 1, Wave 2, S112, and the S122 adjunct are complete. The remaining Phase 8 work is S113 and the S123 adjunct.
+- Note: Wave 1, Wave 2, Wave 3, and the S122 adjunct are complete. The remaining Phase 8 work is the S123 adjunct.
 
 ---
 

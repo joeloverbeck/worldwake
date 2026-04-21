@@ -95,6 +95,23 @@ fn known_target_failure(ranked: &RankedGoal, context: &ProbeContext<'_>) -> Opti
     };
 
     if let Some(target) = target {
+        if requires_exact_identity_target(ranked, context) {
+            let envelope = context
+                .belief_view
+                .believed_target_location(context.agent, target);
+            match envelope.status {
+                worldwake_sim::belief_view::BeliefStatus::Stale => {
+                    return Some(Discrepancy::BeliefStale);
+                }
+                worldwake_sim::belief_view::BeliefStatus::Contradicted => {
+                    return Some(Discrepancy::BeliefContradicted);
+                }
+                worldwake_sim::belief_view::BeliefStatus::Certain
+                | worldwake_sim::belief_view::BeliefStatus::Probable
+                | worldwake_sim::belief_view::BeliefStatus::Disputed => {}
+            }
+        }
+
         let target_known = context.belief_view.entity_kind(target).is_some()
             || context.belief_view.effective_place(target).is_some()
             || context.belief_view.is_alive(target)
@@ -125,6 +142,13 @@ fn known_target_failure(ranked: &RankedGoal, context: &ProbeContext<'_>) -> Opti
     }
 
     None
+}
+
+fn requires_exact_identity_target(ranked: &RankedGoal, context: &ProbeContext<'_>) -> bool {
+    relevant_action_defs(ranked, context.semantics_table)
+        .into_iter()
+        .filter_map(|def_id| context.action_defs.get(def_id))
+        .any(|def| def.binding_strictness == worldwake_sim::BindingStrictness::ExactIdentity)
 }
 
 fn current_place_support_failure(
@@ -295,6 +319,7 @@ mod tests {
         EconomicBeliefView, EntityBeliefView, FacilityBeliefView, Interruptibility,
         InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView,
         SocialBeliefView, SpatialBeliefView, TemporalBeliefView,
+        belief_view::{BeliefStatus, BeliefValue},
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -363,6 +388,56 @@ mod tests {
                 defs,
                 handlers,
             }
+        }
+
+        fn heal_only() -> Self {
+            let mut handlers = ActionHandlerRegistry::new();
+            let handler = handlers.register(ActionHandler::new(
+                noop_start,
+                noop_tick,
+                noop_commit,
+                noop_abort,
+            ));
+
+            let mut defs = ActionDefRegistry::new();
+            defs.register(ActionDef {
+                id: ActionDefId(0),
+                name: "heal".to_owned(),
+                domain: ActionDomain::Care,
+                actor_constraints: vec![Constraint::ActorAlive],
+                targets: vec![worldwake_sim::TargetSpec::SpecificEntity(entity(999))],
+                preconditions: Vec::new(),
+                reservation_requirements: Vec::new(),
+                duration: DurationExpr::Fixed(NonZeroU32::new(1).expect("nonzero")),
+                body_cost_per_tick: BodyCostPerTick::zero(),
+                attention_cost: Permille::ZERO,
+                interruptibility: Interruptibility::FreelyInterruptible,
+                commit_conditions: Vec::new(),
+                visibility: VisibilitySpec::SamePlace,
+                causal_event_tags: BTreeSet::new(),
+                payload: ActionPayload::None,
+                handler,
+                binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            });
+
+            Self {
+                semantics: build_semantics_table(&defs),
+                defs,
+                handlers,
+            }
+        }
+    }
+
+    fn target_location_belief(
+        place: Option<EntityId>,
+        status: BeliefStatus,
+    ) -> BeliefValue<Option<EntityId>> {
+        BeliefValue {
+            value: place,
+            confidence: Permille::new_unchecked(900),
+            acquired_tick: Tick(4),
+            claimed_event_tick: Some(Tick(4)),
+            status,
         }
     }
 
@@ -540,6 +615,90 @@ mod tests {
         );
 
         assert_eq!(verdict, FeasibilityVerdict::Plausible);
+    }
+
+    #[test]
+    fn probe_rejects_stale_exact_target_belief_before_search() {
+        let harness = ProbeHarness::heal_only();
+        let agent = entity(1);
+        let place = entity(2);
+        let patient = entity(3);
+        let ranked = ranked_goal(
+            GoalKind::TreatWounds { patient },
+            OpportunityAnchor::Entity(patient),
+        );
+        let mut view = MockView::default();
+        view.alive.extend([agent, patient]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(patient, EntityKind::Agent);
+        view.places.insert(agent, place);
+        view.places.insert(patient, place);
+        view.believed_target_locations.insert(
+            (agent, patient),
+            target_location_belief(Some(place), BeliefStatus::Stale),
+        );
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(place),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(
+            verdict,
+            FeasibilityVerdict::RejectedBeforeSearch {
+                reason: Discrepancy::BeliefStale,
+            }
+        );
+    }
+
+    #[test]
+    fn probe_rejects_contradicted_exact_target_belief_before_search() {
+        let harness = ProbeHarness::heal_only();
+        let agent = entity(1);
+        let place = entity(2);
+        let patient = entity(3);
+        let ranked = ranked_goal(
+            GoalKind::TreatWounds { patient },
+            OpportunityAnchor::Entity(patient),
+        );
+        let mut view = MockView::default();
+        view.alive.extend([agent, patient]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(patient, EntityKind::Agent);
+        view.places.insert(agent, place);
+        view.places.insert(patient, place);
+        view.believed_target_locations.insert(
+            (agent, patient),
+            target_location_belief(Some(place), BeliefStatus::Contradicted),
+        );
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(place),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(
+            verdict,
+            FeasibilityVerdict::RejectedBeforeSearch {
+                reason: Discrepancy::BeliefContradicted,
+            }
+        );
     }
 
     #[test]
@@ -723,6 +882,7 @@ mod tests {
         entity_kinds: BTreeMap<EntityId, EntityKind>,
         places: BTreeMap<EntityId, EntityId>,
         routes: BTreeSet<(EntityId, EntityId)>,
+        believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
     }
 
     impl ControlBeliefView for MockView {
@@ -754,6 +914,17 @@ mod tests {
 
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
+        }
+
+        fn believed_target_location(
+            &self,
+            agent: EntityId,
+            target: EntityId,
+        ) -> BeliefValue<Option<EntityId>> {
+            self.believed_target_locations
+                .get(&(agent, target))
+                .copied()
+                .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(None))
         }
     }
 

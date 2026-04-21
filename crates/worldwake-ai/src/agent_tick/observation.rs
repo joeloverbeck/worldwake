@@ -496,6 +496,7 @@ pub(super) fn reconcile_in_flight_state(
             agent,
             &step,
             Some(ExecutionFailure::Replan(signal)),
+            None,
         )?;
         return Ok(ReconciliationResult {
             completed_plan: None,
@@ -516,6 +517,7 @@ pub(super) fn reconcile_in_flight_state(
             agent,
             &step,
             Some(ExecutionFailure::Start(start_failure)),
+            None,
         )?;
         return Ok(ReconciliationResult {
             completed_plan: None,
@@ -536,6 +538,7 @@ pub(super) fn reconcile_in_flight_state(
             facility_intents,
             agent,
             &step,
+            None,
             None,
         )?;
         return Ok(ReconciliationResult {
@@ -586,6 +589,7 @@ pub(super) fn reconcile_in_flight_state(
             facility_intents,
             agent,
             &step,
+            None,
             None,
         )?;
         return Ok(ReconciliationResult {

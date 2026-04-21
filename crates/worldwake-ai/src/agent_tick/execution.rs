@@ -4,13 +4,18 @@ use super::{
     AgentTickContext, emit_decision_event, handle_recoverable_travel_step_blockage,
     runtime_belief_view,
 };
+use crate::failure_handling::exact_target_belief_discrepancy;
 use crate::{AgentDecisionRuntime, PlannedStep};
 use worldwake_core::{
-    ActiveGoal, BlockerMemory, BlockerRecordedPayload, CauseRef, ContentionIntents,
-    DecisionEventPayload, DiscrepancyMemory, EntityId, EventTag, LearnedOpportunityMemory,
-    RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    ActiveGoal, BeliefSnapshot, BeliefStatusTag, BlockerMemory, BlockerRecordedPayload, CauseRef,
+    ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyEntry, DiscrepancyMemory,
+    EntityId, EventTag, LearnedOpportunityMemory, RepairMemory, ReplanTriggeredPayload, Tick,
+    VisibilitySpec, WitnessData, WorldTxn,
 };
-use worldwake_sim::{CommitOutcome, CommittedAction, InputKind, Scheduler, TickInputError};
+use worldwake_sim::{
+    CommitOutcome, CommittedAction, EntityBeliefView, InputKind, PerAgentBeliefView, Scheduler,
+    TickInputError,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn enqueue_valid_step_or_handle_failure(
@@ -58,6 +63,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
         if handled {
             return Ok(());
         }
+        let belief_discrepancy = exact_target_belief_discrepancy(&view, agent, step);
         let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
@@ -69,6 +75,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             agent,
             step,
             None,
+            belief_discrepancy,
         )?;
         if let Some(goal_key) = active_goal {
             emit_decision_event(
@@ -139,6 +146,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             facility_intents,
             agent,
             step,
+            None,
             None,
         )?;
         if let Some(goal_key) = active_goal {
@@ -379,6 +387,7 @@ pub(super) fn persist_blocked_memory(
                 discrepancy: None,
                 blocking_fact: Some(blocker.blocking_fact),
                 expires_tick: blocker.expires_tick,
+                belief_snapshot: None,
             }),
         );
     }
@@ -421,6 +430,7 @@ pub(super) fn persist_discrepancy_memory(
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     for entry in changed_entries {
+        let belief_snapshot = belief_snapshot_for_discrepancy_entry(world, agent, tick, &entry);
         emit_decision_event(
             event_log,
             tick,
@@ -432,10 +442,52 @@ pub(super) fn persist_discrepancy_memory(
                 discrepancy: Some(entry.discrepancy),
                 blocking_fact: None,
                 expires_tick: entry.expires_tick,
+                belief_snapshot,
             }),
         );
     }
     Ok(())
+}
+
+fn belief_snapshot_for_discrepancy_entry(
+    world: &worldwake_core::World,
+    agent: EntityId,
+    tick: Tick,
+    entry: &DiscrepancyEntry,
+) -> Option<BeliefSnapshot> {
+    if !matches!(
+        entry.discrepancy,
+        Discrepancy::BeliefStale | Discrepancy::BeliefContradicted
+    ) {
+        return None;
+    }
+
+    let _ = world.get_component_agent_belief_store(agent)?;
+    let target = entry.blocker_key.target?;
+    let view = PerAgentBeliefView::from_world_at_tick(agent, tick, world);
+    let envelope = view.believed_target_location(agent, target);
+    let expected = match envelope.status {
+        worldwake_sim::belief_view::BeliefStatus::Stale => Discrepancy::BeliefStale,
+        worldwake_sim::belief_view::BeliefStatus::Contradicted => Discrepancy::BeliefContradicted,
+        worldwake_sim::belief_view::BeliefStatus::Certain
+        | worldwake_sim::belief_view::BeliefStatus::Probable
+        | worldwake_sim::belief_view::BeliefStatus::Disputed => return None,
+    };
+    (expected == entry.discrepancy).then_some(BeliefSnapshot {
+        confidence: envelope.confidence,
+        status: belief_status_tag(envelope.status),
+        acquired_tick: envelope.acquired_tick,
+    })
+}
+
+fn belief_status_tag(status: worldwake_sim::belief_view::BeliefStatus) -> BeliefStatusTag {
+    match status {
+        worldwake_sim::belief_view::BeliefStatus::Certain => BeliefStatusTag::Certain,
+        worldwake_sim::belief_view::BeliefStatus::Probable => BeliefStatusTag::Probable,
+        worldwake_sim::belief_view::BeliefStatus::Stale => BeliefStatusTag::Stale,
+        worldwake_sim::belief_view::BeliefStatus::Disputed => BeliefStatusTag::Disputed,
+        worldwake_sim::belief_view::BeliefStatus::Contradicted => BeliefStatusTag::Contradicted,
+    }
 }
 
 /// Persist the violation memory component to the world, producing a
