@@ -388,24 +388,57 @@ pub(super) fn build_candidate_plans(
         .into_iter()
         .map(|(kind, _slot)| kind)
         .collect::<Vec<_>>();
-    let mut search_order = plausible_slots
-        .iter()
-        .filter_map(|kind| {
-            portfolio.slots.get(kind).map(|slot| OpportunityKey {
+    // Opportunities the feasibility probe has already rejected. Excluding
+    // them from the search budget is the portfolio's budget-saving function
+    // (FND-20): no point searching a candidate whose belief-grounded
+    // prerequisites we already know are not met.
+    //
+    // We do NOT exclude the agent's committed opportunity even when the
+    // probe rejects it. "Rejected" here simply means "no productive
+    // belief-grounded work is possible right now"; for a goal the agent
+    // is already pursuing (`runtime.current_plan` still targets it) that
+    // often means the plan reached its terminal (e.g. cargo is already at
+    // its destination) rather than the goal being truly infeasible.
+    // Searching the committed goal preserves the intention across ticks
+    // (FND-21) — the downstream selection logic sees "same goal, no new
+    // plan" and keeps `active_goal` pinned instead of defecting.
+    let rejected_opportunities: BTreeSet<OpportunityKey> = portfolio
+        .slots
+        .values()
+        .filter_map(|slot| {
+            let is_committed = committed_opportunity.is_some_and(|committed| {
+                committed.goal_key == slot.ranked.grounded.key
+                    && committed.anchor == slot.ranked.grounded.anchor
+            });
+            (!is_committed
+                && matches!(
+                    slot.feasibility,
+                    crate::agent_tick::portfolio::FeasibilityVerdict::RejectedBeforeSearch { .. }
+                ))
+            .then_some(OpportunityKey {
                 goal_key: slot.ranked.grounded.key,
                 anchor: slot.ranked.grounded.anchor,
             })
         })
-        .collect::<Vec<_>>();
-    for ranked in &admitted_candidates {
-        let opportunity = OpportunityKey {
-            goal_key: ranked.grounded.key,
-            anchor: ranked.grounded.anchor,
-        };
-        if !search_order.contains(&opportunity) {
-            search_order.push(opportunity);
-        }
-    }
+        .collect();
+    // Search order follows `ranking::compare_ranked_goals` — the same
+    // composite preference used everywhere else in the decision cycle —
+    // rather than re-prioritising by slot category. The portfolio's role
+    // here is trace/diagnostic plus probe-based budget protection; re-sorting
+    // the search order by slot category caused higher-motive non-survival
+    // goals (e.g. `ExploreLocation` under hunger pressure) to be deferred
+    // behind lower-motive survival slot winners, regressing main's
+    // "highest-preference first" behaviour.
+    let search_order: Vec<OpportunityKey> = admitted_candidates
+        .iter()
+        .filter_map(|ranked| {
+            let opp = OpportunityKey {
+                goal_key: ranked.grounded.key,
+                anchor: ranked.grounded.anchor,
+            };
+            (!rejected_opportunities.contains(&opp)).then_some(opp)
+        })
+        .collect();
     let candidate_cap = usize::from(cognitive.max_candidates_to_plan);
 
     // All candidates filtered by exhausted-goal skip set or probe — no snapshot needed.
@@ -3272,18 +3305,22 @@ mod tests {
         let (defs, handlers, recipes) = build_full_registries();
         let semantics = build_semantics_table(&defs);
         let scheduler = Scheduler::new(SystemManifest::canonical());
+        // Candidates are pre-sorted by `ranking::compare_ranked_goals`:
+        // the same-place/local-evidence candidate ranks ahead of the remote
+        // one when everything else is equal. Portfolio admission must honour
+        // that sort order rather than re-tiebreaking internally.
         let ranked_candidates = vec![
-            ranked_goal(acquire_goal(
-                CommodityKind::Bread,
-                OpportunityAnchor::Place(market),
-                BTreeSet::new(),
-                BTreeSet::from([market]),
-            )),
             ranked_goal(acquire_goal(
                 CommodityKind::Bread,
                 OpportunityAnchor::Place(origin),
                 BTreeSet::from([bread]),
                 BTreeSet::from([origin]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::new(),
+                BTreeSet::from([market]),
             )),
         ];
         let budget = ProfileFixture {
@@ -3606,18 +3643,20 @@ mod tests {
         let (defs, handlers, recipes) = build_full_registries();
         let semantics = build_semantics_table(&defs);
         let scheduler = Scheduler::new(SystemManifest::canonical());
+        // Local-evidence candidate is sorted ahead by `ranking::compare_ranked_goals`
+        // under real conditions; pass the list in that pre-sorted order.
         let ranked_candidates = vec![
-            ranked_goal(acquire_goal(
-                CommodityKind::Bread,
-                OpportunityAnchor::Place(market),
-                BTreeSet::new(),
-                BTreeSet::from([market]),
-            )),
             ranked_goal(acquire_goal(
                 CommodityKind::Bread,
                 OpportunityAnchor::Place(origin),
                 BTreeSet::from([bread]),
                 BTreeSet::from([origin]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::new(),
+                BTreeSet::from([market]),
             )),
         ];
         let budget = ProfileFixture {
@@ -3868,18 +3907,16 @@ mod tests {
         let (defs, handlers, recipes) = build_full_registries();
         let semantics = build_semantics_table(&defs);
         let scheduler = Scheduler::new(SystemManifest::canonical());
+        // Order this list as `ranking::compare_ranked_goals` would: the
+        // fresh same-place candidate leads, and retry-ready/cooling-down
+        // variants trail in sort order. `assemble_portfolio` trusts that
+        // sort order, so the test mirrors it here explicitly.
         let ranked_candidates = vec![
             ranked_goal(acquire_goal(
                 CommodityKind::Bread,
-                OpportunityAnchor::Place(frontier),
+                OpportunityAnchor::Place(fresh),
                 BTreeSet::new(),
-                BTreeSet::from([frontier]),
-            )),
-            ranked_goal(acquire_goal(
-                CommodityKind::Bread,
-                OpportunityAnchor::Place(cooling_down),
-                BTreeSet::new(),
-                BTreeSet::from([cooling_down]),
+                BTreeSet::from([fresh]),
             )),
             ranked_goal(acquire_goal(
                 CommodityKind::Bread,
@@ -3889,16 +3926,27 @@ mod tests {
             )),
             ranked_goal(acquire_goal(
                 CommodityKind::Bread,
-                OpportunityAnchor::Place(fresh),
+                OpportunityAnchor::Place(cooling_down),
                 BTreeSet::new(),
-                BTreeSet::from([fresh]),
+                BTreeSet::from([cooling_down]),
+            )),
+            ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(frontier),
+                BTreeSet::new(),
+                BTreeSet::from([frontier]),
             )),
         ];
+        // After the reordering above, indices map to:
+        //   [0] fresh (no exhaustion entry — always admitted)
+        //   [1] retry_ready (BudgetRetry, next_retry=10, eligible at tick 10)
+        //   [2] cooling_down (BudgetRetry, next_retry=20, still cooling at tick 10)
+        //   [3] frontier (FrontierExhausted — suppressed from planning)
         let exhaustion_cache = BTreeMap::from([
             (
                 OpportunityKey {
-                    goal_key: ranked_candidates[0].grounded.key,
-                    anchor: ranked_candidates[0].grounded.anchor,
+                    goal_key: ranked_candidates[3].grounded.key,
+                    anchor: ranked_candidates[3].grounded.anchor,
                 },
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::FrontierExhausted,
@@ -3910,8 +3958,8 @@ mod tests {
             ),
             (
                 OpportunityKey {
-                    goal_key: ranked_candidates[1].grounded.key,
-                    anchor: ranked_candidates[1].grounded.anchor,
+                    goal_key: ranked_candidates[2].grounded.key,
+                    anchor: ranked_candidates[2].grounded.anchor,
                 },
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -3923,8 +3971,8 @@ mod tests {
             ),
             (
                 OpportunityKey {
-                    goal_key: ranked_candidates[2].grounded.key,
-                    anchor: ranked_candidates[2].grounded.anchor,
+                    goal_key: ranked_candidates[1].grounded.key,
+                    anchor: ranked_candidates[1].grounded.anchor,
                 },
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -3969,12 +4017,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 OpportunityKey {
-                    goal_key: ranked_candidates[3].grounded.key,
-                    anchor: ranked_candidates[3].grounded.anchor,
+                    goal_key: ranked_candidates[0].grounded.key,
+                    anchor: ranked_candidates[0].grounded.anchor,
                 },
                 OpportunityKey {
-                    goal_key: ranked_candidates[2].grounded.key,
-                    anchor: ranked_candidates[2].grounded.anchor,
+                    goal_key: ranked_candidates[1].grounded.key,
+                    anchor: ranked_candidates[1].grounded.anchor,
                 },
             ]
         );

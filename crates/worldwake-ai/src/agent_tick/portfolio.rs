@@ -113,26 +113,25 @@ fn select_commitment_candidate<'a>(
     select_best_candidate(ranked, selected, is_commitment_goal)
 }
 
+/// Pick the most-preferred candidate matching `predicate` from the pre-sorted
+/// ranked list.
+///
+/// `ranked` is pre-sorted by `ranking::compare_ranked_goals`, which considers
+/// priority class, motive score, feasibility hint, goal specificity, and
+/// opportunity strength. That composite ordering is the authoritative
+/// preference signal used everywhere else in the decision cycle. Re-tiebreaking
+/// here with a narrower comparator (e.g., raw goal-key order) can invert
+/// ranking's choice on motive-score ties and cause the portfolio to
+/// systematically prefer a lower-ranked goal — a regression against FND-14
+/// (belief-first planning) and the ranking contract.
 fn select_best_candidate<'a>(
     ranked: &'a [RankedGoal],
     selected: &BTreeSet<OpportunityKey>,
     predicate: impl Fn(&GoalKind) -> bool,
 ) -> Option<&'a RankedGoal> {
-    ranked
-        .iter()
-        .filter(|candidate| {
-            predicate(&candidate.grounded.key.kind)
-                && !selected.contains(&opportunity_key(candidate))
-        })
-        .max_by(|left, right| compare_ranked_goals(left, right))
-}
-
-fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> std::cmp::Ordering {
-    left.priority_class
-        .cmp(&right.priority_class)
-        .then_with(|| left.motive_score.cmp(&right.motive_score))
-        .then_with(|| right.grounded.key.cmp(&left.grounded.key))
-        .then_with(|| right.grounded.anchor.cmp(&left.grounded.anchor))
+    ranked.iter().find(|candidate| {
+        predicate(&candidate.grounded.key.kind) && !selected.contains(&opportunity_key(candidate))
+    })
 }
 
 fn compare_plausible_slots(
@@ -285,9 +284,13 @@ mod tests {
 
     #[test]
     fn survival_slot_picks_highest_motive_survival() {
+        // Input mirrors the real call path: `agent_tick::mod` sorts candidates
+        // by `ranking::compare_ranked_goals` (highest-preference first) before
+        // handing the list to `assemble_portfolio`. Pass candidates in that
+        // pre-sorted order here.
         let ranked = vec![
+            ranked_goal(GoalKind::Sleep, 600, OpportunityAnchor::None),
             ranked_goal(GoalKind::Relieve, 500, OpportunityAnchor::None),
-            ranked_goal(GoalKind::Sleep, 500, OpportunityAnchor::None),
             ranked_goal(GoalKind::Wash, 400, OpportunityAnchor::None),
         ];
 
@@ -474,7 +477,17 @@ mod tests {
 
     #[test]
     fn survival_slot_prefers_higher_priority_class_over_higher_motive() {
+        // `ranking::compare_ranked_goals` sorts higher priority class first,
+        // so Critical Relieve leads High-priority apple even though apple has
+        // the higher raw motive. Tests that feed `assemble_portfolio` must
+        // preserve that sort order because the portfolio trusts the list.
         let ranked = vec![
+            ranked_goal_with_priority(
+                GoalKind::Relieve,
+                GoalPriorityClass::Critical,
+                500,
+                OpportunityAnchor::None,
+            ),
             ranked_goal_with_priority(
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
@@ -483,12 +496,6 @@ mod tests {
                 GoalPriorityClass::High,
                 900,
                 OpportunityAnchor::Place(entity(40)),
-            ),
-            ranked_goal_with_priority(
-                GoalKind::Relieve,
-                GoalPriorityClass::Critical,
-                500,
-                OpportunityAnchor::None,
             ),
         ];
 
