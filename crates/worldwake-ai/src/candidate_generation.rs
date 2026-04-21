@@ -28,8 +28,8 @@ use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
-    EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey, GoalKind,
+    EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey, GoalKind,
     GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
     OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
@@ -3892,6 +3892,14 @@ fn emit_search_candidates(
         if record.owner != ctx.agent || record.state != ExpectationState::Overdue {
             continue;
         }
+        if matches!(
+            record.basis,
+            ExpectationBasis::PlanStepCompletion { .. }
+        ) {
+            // Plan-step expectation mismatches route through plan discrepancy
+            // handling, not the social missing-response candidate path.
+            continue;
+        }
 
         strongest_by_subject
             .entry(record.subject)
@@ -4052,6 +4060,7 @@ fn expectation_basis_weight(record: ExpectationRecord) -> u8 {
         worldwake_core::ExpectationBasis::DeliveryCommitment { .. } => 2,
         worldwake_core::ExpectationBasis::RoutineReturn
         | worldwake_core::ExpectationBasis::SocialPromise => 1,
+        worldwake_core::ExpectationBasis::PlanStepCompletion { .. } => 0,
     }
 }
 
@@ -5541,7 +5550,8 @@ mod tests {
         DemandObservationReason, Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile,
         DiversificationProfile, DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag,
         EntityId, EntityKind, EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis,
-        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+        ExpectationId, ExpectationKindTag, ExpectationRecord, ExpectationState,
+        ExpectationStore, ExplorationProfile,
         GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
@@ -15355,6 +15365,55 @@ mod tests {
                 expectation_id: Some(ExpectationId(1)),
             }
         ));
+    }
+
+    #[test]
+    fn plan_step_completion_expectations_do_not_emit_missing_response_goals() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let home = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        view.entities_at.insert(home, vec![agent]);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([overdue_expectation(
+                1,
+                agent,
+                subject,
+                home,
+                4,
+                ExpectationBasis::PlanStepCompletion {
+                    step_index: 3,
+                    kind_tag: ExpectationKindTag::State,
+                },
+            )]),
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            false,
+        );
+
+        assert!(!result.candidates.iter().any(|candidate| {
+            matches!(
+                candidate.key.kind,
+                GoalKind::SearchForMissing { subject: goal_subject, .. }
+                    | GoalKind::ReportMissing { subject: goal_subject, .. }
+                    if goal_subject == subject
+            )
+        }));
     }
 
     fn belief_at_place(place: EntityId, tick: Tick) -> BelievedEntityState {

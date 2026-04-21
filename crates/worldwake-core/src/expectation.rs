@@ -1,6 +1,8 @@
 //! Expectation, last-seen, and search substrate types shared across crates.
 
-use crate::{CommodityKind, Component, EntityId, EvidenceKind, Quantity, Tick};
+use crate::{
+    CommodityKind, Component, EntityId, EvidenceKind, ExpectationKindTag, Quantity, Tick,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -32,6 +34,13 @@ pub enum ExpectationBasis {
         charge: EntityId,
     },
     SocialPromise,
+    /// A plan step expects completion by `deadline_tick`. The rich
+    /// `PlanExpectation` lives on the runtime `PlannedStep`; persisted
+    /// expectation records cross-reference that runtime state by index and tag.
+    PlanStepCompletion {
+        step_index: u16,
+        kind_tag: ExpectationKindTag,
+    },
 }
 
 /// Lifecycle state of an expectation.
@@ -157,7 +166,8 @@ mod tests {
     };
     use crate::{
         CauseRef, CommodityKind, Component, ControlSource, EntityId, EventLog, EvidenceKind,
-        Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        ExpectationKindTag, Quantity, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
@@ -233,6 +243,24 @@ mod tests {
         };
 
         assert_roundtrip(&record);
+    }
+
+    #[test]
+    fn expectation_basis_plan_step_completion_round_trips_through_bincode() {
+        let basis = ExpectationBasis::PlanStepCompletion {
+            step_index: 3,
+            kind_tag: ExpectationKindTag::State,
+        };
+        let bytes = bincode::serialize(&basis).unwrap();
+        let decoded: ExpectationBasis = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(decoded, basis);
+
+        let existing = ExpectationBasis::RoutineReturn;
+        assert_eq!(
+            bincode::deserialize::<ExpectationBasis>(&bincode::serialize(&existing).unwrap())
+                .unwrap(),
+            existing,
+        );
     }
 
     #[test]

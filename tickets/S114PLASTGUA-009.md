@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium-Large
 **Engine Changes**: Yes — new AI-side tick step reads `PlanStepCompletion`-basis `Overdue` records, emits `EventTag::ExpectationMismatch`, classifies discrepancies, transitions record state; `classify_discrepancy` promoted to `pub(crate)`.
-**Deps**: `archive/tickets/S114PLASTGUA-003.md`, `tickets/S114PLASTGUA-004.md`, `tickets/S114PLASTGUA-005.md`, `tickets/S114PLASTGUA-008.md`
+**Deps**: `archive/tickets/S114PLASTGUA-003.md`, `archive/tickets/S114PLASTGUA-004.md`, `tickets/S114PLASTGUA-005.md`, `tickets/S114PLASTGUA-008.md`
 
 ## Problem
 
