@@ -112,8 +112,8 @@ pub(crate) fn probe(
 
 Probes are shallow:
 
-1. **Discrepancy/blocker memory check**: if `DiscrepancyMemory::is_suppressed` returns true for the goal's `BlockerKey { goal_key, place, target, action_def }` (keys match the existing `blocker_memory.rs:11-16` shape) or if `BlockerMemory::is_blocked` returns true, the slot is rejected with the recorded `Discrepancy` (for `DiscrepancyMemory` hits) or with `Discrepancy::PartialExecutionDrift` (mapping the `BlockerMemory` hit to the taxonomy). No search budget consumed.
-2. **Known-target check**: the goal must have at least one candidate target that the agent believes exists (from the agent's belief store via the existing `GoalBeliefView` surface). Goals whose anchors reference unknown targets are rejected with `Discrepancy::MissingObservation`. Goals whose target place is known but unreachable from the agent's current place (no known route in belief) are rejected with `Discrepancy::RouteUnknown`.
+1. **Discrepancy/blocker memory check**: if `DiscrepancyMemory::is_suppressed` returns true for the goal's blocker key or if `BlockerMemory::is_blocked` returns true, the slot is rejected with the recorded `Discrepancy` (for `DiscrepancyMemory` hits) or with `Discrepancy::PartialExecutionDrift` (mapping the `BlockerMemory` hit to the taxonomy). In the landed standalone probe, this blocker lookup is goal/anchor-scoped and uses `action_def: None` because root candidate expansion has not happened yet. No search budget consumed.
+2. **Known-target check**: the goal must have at least one candidate target that the agent believes exists (from the agent's belief store via the existing `RuntimeBeliefView` surface). Goals whose anchors reference unknown targets are rejected with `Discrepancy::MissingObservation`. Goals whose target place is known but unreachable from the agent's current place (no known route in belief) are rejected with `Discrepancy::RouteUnknown`.
 3. **Affordance existence check**: at least one affordance of the goal's action-kind must be believed-reachable from the agent's current place. Does not verify the full chain — only that the first step type is plausible. If no such affordance exists in belief, reject with `Discrepancy::MissingObservation`.
 
 The probe does **not** run tactical search. It is O(candidates × belief-lookup), not O(search budget).
@@ -123,7 +123,11 @@ The probe does **not** run tactical search. It is O(candidates × belief-lookup)
 `agent_tick/planning.rs` currently takes the top `max_candidates_to_plan` ranked goals and attempts to plan each in order (after a `prioritize_same_goal_replan_candidates` clustering pre-step at line 405). Replace with:
 
 ```rust
-let portfolio = assemble_portfolio(&ranked_goals, &probe_context, &cognitive);
+let portfolio = assemble_portfolio(
+    &ranked_goals,
+    committed_opportunity,
+    |ranked| feasibility_probe::probe(ranked, &probe_context),
+);
 let plausible_slots = portfolio.plausible_slots_by_score(&cognitive.slot_weights);
 for (_kind, slot) in plausible_slots
     .iter()
@@ -211,7 +215,7 @@ pub struct PortfolioSlotTrace {
 
 ## FND-01 Section H: Causal Hooks
 
-1. **Information-path analysis**: The feasibility probe reads only from the agent's own `DiscrepancyMemory`, `BlockerMemory`, and belief store (via `GoalBeliefView`). It does not consult world state. Aligned with FND-14 (World State Is Not Belief State).
+1. **Information-path analysis**: The feasibility probe reads only from the agent's own `DiscrepancyMemory`, `BlockerMemory`, and belief store (via `RuntimeBeliefView`, plus the existing action-def, handler, and planner-semantics tables needed for affordance enumeration). It does not consult world state. Aligned with FND-14 (World State Is Not Belief State).
 2. **Positive-feedback analysis**: A loop would exist if "probe fails → record discrepancy → next tick probe fails for same reason → record discrepancy again." S109 already provides typed TTLs per discrepancy class (stored on `DiscrepancyEntry::expires_tick`); the same `(blocker_key)` stays suppressed until its TTL expires, preventing re-recording each tick.
 3. **Concrete dampeners**: S109's typed TTLs (`CognitiveProfile::*_backoff_ticks` fields) dampen retry loops. Probe budget is bounded: at most `max_candidates_to_plan × (number_of_slot_categories)` belief-store lookups per tick, independent of search budget.
 4. **Stored state vs. derived read-model**: `Portfolio`, `PortfolioSlot`, `SlotKind`, and `FeasibilityVerdict` are transient per-tick derivations — no authoritative state is added beyond the profile fields in core. `PortfolioTrace` is recorded into the optional decision-trace sink; S110's `GoalCommittedPayload::rejected_alternatives` is the authoritative log entry. No new event types are emitted; rejection reasons reuse existing `GoalRejectionReason::FeasibilityProbeFailed`.

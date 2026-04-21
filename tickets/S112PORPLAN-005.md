@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai::agent_tick::planning` candidate selection rewrite
-**Deps**: archive/tickets/S112PORPLAN-001.md, archive/tickets/S112PORPLAN-002.md, S112PORPLAN-003, S112PORPLAN-004
+**Deps**: archive/tickets/S112PORPLAN-001.md, archive/tickets/S112PORPLAN-002.md, archive/tickets/S112PORPLAN-003.md, S112PORPLAN-004
 
 ## Problem
 
