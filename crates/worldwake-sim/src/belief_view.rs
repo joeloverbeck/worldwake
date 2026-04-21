@@ -105,12 +105,17 @@ pub fn project_claim_into_belief_value<T: Copy>(
     policy: &BeliefConfidencePolicy,
 ) -> BeliefValue<T> {
     let effective = effective_claim_confidence(claim, current_tick, policy);
+    let status = if claim.refuted_at_tick.is_some() {
+        BeliefStatus::Contradicted
+    } else {
+        belief_status_for_effective_confidence(effective, threshold)
+    };
     BeliefValue {
         value,
         confidence: Permille::new(effective).unwrap_or(Permille::ZERO),
         acquired_tick: claim.acquired_tick,
         claimed_event_tick: claim.claimed_event_tick,
-        status: belief_status_for_effective_confidence(effective, threshold),
+        status,
     }
 }
 
@@ -152,6 +157,13 @@ where
         return BeliefSet::empty();
     }
 
+    let has_active_claim = projected
+        .iter()
+        .any(|(_, value)| value.status != BeliefStatus::Contradicted);
+    if has_active_claim {
+        projected.retain(|(_, value)| value.status != BeliefStatus::Contradicted);
+    }
+
     projected.sort_by_key(|(rank, _)| *rank);
     let (_, mut best) = projected
         .pop()
@@ -163,7 +175,7 @@ where
         .filter(|value| value.value != best.value)
         .collect::<Vec<_>>();
 
-    if !alternatives.is_empty() {
+    if !alternatives.is_empty() && best.status != BeliefStatus::Contradicted {
         best.status = BeliefStatus::Disputed;
     }
 
@@ -2215,6 +2227,7 @@ mod tests {
             acquired_tick: Tick(acquired_tick),
             claimed_event_tick: Some(Tick(acquired_tick)),
             confidence: Permille::new(confidence).unwrap(),
+            refuted_at_tick: None,
         }
     }
 
@@ -2707,6 +2720,40 @@ mod tests {
     }
 
     #[test]
+    fn project_claim_into_belief_value_marks_refuted_claims_contradicted() {
+        let subject = EntityId {
+            slot: 40,
+            generation: 0,
+        };
+        let value = super::project_claim_into_belief_value(
+            &EntityBeliefClaim {
+                refuted_at_tick: Some(Tick(9)),
+                ..sample_claim(
+                    1,
+                    subject,
+                    EntityBeliefAspect::Location,
+                    ClaimValue::Place(Some(EntityId {
+                        slot: 10,
+                        generation: 0,
+                    })),
+                    7,
+                    950,
+                )
+            },
+            Some(EntityId {
+                slot: 10,
+                generation: 0,
+            }),
+            Tick(10),
+            Permille::new(300).unwrap(),
+            &BeliefConfidencePolicy::default(),
+        );
+
+        assert_eq!(value.status, super::BeliefStatus::Contradicted);
+        assert_eq!(value.claimed_event_tick, Some(Tick(7)));
+    }
+
+    #[test]
     fn project_claims_into_belief_set_marks_disputed_when_alternative_values_survive() {
         let subject = EntityId {
             slot: 41,
@@ -2812,6 +2859,71 @@ mod tests {
         );
 
         assert_eq!(set.best.as_ref().map(|best| best.value), Some(Quantity(3)));
+        assert_eq!(
+            set.best.as_ref().map(|best| best.status),
+            Some(super::BeliefStatus::Certain)
+        );
+        assert!(set.alternatives.is_empty());
+    }
+
+    #[test]
+    fn project_claims_into_belief_set_prefers_active_claims_over_contradicted_history() {
+        let subject = EntityId {
+            slot: 43,
+            generation: 0,
+        };
+        let set = super::project_claims_into_belief_set(
+            [
+                (
+                    EntityBeliefClaim {
+                        refuted_at_tick: Some(Tick(9)),
+                        ..sample_claim(
+                            1,
+                            subject,
+                            EntityBeliefAspect::Location,
+                            ClaimValue::Place(Some(EntityId {
+                                slot: 10,
+                                generation: 0,
+                            })),
+                            7,
+                            950,
+                        )
+                    },
+                    Some(EntityId {
+                        slot: 10,
+                        generation: 0,
+                    }),
+                ),
+                (
+                    sample_claim(
+                        2,
+                        subject,
+                        EntityBeliefAspect::Location,
+                        ClaimValue::Place(Some(EntityId {
+                            slot: 11,
+                            generation: 0,
+                        })),
+                        10,
+                        920,
+                    ),
+                    Some(EntityId {
+                        slot: 11,
+                        generation: 0,
+                    }),
+                ),
+            ],
+            Tick(10),
+            Permille::new(300).unwrap(),
+            &BeliefConfidencePolicy::default(),
+        );
+
+        assert_eq!(
+            set.best.as_ref().map(|best| best.value),
+            Some(Some(EntityId {
+                slot: 11,
+                generation: 0,
+            }))
+        );
         assert_eq!(
             set.best.as_ref().map(|best| best.status),
             Some(super::BeliefStatus::Certain)

@@ -53,4 +53,6 @@ pub struct EntityBeliefClaim {
     pub acquired_tick: Tick,
     pub claimed_event_tick: Option<Tick>,
     pub confidence: Permille,
+    #[serde(default)]
+    pub refuted_at_tick: Option<Tick>,
 }

@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 35;
+pub const SAVE_FORMAT_VERSION: u32 = 36;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -334,6 +334,7 @@ mod tests {
             acquired_tick: Tick(3),
             claimed_event_tick: Some(Tick(3)),
             confidence: worldwake_core::Permille::new(1000).unwrap(),
+            refuted_at_tick: None,
         });
         beliefs.record_entity_claim(EntityBeliefClaim {
             claim_id: ClaimId(2),
@@ -344,6 +345,7 @@ mod tests {
             acquired_tick: Tick(3),
             claimed_event_tick: None,
             confidence: worldwake_core::Permille::new(1000).unwrap(),
+            refuted_at_tick: Some(Tick(18)),
         });
         let mut belief_txn = new_txn(&mut world, Tick(3), CauseRef::Bootstrap);
         belief_txn
@@ -890,7 +892,9 @@ mod tests {
         let restored_claims = restored_belief.entity_claims.get(&target).unwrap();
         assert_eq!(restored_claims.len(), 2);
         assert_eq!(restored_claims[0].claim_id, ClaimId(1));
+        assert_eq!(restored_claims[0].refuted_at_tick, None);
         assert_eq!(restored_claims[1].claim_id, ClaimId(2));
+        assert_eq!(restored_claims[1].refuted_at_tick, Some(Tick(18)));
         assert_eq!(restored_belief.next_claim_id, ClaimId(3));
         let restored_belief_place = restored_summary.last_known_place.unwrap();
         let restored_expectation_store = restored

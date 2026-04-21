@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — candidate emission for remote-target goals (`worldwake-ai/src/candidate_generation.rs`)
-**Deps**: archive/tickets/S113BELENV-001.md, S113BELENV-006
+**Deps**: archive/tickets/S113BELENV-001.md, archive/tickets/S113BELENV-006.md
 
 ## Problem
 

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI ranking formula, plan revalidation predicate, S112 feasibility probe rejection path, belief-driven decision-payload snapshot population on the affected AI emission paths
-**Deps**: archive/tickets/S113BELENV-001.md, archive/tickets/S113BELENV-002.md, S113BELENV-006
+**Deps**: archive/tickets/S113BELENV-001.md, archive/tickets/S113BELENV-002.md, archive/tickets/S113BELENV-006.md
 
 ## Problem
 

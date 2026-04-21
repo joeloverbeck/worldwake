@@ -5006,6 +5006,7 @@ mod tests {
             acquired_tick: Tick(acquired_tick),
             claimed_event_tick: Some(Tick(acquired_tick)),
             confidence: Permille::new(confidence).unwrap(),
+            refuted_at_tick: None,
         }
     }
 
@@ -5054,6 +5055,7 @@ mod tests {
             acquired_tick: Tick(9),
             claimed_event_tick: Some(Tick(9)),
             confidence: Permille::new(980).unwrap(),
+            refuted_at_tick: None,
         });
         view.belief_stores.insert(actor, belief_store);
 

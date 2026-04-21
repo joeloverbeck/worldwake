@@ -1965,6 +1965,7 @@ mod tests {
             acquired_tick: Tick(acquired_tick),
             claimed_event_tick: Some(Tick(acquired_tick)),
             confidence: Permille::new(confidence).unwrap(),
+            refuted_at_tick: None,
         }
     }
 
@@ -4746,6 +4747,7 @@ mod tests {
             acquired_tick: Tick(9),
             claimed_event_tick: Some(Tick(9)),
             confidence: Permille::new(975).unwrap(),
+            refuted_at_tick: None,
         });
 
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(10), &world, &beliefs);
@@ -4754,6 +4756,52 @@ mod tests {
         assert_eq!(value.value, Some(other_place));
         assert_eq!(value.status, crate::belief_view::BeliefStatus::Disputed);
         assert_eq!(value.claimed_event_tick, Some(Tick(9)));
+    }
+
+    #[test]
+    fn believed_target_location_surfaces_contradicted_when_only_refuted_claim_remains() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (home, other_place) = {
+            let mut places = world.topology().place_ids();
+            (places.next().unwrap(), places.next().unwrap())
+        };
+        let (agent, target) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let target = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, home).unwrap();
+            txn.set_ground_location(target, other_place).unwrap();
+            txn.set_component_perception_profile(
+                agent,
+                PerceptionProfile {
+                    claim_confidence_threshold: Permille::new(300).unwrap(),
+                    ..PerceptionProfile::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (agent, target)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.record_entity_claim(EntityBeliefClaim {
+            refuted_at_tick: Some(Tick(9)),
+            ..sample_claim(
+                1,
+                target,
+                EntityBeliefAspect::Location,
+                ClaimValue::Place(Some(other_place)),
+                7,
+                950,
+            )
+        });
+
+        let view = PerAgentBeliefView::new_at_tick(agent, Tick(10), &world, &beliefs);
+        let value = EntityBeliefView::believed_target_location(&view, agent, target);
+
+        assert_eq!(value.value, Some(other_place));
+        assert_eq!(value.status, crate::belief_view::BeliefStatus::Contradicted);
+        assert_eq!(value.claimed_event_tick, Some(Tick(7)));
     }
 
     #[test]
