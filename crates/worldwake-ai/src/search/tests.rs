@@ -1099,6 +1099,8 @@ fn sample_step(
         estimated_ticks,
         is_materialization_barrier: false,
         expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
     }
 }
 

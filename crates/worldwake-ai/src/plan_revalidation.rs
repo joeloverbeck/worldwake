@@ -891,6 +891,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1025,6 +1027,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         let (registry, handlers) = build_registry();
@@ -1063,6 +1067,8 @@ mod tests {
                 tag: worldwake_sim::MaterializationTag::SplitOffLot,
                 hypothetical_id: hypothetical,
             }],
+            guard: None,
+            expectations: Vec::new(),
         };
         let mut bindings = MaterializationBindings::new();
         bindings.bind(hypothetical, destination);
@@ -1211,6 +1217,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         let (registry, handlers) = build_specific_entity_payload_registry();
@@ -1255,6 +1263,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         let (registry, handlers) = build_explicit_payload_registry();
@@ -1286,6 +1296,8 @@ mod tests {
                     estimated_ticks: 3,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 },
                 PlannedStep {
                     def_id: ActionDefId(11),
@@ -1295,6 +1307,8 @@ mod tests {
                     estimated_ticks: 0,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 },
             ],
             PlanTerminalKind::GoalSatisfied,
@@ -1488,6 +1502,8 @@ mod tests {
                 estimated_ticks: 5,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );

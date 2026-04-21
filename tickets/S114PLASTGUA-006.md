@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — two new fields on `ActionDef` (widespread construction-site impact); new `plan_guard_build.rs` module; `trade` action's guard_template populated; `SAVE_FORMAT_VERSION` bump.
-**Deps**: `archive/tickets/S114PLASTGUA-001.md`, `tickets/S114PLASTGUA-003.md`
+**Deps**: `archive/tickets/S114PLASTGUA-001.md`, `archive/tickets/S114PLASTGUA-003.md`
 
 ## Problem
 

@@ -1,9 +1,9 @@
 # S114PLASTGUA-003: PlannedStep extension — guard, expectations, and accessor methods
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — two new fields on `PlannedStep` (runtime-only); `impl PlannedStep` accessor block.
+**Engine Changes**: Yes — two new fields on `PlannedStep`; `impl PlannedStep` accessor block; existing derive surface preserved.
 **Deps**: `archive/tickets/S114PLASTGUA-001.md`
 
 ## Problem
@@ -12,22 +12,22 @@ Every plan-guard downstream ticket (006 build functions, 007 revalidation, 008 p
 
 ## Assumption Reassessment (2026-04-21)
 
-1. `PlannedStep` is declared at `crates/worldwake-ai/src/planner_ops.rs:814` with seven existing fields (`def_id`, `targets`, `payload_override`, `estimated_ticks`, plus three more — the struct has no `impl` block today per the handoff's evidence-backed facts). `PlannedPlan` at `planner_ops.rs:924` owns `steps: Vec<PlannedStep>`. Runtime-only: no `Serialize` / `Deserialize` derives, not saved/loaded.
+1. `PlannedStep` is declared at `crates/worldwake-ai/src/planner_ops.rs` with seven existing fields and no accessor `impl` block on the live branch. Reassessment drift: despite the original draft calling it runtime-only, the live type already derives `Ord + PartialOrd + Serialize + Deserialize`, and `PlannedPlan` round-trip tests serialize it through bincode. The added fields therefore had to preserve that existing derive surface rather than narrow it.
 2. S114 spec D2 at `specs/S114-plan-step-guards.md:141-170` defines the two new fields (`guard: Option<PlanGuard>`, `expectations: Vec<PlanExpectation>`) and four accessor methods (`primary_target`, `target_place`, `target_claim`, `expected_complete_tick`). Each accessor returns `Option<_>` because the backing field may be absent for untargeted actions.
-3. Shared boundary under audit: the `PlannedStep` struct itself. Construction sites counted via `rg -c 'PlannedStep \{' crates/worldwake-ai` = 102 occurrences across 15 files. No `Default` impl on `PlannedStep` exists, so every literal construction site must either add `guard: None, expectations: vec![]` explicitly or be migrated to use a new `..Default::default()` spread (out of scope — the spec does not mandate a `Default` impl).
+3. Shared boundary under audit: the `PlannedStep` struct itself. Live constructor fallout was narrower than the draft's 102-count estimate once helper-backed and spread-based sites were accounted for, but it still crossed the same `worldwake-ai` modules named in this ticket. No `Default` impl on `PlannedStep` exists, so touched explicit literals now initialize `guard: None` and `expectations: Vec::new()` directly.
 4. Live `GoalKind` coverage: all planning-layer goals construct `PlannedStep` through the planner (`planner_ops::make_step`, `search::transition`, etc.) — not through scenario authoring. Construction-site updates are mechanical and contained within worldwake-ai.
 5. No existing test in `plan_revalidation.rs`, `search/`, or `agent_tick/` currently asserts the absence of `guard` / `expectations` fields, so additive fields don't break any test — they only force literal updates.
 
 ## Architecture Check
 
-1. Pure additive to a runtime-only struct. No save format impact (no `Serialize` derive). No impact on the authoritative event log or sim-layer types.
-2. Accessor methods centralize binding logic used by ticket 006's `build_plan_guard` / `build_plan_expectations` — without accessors, the build functions would re-implement target extraction at every call site.
+1. Pure additive to the existing `PlannedStep` carrier. No authoritative event-log or sim-layer schema changed, but the live serde/ordering contract on `PlannedStep` remained intact, so ticket 001's runtime guard/expectation types and core predicate enums were widened enough to satisfy the pre-existing derive chain.
+2. Accessor methods centralize binding logic used by ticket 006's `build_plan_guard` / `build_plan_expectations`. On the current branch, the strongest honest `target_claim()` seam is the primary authoritative target's location claim key; the method does not invent payload-specific claim taxonomy ahead of ticket 006.
 
 ## Verification Layers
 
-1. Struct-field addition (compile-time) → workspace `cargo check -p worldwake-ai` after all 102 construction sites are updated.
+1. Struct-field addition / derive preservation → `cargo test -p worldwake-ai --no-run` after constructor fallout is updated.
 2. Accessor correctness (`primary_target`, `target_place`, `target_claim`, `expected_complete_tick`) → focused unit tests in a new `#[cfg(test)]` block appended to `planner_ops.rs` or a new `plan_step_accessors.rs` module.
-3. No behavioral change → existing decision-trace and agent_tick tests (`crates/worldwake-ai/tests/*.rs`) stay green byte-for-byte — the additive fields default to `None` / `Vec::new()` and are read by no one yet.
+3. No behavioral change → existing `cargo test -p worldwake-ai` suite stays green — the additive fields default to `None` / `Vec::new()` and are not consumed yet.
 4. Single-layer (AI-crate runtime only); downstream action-trace and event-log impacts arrive in tickets 007 / 009.
 
 ## What to Change
@@ -53,15 +53,9 @@ impl PlannedStep {
         self.targets.first().and_then(PlanningEntityRef::entity)
     }
 
-    pub fn target_place(&self) -> Option<EntityId> {
-        // Implementation derives the place from the primary target by
-        // inspecting `PlanningEntityRef` variants (Authoritative vs Hypothetical)
-        // — exact path per live `PlanningEntityRef` shape.
-    }
+    pub fn target_place(&self) -> Option<EntityId> { /* primary authoritative target today */ }
 
-    pub fn target_claim(&self) -> Option<BeliefClaimKey> {
-        // Derived from `targets` + payload_override where applicable.
-    }
+    pub fn target_claim(&self) -> Option<BeliefClaimKey> { /* primary target location claim */ }
 
     pub fn expected_complete_tick(&self, start_tick: Tick) -> Tick {
         Tick(start_tick.0.saturating_add(self.estimated_ticks as u64))
@@ -71,7 +65,7 @@ impl PlannedStep {
 
 ### 3. Update every `PlannedStep { ... }` construction site
 
-Touch every file listed in the Files to Touch block; add `guard: None, expectations: vec![],` to each literal. This is mechanical but voluminous (~102 sites).
+Touch every affected explicit `PlannedStep { ... }` literal in `worldwake-ai`; initialize `guard: None` and `expectations: Vec::new()` while leaving helper-backed spread sites alone when they already inherit the updated fields.
 
 ## Files to Touch
 
@@ -113,7 +107,7 @@ Touch every file listed in the Files to Touch block; add `guard: None, expectati
 
 ### Invariants
 
-1. `PlannedStep` remains runtime-only — no `Serialize` / `Deserialize` derive added.
+1. `PlannedStep` keeps its pre-existing `Ord + PartialOrd + Serialize + Deserialize` derive surface; this ticket does not narrow or remove that contract.
 2. Accessor methods always return `Option<_>` where the backing field may be absent; callers must handle `None` explicitly.
 3. `expected_complete_tick` uses `saturating_add` so a pathological `estimated_ticks` cannot overflow.
 
@@ -129,3 +123,24 @@ Touch every file listed in the Files to Touch block; add `guard: None, expectati
 1. `cargo test -p worldwake-ai planned_step`
 2. `cargo test -p worldwake-ai` (full crate suite)
 3. `cargo clippy -p worldwake-ai --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-22.
+
+- Extended `PlannedStep` with `guard: Option<PlanGuard>` and `expectations: Vec<PlanExpectation>` in `crates/worldwake-ai/src/planner_ops.rs`.
+- Added `PlannedStep::{primary_target,target_place,target_claim,expected_complete_tick}` with the live-honest contract: authoritative primary-target extraction, authoritative-primary-target place passthrough, and a location-scoped `BeliefClaimKey` for `target_claim`.
+- Updated the affected `PlannedStep` construction sites across `worldwake-ai` to seed the new fields with `None` / `Vec::new()`.
+- Preserved the existing derive boundary on `PlannedStep` by widening the ticket-001 runtime guard types and the core predicate enums to satisfy `Ord` and serde requirements already present on the live branch.
+
+## Deviations
+
+- Reassessment disproved the draft's "runtime-only / no serde" assumption for `PlannedStep`; the implementation preserved the live derive surface instead of trying to narrow it.
+- `target_claim()` landed as the strongest honest current seam: the primary authoritative target's `EntityBeliefAspect::Location` claim key. Payload-specific claim derivation remains for later ticketed guard-building work.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --no-run`
+- Passed `cargo test -p worldwake-ai planned_step`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`

@@ -292,6 +292,8 @@ fn save_runtime_state_serializes_persisted_driver_state() {
             estimated_ticks: 3,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }],
         PlanTerminalKind::GoalSatisfied,
     ));
@@ -1359,6 +1361,8 @@ fn barrier_step() -> PlannedStep {
         estimated_ticks: 3,
         is_materialization_barrier: true,
         expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
     }
 }
 
@@ -1371,6 +1375,8 @@ fn travel_step(def_id: u32, target: EntityId) -> PlannedStep {
         estimated_ticks: 1,
         is_materialization_barrier: false,
         expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
     }
 }
 
@@ -1388,6 +1394,8 @@ fn hypothetical_step(def_id: u32, hypothetical: u32) -> PlannedStep {
             tag: MaterializationTag::SplitOffLot,
             hypothetical_id: crate::HypotheticalEntityId(hypothetical),
         }],
+        guard: None,
+        expectations: Vec::new(),
     }
 }
 
@@ -2872,6 +2880,8 @@ fn suspended_detour_completion_preserves_commitment_and_reactivates_it() {
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         )),
@@ -3056,6 +3066,8 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
                     tag: MaterializationTag::SplitOffLot,
                     hypothetical_id,
                 }],
+                guard: None,
+                expectations: Vec::new(),
             },
             PlannedStep {
                 def_id: ActionDefId(5),
@@ -3065,6 +3077,8 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
                 estimated_ticks: 2,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             },
             PlannedStep {
                 def_id: ActionDefId(6),
@@ -3074,6 +3088,8 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             },
         ],
         PlanTerminalKind::GoalSatisfied,
@@ -3252,6 +3268,8 @@ fn goal_stability_across_cargo_materialization_continuity() {
             tag: MaterializationTag::SplitOffLot,
             hypothetical_id: carried_hypothetical,
         }],
+        guard: None,
+        expectations: Vec::new(),
     };
     let travel = PlannedStep {
         def_id: travel_def,
@@ -3261,6 +3279,8 @@ fn goal_stability_across_cargo_materialization_continuity() {
         estimated_ticks: 1,
         is_materialization_barrier: false,
         expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
     };
     let store_stock = PlannedStep {
         def_id: store_stock_def,
@@ -3270,6 +3290,8 @@ fn goal_stability_across_cargo_materialization_continuity() {
         estimated_ticks: 1,
         is_materialization_barrier: false,
         expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
     };
     let initial_plan = PlannedPlan::new(
         default_opportunity(expected_goal),
@@ -4914,6 +4936,8 @@ fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
         estimated_ticks: 1,
         is_materialization_barrier: false,
         expected_materializations: Vec::new(),
+        guard: None,
+        expectations: Vec::new(),
     };
     harness.driver.runtime_by_agent.insert(
         harness.actor,
@@ -5252,6 +5276,8 @@ fn summarize_plan_replacement_records_same_goal_sibling_replacement() {
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             },
         ],
         PlanTerminalKind::GoalSatisfied,

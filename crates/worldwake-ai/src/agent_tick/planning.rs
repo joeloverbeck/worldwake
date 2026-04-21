@@ -2071,6 +2071,8 @@ mod tests {
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );
@@ -2109,6 +2111,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -2127,6 +2131,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -2145,6 +2151,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -2392,6 +2400,8 @@ mod tests {
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );
@@ -2600,6 +2610,8 @@ mod tests {
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );
@@ -2888,6 +2900,8 @@ mod tests {
                     estimated_ticks: 3,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 },
                 PlannedStep {
                     def_id: ActionDefId(2),
@@ -2897,6 +2911,8 @@ mod tests {
                     estimated_ticks: 2,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 },
             ],
             PlanTerminalKind::GoalSatisfied,
@@ -3001,6 +3017,8 @@ mod tests {
                 estimated_ticks: 3,
                 is_materialization_barrier: false,
                 expected_materializations: vec![],
+                guard: None,
+                expectations: Vec::new(),
             },
             &action_defs,
         );
@@ -3013,6 +3031,8 @@ mod tests {
                 estimated_ticks: 2,
                 is_materialization_barrier: false,
                 expected_materializations: vec![],
+                guard: None,
+                expectations: Vec::new(),
             },
             &action_defs,
         );
@@ -3532,6 +3552,8 @@ mod tests {
                     estimated_ticks: 2,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 }],
                 PlanTerminalKind::GoalSatisfied,
             ))),

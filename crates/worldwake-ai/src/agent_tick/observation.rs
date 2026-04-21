@@ -895,6 +895,8 @@ mod tests {
                 estimated_ticks: 3,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::ProgressBarrier,
         );
@@ -1020,6 +1022,8 @@ mod tests {
                 hypothetical_id: HypotheticalEntityId(3),
                 tag: MaterializationTag::SplitOffLot,
             }],
+            guard: None,
+            expectations: Vec::new(),
         };
 
         emit_expectation_mismatch(

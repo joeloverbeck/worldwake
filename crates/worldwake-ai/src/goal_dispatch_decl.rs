@@ -1257,6 +1257,8 @@ mod tests {
                     estimated_ticks: 1,
                     is_materialization_barrier: false,
                     expected_materializations: vec![],
+                    guard: None,
+                    expectations: Vec::new(),
                 };
                 assert!(
                     goal.is_progress_barrier(&step),

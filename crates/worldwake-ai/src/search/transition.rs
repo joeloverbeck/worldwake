@@ -159,6 +159,8 @@ pub(super) fn build_successor_detailed<'snapshot>(
         estimated_ticks,
         is_materialization_barrier: semantics.is_materialization_barrier,
         expected_materializations: transition.expected_materializations,
+        guard: None,
+        expectations: Vec::new(),
     };
     let terminal = terminal_kind(goal, &transition.state, &step, tactical_goal);
     if !semantics.may_appear_mid_plan && terminal.is_none() {

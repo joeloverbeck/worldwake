@@ -3023,6 +3023,8 @@ mod tests {
             estimated_ticks: 2,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         assert!(goal.is_progress_barrier(&step));
@@ -5676,6 +5678,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
         let barrier_step = PlannedStep {
             def_id: ActionDefId(1),
@@ -5685,6 +5689,8 @@ mod tests {
             estimated_ticks: 3,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         assert!(acquire_goal.is_progress_barrier(&barrier_step));
@@ -6150,6 +6156,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         assert!(
@@ -6450,6 +6458,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }));
     }
 
@@ -8786,6 +8796,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
         assert!(
             goal.is_progress_barrier(&step),
@@ -9795,6 +9807,8 @@ mod tests {
             estimated_ticks: 5,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
         assert!(
             goal.is_progress_barrier(&step),
@@ -9815,6 +9829,8 @@ mod tests {
             estimated_ticks: 2,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
         assert!(
             !goal.is_progress_barrier(&step),
@@ -10730,6 +10746,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }));
     }
 }

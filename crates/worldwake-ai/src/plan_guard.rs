@@ -1,16 +1,17 @@
+use serde::{Deserialize, Serialize};
 use worldwake_core::{
     BeliefClaimKey, CommodityKind, EntityId, EventTag, ObservationPredicate, Permille, Quantity,
     StatePredicate, Tick,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PlanGuard {
     pub required_facts: Vec<RequiredFact>,
     pub min_confidence: Permille,
     pub invalidators: Vec<Invalidator>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum RequiredFact {
     TargetPresent {
         target: EntityId,
@@ -31,7 +32,7 @@ pub enum RequiredFact {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum Invalidator {
     BeliefStatusChange {
         claim: BeliefClaimKey,
@@ -48,13 +49,13 @@ pub enum Invalidator {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PlanExpectation {
     pub kind: ExpectationKind,
     pub observe_by: Option<Tick>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum ExpectationKind {
     Immediate { event_tag: EventTag },
     State { predicate: StatePredicate },

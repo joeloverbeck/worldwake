@@ -167,6 +167,8 @@ mod tests {
             estimated_ticks: 3,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -181,6 +183,8 @@ mod tests {
             estimated_ticks: 3,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 

@@ -1806,6 +1806,8 @@ mod tests {
             estimated_ticks: 3,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1825,6 +1827,8 @@ mod tests {
             estimated_ticks: 2,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1843,6 +1847,8 @@ mod tests {
             estimated_ticks: 4,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1862,6 +1868,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1877,6 +1885,8 @@ mod tests {
             estimated_ticks: 0,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1889,6 +1899,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -2002,6 +2014,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -3114,6 +3128,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
         let signal = ReplanNeeded {
             agent,

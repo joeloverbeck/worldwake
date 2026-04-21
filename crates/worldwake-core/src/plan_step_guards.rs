@@ -9,7 +9,7 @@ pub enum ExpectationKindTag {
     Regression,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum StatePredicate {
     CommodityAtPlaceAtLeast {
         place: EntityId,
@@ -29,7 +29,7 @@ pub enum StatePredicate {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum ObservationPredicate {
     EntityPerceivedAtPlace { entity: EntityId, place: EntityId },
     EvidencePerceived { kind: EvidenceKind, place: EntityId },
