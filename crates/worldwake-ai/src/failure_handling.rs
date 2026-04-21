@@ -23,6 +23,7 @@ pub struct PlanFailureContext<'a> {
     pub goal_key: GoalKey,
     pub failed_step: &'a PlannedStep,
     pub execution_failure: Option<ExecutionFailure<'a>>,
+    pub belief_discrepancy: Option<Discrepancy>,
     pub current_tick: Tick,
 }
 
@@ -55,6 +56,7 @@ pub fn handle_plan_failure(
         &context.goal_key,
         context.failed_step,
         context.execution_failure,
+        context.belief_discrepancy,
     );
     let mut blocker_key = BlockerKey {
         goal_key: context.goal_key,
@@ -134,7 +136,12 @@ fn classify_discrepancy(
     goal_key: &GoalKey,
     step: &PlannedStep,
     execution_failure: Option<ExecutionFailure<'_>>,
+    belief_discrepancy: Option<Discrepancy>,
 ) -> FailureClassification {
+    if let Some(discrepancy) = belief_discrepancy {
+        return FailureClassification::Discrepancy(discrepancy);
+    }
+
     if target_gone(view, agent, step) {
         return FailureClassification::Blocker(BlockingFact::TargetGone);
     }
@@ -212,6 +219,30 @@ fn classify_discrepancy(
     }
 
     FailureClassification::Discrepancy(Discrepancy::ImproperPlanningState)
+}
+
+pub fn discrepancy_for_target_belief_status(
+    status: worldwake_sim::belief_view::BeliefStatus,
+) -> Option<Discrepancy> {
+    match status {
+        worldwake_sim::belief_view::BeliefStatus::Stale => Some(Discrepancy::BeliefStale),
+        worldwake_sim::belief_view::BeliefStatus::Contradicted => {
+            Some(Discrepancy::BeliefContradicted)
+        }
+        worldwake_sim::belief_view::BeliefStatus::Certain
+        | worldwake_sim::belief_view::BeliefStatus::Probable
+        | worldwake_sim::belief_view::BeliefStatus::Disputed => None,
+    }
+}
+
+pub fn exact_target_belief_discrepancy(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    step: &PlannedStep,
+) -> Option<Discrepancy> {
+    let target = related_entity(step)?;
+    let envelope = view.believed_target_location(agent, target);
+    discrepancy_for_target_belief_status(envelope.status)
 }
 
 fn classify_trade_failure(
@@ -1340,6 +1371,7 @@ mod tests {
         ProfileBeliefView, ReplanNeeded, RequestAttemptTrace, RequestBindingKind,
         RequestProvenance, ResolvedRequestTrace, RuntimeBeliefView, SpatialBeliefView,
         TemporalBeliefView, TradeActionPayload,
+        belief_view::{BeliefStatus, BeliefValue},
     };
 
     #[derive(Default)]
@@ -1364,6 +1396,7 @@ mod tests {
         listed_lots: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         lot_sellers: BTreeMap<EntityId, EntityId>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
+        believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
     }
 
     impl ControlBeliefView for TestBeliefView {
@@ -1395,6 +1428,17 @@ mod tests {
         }
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
+        }
+
+        fn believed_target_location(
+            &self,
+            agent: EntityId,
+            target: EntityId,
+        ) -> BeliefValue<Option<EntityId>> {
+            self.believed_target_locations
+                .get(&(agent, target))
+                .copied()
+                .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(None))
         }
     }
 
@@ -1710,6 +1754,19 @@ mod tests {
         }
     }
 
+    fn target_location_belief(
+        place: Option<EntityId>,
+        status: BeliefStatus,
+    ) -> BeliefValue<Option<EntityId>> {
+        BeliefValue {
+            value: place,
+            confidence: worldwake_core::Permille::new_unchecked(900),
+            acquired_tick: Tick(5),
+            claimed_event_tick: Some(Tick(5)),
+            status,
+        }
+    }
+
     const fn sample_request(input_sequence_no: u64) -> ResolvedRequestTrace {
         ResolvedRequestTrace {
             attempt: RequestAttemptTrace {
@@ -1895,6 +1952,7 @@ mod tests {
                 goal_key: goal,
                 failed_step: &step,
                 execution_failure: None,
+                belief_discrepancy: None,
                 current_tick: Tick(20),
             },
             &mut runtime,
@@ -1952,7 +2010,7 @@ mod tests {
         failed_step: &PlannedStep,
         execution_failure: Option<ExecutionFailure<'_>>,
     ) -> BlockingFact {
-        match classify_discrepancy(view, agent, goal_key, failed_step, execution_failure) {
+        match classify_discrepancy(view, agent, goal_key, failed_step, execution_failure, None) {
             FailureClassification::Blocker(fact) => fact,
             FailureClassification::Discrepancy(discrepancy) => {
                 panic!("expected blocker classification, got discrepancy {discrepancy:?}")
@@ -2013,6 +2071,7 @@ mod tests {
                         "TargetAtActorPlace(0)".to_string(),
                     ),
                 })),
+                belief_discrepancy: None,
                 current_tick: Tick(20),
             },
             &mut runtime,
@@ -2057,6 +2116,7 @@ mod tests {
                 goal_key: goal,
                 failed_step: &step,
                 execution_failure: None,
+                belief_discrepancy: None,
                 current_tick: Tick(20),
             },
             &mut runtime,
@@ -2124,6 +2184,7 @@ mod tests {
                         "TargetAtActorPlace(0)".to_string(),
                     ),
                 })),
+                belief_discrepancy: None,
                 current_tick: Tick(20),
             },
             &mut runtime,
@@ -2143,6 +2204,96 @@ mod tests {
         assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
         assert_eq!(entry.blocker_key.place, Some(home));
         assert_eq!(entry.blocker_key.target, None);
+    }
+
+    #[test]
+    fn handle_plan_failure_records_stale_exact_target_revalidation_as_discrepancy() {
+        let agent = entity(1);
+        let target = entity(2);
+        let place = entity(10);
+        let goal = GoalKey::from(GoalKind::RaidTarget { target });
+        let step = attack_step(target);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(target, place);
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(Some(place), BeliefStatus::Stale),
+        );
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = Some(jc_for_goal(goal));
+        let mut blocked = BlockerMemory::default();
+        let mut discrepancies = DiscrepancyMemory::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: None,
+                belief_discrepancy: super::exact_target_belief_discrepancy(&view, agent, &step),
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut jc,
+            &mut blocked,
+            &mut discrepancies,
+            &mut ContentionIntents::default(),
+            &cognitive(&ProfileFixture::default()),
+        );
+
+        let entry = discrepancies.entries.values().next().unwrap();
+        assert_eq!(entry.discrepancy, Discrepancy::BeliefStale);
+        assert_eq!(entry.blocker_key.target, Some(target));
+    }
+
+    #[test]
+    fn handle_plan_failure_records_contradicted_exact_target_revalidation_as_discrepancy() {
+        let agent = entity(1);
+        let target = entity(2);
+        let place = entity(10);
+        let goal = GoalKey::from(GoalKind::RaidTarget { target });
+        let step = attack_step(target);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, target]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(target, place);
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(Some(place), BeliefStatus::Contradicted),
+        );
+        let mut runtime = runtime_with_plan(goal, step.clone());
+        let mut jc = Some(jc_for_goal(goal));
+        let mut blocked = BlockerMemory::default();
+        let mut discrepancies = DiscrepancyMemory::default();
+
+        handle_plan_failure(
+            &PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key: goal,
+                failed_step: &step,
+                execution_failure: None,
+                belief_discrepancy: super::exact_target_belief_discrepancy(&view, agent, &step),
+                current_tick: Tick(20),
+            },
+            &mut runtime,
+            &mut jc,
+            &mut blocked,
+            &mut discrepancies,
+            &mut ContentionIntents::default(),
+            &cognitive(&ProfileFixture::default()),
+        );
+
+        let entry = discrepancies.entries.values().next().unwrap();
+        assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+        assert_eq!(entry.blocker_key.target, Some(target));
     }
 
     #[test]
@@ -2901,6 +3052,7 @@ mod tests {
                 goal_key: goal,
                 failed_step: &step,
                 execution_failure: Some(ExecutionFailure::Start(&start_failure)),
+                belief_discrepancy: None,
                 current_tick: Tick(20),
             },
             &mut runtime,
@@ -3124,6 +3276,7 @@ mod tests {
                 goal_key: goal,
                 failed_step: &step,
                 execution_failure: Some(ExecutionFailure::Start(&start_failure)),
+                belief_discrepancy: None,
                 current_tick: Tick(20),
             },
             &mut runtime,

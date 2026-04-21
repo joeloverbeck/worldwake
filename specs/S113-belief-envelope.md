@@ -160,7 +160,7 @@ No new `PerceptionProfile` field is introduced. The existing `claim_confidence_t
 None of the three accessors have current consumers. All integration sites are new:
 
 - `candidate_generation.rs` — existing emitters that need belief-based target-presence or remote-stock signals gain new envelope reads. Emitters use `status == Contradicted` to skip (the belief is refuted), `status == Stale` to still emit (the belief is eroded but plausible — the agent may want to plan a verification step), and `status == Certain`/`Probable` for normal emission. The specific emitters that gain new reads are identified per-GoalKind during ticket decomposition; the envelope infrastructure is introduced first.
-- `ranking.rs` — `motive_score` (currently at `ranking.rs:747`, returning `u32`) becomes envelope-confidence-aware for goals anchored on belief-based location or stock. The scaling formula is
+- `ranking.rs` — `motive_score` gains envelope-confidence-aware scaling at the strongest honest live seam: `RaidTarget` motive via target-location confidence. The scaling formula is
   ```rust
   let scaled = (motive as u64)
       .saturating_mul(confidence.value() as u64)
@@ -168,7 +168,7 @@ None of the three accessors have current consumers. All integration sites are ne
   u32::try_from(scaled).unwrap_or(u32::MAX)
   ```
   multiplying before dividing to preserve precision. `Permille::value()` returns `u16` in [0, 1000]; the `u64` lift avoids overflow on large motive values. Deterministic integer arithmetic throughout.
-- `plan_revalidation.rs` — `revalidate_exact_target_step` (around `plan_revalidation.rs:101-117`) gains a new predicate: when the step is identity-bound (S108 `BindingStrictness::ExactIdentity`), read the target-presence envelope via `believed_target_location`. If `status == Contradicted`, return failure with `Discrepancy::BeliefContradicted`. This is a new predicate insertion, not a modification of existing logic.
+- `plan_revalidation.rs` — `revalidate_exact_target_step` (around `plan_revalidation.rs:101-117`) gains a new predicate: when the step is identity-bound (S108 `BindingStrictness::ExactIdentity`), read the target-presence envelope via `believed_target_location`. If `status == Contradicted`, return `false` from the boolean revalidation seam. The discrepancy classification (`Discrepancy::BeliefContradicted` / `BeliefStale`) remains downstream in failure handling. This is a new predicate insertion, not a modification of existing logic.
 - S112 feasibility probe (`crates/worldwake-ai/src/feasibility_probe.rs`) — the probe gains envelope-aware rejection: when the target step is identity-bound and the envelope returns `status == Stale`, the probe returns `FeasibilityVerdict::RejectedBeforeSearch { reason: Discrepancy::BeliefStale }`, letting the information-gathering slot activate. `FeasibilityVerdict` at `crates/worldwake-ai/src/agent_tick/portfolio.rs:29-31` already carries the `Discrepancy` reason; no new variants are needed.
 
 Under the **Authoritative-to-AI Impact Rule** (CLAUDE.md): emitter changes in D4 modify candidate emission. Ticket decomposition must check that `get_affordances`, `generate_candidates`, `search_plan`, `BestEffort` action start, `handle_plan_failure`, and payload revalidation all remain correct; new goldens or extensions of `golden_planner_pathology` exercise the `Stale`/`Contradicted` paths.
@@ -209,7 +209,7 @@ pub enum BeliefStatusTag {
 
 Extend the two belief-referencing payloads:
 
-- `BlockerRecordedPayload` (at `decision_event_payload.rs:250-256`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. `S113BELENV-002` owns the schema addition plus save-format bump; live population for `BeliefStale` / `BeliefContradicted` blocker sites lands later once the envelope consumers are wired. Until then, runtime emitters lawfully write `None`.
+- `BlockerRecordedPayload` (at `decision_event_payload.rs:250-256`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. `S113BELENV-002` owns the schema addition plus save-format bump; `S113BELENV-003` now populates this field on the target-belief `BeliefStale` / `BeliefContradicted` blocker/discrepancy branches it wired. Other runtime emitters still lawfully write `None` until their producer sites are updated.
 - `PlanInvalidatedPayload` (at `decision_event_payload.rs:144-178`) gains an optional `belief_snapshot: Option<BeliefSnapshot>`. `S113BELENV-002` owns the schema addition plus save-format bump; live population for belief-driven invalidation variants lands later once the producer sites are wired. Until then, runtime emitters lawfully write `None`.
 
 Because Worldwake's save format is positionally serialized with `bincode`, adding either field requires a save-format bump rather than relying on `#[serde(default)]` for old-save compatibility. The `#[serde(default)]` remains useful for any intra-head decode path that omits the field, but it is not a cross-version migration mechanism.
@@ -269,7 +269,7 @@ Agent diversity (FND-22) continues to flow through these existing parameters: ag
 10. Ranking: motive score for an acquisition goal tied to a `Stale` belief is scaled down proportional to effective confidence.
 11. Feasibility probe (S112): identity-bound target with `status == Stale` → probe returns `FeasibilityVerdict::RejectedBeforeSearch { reason: Discrepancy::BeliefStale }`.
 12. Plan revalidation: identity-bound step whose target-presence envelope returns `status == Contradicted` fails revalidation with `Discrepancy::BeliefContradicted`.
-13. Decision-trace payload: once the producer wiring lands, a `Stale`-driven blocker emits a `BlockerRecordedPayload` with `belief_snapshot: Some(...)` carrying the captured `confidence` and `BeliefStatusTag::Stale`. `S113BELENV-002` lands the payload schema; population is a later ticket.
+13. Decision-trace payload: a `Stale`-driven target-belief blocker emits a `BlockerRecordedPayload` with `belief_snapshot: Some(...)` carrying the captured `confidence` and `BeliefStatusTag::Stale`. `S113BELENV-002` lands the payload schema; `S113BELENV-003` lands the first live producer population on the affected AI branches.
 
 ### Golden test extension
 

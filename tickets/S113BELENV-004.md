@@ -13,7 +13,7 @@ Candidate emitters that fire for **remote** targets — targets the agent is not
 - `emit_remote_engage_hostile_targets` (`crates/worldwake-ai/src/candidate_generation.rs:2095`) — emits engage-hostile goals against targets believed to be at other places.
 - `emit_remote_raid_targets` (`crates/worldwake-ai/src/candidate_generation.rs:2308`) — emits raid goals against remote target entities.
 
-Today these emitters gate on whether the agent *has* a belief about the target at all, not on whether that belief is fresh, decayed, or refuted. The planner can emit an engage-hostile goal against a target whose last known location is two hundred ticks stale, alongside a fresh one — and ranking has no confidence signal to separate them until T003 lands. Worse, a contradicted belief (a later observation refuted the target's presence at the remembered place) still gates the emitter open.
+Today these emitters gate on whether the agent *has* a belief about the target at all, not on whether that belief is fresh, decayed, or refuted. The planner can emit an engage-hostile goal against a target whose last known location is two hundred ticks stale, alongside a fresh one. `S113BELENV-003` now discounts the `RaidTarget` ranking path via target-location confidence, but that downstream scaling is not an emission gate and does not fix contradicted candidate creation. Worse, a contradicted belief (a later observation refuted the target's presence at the remembered place) still gates the emitter open.
 
 This ticket instruments both emitters with envelope-aware gating. After `S113BELENV-006` lands explicit contradiction carriage, the contract is: skip on `Contradicted`, emit on `Stale` (the agent may still want to plan a verification step), and proceed normally on `Certain`/`Probable`. It establishes the pattern for other emitters to adopt in follow-up tickets.
 
@@ -48,7 +48,7 @@ In `crates/worldwake-ai/src/candidate_generation.rs` at line 2095, where the emi
 
 - Read `view.believed_target_location(agent, target)` (or the analog surface; implementer verifies whether the emitter's signature exposes `&dyn GoalBeliefView` or needs routing through its context).
 - If `envelope.status == BeliefStatus::Contradicted`, skip emission for this target (continue to the next candidate).
-- Otherwise emit as today. `Stale` does not block emission — the ranking (T003) will discount its motive score, and the agent can still plan verification.
+- Otherwise emit as today. `Stale` does not block emission — the landed `S113BELENV-003` ranking consumer already discounts the `RaidTarget` motive score, and the agent can still plan verification.
 
 ### 2. `emit_remote_raid_targets` — envelope gating
 
@@ -71,8 +71,8 @@ Six unit tests total. Use fixture belief views that return controlled `BeliefVal
 
 ## Out of Scope
 
-- Instrumenting other emitters. The 28 other `emit_*` functions may benefit from envelope reads, but each requires its own design decision about what signal (target presence, remote stock, entity-at-place) applies. Follow-up tickets can address them once this pattern is in place and the ranking/revalidation consumers (T003) prove the end-to-end story.
-- Ranking scaling for emitted candidates (T003 owns ranking-side envelope use).
+- Instrumenting other emitters. The 28 other `emit_*` functions may benefit from envelope reads, but each requires its own design decision about what signal (target presence, remote stock, entity-at-place) applies. Follow-up tickets can address them once this pattern is in place and the landed ranking/revalidation consumers from `S113BELENV-003` prove the end-to-end story.
+- Additional ranking scaling for emitted candidates outside the already-landed `S113BELENV-003` `RaidTarget` seam.
 - Modifying `GoalKind::EngageHostile` or `GoalKind::Raid` — no goal-model surface changes.
 - Changing the `emit_candidate_with_trace` surface or introducing a drive-score field on `GroundedGoal` (architectural mismatch per the Candidate Scoring Architecture pattern — would double-classify as emitter-vs-ranking concern).
 
@@ -88,7 +88,7 @@ Six unit tests total. Use fixture belief views that return controlled `BeliefVal
 
 1. Emitters are gates (emit-or-not decisions), not scorers — no motive/drive score attached to the emitted `GroundedGoal` (Candidate Scoring Architecture).
 2. `GoalKind::EngageHostile` and `GoalKind::Raid` variant shapes are unchanged; their `payload` surface (action anchors, target binding) is unchanged.
-3. No new `Discrepancy` variants emitted by this ticket — a contradicted-target skip simply does not emit; the `Contradicted` discrepancy (if propagated elsewhere) comes from revalidation/probe in T003, not from candidate generation.
+3. No new `Discrepancy` variants emitted by this ticket — a contradicted-target skip simply does not emit; the `Contradicted` discrepancy (if propagated elsewhere) comes from the already-landed revalidation/probe consumers in `S113BELENV-003`, not from candidate generation.
 
 ## Test Plan
 

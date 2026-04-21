@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 use worldwake_core::{EntityId, GoalKind, Tick, belief_confidence};
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, Affordance, RuntimeBeliefView, TargetSpec,
-    evaluate_constraint, evaluate_precondition, get_affordances_for_defs,
-    requested_affordance_matches,
+    belief_view::BeliefStatus, evaluate_constraint, evaluate_precondition,
+    get_affordances_for_defs, requested_affordance_matches,
 };
 
 #[must_use]
@@ -29,6 +29,9 @@ pub fn revalidate_next_step(
     else {
         return false;
     };
+    if exact_target_belief_contradicted(view, actor, &targets, def) {
+        return false;
+    }
     let single_def = BTreeSet::from([step.def_id]);
     let affordance_match = get_affordances_for_defs(view, actor, registry, handlers, &single_def)
         .into_iter()
@@ -46,6 +49,22 @@ pub fn revalidate_next_step(
     affordance_match
         || revalidate_best_effort_payload_override_step(view, actor, step, &targets, def, handler)
         || revalidate_exact_target_step(view, actor, step, &targets, def, handler)
+}
+
+fn exact_target_belief_contradicted(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    targets: &[EntityId],
+    def: &worldwake_sim::ActionDef,
+) -> bool {
+    def.targets.len() == targets.len()
+        && def
+            .targets
+            .iter()
+            .all(|spec| matches!(spec, TargetSpec::SpecificEntity(_)))
+        && targets.iter().copied().any(|target| {
+            view.believed_target_location(actor, target).status == BeliefStatus::Contradicted
+        })
 }
 
 fn revalidate_best_effort_payload_override_step(
@@ -249,6 +268,7 @@ mod tests {
         ControlBeliefView, DeterministicRng, DurationExpr, EntityBeliefView, Interruptibility,
         Precondition, ProfileBeliefView, RuntimeBeliefView, SpatialBeliefView, TargetSpec,
         TemporalBeliefView, TransportActionPayload,
+        belief_view::{BeliefStatus, BeliefValue},
     };
 
     #[derive(Default)]
@@ -265,6 +285,7 @@ mod tests {
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         pursuit_profiles: BTreeMap<EntityId, PursuitProfile>,
+        believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
     }
 
     impl ControlBeliefView for TestBeliefView {
@@ -297,6 +318,17 @@ mod tests {
         }
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
+        }
+
+        fn believed_target_location(
+            &self,
+            agent: EntityId,
+            target: EntityId,
+        ) -> BeliefValue<Option<EntityId>> {
+            self.believed_target_locations
+                .get(&(agent, target))
+                .copied()
+                .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(None))
         }
     }
 
@@ -862,6 +894,19 @@ mod tests {
         }
     }
 
+    fn target_location_belief(
+        place: Option<EntityId>,
+        status: BeliefStatus,
+    ) -> BeliefValue<Option<EntityId>> {
+        BeliefValue {
+            value: place,
+            confidence: pm(900),
+            acquired_tick: Tick(4),
+            claimed_event_tick: Some(Tick(4)),
+            status,
+        }
+    }
+
     #[test]
     fn matching_affordance_binding_revalidates_true() {
         let actor = entity(1);
@@ -877,6 +922,58 @@ mod tests {
             .insert(origin, vec![(destination, NonZeroU32::new(1).unwrap())]);
 
         let (registry, handlers) = build_registry();
+        assert!(revalidate_next_step(
+            &view,
+            actor,
+            &sample_step(ActionDefId(0), destination),
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        ));
+    }
+
+    #[test]
+    fn contradicted_exact_target_belief_fails_revalidation() {
+        let actor = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, origin, destination]);
+        view.kinds.insert(origin, EntityKind::Place);
+        view.kinds.insert(destination, EntityKind::Agent);
+        view.effective_places.insert(actor, origin);
+        view.believed_target_locations.insert(
+            (actor, destination),
+            target_location_belief(Some(destination), BeliefStatus::Contradicted),
+        );
+
+        let (registry, handlers) = build_specific_entity_payload_registry();
+        assert!(!revalidate_next_step(
+            &view,
+            actor,
+            &sample_step(ActionDefId(0), destination),
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        ));
+    }
+
+    #[test]
+    fn certain_exact_target_belief_preserves_revalidation() {
+        let actor = entity(1);
+        let origin = entity(10);
+        let destination = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, origin, destination]);
+        view.kinds.insert(origin, EntityKind::Place);
+        view.kinds.insert(destination, EntityKind::Agent);
+        view.effective_places.insert(actor, origin);
+        view.believed_target_locations.insert(
+            (actor, destination),
+            target_location_belief(Some(destination), BeliefStatus::Certain),
+        );
+
+        let (registry, handlers) = build_specific_entity_payload_registry();
         assert!(revalidate_next_step(
             &view,
             actor,

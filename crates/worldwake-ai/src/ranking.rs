@@ -1415,7 +1415,7 @@ fn raid_target_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) ->
         return 0;
     }
 
-    CommodityKind::ALL
+    let base = CommodityKind::ALL
         .iter()
         .copied()
         .filter_map(|commodity| {
@@ -1434,7 +1434,15 @@ fn raid_target_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) ->
                     .saturating_mul(quantity.0)
             })
         })
-        .sum()
+        .sum();
+
+    scale_motive_by_confidence(
+        base,
+        context
+            .view
+            .believed_target_location(context.agent, target)
+            .confidence,
+    )
 }
 
 fn relevant_self_consume_factors(
@@ -1499,6 +1507,10 @@ fn score_product(weight: Permille, pressure: Permille) -> u32 {
 
 fn effective_motive_score(base_score: u32, multiplier: MultiplierPermille) -> u32 {
     base_score.saturating_mul(u32::from(multiplier.value())) / 1000
+}
+
+fn scale_motive_by_confidence(base_score: u32, confidence: Permille) -> u32 {
+    base_score.saturating_mul(u32::from(confidence.value())) / 1000
 }
 
 fn drive_escalation_multiplier(
@@ -2061,6 +2073,7 @@ mod tests {
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
         EconomicBeliefView, EntityBeliefView, ProfileBeliefView, RecipeDefinition,
         RuntimeBeliefView, SocialBeliefView, SpatialBeliefView, TemporalBeliefView,
+        belief_view::{BeliefStatus, BeliefValue},
     };
 
     #[derive(Clone, Default)]
@@ -2118,6 +2131,7 @@ mod tests {
         active_violation_records: BTreeMap<EntityId, Vec<RecordedViolation>>,
         expectation_stores: BTreeMap<EntityId, ExpectationStore>,
         last_seen_memories: BTreeMap<EntityId, LastSeenMemory>,
+        believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
     }
 
     impl ControlBeliefView for TestBeliefView {
@@ -2159,6 +2173,17 @@ mod tests {
         }
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
             Vec::new()
+        }
+
+        fn believed_target_location(
+            &self,
+            agent: EntityId,
+            target: EntityId,
+        ) -> BeliefValue<Option<EntityId>> {
+            self.believed_target_locations
+                .get(&(agent, target))
+                .copied()
+                .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(None))
         }
     }
 
@@ -2818,6 +2843,16 @@ mod tests {
         view.confidence_policies
             .insert(agent, BeliefConfidencePolicy::default());
         view
+    }
+
+    fn target_location_belief(place: EntityId, confidence: u16) -> BeliefValue<Option<EntityId>> {
+        BeliefValue {
+            value: Some(place),
+            confidence: pm(confidence),
+            acquired_tick: current_tick(),
+            claimed_event_tick: Some(current_tick()),
+            status: BeliefStatus::Certain,
+        }
     }
 
     #[test]
@@ -6724,6 +6759,10 @@ mod tests {
             .push(target);
         view.effective_places
             .insert(target, view.effective_places[&agent]);
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(view.effective_places[&agent], 1000),
+        );
         view.needs.insert(
             agent,
             HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
@@ -6768,6 +6807,10 @@ mod tests {
             .push(target);
         view.effective_places
             .insert(target, view.effective_places[&agent]);
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(view.effective_places[&agent], 1000),
+        );
         view.needs.insert(
             agent,
             HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
@@ -6798,6 +6841,10 @@ mod tests {
             .push(target);
         view.effective_places
             .insert(target, view.effective_places[&agent]);
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(view.effective_places[&agent], 1000),
+        );
         view.needs.insert(
             agent,
             HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
@@ -6830,6 +6877,58 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked.len(), 1);
+    }
+
+    #[test]
+    fn raid_target_motive_scales_with_target_location_confidence() {
+        let agent = entity(1);
+        let target = entity(7);
+        let mut view = base_view(agent);
+        view.entity_kinds.insert(target, EntityKind::Agent);
+        view.alive.insert(target);
+        view.place_entities
+            .entry(view.effective_places[&agent])
+            .or_default()
+            .push(target);
+        view.effective_places
+            .insert(target, view.effective_places[&agent]);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.commodity_quantities
+            .insert((target, CommodityKind::Apple), Quantity(4));
+
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(view.effective_places[&agent], 500),
+        );
+        let half = rank(
+            &[goal(GoalKind::RaidTarget { target })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+        assert_eq!(half.len(), 1);
+        assert_eq!(
+            half[0].motive_score,
+            4 * u32::from(utility().hunger_weight.value()) * 350
+        );
+
+        view.believed_target_locations.insert(
+            (agent, target),
+            target_location_belief(view.effective_places[&agent], 0),
+        );
+        let zero = rank(
+            &[goal(GoalKind::RaidTarget { target })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+        assert!(zero.into_ranked().is_empty());
     }
 
     #[test]

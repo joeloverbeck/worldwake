@@ -280,6 +280,7 @@ pub(super) fn handle_current_step_failure(
     agent: EntityId,
     step: &PlannedStep,
     execution_failure: Option<ExecutionFailure<'_>>,
+    belief_discrepancy: Option<worldwake_core::Discrepancy>,
 ) -> Result<ReplanReason, TickInputError> {
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
@@ -310,6 +311,7 @@ pub(super) fn handle_current_step_failure(
             goal_key,
             failed_step: step,
             execution_failure,
+            belief_discrepancy,
             current_tick: tick,
         },
         runtime,
