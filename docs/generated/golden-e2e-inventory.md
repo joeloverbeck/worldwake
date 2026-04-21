@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 15
-- Files contributing `golden_*` tests: 15
-- Total `golden_*` tests: 106
+- Golden test files: 17
+- Files contributing `golden_*` tests: 17
+- Total `golden_*` tests: 108
 
 ## Per-File Inventory
 
@@ -15,6 +15,7 @@ Do not hand-edit it.
 |------|------------------|
 | `golden_activation_decay.rs` | 6 |
 | `golden_ai_decisions.rs` | 15 |
+| `golden_decision_history_events.rs` | 1 |
 | `golden_drive_escalation_wash_priority.rs` | 3 |
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 11 |
@@ -23,6 +24,7 @@ Do not hand-edit it.
 | `golden_offices.rs` | 12 |
 | `golden_perception_exposure.rs` | 7 |
 | `golden_planner_pathology.rs` | 3 |
+| `golden_portfolio_planning.rs` | 1 |
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_survival_baseline.rs` | 7 |
 | `golden_survival_contested.rs` | 7 |
@@ -43,7 +45,7 @@ Do not hand-edit it.
 - `golden_goal_invalidation_by_another_agent`
 - `golden_unrelated_commodity_change_preserves_frontier_exhaustion`
 - `golden_priority_based_interrupt`
-- `golden_discrepancy_memory_with_ttl_expiry`
+- `golden_local_depleted_source_regenerates_without_spurious_failure_memory`
 - `golden_deprivation_cascade`
 - `golden_thirst_driven_acquisition`
 - `golden_wash_action`
@@ -55,6 +57,10 @@ Do not hand-edit it.
 - `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
 - `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`
 - `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
+
+### `golden_decision_history_events.rs`
+
+- `survival_baseline_emits_goal_commit_and_plan_adoption_in_order`
 
 ### `golden_drive_escalation_wash_priority.rs`
 
@@ -128,6 +134,10 @@ Do not hand-edit it.
 - `cross_location_water_acquisition_succeeds_without_budget_exhaustion`
 - `degenerate_zero_step_loop_blocks_actionable_goals`
 - `obligation_satiation_allows_survival_needs_to_override_posting`
+
+### `golden_portfolio_planning.rs`
+
+- `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal`
 
 ### `golden_simulation_gaps.rs`
 

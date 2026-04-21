@@ -340,6 +340,8 @@ Phase 8 runs in parallel with the remaining Phase 7 feature work — Phase 8 tou
 
 The travel-fence epistemic regression audit (originally PR-1.11 in the assessment) is folded into S111 as a ticket, not a standalone spec.
 
+S123 (preference-ordering authority) was drafted post-S112-land from the portfolio-planning regression post-mortem. It was not in the original Phase 8 assessment; it enforces the structural invariant that `ranking::compare_ranked_goals` is the single authoritative preference ordering, preventing the class of bug that regressed `golden-survival / baseline` after S112. S123 is sequenced alongside the S122 adjunct as a Phase 8 critical-path closer rather than starting a new phase, because it is a narrow type-system refactor with no runtime-behaviour change expected.
+
 ### Dependency Graph
 
 ```text
@@ -349,8 +351,10 @@ S108 ✅ archived               S111 ✅ archived
          │
          ├── S110 ✅ archived (soft dep on S109)
          │       │
-         │       ├── S112 (soft dep on S109)
-         │       └── S113 (soft dep on S109)
+         │       ├── S112 ✅ archived (soft dep on S109)
+         │       │       │
+         │       │       └── S123 (hard dep on S112's public signatures)
+         │       └── S113 (soft dep on S109, soft dep on S112)
          │
          └── S122 ✅ archived
 ```
@@ -368,16 +372,20 @@ S108 ✅ archived               S111 ✅ archived
   - soft depended on S109 for the `Discrepancy` payload carried by `BlockerRecorded`
 
 **Wave 3** (after Wave 2):
-- **S112**: Portfolio Planning with Feasibility Probes — replace flat top-N selection with 4-slot portfolio (survival / commitment / economic / information) gated by cheap feasibility probes; low-confidence agents activate the information slot.
-  - soft depends on S109 for probe reading of discrepancy/blocker memories
+- **S112**: ✅ COMPLETED — archived at [archive/specs/S112-portfolio-planning.md](/home/joeloverbeck/projects/worldwake/archive/specs/S112-portfolio-planning.md). Landed the portfolio substrate and probe integration ticket wave (`S112PORPLAN-002` through `S112PORPLAN-006`): deterministic survival / commitment / economic slot assembly, staged `PortfolioTrace`, feasibility-probe rejection surfacing through decision history, portfolio-led search ordering with `GoalPriorityClass` still gating slot winners, and the generated golden-doc-backed end-to-end proof of rejected `Sleep` and `ReportMissing` slots ahead of plausible `Bake Bread` production.
+  - soft depended on S109 for probe reading of discrepancy/blocker memories
 - **S113**: Planner-Facing Belief Envelope — `BeliefValue<T>` / `BeliefSet<T>` wrappers on target-presence / believed-location / believed-stock queries; surface confidence, freshness, status (Certain/Probable/Stale/Disputed/Contradicted), and alternatives.
   - soft depends on S109 for `BeliefStatus::Contradicted` alignment
+  - soft depends on S112 for the still-deferred information slot consumer
 
 **Wave 3 adjunct** (Phase 8 critical-path closer):
 - **S122**: ✅ COMPLETED — archived at [archive/specs/S122-frame-assumption-commodity-availability.md](/home/joeloverbeck/projects/worldwake/archive/specs/S122-frame-assumption-commodity-availability.md). Landed the live `FrameAssumption::CommodityAvailableAt` path end to end: goal-derived assumption population, belief/co-location evaluation, failed-assumption trace payloads, survival-golden/falsification-harness proof, and the adjacent survival-path cleanup needed to make the S122 contradiction chain honest in long-run goldens.
   - hard depended on S109 (consumed the post-correction `record_assumption_failure` TTL/clearing semantics)
   - soft relationship with S110 remains historical only; S122 itself still did not add a new decision-history `EventTag`
   - soft relationship with S113 remains optional; the landed path uses the live belief surface without requiring the envelope layer first
+- **S123**: Preference-Ordering Authority — `OrderedRanked<'a>` newtype over `&[RankedGoal]` constructible only inside `ranking`; migrate all `&[RankedGoal]` parameter sites; demote `compare_ranked_goals` to file-private; compile-fail doctests and a grep regression to prevent parallel comparator re-introduction. Net-new structural invariant spec motivated by the S112 portfolio-planning regression post-mortem — the parallel `agent_tick::portfolio::compare_ranked_goals` that silently disagreed with `ranking::compare_ranked_goals` on motive-score ties, and the slot-first `search_order` construction that preferred lower-motive survival candidates over higher-motive non-survival candidates, together broke `golden-survival / baseline`. Fixes in the S112 PR closed the behaviour; S123 closes the architectural surface that allowed the divergence to exist.
+  - hard depends on S112 (post-S112 call-site surface is the migration target)
+  - soft relationship with S74 (`explain_ranked_goal_order` stays the public "why X outranked Y" surface)
 
 ### Phase 8 Gate
 
@@ -385,15 +393,16 @@ S108 ✅ archived               S111 ✅ archived
 - [ ] Wave 1 specs implemented and passing golden E2E tests
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
+- [x] Portfolio planning golden (infeasible top-N + feasible lower slot) passes
 - [ ] Every `ActionDef` registration has explicit `BindingStrictness` (compile-time coverage)
 - [x] No remaining `BlockingFact::Unknown` or `AssumptionFailed` variants (migrated to typed `Discrepancy`)
 - [x] Authoritative decision history events surfaced in observer "Decision History" section for `survival-baseline.ron`
-- [ ] Portfolio planning golden (infeasible top-N + feasible lower slot) passes
 - [ ] Belief envelope golden (stale belief surfaces via `status == Stale`) passes
+- [ ] S123 implemented: `OrderedRanked` migration complete; `compare_ranked_goals` file-private; compile-fail doctests and grep regression pass; no parallel comparator definition reachable in-crate
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 
-- Note: Wave 1, S110, and the S122 adjunct are complete. The remaining Phase 8 work is S112 and S113.
+- Note: Wave 1, Wave 2, S112, and the S122 adjunct are complete. The remaining Phase 8 work is S113 and the S123 adjunct.
 
 ---
 
@@ -406,7 +415,7 @@ Follow-on to Phase 8. Deferred from the Phase 8 scope because these specs depend
 ```text
 S114 (hard deps on S109, S110, S113)
   │
-  └── S115 (hard deps on S110, S112, S114)
+  └── S115 (hard deps on S110, S112, S114; soft dep on S123)
 ```
 
 ### Active Execution Steps
@@ -415,13 +424,15 @@ S114 (hard deps on S109, S110, S113)
 - **S114**: Plan Step Guards and Expectation Monitoring — annotate `PlannedStep` with `PlanGuard` (required facts, min confidence, invalidators) and `PlanExpectation` (immediate / state / informed / regression); new `expectation_monitor_system` SystemFn; guard breaches emit `ExpectationMismatch` events and typed discrepancies.
 
 **Wave 2** (after Wave 1):
-- **S115**: Agenda Manager with Goal Lifecycle — `AgendaState` with `committed`/`pending`/`suspended` entries, each with origin, freshness, revival trigger, kill condition; rename `GroundedGoal` → `GoalOffer`, `RankedGoal` → `AgendaEntry`; new `agenda_tick_system` SystemFn; margin-based commit (S74) reads the agenda manager.
+- **S115**: Agenda Manager with Goal Lifecycle — `AgendaState` with `committed`/`pending`/`suspended` entries, each with origin, freshness, revival trigger, kill condition; rename `GroundedGoal` → `GoalOffer`, `RankedGoal` → `AgendaEntry`; new `agenda_tick_system` SystemFn; margin-based commit (S74) reads the agenda manager. Now also owns the *feasibility-rejection lifecycle classifier* (D4A) that decodes S112's `RejectedBeforeSearch { reason }` into `Satisfied` / `InfeasibleUntil { trigger }` / `Dead` lifecycle states, replacing the S112-era `search_order` special case that kept rejected committed opportunities in the search queue.
+  - soft dep on S123: if S123 lands first, S115's tick_agenda consumes `OrderedRanked<'_>` directly; otherwise S115 includes the migration in its own ticket set.
 
 ### Phase 9 Gate
 
 - [ ] Both specs reassessed post-Phase-7/8 and ticket-decomposed
 - [ ] S114 implemented: guard breaches short-circuit revalidation before affordance matching; `ExpectationMismatch` events appear in event log
 - [ ] S115 implemented: committed goals persist across ticks deterministically; pending/suspended surfaced in observer output
+- [ ] S115 D4A classifier lands: the S112 cargo-satisfaction assertion and `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` both pass via the lifecycle classifier, not via ad-hoc `build_candidate_plans` special cases
 - [ ] Deterministic replay of scenarios produces identical agenda state transitions
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing

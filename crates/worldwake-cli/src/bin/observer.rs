@@ -4346,6 +4346,7 @@ mod tests {
                     plan_replacement: None,
                     snapshot_continuation: None,
                 },
+                portfolio: None,
                 execution: ExecutionTrace {
                     enqueued_step: None,
                     revalidation_passed: None,

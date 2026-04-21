@@ -45,3 +45,4 @@
 | 4 | Agent C | GoalOffered | goal=ExploreLocation { target_place: EntityId { slot: 1, generation: 0 }, motivating_need: NeedDriven(Hunger) } emitter=Exploration evidence=ExplorationPressurex1 |
 | 4 | Agent C | GoalCommitted | goal=ConsumeOwnedCommodity { commodity: Water } motive=203000 alts=1 |
 | 4 | Agent C | PlanAdopted | goal=ConsumeOwnedCommodity { commodity: Water } steps=1 |
+

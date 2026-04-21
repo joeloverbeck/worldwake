@@ -2,7 +2,7 @@
 
 ## Summary
 
-Add an `AgendaState` that tracks goals through a three-state lifecycle (`committed`, `pending`, `suspended`) with origin, freshness, revival trigger, and kill condition per entry. Replaces the current "rank everything fresh every tick" model with an explicit agenda manager: committed goals persist across ticks under margin-based commitment (S74); pending goals wait for a revival condition (resource appears, route becomes safe, counterparty arrives); suspended goals are dormant but not abandoned. Rename `GroundedGoal` → `GoalOffer` and `RankedGoal` → `AgendaEntry` to reflect their lifecycle role. `exhausted` and `abandoned` states are deferred — Phase 7 scenarios have not yet demonstrated a need to distinguish them from `DiscrepancyMemory` entries.
+Add an `AgendaState` that tracks goals through a three-state lifecycle (`committed`, `pending`, `suspended`) with origin, freshness, revival trigger, and kill condition per entry. Replaces the current "rank everything fresh every tick" model with an explicit agenda manager: committed goals persist across ticks under margin-based commitment (S74); pending goals wait for a revival condition (resource appears, route becomes safe, counterparty arrives); suspended goals are dormant but not abandoned. The agenda is also the architectural home for distinguishing *satisfied* from *truly-infeasible* from *infeasible-until-belief-changes* goals — a distinction the S112 feasibility probe collapses into a single opaque `RejectedBeforeSearch { reason: Discrepancy }` today, forcing downstream callers to re-derive the intent by inspecting `Discrepancy` variants. Rename `GroundedGoal` → `GoalOffer` and `RankedGoal` → `AgendaEntry` to reflect their lifecycle role. `exhausted` and `abandoned` states are deferred — Phase 7 scenarios have not yet demonstrated a need to distinguish them from `DiscrepancyMemory` entries.
 
 ## Phase and Status
 
@@ -18,8 +18,9 @@ Phase 9: Belief-First Continual Planning Structural. Status: Draft.
 ## Dependencies
 
 - S110 (Decision History Events) — lifecycle transitions emit `GoalCommitted` / `GoalSuspended` / `GoalAbandoned`.
-- S112 (Portfolio Planning) — portfolio still assembles slots per tick, but the commitment slot now reads `AgendaState.committed` directly.
+- S112 (Portfolio Planning) — portfolio still assembles slots per tick, but the commitment slot now reads `AgendaState.committed` directly. The feasibility probe's `RejectedBeforeSearch { reason }` is the primary input to the lifecycle classifier (D4A) that decides whether a rejected goal becomes `Suspended` with no revival trigger (satisfied), `Pending` with a concrete revival trigger (infeasible-until-belief-changes), or killed outright (truly infeasible with no revival path). Hard.
 - S114 (Plan Step Guards) — pending goals store their revival conditions as `Invalidator`-kind predicates, reusing the guard infrastructure.
+- S123 (Preference-Ordering Authority) — `tick_agenda` ranks its merged candidate pool via `ranking::sort_in_place` and consumes the resulting `OrderedRanked<'_>` for the commit decision. No parallel comparator. Soft (migration ordering only).
 
 ## Design Goals
 
@@ -38,8 +39,9 @@ Phase 9: Belief-First Continual Planning Structural. Status: Draft.
 
 | Principle | How Satisfied |
 |-----------|---------------|
+| FND-16 (Ignorance, Uncertainty, Contradiction First-Class) | The D4A classifier turns the probe's opaque `RejectedBeforeSearch { reason }` into three explicit lifecycle branches (`Satisfied` / `InfeasibleUntil` / `Dead`). "I can't do this right now" becomes queryable state, not a heuristic the caller re-derives. |
 | FND-20 (Resource-Bounded Practical Reasoning) | An explicit agenda lets agents keep track of "what I wanted to do but can't now" without re-ranking from scratch every tick. Lower cognitive cost per tick. |
-| FND-21 (Intentions Are Revisable Commitments) | Commitment is explicit state with a kill condition. Revisability is a lifecycle transition (`committed → suspended`), not a silent re-rank. |
+| FND-21 (Intentions Are Revisable Commitments) | Commitment is explicit state with a kill condition. Revisability is a lifecycle transition (`committed → suspended`), not a silent re-rank. A *satisfied* committed goal (D4A) is preserved as `Suspended` rather than silently dropped, which is the correctness signal the S112 cargo-delivery regression surfaced. |
 | FND-22 (Agent Diversity) | `AgendaEntry.origin` records whether the goal came from a need, an obligation, a social commitment, or an opportunity. Per-agent lifecycle policies (S115's agenda profile) let one agent abandon stale pending goals quickly, another patiently. |
 | FND-29A (Causal History) | Lifecycle transitions are append-only events (S110). Why a goal was suspended, for what revival condition, and when it revived are all queryable. |
 
@@ -155,6 +157,30 @@ Each transition emits the corresponding S110 `EventTag`. The portfolio assembly 
 
 For each pending entry, `evaluate_revival_trigger` reads the agent's belief store (via the S113 envelope) and returns whether the trigger fires this tick. Triggers are cheap belief-store lookups; the dominant cost is iterating `pending` map entries (bounded by `agenda_pending_capacity` — see D6). Determinism guaranteed by `BTreeMap` iteration.
 
+### D4A: Feasibility-rejection → lifecycle classifier
+
+The S112 feasibility probe (`feasibility_probe::probe`) returns `FeasibilityVerdict::RejectedBeforeSearch { reason: Discrepancy }` with five collapsed reason variants (`MissingObservation`, `RouteUnknown`, `PartialExecutionDrift`, `NoLegalBinding`, `ImproperPlanningState`). Three structurally different situations map onto those variants today:
+
+| Situation | Probe signal | Correct lifecycle action |
+|-----------|--------------|--------------------------|
+| Goal is already *satisfied* (e.g. `MoveCargo` when the agent is at destination with the cargo) | `RejectedBeforeSearch { reason }` where the goal's post-conditions are already true in the agent's belief store | Move to `Suspended` with `KillCondition::External`; `revival_trigger = None`. The commitment persists until `KillCondition` fires (typically `TargetDead` / `ObligationResolved`) or the goal's post-conditions stop holding. |
+| Goal is *infeasible now, may become feasible* (e.g. `AcquireCommodity` at a place with `MissingObservation` about stock) | `RejectedBeforeSearch { reason: MissingObservation \| RouteUnknown \| PartialExecutionDrift }` with a belief gap the agent can plausibly close | Move to `Pending` with a `RevivalTrigger` synthesised from the rejection reason: `MissingObservation` on a commodity → `CommodityAvailable`; `RouteUnknown` → `RouteLearned`; `PartialExecutionDrift` on a reservation → `CounterpartyAvailable` or `TickElapsed`. |
+| Goal is *structurally infeasible* (e.g. `NoLegalBinding`, `ImproperPlanningState` with no believable resolution path) | `RejectedBeforeSearch { reason: NoLegalBinding \| ImproperPlanningState }` | Kill the entry (drop from agenda). `DiscrepancyMemory` records the failure so the ranker does not re-emit immediately; the goal re-enters naturally after memory TTL. |
+
+New helper `agenda_manager::classify_rejection(probe_verdict: &FeasibilityVerdict, offer: &GoalOffer, beliefs: &impl BeliefView) -> RejectionLifecycle` produces:
+
+```rust
+pub enum RejectionLifecycle {
+    Satisfied,
+    InfeasibleUntil { trigger: RevivalTrigger },
+    Dead,
+}
+```
+
+The classifier is deterministic, pure over (verdict, offer, beliefs), and has no side effects. It is the single authoritative decoder of the probe's rejection reason into agenda lifecycle state — downstream modules do not inspect `Discrepancy` variants to infer the same distinction (closing the Gap-2 gap surfaced by the S112 incident, where the `build_candidate_plans` caller had to special-case "don't exclude the committed opportunity from `search_order` even when the probe rejected it").
+
+Migration note: the S112-era special case in `build_candidate_plans` that kept a rejected *committed* opportunity in `search_order` disappears with S115. Post-S115, a rejected committed goal is demoted to `Suspended` (satisfied) or `Pending` (infeasible-now) by the classifier before `search_order` is built; the search order then trusts the admitted ranking without the special case.
+
 ### D5: Suspended vs pending
 
 - **Pending**: has a concrete `RevivalTrigger` that can fire. The agent is actively waiting for the condition.
@@ -176,10 +202,10 @@ New accessor `agenda_state(agent) -> &AgendaState` on the appropriate belief-vie
 
 ## FND-01 Section H: Causal Hooks
 
-1. **Information-path analysis**: Revival triggers read the agent's own belief store. No cross-agent information flow. A social commitment's revival (e.g., counterparty arrives) fires only when the agent perceives the arrival — delegated to the perception system, not omniscient query.
-2. **Positive-feedback analysis**: Potential loop: pending → revival fires → commit → plan fails → demote to pending → revival fires again. Dampener: S109 `DiscrepancyMemory` records the failure and suppresses re-emission; S115's `kill_condition` can include "after N cycles of commit-then-fail, abandon."
-3. **Concrete dampeners**: `agenda_pending_capacity` + eviction by `last_reconsidered_tick` + discrepancy-memory suppression. All profile-driven.
-4. **Stored state vs. derived read-model**: `AgendaState` is authoritative stored state on each agent. Lifecycle transitions produce event-log entries (S110). Portfolio slots (S112) are derived read-views over the agenda.
+1. **Information-path analysis**: Revival triggers read the agent's own belief store. No cross-agent information flow. A social commitment's revival (e.g., counterparty arrives) fires only when the agent perceives the arrival — delegated to the perception system, not omniscient query. The D4A classifier is pure over `(probe_verdict, offer, beliefs)` with no side effects and no cross-agent reads.
+2. **Positive-feedback analysis**: Potential loop: pending → revival fires → commit → plan fails → demote to pending → revival fires again. Dampener: S109 `DiscrepancyMemory` records the failure and suppresses re-emission; S115's `kill_condition` can include "after N cycles of commit-then-fail, abandon." A second potential loop is D4A misclassifying a structurally-dead goal as `InfeasibleUntil`, producing endless pending-revive-dead-pending cycles; dampener is `revive_cooldown_ticks` (D6) plus `DiscrepancyMemory` suppression of the emit side.
+3. **Concrete dampeners**: `agenda_pending_capacity` + eviction by `last_reconsidered_tick` + discrepancy-memory suppression + `revive_cooldown_ticks`. All profile-driven.
+4. **Stored state vs. derived read-model**: `AgendaState` is authoritative stored state on each agent. Lifecycle transitions produce event-log entries (S110). Portfolio slots (S112) are derived read-views over the agenda. The D4A classifier result is *not* stored — it is a per-tick derived decision over inputs that are themselves stored (probe verdict, belief store).
 
 ## SystemFn Integration
 
@@ -215,16 +241,22 @@ New accessor `agenda_state(agent) -> &AgendaState` on the appropriate belief-vie
 3. `KillCondition::TickExpiry` drops a pending entry at or after the expiry tick.
 4. Capacity overflow evicts the oldest `last_reconsidered_tick`.
 5. A revived entry becomes a commit candidate; if it wins, `AgendaState.committed` updates and `EventTag::GoalCommitted` is emitted.
+6. D4A `classify_rejection` on a satisfied `MoveCargo` (agent at destination with cargo) returns `RejectionLifecycle::Satisfied`; the entry is demoted to `Suspended` with no revival trigger.
+7. D4A `classify_rejection` on `AcquireCommodity` at a place with `MissingObservation` about stock returns `RejectionLifecycle::InfeasibleUntil { trigger: CommodityAvailable { .. } }`; the entry is demoted to `Pending` with a matching trigger that fires when a later belief update resolves the observation gap.
+8. D4A `classify_rejection` on `NoLegalBinding` returns `RejectionLifecycle::Dead`; the entry is dropped, and a `DiscrepancyMemory` entry keeps the ranker from re-emitting until TTL.
 
 ### Integration tests
 
-6. Two-tick scenario: agent commits goal A at tick 1; tick 2 belief confirms A still viable; `AgendaState.committed == A` at end of tick 2 (no re-commit churn).
-7. Deterministic replay: re-running a recorded simulation reproduces identical agenda state at every tick.
-8. Existing goldens pass (`survival-baseline.ron`, `survival-contested.ron`, `golden_planner_pathology.rs`).
+9. Two-tick scenario: agent commits goal A at tick 1; tick 2 belief confirms A still viable; `AgendaState.committed == A` at end of tick 2 (no re-commit churn).
+10. Deterministic replay: re-running a recorded simulation reproduces identical agenda state at every tick.
+11. Cargo-delivery: the S112 `cargo_satisfaction_at_destination_while_carrying` assertion — `active_goal` remains `MoveCargo` after delivery — passes via the D4A classifier demoting the committed goal to `Suspended` (satisfied), not via the search-order special case the S112 incident fix added.
+12. Portfolio rejection: the S112 `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` assertion — commit the feasible economic goal within two ticks, ignore the rejected `Sleep` / `ReportMissing` slots — passes via the D4A classifier killing the structurally-infeasible commitment rather than pinning it as the committed priority.
+13. Existing goldens pass (`survival-baseline.ron`, `survival-contested.ron`, `golden_planner_pathology.rs`).
 
 ### Golden test
 
-9. New scenario `golden_agenda_lifecycle.rs`: agent's purchase goal becomes pending when merchant departs, revives when merchant returns, commits, and completes — all transitions visible in event log and in final agenda state.
+14. New scenario `golden_agenda_lifecycle.rs`: agent's purchase goal becomes pending when merchant departs, revives when merchant returns, commits, and completes — all transitions visible in event log and in final agenda state.
+15. Extension of `golden_agenda_lifecycle.rs`: agent's cargo-delivery goal reaches destination, the D4A classifier demotes it to `Suspended { kind: Satisfied }`, and the suspended entry appears in observer Section 9 output for one post-satisfaction tick before `KillCondition::External` clears it.
 
 ## Outcome
 

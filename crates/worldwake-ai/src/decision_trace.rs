@@ -4,6 +4,7 @@
 //! and test query purposes. See spec S08 for design rationale.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameAssumption,
@@ -17,6 +18,7 @@ use worldwake_sim::{
 };
 
 use crate::ExhaustionRetryState;
+use crate::agent_tick::portfolio::{FeasibilityVerdict, SlotKind};
 use crate::feasibility::FeasibilityHint;
 use crate::goal_model::{GoalPriorityClass, RankedGoalProvenance};
 use crate::goal_switching::GoalSwitchKind;
@@ -65,6 +67,19 @@ pub enum FrameTransitionKind {
 #[derive(Clone, Debug)]
 pub struct FrameTransitionTrace {
     pub transitions: Vec<FrameTransitionKind>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PortfolioTrace {
+    pub(crate) slots: BTreeMap<SlotKind, PortfolioSlotTrace>,
+    pub(crate) slots_attempted: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PortfolioSlotTrace {
+    pub(crate) goal_key: GoalKey,
+    pub(crate) motive_score: u32,
+    pub(crate) feasibility: FeasibilityVerdict,
 }
 
 // ── Top-Level Record ────────────────────────────────────────────
@@ -238,6 +253,8 @@ pub struct PlanningPipelineTrace {
     pub candidates: CandidateTrace,
     pub planning: PlanSearchTrace,
     pub selection: SelectionTrace,
+    #[allow(dead_code)]
+    pub portfolio: Option<PortfolioTrace>,
     pub execution: ExecutionTrace,
     /// Action start failures from the previous tick's `BestEffort` inputs,
     /// drained from the `Scheduler` for this agent.
@@ -2324,6 +2341,7 @@ mod tests {
                     plan_replacement: None,
                     snapshot_continuation: None,
                 },
+                portfolio: None,
                 execution: ExecutionTrace {
                     enqueued_step: None,
                     revalidation_passed: None,
@@ -2378,6 +2396,7 @@ mod tests {
                     plan_replacement: None,
                     snapshot_continuation: None,
                 },
+                portfolio: None,
                 execution: ExecutionTrace {
                     enqueued_step: None,
                     revalidation_passed: None,
@@ -2946,6 +2965,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -2979,6 +2999,114 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![orchard, market]
         );
+    }
+
+    #[test]
+    fn planning_pipeline_trace_portfolio_defaults_to_none_in_literal() {
+        let planning = PlanningPipelineTrace {
+            affordances: None,
+            dirty: crate::DirtySet::NO_PLAN,
+            plan_continued: false,
+            candidates: CandidateTrace {
+                generated: vec![],
+                evidence: vec![],
+                fully_blocked_desires: vec![],
+                places_reachable: 0,
+                places_after_belief_filter: 0,
+                ranked: vec![],
+                top_ranked_comparison: None,
+                suppressed: vec![],
+                zero_motive: vec![],
+                omitted_political: vec![],
+                omitted_bandit: vec![],
+                omitted_social: vec![],
+                omitted_violation_detection: vec![],
+            },
+            planning: PlanSearchTrace {
+                attempts: vec![],
+                same_goal_trace: None,
+            },
+            selection: SelectionTrace {
+                selected_opportunity: None,
+                selected_plan: None,
+                selected_plan_source: None,
+                goal_switch: None,
+                previous_goal: None,
+                plan_replacement: None,
+                snapshot_continuation: None,
+            },
+            portfolio: None,
+            execution: ExecutionTrace {
+                enqueued_step: None,
+                revalidation_passed: None,
+                failure: None,
+            },
+            action_start_failures: vec![],
+            discrepancy_trace: vec![],
+            exhaustion_snapshot: vec![],
+            frame_transition: None,
+            patrol_route: PatrolRouteSnapshotTrace::default(),
+            selected_patrol_anchor: None,
+            pursuit_invalidation: None,
+        };
+
+        assert_eq!(planning.portfolio, None);
+    }
+
+    #[test]
+    fn portfolio_trace_preserves_slot_contents() {
+        let sleep = GoalKey::new(GoalKind::Sleep);
+        let bread = GoalKey::new(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: worldwake_core::CommodityPurpose::Restock,
+        });
+        let mut slots = std::collections::BTreeMap::new();
+        slots.insert(
+            SlotKind::Survival,
+            PortfolioSlotTrace {
+                goal_key: sleep,
+                motive_score: 900,
+                feasibility: FeasibilityVerdict::Plausible,
+            },
+        );
+        slots.insert(
+            SlotKind::Economic,
+            PortfolioSlotTrace {
+                goal_key: bread,
+                motive_score: 450,
+                feasibility: FeasibilityVerdict::RejectedBeforeSearch {
+                    reason: worldwake_core::Discrepancy::MissingObservation,
+                },
+            },
+        );
+        let trace = PortfolioTrace {
+            slots,
+            slots_attempted: 1,
+        };
+
+        assert_eq!(
+            trace.slots.keys().copied().collect::<Vec<_>>(),
+            vec![SlotKind::Survival, SlotKind::Economic]
+        );
+        assert_eq!(
+            trace.slots.get(&SlotKind::Survival),
+            Some(&PortfolioSlotTrace {
+                goal_key: sleep,
+                motive_score: 900,
+                feasibility: FeasibilityVerdict::Plausible,
+            })
+        );
+        assert_eq!(
+            trace.slots.get(&SlotKind::Economic),
+            Some(&PortfolioSlotTrace {
+                goal_key: bread,
+                motive_score: 450,
+                feasibility: FeasibilityVerdict::RejectedBeforeSearch {
+                    reason: worldwake_core::Discrepancy::MissingObservation,
+                },
+            })
+        );
+        assert_eq!(trace.slots_attempted, 1);
     }
 
     #[test]
@@ -3178,6 +3306,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3262,6 +3391,7 @@ mod tests {
                 }),
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3338,6 +3468,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3404,6 +3535,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3471,6 +3603,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3538,6 +3671,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3604,6 +3738,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3675,6 +3810,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3758,6 +3894,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3833,6 +3970,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -3926,6 +4064,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -4048,6 +4187,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -4418,6 +4558,7 @@ mod tests {
                 plan_replacement: None,
                 snapshot_continuation: None,
             },
+            portfolio: None,
             execution: ExecutionTrace {
                 enqueued_step: None,
                 revalidation_passed: None,
@@ -4607,6 +4748,7 @@ mod tests {
                     plan_replacement: None,
                     snapshot_continuation: None,
                 },
+                portfolio: None,
                 execution: ExecutionTrace {
                     enqueued_step: None,
                     revalidation_passed: None,

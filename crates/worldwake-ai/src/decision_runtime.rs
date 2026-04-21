@@ -399,6 +399,7 @@ mod tests {
             use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
             decision_history_alternatives: CognitiveProfile::default()
                 .decision_history_alternatives,
+            slot_weights: worldwake_core::PortfolioSlotWeights::default(),
         }
     }
 

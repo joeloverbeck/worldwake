@@ -1094,7 +1094,7 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
     }
 }
 
-fn place_has_local_commodity_support(
+pub(crate) fn place_has_local_commodity_support(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     place: EntityId,
@@ -1114,6 +1114,7 @@ fn place_has_local_commodity_support(
             .filter(|entity| Some(*entity) != excluded_target)
             .any(|entity| {
                 view.item_lot_commodity(entity) == Some(commodity)
+                    && view.commodity_quantity(entity, commodity) > Quantity(0)
                     && view.direct_container(entity).is_none()
                     && view.direct_possessor(entity).is_none()
             })
@@ -1698,6 +1699,7 @@ mod tests {
             use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
             decision_history_alternatives: CognitiveProfile::default()
                 .decision_history_alternatives,
+            slot_weights: worldwake_core::PortfolioSlotWeights::default(),
         }
     }
 

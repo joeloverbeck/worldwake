@@ -12,7 +12,7 @@ use super::frame::progress_op_kinds;
 use super::observation::{InFlightReconciliation, reconcile_in_flight_state};
 use super::{
     AgentTickContext, FrameSwitchMarginSource, build_candidate_plans, persist_blocked_memory,
-    persist_discrepancy_memory, selection_candidates,
+    persist_discrepancy_memory,
 };
 use crate::DirtySet;
 use crate::failure_handling::{ExecutionFailure, FailureClassification};
@@ -87,6 +87,7 @@ pub(super) fn handle_active_action_phase(
             agent,
             ranked_candidates,
             None,
+            discrepancy_memory,
             blocked_memory,
             tick,
             ctx.cognitive,
@@ -100,7 +101,9 @@ pub(super) fn handle_active_action_phase(
             &runtime.exhaustion_cache,
         )
     });
-    let selection_plans = planned_candidates.as_ref().map(|p| selection_candidates(p));
+    let selection_plans = planned_candidates
+        .as_ref()
+        .map(super::planning::CandidatePlanningPass::selection_plans);
     let active_goal_key = active_goal.map(|ag| ag.goal_key);
     let decision = evaluate_interrupt(
         runtime,

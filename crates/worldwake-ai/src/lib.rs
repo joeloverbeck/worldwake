@@ -12,6 +12,7 @@ mod enterprise;
 pub mod exhaustion;
 pub mod failure_handling;
 pub mod feasibility;
+pub(crate) mod feasibility_probe;
 mod frame_switch_policy;
 mod goal_dispatch_decl;
 mod goal_dispatch_key;

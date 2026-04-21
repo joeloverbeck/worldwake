@@ -1,0 +1,81 @@
+// Portfolio-planning probe scenario for Worldwake.
+//
+// Purpose: prove the landed S112 portfolio branch with one rejected survival
+// slot, one rejected commitment slot, and one plausible economic slot on the
+// same planning tick.
+//
+// Authored world shape:
+// - Camp Workshop is the agent's only place and contains the lawful economic
+//   opportunity:
+//   - `Bake Bread` via `Camp Mill` + local `Firewood`
+//
+// The scenario itself does not author persisted belief state or prior
+// commitment. The golden harness seeds those explicit proof
+// inputs so the test can exercise the live commitment-slot and
+// feasibility-probe contracts without widening the scenario schema.
+//
+// Lawful competing affordances intentionally removed from setup:
+// - no travel graph complexity
+// - no combat, politics, trade, or social branches
+// - no alternate workstation family or second recipe
+// - no local sleep support, so `Sleep` can be tested as a probe rejection
+// - no extra commodity or social support beyond the seeded expectation record
+(
+    seed: 112006,
+    places: [
+        (name: "Camp Workshop", tags: [Village, Store]),
+    ],
+    agents: [
+        (
+            name: "Planner",
+            location: "Camp Workshop",
+            control: Ai,
+            known_recipes: ["Bake Bread"],
+            needs: (
+                hunger: 640,
+                thirst: 0,
+                fatigue: 700,
+                bladder: 0,
+                dirtiness: 0,
+            ),
+            utility_profile: (
+                hunger_weight: 650,
+                thirst_weight: 0,
+                fatigue_weight: 900,
+                bladder_weight: 0,
+                dirtiness_weight: 0,
+                pain_weight: 0,
+                danger_weight: 0,
+                enterprise_weight: 0,
+                social_weight: 1000,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 500,
+                care_weight: 0,
+            ),
+            cognitive_profile: (
+                max_candidates_to_plan: 2,
+                max_candidates_per_expansion: 4,
+                max_plan_depth: 8,
+                snapshot_travel_horizon: 6,
+                max_node_expansions: 300,
+                switch_margin: 100,
+                planning_switch_margin: 150,
+                transient_block_ticks: 20,
+                structural_block_ticks: 200,
+                initial_cooldown_ticks: 4,
+                max_cooldown_ticks: 64,
+                max_snapshot_entities_per_place: 50,
+                landmark_extraction_depth: 3,
+            ),
+        ),
+    ],
+    facilities: [
+        (name: "Camp Mill", workstation: Mill, location: "Camp Workshop"),
+    ],
+    items: [
+        (commodity: Firewood, quantity: 1, location: "Camp Workshop"),
+    ],
+)

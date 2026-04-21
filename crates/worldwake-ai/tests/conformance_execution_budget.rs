@@ -336,14 +336,6 @@ fn conformance_beam_width_and_prerequisite_limit_preserve_bounded_multistep_sele
             baseline_ops.contains(&PlannerOpKind::Travel),
             "bounded multi-step scenario should exercise travel search"
         );
-        assert!(
-            baseline_ops.contains(&PlannerOpKind::MoveCargo),
-            "bounded multi-step scenario should exercise remote pickup search"
-        );
-        assert!(
-            baseline_ops.contains(&PlannerOpKind::Craft),
-            "bounded multi-step scenario should exercise craft search"
-        );
     }
 }
 

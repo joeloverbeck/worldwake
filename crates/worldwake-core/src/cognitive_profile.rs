@@ -1,6 +1,23 @@
 use crate::{Component, Permille};
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct PortfolioSlotWeights {
+    pub survival: Permille,
+    pub commitment: Permille,
+    pub economic: Permille,
+}
+
+impl Default for PortfolioSlotWeights {
+    fn default() -> Self {
+        Self {
+            survival: Permille::new_unchecked(1000),
+            commitment: Permille::new_unchecked(900),
+            economic: Permille::new_unchecked(700),
+        }
+    }
+}
+
 /// Stable per-agent cognitive reasoning parameters used by the AI layer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct CognitiveProfile {
@@ -76,6 +93,9 @@ pub struct CognitiveProfile {
     /// Maximum number of rejected alternatives recorded in decision history events.
     #[serde(default = "default_decision_history_alternatives")]
     pub decision_history_alternatives: u8,
+    /// Relative slot weights for portfolio candidate ordering.
+    #[serde(default)]
+    pub slot_weights: PortfolioSlotWeights,
 }
 
 impl Default for CognitiveProfile {
@@ -108,6 +128,7 @@ impl Default for CognitiveProfile {
             landmark_extraction_depth: 4,
             use_ff_heuristic: default_use_ff_heuristic(),
             decision_history_alternatives: default_decision_history_alternatives(),
+            slot_weights: PortfolioSlotWeights::default(),
         }
     }
 }
@@ -172,7 +193,7 @@ const fn default_learned_opportunity_memory_ticks() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::CognitiveProfile;
+    use super::{CognitiveProfile, PortfolioSlotWeights};
     use crate::{ControlSource, EntityKind, Tick, Topology, World, traits::Component};
     use ron::{
         de::from_str,
@@ -189,6 +210,7 @@ mod tests {
     fn cognitive_profile_component_bounds() {
         assert_component_bounds::<CognitiveProfile>();
         assert_value_bounds::<CognitiveProfile>();
+        assert_value_bounds::<PortfolioSlotWeights>();
     }
 
     #[test]
@@ -225,6 +247,7 @@ mod tests {
         assert_eq!(profile.landmark_extraction_depth, 4);
         assert!(profile.use_ff_heuristic);
         assert_eq!(profile.decision_history_alternatives, 5);
+        assert_eq!(profile.slot_weights, PortfolioSlotWeights::default());
     }
 
     #[test]
@@ -257,6 +280,11 @@ mod tests {
             landmark_extraction_depth: 5,
             use_ff_heuristic: false,
             decision_history_alternatives: 8,
+            slot_weights: PortfolioSlotWeights {
+                survival: crate::Permille::new(950).unwrap(),
+                commitment: crate::Permille::new(800).unwrap(),
+                economic: crate::Permille::new(650).unwrap(),
+            },
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
@@ -306,6 +334,44 @@ mod tests {
             profile.decision_history_alternatives,
             super::default_decision_history_alternatives()
         );
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_slot_weights() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                slot_weights: PortfolioSlotWeights {
+                    survival: crate::Permille::new(850).unwrap(),
+                    commitment: crate::Permille::new(750).unwrap(),
+                    economic: crate::Permille::new(650).unwrap(),
+                },
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let mut skipping_slot_weights = false;
+        let without_field = serialized
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                if skipping_slot_weights {
+                    if trimmed == ")," {
+                        skipping_slot_weights = false;
+                    }
+                    return false;
+                }
+                if trimmed.starts_with("slot_weights: (") {
+                    skipping_slot_weights = true;
+                    return false;
+                }
+                true
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_field).unwrap();
+
+        assert_eq!(profile.slot_weights, PortfolioSlotWeights::default());
     }
 
     #[test]
