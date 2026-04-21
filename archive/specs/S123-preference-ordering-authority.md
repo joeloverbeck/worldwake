@@ -1,12 +1,14 @@
 # S123: Preference-Ordering Authority
 
+**Status**: COMPLETED
+
 ## Summary
 
 Make `ranking::compare_ranked_goals` the sole authoritative total order on `RankedGoal` by introducing a module-owned `OrderedRanked<'a>` newtype over `&[RankedGoal]`, constructible only through `ranking::sort_in_place` (which sorts a `Vec<RankedGoal>` and returns an `OrderedRanked<'_>` borrowing it) or `RankingOutcome::ordered` (which borrows the outcome's already-sorted `ranked` field). The newtype's constructor is strictly module-private, which is what closes the gap: downstream modules inside `worldwake-ai` cannot synthesise an `OrderedRanked` over a slice they sorted themselves, because the only paths that produce an `OrderedRanked` also perform the authoritative sort. S112 regressed `golden-survival / baseline` precisely because `agent_tick/portfolio.rs` shipped a parallel comparator whose tie-breaker (goal-key discriminant) silently disagreed with ranking's authoritative tie-breaker chain (feasibility → specificity → opportunity strength). The comparator divergence was not visible at review time, did not fail any unit test at land, and only surfaced after 1440-tick behavioural golden runs. This spec closes the structural path that allowed the divergence to exist.
 
 ## Phase and Status
 
-Phase 8 Adjunct: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8 Adjunct: Belief-First Continual Planning Foundation. Status: Completed 2026-04-21.
 
 ## Crates
 
@@ -269,4 +271,9 @@ None. The preference ordering is not per-agent; it is the single authoritative o
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-21.
+
+- Delivered through the archived ticket chain [archive/tickets/S123PREORDAUT-001.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S123PREORDAUT-001.md), [archive/tickets/S123PREORDAUT-002.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S123PREORDAUT-002.md), and [archive/tickets/S123PREORDAUT-003.md](/home/joeloverbeck/projects/worldwake/archive/tickets/S123PREORDAUT-003.md).
+- Landed the `OrderedRanked<'_>` read-only authority surface, migrated all production `&[RankedGoal]` consumer signatures to `&OrderedRanked<'_>`, demoted `compare_ranked_goals` to file-private, and demoted `RankingOutcome.ranked` to `pub(crate)`.
+- Added build-time falsification at the intended boundary: `ranking.rs` compile-fail doctests proving external code cannot import `compare_ranked_goals` or call `OrderedRanked::from_sorted_for_test`, plus the crate-local grep regression that prevents any parallel `fn compare_ranked_goals` definition under `worldwake-ai/src/`.
+- Verification for the completed series included `cargo test --doc -p worldwake-ai`, `cargo test -p worldwake-ai`, `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`.

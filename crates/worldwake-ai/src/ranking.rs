@@ -1,3 +1,24 @@
+//! # Preference-ordering authority
+//!
+//! `ranking::compare_ranked_goals` is the sole authoritative total order on
+//! `RankedGoal`. It is file-private and therefore unreachable from outside
+//! this module.
+//!
+//! ```compile_fail
+//! use worldwake_ai::ranking::compare_ranked_goals;
+//! ```
+//!
+//! `OrderedRanked::from_sorted_for_test` is the in-crate test escape hatch
+//! and is not reachable from outside `worldwake-ai`.
+//!
+//! ```compile_fail
+//! use worldwake_ai::ranking::OrderedRanked;
+//! use worldwake_ai::RankedGoal;
+//!
+//! let empty: &[RankedGoal] = &[];
+//! let _ = OrderedRanked::from_sorted_for_test(empty);
+//! ```
+
 use crate::{
     DecisionContext, GoalKindPlannerExt, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
     RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
@@ -35,7 +56,7 @@ use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opp
 #[derive(Clone, Debug)]
 pub struct RankingOutcome {
     /// Ranked goals after all filters (sorted by ranking order).
-    pub ranked: Vec<RankedGoal>,
+    pub(crate) ranked: Vec<RankedGoal>,
     /// Goals that were suppressed by situational conditions (danger/self-care pressure).
     pub(crate) suppressed: Vec<crate::candidate_generation::CandidateSuppressionDiagnostic>,
     /// Goals that passed suppression but had zero motive score.
@@ -1989,7 +2010,7 @@ fn compare_goal_specificity(left: &GoalKind, right: &GoalKind) -> Ordering {
     }
 }
 
-pub(crate) fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
+fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
     ranked_goal_ordering(left, right).0
 }
 
@@ -7383,6 +7404,43 @@ mod tests {
         let outcome = rank(&candidates, &view, agent, current_tick(), &utility());
 
         assert_eq!(outcome.ordered().as_slice(), outcome.ranked.as_slice());
+    }
+
+    #[test]
+    fn compare_ranked_goals_is_the_only_impl_in_crate() {
+        use std::fs;
+        use std::path::Path;
+
+        fn walk(dir: &Path, offending: &mut Vec<String>, needle: &[u8]) {
+            for entry in fs::read_dir(dir).expect("read_dir").flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, offending, needle);
+                    continue;
+                }
+                if path.extension().and_then(|s| s.to_str()) != Some("rs") {
+                    continue;
+                }
+                if path.file_name().and_then(|s| s.to_str()) == Some("ranking.rs") {
+                    continue;
+                }
+                let bytes = fs::read(&path).expect("read file");
+                if bytes.windows(needle.len()).any(|window| window == needle) {
+                    offending.push(path.display().to_string());
+                }
+            }
+        }
+
+        let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let needle = b"fn compare_ranked_goals";
+        let mut offending = Vec::new();
+
+        walk(&src_root, &mut offending, needle);
+
+        assert!(
+            offending.is_empty(),
+            "`fn compare_ranked_goals` must only be defined in ranking.rs; found parallel definitions in: {offending:?}"
+        );
     }
 
     #[test]

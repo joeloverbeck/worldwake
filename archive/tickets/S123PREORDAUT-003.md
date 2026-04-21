@@ -1,6 +1,6 @@
 # S123PREORDAUT-003: Lock preference-ordering invariant — demote visibilities, add compile-fail doctests and grep regression
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — visibility demotions in `worldwake-ai::ranking` (`compare_ranked_goals`: `pub(crate)` → file-private; `RankingOutcome.ranked`: `pub` → `pub(crate)`) + new build-time falsification tests
@@ -22,7 +22,7 @@ After this ticket, the S112 failure mode is structurally impossible: the Rust ty
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. Post-S123PREORDAUT-002 code state (assumed by Deps): every production `&[RankedGoal]` parameter in `worldwake-ai/src/**/*.rs` outside `ranking.rs` has migrated to `&OrderedRanked<'_>`. `compare_ranked_goals` is called from exactly `sort_in_place` + the in-file test module's 6 sites (ranking.rs:5265, 5322, 7210, 7237, 7260, 7287). `RankingOutcome.ranked` is still `pub` but is read only by in-crate callers (`observation.rs:274`, `decision_trace.rs:154/1587`, the many `ranking.rs` test assertions, and `crates/worldwake-ai/tests/golden_ai_decisions.rs:1670`). Verified by re-grep at 2026-04-21: zero `RankingOutcome` / `outcome.ranked` matches outside `worldwake-ai` today; this is stable because S123PREORDAUT-002 does not change external boundary.
+1. Post-S123PREORDAUT-002 code state (assumed by Deps): every production `&[RankedGoal]` parameter in `worldwake-ai/src/**/*.rs` outside `ranking.rs` has migrated to `&OrderedRanked<'_>`. `compare_ranked_goals` is called from exactly `sort_in_place` + the in-file test module sites in `ranking.rs`. `RankingOutcome.ranked` is still `pub` on intake, but live readers are confined to `worldwake-ai` itself and its crate-local test targets (`agent_tick/observation.rs`, `goal_explanation.rs`, `survival_forensics.rs`, `decision_trace.rs`, `ranking.rs` tests, and `crates/worldwake-ai/tests/*`). Re-grep on 2026-04-21 found no readers in sibling crates (`worldwake-core`, `worldwake-sim`, `worldwake-cli`), so the `pub` -> `pub(crate)` demotion is still zero-blast-radius at the workspace boundary even though the original “only a few in-crate readers” wording was stale.
 2. Compile-fail doctest precedent: `crates/worldwake-ai/src/planning_snapshot.rs:399` and `:407` are the in-crate reference for this pattern. Both use `/// \`\`\`compile_fail` blocks that `cargo test --doc -p worldwake-ai` runs. The new doctests co-locate on `ranking.rs`'s module-level documentation.
 3. Shared abstraction boundary under audit: the **visibility** contract on `compare_ranked_goals` and `RankingOutcome.ranked`, plus the **uniqueness** contract that only `ranking.rs` defines `fn compare_ranked_goals`. The type-system already prevents external `OrderedRanked::new` construction (from S123PREORDAUT-001's no-visibility-qualifier constructor); this ticket adds belt-and-suspenders falsification for the two remaining invariants.
 4. Existing tests exercising the demoted-visibility symbols: the six in-file calls to `super::compare_ranked_goals` at `ranking.rs:5265, 5322, 7210, 7237, 7260, 7287` continue to compile because file-private items are accessible to any child module of the defining module (Rust visibility rule); `#[cfg(test)] mod tests` is such a child. Multiple `outcome.ranked[i].motive_score`-style assertions across `ranking.rs` tests (e.g. 3264, 3360, 3488, 3542, 3740, 4249, 4284) continue to compile because they are in-crate readers; `pub(crate)` still permits in-crate reads. No test modifications required.
@@ -40,7 +40,7 @@ After this ticket, the S112 failure mode is structurally impossible: the Rust ty
 1. Visibility of `compare_ranked_goals` post-demotion -> compile-fail doctest block in `ranking.rs` module docs: `use worldwake_ai::ranking::compare_ranked_goals;` must not compile.
 2. Visibility of `OrderedRanked::from_sorted_for_test` from outside the crate -> compile-fail doctest: `use worldwake_ai::ranking::OrderedRanked; OrderedRanked::from_sorted_for_test(&[])` must not compile.
 3. Uniqueness of `fn compare_ranked_goals` in `worldwake-ai/src/` -> D6 grep regression test (`compare_ranked_goals_is_the_only_impl_in_crate`) walks every `.rs` under `CARGO_MANIFEST_DIR/src/` (excluding `ranking.rs`) and fails if the byte sequence `fn compare_ranked_goals` appears.
-4. Visibility of `RankingOutcome.ranked` -> no external-reader regression possible because grep confirmed zero extra-crate readers before demotion; in-crate readers remain valid under `pub(crate)`. Verified by `cargo test --workspace` passing.
+4. Visibility of `RankingOutcome.ranked` -> no sibling-crate regression possible because grep confirmed zero readers in `worldwake-core`, `worldwake-sim`, or `worldwake-cli` before demotion; in-crate readers and `worldwake-ai` integration tests remain valid under `pub(crate)`. Verified by `cargo test --workspace` passing.
 5. Single-layer ticket on production behaviour: no decision-trace, action-trace, event-log, or authoritative-state change. The proof surfaces for this ticket are (a) `cargo test --doc -p worldwake-ai` running the compile-fail blocks, (b) `cargo test -p worldwake-ai ranking::tests::compare_ranked_goals_is_the_only_impl_in_crate`, (c) `cargo test --workspace` passing unchanged (demotions have zero behavioural effect).
 
 ## What to Change
@@ -196,3 +196,25 @@ Belt-and-suspenders with the newtype: a future PR that tries to re-introduce a p
 4. `cargo test --workspace` — whole-workspace build and test (proves the `pub(crate)` demotion has zero external blast radius).
 5. `cargo clippy --workspace --all-targets -- -D warnings`
 6. `scripts/verify.sh` — before pushing.
+
+## Outcome
+
+Completed on 2026-04-21.
+
+- Demoted `ranking::compare_ranked_goals` from `pub(crate)` to file-private, making `ranking.rs` the only module that can call the authoritative comparator directly.
+- Demoted `RankingOutcome.ranked` from `pub` to `pub(crate)` while preserving the intended external read paths through `RankingOutcome::ordered()` and `RankingOutcome::into_ranked()`.
+- Added two `compile_fail` doctests to `crates/worldwake-ai/src/ranking.rs` proving that external code cannot import `compare_ranked_goals` or call `OrderedRanked::from_sorted_for_test`.
+- Added `ranking::tests::compare_ranked_goals_is_the_only_impl_in_crate`, which walks `crates/worldwake-ai/src/` and fails if any file other than `ranking.rs` defines `fn compare_ranked_goals`.
+
+## Deviations
+
+- Reassessment corrected one stale ticket claim: `RankingOutcome.ranked` still had multiple in-crate and `worldwake-ai` test readers at intake. The landed `pub(crate)` demotion remains correct because no sibling-crate readers existed; the zero-blast-radius claim was narrowed from “no other readers” to “no workspace-external readers.”
+- `scripts/verify.sh` was not run in this implementation pass because the ticket was completed locally rather than prepared for push. The ticket's required proof surface was satisfied by the explicit cargo commands below.
+
+## Verification Result
+
+- Passed `cargo test --doc -p worldwake-ai`
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::compare_ranked_goals_is_the_only_impl_in_crate -- --exact`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
