@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — this ticket adds tests only; no production-code changes beyond test support helpers.
-**Deps**: [S115AGEMAN-005](S115AGEMAN-005.md)
+**Deps**: [archive/tickets/S115AGEMAN-005](../archive/tickets/S115AGEMAN-005.md)
 
 ## Problem
 
@@ -15,7 +15,7 @@ The spec's Validation and Falsification section lists 16 unit/integration tests 
 1. Existing harness `crates/worldwake-ai/src/agent_tick/tests.rs` already exercises `runtime_by_agent` and observes per-agent state. Post-ticket 002 it reads `AgendaState` via `runtime.agenda_state` rather than `get_component_active_goal`.
 2. The scenario fixtures used by existing agent-tick tests (e.g., `cargo_harness`) already construct agents with `MerchandiseProfile` and spawn them in a small world. For two-tick commit persistence and cargo-delivery tests, these fixtures are the natural base.
 3. `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` at `crates/worldwake-ai/tests/golden_portfolio_planning.rs:210` is an integration test using a golden harness. Post-ticket 005 it passes via the classifier's `Dead` routing for structurally-infeasible commitments. This ticket verifies it still passes AND adds a trace-level assertion that the transition happens via `classify_rejection` (decision-trace surface) rather than the old carve-out (confirmed absent by the grep invariant).
-4. The shared boundary under audit is the `AgendaTransitions` → event-log pipeline (from ticket 005). Integration tests assert that emitted events match agenda state mutations cycle-for-cycle.
+4. The shared boundary under audit is the live `AgendaState` + selected-plan event seam after ticket 005: `tick_agenda` mutates lifecycle state at the post-ranking caller seam, while `GoalCommitted` still emits from selected-plan adoption. Integration tests should prove those two surfaces stay coherent rather than assuming an `AgendaTransitions`-only event pipeline.
 5. `ActiveGoal` zero-match grep: after ticket 002, no references remain to `ActiveGoal`, `get_component_active_goal`, `set_component_active_goal`, etc. This ticket adds a grep-regression test (e.g., a `compile_fail` doctest or a small bash script in `scripts/`) that asserts zero matches — catches future reintroduction.
 6. Replay determinism: `crates/worldwake-sim/tests/save_load.rs` (or equivalent) already covers full-simulation replay. This ticket extends the coverage to populate `AgendaState` during a recorded run and verify re-load produces identical state.
 
@@ -28,7 +28,7 @@ The spec's Validation and Falsification section lists 16 unit/integration tests 
 
 1. Two-tick commit persistence — integration test using harness; assertion on `runtime.agenda_state.committed.as_ref().map(|e| e.key)` across two ticks.
 2. Replay determinism — save/load round-trip test; `AgendaState` inside `AgentDecisionRuntime` survives bincode round-trip byte-identically.
-3. Cargo-delivery via classifier — `cargo_satisfaction_at_destination_while_carrying` extended or mirrored to assert the committed entry has `phase: Suspended` after the satisfied pre-check fires (decision-trace proof that classifier was invoked, not the old carve-out).
+3. Cargo-delivery via classifier — `cargo_satisfaction_at_destination_while_carrying` extended or mirrored to assert the satisfied goal moved into `runtime.agenda_state.suspended` with `AgendaPhase::Suspended` after the satisfied pre-check fires (decision-trace proof that classifier was invoked, not the old carve-out).
 4. Portfolio rejection via classifier — `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` extended with decision-trace assertion that the rejected `Sleep`/`ReportMissing` slots transit `RejectionLifecycle::Dead` rather than being dropped by ad-hoc filtering.
 5. ActiveGoal zero-match — grep invariant: `scripts/` or CI check runs `rg -q 'ActiveGoal|get_component_active_goal|set_component_active_goal' crates/` and fails on any match outside comments, archived specs, or this ticket's own test assertion strings.
 
@@ -37,7 +37,7 @@ The spec's Validation and Falsification section lists 16 unit/integration tests 
 ### 1. New integration tests in `crates/worldwake-ai/tests/agenda_integration.rs`
 
 - `two_tick_commit_persists_when_belief_still_viable`: construct a harness with one agent + one goal; tick 1 commits; tick 2 verifies `AgendaState.committed` unchanged AND no re-commit event in event log (FND-21 stability).
-- `revival_trigger_commodity_available_commits_pending_goal`: seed pending entry with `CommodityAvailable` trigger; belief update reports quantity; assert `GoalCommitted` emitted and pending → committed transition occurs.
+- `revival_trigger_commodity_available_commits_pending_goal`: seed pending entry with `CommodityAvailable` trigger; belief update reports quantity; assert selected-plan adoption emits `GoalCommitted` and pending → committed transition occurs.
 - `kill_condition_tick_expiry_emits_abandoned`: seed pending entry with `KillCondition::TickExpiry`; tick past expiry; assert `GoalAbandoned` emitted and entry dropped.
 - `capacity_overflow_evicts_oldest`: populate pending to capacity+1 entries; assert smallest-`last_reconsidered_tick` evicted, no crash.
 
@@ -45,9 +45,14 @@ The spec's Validation and Falsification section lists 16 unit/integration tests 
 
 - `crates/worldwake-ai/src/agent_tick/tests.rs::cargo_satisfaction_at_destination_while_carrying` (modify): after the test's existing assertions, add:
   ```rust
-  let committed = runtime.agenda_state.committed.as_ref().expect("committed entry");
-  assert_eq!(committed.phase, AgendaPhase::Suspended);
-  assert!(committed.revival_trigger.is_none());
+  let suspended = runtime
+      .agenda_state
+      .suspended
+      .values()
+      .find(|goal| goal.key.goal_key == expected_goal)
+      .expect("suspended entry");
+  assert_eq!(suspended.phase, AgendaPhase::Suspended);
+  assert!(suspended.revival_trigger.is_none());
   ```
   This asserts the classifier fired the Satisfied pre-check, not the carve-out (which no longer exists).
 - `crates/worldwake-ai/tests/golden_portfolio_planning.rs::portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` (modify): assert one `GoalAbandoned` event in the tick where the structurally-infeasible commitment is dropped.

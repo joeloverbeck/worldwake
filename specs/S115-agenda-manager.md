@@ -17,10 +17,10 @@ Phase 9: Belief-First Continual Planning Structural. Status: Draft.
 
 ## Dependencies
 
-- S110 (Decision History Events) — lifecycle transitions emit `EventTag::GoalCommitted` / `GoalSuspended` / `GoalAbandoned` (variants already present at `crates/worldwake-core/src/event_tag.rs:37-39`; payload structs `GoalCommittedPayload`, `GoalSuspendedPayload`, `GoalAbandonedPayload` already present at `decision_event_payload.rs:80,107,114`). Archived.
+- S110 (Decision History Events) — lifecycle work in S115 uses the existing `EventTag::GoalCommitted` / `GoalSuspended` / `GoalAbandoned` payload family (variants already present at `crates/worldwake-core/src/event_tag.rs:37-39`; payload structs already present at `decision_event_payload.rs:80,107,114`). On the current live branch, `GoalCommitted` still emits from selected-plan adoption, while parking/abandonment lifecycle events remain agenda-state driven. Archived.
 - S112 (Portfolio Planning) — portfolio still assembles slots per tick, but the commitment slot now reads `AgendaState.committed` directly. The feasibility probe's `RejectedBeforeSearch { reason }` (see `crates/worldwake-ai/src/agent_tick/portfolio.rs:29-32`) is the primary input to the lifecycle classifier (D4A) that decides whether a rejected goal becomes `Suspended` with no revival trigger (satisfied), `Pending` with a concrete revival trigger (infeasible-until-belief-changes), or killed outright (truly infeasible with no revival path). Hard. Archived.
 - S114 (Plan Step Guards) — pending goals may store revival-invalidation signals as `Invalidator` predicates (`crates/worldwake-ai/src/plan_guard.rs:36`), reusing the guard infrastructure. Archived.
-- S123 (Preference-Ordering Authority) — `tick_agenda` ranks its merged candidate pool via `ranking::sort_in_place` and consumes the resulting `OrderedRanked<'_>` (`crates/worldwake-ai/src/ranking.rs:271`) for the commit decision. No parallel comparator. Soft (migration ordering only). Archived.
+- S123 (Preference-Ordering Authority) — `tick_agenda` still consumes fresh ranked `AgendaEntry` values from the caller and uses `ranking::sort_in_place` internally for manager-local ordering. On the current live branch, downstream planning still consumes the fresh ranked feed rather than the merged agenda-manager pool. Soft (migration ordering only). Archived.
 
 ## Design Goals
 
@@ -44,8 +44,8 @@ Phase 9: Belief-First Continual Planning Structural. Status: Draft.
 | FND-21 (Intentions Are Revisable Commitments) | Commitment is explicit state with a kill condition. Revisability is a lifecycle transition (`committed → suspended`), not a silent re-rank. A *satisfied* committed goal (D4A) is preserved as `Suspended` rather than silently dropped, which is the correctness signal the S112 cargo-delivery regression surfaced. |
 | FND-22 (Agent Diversity) | `AgendaEntry.origin` records whether the goal came from a need, an obligation, a social commitment, or an opportunity. Per-agent `AgendaProfile` (D6) lets one agent abandon stale pending goals quickly, another patiently. |
 | FND-26 (Systems Interact Through State) | `AgendaState` is ai-layer read/write state; other systems never call into the agenda manager. The portfolio reads `AgendaState.committed`; the observer reads the runtime map directly. No sim-layer belief-view accessor (`worldwake-sim` cannot depend on ai). |
-| FND-28 (No Backward Compatibility in Live Authority Paths) | `ActiveGoal` component is removed entirely; no alias, no derived cache, no shim. `AgendaEntry` is the single authority for the agent's committed goal. All ~10 call sites across `agent_tick/planning.rs`, `execution.rs`, `active_action.rs`, `observation.rs` migrate to `AgendaState.committed`. |
-| FND-29A (Causal History) | Lifecycle transitions are append-only events (S110). Why a goal was suspended, for what revival condition, and when it revived are all queryable through existing `GoalCommitted`, `GoalSuspended`, `GoalAbandoned` event tags. |
+| FND-28 (No Backward Compatibility in Live Authority Paths) | `ActiveGoal` component is removed entirely; no alias, no derived cache, no shim. `AgendaState` is the single stored carrier for committed/pending/suspended goal state on the live branch, even though executable commitment still finalizes at selected-plan adoption. |
+| FND-29A (Causal History) | Lifecycle transitions are append-only events (S110). Why a goal was suspended, for what revival condition, and when it revived remain queryable through the existing event family, with `GoalCommitted` still authored at the selected-plan seam on the current live branch. |
 
 ## Deliverables
 
@@ -186,7 +186,7 @@ pub fn tick_agenda(
 
 The `&DiscrepancyMemory` parameter replaces the previously-proposed `AgendaMemory` trait — `DiscrepancyMemory` (`crates/worldwake-core/src/discrepancy.rs:53`) already provides `is_suppressed(key, tick)` which is the only memory lookup the agenda manager needs. No new trait required.
 
-Ticket 003 lands this as a pure state transition function over `AgendaState`; caller-side event emission remains owned by ticket 005. The portfolio assembly (S112) reads the post-tick agenda state: `committed` → commitment slot; fresh ranked candidates remain the upstream feed into the manager.
+Ticket 003 lands this as a pure state transition function over `AgendaState`. On the current live branch, ticket 005 wires it at the post-ranking caller seam and lands the parking/suspension lifecycle on the real agenda maps, but `GoalCommitted` emission and executable commitment still finalize at selected-plan adoption rather than directly from `AgendaTransitions`.
 
 ### D4: Revival-trigger evaluation
 
@@ -237,7 +237,7 @@ pub enum RejectionLifecycle {
 
 The classifier is deterministic, pure over `(actor, verdict, offer, beliefs, tick, revive_cooldown_ticks)`, and has no side effects. It is the single authoritative decoder of the probe's rejection reason into agenda lifecycle state — downstream modules do not inspect `Discrepancy` variants to infer the same distinction (closing the Gap-2 gap surfaced by the S112 incident, where `build_candidate_plans` had to special-case rejected committed opportunities in `search_order`).
 
-For the `Dead` branch, `classify_rejection` returns the lifecycle but leaves memory-write to the caller. The current live caller seam is `agent_tick/planning.rs`, which synthesises a `BlockerKey { goal_key: offer.key, place: offer.anchor.place(), target: offer.anchor.entity(), action_def: None }` and calls `DiscrepancyMemory::record` with `DiscrepancyClearing::TtlExpiry`. This keeps the classifier pure today; ticket 005 still owns the later `tick_agenda` system wiring.
+For the `Dead` branch, `classify_rejection` returns the lifecycle but leaves memory-write to the caller. The current live caller seam is `agent_tick/planning.rs`, which synthesises a `BlockerKey { goal_key: offer.key, place: offer.anchor.place(), target: offer.anchor.entity(), action_def: None }` and calls `DiscrepancyMemory::record` with `DiscrepancyClearing::TtlExpiry`. Ticket 005 wires the classifier into the live post-ranking caller seam and parks satisfied/retryable goals into the real agenda maps.
 
 Migration note: the S112-era special cases in `build_candidate_plans` that kept a rejected *committed* opportunity alive — **both** the `search_order` exclusion at `agent_tick/planning.rs:400-427` (the `!is_committed` check inside `rejected_opportunities`) **and** the `rejected_by_goal` skip at `agent_tick/planning.rs:875-892` (the `if slot.ranked.grounded.key == committed_goal { continue; }` guard) — disappear with S115. Post-S115, a rejected committed goal is demoted to `Suspended` (satisfied) or `Pending` (infeasible-now) or dropped as `Dead` by the classifier before `search_order` is built; the search order then trusts the admitted ranking without either carve-out.
 
@@ -300,7 +300,7 @@ No sim-layer belief-view accessor. `worldwake-sim::GoalBeliefView` cannot expose
 
 ## SystemFn Integration
 
-**New SystemFn**: `agenda_tick_system`. Placement: early in agent-tick phase, after perception/belief-update (`refresh_runtime_for_read_phase_with_memories` at ~`crates/worldwake-ai/src/agent_tick/mod.rs:930`), before candidate-generation+ranking (which feeds `build_candidate_plans` at `agent_tick/planning.rs:341`). Produces the agenda state the portfolio reads.
+**Live integration seam**: `tick_agenda` is called from `agent_tick/mod.rs` after candidate generation, feasibility annotation, and ranking. The earlier drafted `agenda_tick_system before candidate generation` seam was falsified on the live branch.
 
 ## Component Registration
 
@@ -312,7 +312,7 @@ No sim-layer belief-view accessor. `worldwake-sim::GoalBeliefView` cannot expose
 - **Agenda manager ↔ candidate generation**: Generation produces `GoalOffer`s each tick (post-rename from `GroundedGoal`); manager merges them into existing pending.
 - **Agenda manager ↔ ranking**: Ranking scores the candidate pool (committed + revived + fresh) for commit decision, using the same `ranking::sort_in_place` path (S123).
 - **Agenda manager ↔ S112 portfolio**: Portfolio reads `AgendaState.committed` to populate the commitment slot and builds survival/economic slots from fresh offers. The S112-era `!is_committed` and `committed_goal` carve-outs in `build_candidate_plans` are deleted.
-- **Agenda manager ↔ S110 event log**: Every lifecycle transition emits an `EventTag` (`GoalCommitted`, `GoalSuspended`, `GoalAbandoned`) with the existing payload types.
+- **Agenda manager ↔ S110 event log**: parking and abandonment lifecycle transitions use the existing event family; on the current live branch `GoalCommitted` still emits from selected-plan adoption so the committed goal and executable plan stay aligned.
 - **Agenda manager ↔ S109 discrepancy memory**: Revival and commit checks read the memory to avoid reviving suppressed goals; `Dead` classifications write back to the memory.
 - **Agenda manager ↔ ActiveGoal removal**: All code paths that previously read `ActiveGoal` via `get_component_active_goal` now read `AgendaState.committed`. All code paths that wrote via `set_component_active_goal` now mutate the ai-layer `AgendaState.committed` field.
 
@@ -332,7 +332,7 @@ No sim-layer belief-view accessor. `worldwake-sim::GoalBeliefView` cannot expose
 2. `RevivalTrigger::CommodityAvailable` fires when belief-store confirms quantity ≥ min.
 3. `KillCondition::TickExpiry` drops a pending entry at or after the expiry tick.
 4. Capacity overflow evicts the oldest `last_reconsidered_tick`.
-5. A revived entry becomes a commit candidate; if it wins, `AgendaState.committed` updates and `EventTag::GoalCommitted` is emitted.
+5. A revived entry becomes a live candidate again; on the current branch a winning executable plan still finalizes commitment and emits `GoalCommitted` at selected-plan adoption.
 6. D4A `classify_rejection` on a satisfied `MoveCargo` (agent at destination with cargo) returns `RejectionLifecycle::Satisfied`; the entry is demoted to `Suspended` with no revival trigger.
 7. D4A `classify_rejection` on `AcquireCommodity` with `MissingObservation` returns `RejectionLifecycle::InfeasibleUntil { trigger: CommodityAvailable { .. } }`; the entry is demoted to `Pending` with a matching trigger that fires when a later belief update resolves the observation gap.
 8. D4A `classify_rejection` on `NoLegalBinding` returns `RejectionLifecycle::Dead`; the entry is dropped, and a `DiscrepancyMemory` entry keeps the ranker from re-emitting until TTL.

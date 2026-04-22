@@ -19,12 +19,12 @@ use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
-    AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgentDecisionRuntime, CommodityPurpose,
-    DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, ExpectedMaterialization,
-    FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
-    Invalidator, OpportunityAnchor, OpportunityKey, PlanExpectation, PlanGuard, PlanTerminalKind,
-    PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoalProvenance,
-    SelectedPlanReplacementKind, build_semantics_table,
+    AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
+    CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition,
+    ExpectedMaterialization, FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass,
+    HypotheticalEntityId, Invalidator, OpportunityAnchor, OpportunityKey, PlanExpectation,
+    PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+    RankedGoalProvenance, SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -2069,7 +2069,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
     );
     let semantics = build_semantics_table(&harness.defs);
     let mut jc = None;
-    let mut active_goal = None;
+    let mut agenda_state = AgendaState::default();
     let mut facility_intents = worldwake_core::ContentionIntents::default();
     let mut event_log = EventLog::new();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
@@ -2077,7 +2077,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         &mut event_log,
         &harness.scheduler,
         &mut runtime,
-        &mut active_goal,
+        &mut agenda_state,
         &mut jc,
         &mut facility_intents,
         harness.actor,
@@ -2096,7 +2096,10 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         &harness.recipes,
     );
 
-    assert_eq!(active_goal.map(|ag| ag.key.goal_key), Some(goal.offer.key));
+    assert_eq!(
+        agenda_state.committed.as_ref().map(|ag| ag.key.goal_key),
+        Some(goal.offer.key)
+    );
     assert_eq!(next_step_valid, Some(true));
     assert_eq!(
         next_step
@@ -4013,12 +4016,16 @@ fn goal_stability_across_cargo_materialization_continuity() {
     };
     let mut jc = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
+    let mut agenda_state = AgendaState {
+        committed: active_goal_state.clone(),
+        ..AgendaState::default()
+    };
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &mut harness.world,
         &mut harness.event_log,
         &harness.scheduler,
         &mut runtime,
-        &mut active_goal_state,
+        &mut agenda_state,
         &mut jc,
         &mut facility_intents,
         harness.actor,
@@ -4038,7 +4045,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     );
     let next_step = next_step.expect("cargo continuity runtime should retain the initial step");
     assert_eq!(
-        active_goal_state.as_ref().map(|ag| ag.key.goal_key),
+        agenda_state.committed.as_ref().map(|ag| ag.key.goal_key),
         Some(expected_goal)
     );
     assert_eq!(next_step, pick_up);
@@ -4126,13 +4133,14 @@ fn goal_stability_across_cargo_materialization_continuity() {
         false,
     )
     .ranked;
+    agenda_state.committed = active_goal_state.clone();
     let mut jc2 = None;
     let (next_step, next_step_valid) = plan_and_validate_next_step(
         &mut harness.world,
         &mut harness.event_log,
         &harness.scheduler,
         &mut runtime,
-        &mut active_goal_state,
+        &mut agenda_state,
         &mut jc2,
         &mut facility_intents,
         harness.actor,
@@ -4152,7 +4160,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     );
     let travel = next_step.expect("dirty cargo runtime should continue planning the same goal");
     assert_eq!(
-        active_goal_state.as_ref().map(|ag| ag.key.goal_key),
+        agenda_state.committed.as_ref().map(|ag| ag.key.goal_key),
         Some(expected_goal)
     );
     assert!(matches!(
@@ -4779,6 +4787,19 @@ fn cargo_satisfaction_at_destination_while_carrying() {
             .committed
             .as_ref()
             .map(|ag| ag.key.goal_key)),
+        None
+    );
+    assert_eq!(
+        harness.runtime().and_then(|runtime| runtime
+            .agenda_state
+            .suspended
+            .values()
+            .find(|goal| goal.key.goal_key
+                == GoalKey::from(GoalKind::MoveCargo {
+                    commodity: CommodityKind::Bread,
+                    destination: destination_facility,
+                }))
+            .map(|ag| ag.key.goal_key)),
         Some(GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
             destination: destination_facility,
@@ -4787,10 +4808,22 @@ fn cargo_satisfaction_at_destination_while_carrying() {
     assert_eq!(
         harness.runtime().and_then(|runtime| runtime
             .agenda_state
-            .committed
-            .as_ref()
+            .suspended
+            .values()
+            .find(|goal| goal.key.goal_key
+                == GoalKey::from(GoalKind::MoveCargo {
+                    commodity: CommodityKind::Bread,
+                    destination: destination_facility,
+                }))
             .map(|ag| ag.phase)),
         Some(AgendaPhase::Suspended)
+    );
+    assert!(
+        harness
+            .event_log
+            .events_by_tag(EventTag::GoalAbandoned)
+            .is_empty(),
+        "satisfied cargo delivery should park the goal, not abandon it"
     );
     assert!(harness.runtime().unwrap().current_plan.is_none());
     assert_eq!(harness.active_action_name(), None);
@@ -5970,8 +6003,8 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         },
         false,
     );
-    let mut active_goal_state: Option<AgendaEntry> = None;
-    let previous_goal = active_goal_state.as_ref().map(|ag| ag.key.goal_key);
+    let mut agenda_state = AgendaState::default();
+    let previous_goal = agenda_state.committed.as_ref().map(|ag| ag.key.goal_key);
     let mut jc = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (_, initial_valid, initial_continued, _, initial_selection, _, _) =
@@ -5980,7 +6013,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             &mut harness.event_log,
             &harness.scheduler,
             runtime,
-            &mut active_goal_state,
+            &mut agenda_state,
             &mut jc,
             &mut facility_intents,
             harness.actor,
@@ -6041,7 +6074,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         &harness.scheduler,
         &harness.defs,
         runtime,
-        active_goal_state.as_ref().map(|ag| ag.key.goal_key),
+        agenda_state.committed.as_ref().map(|ag| ag.key.goal_key),
         &mut fi,
         &mut blocked,
         &mut ViolationMemory::default(),
@@ -6063,7 +6096,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         runtime.dirty.display_names()
     );
 
-    let previous_goal = active_goal_state.as_ref().map(|ag| ag.key.goal_key);
+    let previous_goal = agenda_state.committed.as_ref().map(|ag| ag.key.goal_key);
     let mut jc2 = None;
     let (continued_step, continued_valid, plan_continued, _, continuation_selection, _, _) =
         plan_and_validate_next_step_traced(
@@ -6071,7 +6104,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             &mut harness.event_log,
             &harness.scheduler,
             runtime,
-            &mut active_goal_state,
+            &mut agenda_state,
             &mut jc2,
             &mut facility_intents,
             harness.actor,

@@ -33,6 +33,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 3. Fix factual, unambiguous handoff issues directly: missing/incomplete `Outcome`, inaccurate verification notes, archival mechanics per [docs/archival-workflow.md](../../../docs/archival-workflow.md).
    - If the completed ticket is untracked, do not rely on ordinary `git diff` output for ticket-body validation. Read the live ticket file directly before archival, then confirm archival state with `git status` plus a direct existence check on the original path after the move.
    - If a repo-local archival helper you would normally use is missing in the current checkout, fall back to the manual move-and-verify workflow in [docs/archival-workflow.md](../../../docs/archival-workflow.md) and mention that fallback explicitly in the report.
+   - For active tickets, compare the live ticket's `Problem`, `What to Change`, `Acceptance Criteria`, `Invariants`, and `Test Plan` against the landed diff before deciding archival readiness. If any of those sections still overclaim the result or describe a stronger end state than the code actually landed, treat that as an unresolved in-scope handoff failure and block archival.
 4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
    - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
    - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up.
@@ -94,6 +95,7 @@ Prefer small, distinct tickets split by architectural concern. Use the 1-3-1 rul
 
 | Situation | Action |
 |-----------|--------|
+| Concern is still an unmet deliverable of the reviewed active ticket | Do not create a new ticket; report archival blocked and return ownership to the current ticket |
 | Concern fully covered by an active ticket | Cite that ticket in the report; do not duplicate |
 | Active ticket partially covers the concern | Update that ticket factually to capture it accurately |
 | No active ticket covers the concern | Create a new follow-up ticket |

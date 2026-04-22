@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — golden scenario + observer rendering assertions only.
-**Deps**: [S115AGEMAN-005](S115AGEMAN-005.md)
+**Deps**: [archive/tickets/S115AGEMAN-005](../archive/tickets/S115AGEMAN-005.md)
 
 ## Problem
 
@@ -27,9 +27,9 @@ Unit and integration tests (tickets 003, 004, 006) cover the agenda manager's be
 ## Verification Layers
 
 1. Purchase revival — integration (golden) test: scenario RON boots, step 20 ticks, assert event-log contains `GoalOffered → GoalCommitted → GoalSuspended (merchant departed) → GoalCommitted (merchant returned) → PlanAdopted → ActionCommitted (purchase)` in order.
-2. Cargo satisfaction — golden test: scenario boots with agent carrying commodity to destination; after reaching destination, assert `runtime.agenda_state.committed.as_ref().unwrap().phase == AgendaPhase::Suspended` AND observer output for that agent contains the suspended-entry rendering (text match on "Suspended" label + goal description).
+2. Cargo satisfaction — golden test: scenario boots with agent carrying commodity to destination; after reaching destination, assert the goal moved into `runtime.agenda_state.suspended` with `AgendaPhase::Suspended` AND observer output for that agent contains the suspended-entry rendering (text match on "Suspended" label + goal description).
 3. Observer rendering — focused unit test in `observer.rs` asserting the new pending/suspended section formats correctly for a fixed input `AgendaState`.
-4. Event-log ordering — action trace key `(tick, sequence_in_tick)`: the `GoalCommitted` event precedes `PlanAdopted` within the same tick (agenda commits before plan selection consumes the slot).
+4. Event-log ordering — action trace key `(tick, sequence_in_tick)`: the `GoalCommitted` event precedes `PlanAdopted` within the same tick at the selected-plan adoption seam.
 
 ## What to Change
 
@@ -50,13 +50,13 @@ Validate per codebase-validation §3.3B:
 
 ### 2. New scenario `scenarios/agenda-cargo-suspended.ron` (OR reuse cargo_harness via in-test setup)
 
-Cargo-delivery scenario reusing existing `cargo_harness` fixture: agent carries commodity to destination; after reaching, `classify_rejection`'s Satisfied pre-check fires; `AgendaState.committed.phase` transitions to `Suspended`; observer renders the suspended entry for one tick before `KillCondition::External` clears it on a subsequent tick (but since `External` never fires on its own, the entry persists until explicit clearing — adjust test to either assert the persistence OR seed a `KillCondition::TickExpiry` for cleanup).
+Cargo-delivery scenario reusing existing `cargo_harness` fixture: agent carries commodity to destination; after reaching, `classify_rejection`'s Satisfied pre-check fires; the goal moves from `AgendaState.committed` into `AgendaState.suspended`; observer renders the suspended entry for one tick before explicit cleanup or later lifecycle handling.
 
 ### 3. New test file `crates/worldwake-ai/tests/golden_agenda_lifecycle.rs`
 
 Two tests:
 - `agent_purchase_goal_revives_when_merchant_returns`: drives `scenarios/agenda-lifecycle.ron`, asserts event sequence (purchase revival).
-- `cargo_delivery_suspends_committed_goal_via_satisfied_classifier`: drives `scenarios/agenda-cargo-suspended.ron`, asserts `AgendaState.committed.phase == Suspended` after delivery and observer rendering.
+- `cargo_delivery_suspends_committed_goal_via_satisfied_classifier`: drives `scenarios/agenda-cargo-suspended.ron`, asserts the goal is present in `AgendaState.suspended` with `AgendaPhase::Suspended` after delivery and observer rendering.
 
 ### 4. Observer pending/suspended section
 

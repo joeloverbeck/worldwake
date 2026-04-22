@@ -19,9 +19,9 @@ use crate::plan_step_expectations::{
 };
 use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
 use crate::{
-    AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgentDecisionRuntime, DirtySet,
-    ExhaustionEntry, ExhaustionRetryState, KillCondition, OpportunityKey, PlanValue, PlannedPlan,
-    PlannedStep, PlannerOpSemantics, authoritative_target,
+    AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
+    DirtySet, ExhaustionEntry, ExhaustionRetryState, KillCondition, OpportunityKey, PlanValue,
+    PlannedPlan, PlannedStep, PlannerOpSemantics, authoritative_target,
     build_planning_snapshot_with_blocked_facility_uses, ranking::OrderedRanked,
     revalidate_next_step, select_best_plan,
 };
@@ -29,9 +29,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 use worldwake_core::{
     ActionDefId, BlockerMemory, CognitiveProfile, DecisionEventPayload, DiscrepancyMemory,
-    EntityId, EventLog, EventTag, ExecutionBudget, GoalCommittedPayload, GoalKey, GoalKind,
-    GoalRejectionReason, IntentionFrame, OpportunityAnchor, Permille, PlanAdoptedPayload,
-    RejectedAlternativeSummary, RepairKind, Tick,
+    EntityId, EventLog, EventTag, ExecutionBudget, GoalKind, IntentionFrame, OpportunityAnchor,
+    Permille, PlanAdoptedPayload, RepairKind, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, ActionPayload, GoalBeliefView, RecipeRegistry, RuntimeBeliefView,
@@ -853,21 +852,21 @@ fn score_gap(committed_motive: u32, rejected_motive: u32) -> i32 {
     gap.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
-fn build_rejected_alternatives(
+pub(super) fn build_rejected_alternatives(
     ranked_candidates: &OrderedRanked<'_>,
     portfolio: &Portfolio,
     committed_goal: worldwake_core::GoalKey,
     committed_motive: u32,
     max_alternatives: u8,
-) -> Vec<RejectedAlternativeSummary> {
+) -> Vec<worldwake_core::RejectedAlternativeSummary> {
     #[derive(Clone, Copy)]
     struct RejectedGoal {
-        goal_key: GoalKey,
+        goal_key: worldwake_core::GoalKey,
         motive_score: u32,
-        rejection_reason: GoalRejectionReason,
+        rejection_reason: worldwake_core::GoalRejectionReason,
     }
 
-    let mut rejected_by_goal = BTreeMap::<GoalKey, RejectedGoal>::new();
+    let mut rejected_by_goal = BTreeMap::<worldwake_core::GoalKey, RejectedGoal>::new();
     for slot in portfolio.slots.values() {
         if matches!(
             slot.feasibility,
@@ -878,7 +877,7 @@ fn build_rejected_alternatives(
                 RejectedGoal {
                     goal_key: slot.ranked.offer.key,
                     motive_score: slot.ranked.motive_score,
-                    rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
+                    rejection_reason: worldwake_core::GoalRejectionReason::FeasibilityProbeFailed,
                 },
             );
         }
@@ -891,8 +890,10 @@ fn build_rejected_alternatives(
         rejected_by_goal
             .entry(candidate.offer.key)
             .and_modify(|existing| {
-                if matches!(existing.rejection_reason, GoalRejectionReason::LowerMotive)
-                    && candidate.motive_score > existing.motive_score
+                if matches!(
+                    existing.rejection_reason,
+                    worldwake_core::GoalRejectionReason::LowerMotive
+                ) && candidate.motive_score > existing.motive_score
                 {
                     existing.motive_score = candidate.motive_score;
                 }
@@ -900,7 +901,7 @@ fn build_rejected_alternatives(
             .or_insert(RejectedGoal {
                 goal_key: candidate.offer.key,
                 motive_score: candidate.motive_score,
-                rejection_reason: GoalRejectionReason::LowerMotive,
+                rejection_reason: worldwake_core::GoalRejectionReason::LowerMotive,
             });
     }
 
@@ -914,7 +915,7 @@ fn build_rejected_alternatives(
     rejected.truncate(usize::from(max_alternatives));
     rejected
         .into_iter()
-        .map(|rejected| RejectedAlternativeSummary {
+        .map(|rejected| worldwake_core::RejectedAlternativeSummary {
             goal_key: rejected.goal_key,
             rejection_reason: rejected.rejection_reason,
             score_gap: score_gap(committed_motive, rejected.motive_score),
@@ -922,37 +923,41 @@ fn build_rejected_alternatives(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_plan_selection_events(
     event_log: &mut EventLog,
     tick: Tick,
     agent: EntityId,
     ranked_candidates: &OrderedRanked<'_>,
     portfolio: &Portfolio,
+    current_goal_before_selection: Option<worldwake_core::GoalKey>,
     selected_plan: &PlannedPlan,
     max_alternatives: u8,
 ) {
-    let committed = ranked_candidates
-        .iter()
-        .find(|candidate| candidate.offer.key == selected_plan.goal)
-        .expect("selected plan must map to a ranked goal");
-    emit_decision_event(
-        event_log,
-        tick,
-        agent,
-        EventTag::GoalCommitted,
-        DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+    if current_goal_before_selection != Some(selected_plan.goal) {
+        let committed = ranked_candidates
+            .iter()
+            .find(|candidate| candidate.offer.key == selected_plan.goal)
+            .expect("selected plan must map to a ranked goal");
+        emit_decision_event(
+            event_log,
+            tick,
             agent,
-            goal_key: selected_plan.goal,
-            motive_score: committed.motive_score,
-            rejected_alternatives: build_rejected_alternatives(
-                ranked_candidates,
-                portfolio,
-                selected_plan.goal,
-                committed.motive_score,
-                max_alternatives,
-            ),
-        }),
-    );
+            EventTag::GoalCommitted,
+            DecisionEventPayload::GoalCommitted(worldwake_core::GoalCommittedPayload {
+                agent,
+                goal_key: selected_plan.goal,
+                motive_score: committed.motive_score,
+                rejected_alternatives: build_rejected_alternatives(
+                    ranked_candidates,
+                    portfolio,
+                    selected_plan.goal,
+                    committed.motive_score,
+                    max_alternatives,
+                ),
+            }),
+        );
+    }
     emit_decision_event(
         event_log,
         tick,
@@ -993,7 +998,7 @@ fn apply_committed_rejection_lifecycle(
     world: &worldwake_core::World,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<AgendaEntry>,
+    agenda_state: &mut AgendaState,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: EntityId,
@@ -1024,19 +1029,21 @@ fn apply_committed_rejection_lifecycle(
     ) {
         RejectionLifecycle::Satisfied => {
             clear_committed_plan_state(runtime, jc, facility_intents);
-            if let Some(goal) = active_goal.as_mut() {
+            if let Some(mut goal) = agenda_state.committed.take() {
                 goal.phase = AgendaPhase::Suspended;
                 goal.revival_trigger = None;
                 goal.kill_condition = KillCondition::External;
+                agenda_state.suspended.insert(goal.key, goal);
             }
             true
         }
         RejectionLifecycle::InfeasibleUntil { trigger } => {
             clear_committed_plan_state(runtime, jc, facility_intents);
-            if let Some(goal) = active_goal.as_mut() {
+            if let Some(mut goal) = agenda_state.committed.take() {
                 goal.phase = AgendaPhase::Pending;
                 goal.revival_trigger = Some(trigger);
                 goal.kill_condition = KillCondition::External;
+                agenda_state.pending.insert(goal.key, goal);
             }
             true
         }
@@ -1066,7 +1073,7 @@ fn apply_committed_rejection_lifecycle(
                     clearing_condition: worldwake_core::DiscrepancyClearing::TtlExpiry,
                 });
             }
-            *active_goal = None;
+            agenda_state.committed = None;
             true
         }
     }
@@ -1195,7 +1202,7 @@ fn adopt_selected_plan(
     world: &mut worldwake_core::World,
     event_log: &mut EventLog,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<AgendaEntry>,
+    agenda_state: &mut AgendaState,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: EntityId,
@@ -1211,7 +1218,7 @@ fn adopt_selected_plan(
     facility_intents.intents.clear();
     runtime.accepted_repair = classify_accepted_repair(runtime, &selected_plan, recipe_registry);
     runtime.pending_repair_context = None;
-    *active_goal = ranked_candidates
+    agenda_state.committed = ranked_candidates
         .iter()
         .find(|candidate| candidate.key == selected_plan.opportunity)
         .map(|candidate| AgendaEntry::committed_from(candidate, tick));
@@ -1234,7 +1241,7 @@ fn adopt_selected_plan(
     runtime.last_priority_class = ranked_candidates
         .iter()
         .find(|candidate| {
-            Some(candidate.offer.key) == active_goal.as_ref().map(|ag| ag.key.goal_key)
+            Some(candidate.offer.key) == agenda_state.committed.as_ref().map(|ag| ag.key.goal_key)
         })
         .map(|candidate| candidate.priority_class);
 }
@@ -1244,7 +1251,7 @@ fn clear_current_plan(
     world: &mut worldwake_core::World,
     event_log: &mut EventLog,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<AgendaEntry>,
+    _agenda_state: &mut AgendaState,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     ranked_candidates: &OrderedRanked<'_>,
@@ -1257,7 +1264,6 @@ fn clear_current_plan(
     *jc = None;
     runtime.materialization_bindings.clear();
     facility_intents.intents.clear();
-    *active_goal = None;
     let _ = persist_expectation_store_update(world, event_log, agent, tick, |store| {
         expire_plan_step_expectations(store)
     });
@@ -1276,7 +1282,7 @@ pub(super) fn plan_and_validate_next_step(
     event_log: &mut EventLog,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<AgendaEntry>,
+    agenda_state: &mut AgendaState,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
@@ -1296,7 +1302,7 @@ pub(super) fn plan_and_validate_next_step(
 ) -> (Option<PlannedStep>, Option<bool>) {
     let planning_start = Instant::now();
     let result = (|| {
-        let active_goal_key = active_goal.as_ref().map(|ag| ag.key.goal_key);
+        let active_goal_key = agenda_state.committed.as_ref().map(|ag| ag.key.goal_key);
         let committed_opportunity = runtime
             .current_plan
             .as_ref()
@@ -1375,7 +1381,7 @@ pub(super) fn plan_and_validate_next_step(
                         world,
                         scheduler,
                         runtime,
-                        active_goal,
+                        agenda_state,
                         jc,
                         facility_intents,
                         agent,
@@ -1389,62 +1395,65 @@ pub(super) fn plan_and_validate_next_step(
 
             let selection_plans = selection_candidates(&plans.plans);
 
-            if let Some(selected_plan) = select_best_plan(
-                ranked_candidates,
-                &selection_plans,
-                active_goal_key,
-                runtime,
-                jc.as_ref(),
-                crate::SelectionPolicy {
-                    side_benefit_weight,
-                    default_switch_margin,
-                    frame_switch_margin,
-                },
-            ) {
-                emit_plan_selection_events(
-                    event_log,
-                    tick,
-                    agent,
+            if !committed_rejection_parked {
+                if let Some(selected_plan) = select_best_plan(
                     ranked_candidates,
-                    &plans.portfolio,
-                    &selected_plan,
-                    cognitive.decision_history_alternatives,
-                );
-                let mut prepared_frame =
-                    update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
-                if let Some(frame) = prepared_frame.as_mut() {
-                    frame.assumptions = populate_assumptions(frame, agent, &view);
+                    &selection_plans,
+                    active_goal_key,
+                    runtime,
+                    jc.as_ref(),
+                    crate::SelectionPolicy {
+                        side_benefit_weight,
+                        default_switch_margin,
+                        frame_switch_margin,
+                    },
+                ) {
+                    emit_plan_selection_events(
+                        event_log,
+                        tick,
+                        agent,
+                        ranked_candidates,
+                        &plans.portfolio,
+                        active_goal_key,
+                        &selected_plan,
+                        cognitive.decision_history_alternatives,
+                    );
+                    let mut prepared_frame =
+                        update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+                    if let Some(frame) = prepared_frame.as_mut() {
+                        frame.assumptions = populate_assumptions(frame, agent, &view);
+                    }
+                    let current_place = SpatialBeliefView::effective_place(&view, agent)
+                        .expect("plan adoption expects actor to have an effective place");
+                    adopt_selected_plan(
+                        world,
+                        event_log,
+                        runtime,
+                        agenda_state,
+                        jc,
+                        facility_intents,
+                        agent,
+                        ranked_candidates,
+                        selected_plan,
+                        recipe_registry,
+                        tick,
+                        cognitive,
+                        prepared_frame,
+                        current_place,
+                    );
+                } else {
+                    clear_current_plan(
+                        world,
+                        event_log,
+                        runtime,
+                        agenda_state,
+                        jc,
+                        facility_intents,
+                        ranked_candidates,
+                        agent,
+                        tick,
+                    );
                 }
-                let current_place = SpatialBeliefView::effective_place(&view, agent)
-                    .expect("plan adoption expects actor to have an effective place");
-                adopt_selected_plan(
-                    world,
-                    event_log,
-                    runtime,
-                    active_goal,
-                    jc,
-                    facility_intents,
-                    agent,
-                    ranked_candidates,
-                    selected_plan,
-                    recipe_registry,
-                    tick,
-                    cognitive,
-                    prepared_frame,
-                    current_place,
-                );
-            } else if !committed_rejection_parked {
-                clear_current_plan(
-                    world,
-                    event_log,
-                    runtime,
-                    active_goal,
-                    jc,
-                    facility_intents,
-                    ranked_candidates,
-                    agent,
-                    tick,
-                );
             }
             runtime.dirty = DirtySet::default();
         }
@@ -1480,7 +1489,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     event_log: &mut EventLog,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<AgendaEntry>,
+    agenda_state: &mut AgendaState,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
@@ -1506,7 +1515,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             event_log,
             scheduler,
             runtime,
-            active_goal,
+            agenda_state,
             jc,
             facility_intents,
             agent,
@@ -1619,7 +1628,8 @@ pub(super) fn plan_and_validate_next_step_traced(
             .map(|plan| plan.opportunity)
             .filter(|opportunity| {
                 Some(opportunity.goal_key)
-                    == active_goal
+                    == agenda_state
+                        .committed
                         .as_ref()
                         .map(|active_goal| active_goal.key.goal_key)
             });
@@ -1698,7 +1708,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                     world,
                     scheduler,
                     runtime,
-                    active_goal,
+                    agenda_state,
                     jc,
                     facility_intents,
                     agent,
@@ -1711,115 +1721,119 @@ pub(super) fn plan_and_validate_next_step_traced(
             });
 
         let selection_plans = selection_candidates(&plans.plans);
-        let current_goal_before_selection = active_goal.as_ref().map(|ag| ag.key.goal_key);
+        let current_goal_before_selection =
+            agenda_state.committed.as_ref().map(|ag| ag.key.goal_key);
 
-        if let Some(selected_plan) = select_best_plan(
-            ranked_candidates,
-            &selection_plans,
-            current_goal_before_selection,
-            runtime,
-            jc.as_ref(),
-            crate::SelectionPolicy {
-                side_benefit_weight,
-                default_switch_margin,
-                frame_switch_margin,
-            },
-        ) {
-            emit_plan_selection_events(
-                event_log,
-                tick,
-                agent,
+        if !committed_rejection_parked {
+            if let Some(selected_plan) = select_best_plan(
                 ranked_candidates,
-                &plans.portfolio,
-                &selected_plan,
-                cognitive.decision_history_alternatives,
-            );
-            let selected_goal = selected_plan.goal;
-            let selected_opportunity = selected_plan.opportunity;
-            let selected_plan_source = determine_selected_plan_source(
-                selected_opportunity,
-                current_goal_before_selection,
                 &selection_plans,
-            );
-            let search_provenance =
-                matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
-                    .then(|| summarize_search_provenance(&plans.plans, selected_opportunity))
-                    .flatten();
-            let plan_value =
-                selected_plan_value(ranked_candidates, &selected_plan, side_benefit_weight)
-                    .expect("selected plan must map back to a ranked opportunity");
-            selection_trace.selected_opportunity = Some(selected_plan.opportunity);
-            selection_trace.selected_plan = Some(summarize_selected_plan(
-                &selected_plan,
-                0,
-                action_defs,
-                search_provenance,
-                &plan_value,
-            ));
-            selection_trace.selected_plan_source = Some(selected_plan_source);
-            selection_trace.plan_replacement = summarize_plan_replacement(
-                runtime,
                 current_goal_before_selection,
-                selected_goal,
-                &selected_plan,
-                action_defs,
-            );
-
-            if let Some(prev) = previous_goal
-                && prev != selected_goal
-            {
-                let prev_rank = ranked_candidates.iter().find(|c| c.offer.key == prev);
-                let new_rank = ranked_candidates
-                    .iter()
-                    .find(|c| c.offer.key == selected_goal);
-                let kind = match (prev_rank, new_rank) {
-                    (Some(p), Some(n)) if n.priority_class > p.priority_class => {
-                        crate::GoalSwitchKind::HigherPriorityGoal
-                    }
-                    _ => crate::GoalSwitchKind::SameClassMargin,
-                };
-                selection_trace.goal_switch = Some(GoalSwitchSummary {
-                    from: prev,
-                    to: selected_goal,
-                    kind,
-                });
-            }
-
-            let mut prepared_frame =
-                update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
-            if let Some(frame) = prepared_frame.as_mut() {
-                frame.assumptions = populate_assumptions(frame, agent, &view);
-            }
-            let current_place = SpatialBeliefView::effective_place(&view, agent)
-                .expect("plan adoption expects actor to have an effective place");
-            adopt_selected_plan(
-                world,
-                event_log,
                 runtime,
-                active_goal,
-                jc,
-                facility_intents,
-                agent,
-                ranked_candidates,
-                selected_plan,
-                recipe_registry,
-                tick,
-                cognitive,
-                prepared_frame,
-                current_place,
-            );
-        } else if !committed_rejection_parked {
-            clear_current_plan(
-                world,
-                event_log,
-                runtime,
-                active_goal,
-                jc,
-                facility_intents,
-                ranked_candidates,
-                agent,
-                tick,
-            );
+                jc.as_ref(),
+                crate::SelectionPolicy {
+                    side_benefit_weight,
+                    default_switch_margin,
+                    frame_switch_margin,
+                },
+            ) {
+                emit_plan_selection_events(
+                    event_log,
+                    tick,
+                    agent,
+                    ranked_candidates,
+                    &plans.portfolio,
+                    current_goal_before_selection,
+                    &selected_plan,
+                    cognitive.decision_history_alternatives,
+                );
+                let selected_goal = selected_plan.goal;
+                let selected_opportunity = selected_plan.opportunity;
+                let selected_plan_source = determine_selected_plan_source(
+                    selected_opportunity,
+                    current_goal_before_selection,
+                    &selection_plans,
+                );
+                let search_provenance =
+                    matches!(selected_plan_source, SelectedPlanSource::SearchSelection)
+                        .then(|| summarize_search_provenance(&plans.plans, selected_opportunity))
+                        .flatten();
+                let plan_value =
+                    selected_plan_value(ranked_candidates, &selected_plan, side_benefit_weight)
+                        .expect("selected plan must map back to a ranked opportunity");
+                selection_trace.selected_opportunity = Some(selected_plan.opportunity);
+                selection_trace.selected_plan = Some(summarize_selected_plan(
+                    &selected_plan,
+                    0,
+                    action_defs,
+                    search_provenance,
+                    &plan_value,
+                ));
+                selection_trace.selected_plan_source = Some(selected_plan_source);
+                selection_trace.plan_replacement = summarize_plan_replacement(
+                    runtime,
+                    current_goal_before_selection,
+                    selected_goal,
+                    &selected_plan,
+                    action_defs,
+                );
+
+                if let Some(prev) = previous_goal
+                    && prev != selected_goal
+                {
+                    let prev_rank = ranked_candidates.iter().find(|c| c.offer.key == prev);
+                    let new_rank = ranked_candidates
+                        .iter()
+                        .find(|c| c.offer.key == selected_goal);
+                    let kind = match (prev_rank, new_rank) {
+                        (Some(p), Some(n)) if n.priority_class > p.priority_class => {
+                            crate::GoalSwitchKind::HigherPriorityGoal
+                        }
+                        _ => crate::GoalSwitchKind::SameClassMargin,
+                    };
+                    selection_trace.goal_switch = Some(GoalSwitchSummary {
+                        from: prev,
+                        to: selected_goal,
+                        kind,
+                    });
+                }
+
+                let mut prepared_frame =
+                    update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+                if let Some(frame) = prepared_frame.as_mut() {
+                    frame.assumptions = populate_assumptions(frame, agent, &view);
+                }
+                let current_place = SpatialBeliefView::effective_place(&view, agent)
+                    .expect("plan adoption expects actor to have an effective place");
+                adopt_selected_plan(
+                    world,
+                    event_log,
+                    runtime,
+                    agenda_state,
+                    jc,
+                    facility_intents,
+                    agent,
+                    ranked_candidates,
+                    selected_plan,
+                    recipe_registry,
+                    tick,
+                    cognitive,
+                    prepared_frame,
+                    current_place,
+                );
+            } else {
+                clear_current_plan(
+                    world,
+                    event_log,
+                    runtime,
+                    agenda_state,
+                    jc,
+                    facility_intents,
+                    ranked_candidates,
+                    agent,
+                    tick,
+                );
+            }
         }
         runtime.dirty = DirtySet::default();
     }
@@ -1931,7 +1945,7 @@ mod tests {
         summarize_snapshot_continuation,
     };
     use crate::{
-        AgendaEntry, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
+        AgendaEntry, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
         ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind, GoalOffer,
         GoalPriorityClass, OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind,
         PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture,
@@ -2246,7 +2260,7 @@ mod tests {
         let scheduler = Scheduler::new(SystemManifest::canonical());
         let mut event_log = EventLog::new();
         let mut runtime = AgentDecisionRuntime::default();
-        let mut active_goal = None;
+        let mut agenda_state = AgendaState::default();
         let mut frame = None;
         let mut facility_intents = ContentionIntents::default();
         let ranked_candidates = vec![ranked_goal(acquire_goal(
@@ -2296,7 +2310,7 @@ mod tests {
             &mut world,
             &mut event_log,
             &mut runtime,
-            &mut active_goal,
+            &mut agenda_state,
             &mut frame,
             &mut facility_intents,
             agent,
@@ -2585,7 +2599,6 @@ mod tests {
                     goal_key: selected_goal,
                     anchor: OpportunityAnchor::None,
                 },
-
                 phase: crate::AgendaPhase::Pending,
                 origin: crate::AgendaOrigin::NeedDrive,
                 introduced_tick: Tick(0),
@@ -2615,7 +2628,6 @@ mod tests {
                     goal_key: runner_up,
                     anchor: OpportunityAnchor::None,
                 },
-
                 phase: crate::AgendaPhase::Pending,
                 origin: crate::AgendaOrigin::NeedDrive,
                 introduced_tick: Tick(0),
@@ -2645,7 +2657,6 @@ mod tests {
                     goal_key: third,
                     anchor: OpportunityAnchor::None,
                 },
-
                 phase: crate::AgendaPhase::Pending,
                 origin: crate::AgendaOrigin::NeedDrive,
                 introduced_tick: Tick(0),
@@ -2675,7 +2686,6 @@ mod tests {
                     goal_key: fourth,
                     anchor: OpportunityAnchor::None,
                 },
-
                 phase: crate::AgendaPhase::Pending,
                 origin: crate::AgendaOrigin::NeedDrive,
                 introduced_tick: Tick(0),
@@ -2713,6 +2723,7 @@ mod tests {
             &Portfolio {
                 slots: BTreeMap::new(),
             },
+            None,
             &selected_plan,
             2,
         );
@@ -2958,7 +2969,7 @@ mod tests {
                 kill_condition: crate::KillCondition::External,
             },
         ];
-        let selected_plan = PlannedPlan::new(
+        let _selected_plan = PlannedPlan::new(
             opportunity(selected_goal),
             selected_goal,
             vec![PlannedStep {
@@ -3004,40 +3015,27 @@ mod tests {
                 ),
             ]),
         };
-        let mut event_log = EventLog::new();
-        let tick = Tick(12);
-
-        super::emit_plan_selection_events(
-            &mut event_log,
-            tick,
-            entity(1),
+        let rejected = super::build_rejected_alternatives(
             &ordered(&ranked_candidates),
             &portfolio,
-            &selected_plan,
+            selected_goal,
+            600,
             4,
         );
-
-        let tick_events = event_log.events_at_tick(tick);
-        let committed = event_log.get(tick_events[0]).unwrap();
         assert_eq!(
-            committed.decision_payload(),
-            Some(&DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
-                agent: entity(1),
-                goal_key: selected_goal,
-                motive_score: 600,
-                rejected_alternatives: vec![
-                    worldwake_core::RejectedAlternativeSummary {
-                        goal_key: survival_goal,
-                        rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
-                        score_gap: -300,
-                    },
-                    worldwake_core::RejectedAlternativeSummary {
-                        goal_key: commitment_goal,
-                        rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
-                        score_gap: -200,
-                    },
-                ],
-            }))
+            rejected,
+            vec![
+                worldwake_core::RejectedAlternativeSummary {
+                    goal_key: survival_goal,
+                    rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
+                    score_gap: -300,
+                },
+                worldwake_core::RejectedAlternativeSummary {
+                    goal_key: commitment_goal,
+                    rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
+                    score_gap: -200,
+                },
+            ]
         );
     }
 
@@ -4128,7 +4126,7 @@ mod tests {
             dirty: DirtySet::NO_PLAN,
             ..AgentDecisionRuntime::default()
         };
-        let mut active_goal = None;
+        let mut agenda_state = AgendaState::default();
         let mut frame = None;
         let mut facility_intents = worldwake_core::ContentionIntents::default();
 
@@ -4138,7 +4136,7 @@ mod tests {
             &mut event_log,
             &scheduler,
             &mut runtime,
-            &mut active_goal,
+            &mut agenda_state,
             &mut frame,
             &mut facility_intents,
             agent,

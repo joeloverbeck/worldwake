@@ -45,7 +45,7 @@ pub mod side_benefit;
 pub mod survival_forensics;
 mod theft;
 
-pub use agenda_manager::{AgendaTransitions, CommitTransition, tick_agenda};
+pub use agenda_manager::{AgendaTickPolicy, AgendaTransitions, CommitTransition, tick_agenda};
 pub use agenda_types::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, KillCondition,
     RevivalTrigger,

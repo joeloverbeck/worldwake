@@ -1,11 +1,12 @@
 use crate::{
     AgendaEntry, AgendaEntryKey, AgendaPhase, AgendaState, GoalKind, GoalOffer, KillCondition,
-    RevivalTrigger, enterprise::restock_gap_at_destination, ranking,
+    RevivalTrigger, enterprise::restock_gap_at_destination, goal_switching::compare_goal_switch,
+    ranking,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     AgendaProfile, BlockerKey, CommodityKind, Discrepancy, DiscrepancyMemory, EntityId,
-    ExpectationId, ExpectationState, OpportunityAnchor, Quantity, Tick,
+    ExpectationId, ExpectationState, OpportunityAnchor, Permille, Quantity, Tick,
 };
 use worldwake_sim::GoalBeliefView;
 
@@ -16,6 +17,13 @@ pub struct AgendaTransitions {
     pub commit_transition: CommitTransition,
     pub demoted_to_suspended: Vec<AgendaEntryKey>,
     pub demoted_to_pending: Vec<AgendaEntryKey>,
+    pub ordered_candidates: Vec<AgendaEntry>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AgendaTickPolicy<'a> {
+    pub profile: &'a AgendaProfile,
+    pub switch_margin: Permille,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -130,18 +138,36 @@ pub fn tick_agenda(
     fresh_candidates: Vec<AgendaEntry>,
     beliefs: &impl GoalBeliefView,
     discrepancy_memory: &DiscrepancyMemory,
-    profile: &AgendaProfile,
+    policy: AgendaTickPolicy<'_>,
     tick: Tick,
 ) -> AgendaTransitions {
-    let previous_committed = state.committed.as_ref().map(|entry| entry.key);
+    let previous_committed = state
+        .committed
+        .as_ref()
+        .filter(|entry| entry.phase == AgendaPhase::Committed)
+        .map(|entry| entry.key);
     let killed = drain_killed(actor, state, beliefs, tick);
-    let revived_entries = promote_revived(actor, state, beliefs, discrepancy_memory, profile, tick);
+    let revived_entries = promote_revived(
+        actor,
+        state,
+        beliefs,
+        discrepancy_memory,
+        policy.profile,
+        tick,
+    );
     let revived = revived_entries.iter().map(|entry| entry.key).collect();
     let merged = merge_candidates(state, fresh_candidates, tick);
     let ranked = rank_for_commit(state, merged, revived_entries);
-    let commit_transition = commit_or_keep(state, ranked.as_slice(), previous_committed, tick);
+    let commit_transition = commit_or_keep(
+        state,
+        ranked.as_slice(),
+        previous_committed,
+        policy.switch_margin,
+        tick,
+    );
+    let ordered_candidates = ranked.clone();
     let (demoted_to_pending, demoted_to_suspended) =
-        demote_to_pending_or_suspended(state, ranked, profile, tick);
+        demote_to_pending_or_suspended(state, ranked, policy.profile, tick);
 
     AgendaTransitions {
         killed,
@@ -149,6 +175,7 @@ pub fn tick_agenda(
         commit_transition,
         demoted_to_suspended,
         demoted_to_pending,
+        ordered_candidates,
     }
 }
 
@@ -313,23 +340,54 @@ fn commit_or_keep(
     state: &mut AgendaState,
     ranked: &[AgendaEntry],
     previous_committed: Option<AgendaEntryKey>,
+    switch_margin: Permille,
     tick: Tick,
 ) -> CommitTransition {
-    if state.committed.is_some() {
-        return CommitTransition::Unchanged;
-    }
+    let Some(top) = ranked.first() else {
+        state.committed = None;
+        return previous_committed.map_or(CommitTransition::Unchanged, |previous_key| {
+            CommitTransition::Cleared { previous_key }
+        });
+    };
 
-    if let Some(top) = ranked.first() {
+    let Some(current) = state.committed.as_ref() else {
         state.committed = Some(AgendaEntry::committed_from(top, tick));
         return CommitTransition::Committed {
             new_key: top.key,
             previous_key: previous_committed,
         };
+    };
+
+    if current.phase != AgendaPhase::Committed {
+        return CommitTransition::Unchanged;
     }
 
-    previous_committed.map_or(CommitTransition::Unchanged, |previous_key| {
-        CommitTransition::Cleared { previous_key }
-    })
+    if current.key == top.key {
+        let mut refreshed = top.clone();
+        refreshed.phase = AgendaPhase::Committed;
+        refreshed.introduced_tick = current.introduced_tick;
+        refreshed.last_reconsidered_tick = tick;
+        state.committed = Some(refreshed);
+        return CommitTransition::Unchanged;
+    }
+
+    let should_switch = compare_goal_switch(
+        current.priority_class,
+        Some(current.motive_score),
+        top.priority_class,
+        top.motive_score,
+        switch_margin,
+    )
+    .is_some();
+    if !should_switch {
+        return CommitTransition::Unchanged;
+    }
+
+    state.committed = Some(AgendaEntry::committed_from(top, tick));
+    CommitTransition::Committed {
+        new_key: top.key,
+        previous_key: previous_committed,
+    }
 }
 
 fn demote_to_pending_or_suspended(
@@ -347,11 +405,17 @@ fn demote_to_pending_or_suspended(
         if Some(entry.key) == committed_key || !seen.insert(entry.key) {
             continue;
         }
+        if entry.revival_trigger.is_none() && entry.introduced_tick == tick {
+            continue;
+        }
         entry.phase = AgendaPhase::Pending;
         entry.last_reconsidered_tick = tick;
         if entry.revival_trigger.is_none() {
             entry.revival_trigger = Some(RevivalTrigger::TickElapsed {
-                at_tick: Tick(tick.0.saturating_add(1)),
+                at_tick: Tick(
+                    tick.0
+                        .saturating_add(u64::from(profile.revive_cooldown_ticks.max(1))),
+                ),
             });
         }
         let key = entry.key;
@@ -445,7 +509,7 @@ fn expectation_is_resolved(
         })
 }
 
-fn goal_post_conditions_already_satisfied(
+pub(crate) fn goal_post_conditions_already_satisfied(
     actor: EntityId,
     offer: &GoalOffer,
     beliefs: &impl GoalBeliefView,
@@ -509,7 +573,8 @@ fn anchor_entity(anchor: OpportunityAnchor) -> Option<EntityId> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AgendaTransitions, CommitTransition, RejectionLifecycle, classify_rejection, tick_agenda,
+        AgendaTickPolicy, AgendaTransitions, CommitTransition, RejectionLifecycle,
+        classify_rejection, tick_agenda,
     };
     use crate::agent_tick::portfolio::FeasibilityVerdict;
     use crate::{
@@ -808,6 +873,10 @@ mod tests {
         }
     }
 
+    fn default_switch_margin() -> worldwake_core::Permille {
+        worldwake_core::Permille::new(100).unwrap()
+    }
+
     fn classify(
         goal: GoalKind,
         anchor: OpportunityAnchor,
@@ -855,7 +924,10 @@ mod tests {
             vec![fresh],
             &MockGoalBeliefView::default(),
             &worldwake_core::DiscrepancyMemory::default(),
-            &default_profile(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
             Tick(10),
         );
 
@@ -896,7 +968,10 @@ mod tests {
             Vec::new(),
             &beliefs,
             &worldwake_core::DiscrepancyMemory::default(),
-            &default_profile(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
             Tick(10),
         );
 
@@ -929,7 +1004,10 @@ mod tests {
             Vec::new(),
             &MockGoalBeliefView::default(),
             &worldwake_core::DiscrepancyMemory::default(),
-            &default_profile(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
             Tick(5),
         );
 
@@ -964,25 +1042,36 @@ mod tests {
         newer.revival_trigger = Some(RevivalTrigger::TickElapsed { at_tick: Tick(4) });
         state.pending.insert(older.key, older.clone());
         state.pending.insert(newer.key, newer.clone());
+        let mut remembered = agenda_entry(GoalKind::Wash, OpportunityAnchor::None, 30, Tick(2));
+        remembered.phase = AgendaPhase::Suspended;
+        remembered.revival_trigger = Some(RevivalTrigger::TickElapsed { at_tick: Tick(5) });
+        state.suspended.insert(remembered.key, remembered.clone());
 
         let mut profile = default_profile();
         profile.pending_capacity = 2;
 
-        let fresh = agenda_entry(GoalKind::Wash, OpportunityAnchor::None, 30, Tick(10));
+        let fresh = agenda_entry(GoalKind::Wash, OpportunityAnchor::None, 40, Tick(10));
         let _ = tick_agenda(
             AGENT,
             &mut state,
             vec![fresh.clone()],
             &MockGoalBeliefView::default(),
             &worldwake_core::DiscrepancyMemory::default(),
-            &profile,
+            AgendaTickPolicy {
+                profile: &profile,
+                switch_margin: default_switch_margin(),
+            },
             Tick(10),
         );
 
         assert_eq!(state.pending.len(), 2);
         assert!(!state.pending.contains_key(&older.key));
         assert!(state.pending.contains_key(&newer.key));
-        assert!(state.pending.contains_key(&fresh.key));
+        let refreshed = state
+            .pending
+            .get(&remembered.key)
+            .expect("remembered agenda entry should be retained");
+        assert_eq!(refreshed.motive_score, fresh.motive_score);
     }
 
     #[test]
@@ -1004,7 +1093,10 @@ mod tests {
             Vec::new(),
             &MockGoalBeliefView::default(),
             &worldwake_core::DiscrepancyMemory::default(),
-            &default_profile(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
             Tick(10),
         );
 
@@ -1045,7 +1137,10 @@ mod tests {
             Vec::new(),
             &MockGoalBeliefView::default(),
             &discrepancy_memory,
-            &default_profile(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
             Tick(10),
         );
 
@@ -1073,7 +1168,10 @@ mod tests {
             Vec::new(),
             &MockGoalBeliefView::default(),
             &worldwake_core::DiscrepancyMemory::default(),
-            &default_profile(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
             Tick(10),
         );
 
@@ -1120,7 +1218,10 @@ mod tests {
             Vec::new(),
             &beliefs,
             &worldwake_core::DiscrepancyMemory::default(),
-            &default_profile(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
             Tick(10),
         );
 
@@ -1147,7 +1248,7 @@ mod tests {
         let challenger = agenda_entry(
             GoalKind::Relieve,
             OpportunityAnchor::Place(TARGET),
-            60,
+            54,
             Tick(10),
         );
         let transitions: AgendaTransitions = tick_agenda(
@@ -1156,7 +1257,10 @@ mod tests {
             vec![challenger],
             &MockGoalBeliefView::default(),
             &worldwake_core::DiscrepancyMemory::default(),
-            &default_profile(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
             Tick(10),
         );
 
@@ -1164,6 +1268,100 @@ mod tests {
         assert_eq!(
             state.committed.as_ref().map(|entry| entry.key),
             Some(committed_key)
+        );
+    }
+
+    #[test]
+    fn same_class_margin_blocks_commit_switch_when_delta_is_too_small() {
+        let mut committed = agenda_entry(
+            GoalKind::Sleep,
+            OpportunityAnchor::Place(PLACE),
+            100,
+            Tick(1),
+        );
+        committed.phase = AgendaPhase::Committed;
+        let committed_key = committed.key;
+        let mut state = AgendaState {
+            committed: Some(committed),
+            pending: BTreeMap::new(),
+            suspended: BTreeMap::new(),
+        };
+
+        let challenger = agenda_entry(
+            GoalKind::Relieve,
+            OpportunityAnchor::Place(TARGET),
+            109,
+            Tick(10),
+        );
+        let transitions = tick_agenda(
+            AGENT,
+            &mut state,
+            vec![challenger],
+            &MockGoalBeliefView::default(),
+            &worldwake_core::DiscrepancyMemory::default(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
+            Tick(10),
+        );
+
+        assert_eq!(transitions.commit_transition, CommitTransition::Unchanged);
+        assert_eq!(
+            state.committed.as_ref().map(|entry| entry.key),
+            Some(committed_key)
+        );
+    }
+
+    #[test]
+    fn same_class_margin_switches_commit_when_delta_clears_threshold() {
+        let mut committed = agenda_entry(
+            GoalKind::Sleep,
+            OpportunityAnchor::Place(PLACE),
+            100,
+            Tick(1),
+        );
+        committed.phase = AgendaPhase::Committed;
+        let committed_key = committed.key;
+        let mut state = AgendaState {
+            committed: Some(committed),
+            pending: BTreeMap::new(),
+            suspended: BTreeMap::new(),
+        };
+
+        let challenger = agenda_entry(
+            GoalKind::Relieve,
+            OpportunityAnchor::Place(TARGET),
+            110,
+            Tick(10),
+        );
+        let transitions = tick_agenda(
+            AGENT,
+            &mut state,
+            vec![challenger.clone()],
+            &MockGoalBeliefView::default(),
+            &worldwake_core::DiscrepancyMemory::default(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
+            Tick(10),
+        );
+
+        assert_eq!(
+            transitions.commit_transition,
+            CommitTransition::Committed {
+                new_key: challenger.key,
+                previous_key: Some(committed_key),
+            }
+        );
+        assert_eq!(
+            state.committed.as_ref().map(|entry| entry.key),
+            Some(challenger.key)
+        );
+        assert!(
+            state.pending.contains_key(&committed_key),
+            "previously committed goal should return to pending after a margin-clearing switch"
         );
     }
 
