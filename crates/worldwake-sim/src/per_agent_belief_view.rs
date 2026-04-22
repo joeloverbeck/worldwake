@@ -2301,6 +2301,72 @@ mod tests {
     }
 
     #[test]
+    fn remote_listed_sale_lot_stays_sale_visible_through_display_container() {
+        use worldwake_core::{LoadUnits, StockAssignment, StockAssignmentKind};
+
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let market = places[1];
+        let (agent, merchant, display, listed_lot) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let merchant = txn.create_agent("Seller", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, home).unwrap();
+            txn.set_ground_location(merchant, market).unwrap();
+
+            let (facility, _stock, display) = txn
+                .create_merchant_facility(market, merchant, LoadUnits(200), Some(LoadUnits(100)))
+                .unwrap();
+            let display = display.expect("merchant facility should include a display container");
+            let listed_lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(5))
+                .unwrap();
+            txn.put_into_container(listed_lot, display).unwrap();
+            txn.set_component_stock_assignment(
+                listed_lot,
+                StockAssignment {
+                    facility,
+                    kind: StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
+            txn.set_component_sale_listing(
+                listed_lot,
+                worldwake_core::SaleListing {
+                    listed_at: worldwake_core::Tick(0),
+                },
+            )
+            .unwrap();
+
+            commit_txn(txn);
+            (agent, merchant, display, listed_lot)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(merchant, entity_belief(market, true, 3, 5));
+        beliefs.update_entity(listed_lot, entity_belief(market, true, 3, 5));
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            EconomicBeliefView::listed_sale_lots_at(&view, market, CommodityKind::Bread),
+            vec![listed_lot]
+        );
+        assert_eq!(
+            EconomicBeliefView::seller_for_sale_lot(&view, listed_lot),
+            Some(merchant)
+        );
+        assert_eq!(
+            InventoryBeliefView::direct_container(&view, listed_lot),
+            Some(display)
+        );
+        assert_eq!(
+            InventoryBeliefView::direct_possessor(&view, listed_lot),
+            None
+        );
+    }
+
+    #[test]
     fn stale_beliefs_do_not_auto_refresh_from_world() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let places = world.topology().place_ids().collect::<Vec<_>>();

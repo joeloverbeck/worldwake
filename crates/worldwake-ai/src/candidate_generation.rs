@@ -5143,6 +5143,9 @@ fn local_unpossessed_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) {
             continue;
         }
+        if view.seller_for_sale_lot(entity).is_some() {
+            continue;
+        }
         if view.direct_container(entity).is_some() || view.direct_possessor(entity).is_some() {
             continue;
         }
@@ -7676,6 +7679,73 @@ mod tests {
                 commodity: CommodityKind::Apple,
             }
         ));
+    }
+
+    #[test]
+    fn remote_listed_sale_lot_does_not_emit_loose_lot_acquire_evidence() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let home = entity(10);
+        let market = entity(11);
+        let listed_lot = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, home, market, listed_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(home, EntityKind::Place);
+        view.entity_kinds.insert(market, EntityKind::Place);
+        view.entity_kinds.insert(listed_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, market);
+        view.effective_places.insert(listed_lot, market);
+        view.entities_at.insert(home, vec![agent]);
+        view.entities_at.insert(market, vec![seller, listed_lot]);
+        view.adjacent_places.insert(home, vec![market]);
+        view.adjacent_places.insert(market, vec![home]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(market),
+            },
+        );
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(3));
+        view.lot_commodities
+            .insert(listed_lot, CommodityKind::Bread);
+        view.listed_lots
+            .insert((market, CommodityKind::Bread), vec![listed_lot]);
+        view.lot_sellers.insert(listed_lot, seller);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let acquire_goal = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.key
+                    == GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                    })
+                    && candidate.anchor == worldwake_core::OpportunityAnchor::Place(market)
+            })
+            .expect("remote listed sale lot should emit an acquire goal");
+
+        assert_eq!(acquire_goal.evidence_places, BTreeSet::from([market]));
+        assert_eq!(acquire_goal.evidence_entities, BTreeSet::from([seller]));
+        assert!(
+            !acquire_goal.evidence_entities.contains(&listed_lot),
+            "listed sale lots must stay seller-backed evidence, not loose-cargo evidence"
+        );
     }
 
     #[test]
