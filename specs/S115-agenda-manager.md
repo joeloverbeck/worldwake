@@ -147,36 +147,38 @@ Rename mechanics: atomic rename across `candidate_generation.rs`, `ranking.rs`, 
 
 ```rust
 pub fn tick_agenda(
+    actor: EntityId,
     state: &mut AgendaState,
-    fresh_offers: Vec<GoalOffer>,
+    fresh_candidates: Vec<AgendaEntry>,
     beliefs: &impl GoalBeliefView,
     discrepancy_memory: &DiscrepancyMemory,
+    profile: &AgendaProfile,
     tick: Tick,
 ) -> AgendaTransitions {
     // 1. Evaluate kill conditions — drop dead committed/pending/suspended.
-    let killed = drain_killed(state, beliefs, tick);
+    let killed = drain_killed(actor, state, beliefs, tick);
 
     // 2. Evaluate revival triggers on pending — promote to candidate pool.
     //    Honours AgendaProfile.revive_cooldown_ticks: a pending entry whose
     //    last_reconsidered_tick + cooldown > tick is skipped this tick.
-    let revived = promote_revived(state, beliefs, tick);
+    let revived = promote_revived(actor, state, beliefs, discrepancy_memory, profile, tick);
 
     // 3. Merge fresh offers with existing pending: a fresh offer with the
     //    same key as a pending entry refreshes its `last_reconsidered_tick`
     //    but does not create a duplicate.
-    let merged = merge_offers(state, fresh_offers, tick);
+    let merged = merge_candidates(state, fresh_candidates, tick);
 
     // 4. Rank the candidate pool (committed + revived + merged pending +
     //    survival overrides) via ranking::sort_in_place.
-    let ranking = rank_for_commit(state, &merged, &revived, beliefs, tick);
+    let ranking = rank_for_commit(state, merged, revived);
 
     // 5. Apply margin-based commitment (S74) — keep committed unless a
     //    candidate exceeds committed.motive_score + switch_margin.
-    let commit_transition = commit_or_keep(state, ranking, beliefs, tick);
+    let commit_transition = commit_or_keep(state, ranking.as_slice(), tick);
 
     // 6. Demote remaining candidates to pending or suspended based on
     //    whether their revival trigger is known (D4A classifier output).
-    demote_to_pending_or_suspended(state, ranking.losers, beliefs, tick);
+    demote_to_pending_or_suspended(state, ranking, profile, tick);
 
     AgendaTransitions { killed, revived, commit_transition }
 }
@@ -184,7 +186,7 @@ pub fn tick_agenda(
 
 The `&DiscrepancyMemory` parameter replaces the previously-proposed `AgendaMemory` trait — `DiscrepancyMemory` (`crates/worldwake-core/src/discrepancy.rs:53`) already provides `is_suppressed(key, tick)` which is the only memory lookup the agenda manager needs. No new trait required.
 
-Each transition emits the corresponding S110 `EventTag`. The portfolio assembly (S112) reads the post-tick agenda state: `committed` → commitment slot; fresh offers → survival / economic / information slots.
+Ticket 003 lands this as a pure state transition function over `AgendaState`; caller-side event emission remains owned by ticket 005. The portfolio assembly (S112) reads the post-tick agenda state: `committed` → commitment slot; fresh ranked candidates remain the upstream feed into the manager.
 
 ### D4: Revival-trigger evaluation
 

@@ -3,6 +3,7 @@
 //! GOAP planner, utility scoring, and decision architecture.
 //! Depends on `worldwake-core`, `worldwake-sim`, and `worldwake-systems`.
 
+pub mod agenda_manager;
 pub mod agenda_types;
 pub mod agent_tick;
 pub mod candidate_generation;
@@ -44,6 +45,7 @@ pub mod side_benefit;
 pub mod survival_forensics;
 mod theft;
 
+pub use agenda_manager::{AgendaTransitions, CommitTransition, tick_agenda};
 pub use agenda_types::{
     AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, KillCondition,
     RevivalTrigger,

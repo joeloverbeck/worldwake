@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — wires `agenda_tick_system` into the agent-tick phase between perception and ranking; redirects S74 switch-margin read from rank-derived current to `AgendaState.committed.motive_score`; emits S110 `GoalCommitted`/`GoalSuspended`/`GoalAbandoned` events from `AgendaTransitions`.
-**Deps**: [S115AGEMAN-003](S115AGEMAN-003.md), [S115AGEMAN-004](S115AGEMAN-004.md)
+**Deps**: [archive/tickets/S115AGEMAN-003](../archive/tickets/S115AGEMAN-003.md), [S115AGEMAN-004](S115AGEMAN-004.md)
 
 ## Problem
 
@@ -12,7 +12,7 @@ With `tick_agenda` implemented (ticket 003) and `classify_rejection` landed (tic
 
 ## Assumption Reassessment (2026-04-22)
 
-1. Current agent-tick flow in `crates/worldwake-ai/src/agent_tick/mod.rs` performs perception/belief-update in `refresh_runtime_for_read_phase_with_memories` (~line 930), candidate generation and ranking in the read-phase (line 1041: `read_result.ranked`), then portfolio assembly in `build_candidate_plans`. The correct insertion point for `agenda_tick_system` is BETWEEN belief-update and candidate generation — agenda state must be finalized before ranking, because ranking consumes the merged candidate pool the agenda manager builds.
+1. Current agent-tick flow in `crates/worldwake-ai/src/agent_tick/mod.rs` performs perception/belief-update in `refresh_runtime_for_read_phase_with_memories` (~line 930), candidate generation plus ranking into `read_result.ranked` (line 1034), then downstream planning/active-action consumers. Ticket 003 landed `tick_agenda(actor, ..., fresh_candidates: Vec<AgendaEntry>, ...)`, so the truthful insertion point is AFTER fresh candidate ranking exists and BEFORE downstream commitment consumers (`build_candidate_plans`, active-action interruption checks, and event emission).
 2. S74 switch-margin read site: `crates/worldwake-ai/src/agent_tick/active_action.rs:180-199`. Currently reads `cognitive.switch_margin` (from `CognitiveProfile` at `crates/worldwake-core/src/cognitive_profile.rs:39`) alongside a rank-derived current candidate. Post-ticket, the switch-margin comparison reads `runtime.agenda_state.committed.as_ref().map(|e| e.motive_score).unwrap_or(0)` as the baseline.
 3. S110 event emission path: `EventTag::GoalCommitted` / `GoalSuspended` / `GoalAbandoned` at `crates/worldwake-core/src/event_tag.rs:37-39` with payload structs `GoalCommittedPayload`, `GoalSuspendedPayload`, `GoalAbandonedPayload` at `crates/worldwake-core/src/decision_event_payload.rs:80,107,114`. These are already the target payload shapes for agenda transitions.
 4. The shared boundary under audit is the caller's `AgendaTransitions` → event-log write loop. `tick_agenda` returns transitions; the caller walks them and writes one event per transition. Keeping emission caller-side (not inside `tick_agenda`) preserves the manager's I/O purity from ticket 003.
@@ -44,8 +44,8 @@ Add `pub fn agenda_tick_system(world: &mut World, tick: Tick, event_log: &mut Ev
 Per-agent loop:
 1. Read `profile = world.get_component_agenda_profile(agent).expect(...)`.
 2. Read `discrepancy_memory = world.get_component_discrepancy_memory(agent).cloned().unwrap_or_default()`.
-3. Build `fresh_offers: Vec<GoalOffer>` from the current tick's candidate generation output (this ticket bridges candidate generation output into `tick_agenda`; the candidate generator already produces the equivalent of fresh offers — ticket 002 renamed `GroundedGoal` to `GoalOffer`, so the pipeline already hands `GoalOffer`).
-4. Call `transitions = tick_agenda(&mut runtime.agenda_state, fresh_offers, &beliefs, &discrepancy_memory, &profile, tick)`.
+3. Build `fresh_candidates: Vec<AgendaEntry>` from the current tick's ranked candidate output (`read_result.ranked`), preserving the actor-scoped agenda-entry shape ticket 003 actually landed.
+4. Call `transitions = tick_agenda(agent, &mut runtime.agenda_state, fresh_candidates, &beliefs, &discrepancy_memory, &profile, tick)`.
 5. Emit events from `transitions`:
    - For each `CommitTransition::Committed { new_key, previous_key }` → write `GoalCommitted` with payload (+ `GoalSuspended` for the previous commitment if non-None and viable).
    - For each `demoted_to_suspended` entry → write `GoalSuspended`.
@@ -98,7 +98,7 @@ Replace the placeholder in `agenda_manager::commit_or_keep` with the margin-awar
 
 - Unit tests for `agenda_tick_system` wiring (ticket 006 covers two-tick commit persistence and event-log assertions)
 - Golden scenario (ticket 007)
-- Changes to candidate-generation algorithms — this ticket consumes the generator's existing `GoalOffer` output as-is
+- Changes to candidate-generation algorithms — this ticket consumes the existing ranked candidate output as-is
 - Changes to event-log infrastructure — payload types already exist (S110)
 
 ## Acceptance Criteria

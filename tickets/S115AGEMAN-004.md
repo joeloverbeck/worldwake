@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — adds `classify_rejection` function mapping all nine `Discrepancy` variants to agenda lifecycle transitions; removes two `committed_goal` / `!is_committed` carve-outs in `build_candidate_plans`.
-**Deps**: [S115AGEMAN-003](S115AGEMAN-003.md)
+**Deps**: [archive/tickets/S115AGEMAN-003](../archive/tickets/S115AGEMAN-003.md)
 
 ## Problem
 
@@ -20,7 +20,7 @@ The S112 feasibility probe returns `FeasibilityVerdict::RejectedBeforeSearch { r
    - `crates/worldwake-ai/src/agent_tick/planning.rs:875-892` — `rejected_by_goal` tracking uses `if slot.ranked.grounded.key == committed_goal { continue; }` to skip the committed goal from rejection bookkeeping.
    Both carve-outs can be deleted once `classify_rejection` runs before `build_candidate_plans` and produces the correct lifecycle transition for the committed goal (demote to Suspended via Satisfied pre-check, demote to Pending via InfeasibleUntil, or drop via Dead).
 5. `cargo_satisfaction_at_destination_while_carrying` (`crates/worldwake-ai/src/agent_tick/tests.rs:4710`) and `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` (`crates/worldwake-ai/tests/golden_portfolio_planning.rs:210`) are the two load-bearing tests protecting the S112 behavior. Post-ticket both must pass via the new classifier path, NOT via the carve-outs.
-6. `DiscrepancyMemory::record` write for the `Dead` branch is performed by the *caller* (`tick_agenda` — ticket 003) using the `blocker_key_from` helper. This ticket defines `classify_rejection` as a pure function; the write side is already wired in 003.
+6. Ticket 003 landed the pure `agenda_manager` module plus the `blocker_key_from`-style identity substrate, but it did not yet wire D4A rejection routing. This ticket therefore owns both the pure `classify_rejection` function and the caller-side `Dead`-branch `DiscrepancyMemory::record` integration that uses the synthesized blocker key while keeping the classifier itself side-effect-free.
 7. Satisfied-goal detection: for each `GoalKind` variant that has natural post-conditions readable from beliefs (e.g., `MoveCargo { commodity, destination }` — agent at destination with commodity possessed), the pre-check reads the belief store and short-circuits to `Satisfied`. For `GoalKind` variants without trivially-readable post-conditions (e.g., `Sleep`, which is a duration-bearing action), the pre-check returns no and variant-table classification applies. Per-variant satisfaction helpers reuse existing `is_satisfied` logic on `GoalKindPlannerExt` at `crates/worldwake-ai/src/goal_model.rs` — this ticket wires the probe path to query the same invariant.
 
 ## Architecture Check
