@@ -91,6 +91,34 @@ impl Default for ExpectationStore {
     }
 }
 
+impl ExpectationStore {
+    pub fn next_expectation_id(&self) -> ExpectationId {
+        self.next_expectation_id
+    }
+
+    fn next_fresh_expectation_id(&self) -> ExpectationId {
+        let highest_live_id = self
+            .records
+            .keys()
+            .map(|id| id.0)
+            .max()
+            .map_or(0, |max_id| max_id.saturating_add(1));
+        ExpectationId(self.next_expectation_id.0.max(highest_live_id))
+    }
+
+    pub fn allocate_record(
+        &mut self,
+        build: impl FnOnce(ExpectationId) -> ExpectationRecord,
+    ) -> ExpectationId {
+        let id = self.next_fresh_expectation_id();
+        let mut record = build(id);
+        record.id = id;
+        self.records.insert(id, record);
+        self.next_expectation_id = ExpectationId(id.0.saturating_add(1));
+        id
+    }
+}
+
 impl Component for ExpectationStore {}
 
 /// A record of when and where an entity was last seen, with provenance.
@@ -306,7 +334,7 @@ mod tests {
     fn expectation_components_default_to_empty_agent_state() {
         let expectation_store = ExpectationStore::default();
         assert!(expectation_store.records.is_empty());
-        assert_eq!(expectation_store.next_expectation_id, ExpectationId(0));
+        assert_eq!(expectation_store.next_expectation_id(), ExpectationId(0));
 
         let last_seen_memory = LastSeenMemory::default();
         assert!(last_seen_memory.records.is_empty());
@@ -412,5 +440,88 @@ mod tests {
             world.get_component_last_seen_memory(agent),
             Some(&last_seen_memory)
         );
+    }
+
+    #[test]
+    fn allocate_record_returns_fresh_id_and_advances_counter() {
+        let owner = entity(1);
+        let subject = entity(2);
+        let expected_place = entity(3);
+        let mut store = ExpectationStore::default();
+
+        let id = store.allocate_record(|id| ExpectationRecord {
+            id,
+            owner,
+            subject,
+            expected_place,
+            deadline_tick: Tick(30),
+            grace_ticks: 4,
+            basis: ExpectationBasis::RoutineReturn,
+            state: ExpectationState::Active,
+            created_tick: Tick(10),
+        });
+
+        assert_eq!(id, ExpectationId(0));
+        assert_eq!(store.next_expectation_id(), ExpectationId(1));
+        assert_eq!(store.records.get(&id).unwrap().id, id);
+        assert_eq!(store.records.get(&id).unwrap().owner, owner);
+    }
+
+    #[test]
+    fn allocate_record_repairs_stale_counter_against_live_records() {
+        let owner = entity(1);
+        let mut store = ExpectationStore {
+            records: BTreeMap::from([(
+                ExpectationId(7),
+                ExpectationRecord {
+                    id: ExpectationId(7),
+                    owner,
+                    subject: entity(2),
+                    expected_place: entity(3),
+                    deadline_tick: Tick(20),
+                    grace_ticks: 2,
+                    basis: ExpectationBasis::SocialPromise,
+                    state: ExpectationState::Active,
+                    created_tick: Tick(5),
+                },
+            )]),
+            next_expectation_id: ExpectationId(1),
+        };
+
+        let id = store.allocate_record(|id| ExpectationRecord {
+            id,
+            owner,
+            subject: entity(4),
+            expected_place: entity(5),
+            deadline_tick: Tick(40),
+            grace_ticks: 3,
+            basis: ExpectationBasis::RoutineReturn,
+            state: ExpectationState::Overdue,
+            created_tick: Tick(12),
+        });
+
+        assert_eq!(id, ExpectationId(8));
+        assert_eq!(store.next_expectation_id(), ExpectationId(9));
+        assert!(store.records.contains_key(&ExpectationId(7)));
+        assert!(store.records.contains_key(&ExpectationId(8)));
+    }
+
+    #[test]
+    fn expectation_store_roundtrips_advanced_counter_after_allocation() {
+        let mut store = ExpectationStore::default();
+        store.allocate_record(|id| ExpectationRecord {
+            id,
+            owner: entity(1),
+            subject: entity(2),
+            expected_place: entity(3),
+            deadline_tick: Tick(30),
+            grace_ticks: 4,
+            basis: ExpectationBasis::RoutineReturn,
+            state: ExpectationState::Active,
+            created_tick: Tick(10),
+        });
+
+        assert_roundtrip(&store);
+        assert_eq!(store.next_expectation_id(), ExpectationId(1));
     }
 }

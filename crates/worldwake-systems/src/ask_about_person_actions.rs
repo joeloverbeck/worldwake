@@ -465,7 +465,7 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         CauseRef, ControlSource, EpistemicDispositionProfile, EventLog, ExpectationBasis,
-        ExpectationId, ExpectationStore, Permille, Seed, Tick, VisibilitySpec, WitnessData,
+        ExpectationStore, Permille, Seed, Tick, VisibilitySpec, WitnessData,
         build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
@@ -545,20 +545,17 @@ mod tests {
             .get_component_expectation_store(actor)
             .cloned()
             .unwrap_or_else(ExpectationStore::default);
-        store.records.insert(
-            ExpectationId(1),
-            ExpectationRecord {
-                id: ExpectationId(1),
-                owner: actor,
-                subject,
-                expected_place,
-                deadline_tick: Tick(5),
-                grace_ticks: 1,
-                basis: ExpectationBasis::RoutineReturn,
-                state: ExpectationState::Overdue,
-                created_tick: Tick(1),
-            },
-        );
+        store.allocate_record(|id| ExpectationRecord {
+            id,
+            owner: actor,
+            subject,
+            expected_place,
+            deadline_tick: Tick(5),
+            grace_ticks: 1,
+            basis: ExpectationBasis::RoutineReturn,
+            state: ExpectationState::Overdue,
+            created_tick: Tick(1),
+        });
         txn.set_component_expectation_store(actor, store).unwrap();
         commit_txn(txn);
     }

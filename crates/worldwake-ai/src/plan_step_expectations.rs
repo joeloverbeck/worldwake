@@ -1,8 +1,8 @@
 use crate::{ExpectationKind, PlanExpectation, PlannedPlan};
 use worldwake_core::{
-    CauseRef, EntityId, EventLog, ExpectationBasis, ExpectationId, ExpectationKindTag,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, Tick,
-    VisibilitySpec, WitnessData, World, WorldTxn,
+    CauseRef, EntityId, EventLog, ExpectationBasis, ExpectationKindTag, ExpectationOutcome,
+    ExpectationRecord, ExpectationState, ExpectationStore, Tick, VisibilitySpec, WitnessData,
+    World, WorldTxn,
 };
 use worldwake_sim::TickInputError;
 
@@ -13,16 +13,6 @@ fn expectation_kind_tag(expectation: &PlanExpectation) -> ExpectationKindTag {
         ExpectationKind::Informed { .. } => ExpectationKindTag::Informed,
         ExpectationKind::Regression { .. } => ExpectationKindTag::Regression,
     }
-}
-
-fn next_expectation_id(store: &mut ExpectationStore) -> ExpectationId {
-    let next_raw = store
-        .records
-        .keys()
-        .map(|id| id.0)
-        .max()
-        .map_or(0, |max_id| max_id.saturating_add(1));
-    ExpectationId(next_raw)
 }
 
 pub(crate) fn write_plan_step_expectations(
@@ -43,8 +33,8 @@ pub(crate) fn write_plan_step_expectations(
         let expected_place = step.target_place().unwrap_or(current_place);
         let default_deadline = step.expected_complete_tick(adoption_tick);
         for expectation in &step.expectations {
-            let record = ExpectationRecord {
-                id: next_expectation_id(store),
+            store.allocate_record(|id| ExpectationRecord {
+                id,
                 owner: agent,
                 subject,
                 expected_place,
@@ -56,8 +46,7 @@ pub(crate) fn write_plan_step_expectations(
                 },
                 state: ExpectationState::Active,
                 created_tick: adoption_tick,
-            };
-            store.records.insert(record.id, record);
+            });
             changed = true;
         }
     }
@@ -285,6 +274,24 @@ mod tests {
         );
 
         assert!(store.records.values().all(|record| record.grace_ticks == 4));
+    }
+
+    #[test]
+    fn plan_adoption_advances_counter_past_allocated_records() {
+        let mut store = worldwake_core::ExpectationStore::default();
+        write_plan_step_expectations(
+            &mut store,
+            entity(1),
+            entity(30),
+            &plan_with_expectations(),
+            Tick(10),
+            4,
+        );
+
+        assert_eq!(
+            store.next_expectation_id(),
+            worldwake_core::ExpectationId(3)
+        );
     }
 
     #[test]

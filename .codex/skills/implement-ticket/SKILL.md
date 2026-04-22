@@ -7,7 +7,15 @@ description: "Implement or reassess a Worldwake ticket. Use when asked to work f
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. If that doc does not cover the exact planner boundary under audit, record the gap and fall back to the landed implementation/spec/ticket chain instead of treating the contract as unknowable. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase. Do not stop at intermediate reassessment or partial fallout; continue until the ticket is completed, fully verified, or blocked by a user decision that requires 1-3-1.
 
-Cargo commands are an explicit exception to the repo's general parallel-read/tool-call habit: run Cargo sequentially throughout this workflow, including `cargo test ... -- --list`, focused tests, compile-only passes, broad crate/workspace tests, and clippy runs. Do not launch multiple Cargo commands in parallel unless the user explicitly asks for that tradeoff.
+## Always First
+
+- Resolve the exact live ticket path and any cited spec/reference path before relying on draft wording.
+- Snapshot the worktree with `git status --short` and classify unrelated dirty paths before coding.
+- Keep Cargo sequential for the entire workflow, including selector-discovery `-- --list` probes.
+- Correct ticket/spec drift before coding when reassessment changes the truthful ownership or proof seam.
+- Close out the ticket file itself with the real scope and verification results; do not leave the correction only in conversation.
+
+Cargo commands are an explicit exception to the repo's general parallel-read/tool-call habit: run Cargo sequentially throughout this workflow, including `cargo test ... -- --list`, focused tests, compile-only passes, broad crate/workspace tests, and clippy runs. In Codex, do not use `multi_tool_use.parallel` for any Cargo command, including `-- --list` probes. Do not launch multiple Cargo commands in parallel unless the user explicitly asks for that tradeoff.
 
 ## Workflow
 
@@ -40,6 +48,8 @@ If that staged ticket introduces a mirrored enum or record in one crate to repre
 ### 2. Reassess assumptions before coding
 
 Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
+
+When the ticket is about canonical write ownership, ID allocation, counter integrity, or another “one lawful writer” contract, classify every cited write site before editing: `production writer`, `same-crate test helper`, `fixture/sample payload`, or `already inert`. Do not preserve a drafted production-scope claim if live reassessment shows some cited sites are only test setup or fixtures; correct the ticket first, then decide whether those helper sites still need migration as consistency fallout.
 
 For additive shared struct/component field tickets, treat the explicit-literal sweep as mandatory before the first focused proof: run a repo-wide search for `Type {` on the changed type, classify the explicit literals by same-crate vs sibling-crate ownership, and expect those explicit constructors to be the first-wave fallout set rather than waiting for the first focused test run to discover them piecemeal.
 Before finalizing a supposedly runtime-only or local-only field addition on a shared type, inspect the enclosing type's live derives, trait bounds, and any round-trip or serialization tests already attached to it. If the host type already derives `Ord`, `PartialOrd`, `Serialize`, `Deserialize`, or similar broad bounds, treat satisfying that existing derive surface as current-ticket scope for the new field types before the first compile rather than discovering it only from compile fallout.
