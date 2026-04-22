@@ -120,7 +120,7 @@ pub(super) fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>
 #[cfg(test)]
 mod tests {
     use super::{DualFrontier, FrontierEntry};
-    use crate::{GoalKey, GroundedGoal, PlanningSnapshot, build_planning_snapshot};
+    use crate::{GoalKey, GoalOffer, PlanningSnapshot, build_planning_snapshot};
     use std::collections::BTreeSet;
     use worldwake_core::{
         CauseRef, ControlSource, ExecutionBudget, GoalKind, OpportunityAnchor, Tick,
@@ -153,14 +153,19 @@ mod tests {
         build_planning_snapshot(&view, agent, &BTreeSet::new(), &BTreeSet::new(), 0)
     }
 
-    fn goal() -> GroundedGoal {
-        GroundedGoal {
+    fn goal() -> GoalOffer {
+        GoalOffer {
             key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                 commodity: worldwake_core::CommodityKind::Bread,
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         }
     }
 

@@ -28,21 +28,21 @@ pub fn explain_goal(
     let target = outcome
         .ranked
         .iter()
-        .find(|candidate| candidate.grounded.key.kind == *goal)?;
+        .find(|candidate| candidate.offer.key.kind == *goal)?;
 
     Some(GoalExplanation {
         goal: *goal,
         priority_class: target.priority_class,
         motive_value: target.motive_score,
-        evidence_entities: target.grounded.evidence_entities.iter().copied().collect(),
-        evidence_places: target.grounded.evidence_places.iter().copied().collect(),
+        evidence_entities: target.offer.evidence_entities.iter().copied().collect(),
+        evidence_places: target.offer.evidence_places.iter().copied().collect(),
         competing_goals: outcome
             .ranked
             .iter()
-            .filter(|candidate| candidate.grounded.key.kind != *goal)
+            .filter(|candidate| candidate.offer.key.kind != *goal)
             .map(|candidate| {
                 (
-                    candidate.grounded.key.kind,
+                    candidate.offer.key.kind,
                     candidate.priority_class,
                     candidate.motive_score,
                 )

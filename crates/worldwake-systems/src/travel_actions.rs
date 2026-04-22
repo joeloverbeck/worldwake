@@ -307,10 +307,10 @@ fn reinforce_exploration_arrival_belief(
     current_tick: Tick,
     txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    let Some(active_goal) = txn.get_component_active_goal(actor).copied() else {
+    let Some(frame) = txn.get_component_intention_frame(actor).cloned() else {
         return Ok(());
     };
-    let GoalKind::ExploreLocation { target_place, .. } = active_goal.goal_key.kind else {
+    let GoalKind::ExploreLocation { target_place, .. } = frame.goal.kind else {
         return Ok(());
     };
     if target_place != destination {
@@ -389,11 +389,12 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActiveGoal, AgentBeliefStore, CauseRef, Container, ControlSource, EdgeExperience, EventLog,
-        EventPayload, EventView, EvidenceKind, ExplorationProfile, GoalKey, GoalKind,
-        HomeostaticNeedId, InTransitOnEdge, LoadUnits, MetabolismProfile, PendingEvent,
-        PerceptionSource, Place, PreferenceProfile, Quantity, RouteExperience, Seed, Tick,
-        Topology, TravelEdge, WitnessData, World, build_believed_entity_state,
+        AgentBeliefStore, CauseRef, Container, ControlSource, EdgeExperience, EventLog,
+        EventPayload, EventView, EvidenceKind, ExplorationProfile, FrameState, GoalKey, GoalKind,
+        HomeostaticNeedId, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
+        MetabolismProfile, PendingEvent, PerceptionSource, Place, PreferenceProfile, Quantity,
+        RouteExperience, Seed, Tick, Topology, TravelEdge, WitnessData, World,
+        build_believed_entity_state,
     };
     use worldwake_sim::{
         ActionExecutionAuthority, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -680,13 +681,21 @@ mod tests {
         commit_txn(txn);
     }
 
-    fn set_active_goal(world: &mut World, actor: EntityId, goal: GoalKind) {
+    fn set_intention_frame(world: &mut World, actor: EntityId, goal: GoalKind) {
         let mut txn = new_txn(world, 2);
-        txn.set_component_active_goal(
+        txn.set_component_intention_frame(
             actor,
-            ActiveGoal {
-                goal_key: GoalKey::from(goal),
-                adopted_at: Tick(2),
+            IntentionFrame {
+                goal: GoalKey::from(goal),
+                domain: IntentionDomain::Travel {
+                    destination: entity(2),
+                },
+                assumptions: vec![],
+                state: FrameState::Active,
+                established_at: Tick(2),
+                last_progress_tick: None,
+                stalled_ticks: 0,
+                patience_limit: 10,
             },
         )
         .unwrap();
@@ -925,7 +934,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
 
-        set_active_goal(
+        set_intention_frame(
             &mut world,
             actor,
             GoalKind::ExploreLocation {
@@ -1000,7 +1009,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
 
-        set_active_goal(&mut world, actor, GoalKind::Sleep);
+        set_intention_frame(&mut world, actor, GoalKind::Sleep);
         set_exploration_profile(
             &mut world,
             actor,
@@ -1060,7 +1069,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
 
-        set_active_goal(
+        set_intention_frame(
             &mut world,
             actor,
             GoalKind::ExploreLocation {
@@ -1129,7 +1138,7 @@ mod tests {
         let mut active_actions = BTreeMap::new();
         let mut rng = test_rng();
 
-        set_active_goal(
+        set_intention_frame(
             &mut world,
             actor,
             GoalKind::ExploreLocation {

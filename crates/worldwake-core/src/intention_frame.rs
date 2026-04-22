@@ -129,7 +129,7 @@ pub enum FrameClearReason {
 /// and under what conditions that intention remains valid.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IntentionFrame {
-    /// The goal this frame serves. Must match the agent's `ActiveGoal`.
+    /// The goal this frame serves. Must match the agent's committed agenda entry.
     pub goal: GoalKey,
     /// Domain tag for domain-specific lifecycle logic.
     pub domain: IntentionDomain,

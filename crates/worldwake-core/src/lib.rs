@@ -25,6 +25,7 @@
 //! forbidden patterns.
 
 pub mod action_domain;
+pub mod agenda_profile;
 pub mod allocator;
 pub mod bandit_camp;
 pub mod belief;
@@ -65,7 +66,6 @@ pub mod factions;
 pub mod goal;
 pub mod ids;
 pub mod institutional;
-pub mod intention;
 pub mod intention_disposition;
 pub mod intention_frame;
 pub mod items;
@@ -101,6 +101,7 @@ pub mod world_txn;
 pub mod wounds;
 
 pub use action_domain::ActionDomain;
+pub use agenda_profile::AgendaProfile;
 pub use allocator::EntityAllocator;
 pub use bandit_camp::{BanditCamp, BanditFactionPolicy};
 pub use belief::{
@@ -196,7 +197,6 @@ pub use institutional::{
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
 };
-pub use intention::ActiveGoal;
 pub use intention_disposition::IntentionDispositionProfile;
 pub use intention_frame::{
     FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,

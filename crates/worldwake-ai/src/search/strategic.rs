@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::{GoalKindPlannerExt, GroundedGoal, PlanningSnapshot, PlanningState};
+use crate::{GoalKindPlannerExt, GoalOffer, PlanningSnapshot, PlanningState};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use worldwake_core::{
@@ -70,7 +70,7 @@ impl PartialOrd for SearchNode {
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(crate) fn plan(
     snapshot: &PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     execution_budget: &ExecutionBudget,
     recipes: &RecipeRegistry,
 ) -> Option<StrategicPlan> {
@@ -174,7 +174,7 @@ fn strategic_search_budget(execution_budget: ExecutionBudget) -> usize {
 }
 
 fn goal_places(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
 ) -> Vec<EntityId> {
@@ -191,7 +191,7 @@ fn goal_places(
     places
 }
 
-fn anchored_goal_place(goal: &GroundedGoal, state: &PlanningState<'_>) -> Option<EntityId> {
+fn anchored_goal_place(goal: &GoalOffer, state: &PlanningState<'_>) -> Option<EntityId> {
     if !matches!(goal.key.kind, GoalKind::AcquireCommodity { .. }) {
         return None;
     }
@@ -203,7 +203,7 @@ fn anchored_goal_place(goal: &GroundedGoal, state: &PlanningState<'_>) -> Option
 }
 
 fn missing_commodities(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
     actor_place: EntityId,
@@ -237,7 +237,7 @@ fn missing_commodities(
 }
 
 fn social_query_commodity(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     missing_commodities: &[CommodityKind],
     recipes: &RecipeRegistry,
 ) -> Option<CommodityKind> {
@@ -964,11 +964,16 @@ mod tests {
         register_agent(&mut view, actor, place);
 
         let snapshot = snapshot(&view, actor, 0);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::Patrol { place }),
             anchor: OpportunityAnchor::Place(place),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1030,11 +1035,16 @@ mod tests {
             &BTreeSet::from([place_c]),
             2,
         );
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::TreatWounds { patient }),
             anchor: OpportunityAnchor::Entity(patient),
             evidence_entities: BTreeSet::from([patient]),
             evidence_places: BTreeSet::from([place_c]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1062,7 +1072,7 @@ mod tests {
         connect(&mut view, place_a, place_b, 2);
 
         let snapshot = snapshot(&view, actor, 1);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
@@ -1070,6 +1080,11 @@ mod tests {
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1093,7 +1108,7 @@ mod tests {
         connect(&mut view, place_a, place_c, 5);
 
         let snapshot = snapshot(&view, actor, 1);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
@@ -1101,6 +1116,11 @@ mod tests {
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1123,11 +1143,16 @@ mod tests {
         connect(&mut view, place_a, place_c, 5);
 
         let snapshot = snapshot(&view, actor, 1);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::Sleep),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1148,7 +1173,7 @@ mod tests {
         register_agent(&mut view, listener, place);
 
         let snapshot = snapshot(&view, actor, 0);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
@@ -1156,6 +1181,11 @@ mod tests {
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1178,7 +1208,7 @@ mod tests {
         register_agent(&mut view, actor, place);
 
         let snapshot = snapshot(&view, actor, 0);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
@@ -1186,6 +1216,11 @@ mod tests {
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         assert!(plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).is_none());
@@ -1217,7 +1252,7 @@ mod tests {
         remember(&mut view, actor, source, source_belief);
 
         let snapshot = snapshot(&view, actor, 1);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
@@ -1225,6 +1260,11 @@ mod tests {
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1285,7 +1325,7 @@ mod tests {
         remember(&mut view, actor, remote_source, source_belief);
 
         let snapshot = snapshot(&view, actor, 1);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
@@ -1293,6 +1333,11 @@ mod tests {
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::from([local_seller, remote_source]),
             evidence_places: BTreeSet::from([place_a, place_b]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1339,7 +1384,7 @@ mod tests {
         connect(&mut view, place_a, place_b, 5);
 
         let snapshot = snapshot(&view, actor, 1);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
@@ -1347,6 +1392,11 @@ mod tests {
             anchor: OpportunityAnchor::Place(place_b),
             evidence_entities: BTreeSet::from([local_source, remote_source]),
             evidence_places: BTreeSet::from([place_a, place_b]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1382,11 +1432,16 @@ mod tests {
             body_cost_per_tick: BodyCostPerTick::zero(),
         });
         let snapshot = snapshot(&view, actor, 0);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &recipes).unwrap();
@@ -1408,13 +1463,18 @@ mod tests {
         register_agent(&mut view, listener, place);
 
         let snapshot = snapshot(&view, actor, 0);
-        let goal = crate::GroundedGoal {
+        let goal = crate::GoalOffer {
             key: worldwake_core::GoalKey::from(GoalKind::SellCommodity {
                 commodity: CommodityKind::Water,
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         assert!(

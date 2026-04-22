@@ -1,7 +1,7 @@
 //! # Preference-ordering authority
 //!
 //! `ranking::compare_ranked_goals` is the sole authoritative total order on
-//! `RankedGoal`. It is file-private and therefore unreachable from outside
+//! `AgendaEntry`. It is file-private and therefore unreachable from outside
 //! this module.
 //!
 //! ```compile_fail
@@ -13,15 +13,15 @@
 //!
 //! ```compile_fail
 //! use worldwake_ai::ranking::OrderedRanked;
-//! use worldwake_ai::RankedGoal;
+//! use worldwake_ai::AgendaEntry;
 //!
-//! let empty: &[RankedGoal] = &[];
+//! let empty: &[AgendaEntry] = &[];
 //! let _ = OrderedRanked::from_sorted_for_test(empty);
 //! ```
 
 use crate::{
-    DecisionContext, GoalKindPlannerExt, GoalPolicyOutcome, GoalPriorityClass, GroundedGoal,
-    RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput, RankedGoal,
+    AgendaEntry, DecisionContext, GoalKindPlannerExt, GoalOffer, GoalPolicyOutcome,
+    GoalPriorityClass, RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput,
     RankedGoalProvenance, RankedGoalProvenanceFamily, RankedPriorityAdjustment, assess_danger,
     classify_band,
     decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
@@ -56,27 +56,27 @@ use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opp
 #[derive(Clone, Debug)]
 pub struct RankingOutcome {
     /// Ranked goals after all filters (sorted by ranking order).
-    pub(crate) ranked: Vec<RankedGoal>,
+    pub(crate) ranked: Vec<AgendaEntry>,
     /// Goals that were suppressed by situational conditions (danger/self-care pressure).
     pub(crate) suppressed: Vec<crate::candidate_generation::CandidateSuppressionDiagnostic>,
     /// Goals that passed suppression but had zero motive score.
     pub zero_motive: Vec<GoalKey>,
 }
 
-/// A read-only view over `RankedGoal`s ordered by the authoritative preference
+/// A read-only view over `AgendaEntry`s ordered by the authoritative preference
 /// defined in `ranking::compare_ranked_goals`.
 #[derive(Clone, Copy, Debug)]
 pub struct OrderedRanked<'a> {
-    slice: &'a [RankedGoal],
+    slice: &'a [AgendaEntry],
 }
 
 impl<'a> OrderedRanked<'a> {
-    fn new(slice: &'a [RankedGoal]) -> Self {
+    fn new(slice: &'a [AgendaEntry]) -> Self {
         Self { slice }
     }
 
     #[cfg(test)]
-    pub(crate) fn from_sorted_for_test(slice: &'a [RankedGoal]) -> Self {
+    pub(crate) fn from_sorted_for_test(slice: &'a [AgendaEntry]) -> Self {
         Self { slice }
     }
 
@@ -91,27 +91,27 @@ impl<'a> OrderedRanked<'a> {
     }
 
     #[must_use]
-    pub fn first(&self) -> Option<&RankedGoal> {
+    pub fn first(&self) -> Option<&AgendaEntry> {
         self.slice.first()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, RankedGoal> {
+    pub fn iter(&self) -> std::slice::Iter<'_, AgendaEntry> {
         self.slice.iter()
     }
 
     #[must_use]
-    pub fn as_slice(&self) -> &[RankedGoal] {
+    pub fn as_slice(&self) -> &[AgendaEntry] {
         self.slice
     }
 
-    pub fn find(&self, pred: impl Fn(&RankedGoal) -> bool) -> Option<&RankedGoal> {
+    pub fn find(&self, pred: impl Fn(&AgendaEntry) -> bool) -> Option<&AgendaEntry> {
         self.slice.iter().find(|goal| pred(goal))
     }
 }
 
 impl<'b> IntoIterator for &'b OrderedRanked<'_> {
-    type Item = &'b RankedGoal;
-    type IntoIter = std::slice::Iter<'b, RankedGoal>;
+    type Item = &'b AgendaEntry;
+    type IntoIter = std::slice::Iter<'b, AgendaEntry>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -121,7 +121,7 @@ impl<'b> IntoIterator for &'b OrderedRanked<'_> {
 impl RankingOutcome {
     /// Consume the outcome, returning only the ranked goals.
     #[must_use]
-    pub fn into_ranked(self) -> Vec<RankedGoal> {
+    pub fn into_ranked(self) -> Vec<AgendaEntry> {
         self.ranked
     }
 
@@ -166,7 +166,7 @@ pub fn build_decision_context(view: &dyn GoalBeliefView, agent: EntityId) -> Dec
 
 #[must_use]
 pub fn rank_candidates(
-    candidates: &[GroundedGoal],
+    candidates: &[GoalOffer],
     view: &dyn GoalBeliefView,
     agent: EntityId,
     current_tick: Tick,
@@ -188,7 +188,7 @@ pub fn rank_candidates(
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rank_candidates_with_memories(
-    candidates: &[GroundedGoal],
+    candidates: &[GoalOffer],
     view: &dyn GoalBeliefView,
     agent: EntityId,
     current_tick: Tick,
@@ -237,10 +237,11 @@ pub(crate) fn rank_candidates_with_memories(
             .map_or(motive_score, |discount| discount.post_discount_motive);
         let competition_discount =
             apply_competition_discount(candidate, &context, post_source_reliability_motive);
-        let scored = RankedGoal {
-            grounded: candidate.clone(),
+        let scored = AgendaEntry::pending(
+            candidate.clone(),
+            current_tick,
             priority_class,
-            motive_score: competition_discount
+            competition_discount
                 .as_ref()
                 .map_or(post_source_reliability_motive, |discount| {
                     discount.post_discount_motive
@@ -248,8 +249,8 @@ pub(crate) fn rank_candidates_with_memories(
             provenance,
             source_reliability_discount,
             competition_discount,
-            feasibility: crate::feasibility::FeasibilityHint::Uncertain,
-        };
+            crate::feasibility::FeasibilityHint::Uncertain,
+        );
         if scored.motive_score == 0 {
             zero_motive.push(candidate.key);
         } else {
@@ -265,16 +266,16 @@ pub(crate) fn rank_candidates_with_memories(
     }
 }
 
-/// Sort a `Vec<RankedGoal>` by authoritative preference and return a view
+/// Sort a `Vec<AgendaEntry>` by authoritative preference and return a view
 /// borrowing the sorted storage.
 #[must_use]
-pub fn sort_in_place(ranked: &mut Vec<RankedGoal>) -> OrderedRanked<'_> {
+pub fn sort_in_place(ranked: &mut Vec<AgendaEntry>) -> OrderedRanked<'_> {
     ranked.sort_unstable_by(compare_ranked_goals);
     OrderedRanked::new(ranked.as_slice())
 }
 
 fn ranked_priority_class(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     context: &RankingContext<'_>,
     provenance: Option<&RankedGoalProvenance>,
 ) -> GoalPriorityClass {
@@ -288,7 +289,7 @@ fn ranked_priority_class(
 }
 
 fn ranked_motive_score(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     context: &RankingContext<'_>,
     provenance: Option<&RankedGoalProvenance>,
 ) -> u32 {
@@ -310,7 +311,7 @@ fn ranked_motive_score(
 }
 
 fn memory_motive_bonus(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     context: &RankingContext<'_>,
     base_motive: u32,
 ) -> u32 {
@@ -326,7 +327,7 @@ fn memory_motive_bonus(
 }
 
 fn repair_memory_bonus(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     context: &RankingContext<'_>,
     base_motive: u32,
 ) -> u32 {
@@ -351,7 +352,7 @@ fn repair_memory_bonus(
 }
 
 fn learned_opportunity_bonus(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     context: &RankingContext<'_>,
     base_motive: u32,
 ) -> u32 {
@@ -374,7 +375,7 @@ fn learned_opportunity_bonus(
 }
 
 fn apply_competition_discount(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     context: &RankingContext<'_>,
     motive_score: u32,
 ) -> Option<CompetitionDiscount> {
@@ -404,7 +405,7 @@ fn apply_competition_discount(
 }
 
 fn apply_source_reliability_discount(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     context: &RankingContext<'_>,
     motive_score: u32,
 ) -> Option<SourceReliabilityDiscount> {
@@ -438,9 +439,7 @@ fn apply_source_reliability_discount(
     })
 }
 
-fn source_reliability_discount_scope(
-    candidate: &GroundedGoal,
-) -> Option<(EntityId, CommodityKind)> {
+fn source_reliability_discount_scope(candidate: &GoalOffer) -> Option<(EntityId, CommodityKind)> {
     let mut source_entities = candidate.evidence_entities.iter().copied();
     let source_entity = source_entities.next()?;
     if source_entities.next().is_some() {
@@ -455,7 +454,7 @@ fn source_reliability_discount_scope(
     }
 }
 
-fn competition_discount_scope(candidate: &GroundedGoal) -> Option<(ActionDomain, EntityId)> {
+fn competition_discount_scope(candidate: &GoalOffer) -> Option<(ActionDomain, EntityId)> {
     let place = match candidate.anchor {
         OpportunityAnchor::Place(place) => place,
         OpportunityAnchor::Entity(_) | OpportunityAnchor::None => return None,
@@ -470,7 +469,7 @@ fn competition_discount_scope(candidate: &GroundedGoal) -> Option<(ActionDomain,
 }
 
 fn goal_ranking_provenance(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     context: &RankingContext<'_>,
 ) -> Option<RankedGoalProvenance> {
     match candidate.key.kind.ranked_goal_provenance_family() {
@@ -654,7 +653,7 @@ fn has_clotted_wounds(view: &dyn GoalBeliefView, agent: EntityId) -> bool {
         .any(|wound| wound.severity.value() > 0 && wound.bleed_rate_per_tick.value() == 0)
 }
 
-fn priority_class(candidate: &GroundedGoal, context: &RankingContext<'_>) -> GoalPriorityClass {
+fn priority_class(candidate: &GoalOffer, context: &RankingContext<'_>) -> GoalPriorityClass {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
         | GoalKind::AcquireCommodity {
@@ -834,7 +833,7 @@ fn drive_provenance_from_inputs(
     }
 }
 
-fn motive_score(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
+fn motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity }
         | GoalKind::AcquireCommodity {
@@ -1362,7 +1361,7 @@ fn belief_pressure_from_source(
     belief_confidence(&source, staleness_ticks, policy)
 }
 
-fn investigation_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
+fn investigation_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
     let Some(profile) = context.view.violation_disposition_profile(context.agent) else {
         return 0;
     };
@@ -1497,7 +1496,7 @@ fn self_consume_provenance(
         .then(|| drive_provenance_from_inputs(context, base_priority_class, motive_inputs))
 }
 
-fn raid_target_motive(candidate: &GroundedGoal, context: &RankingContext<'_>) -> u32 {
+fn raid_target_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
     let GoalKind::RaidTarget { target } = candidate.key.kind else {
         unreachable!("raid_target_motive requires RaidTarget");
     };
@@ -1883,8 +1882,8 @@ pub struct RankedGoalComparison {
 }
 
 fn ranked_goal_ordering(
-    left: &RankedGoal,
-    right: &RankedGoal,
+    left: &AgendaEntry,
+    right: &AgendaEntry,
 ) -> (Ordering, Option<RankedGoalComparisonDimension>) {
     let ordering = right.priority_class.cmp(&left.priority_class);
     if ordering != Ordering::Equal {
@@ -1901,7 +1900,7 @@ fn ranked_goal_ordering(
         return (ordering, Some(RankedGoalComparisonDimension::Feasibility));
     }
 
-    let ordering = compare_goal_specificity(&left.grounded.key.kind, &right.grounded.key.kind);
+    let ordering = compare_goal_specificity(&left.offer.key.kind, &right.offer.key.kind);
     if ordering != Ordering::Equal {
         return (
             ordering,
@@ -1919,7 +1918,7 @@ fn ranked_goal_ordering(
         );
     }
 
-    let ordering = compare_share_belief_topics(&left.grounded.key.kind, &right.grounded.key.kind);
+    let ordering = compare_share_belief_topics(&left.offer.key.kind, &right.offer.key.kind);
     if ordering != Ordering::Equal {
         return (
             ordering,
@@ -1927,27 +1926,23 @@ fn ranked_goal_ordering(
         );
     }
 
-    let ordering = goal_kind_discriminant(left.grounded.key.kind)
-        .cmp(&goal_kind_discriminant(right.grounded.key.kind));
+    let ordering = goal_kind_discriminant(left.offer.key.kind)
+        .cmp(&goal_kind_discriminant(right.offer.key.kind));
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::GoalKindOrder));
     }
 
-    let ordering = left
-        .grounded
-        .key
-        .commodity
-        .cmp(&right.grounded.key.commodity);
+    let ordering = left.offer.key.commodity.cmp(&right.offer.key.commodity);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::CommodityKey));
     }
 
-    let ordering = left.grounded.key.entity.cmp(&right.grounded.key.entity);
+    let ordering = left.offer.key.entity.cmp(&right.offer.key.entity);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::EntityKey));
     }
 
-    let ordering = left.grounded.key.place.cmp(&right.grounded.key.place);
+    let ordering = left.offer.key.place.cmp(&right.offer.key.place);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::PlaceKey));
     }
@@ -1956,30 +1951,30 @@ fn ranked_goal_ordering(
 }
 
 pub(crate) fn explain_ranked_goal_order(
-    left: &RankedGoal,
-    right: &RankedGoal,
+    left: &AgendaEntry,
+    right: &AgendaEntry,
 ) -> Option<RankedGoalComparison> {
     let (ordering, decisive_dimension) = ranked_goal_ordering(left, right);
     let decisive_dimension = decisive_dimension?;
     let (winner, loser) = match ordering {
         Ordering::Less => (
             OpportunityKey {
-                goal_key: left.grounded.key,
-                anchor: left.grounded.anchor,
+                goal_key: left.offer.key,
+                anchor: left.offer.anchor,
             },
             OpportunityKey {
-                goal_key: right.grounded.key,
-                anchor: right.grounded.anchor,
+                goal_key: right.offer.key,
+                anchor: right.offer.anchor,
             },
         ),
         Ordering::Greater => (
             OpportunityKey {
-                goal_key: right.grounded.key,
-                anchor: right.grounded.anchor,
+                goal_key: right.offer.key,
+                anchor: right.offer.anchor,
             },
             OpportunityKey {
-                goal_key: left.grounded.key,
-                anchor: left.grounded.anchor,
+                goal_key: left.offer.key,
+                anchor: left.offer.anchor,
             },
         ),
         Ordering::Equal => return None,
@@ -2011,7 +2006,7 @@ fn compare_goal_specificity(left: &GoalKind, right: &GoalKind) -> Ordering {
     }
 }
 
-fn compare_ranked_goals(left: &RankedGoal, right: &RankedGoal) -> Ordering {
+fn compare_ranked_goals(left: &AgendaEntry, right: &AgendaEntry) -> Ordering {
     ranked_goal_ordering(left, right).0
 }
 
@@ -2039,8 +2034,8 @@ fn compare_share_belief_topics(left: &GoalKind, right: &GoalKind) -> Ordering {
     }
 }
 
-fn opportunity_strength(goal: &RankedGoal) -> u32 {
-    match (&goal.grounded.key.kind, goal.provenance.as_ref()) {
+fn opportunity_strength(goal: &AgendaEntry) -> u32 {
+    match (&goal.offer.key.kind, goal.provenance.as_ref()) {
         (
             GoalKind::ConsumeOwnedCommodity { .. }
             | GoalKind::AcquireCommodity {
@@ -2133,9 +2128,8 @@ mod tests {
         apply_source_reliability_discount, build_decision_context,
     };
     use crate::{
-        GoalKey, GoalKind, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
-        RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
-        RankedPriorityAdjustment,
+        AgendaEntry, GoalKey, GoalKind, GoalOffer, GoalPriorityClass, RankedDriveGoalProvenance,
+        RankedDriveKind, RankedDriveMotiveInput, RankedGoalProvenance, RankedPriorityAdjustment,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -2738,21 +2732,31 @@ mod tests {
         wound_with_bleed(severity, 0)
     }
 
-    fn goal(kind: GoalKind) -> GroundedGoal {
-        GroundedGoal {
+    fn goal(kind: GoalKind) -> GoalOffer {
+        GoalOffer {
             anchor: OpportunityAnchor::None,
             key: GoalKey::from(kind),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         }
     }
 
-    fn goal_at_place(kind: GoalKind, place: EntityId) -> GroundedGoal {
-        GroundedGoal {
+    fn goal_at_place(kind: GoalKind, place: EntityId) -> GoalOffer {
+        GoalOffer {
             anchor: OpportunityAnchor::Place(place),
             key: GoalKey::from(kind),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::from([place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         }
     }
 
@@ -2760,12 +2764,17 @@ mod tests {
         kind: GoalKind,
         place: EntityId,
         evidence_entities: BTreeSet<EntityId>,
-    ) -> GroundedGoal {
-        GroundedGoal {
+    ) -> GoalOffer {
+        GoalOffer {
             anchor: OpportunityAnchor::Place(place),
             key: GoalKey::from(kind),
             evidence_entities,
             evidence_places: BTreeSet::from([place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         }
     }
 
@@ -3224,7 +3233,7 @@ mod tests {
             .ranked
             .iter()
             .find(|ranked| {
-                ranked.grounded.key.kind
+                ranked.offer.key.kind
                     == GoalKind::StealItem {
                         target_item: entity(2),
                     }
@@ -3237,7 +3246,7 @@ mod tests {
             .ranked
             .iter()
             .find(|ranked| {
-                ranked.grounded.key.kind
+                ranked.offer.key.kind
                     == GoalKind::Accuse {
                         crime_register: entity(7),
                         accused: entity(3),
@@ -3252,7 +3261,7 @@ mod tests {
             .ranked
             .iter()
             .find(|ranked| {
-                ranked.grounded.key.kind
+                ranked.offer.key.kind
                     == GoalKind::PunishAccused {
                         office: entity(6),
                         accused: entity(4),
@@ -4116,7 +4125,7 @@ mod tests {
 
     /// Test helper: builds `DecisionContext` from the view and delegates to `rank_candidates`.
     fn rank(
-        candidates: &[GroundedGoal],
+        candidates: &[GoalOffer],
         view: &TestBeliefView,
         agent: EntityId,
         current_tick: Tick,
@@ -4134,7 +4143,7 @@ mod tests {
     }
 
     fn rank_with_memories(
-        candidates: &[GroundedGoal],
+        candidates: &[GoalOffer],
         view: &TestBeliefView,
         agent: EntityId,
         current_tick: Tick,
@@ -4236,18 +4245,9 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(
-            baseline[0].grounded.anchor,
-            OpportunityAnchor::Place(place_a)
-        );
-        assert_eq!(
-            boosted[0].grounded.anchor,
-            OpportunityAnchor::Place(place_b)
-        );
-        assert_eq!(
-            expired[0].grounded.anchor,
-            OpportunityAnchor::Place(place_a)
-        );
+        assert_eq!(baseline[0].offer.anchor, OpportunityAnchor::Place(place_a));
+        assert_eq!(boosted[0].offer.anchor, OpportunityAnchor::Place(place_b));
+        assert_eq!(expired[0].offer.anchor, OpportunityAnchor::Place(place_a));
     }
 
     #[test]
@@ -4297,14 +4297,8 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(
-            boosted[0].grounded.anchor,
-            OpportunityAnchor::Place(place_b)
-        );
-        assert_eq!(
-            expired[0].grounded.anchor,
-            OpportunityAnchor::Place(place_a)
-        );
+        assert_eq!(boosted[0].offer.anchor, OpportunityAnchor::Place(place_b));
+        assert_eq!(expired[0].offer.anchor, OpportunityAnchor::Place(place_a));
     }
 
     #[test]
@@ -5304,8 +5298,15 @@ mod tests {
     #[test]
     fn loot_corpse_drive_provenance_participates_in_opportunity_strength_tiebreak() {
         let corpse = entity(3);
-        let acquire = RankedGoal {
-            grounded: goal(GoalKind::AcquireCommodity {
+        let acquire = AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                }),
+                anchor: OpportunityAnchor::None,
+            },
+            offer: goal(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
             }),
@@ -5328,9 +5329,19 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         };
-        let loot = RankedGoal {
-            grounded: goal(GoalKind::LootCorpse { corpse }),
+        let loot = AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::LootCorpse { corpse }),
+                anchor: OpportunityAnchor::None,
+            },
+            offer: goal(GoalKind::LootCorpse { corpse }),
             priority_class: GoalPriorityClass::Medium,
             motive_score: 250_000,
             provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
@@ -5350,6 +5361,12 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         };
 
         assert_eq!(
@@ -5361,8 +5378,15 @@ mod tests {
     #[test]
     fn loot_corpse_outranks_generic_self_consume_acquire_when_other_factors_tie() {
         let corpse = entity(3);
-        let acquire = RankedGoal {
-            grounded: goal(GoalKind::AcquireCommodity {
+        let acquire = AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: CommodityPurpose::SelfConsume,
+                }),
+                anchor: OpportunityAnchor::None,
+            },
+            offer: goal(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
             }),
@@ -5385,9 +5409,19 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Likely,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         };
-        let loot = RankedGoal {
-            grounded: goal(GoalKind::LootCorpse { corpse }),
+        let loot = AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::LootCorpse { corpse }),
+                anchor: OpportunityAnchor::None,
+            },
+            offer: goal(GoalKind::LootCorpse { corpse }),
             priority_class: GoalPriorityClass::Medium,
             motive_score: 250_000,
             provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
@@ -5407,6 +5441,12 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Likely,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         };
 
         assert_eq!(
@@ -5584,7 +5624,7 @@ mod tests {
         .into_ranked();
 
         assert_eq!(
-            ranked[0].grounded.key.kind,
+            ranked[0].offer.key.kind,
             GoalKind::ShareBelief {
                 listener,
                 topic: TellTopic::EntityBelief { subject },
@@ -5840,7 +5880,7 @@ mod tests {
         )
         .into_ranked();
         assert!(matches!(
-            enterprise_first[0].grounded.key.kind,
+            enterprise_first[0].offer.key.kind,
             GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread
             }
@@ -5870,7 +5910,7 @@ mod tests {
         )
         .into_ranked();
         assert!(matches!(
-            self_care_first[0].grounded.key.kind,
+            self_care_first[0].offer.key.kind,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread
             }
@@ -5916,7 +5956,7 @@ mod tests {
         .into_ranked();
 
         assert!(matches!(
-            ranked.first().map(|goal| goal.grounded.key.kind),
+            ranked.first().map(|goal| goal.offer.key.kind),
             Some(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread
             })
@@ -5966,23 +6006,23 @@ mod tests {
         .into_ranked();
 
         assert!(matches!(
-            ranked[0].grounded.key.kind,
+            ranked[0].offer.key.kind,
             GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread
             }
         ));
         assert!(matches!(
-            ranked[1].grounded.key.kind,
+            ranked[1].offer.key.kind,
             GoalKind::RestockCommodity {
                 commodity: CommodityKind::Water
             }
         ));
         assert!(matches!(
-            ranked[2].grounded.key.kind,
+            ranked[2].offer.key.kind,
             GoalKind::LootCorpse { corpse } if corpse == corpse_a
         ));
         assert!(matches!(
-            ranked[3].grounded.key.kind,
+            ranked[3].offer.key.kind,
             GoalKind::LootCorpse { corpse } if corpse == corpse_b
         ));
     }
@@ -6082,13 +6122,10 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(
-            ranked[0].grounded.key.kind,
-            GoalKind::TreatWounds { patient }
-        );
+        assert_eq!(ranked[0].offer.key.kind, GoalKind::TreatWounds { patient });
         assert_eq!(ranked[0].motive_score, 900 * 500);
         assert_eq!(
-            ranked[1].grounded.key.kind,
+            ranked[1].offer.key.kind,
             GoalKind::TreatWounds { patient: agent }
         );
         assert_eq!(ranked[1].motive_score, 100 * 500);
@@ -6121,14 +6158,11 @@ mod tests {
         .into_ranked();
 
         assert_eq!(
-            ranked[0].grounded.key.kind,
+            ranked[0].offer.key.kind,
             GoalKind::TreatWounds { patient: agent }
         );
         assert_eq!(ranked[0].motive_score, 900 * 500);
-        assert_eq!(
-            ranked[1].grounded.key.kind,
-            GoalKind::TreatWounds { patient }
-        );
+        assert_eq!(ranked[1].offer.key.kind, GoalKind::TreatWounds { patient });
         assert_eq!(ranked[1].motive_score, 100 * 500);
     }
 
@@ -6284,18 +6318,18 @@ mod tests {
         .into_ranked();
 
         assert!(matches!(
-            ranked[0].grounded.key.kind,
+            ranked[0].offer.key.kind,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread
             }
         ));
         assert!(matches!(
-            ranked[1].grounded.key.kind,
+            ranked[1].offer.key.kind,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Water
             }
         ));
-        assert!(matches!(ranked[2].grounded.key.kind, GoalKind::Sleep));
+        assert!(matches!(ranked[2].offer.key.kind, GoalKind::Sleep));
     }
 
     #[test]
@@ -6510,7 +6544,7 @@ mod tests {
         let wash = &ranked[1];
 
         assert_eq!(
-            bread.grounded.key.kind,
+            bread.offer.key.kind,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
             }
@@ -6518,7 +6552,7 @@ mod tests {
         assert_eq!(bread.priority_class, GoalPriorityClass::Critical);
         assert_eq!(bread.motive_score, 380_000);
 
-        assert_eq!(wash.grounded.key.kind, GoalKind::Wash);
+        assert_eq!(wash.offer.key.kind, GoalKind::Wash);
         assert_eq!(wash.priority_class, GoalPriorityClass::High);
         assert_eq!(wash.motive_score, 430_000);
         assert!(wash.motive_score > bread.motive_score);
@@ -7104,7 +7138,7 @@ mod tests {
         .into_ranked();
 
         assert_eq!(
-            ranked[0].grounded.key.kind,
+            ranked[0].offer.key.kind,
             GoalKind::EstablishBanditCamp { faction }
         );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
@@ -7136,15 +7170,12 @@ mod tests {
         .into_ranked();
 
         assert_eq!(
-            ranked[0].grounded.key.kind,
+            ranked[0].offer.key.kind,
             GoalKind::TreatWounds { patient: agent }
         );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
         assert_eq!(ranked[0].motive_score, 850);
-        assert_eq!(
-            ranked[1].grounded.key.kind,
-            GoalKind::ClaimOffice { office }
-        );
+        assert_eq!(ranked[1].offer.key.kind, GoalKind::ClaimOffice { office });
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[1].motive_score, 1000);
     }
@@ -7174,15 +7205,12 @@ mod tests {
         .into_ranked();
 
         assert_eq!(
-            ranked[0].grounded.key.kind,
+            ranked[0].offer.key.kind,
             GoalKind::TreatWounds { patient: agent }
         );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 1050);
-        assert_eq!(
-            ranked[1].grounded.key.kind,
-            GoalKind::ClaimOffice { office }
-        );
+        assert_eq!(ranked[1].offer.key.kind, GoalKind::ClaimOffice { office });
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[1].motive_score, 1000);
     }
@@ -7211,14 +7239,11 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(
-            ranked[0].grounded.key.kind,
-            GoalKind::ClaimOffice { office }
-        );
+        assert_eq!(ranked[0].offer.key.kind, GoalKind::ClaimOffice { office });
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].motive_score, 1);
         assert_eq!(
-            ranked[1].grounded.key.kind,
+            ranked[1].offer.key.kind,
             GoalKind::TreatWounds { patient: agent }
         );
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::Low);
@@ -7259,9 +7284,18 @@ mod tests {
         priority_class: GoalPriorityClass,
         motive: u32,
         feasibility: crate::feasibility::FeasibilityHint,
-    ) -> crate::RankedGoal {
-        crate::RankedGoal {
-            grounded: GroundedGoal {
+    ) -> crate::AgendaEntry {
+        crate::AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey {
+                    kind,
+                    commodity: None,
+                    entity: None,
+                    place: None,
+                },
+                anchor: worldwake_core::OpportunityAnchor::None,
+            },
+            offer: GoalOffer {
                 anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey {
                     kind,
@@ -7271,6 +7305,11 @@ mod tests {
                 },
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class,
             motive_score: motive,
@@ -7278,6 +7317,12 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
@@ -7340,7 +7385,7 @@ mod tests {
         ];
 
         let ordered = super::OrderedRanked::from_sorted_for_test(&ranked);
-        let found = ordered.find(|goal| matches!(goal.grounded.key.kind, GoalKind::Sleep));
+        let found = ordered.find(|goal| matches!(goal.offer.key.kind, GoalKind::Sleep));
 
         assert_eq!(found, Some(&ranked[1]));
     }
@@ -7541,7 +7586,7 @@ mod tests {
         goals.sort_by(super::compare_ranked_goals);
 
         assert!(matches!(
-            goals[0].grounded.key.kind,
+            goals[0].offer.key.kind,
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
@@ -7552,7 +7597,6 @@ mod tests {
     #[test]
     fn explain_ranked_goal_order_reports_decisive_dimension() {
         use crate::feasibility::FeasibilityHint;
-
         let winner = make_ranked_goal(
             GoalKind::Sleep,
             GoalPriorityClass::High,
@@ -7649,7 +7693,6 @@ mod tests {
     #[test]
     fn explain_ranked_goal_order_reports_priority_class_for_political_over_social() {
         use crate::feasibility::FeasibilityHint;
-
         let office = entity(7);
         let listener = entity(8);
         let political = make_ranked_goal(
@@ -7825,7 +7868,7 @@ mod tests {
         .into_ranked();
 
         assert_eq!(
-            ranked[0].grounded.key.kind,
+            ranked[0].offer.key.kind,
             GoalKind::ExploreLocation {
                 target_place,
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(

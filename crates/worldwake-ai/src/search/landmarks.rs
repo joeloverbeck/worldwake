@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{CommodityKind, EntityId, GoalKind, HomeostaticNeedId, Quantity};
 use worldwake_sim::{InventoryBeliefView, ProfileBeliefView, RecipeRegistry};
 
-use crate::{GroundedGoal, PlanningEntityRef, PlanningState};
+use crate::{GoalOffer, PlanningEntityRef, PlanningState};
 
 use super::candidates::SearchCandidate;
 
@@ -105,7 +105,7 @@ pub(super) fn planning_operator_from_transition(
 }
 
 pub(super) fn goal_facts_from_goal(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
 ) -> BTreeSet<PlanningFact> {

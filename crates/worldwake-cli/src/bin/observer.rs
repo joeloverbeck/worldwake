@@ -16,8 +16,9 @@ use worldwake_ai::decision_trace::{
     PlanSearchOutcome, TargetBeliefPresence,
 };
 use worldwake_ai::{
-    ActionTraceSnapshot, AgentTickDriver, CriticalWindowReport, ExhaustionSummary,
-    LocalSurvivalStateSummary, SurvivalForensicExtractor,
+    ActionTraceSnapshot, AgendaEntry, AgendaState, AgentTickDriver, CriticalWindowReport,
+    ExhaustionSummary, KillCondition, LocalSurvivalStateSummary, RevivalTrigger,
+    SurvivalForensicExtractor,
 };
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints};
@@ -2597,6 +2598,103 @@ fn death_summary_line(world: &worldwake_core::World, agent_id: EntityId) -> Opti
         })
 }
 
+fn format_agenda_goal(entry: &AgendaEntry) -> String {
+    format!("{:?}", entry.key.goal_key.kind)
+}
+
+fn format_revival_trigger(world: &worldwake_core::World, trigger: &RevivalTrigger) -> String {
+    match trigger {
+        RevivalTrigger::CommodityAvailable { place, kind, min } => format!(
+            "commodity {:?} x{} at {}",
+            kind,
+            min.0,
+            entity_display_name(world, *place)
+        ),
+        RevivalTrigger::TargetPresent { target, place } => format!(
+            "target {} at {}",
+            entity_display_name(world, *target),
+            entity_display_name(world, *place)
+        ),
+        RevivalTrigger::RouteLearned { from, to } => format!(
+            "route {} -> {}",
+            entity_display_name(world, *from),
+            entity_display_name(world, *to)
+        ),
+        RevivalTrigger::CounterpartyAvailable {
+            counterparty,
+            place,
+        } => format!(
+            "counterparty {} at {}",
+            entity_display_name(world, *counterparty),
+            entity_display_name(world, *place)
+        ),
+        RevivalTrigger::TickElapsed { at_tick } => format!("tick {}", at_tick.0),
+    }
+}
+
+fn format_kill_condition(world: &worldwake_core::World, kill: &KillCondition) -> String {
+    match kill {
+        KillCondition::TickExpiry { at_tick } => format!("expires at tick {}", at_tick.0),
+        KillCondition::ObligationResolved { expectation } => {
+            format!("until expectation {expectation:?} resolves")
+        }
+        KillCondition::TargetDead { target } => {
+            format!("until {} dies", entity_display_name(world, *target))
+        }
+        KillCondition::External => "external".to_string(),
+    }
+}
+
+fn write_agenda_state_summary(
+    out: &mut String,
+    world: &worldwake_core::World,
+    agenda_state: &AgendaState,
+) {
+    let committed = agenda_state
+        .committed
+        .as_ref()
+        .map_or_else(|| "none".to_string(), format_agenda_goal);
+    writeln!(
+        out,
+        "**Agenda state**: committed={committed}, pending={}, suspended={}",
+        agenda_state.pending.len(),
+        agenda_state.suspended.len()
+    )
+    .unwrap();
+
+    if !agenda_state.pending.is_empty() {
+        writeln!(out, "**Pending goals**:").unwrap();
+        for entry in agenda_state.pending.values() {
+            let trigger = entry.revival_trigger.as_ref().map_or_else(
+                || "none".to_string(),
+                |trigger| format_revival_trigger(world, trigger),
+            );
+            writeln!(
+                out,
+                "- {} | revive on {}",
+                format_agenda_goal(entry),
+                trigger
+            )
+            .unwrap();
+        }
+    }
+
+    if !agenda_state.suspended.is_empty() {
+        writeln!(out, "**Suspended goals**:").unwrap();
+        for entry in agenda_state.suspended.values() {
+            writeln!(
+                out,
+                "- {} | {}",
+                format_agenda_goal(entry),
+                format_kill_condition(world, &entry.kill_condition)
+            )
+            .unwrap();
+        }
+    }
+
+    writeln!(out).unwrap();
+}
+
 #[allow(clippy::too_many_arguments)]
 fn format_report(
     scenario_path: &str,
@@ -3169,13 +3267,17 @@ fn format_report(
     if let Some(sink) = driver.trace_sink() {
         for (agent_id, agent_name) in agents {
             let traces = sink.traces_for(*agent_id);
+            let runtime = driver.runtime(*agent_id);
+            writeln!(out, "### {agent_name} ({} decision ticks)\n", traces.len()).unwrap();
+
+            if let Some(runtime) = runtime {
+                write_agenda_state_summary(&mut out, world, &runtime.agenda_state);
+            }
+
             if traces.is_empty() {
-                writeln!(out, "### {agent_name}\n").unwrap();
                 writeln!(out, "No decision traces recorded.\n").unwrap();
                 continue;
             }
-
-            writeln!(out, "### {agent_name} ({} decision ticks)\n", traces.len()).unwrap();
 
             // Aggregate statistics
             let mut plans_found: u32 = 0;
@@ -3965,9 +4067,10 @@ mod tests {
         SearchExpansionSummary, SelectionTrace, TargetBeliefPresence,
     };
     use worldwake_ai::{
-        ActiveActionSummary, AgentTickDriver, BlockerSummary, CriticalWindowFrame,
-        CriticalWindowReport, DirtySet, ExhaustionSummary, GoalPriorityClass,
-        LocalSurvivalStateSummary, RankedGoalSnapshot, SelectedPlanSource,
+        ActiveActionSummary, AgendaEntry, AgendaEntrySnapshot, AgendaOrigin, AgendaPhase,
+        AgentDecisionRuntime, AgentTickDriver, BlockerSummary, CriticalWindowFrame,
+        CriticalWindowReport, DirtySet, ExhaustionSummary, GoalOffer, GoalPriorityClass,
+        KillCondition, LocalSurvivalStateSummary, RevivalTrigger, SelectedPlanSource,
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
@@ -4414,7 +4517,7 @@ mod tests {
                 need_value: Permille::new(940).expect("need value"),
                 selected_goal: Some(GoalKey::from(GoalKind::Sleep)),
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
-                top_competitors: vec![RankedGoalSnapshot {
+                top_competitors: vec![AgendaEntrySnapshot {
                     goal: GoalKey::from(GoalKind::Sleep),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 940,
@@ -4433,6 +4536,49 @@ mod tests {
                 local_authoritative_summary: sample_local_survival_state_summary(),
             }],
         }
+    }
+
+    fn sample_agenda_entry(
+        goal: GoalKey,
+        anchor: OpportunityAnchor,
+        phase: AgendaPhase,
+        tick: Tick,
+    ) -> AgendaEntry {
+        AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor,
+            },
+            offer: GoalOffer {
+                key: goal,
+                anchor,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
+            },
+            phase,
+            origin: AgendaOrigin::NeedDrive,
+            introduced_tick: tick,
+            last_reconsidered_tick: tick,
+            revival_trigger: None,
+            kill_condition: KillCondition::External,
+            priority_class: GoalPriorityClass::Background,
+            motive_score: 250,
+            provenance: None,
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: worldwake_ai::FeasibilityHint::Uncertain,
+        }
+    }
+
+    fn driver_with_runtime(agent: EntityId, runtime: AgentDecisionRuntime) -> AgentTickDriver {
+        let mut driver = AgentTickDriver::new();
+        driver.set_runtime(agent, runtime);
+        driver
     }
 
     fn agent_stats_with_locations(name: &str, locations: &[EntityId]) -> AgentStats {
@@ -5029,6 +5175,88 @@ mod tests {
         assert!(
             report.contains("**Affordance changes** (tick 5): +harvest, -sleep (at Unknown#20)")
         );
+    }
+
+    #[test]
+    fn format_report_renders_agenda_state_summary() {
+        let world = World::new(build_prototype_world()).expect("world");
+        let registry = RecipeRegistry::new();
+        let agent = entity(1);
+        let pending_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Water,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let suspended_goal = GoalKey::from(GoalKind::MoveCargo {
+            commodity: CommodityKind::Bread,
+            destination: entity(44),
+        });
+
+        let mut pending = sample_agenda_entry(
+            pending_goal,
+            OpportunityAnchor::Place(entity(18)),
+            AgendaPhase::Pending,
+            Tick(12),
+        );
+        pending.revival_trigger = Some(RevivalTrigger::CounterpartyAvailable {
+            counterparty: entity(77),
+            place: entity(18),
+        });
+
+        let mut suspended = sample_agenda_entry(
+            suspended_goal,
+            OpportunityAnchor::Entity(entity(88)),
+            AgendaPhase::Suspended,
+            Tick(13),
+        );
+        suspended.kill_condition = KillCondition::TickExpiry { at_tick: Tick(25) };
+
+        let mut driver = driver_with_runtime(
+            agent,
+            AgentDecisionRuntime {
+                agenda_state: worldwake_ai::AgendaState {
+                    committed: Some(sample_agenda_entry(
+                        GoalKey::from(GoalKind::Sleep),
+                        OpportunityAnchor::Place(entity(17)),
+                        AgendaPhase::Committed,
+                        Tick(11),
+                    )),
+                    pending: BTreeMap::from([(pending.key, pending)]),
+                    suspended: BTreeMap::from([(suspended.key, suspended)]),
+                },
+                ..AgentDecisionRuntime::default()
+            },
+        );
+        driver.enable_tracing();
+
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &driver,
+            &[],
+            false,
+            &[],
+            0,
+        );
+
+        assert!(report.contains("**Agenda state**: committed=Sleep, pending=1, suspended=1"));
+        assert!(report.contains("**Pending goals**:"));
+        assert!(report.contains(
+            "- AcquireCommodity { commodity: Water, purpose: SelfConsume } | revive on counterparty Unknown#77 at Unknown#18"
+        ));
+        assert!(report.contains("**Suspended goals**:"));
+        assert!(report.contains(
+            "- MoveCargo { commodity: Bread, destination: EntityId { slot: 44, generation: 0 } } | expires at tick 25"
+        ));
     }
 
     #[test]

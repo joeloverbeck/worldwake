@@ -5,7 +5,7 @@ use crate::goal_model::{
 };
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
-    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind,
+    GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedStep, PlannerOpKind,
     PlannerOpSemantics, PlanningEntityRef, apply_hypothetical_transition, build_plan_expectations,
     build_plan_guard,
 };
@@ -41,7 +41,7 @@ fn resolve_step_target_place(
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn build_successor<'snapshot>(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     node: &SearchNode<'snapshot>,
@@ -69,7 +69,7 @@ pub(super) fn build_successor<'snapshot>(
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn build_successor_detailed<'snapshot>(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     node: &SearchNode<'snapshot>,
@@ -266,7 +266,7 @@ fn root_candidate_payload_error(
 }
 
 pub(super) fn terminal_kind(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &crate::PlanningState<'_>,
     step: &PlannedStep,
     tactical_goal: Option<&TacticalGoal>,

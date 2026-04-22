@@ -415,24 +415,23 @@ Follow-on to Phase 8. Deferred from the Phase 8 scope because these specs depend
 ```text
 S114 ✅ archived (hard deps on S109, S110, S113)
   │
-  └── S115 (hard deps on S110, S112, S114; soft dep on S123)
+  └── S115 ✅ archived (hard deps on S110, S112, S114; soft dep on S123)
 ```
 
 ### Active Execution Steps
 
 **Completed in Wave 1**:
 - **S114**: ✅ COMPLETED — archived at [archive/specs/S114-plan-step-guards.md](/home/joeloverbeck/projects/worldwake/archive/specs/S114-plan-step-guards.md). Landed the staged plan-step guard and expectation-monitoring wave across the S114 ticket family: `PlanGuard` / `PlanExpectation`, `ExpectationBasis::PlanStepCompletion`, widened `ExpectationMismatchPayload`, declarative `ActionDef` templates, AI-side mismatch emission, and the truthful paired proof surface for merchant-departure guard breach (golden branch-selection/local trade binding plus focused `agent_tick` mismatch/discrepancy proof).
+- **S115**: ✅ COMPLETED — archived at [archive/specs/S115-agenda-manager.md](/home/joeloverbeck/projects/worldwake/archive/specs/S115-agenda-manager.md). Landed `AgendaProfile`, ai-runtime `AgendaState`, the `GoalOffer` / `AgendaEntry` rename, the `tick_agenda(...)` lifecycle manager, the D4A feasibility-rejection classifier, observer agenda-state rendering, and the later seller-return trade follow-on fixes needed to prove pending parking, revival, and eventual resumed purchase completion. The stronger `agenda_tick_system before candidate generation` plan was falsified on the live branch; the truthful shipped seam runs `tick_agenda(...)` after ranking while downstream planning still consumes the fresh ranked feed and executable commitment still finalizes at selected-plan adoption.
 
-**Remaining active work**:
-- **S115**: Agenda Manager with Goal Lifecycle — `AgendaState` with `committed`/`pending`/`suspended` entries, each with origin, freshness, revival trigger, kill condition; rename `GroundedGoal` → `GoalOffer`, `RankedGoal` → `AgendaEntry`; new `agenda_tick_system` SystemFn; margin-based commit (S74) reads the agenda manager. Now also owns the *feasibility-rejection lifecycle classifier* (D4A) that decodes S112's `RejectedBeforeSearch { reason }` into `Satisfied` / `InfeasibleUntil { trigger }` / `Dead` lifecycle states, replacing the S112-era `search_order` special case that kept rejected committed opportunities in the search queue.
-  - soft dep on S123: if S123 lands first, S115's tick_agenda consumes `OrderedRanked<'_>` directly; otherwise S115 includes the migration in its own ticket set.
+No active Phase 9 specs remain.
 
 ### Phase 9 Gate
 
-- [ ] Both specs reassessed post-Phase-7/8 and ticket-decomposed
+- [x] Both specs reassessed post-Phase-7/8 and ticket-decomposed
 - [x] S114 implemented: guard breaches short-circuit revalidation before affordance matching; `ExpectationMismatch` events appear in event log
-- [ ] S115 implemented: committed goals persist across ticks deterministically; pending/suspended surfaced in observer output
-- [ ] S115 D4A classifier lands: the S112 cargo-satisfaction assertion and `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` both pass via the lifecycle classifier, not via ad-hoc `build_candidate_plans` special cases
+- [x] S115 implemented: committed goals persist across ticks deterministically; pending/suspended surfaced in observer output
+- [x] S115 D4A classifier lands: the S112 cargo-satisfaction assertion and `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` both pass via the lifecycle classifier, not via ad-hoc `build_candidate_plans` special cases
 - [ ] Deterministic replay of scenarios produces identical agenda state transitions
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing

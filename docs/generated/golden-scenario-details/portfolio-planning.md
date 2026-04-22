@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 167: Portfolio Rejects Infeasible Survival And Commitment Slots
 
-- Source: `golden_portfolio_planning.rs:183`
+- Source: `golden_portfolio_planning.rs:211`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production

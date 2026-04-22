@@ -1990,16 +1990,16 @@ fn observed_evidence_entities(evidence: &EvidenceRef) -> BTreeSet<EntityId> {
 mod tests {
     use super::WorldTxn;
     use crate::{
-        AcquisitionExhaustionTracker, AgentBeliefStore, ArtifactPostingProfile, BeliefStoreDiff,
-        BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory, CognitiveProfile,
-        CommunicationProfile, DemandMemory, DisposalProfile, DriveEscalationProfile,
-        EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, FactionData,
-        FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-        InstitutionalRecordEntry, IntentionDispositionProfile, MerchandiseProfile,
-        ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState,
-        PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, PreferenceProfile,
-        RecordData, RecordEntryId, RecordKind, SubstitutePreferences, SuccessionLaw, TellProfile,
-        TradeDispositionProfile, UtilityProfile,
+        AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, ArtifactPostingProfile,
+        BeliefStoreDiff, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
+        CognitiveProfile, CommunicationProfile, DemandMemory, DisposalProfile,
+        DriveEscalationProfile, EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile,
+        FactionData, FactionPurpose, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, InstitutionalRecordEntry, IntentionDispositionProfile,
+        MerchandiseProfile, ObligationSatiationProfile, OfficeData, OfficeForceProfile,
+        OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
+        PreferenceProfile, RecordData, RecordEntryId, RecordKind, SubstitutePreferences,
+        SuccessionLaw, TellProfile, TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2459,6 +2459,12 @@ mod tests {
                     component_kind: ComponentKind::CognitiveProfile,
                     before: None,
                     after: ComponentValue::CognitiveProfile(CognitiveProfile::default()),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::AgendaProfile,
+                    before: None,
+                    after: ComponentValue::AgendaProfile(AgendaProfile::default()),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

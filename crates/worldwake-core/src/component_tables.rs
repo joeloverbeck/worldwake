@@ -1,7 +1,7 @@
 //! Explicit typed component storage.
 
 use crate::{
-    EntityId,
+    AgendaProfile, EntityId,
     bandit_camp::{BanditCamp, BanditFactionPolicy},
     belief::{AgentBeliefStore, PerceptionProfile, TellProfile},
     blocker_memory::BlockerMemory,
@@ -27,7 +27,6 @@ use crate::{
     exploration::{AcquisitionExhaustionTracker, ExplorationProfile},
     factions::FactionData,
     institutional::RecordData,
-    intention::ActiveGoal,
     intention_disposition::IntentionDispositionProfile,
     intention_frame::IntentionFrame,
     items::{Container, GroundSince, ItemLot, UniqueItem},

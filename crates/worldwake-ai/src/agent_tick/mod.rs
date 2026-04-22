@@ -12,9 +12,9 @@ use active_action::{
 use candidates::abandon_expired_facility_queues;
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
-    enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_active_goal,
-    persist_blocked_memory, persist_discrepancy_memory, persist_facility_queue_intents,
-    persist_intention_frame, plan_finished,
+    enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_blocked_memory,
+    persist_discrepancy_memory, persist_facility_queue_intents, persist_intention_frame,
+    plan_finished,
 };
 use frame::{
     AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
@@ -40,18 +40,21 @@ use crate::decision_trace::{
     SelectionTrace,
 };
 use crate::{
-    AcceptedRepairProvenance, AgentDecisionRuntime, PlannerOpSemantics, authoritative_target,
-    build_semantics_table,
+    AcceptedRepairProvenance, AgendaPhase, AgendaTickPolicy, AgentDecisionRuntime, KillCondition,
+    PlannerOpSemantics,
+    agenda_manager::goal_post_conditions_already_satisfied,
+    authoritative_target, build_semantics_table,
     failure_handling::{classify_discrepancy, record_failure_classification},
     frame_runtime_snapshot,
     plan_step_expectations::{expire_plan_step_expectations, persist_expectation_store_update},
     ranking::OrderedRanked,
+    tick_agenda,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
+    ActionDefId, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
     DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget, GoalAbandonReason,
     GoalAbandonedPayload, GoalOfferedPayload, GoalSuppressedPayload, GoalSuspendedPayload,
     GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick, LearnedOpportunityMemory,
@@ -107,6 +110,19 @@ impl AgentTickDriver {
     #[must_use]
     pub fn trace_sink(&self) -> Option<&DecisionTraceSink> {
         self.trace_sink.as_ref()
+    }
+
+    /// Read-only access to persisted per-agent runtime state for diagnostic
+    /// and observer tooling.
+    #[must_use]
+    pub fn runtime(&self, agent: EntityId) -> Option<&AgentDecisionRuntime> {
+        self.runtime_by_agent.get(&agent)
+    }
+
+    /// Replace the persisted runtime snapshot for one agent. Used by tooling
+    /// and harnesses that need to seed or restore a specific runtime state.
+    pub fn set_runtime(&mut self, agent: EntityId, runtime: AgentDecisionRuntime) {
+        self.runtime_by_agent.insert(agent, runtime);
     }
 
     /// Mutable access to the trace sink (for tests).
@@ -526,10 +542,10 @@ fn infer_goal_switch_reason(
 ) -> GoalSwitchReason {
     let previous = ranked_candidates
         .iter()
-        .find(|candidate| candidate.grounded.key == previous_goal);
+        .find(|candidate| candidate.offer.key == previous_goal);
     let new = ranked_candidates
         .iter()
-        .find(|candidate| candidate.grounded.key == new_goal);
+        .find(|candidate| candidate.offer.key == new_goal);
     match (previous, new) {
         (Some(previous), Some(new)) if new.priority_class > previous.priority_class => {
             GoalSwitchReason::HigherPriorityGoal
@@ -709,9 +725,12 @@ fn process_agent(
     // Read intention frame from authoritative component.
     let original_frame = ctx.world.get_component_intention_frame(agent).cloned();
     let mut current_frame = original_frame.clone();
-    // Read active goal from authoritative component.
-    let original_active_goal = ctx.world.get_component_active_goal(agent).copied();
-    let mut current_active_goal = original_active_goal;
+    let runtime = runtime_by_agent.entry(agent).or_default();
+    let original_agenda_state = runtime.agenda_state.clone();
+    // Read active goal from authoritative agenda state.
+    let original_active_goal = original_agenda_state.committed.clone();
+    let mut current_agenda_state = original_agenda_state.clone();
+    let mut current_active_goal = current_agenda_state.committed.clone();
     // Read facility queue intents from authoritative component.
     let original_facility_intents = ctx
         .world
@@ -719,7 +738,6 @@ fn process_agent(
         .cloned()
         .unwrap_or_default();
     let mut current_facility_intents = original_facility_intents.clone();
-    let runtime = runtime_by_agent.entry(agent).or_default();
     let original_plan_goal = runtime.current_plan.as_ref().map(|plan| plan.goal);
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
@@ -743,7 +761,7 @@ fn process_agent(
             dead
         };
         if dead_agent {
-            if let Some(goal_key) = original_active_goal.map(|goal| goal.goal_key) {
+            if let Some(goal_key) = original_active_goal.map(|goal| goal.key.goal_key) {
                 emit_decision_event(
                     ctx.event_log,
                     tick,
@@ -768,7 +786,7 @@ fn process_agent(
                     });
                 }
             }
-            current_active_goal = None;
+            current_agenda_state.committed = None;
             current_facility_intents = ContentionIntents::default();
             runtime.current_plan = None;
             runtime.current_step_index = 0;
@@ -793,14 +811,7 @@ fn process_agent(
                 original_frame.as_ref(),
                 current_frame.as_ref(),
             )?;
-            persist_active_goal(
-                ctx.world,
-                ctx.event_log,
-                agent,
-                tick,
-                original_active_goal.as_ref(),
-                current_active_goal.as_ref(),
-            )?;
+            runtime.agenda_state = current_agenda_state.clone();
             persist_facility_queue_intents(
                 ctx.world,
                 ctx.event_log,
@@ -839,6 +850,7 @@ fn process_agent(
     if let Some((goal_key, reason)) = reconciliation.replan_trigger.clone() {
         emit_replan_triggered(ctx.event_log, tick, agent, goal_key, reason);
     }
+    current_agenda_state.committed = current_active_goal.clone();
     if let Some(summary) = reconciliation.completed_plan
         && let Some(payload) = record_repair_memory_from_completed_plan(
             &mut repair_memory,
@@ -943,7 +955,7 @@ fn process_agent(
                     current_facility_intents.intents.clear();
                     runtime.dirty.insert(crate::DirtySet::ASSUMPTION_FAILED);
                     if let Some(goal_key) = original_plan_goal
-                        .or(current_active_goal.as_ref().map(|goal| goal.goal_key))
+                        .or(current_active_goal.as_ref().map(|goal| goal.key.goal_key))
                     {
                         let reason = PlanInvalidationReason::AssumptionFailed { assumption };
                         emit_plan_invalidated(ctx.event_log, tick, agent, goal_key, reason);
@@ -961,7 +973,7 @@ fn process_agent(
     }
 
     // ── Read phase: candidate generation + ranking ──
-    let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
+    let active_goal_key = current_active_goal.as_ref().map(|ag| ag.key.goal_key);
     let read_result = refresh_runtime_for_read_phase_with_memories(
         ctx.world,
         ctx.scheduler,
@@ -1105,9 +1117,6 @@ fn process_agent(
             );
         }
     }
-    let ordered = crate::ranking::sort_in_place(&mut ranked_candidates);
-
-    let active_action = active_action_for_agent(ctx, agent);
     let frame_switch_margin = {
         let jc = ctx.world.get_component_intention_frame(agent);
         let view = runtime_belief_view(
@@ -1120,10 +1129,60 @@ fn process_agent(
         effective_goal_switch_margin(&view, agent, jc, cognitive)
     };
     let default_switch_margin = cognitive.switch_margin;
+    let agenda_profile = ctx
+        .world
+        .get_component_agenda_profile(agent)
+        .expect("universal AgendaProfile");
+    let ordered = crate::ranking::sort_in_place(&mut ranked_candidates);
+    let _agenda_transitions = {
+        let view = runtime_belief_view(
+            agent,
+            ctx.world,
+            ctx.scheduler,
+            action_defs,
+            recipe_registry,
+        );
+        tick_agenda(
+            agent,
+            &mut current_agenda_state,
+            ordered.iter().cloned().collect(),
+            &view,
+            &discrepancy_memory,
+            AgendaTickPolicy {
+                profile: agenda_profile,
+                switch_margin: frame_switch_margin,
+            },
+            tick,
+        )
+    };
+    let view = runtime_belief_view(
+        agent,
+        ctx.world,
+        ctx.scheduler,
+        action_defs,
+        recipe_registry,
+    );
+    if let Some(goal) = current_agenda_state
+        .committed
+        .as_ref()
+        .filter(|goal| goal.phase == AgendaPhase::Committed)
+        .filter(|goal| goal_post_conditions_already_satisfied(agent, &goal.offer, &view))
+        .cloned()
+    {
+        let mut goal = goal;
+        goal.phase = AgendaPhase::Suspended;
+        goal.revival_trigger = None;
+        goal.kill_condition = KillCondition::External;
+        current_agenda_state.committed = None;
+        current_agenda_state.suspended.insert(goal.key, goal);
+    }
+    current_active_goal = current_agenda_state.committed.clone();
+    let active_action = active_action_for_agent(ctx, agent);
 
     // ── Active-action path: interrupt evaluation ──
     let outcome_trace = if let Some(active_action) = active_action {
-        let active_goal_before_interrupt = current_active_goal.as_ref().map(|goal| goal.goal_key);
+        let active_goal_before_interrupt =
+            current_active_goal.as_ref().map(|goal| goal.key.goal_key);
         let interrupt_decision = handle_active_action_phase(
             ctx,
             runtime,
@@ -1159,6 +1218,7 @@ fn process_agent(
                 },
             );
         }
+        current_agenda_state.committed = current_active_goal.clone();
 
         tracing.then(|| {
             let action_name = action_defs
@@ -1169,7 +1229,7 @@ fn process_agent(
                 let challenger = ordered.first()?;
                 let current = ordered
                     .iter()
-                    .find(|candidate| candidate.grounded.key == current_goal)?;
+                    .find(|candidate| candidate.offer.key == current_goal)?;
                 crate::ranking::explain_ranked_goal_order(challenger, current)
             });
             DecisionOutcome::ActiveAction {
@@ -1185,7 +1245,7 @@ fn process_agent(
         })
     } else {
         // ── Planning path ──
-        let previous_goal = current_active_goal.as_ref().map(|ag| ag.goal_key);
+        let previous_goal = current_active_goal.as_ref().map(|ag| ag.key.goal_key);
 
         // Drain action start failures for this agent from the scheduler.
         let agent_failures: Vec<ActionStartFailureSummary> = start_failures
@@ -1211,12 +1271,12 @@ fn process_agent(
             ctx.event_log,
             ctx.scheduler,
             runtime,
-            &mut current_active_goal,
+            &mut current_agenda_state,
             &mut current_frame,
             &mut current_facility_intents,
             agent,
             &ordered,
-            &discrepancy_memory,
+            &mut discrepancy_memory,
             &blocked_memory,
             default_switch_margin,
             frame_switch_margin,
@@ -1231,6 +1291,7 @@ fn process_agent(
             previous_goal,
             ctx.recipe_registry,
         );
+        current_active_goal = current_agenda_state.committed.clone();
         if !pending_tracker_increments.is_empty() {
             apply_acquisition_exhaustion_tracker_increments(
                 ctx.world,
@@ -1261,7 +1322,7 @@ fn process_agent(
                 et.enqueued_step = Some(summarize_step(&step, action_defs));
             }
 
-            let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
+            let active_goal_key = current_active_goal.as_ref().map(|ag| ag.key.goal_key);
             let exec_result = enqueue_valid_step_or_handle_failure(
                 ctx,
                 runtime,
@@ -1408,6 +1469,36 @@ fn process_agent(
         })
     };
 
+    let satisfied_view = runtime_belief_view(
+        agent,
+        ctx.world,
+        ctx.scheduler,
+        action_defs,
+        recipe_registry,
+    );
+    if let Some(goal) = current_active_goal
+        .as_ref()
+        .filter(|goal| goal.phase == AgendaPhase::Committed)
+        .filter(|goal| goal_post_conditions_already_satisfied(agent, &goal.offer, &satisfied_view))
+        .cloned()
+    {
+        let mut goal = goal;
+        goal.phase = AgendaPhase::Suspended;
+        goal.revival_trigger = None;
+        goal.kill_condition = KillCondition::External;
+        current_active_goal = None;
+        current_agenda_state.committed = None;
+        current_agenda_state.suspended.insert(goal.key, goal);
+        current_frame = None;
+        current_facility_intents.intents.clear();
+        runtime.current_plan = None;
+        runtime.current_step_index = 0;
+        runtime.step_in_flight = false;
+        runtime.materialization_bindings.clear();
+        runtime.pending_repair_context = None;
+        runtime.accepted_repair = None;
+    }
+
     // ── Per-tick stall increment ──
     // If the frame is Active and no progress was recorded this tick, increment
     // stalled_ticks. Progress resets happen inside advance_completed_step via
@@ -1539,28 +1630,34 @@ fn process_agent(
         );
     }
 
-    if let Some(previous_goal) = original_active_goal.map(|goal| goal.goal_key) {
+    if let Some(previous_goal) = original_active_goal.map(|goal| goal.key.goal_key) {
         let preserved_as_suspended = current_frame.as_ref().is_some_and(|frame| {
             frame.goal == previous_goal
                 && matches!(frame.state, worldwake_core::FrameState::Suspended { .. })
         });
+        let preserved_in_agenda = current_agenda_state
+            .pending
+            .values()
+            .chain(current_agenda_state.suspended.values())
+            .any(|goal| goal.key.goal_key == previous_goal);
         let still_active = current_active_goal
             .as_ref()
-            .is_some_and(|goal| goal.goal_key == previous_goal);
-        if !preserved_as_suspended && !still_active {
-            let abandon_reason =
-                if let Some(new_goal) = current_active_goal.map(|goal| goal.goal_key) {
-                    GoalAbandonReason::GoalSwitched {
-                        new_goal,
-                        switch_kind: infer_goal_switch_reason(previous_goal, new_goal, &ordered),
-                    }
-                } else if let Some(reason) = runtime.last_frame_clear_reason {
-                    GoalAbandonReason::FrameCleared { reason }
-                } else {
-                    GoalAbandonReason::FrameCleared {
-                        reason: FrameClearReason::LostPlan,
-                    }
-                };
+            .is_some_and(|goal| goal.key.goal_key == previous_goal);
+        if !preserved_as_suspended && !preserved_in_agenda && !still_active {
+            let abandon_reason = if let Some(new_goal) =
+                current_active_goal.as_ref().map(|goal| goal.key.goal_key)
+            {
+                GoalAbandonReason::GoalSwitched {
+                    new_goal,
+                    switch_kind: infer_goal_switch_reason(previous_goal, new_goal, &ordered),
+                }
+            } else if let Some(reason) = runtime.last_frame_clear_reason {
+                GoalAbandonReason::FrameCleared { reason }
+            } else {
+                GoalAbandonReason::FrameCleared {
+                    reason: FrameClearReason::LostPlan,
+                }
+            };
             emit_decision_event(
                 ctx.event_log,
                 tick,
@@ -1576,6 +1673,8 @@ fn process_agent(
     }
 
     // ── Finalize (runs for both paths) ──
+    current_agenda_state.committed = current_active_goal.clone();
+    runtime.agenda_state = current_agenda_state.clone();
     persist_intention_frame(
         ctx.world,
         ctx.event_log,
@@ -1583,14 +1682,6 @@ fn process_agent(
         tick,
         original_frame.as_ref(),
         current_frame.as_ref(),
-    )?;
-    persist_active_goal(
-        ctx.world,
-        ctx.event_log,
-        agent,
-        tick,
-        original_active_goal.as_ref(),
-        current_active_goal.as_ref(),
     )?;
     persist_facility_queue_intents(
         ctx.world,
@@ -1713,10 +1804,11 @@ pub(super) fn update_exploration_counter_for_adopted_goal(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
     agent: EntityId,
-    active_goal: Option<&ActiveGoal>,
+    active_goal: Option<&crate::AgendaEntry>,
     tick: Tick,
 ) -> Result<(), TickInputError> {
-    let Some(active_goal) = active_goal.filter(|active_goal| active_goal.adopted_at == tick) else {
+    let Some(active_goal) = active_goal.filter(|active_goal| active_goal.introduced_tick == tick)
+    else {
         return Ok(());
     };
     let Some(mut profile) = world.get_component_exploration_profile(agent).copied() else {
@@ -1724,7 +1816,7 @@ pub(super) fn update_exploration_counter_for_adopted_goal(
     };
 
     let mut proactive_commit_tick = None;
-    match active_goal.goal_key.kind {
+    match active_goal.key.goal_key.kind {
         worldwake_core::GoalKind::ExploreLocation {
             motivating_need, ..
         } => {

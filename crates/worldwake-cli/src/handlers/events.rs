@@ -278,6 +278,7 @@ mod tests {
                 perception_profile: None,
                 tell_profile: None,
                 cognitive_profile: None,
+                agenda_profile: None,
                 execution_budget: None,
                 epistemic_disposition: None,
                 intention_disposition: None,

@@ -8,15 +8,16 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile, CommodityDecayMap,
-    CommodityValuationProfile, CommunicationProfile, ContentionDispositionProfile, ControlSource,
-    DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
-    EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeeds,
-    IntentionDispositionProfile, JusticeDispositionProfile, LastSeenMemory, MetabolismProfile,
-    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile,
-    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
-    WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    AgendaProfile, ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile,
+    CommodityDecayMap, CommodityValuationProfile, CommunicationProfile,
+    ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
+    DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
+    ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+    LastSeenMemory, MetabolismProfile, ObligationSatiationProfile, PatrolProfile,
+    PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
+    Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
+    topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -131,6 +132,8 @@ pub struct AgentDef {
     pub tell_profile: Option<TellProfile>,
     #[serde(default)]
     pub cognitive_profile: Option<CognitiveProfile>,
+    #[serde(default)]
+    pub agenda_profile: Option<AgendaProfile>,
     #[serde(default)]
     pub execution_budget: Option<ExecutionBudget>,
     #[serde(default)]
@@ -308,6 +311,7 @@ mod tests {
         assert_eq!(def.agents[0].control, ControlSource::Human);
         assert_eq!(def.agents[0].diversification_profile, None);
         assert_eq!(def.agents[0].drive_escalation_profile, None);
+        assert_eq!(def.agents[0].agenda_profile, None);
         assert!(def.items.is_empty());
         assert!(def.facilities.is_empty());
         assert!(def.resource_sources.is_empty());
@@ -895,6 +899,7 @@ mod tests {
         assert!(agent.perception_profile.is_none());
         assert!(agent.tell_profile.is_none());
         assert!(agent.cognitive_profile.is_none());
+        assert!(agent.agenda_profile.is_none());
         assert!(agent.execution_budget.is_none());
         assert!(agent.epistemic_disposition.is_none());
         assert!(agent.intention_disposition.is_none());
@@ -942,6 +947,11 @@ mod tests {
                         max_snapshot_entities_per_place: 50,
                         landmark_extraction_depth: 3,
                     ),
+                    agenda_profile: (
+                        pending_capacity: 20,
+                        suspended_capacity: 4,
+                        revive_cooldown_ticks: 2,
+                    ),
                 ),
             ],
         )"#;
@@ -959,6 +969,14 @@ mod tests {
         assert_eq!(cognitive.max_plan_depth, 10);
         assert_eq!(cognitive.max_travel_candidates_per_expansion, None);
         assert_eq!(cognitive.landmark_extraction_depth, 3);
+        assert_eq!(
+            def.agents[0].agenda_profile,
+            Some(AgendaProfile {
+                pending_capacity: 20,
+                suspended_capacity: 4,
+                revive_cooldown_ticks: 2,
+            })
+        );
     }
 
     #[test]

@@ -15,10 +15,10 @@ use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView,
-    GuardTemplateSpec, Interruptibility, InvalidatorSpec, PayloadEntityRole, PerAgentBeliefView,
-    Precondition, RecipeRegistry, RequiredFactSpec, RuntimeBeliefView, StaffMarketPayload,
-    TargetSpec, TradeAcceptance, TradeActionPayload, TradeRejectionReason,
-    commodity_opportunity_score, evaluate_trade_bundle,
+    GuardTemplateSpec, Interruptibility, InvalidatorSpec, InventoryBeliefView, PayloadEntityRole,
+    PerAgentBeliefView, Precondition, ProfileBeliefView, RecipeRegistry, RequiredFactSpec,
+    RuntimeBeliefView, StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload,
+    TradeRejectionReason, commodity_opportunity_score, evaluate_trade_bundle,
 };
 
 pub fn register_trade_action(
@@ -116,33 +116,17 @@ fn enumerate_trade_payloads(
     if view.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0) {
         return Vec::new();
     }
-    let Some(disposition) = view.trade_disposition_profile(actor) else {
-        return Vec::new();
-    };
-
     // Discover concrete listed sale lots at this place for each commodity the
     // counterparty is selling.  We iterate sale_kinds to know which commodities
     // to look for, then find listed lots for each.
     let profile = view.merchandise_profile(counterparty).unwrap();
     let mut payloads: Vec<ActionPayload> = Vec::new();
     for commodity in &profile.sale_kinds {
-        let reservation = buyer_reservation_price(
-            view.homeostatic_needs(actor).as_ref(),
-            wounds_for(view, actor).as_ref(),
-            *commodity,
-            view.commodity_quantity(actor, CommodityKind::Coin),
-            count_local_alternatives(view, actor, counterparty, place, *commodity),
-        );
-        if reservation < Quantity(1) {
+        let Some(opening_offer) =
+            buyer_trade_opening_offer_for_view(view, actor, counterparty, place, *commodity)
+        else {
             continue;
-        }
-        let opening_offer = derive_opening_offer(
-            worldwake_core::TradeRole::Buyer,
-            reservation,
-            disposition.initial_offer_bias,
-            disposition.rejection_escalation_rate,
-            rejection_count_for(view, actor, counterparty, *commodity),
-        );
+        };
         for lot in view.listed_sale_lots_at(place, *commodity) {
             if view.seller_for_sale_lot(lot) != Some(counterparty) {
                 continue;
@@ -305,22 +289,24 @@ fn tick_trade(
 
     let opening = if current_role == initiator_role {
         initiator_last_offer.unwrap_or_else(|| {
-            derive_opening_offer(
+            opening_offer_for_deadline(
                 current_role,
                 reservation,
                 profile.initial_offer_bias,
                 profile.rejection_escalation_rate,
                 0,
+                deadline,
             )
         })
     } else {
         responder_last_offer.unwrap_or_else(|| {
-            derive_opening_offer(
+            opening_offer_for_deadline(
                 current_role,
                 reservation,
                 profile.initial_offer_bias,
                 profile.rejection_escalation_rate,
                 0,
+                deadline,
             )
         })
     };
@@ -617,6 +603,40 @@ pub(crate) fn count_local_alternatives(
         .count() as u32
 }
 
+pub fn buyer_trade_opening_offer_for_view(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    counterparty: EntityId,
+    place: EntityId,
+    commodity: CommodityKind,
+) -> Option<Quantity> {
+    let disposition = view.trade_disposition_profile(actor)?;
+    let reservation = buyer_reservation_price(
+        ProfileBeliefView::homeostatic_needs(view, actor).as_ref(),
+        wounds_for(view, actor).as_ref(),
+        commodity,
+        InventoryBeliefView::commodity_quantity(view, actor, CommodityKind::Coin),
+        count_local_alternatives(view, actor, counterparty, place, commodity),
+    );
+    if reservation < Quantity(1) {
+        return None;
+    }
+    let deadline = urgency_modulated_deadline(
+        disposition.negotiation_round_ticks,
+        ProfileBeliefView::homeostatic_needs(view, actor).as_ref(),
+        commodity,
+    );
+
+    Some(opening_offer_for_deadline(
+        worldwake_core::TradeRole::Buyer,
+        reservation,
+        disposition.initial_offer_bias,
+        disposition.rejection_escalation_rate,
+        rejection_count_for(view, actor, counterparty, commodity),
+        deadline,
+    ))
+}
+
 #[allow(dead_code)]
 pub(crate) fn rejection_count_for(
     view: &dyn RuntimeBeliefView,
@@ -750,6 +770,27 @@ pub(crate) fn derive_opening_offer(
     }
 }
 
+fn opening_offer_for_deadline(
+    role: worldwake_core::TradeRole,
+    reservation: Quantity,
+    initial_offer_bias: worldwake_core::Permille,
+    rejection_escalation_rate: worldwake_core::Permille,
+    prior_rejections: u32,
+    deadline: u32,
+) -> Quantity {
+    if deadline <= 1 {
+        return reservation.max(Quantity(1));
+    }
+
+    derive_opening_offer(
+        role,
+        reservation,
+        initial_offer_bias,
+        rejection_escalation_rate,
+        prior_rejections,
+    )
+}
+
 #[allow(dead_code)]
 pub(crate) fn urgency_modulated_deadline(
     base_patience: NonZeroU32,
@@ -814,7 +855,16 @@ fn remembered_demand_pressure(
         memory
             .observations
             .iter()
-            .filter(|obs| obs.commodity == commodity)
+            .filter(|obs| {
+                obs.commodity == commodity
+                    && matches!(
+                        obs.reason,
+                        DemandObservationReason::WantedToBuyButNoSeller
+                            | DemandObservationReason::WantedToBuyButSellerOutOfStock
+                            | DemandObservationReason::WantedToBuyButTooExpensive
+                            | DemandObservationReason::TradeAgreed
+                    )
+            })
             .map(|obs| obs.quantity.0)
             .sum()
     })
@@ -1482,7 +1532,8 @@ fn start_staff_market(
     let payload = staff_market_payload(def, instance)?;
     let commodity = payload.commodity;
     let (_place, _profile) = validate_staff_market_preconditions(txn, instance.actor, commodity)?;
-    // Presence-only: SaleListing is managed by stage_stock_for_sale/unstage_stock.
+    // Presence-only: displayed listing state is staged/unstaged explicitly and
+    // reconciled by the trade system's validity sync.
     // This action represents the merchant being present at the market.
     Ok(Some(ActionState::Empty))
 }
@@ -1508,7 +1559,8 @@ fn commit_staff_market(
 ) -> Result<CommitOutcome, ActionError> {
     let payload = staff_market_payload(def, instance)?;
     let commodity = payload.commodity;
-    // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
+    // Presence-only: displayed listing state is staged/unstaged explicitly and
+    // reconciled by the trade system's validity sync.
     // Record unproductive demand if displayed stock remains unsold.
     if let Some(profile) = txn.get_component_merchandise_profile(instance.actor)
         && let Some(home_facility) = profile.home_facility
@@ -1531,7 +1583,8 @@ fn abort_staff_market(
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
+    // Presence-only: displayed listing state is staged/unstaged explicitly and
+    // reconciled by the trade system's validity sync.
     Ok(())
 }
 
@@ -2594,6 +2647,137 @@ mod tests {
                     .and_then(ActionPayload::as_trade)
                     .is_some()
         }));
+    }
+
+    #[test]
+    fn trade_affordance_uses_reservation_price_when_deadline_is_one_tick() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(3),
+            CommodityKind::Bread,
+            Quantity(3),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        harness.set_counterparty_demand_memory(vec![DemandObservation {
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(5),
+            place: harness.place,
+            tick: Tick(3),
+            counterparty: None,
+            reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+        }]);
+
+        let affordances = affordances_for(
+            &harness.world,
+            harness.actor,
+            &harness.defs,
+            &harness.handlers,
+        );
+
+        let payload = affordances
+            .into_iter()
+            .find(|affordance| {
+                affordance.def_id == harness.def_id
+                    && affordance.bound_targets == vec![harness.counterparty]
+            })
+            .and_then(|affordance| affordance.payload_override)
+            .and_then(|payload| payload.as_trade().cloned())
+            .expect("trade affordance should expose a payload override");
+
+        assert_eq!(
+            payload.offered_quantity,
+            Quantity(3),
+            "when the buyer can only afford one trade tick, the opening offer must already meet the full reservation price"
+        );
+    }
+
+    #[test]
+    fn single_tick_trade_commits_when_opening_offer_matches_overlap_price() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(3),
+            CommodityKind::Bread,
+            Quantity(3),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        harness.payload.offered_quantity = Quantity(3);
+        harness.set_counterparty_demand_memory(vec![DemandObservation {
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(5),
+            place: harness.place,
+            tick: Tick(3),
+            counterparty: None,
+            reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+        }]);
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let outcome = harness.tick(instance_id, &mut active, 4).unwrap();
+
+        assert!(
+            matches!(outcome, TickOutcome::Committed { .. }),
+            "single-tick trade should commit immediately once the opening offer already reaches the overlapping price"
+        );
+        assert_eq!(
+            harness
+                .world
+                .controlled_commodity_quantity(harness.actor, CommodityKind::Bread),
+            Quantity(3)
+        );
+        assert_eq!(
+            harness
+                .world
+                .controlled_commodity_quantity(harness.actor, CommodityKind::Coin),
+            Quantity(0)
+        );
+    }
+
+    #[test]
+    fn seller_no_buyer_memory_does_not_raise_reservation_above_overlapping_price() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(3),
+            CommodityKind::Bread,
+            Quantity(3),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        harness.payload.offered_quantity = Quantity(3);
+        harness.set_counterparty_demand_memory(vec![
+            DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(5),
+                place: harness.place,
+                tick: Tick(3),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            },
+            DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+                place: harness.place,
+                tick: Tick(4),
+                counterparty: Some(harness.actor),
+                reason: DemandObservationReason::WantedToSellButNoBuyer,
+            },
+            DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+                place: harness.place,
+                tick: Tick(5),
+                counterparty: Some(harness.actor),
+                reason: DemandObservationReason::WantedToSellButNoBuyer,
+            },
+        ]);
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let outcome = harness.tick(instance_id, &mut active, 4).unwrap();
+
+        assert!(
+            matches!(outcome, TickOutcome::Committed { .. }),
+            "seller-side no-buyer frustration memory should not make an already-overlapping three-coin trade fail with InsufficientPayment"
+        );
     }
 
     #[test]
@@ -3934,7 +4118,8 @@ mod tests {
 
     #[test]
     fn staff_market_commit_preserves_displayed_listings() {
-        // Presence-only: SaleListing is managed by stage/unstage. After
+        // Presence-only: displayed listing state is staged/unstaged explicitly
+        // and reconciled by the trade system's validity sync. After
         // staff_market commit, the displayed lot's SaleListing must remain.
         let mut h = StaffMarketHarness::new();
         let (instance_id, mut active) = h.start_with_active();
@@ -3962,7 +4147,7 @@ mod tests {
             }
         }
 
-        // After commit, listing must still be present (managed by unstage, not staff_market).
+        // After commit, listing must still be present.
         assert!(
             h.world.get_component_sale_listing(h.lot).is_some(),
             "staff_market commit must not remove displayed SaleListing"

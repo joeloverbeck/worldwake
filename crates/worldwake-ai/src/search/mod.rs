@@ -6,9 +6,8 @@ pub(crate) mod strategic;
 mod transition;
 
 use crate::{
-    GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedPlan, PlannedStep,
-    PlannerOpSemantics, PlanningEntityRef, PlanningSnapshot, PlanningState,
-    shared_collections::SharedVec,
+    GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
+    PlanningEntityRef, PlanningSnapshot, PlanningState, shared_collections::SharedVec,
 };
 #[cfg(test)]
 use candidates::search_candidate_from_planner;
@@ -91,7 +90,7 @@ pub(super) enum TacticalGoal {
 
 impl TacticalGoal {
     fn from_strategic_step(
-        goal: &GroundedGoal,
+        goal: &GoalOffer,
         step: Option<&strategic::StrategicStep>,
         snapshot: &PlanningSnapshot,
     ) -> Option<Self> {
@@ -135,7 +134,7 @@ impl TacticalGoal {
 
     fn goal_facts(
         &self,
-        goal: &GroundedGoal,
+        goal: &GoalOffer,
         state: &PlanningState<'_>,
         recipes: &RecipeRegistry,
     ) -> std::collections::BTreeSet<PlanningFact> {
@@ -155,7 +154,7 @@ impl TacticalGoal {
 }
 
 fn evidence_directed_destination(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     step: &strategic::StrategicStep,
     snapshot: &PlanningSnapshot,
 ) -> worldwake_core::EntityId {
@@ -197,7 +196,7 @@ fn anchored_place_constrains_execution(goal: &worldwake_core::GoalKind) -> bool 
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
 fn apply_ff_heuristic_to_successors<'snapshot>(
     snapshot: &PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     node: &SearchNode<'snapshot>,
     cognitive: &CognitiveProfile,
     recipes: &RecipeRegistry,
@@ -443,7 +442,7 @@ impl PlanSearchResult {
 )]
 pub fn search_plan(
     snapshot: &PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
@@ -479,7 +478,7 @@ pub fn search_plan(
 )]
 pub(crate) fn search_plan_with_trace_metadata(
     snapshot: &PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
@@ -988,7 +987,7 @@ pub(crate) fn search_plan_with_trace_metadata(
 }
 
 fn social_query_candidates(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
@@ -1026,7 +1025,7 @@ fn social_query_candidates(
 #[cfg(test)]
 fn apply_tactical_candidate_filter(
     candidates: &mut Vec<SearchCandidate>,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     tactical_goal: Option<&TacticalGoal>,
@@ -1044,7 +1043,7 @@ fn apply_tactical_candidate_filter(
 fn apply_tactical_candidate_filter_with_expansion_trace(
     candidates: &mut Vec<SearchCandidate>,
     expansion_candidates: Option<&mut Vec<crate::decision_trace::ExpansionCandidateTrace>>,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     tactical_goal: Option<&TacticalGoal>,

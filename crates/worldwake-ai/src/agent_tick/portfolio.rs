@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{goal_model::RankedGoal, ranking::OrderedRanked};
+use crate::{goal_model::AgendaEntry, ranking::OrderedRanked};
 use worldwake_core::{
     CommodityPurpose, Discrepancy, GoalKind, OpportunityKey, PortfolioSlotWeights,
 };
@@ -21,7 +21,7 @@ pub(crate) struct Portfolio {
 
 #[derive(Clone, Debug)]
 pub(crate) struct PortfolioSlot {
-    pub(crate) ranked: RankedGoal,
+    pub(crate) ranked: AgendaEntry,
     pub(crate) feasibility: FeasibilityVerdict,
 }
 
@@ -34,7 +34,7 @@ pub(crate) enum FeasibilityVerdict {
 pub(crate) fn assemble_portfolio(
     ranked: &OrderedRanked<'_>,
     committed: Option<OpportunityKey>,
-    probe: impl Fn(&RankedGoal) -> FeasibilityVerdict,
+    probe: impl Fn(&AgendaEntry) -> FeasibilityVerdict,
 ) -> Portfolio {
     let mut slots = BTreeMap::new();
     let mut selected = BTreeSet::new();
@@ -98,7 +98,7 @@ fn select_commitment_candidate<'a>(
     ranked: &'a OrderedRanked<'_>,
     selected: &BTreeSet<OpportunityKey>,
     committed: Option<OpportunityKey>,
-) -> Option<&'a RankedGoal> {
+) -> Option<&'a AgendaEntry> {
     if let Some(committed) = committed {
         let committed_candidate = ranked
             .iter()
@@ -128,9 +128,9 @@ fn select_best_candidate<'a>(
     ranked: &'a OrderedRanked<'_>,
     selected: &BTreeSet<OpportunityKey>,
     predicate: impl Fn(&GoalKind) -> bool,
-) -> Option<&'a RankedGoal> {
+) -> Option<&'a AgendaEntry> {
     ranked.iter().find(|candidate| {
-        predicate(&candidate.grounded.key.kind) && !selected.contains(&opportunity_key(candidate))
+        predicate(&candidate.offer.key.kind) && !selected.contains(&opportunity_key(candidate))
     })
 }
 
@@ -169,10 +169,10 @@ fn weight_for(kind: SlotKind, weights: &PortfolioSlotWeights) -> worldwake_core:
     }
 }
 
-fn opportunity_key(ranked: &RankedGoal) -> OpportunityKey {
+fn opportunity_key(ranked: &AgendaEntry) -> OpportunityKey {
     OpportunityKey {
-        goal_key: ranked.grounded.key,
-        anchor: ranked.grounded.anchor,
+        goal_key: ranked.offer.key,
+        anchor: ranked.offer.anchor,
     }
 }
 
@@ -225,7 +225,7 @@ mod tests {
     use crate::{
         GoalPriorityClass,
         feasibility::FeasibilityHint,
-        goal_model::{GroundedGoal, RankedGoal},
+        goal_model::{AgendaEntry, GoalOffer},
         ranking,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -241,13 +241,22 @@ mod tests {
         }
     }
 
-    fn ranked_goal(kind: GoalKind, motive_score: u32, anchor: OpportunityAnchor) -> RankedGoal {
-        RankedGoal {
-            grounded: GroundedGoal {
+    fn ranked_goal(kind: GoalKind, motive_score: u32, anchor: OpportunityAnchor) -> AgendaEntry {
+        AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(kind),
+                anchor,
+            },
+            offer: GoalOffer {
                 key: GoalKey::from(kind),
                 anchor,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class: GoalPriorityClass::High,
             motive_score,
@@ -255,6 +264,12 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: FeasibilityHint::Uncertain,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
@@ -263,7 +278,7 @@ mod tests {
         priority_class: GoalPriorityClass,
         motive_score: u32,
         anchor: OpportunityAnchor,
-    ) -> RankedGoal {
+    ) -> AgendaEntry {
         let mut ranked = ranked_goal(kind, motive_score, anchor);
         ranked.priority_class = priority_class;
         ranked
@@ -302,7 +317,7 @@ mod tests {
             .slots
             .get(&SlotKind::Survival)
             .expect("survival slot should be populated");
-        assert_eq!(survival.ranked.grounded.key, GoalKey::from(GoalKind::Sleep));
+        assert_eq!(survival.ranked.offer.key, GoalKey::from(GoalKind::Sleep));
     }
 
     #[test]
@@ -370,7 +385,7 @@ mod tests {
             .get(&SlotKind::Commitment)
             .expect("commitment slot should fall back to an obligation");
         assert_eq!(
-            slot.ranked.grounded.key,
+            slot.ranked.offer.key,
             GoalKey::from(GoalKind::ReportFound {
                 subject: entity(7),
                 expectation_id: worldwake_core::ExpectationId(2),
@@ -408,7 +423,7 @@ mod tests {
                 .get(&SlotKind::Survival)
                 .expect("self-consume acquisition should count as survival")
                 .ranked
-                .grounded
+                .offer
                 .key,
             GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
@@ -421,7 +436,7 @@ mod tests {
                 .get(&SlotKind::Economic)
                 .expect("restock acquisition should still populate economic")
                 .ranked
-                .grounded
+                .offer
                 .key,
             GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
@@ -510,7 +525,7 @@ mod tests {
             .slots
             .get(&SlotKind::Survival)
             .expect("survival slot should be populated");
-        assert_eq!(survival.ranked.grounded.key.kind, GoalKind::Relieve);
+        assert_eq!(survival.ranked.offer.key.kind, GoalKind::Relieve);
     }
 
     #[test]

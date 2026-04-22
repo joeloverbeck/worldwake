@@ -1,5 +1,5 @@
 use crate::{
-    GoalKindPlannerExt, GroundedGoal, PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
+    GoalKindPlannerExt, GoalOffer, PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
     PlanningSnapshot, PlanningState, goal_model::trace_prerequisite_guidance,
     shared_collections::SharedVec,
 };
@@ -12,7 +12,7 @@ use super::{
     landmarks::{LandmarkSet, PlanningFact, actionable_landmarks},
 };
 
-fn anchored_goal_place(goal: &GroundedGoal, state: &PlanningState<'_>) -> Option<EntityId> {
+fn anchored_goal_place(goal: &GoalOffer, state: &PlanningState<'_>) -> Option<EntityId> {
     if !matches!(
         goal.key.kind,
         worldwake_core::GoalKind::AcquireCommodity { .. }
@@ -64,7 +64,7 @@ pub(super) struct CombinedRelevantPlaces {
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn combined_relevant_places(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
@@ -74,7 +74,7 @@ pub(super) fn combined_relevant_places(
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn combined_relevant_places_for_tactical(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
@@ -92,7 +92,7 @@ pub(super) fn combined_relevant_places_for_tactical(
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn combined_relevant_places_with_guidance_for_tactical(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
@@ -110,7 +110,7 @@ pub(super) fn combined_relevant_places_with_guidance_for_tactical(
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn combined_relevant_places_with_guidance(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
@@ -120,7 +120,7 @@ pub(super) fn combined_relevant_places_with_guidance(
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn combined_relevant_places_internal(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
@@ -177,7 +177,7 @@ fn combined_relevant_places_internal(
 #[cfg(test)]
 pub(super) fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
 ) -> SearchNode<'snapshot> {
@@ -187,7 +187,7 @@ pub(super) fn root_node<'snapshot>(
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub(super) fn root_node_for_tactical<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     recipes: &RecipeRegistry,
     execution_budget: &ExecutionBudget,
     tactical_goal: Option<&TacticalGoal>,

@@ -2,7 +2,7 @@
 
 use crate::BeliefStoreDiff;
 use crate::{
-    AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
+    AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, AgentData, ArtifactHeader,
     ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory, BountyTerms,
     CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
     CommodityValuationProfile, CommunicationProfile, Container, ContentionDispositionProfile,
@@ -273,7 +273,7 @@ mod tests {
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        AcquisitionExhaustionTracker, ActionDefId, ActiveGoal, AgentBeliefStore, AgentData,
+        AcquisitionExhaustionTracker, ActionDefId, AgendaProfile, AgentBeliefStore, AgentData,
         ArtifactHeader, ArtifactKind, ArtifactPostingProfile, ArtifactState, BanditCamp,
         BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState, BodyPart, BountyTarget,
         BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
@@ -606,6 +606,11 @@ mod tests {
                 decision_history_alternatives: 5,
                 slot_weights: PortfolioSlotWeights::default(),
             }),
+            ComponentValue::AgendaProfile(AgendaProfile {
+                pending_capacity: 16,
+                suspended_capacity: 8,
+                revive_cooldown_ticks: 4,
+            }),
             ComponentValue::ExplorationProfile(ExplorationProfile {
                 curiosity_weight: Permille::new(650).unwrap(),
                 need_activation_threshold: Permille::new(450).unwrap(),
@@ -719,10 +724,6 @@ mod tests {
                 destination: entity(31),
                 departure_tick: Tick(13),
                 arrival_tick: Tick(21),
-            }),
-            ComponentValue::ActiveGoal(ActiveGoal {
-                goal_key: GoalKey::from(GoalKind::Sleep),
-                adopted_at: Tick(10),
             }),
             ComponentValue::ContentionIntents(ContentionIntents {
                 intents: BTreeMap::from([(
@@ -921,6 +922,7 @@ mod tests {
                 ComponentKind::TellProfile,
                 ComponentKind::CommunicationProfile,
                 ComponentKind::CognitiveProfile,
+                ComponentKind::AgendaProfile,
                 ComponentKind::AcquisitionExhaustionTracker,
                 ComponentKind::ExplorationProfile,
                 ComponentKind::DiversificationProfile,
@@ -951,7 +953,6 @@ mod tests {
                 ComponentKind::BanditFactionPolicy,
                 ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,
-                ComponentKind::ActiveGoal,
                 ComponentKind::ContentionIntents,
                 ComponentKind::IntentionFrame,
                 ComponentKind::IntentionDispositionProfile,

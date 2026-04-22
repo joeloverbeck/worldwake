@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 89
+- Scenario blocks: 91
 - Contributing golden test files: 16
-- Associated tests: 108
+- Associated tests: 110
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -423,9 +423,29 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: buyer discovers and trades against concrete listed lot with conservation
 
-### Scenario 77: Unlisted Stock Not Sellable
+### Scenario 84: Remote Branch Selection Reaches Local Trade Binding
 
 - Source: `golden_merchant_selling.rs:527`
+- Systems: Trade, AI, Needs
+- GoalKinds: AcquireCommodity
+- ActionDomains: Travel, Trade
+- Principles: P1, P3, P4
+
+**Proves**: buyer first selects the remote seller-backed `Travel -> Trade` path and, after arrival, reaches a concrete local `trade` next step before seller departure. The mismatch event itself stays owned by the focused `agent_tick` execution proof.
+
+### Scenario 85: Seller Return Revives Pending Purchase Agenda Entry
+
+- Source: `golden_merchant_selling.rs:638`
+- Systems: Trade, AI, Needs
+- GoalKinds: AcquireCommodity
+- ActionDomains: Travel, Trade
+- Principles: P1, P3, P4
+
+**Proves**: after a buyer reaches a concrete local `trade` binding, seller departure parks the committed purchase goal into pending with a counterparty-based revival trigger; seller return then revives the agenda entry back into live committed/current-plan state. Seller-side market-presence restaging remains a separate seam.
+
+### Scenario 77: Unlisted Stock Not Sellable
+
+- Source: `golden_merchant_selling.rs:787`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -435,7 +455,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 79b: Unstage Round Trip Preserves Storage Contract
 
-- Source: `golden_merchant_selling.rs:679`
+- Source: `golden_merchant_selling.rs:939`
 - Systems: Trade, AI
 - ActionDomains: Trade
 - Principles: P4, P24
@@ -444,7 +464,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `golden_merchant_selling.rs:693`
+- Source: `golden_merchant_selling.rs:953`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -454,7 +474,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:761`
+- Source: `golden_merchant_selling.rs:1021`
 - Systems: Trade
 - Principles: P3, P7
 
@@ -462,15 +482,15 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:818`
+- Source: `golden_merchant_selling.rs:1078`
 - Systems: Trade
 - Principles: P3, P4
 
 **Proves**: SaleListing pruned within one tick of seller death
 
-### Scenario 85: Demand Memory Raises Sell Ranking
+### Scenario 86: Demand Memory Raises Sell Ranking
 
-- Source: `golden_merchant_selling.rs:890`
+- Source: `golden_merchant_selling.rs:1150`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -479,7 +499,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `golden_merchant_selling.rs:962`
+- Source: `golden_merchant_selling.rs:1222`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)
@@ -787,7 +807,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Survival And Commitment Slots
 
-- Source: `golden_portfolio_planning.rs:183`
+- Source: `golden_portfolio_planning.rs:211`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production

@@ -3,6 +3,8 @@
 //! GOAP planner, utility scoring, and decision architecture.
 //! Depends on `worldwake-core`, `worldwake-sim`, and `worldwake-systems`.
 
+pub mod agenda_manager;
+pub mod agenda_types;
 pub mod agent_tick;
 pub mod candidate_generation;
 pub mod decision_runtime;
@@ -43,6 +45,11 @@ pub mod side_benefit;
 pub mod survival_forensics;
 mod theft;
 
+pub use agenda_manager::{AgendaTickPolicy, AgendaTransitions, CommitTransition, tick_agenda};
+pub use agenda_types::{
+    AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgendaState, KillCondition,
+    RevivalTrigger,
+};
 pub use agent_tick::{AgentTickDriver, FrameDebugSnapshot, FrameSwitchMarginSource};
 pub use candidate_generation::generate_candidates;
 pub use decision_runtime::{
@@ -79,9 +86,9 @@ pub use feasibility::{FeasibilityHint, feasibility_hint};
 pub use goal_dispatch_decl::{FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy};
 pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_model::{
-    GoalKindPlannerExt, GoalPriorityClass, GroundedGoal, RankedDriveGoalProvenance,
-    RankedDriveKind, RankedDriveMotiveInput, RankedGoal, RankedGoalProvenance,
-    RankedGoalProvenanceFamily, RankedPriorityAdjustment,
+    GoalKindPlannerExt, GoalOffer, GoalPriorityClass, RankedDriveGoalProvenance, RankedDriveKind,
+    RankedDriveMotiveInput, RankedGoalProvenance, RankedGoalProvenanceFamily,
+    RankedPriorityAdjustment,
 };
 pub use goal_policy::{
     DecisionContext, FreeInterruptRole, GoalFamilyPolicy, GoalPolicyOutcome, evaluate_suppression,
@@ -118,8 +125,8 @@ pub use ranking::{
 pub use search::{PlanSearchResult, search_plan};
 pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
 pub use survival_forensics::{
-    ActionTraceSnapshot, ActiveActionSummary, BlockerSummary, CriticalWindowFrame,
-    CriticalWindowReport, ExhaustionSummary, LocalSurvivalStateSummary, RankedGoalSnapshot,
+    ActionTraceSnapshot, ActiveActionSummary, AgendaEntrySnapshot, BlockerSummary,
+    CriticalWindowFrame, CriticalWindowReport, ExhaustionSummary, LocalSurvivalStateSummary,
     SurvivalForensicExtractor,
 };
 pub use worldwake_core::{

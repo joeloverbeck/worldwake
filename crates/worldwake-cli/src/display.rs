@@ -188,7 +188,6 @@ pub fn format_state_delta(world: &World, delta: &StateDelta) -> String {
         }) => {
             let name = entity_display_name(world, *entity);
             match component_kind {
-                ComponentKind::ActiveGoal => format_active_goal_delta(&name, after, world),
                 ComponentKind::AgentBeliefStore => {
                     format_belief_store_delta(&name, before.as_ref(), after, world)
                 }
@@ -279,16 +278,6 @@ fn format_relation_delta(
             format!("HostileTo: {verb} ({s} → {t})")
         }
         _ => format!("{kind:?}: {verb}"),
-    }
-}
-
-/// Format an `ActiveGoal` delta showing the goal kind with resolved entity names.
-fn format_active_goal_delta(agent_name: &str, after: &ComponentValue, world: &World) -> String {
-    if let ComponentValue::ActiveGoal(goal) = after {
-        let kind_str = format_goal_kind(world, &goal.goal_key.kind);
-        format!("ActiveGoal: {agent_name} chose {kind_str}")
-    } else {
-        format!("ActiveGoal: set on {agent_name}")
     }
 }
 
@@ -709,6 +698,7 @@ mod tests {
                 perception_profile: None,
                 tell_profile: None,
                 cognitive_profile: None,
+                agenda_profile: None,
                 execution_budget: None,
                 epistemic_disposition: None,
                 intention_disposition: None,
@@ -822,6 +812,7 @@ mod tests {
                     perception_profile: None,
                     tell_profile: None,
                     cognitive_profile: None,
+                    agenda_profile: None,
                     execution_budget: None,
                     epistemic_disposition: None,
                     intention_disposition: None,
@@ -861,6 +852,7 @@ mod tests {
                     perception_profile: None,
                     tell_profile: None,
                     cognitive_profile: None,
+                    agenda_profile: None,
                     execution_budget: None,
                     epistemic_disposition: None,
                     intention_disposition: None,
