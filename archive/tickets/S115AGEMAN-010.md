@@ -28,7 +28,7 @@
 1. Explicit payload-variant steps no longer survive revalidation via validator-only fallback -> `crates/worldwake-ai/src/plan_revalidation.rs::tests::explicit_trade_payload_variants_require_exact_affordance_match`.
 2. Pending-repair resumption refreshes the failed trade step from the live affordance before restoring `current_plan` -> `crates/worldwake-ai/src/agent_tick/planning.rs::tests::resume_pending_repair_plan_restores_failed_trade_plan_when_counterparty_trigger_revives`.
 3. Seller-side relist and buyer-side revival remain intact while this lower-layer fix lands -> existing `crates/worldwake-ai/tests/golden_merchant_selling.rs::seller_return_restores_displayed_listing_after_pending_revival` plus the full `golden_merchant_selling` suite.
-4. The later resumed trade completion seam remains owned by follow-up `tickets/S115AGEMAN-011.md`, not overclaimed here.
+4. The later resumed trade completion seam remains owned by follow-up `archive/tickets/S115AGEMAN-011.md`, not overclaimed here.
 
 ## What to Change
 
@@ -50,7 +50,7 @@ If the broader resumed purchase still aborts after the lower-layer fix, record t
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modify)
 - `specs/S115-agenda-manager.md` (modify)
 - `tickets/S115AGEMAN-010.md` (modify)
-- `tickets/S115AGEMAN-011.md` (new)
+- `archive/tickets/S115AGEMAN-011.md` (new)
 
 ## Out of Scope
 
@@ -97,7 +97,7 @@ Completed on 2026-04-22.
 ## Deviations
 
 - The drafted stronger “seller returns and the resumed buyer completes the purchase” ending is still false after the lower-layer fix. A post-fix golden probe showed the buyer now carries the refreshed live offer (`Quantity(2)`), retries `trade`, aborts again, and re-parks the goal into `pending`.
-- Follow-up ticket `tickets/S115AGEMAN-011.md` now owns that remaining opening-offer / negotiation-completion seam.
+- Follow-up ticket `archive/tickets/S115AGEMAN-011.md` now owns that remaining opening-offer / negotiation-completion seam.
 
 ## Verification Result
 

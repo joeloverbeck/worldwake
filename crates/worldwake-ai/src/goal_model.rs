@@ -27,6 +27,7 @@ use worldwake_sim::{
     SearchPlaceActionPayload, SocialBeliefView, SpatialBeliefView, TellActionPayload,
     TemporalBeliefView, TradeActionPayload, TransportActionPayload,
 };
+use worldwake_systems::trade_actions::buyer_trade_opening_offer_for_view;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RankedGoalProvenanceFamily {
@@ -759,11 +760,20 @@ impl GoalKindPlannerExt for GoalKind {
                 if state.commodity_quantity(actor, CommodityKind::Coin) == Quantity(0) {
                     return Err(GoalPayloadOverrideError::ActorCannotPay);
                 }
+                let Some(offered_quantity) = buyer_trade_opening_offer_for_view(
+                    state,
+                    actor,
+                    counterparty,
+                    actor_place,
+                    requested_commodity,
+                ) else {
+                    return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                };
                 Ok(Some(ActionPayload::Trade(TradeActionPayload {
                     counterparty,
                     sale_lot,
                     offered_commodity: CommodityKind::Coin,
-                    offered_quantity: Quantity(1),
+                    offered_quantity,
                     requested_quantity: Quantity(1),
                 })))
             }
@@ -4127,6 +4137,8 @@ mod tests {
         );
         view.thresholds.insert(actor, DriveThresholds::default());
         view.trade_profiles
+            .insert(actor, sample_trade_disposition_profile());
+        view.trade_profiles
             .insert(seller, sample_trade_disposition_profile());
         view.merchandise_profiles.insert(
             seller,
@@ -4226,7 +4238,7 @@ mod tests {
                 counterparty: seller,
                 sale_lot: entity(30),
                 offered_commodity: CommodityKind::Coin,
-                offered_quantity: Quantity(1),
+                offered_quantity: Quantity(3),
                 requested_quantity: Quantity(1),
             }))
         );
