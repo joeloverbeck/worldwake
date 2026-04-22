@@ -27,7 +27,6 @@ use crate::{
     exploration::{AcquisitionExhaustionTracker, ExplorationProfile},
     factions::FactionData,
     institutional::RecordData,
-    intention::ActiveGoal,
     intention_disposition::IntentionDispositionProfile,
     intention_frame::IntentionFrame,
     items::{Container, GroundSince, ItemLot, UniqueItem},

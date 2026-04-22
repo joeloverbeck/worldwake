@@ -18,7 +18,7 @@ use crate::plan_step_expectations::{
 };
 use crate::ranking::rank_candidates_with_memories;
 use crate::{
-    AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
+    AgendaEntry, AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep,
     authoritative_target, clear_resolved_failures,
 };
 use worldwake_core::{ContentionIntents, QueuedContentionIntent};
@@ -63,7 +63,7 @@ pub(crate) struct ReconciliationResult {
 pub(crate) struct ReadPhaseResult {
     /// Candidate offers emitted during generation in generation order.
     pub(super) offered: Vec<crate::candidate_generation::CandidateOfferDiagnostic>,
-    pub(super) ranked: Vec<RankedGoal>,
+    pub(super) ranked: Vec<AgendaEntry>,
     /// Generated candidate keys (before ranking filter).
     pub(super) generated_keys: Vec<worldwake_core::OpportunityKey>,
     /// Typed candidate-evidence provenance keyed by generated goal.
@@ -350,11 +350,16 @@ fn reinstate_current_plan_candidate(
         }
     }
 
-    candidates.candidates.push(crate::GroundedGoal {
+    candidates.candidates.push(crate::GoalOffer {
         key: opportunity.goal_key,
         anchor: opportunity.anchor,
         evidence_entities,
         evidence_places,
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     });
     candidates
         .diagnostics
@@ -469,7 +474,7 @@ pub(super) fn handle_facility_queue_transitions(
 pub(super) fn reconcile_in_flight_state(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<worldwake_core::ActiveGoal>,
+    active_goal: &mut Option<crate::AgendaEntry>,
     jc: &mut Option<worldwake_core::IntentionFrame>,
     facility_intents: &mut ContentionIntents,
     blocked_memory: &mut BlockerMemory,
@@ -492,7 +497,7 @@ pub(super) fn reconcile_in_flight_state(
     };
     let goal_key = active_goal
         .as_ref()
-        .map(|ag| ag.goal_key)
+        .map(|ag| ag.key.goal_key)
         .or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
         .expect("in-flight step must have a current goal");
 
@@ -881,7 +886,7 @@ mod tests {
         ExpectationMismatchContext, emit_expectation_mismatch, reinstate_current_plan_candidate,
     };
     use crate::{
-        AgentDecisionRuntime, CommodityPurpose, ExpectedMaterialization, GroundedGoal,
+        AgentDecisionRuntime, CommodityPurpose, ExpectedMaterialization, GoalOffer,
         HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
         PlanningEntityRef,
         candidate_generation::{CandidateGenerationDiagnostics, CandidateGenerationResult},
@@ -933,11 +938,16 @@ mod tests {
         };
 
         let mut candidates = CandidateGenerationResult {
-            candidates: vec![GroundedGoal {
+            candidates: vec![GoalOffer {
                 key: goal,
                 anchor: OpportunityAnchor::Place(inn),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::from([inn]),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
@@ -1015,11 +1025,16 @@ mod tests {
             ..AgentDecisionRuntime::default()
         };
         let mut candidates = CandidateGenerationResult {
-            candidates: vec![GroundedGoal {
+            candidates: vec![GoalOffer {
                 key: GoalKey::from(GoalKind::Sleep),
                 anchor: OpportunityAnchor::None,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),

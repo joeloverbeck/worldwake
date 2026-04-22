@@ -11,7 +11,7 @@ use worldwake_core::{
 use worldwake_sim::GoalBeliefView;
 
 use crate::{
-    FeasibilityStrategy, GoalDispatchKey, enterprise::merchant_home_place, goal_model::RankedGoal,
+    FeasibilityStrategy, GoalDispatchKey, enterprise::merchant_home_place, goal_model::AgendaEntry,
 };
 
 /// Cheap pre-GOAP estimate of whether a goal is locally actionable.
@@ -33,7 +33,7 @@ pub enum FeasibilityHint {
 pub fn feasibility_hint(
     view: &dyn GoalBeliefView,
     agent: EntityId,
-    goal: &RankedGoal,
+    goal: &AgendaEntry,
     blocked_memory: &BlockerMemory,
     current_frame: Option<&IntentionFrame>,
     current_tick: Tick,
@@ -58,11 +58,11 @@ pub fn feasibility_hint(
 /// Phase 1, Check 1: If the current intention frame is exhausted for this
 /// exact goal, return `Unlikely`. Suspended frames are NOT treated as Unlikely.
 fn check_exhausted_frame(
-    goal: &RankedGoal,
+    goal: &AgendaEntry,
     current_frame: Option<&IntentionFrame>,
 ) -> Option<FeasibilityHint> {
     let frame = current_frame?;
-    if frame.state == FrameState::Exhausted && frame.goal == goal.grounded.key {
+    if frame.state == FrameState::Exhausted && frame.goal == goal.offer.key {
         return Some(FeasibilityHint::Unlikely);
     }
     None
@@ -71,12 +71,12 @@ fn check_exhausted_frame(
 /// Phase 1, Check 2: If any live blocker exists in memory for this goal,
 /// return `Unlikely`.
 fn check_blocker_memory(
-    goal: &RankedGoal,
+    goal: &AgendaEntry,
     blocked_memory: &BlockerMemory,
     current_tick: Tick,
 ) -> Option<FeasibilityHint> {
     let has_live_blocker = blocked_memory.intents.values().any(|intent| {
-        intent.blocker_key.goal_key == goal.grounded.key && intent.expires_tick > current_tick
+        intent.blocker_key.goal_key == goal.offer.key && intent.expires_tick > current_tick
     });
     if has_live_blocker {
         return Some(FeasibilityHint::Unlikely);
@@ -89,13 +89,13 @@ fn check_blocker_memory(
 fn goal_specific_feasibility(
     view: &dyn GoalBeliefView,
     agent: EntityId,
-    goal: &RankedGoal,
+    goal: &AgendaEntry,
 ) -> Option<FeasibilityHint> {
-    let strategy = GoalDispatchKey::from_goal_kind(&goal.grounded.key.kind)
+    let strategy = GoalDispatchKey::from_goal_kind(&goal.offer.key.kind)
         .declaration()
         .feasibility_strategy;
 
-    match (strategy, &goal.grounded.key.kind) {
+    match (strategy, &goal.offer.key.kind) {
         (
             FeasibilityStrategy::OwnedCommodityCheck,
             GoalKind::ConsumeOwnedCommodity { commodity },
@@ -182,7 +182,7 @@ fn goal_specific_feasibility(
         (FeasibilityStrategy::CargoDestinationCheck, GoalKind::MoveCargo { commodity, .. }) => {
             let has_commodity = view.commodity_quantity(agent, *commodity) > Quantity(0);
             if has_commodity && let Some(agent_place) = view.effective_place(agent) {
-                let destination = goal.grounded.key.place;
+                let destination = goal.offer.key.place;
                 if destination == Some(agent_place) {
                     return Some(FeasibilityHint::Likely);
                 }
@@ -199,7 +199,7 @@ fn goal_specific_feasibility(
             if agent_place != corpse_place {
                 return None;
             }
-            let burial_site = goal.grounded.key.place;
+            let burial_site = goal.offer.key.place;
             if burial_site == Some(agent_place) {
                 return Some(FeasibilityHint::Likely);
             }
@@ -254,10 +254,10 @@ fn check_colocated_or_dead(
 fn check_evidence_places_local(
     view: &dyn GoalBeliefView,
     agent: EntityId,
-    goal: &RankedGoal,
+    goal: &AgendaEntry,
 ) -> Option<FeasibilityHint> {
     let agent_place = view.effective_place(agent)?;
-    if goal.grounded.evidence_places.contains(&agent_place) {
+    if goal.offer.evidence_places.contains(&agent_place) {
         return Some(FeasibilityHint::Likely);
     }
     None
@@ -268,7 +268,7 @@ mod tests {
     use super::*;
     use crate::{
         GoalDispatchKey,
-        goal_model::{GoalPriorityClass, GroundedGoal, RankedGoal},
+        goal_model::{AgendaEntry, GoalOffer, GoalPriorityClass},
     };
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -506,20 +506,29 @@ mod tests {
         }
     }
 
-    // -- Helper to build RankedGoal for tests --
+    // -- Helper to build AgendaEntry for tests --
 
     const AGENT: EntityId = EntityId {
         slot: 1,
         generation: 0,
     };
 
-    fn ranked_goal(kind: GoalKind) -> RankedGoal {
-        RankedGoal {
-            grounded: GroundedGoal {
+    fn ranked_goal(kind: GoalKind) -> AgendaEntry {
+        AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(kind),
+                anchor: worldwake_core::OpportunityAnchor::None,
+            },
+            offer: GoalOffer {
                 anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(kind),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class: GoalPriorityClass::Medium,
             motive_score: 500,
@@ -527,12 +536,18 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: FeasibilityHint::Uncertain,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
-    fn ranked_goal_with_evidence_places(kind: GoalKind, places: &[EntityId]) -> RankedGoal {
+    fn ranked_goal_with_evidence_places(kind: GoalKind, places: &[EntityId]) -> AgendaEntry {
         let mut g = ranked_goal(kind);
-        g.grounded.evidence_places = places.iter().copied().collect();
+        g.offer.evidence_places = places.iter().copied().collect();
         g
     }
 
@@ -570,8 +585,8 @@ mod tests {
         }
     }
 
-    fn goal_specific_feasibility_strategy(goal: &RankedGoal) -> crate::FeasibilityStrategy {
-        GoalDispatchKey::from_goal_kind(&goal.grounded.key.kind)
+    fn goal_specific_feasibility_strategy(goal: &AgendaEntry) -> crate::FeasibilityStrategy {
+        GoalDispatchKey::from_goal_kind(&goal.offer.key.kind)
             .declaration()
             .feasibility_strategy
     }
@@ -582,7 +597,7 @@ mod tests {
     fn test_exhausted_frame_returns_unlikely() {
         let view = MockView::default();
         let goal = ranked_goal(GoalKind::Sleep);
-        let frame = make_frame(goal.grounded.key, FrameState::Exhausted);
+        let frame = make_frame(goal.offer.key, FrameState::Exhausted);
         let blocked = empty_blocked_memory();
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, Some(&frame), Tick(10));
@@ -596,7 +611,7 @@ mod tests {
         let view = MockView::default();
         let goal = ranked_goal(GoalKind::Sleep);
         let frame = make_frame(
-            goal.grounded.key,
+            goal.offer.key,
             FrameState::Suspended {
                 reason: worldwake_core::SuspensionReason::PriorityInterrupt,
                 suspended_at: Tick(5),
@@ -616,7 +631,7 @@ mod tests {
         let view = MockView::default();
         let goal = ranked_goal(GoalKind::Sleep);
         let mut blocked = empty_blocked_memory();
-        blocked.record(make_blocker(goal.grounded.key, Tick(20)));
+        blocked.record(make_blocker(goal.offer.key, Tick(20)));
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(10));
         assert_eq!(hint, FeasibilityHint::Unlikely);
@@ -629,7 +644,7 @@ mod tests {
         let view = MockView::default();
         let goal = ranked_goal(GoalKind::Sleep);
         let mut blocked = empty_blocked_memory();
-        blocked.record(make_blocker(goal.grounded.key, Tick(5)));
+        blocked.record(make_blocker(goal.offer.key, Tick(5)));
 
         let hint = feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(10));
         // Blocker expired at tick 5, current tick is 10 → no effect → Sleep → Likely
@@ -757,7 +772,7 @@ mod tests {
                 feasibility_hint(&view, AGENT, &goal, &blocked, None, Tick(1)),
                 FeasibilityHint::Uncertain,
                 "{:?} should fall through to NoOpinion/Uncertain",
-                goal.grounded.key.kind
+                goal.offer.key.kind
             );
             assert_eq!(
                 goal_specific_feasibility_strategy(&goal),

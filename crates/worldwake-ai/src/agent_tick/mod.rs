@@ -12,9 +12,9 @@ use active_action::{
 use candidates::abandon_expired_facility_queues;
 use execution::{
     apply_step_materialization_bindings, committed_action_for_step, current_step,
-    enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_active_goal,
-    persist_blocked_memory, persist_discrepancy_memory, persist_facility_queue_intents,
-    persist_intention_frame, plan_finished,
+    enqueue_valid_step_or_handle_failure, finalize_agent_tick, persist_blocked_memory,
+    persist_discrepancy_memory, persist_facility_queue_intents, persist_intention_frame,
+    plan_finished,
 };
 use frame::{
     AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
@@ -51,7 +51,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
+    ActionDefId, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
     DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget, GoalAbandonReason,
     GoalAbandonedPayload, GoalOfferedPayload, GoalSuppressedPayload, GoalSuspendedPayload,
     GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick, LearnedOpportunityMemory,
@@ -526,10 +526,10 @@ fn infer_goal_switch_reason(
 ) -> GoalSwitchReason {
     let previous = ranked_candidates
         .iter()
-        .find(|candidate| candidate.grounded.key == previous_goal);
+        .find(|candidate| candidate.offer.key == previous_goal);
     let new = ranked_candidates
         .iter()
-        .find(|candidate| candidate.grounded.key == new_goal);
+        .find(|candidate| candidate.offer.key == new_goal);
     match (previous, new) {
         (Some(previous), Some(new)) if new.priority_class > previous.priority_class => {
             GoalSwitchReason::HigherPriorityGoal
@@ -709,9 +709,10 @@ fn process_agent(
     // Read intention frame from authoritative component.
     let original_frame = ctx.world.get_component_intention_frame(agent).cloned();
     let mut current_frame = original_frame.clone();
+    let runtime = runtime_by_agent.entry(agent).or_default();
     // Read active goal from authoritative component.
-    let original_active_goal = ctx.world.get_component_active_goal(agent).copied();
-    let mut current_active_goal = original_active_goal;
+    let original_active_goal = runtime.agenda_state.committed.clone();
+    let mut current_active_goal = original_active_goal.clone();
     // Read facility queue intents from authoritative component.
     let original_facility_intents = ctx
         .world
@@ -719,7 +720,6 @@ fn process_agent(
         .cloned()
         .unwrap_or_default();
     let mut current_facility_intents = original_facility_intents.clone();
-    let runtime = runtime_by_agent.entry(agent).or_default();
     let original_plan_goal = runtime.current_plan.as_ref().map(|plan| plan.goal);
     let active_action = active_action_for_agent(ctx, agent);
     let start_failures = ctx.scheduler.take_action_start_failures_for(agent);
@@ -743,7 +743,7 @@ fn process_agent(
             dead
         };
         if dead_agent {
-            if let Some(goal_key) = original_active_goal.map(|goal| goal.goal_key) {
+            if let Some(goal_key) = original_active_goal.map(|goal| goal.key.goal_key) {
                 emit_decision_event(
                     ctx.event_log,
                     tick,
@@ -793,14 +793,7 @@ fn process_agent(
                 original_frame.as_ref(),
                 current_frame.as_ref(),
             )?;
-            persist_active_goal(
-                ctx.world,
-                ctx.event_log,
-                agent,
-                tick,
-                original_active_goal.as_ref(),
-                current_active_goal.as_ref(),
-            )?;
+            runtime.agenda_state.committed = current_active_goal.clone();
             persist_facility_queue_intents(
                 ctx.world,
                 ctx.event_log,
@@ -943,7 +936,7 @@ fn process_agent(
                     current_facility_intents.intents.clear();
                     runtime.dirty.insert(crate::DirtySet::ASSUMPTION_FAILED);
                     if let Some(goal_key) = original_plan_goal
-                        .or(current_active_goal.as_ref().map(|goal| goal.goal_key))
+                        .or(current_active_goal.as_ref().map(|goal| goal.key.goal_key))
                     {
                         let reason = PlanInvalidationReason::AssumptionFailed { assumption };
                         emit_plan_invalidated(ctx.event_log, tick, agent, goal_key, reason);
@@ -961,7 +954,7 @@ fn process_agent(
     }
 
     // ── Read phase: candidate generation + ranking ──
-    let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
+    let active_goal_key = current_active_goal.as_ref().map(|ag| ag.key.goal_key);
     let read_result = refresh_runtime_for_read_phase_with_memories(
         ctx.world,
         ctx.scheduler,
@@ -1123,7 +1116,8 @@ fn process_agent(
 
     // ── Active-action path: interrupt evaluation ──
     let outcome_trace = if let Some(active_action) = active_action {
-        let active_goal_before_interrupt = current_active_goal.as_ref().map(|goal| goal.goal_key);
+        let active_goal_before_interrupt =
+            current_active_goal.as_ref().map(|goal| goal.key.goal_key);
         let interrupt_decision = handle_active_action_phase(
             ctx,
             runtime,
@@ -1169,7 +1163,7 @@ fn process_agent(
                 let challenger = ordered.first()?;
                 let current = ordered
                     .iter()
-                    .find(|candidate| candidate.grounded.key == current_goal)?;
+                    .find(|candidate| candidate.offer.key == current_goal)?;
                 crate::ranking::explain_ranked_goal_order(challenger, current)
             });
             DecisionOutcome::ActiveAction {
@@ -1185,7 +1179,7 @@ fn process_agent(
         })
     } else {
         // ── Planning path ──
-        let previous_goal = current_active_goal.as_ref().map(|ag| ag.goal_key);
+        let previous_goal = current_active_goal.as_ref().map(|ag| ag.key.goal_key);
 
         // Drain action start failures for this agent from the scheduler.
         let agent_failures: Vec<ActionStartFailureSummary> = start_failures
@@ -1261,7 +1255,7 @@ fn process_agent(
                 et.enqueued_step = Some(summarize_step(&step, action_defs));
             }
 
-            let active_goal_key = current_active_goal.as_ref().map(|ag| ag.goal_key);
+            let active_goal_key = current_active_goal.as_ref().map(|ag| ag.key.goal_key);
             let exec_result = enqueue_valid_step_or_handle_failure(
                 ctx,
                 runtime,
@@ -1539,28 +1533,29 @@ fn process_agent(
         );
     }
 
-    if let Some(previous_goal) = original_active_goal.map(|goal| goal.goal_key) {
+    if let Some(previous_goal) = original_active_goal.map(|goal| goal.key.goal_key) {
         let preserved_as_suspended = current_frame.as_ref().is_some_and(|frame| {
             frame.goal == previous_goal
                 && matches!(frame.state, worldwake_core::FrameState::Suspended { .. })
         });
         let still_active = current_active_goal
             .as_ref()
-            .is_some_and(|goal| goal.goal_key == previous_goal);
+            .is_some_and(|goal| goal.key.goal_key == previous_goal);
         if !preserved_as_suspended && !still_active {
-            let abandon_reason =
-                if let Some(new_goal) = current_active_goal.map(|goal| goal.goal_key) {
-                    GoalAbandonReason::GoalSwitched {
-                        new_goal,
-                        switch_kind: infer_goal_switch_reason(previous_goal, new_goal, &ordered),
-                    }
-                } else if let Some(reason) = runtime.last_frame_clear_reason {
-                    GoalAbandonReason::FrameCleared { reason }
-                } else {
-                    GoalAbandonReason::FrameCleared {
-                        reason: FrameClearReason::LostPlan,
-                    }
-                };
+            let abandon_reason = if let Some(new_goal) =
+                current_active_goal.as_ref().map(|goal| goal.key.goal_key)
+            {
+                GoalAbandonReason::GoalSwitched {
+                    new_goal,
+                    switch_kind: infer_goal_switch_reason(previous_goal, new_goal, &ordered),
+                }
+            } else if let Some(reason) = runtime.last_frame_clear_reason {
+                GoalAbandonReason::FrameCleared { reason }
+            } else {
+                GoalAbandonReason::FrameCleared {
+                    reason: FrameClearReason::LostPlan,
+                }
+            };
             emit_decision_event(
                 ctx.event_log,
                 tick,
@@ -1576,6 +1571,7 @@ fn process_agent(
     }
 
     // ── Finalize (runs for both paths) ──
+    runtime.agenda_state.committed = current_active_goal.clone();
     persist_intention_frame(
         ctx.world,
         ctx.event_log,
@@ -1583,14 +1579,6 @@ fn process_agent(
         tick,
         original_frame.as_ref(),
         current_frame.as_ref(),
-    )?;
-    persist_active_goal(
-        ctx.world,
-        ctx.event_log,
-        agent,
-        tick,
-        original_active_goal.as_ref(),
-        current_active_goal.as_ref(),
     )?;
     persist_facility_queue_intents(
         ctx.world,
@@ -1713,10 +1701,11 @@ pub(super) fn update_exploration_counter_for_adopted_goal(
     world: &mut worldwake_core::World,
     event_log: &mut worldwake_core::EventLog,
     agent: EntityId,
-    active_goal: Option<&ActiveGoal>,
+    active_goal: Option<&crate::AgendaEntry>,
     tick: Tick,
 ) -> Result<(), TickInputError> {
-    let Some(active_goal) = active_goal.filter(|active_goal| active_goal.adopted_at == tick) else {
+    let Some(active_goal) = active_goal.filter(|active_goal| active_goal.introduced_tick == tick)
+    else {
         return Ok(());
     };
     let Some(mut profile) = world.get_component_exploration_profile(agent).copied() else {
@@ -1724,7 +1713,7 @@ pub(super) fn update_exploration_counter_for_adopted_goal(
     };
 
     let mut proactive_commit_tick = None;
-    match active_goal.goal_key.kind {
+    match active_goal.key.goal_key.kind {
         worldwake_core::GoalKind::ExploreLocation {
             motivating_need, ..
         } => {

@@ -19,11 +19,11 @@ use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
-    AcceptedRepairProvenance, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
-    ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
-    GoalKind, GoalPriorityClass, HypotheticalEntityId, Invalidator, OpportunityAnchor,
-    OpportunityKey, PlanExpectation, PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep,
-    PlannerOpKind, PlanningEntityRef, RankedGoal, RankedGoalProvenance,
+    AcceptedRepairProvenance, AgendaEntry, AgentDecisionRuntime, CommodityPurpose, DirtySet,
+    ExhaustionBaseline, ExhaustionInvalidationCondition, ExpectedMaterialization,
+    FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
+    Invalidator, OpportunityAnchor, OpportunityKey, PlanExpectation, PlanGuard, PlanTerminalKind,
+    PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoalProvenance,
     SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -87,6 +87,35 @@ fn default_opportunity(goal_key: GoalKey) -> OpportunityKey {
     OpportunityKey {
         goal_key,
         anchor: OpportunityAnchor::None,
+    }
+}
+
+fn committed_goal_entry(goal_key: GoalKey, tick: Tick) -> AgendaEntry {
+    AgendaEntry {
+        key: default_opportunity(goal_key),
+        offer: crate::GoalOffer {
+            key: goal_key,
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+        },
+        phase: crate::AgendaPhase::Committed,
+        origin: crate::AgendaOrigin::NeedDrive,
+        introduced_tick: tick,
+        last_reconsidered_tick: tick,
+        revival_trigger: None,
+        kill_condition: crate::KillCondition::External,
+        priority_class: GoalPriorityClass::Background,
+        motive_score: 0,
+        provenance: None,
+        source_reliability_discount: None,
+        competition_discount: None,
+        feasibility: crate::FeasibilityHint::Uncertain,
     }
 }
 
@@ -1093,7 +1122,7 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
     )
 }
 
-fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
+fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<AgendaEntry> {
     let utility = harness
         .world
         .get_component_utility_profile(harness.actor)
@@ -1131,10 +1160,10 @@ fn ranked_goals_at(harness: &mut Harness, tick: Tick) -> Vec<RankedGoal> {
 
 fn has_goal(ranked: &crate::ranking::OrderedRanked<'_>, goal: GoalKind) -> bool {
     let key = GoalKey::from(goal);
-    ranked.iter().any(|candidate| candidate.grounded.key == key)
+    ranked.iter().any(|candidate| candidate.offer.key == key)
 }
 
-fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+fn ordered(ranked: &[AgendaEntry]) -> crate::ranking::OrderedRanked<'_> {
     crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
 }
 
@@ -1453,13 +1482,22 @@ fn ranked_goal(
     goal: GoalKind,
     evidence_entities: impl IntoIterator<Item = EntityId>,
     evidence_places: impl IntoIterator<Item = EntityId>,
-) -> RankedGoal {
-    RankedGoal {
-        grounded: crate::GroundedGoal {
+) -> AgendaEntry {
+    AgendaEntry {
+        key: worldwake_core::OpportunityKey {
+            goal_key: GoalKey::from(goal),
+            anchor: worldwake_core::OpportunityAnchor::None,
+        },
+        offer: crate::GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(goal),
             evidence_entities: evidence_entities.into_iter().collect(),
             evidence_places: evidence_places.into_iter().collect(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         },
         priority_class: crate::GoalPriorityClass::Medium,
         motive_score: 500,
@@ -1467,6 +1505,12 @@ fn ranked_goal(
         source_reliability_discount: None,
         competition_discount: None,
         feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+        phase: crate::AgendaPhase::Pending,
+        origin: crate::AgendaOrigin::NeedDrive,
+        introduced_tick: Tick(0),
+        last_reconsidered_tick: Tick(0),
+        revival_trigger: None,
+        kill_condition: crate::KillCondition::External,
     }
 }
 
@@ -2052,7 +2096,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         &harness.recipes,
     );
 
-    assert_eq!(active_goal.map(|ag| ag.goal_key), Some(goal.grounded.key));
+    assert_eq!(active_goal.map(|ag| ag.key.goal_key), Some(goal.offer.key));
     assert_eq!(next_step_valid, Some(true));
     assert_eq!(
         next_step
@@ -2848,10 +2892,7 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
         ..crate::AgentDecisionRuntime::default()
     };
 
-    let mut active_goal = Some(worldwake_core::ActiveGoal {
-        goal_key: goal,
-        adopted_at: Tick(0),
-    });
+    let mut active_goal = Some(committed_goal_entry(goal, Tick(0)));
     let updated_jc = advance_completed_step(
         &mut runtime,
         &mut active_goal,
@@ -2861,7 +2902,7 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
         Tick(4),
     );
 
-    assert_eq!(active_goal.map(|ag| ag.goal_key), Some(goal));
+    assert_eq!(active_goal.map(|ag| ag.key.goal_key), Some(goal));
     assert_eq!(runtime.current_plan, None);
     assert_eq!(runtime.current_step_index, 0);
     let updated_jc = updated_jc.expect("intention frame should persist through progress barrier");
@@ -2926,10 +2967,7 @@ fn suspended_detour_completion_preserves_commitment_and_reactivates_it() {
         ..crate::AgentDecisionRuntime::default()
     };
 
-    let mut active_goal = Some(worldwake_core::ActiveGoal {
-        goal_key: detour_goal,
-        adopted_at: Tick(0),
-    });
+    let mut active_goal = Some(committed_goal_entry(detour_goal, Tick(0)));
     let updated_jc = advance_completed_step(
         &mut runtime,
         &mut active_goal,
@@ -2979,10 +3017,7 @@ fn goal_completion_records_goal_satisfied_clear_reason() {
         ..crate::AgentDecisionRuntime::default()
     };
 
-    let mut active_goal = Some(worldwake_core::ActiveGoal {
-        goal_key: goal,
-        adopted_at: Tick(0),
-    });
+    let mut active_goal = Some(committed_goal_entry(goal, Tick(0)));
     let updated_jc = advance_completed_step(
         &mut runtime,
         &mut active_goal,
@@ -3063,10 +3098,7 @@ fn committed_step_fulfills_matching_plan_step_expectations_in_world_store() {
         },
     );
 
-    let mut active_goal = Some(worldwake_core::ActiveGoal {
-        goal_key: goal,
-        adopted_at: Tick(2),
-    });
+    let mut active_goal = Some(committed_goal_entry(goal, Tick(2)));
     let mut blocked_memory = BlockerMemory::default();
     let mut discrepancy_memory = DiscrepancyMemory::default();
     let mut facility_intents = ContentionIntents::default();
@@ -3734,10 +3766,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
         dirty: crate::DirtySet::default(),
         ..crate::AgentDecisionRuntime::default()
     };
-    let mut active_goal = Some(worldwake_core::ActiveGoal {
-        goal_key: goal,
-        adopted_at: Tick(0),
-    });
+    let mut active_goal = Some(committed_goal_entry(goal, Tick(0)));
 
     apply_step_materialization_bindings(
         &mut runtime,
@@ -3956,10 +3985,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
             dirty: crate::DirtySet::default(),
             ..crate::AgentDecisionRuntime::default()
         };
-        let active_goal_state = Some(worldwake_core::ActiveGoal {
-            goal_key: expected_goal,
-            adopted_at: Tick(1),
-        });
+        let active_goal_state = Some(committed_goal_entry(expected_goal, Tick(1)));
         update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
 
         let ranked = refresh_runtime_for_read_phase(
@@ -4011,7 +4037,10 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &harness.recipes,
     );
     let next_step = next_step.expect("cargo continuity runtime should retain the initial step");
-    assert_eq!(active_goal_state.map(|ag| ag.goal_key), Some(expected_goal));
+    assert_eq!(
+        active_goal_state.as_ref().map(|ag| ag.key.goal_key),
+        Some(expected_goal)
+    );
     assert_eq!(next_step, pick_up);
     assert_eq!(next_step_valid, Some(true));
 
@@ -4071,14 +4100,17 @@ fn goal_stability_across_cargo_materialization_continuity() {
         PlannerOpKind::MoveCargo,
         Tick(2),
     );
-    assert_eq!(active_goal_state.map(|ag| ag.goal_key), Some(expected_goal));
+    assert_eq!(
+        active_goal_state.as_ref().map(|ag| ag.key.goal_key),
+        Some(expected_goal)
+    );
 
     let ranked_after_pickup = refresh_runtime_for_read_phase(
         &harness.world,
         &harness.scheduler,
         &harness.defs,
         &mut runtime,
-        active_goal_state.map(|ag| ag.goal_key),
+        active_goal_state.as_ref().map(|ag| ag.key.goal_key),
         &mut fi,
         &mut blocked,
         &mut ViolationMemory::default(),
@@ -4119,7 +4151,10 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &harness.recipes,
     );
     let travel = next_step.expect("dirty cargo runtime should continue planning the same goal");
-    assert_eq!(active_goal_state.map(|ag| ag.goal_key), Some(expected_goal));
+    assert_eq!(
+        active_goal_state.as_ref().map(|ag| ag.key.goal_key),
+        Some(expected_goal)
+    );
     assert!(matches!(
         travel.op_kind,
         PlannerOpKind::Travel | PlannerOpKind::MoveCargo
@@ -4550,13 +4585,13 @@ fn unseen_death_does_not_create_corpse_reaction_without_reobservation() {
     let ranked = ranked_goals_at(&mut harness, Tick(3));
     assert!(!ranked.iter().any(|candidate| {
         matches!(
-            candidate.grounded.key.kind,
+            candidate.offer.key.kind,
             GoalKind::LootCorpse { corpse } if corpse == seller
         )
     }));
     assert!(!ranked.iter().any(|candidate| {
         matches!(
-            candidate.grounded.key.kind,
+            candidate.offer.key.kind,
             GoalKind::BuryCorpse { corpse, .. } if corpse == seller
         )
     }));
@@ -4717,10 +4752,11 @@ fn cargo_satisfaction_at_destination_while_carrying() {
 
     let _ = harness.step_once();
     assert_eq!(
-        harness
-            .world
-            .get_component_active_goal(harness.actor)
-            .map(|ag| ag.goal_key),
+        harness.runtime().and_then(|runtime| runtime
+            .agenda_state
+            .committed
+            .as_ref()
+            .map(|ag| ag.key.goal_key)),
         Some(GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
             destination: destination_facility,
@@ -4738,10 +4774,11 @@ fn cargo_satisfaction_at_destination_while_carrying() {
     assert_eq!(harness.world.possessor_of(remote_lot), Some(harness.actor));
     assert_eq!(harness.world.effective_place(remote_lot), Some(destination));
     assert_eq!(
-        harness
-            .world
-            .get_component_active_goal(harness.actor)
-            .map(|ag| ag.goal_key),
+        harness.runtime().and_then(|runtime| runtime
+            .agenda_state
+            .committed
+            .as_ref()
+            .map(|ag| ag.key.goal_key)),
         Some(GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
             destination: destination_facility,
@@ -4768,10 +4805,11 @@ fn merchant_restock_requires_delivery_to_home_facility() {
     assert_eq!(result.actions_started, 1);
 
     assert_eq!(
-        harness
-            .world
-            .get_component_active_goal(harness.actor)
-            .map(|ag| ag.goal_key),
+        harness.runtime().and_then(|runtime| runtime
+            .agenda_state
+            .committed
+            .as_ref()
+            .map(|ag| ag.key.goal_key)),
         Some(GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
             destination: destination_facility,
@@ -5777,15 +5815,7 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
         },
     );
     {
-        let mut txn = new_txn(&mut harness.world, 2);
-        txn.set_component_active_goal(
-            harness.actor,
-            worldwake_core::ActiveGoal {
-                goal_key: goal,
-                adopted_at: Tick(2),
-            },
-        )
-        .unwrap();
+        let txn = new_txn(&mut harness.world, 2);
         commit_txn(txn);
     }
 
@@ -5884,12 +5914,12 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
     assert_eq!(runtime.current_step_index, 0);
 
     assert_eq!(
-        harness
-            .world
-            .get_component_active_goal(harness.actor)
-            .map(|active| active.goal_key),
-        Some(goal),
-        "this focused execution proof stops at the pre-enqueue branch and does not run the later active-goal persistence cleanup"
+        runtime
+            .agenda_state
+            .committed
+            .as_ref()
+            .map(|active| active.key.goal_key),
+        None
     );
 }
 
@@ -5932,8 +5962,8 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         },
         false,
     );
-    let mut active_goal_state: Option<worldwake_core::ActiveGoal> = None;
-    let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
+    let mut active_goal_state: Option<AgendaEntry> = None;
+    let previous_goal = active_goal_state.as_ref().map(|ag| ag.key.goal_key);
     let mut jc = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (_, initial_valid, initial_continued, _, initial_selection, _, _) =
@@ -6003,7 +6033,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         &harness.scheduler,
         &harness.defs,
         runtime,
-        active_goal_state.as_ref().map(|ag| ag.goal_key),
+        active_goal_state.as_ref().map(|ag| ag.key.goal_key),
         &mut fi,
         &mut blocked,
         &mut ViolationMemory::default(),
@@ -6025,7 +6055,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         runtime.dirty.display_names()
     );
 
-    let previous_goal = active_goal_state.as_ref().map(|ag| ag.goal_key);
+    let previous_goal = active_goal_state.as_ref().map(|ag| ag.key.goal_key);
     let mut jc2 = None;
     let (continued_step, continued_valid, plan_continued, _, continuation_selection, _, _) =
         plan_and_validate_next_step_traced(
@@ -6911,10 +6941,15 @@ fn dead_agent_emits_goal_abandoned_with_death_reason() {
     let mut harness = Harness::new(ControlSource::Ai);
     harness.step_once();
     let goal_key = harness
-        .world
-        .get_component_active_goal(harness.actor)
-        .expect("agent should have an active goal after first tick")
-        .goal_key;
+        .runtime()
+        .and_then(|runtime| {
+            runtime
+                .agenda_state
+                .committed
+                .as_ref()
+                .map(|goal| goal.key.goal_key)
+        })
+        .expect("agent should have a committed goal after first tick");
 
     {
         let mut txn = new_txn(&mut harness.world, 2);
@@ -7348,14 +7383,6 @@ fn commodity_assumption_fixture(
     });
     {
         let mut txn = new_txn(&mut harness.world, 2);
-        txn.set_component_active_goal(
-            harness.actor,
-            worldwake_core::ActiveGoal {
-                goal_key: goal,
-                adopted_at: Tick(2),
-            },
-        )
-        .unwrap();
         txn.set_component_intention_frame(
             harness.actor,
             IntentionFrame {
@@ -7906,15 +7933,15 @@ fn exploration_counter_increments_when_explore_goal_is_adopted() {
     .unwrap();
     commit_txn(txn);
 
-    let active_goal = worldwake_core::ActiveGoal {
-        goal_key: GoalKey::from(GoalKind::ExploreLocation {
+    let active_goal = committed_goal_entry(
+        GoalKey::from(GoalKind::ExploreLocation {
             target_place: entity(99),
             motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                 HomeostaticNeedId::Hunger,
             ),
         }),
-        adopted_at: Tick(5),
-    };
+        Tick(5),
+    );
 
     update_exploration_counter_for_adopted_goal(
         &mut harness.world,
@@ -7954,13 +7981,13 @@ fn proactive_exploration_commit_updates_last_proactive_tick() {
     .unwrap();
     commit_txn(txn);
 
-    let active_goal = worldwake_core::ActiveGoal {
-        goal_key: GoalKey::from(GoalKind::ExploreLocation {
+    let active_goal = committed_goal_entry(
+        GoalKey::from(GoalKind::ExploreLocation {
             target_place: entity(99),
             motivating_need: worldwake_core::ExplorationMotivation::Proactive,
         }),
-        adopted_at: Tick(5),
-    };
+        Tick(5),
+    );
 
     update_exploration_counter_for_adopted_goal(
         &mut harness.world,
@@ -7993,10 +8020,7 @@ fn exploration_counter_resets_when_non_explore_goal_is_adopted() {
     .unwrap();
     commit_txn(txn);
 
-    let active_goal = worldwake_core::ActiveGoal {
-        goal_key: GoalKey::from(GoalKind::Sleep),
-        adopted_at: Tick(5),
-    };
+    let active_goal = committed_goal_entry(GoalKey::from(GoalKind::Sleep), Tick(5));
 
     update_exploration_counter_for_adopted_goal(
         &mut harness.world,

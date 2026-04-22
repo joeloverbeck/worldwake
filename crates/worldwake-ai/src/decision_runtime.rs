@@ -1,5 +1,5 @@
 use crate::{
-    DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalPriorityClass,
+    AgendaState, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalPriorityClass,
     HypotheticalEntityId, PlannedPlan,
 };
 use serde::{Deserialize, Serialize};
@@ -177,6 +177,8 @@ pub struct AgentDecisionRuntime {
     /// concrete local fact changes; `BudgetRetryPending` entries keep the goal
     /// eligible for the next compatible planning pass.
     pub exhaustion_cache: std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
+    #[serde(default)]
+    pub agenda_state: AgendaState,
     #[serde(default)]
     pub pending_repair_context: Option<PendingRepairContext>,
     #[serde(default)]
@@ -496,6 +498,7 @@ mod tests {
                 },
                 sample_step(2, PlannerOpKind::Consume),
             ])),
+            agenda_state: crate::AgendaState::default(),
             current_step_index: 1,
             last_frame_clear_reason: Some(FrameClearReason::PlanFailed),
             step_in_flight: true,

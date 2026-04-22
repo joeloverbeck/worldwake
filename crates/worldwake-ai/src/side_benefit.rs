@@ -1,5 +1,5 @@
 use crate::{
-    GoalPriorityClass, PlannedPlan, PlannerOpKind, PlanningEntityRef, RankedGoal,
+    AgendaEntry, GoalPriorityClass, PlannedPlan, PlannerOpKind, PlanningEntityRef,
     ranking::OrderedRanked,
 };
 use std::collections::BTreeSet;
@@ -41,7 +41,7 @@ pub fn detect_side_benefits(
     let mut side_benefits = Vec::new();
 
     for candidate in ranked_candidates {
-        if &candidate.grounded.key == primary_goal_key {
+        if &candidate.offer.key == primary_goal_key {
             continue;
         }
 
@@ -51,7 +51,7 @@ pub fn detect_side_benefits(
         if !visited_places.contains(&at_place) {
             continue;
         }
-        if !seen_goals.insert(candidate.grounded.key) {
+        if !seen_goals.insert(candidate.offer.key) {
             continue;
         }
 
@@ -62,7 +62,7 @@ pub fn detect_side_benefits(
         }
 
         side_benefits.push(SideBenefit {
-            goal_key: candidate.grounded.key,
+            goal_key: candidate.offer.key,
             at_place,
             estimated_value,
         });
@@ -106,10 +106,10 @@ fn visited_places(plan: &PlannedPlan) -> BTreeSet<EntityId> {
         .collect()
 }
 
-fn candidate_target_place(candidate: &RankedGoal) -> Option<EntityId> {
-    match candidate.grounded.anchor {
+fn candidate_target_place(candidate: &AgendaEntry) -> Option<EntityId> {
+    match candidate.offer.anchor {
         OpportunityAnchor::Place(place) => Some(place),
-        OpportunityAnchor::Entity(_) | OpportunityAnchor::None => candidate.grounded.key.place,
+        OpportunityAnchor::Entity(_) | OpportunityAnchor::None => candidate.offer.key.place,
     }
 }
 
@@ -125,13 +125,13 @@ fn capped_total_value(primary_motive: u32, side_benefits: &[SideBenefit]) -> u32
 mod tests {
     use super::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
     use crate::{
-        CommodityPurpose, GoalPriorityClass, GroundedGoal, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
+        AgendaEntry, CommodityPurpose, GoalOffer, GoalPriorityClass, PlanTerminalKind, PlannedPlan,
+        PlannedStep, PlannerOpKind, PlanningEntityRef,
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
         ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
-        Permille,
+        Permille, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -141,13 +141,22 @@ mod tests {
         }
     }
 
-    fn ranked(goal: GoalKind, anchor: OpportunityAnchor, motive_score: u32) -> RankedGoal {
-        RankedGoal {
-            grounded: GroundedGoal {
+    fn ranked(goal: GoalKind, anchor: OpportunityAnchor, motive_score: u32) -> AgendaEntry {
+        AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(goal),
+                anchor,
+            },
+            offer: GoalOffer {
                 key: GoalKey::from(goal),
                 anchor,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class: GoalPriorityClass::High,
             motive_score,
@@ -155,6 +164,12 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
@@ -202,7 +217,7 @@ mod tests {
         )
     }
 
-    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+    fn ordered(ranked: &[AgendaEntry]) -> crate::ranking::OrderedRanked<'_> {
         crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
     }
 

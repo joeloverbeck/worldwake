@@ -14,8 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use golden_harness::*;
 use worldwake_ai::{
-    GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
-    apply_hypothetical_transition, build_planning_snapshot, build_semantics_table,
+    GoalOffer, PlannerOpSemantics, PlanningEntityRef, PlanningState, apply_hypothetical_transition,
+    build_planning_snapshot, build_semantics_table,
 };
 use worldwake_core::{
     AgentBeliefStore, AgentData, CommodityKind, ContentionIntents, ControlSource, EntityId,
@@ -136,12 +136,17 @@ fn disable_ai_control(h: &mut GoldenHarness, agent: EntityId) {
     commit_txn(txn, &mut h.event_log);
 }
 
-fn grounded(kind: GoalKind) -> GroundedGoal {
-    GroundedGoal {
+fn grounded(kind: GoalKind) -> GoalOffer {
+    GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(kind),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     }
 }
 

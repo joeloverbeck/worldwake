@@ -1,5 +1,5 @@
 use crate::{
-    GoalKey, GoalKind, GoalKindPlannerExt, GroundedGoal, HypotheticalEntityId, PlanExpectation,
+    GoalKey, GoalKind, GoalKindPlannerExt, GoalOffer, HypotheticalEntityId, PlanExpectation,
     PlanGuard, PlanningEntityRef, PlanningState,
 };
 use serde::{Deserialize, Serialize};
@@ -305,7 +305,7 @@ pub struct HypotheticalTransition<'snapshot> {
 }
 
 pub fn apply_hypothetical_transition<'snapshot>(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics: PlannerOpSemantics,
     state: PlanningState<'snapshot>,
     targets: &[PlanningEntityRef],
@@ -361,7 +361,7 @@ pub fn apply_hypothetical_transition<'snapshot>(
 }
 
 fn apply_goal_model_fallback_state<'snapshot>(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics: PlannerOpSemantics,
     state: PlanningState<'snapshot>,
     targets: &[PlanningEntityRef],
@@ -377,7 +377,7 @@ fn apply_goal_model_fallback_state<'snapshot>(
 }
 
 fn apply_goal_model_fallback_transition<'snapshot>(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics: PlannerOpSemantics,
     state: PlanningState<'snapshot>,
     targets: &[PlanningEntityRef],
@@ -391,7 +391,7 @@ fn apply_goal_model_fallback_transition<'snapshot>(
 }
 
 fn apply_consume_matching_target_transition<'snapshot>(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics: PlannerOpSemantics,
     state: PlanningState<'snapshot>,
     targets: &[PlanningEntityRef],
@@ -1021,7 +1021,7 @@ mod tests {
         planner_only_candidates, resolve_planning_targets_with, semantics_for,
     };
     use crate::{
-        CommodityPurpose, GoalKey, GoalKind, GroundedGoal, HypotheticalEntityId, PlanningEntityRef,
+        CommodityPurpose, GoalKey, GoalKind, GoalOffer, HypotheticalEntityId, PlanningEntityRef,
         PlanningState, build_planning_snapshot,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -2179,13 +2179,18 @@ mod tests {
     #[test]
     fn hypothetical_transition_preserves_goal_model_fallback_for_non_pickup_ops() {
         let (state, actor, _town, bread) = sample_snapshot();
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let semantics = build_phase_two_registry()
             .iter()
@@ -2215,13 +2220,18 @@ mod tests {
             .find(|def| def.name == "eat")
             .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
             .unwrap();
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let advanced = apply_hypothetical_transition(
@@ -2247,13 +2257,18 @@ mod tests {
             .find(|def| def.name == "drink")
             .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
             .unwrap();
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         assert!(apply_hypothetical_transition(&goal, semantics, state, &[lot], None).is_none());
@@ -2269,7 +2284,7 @@ mod tests {
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
         };
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
@@ -2277,6 +2292,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let advanced =
@@ -2306,7 +2326,7 @@ mod tests {
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
         };
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
@@ -2314,6 +2334,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let advanced =
@@ -2363,7 +2388,7 @@ mod tests {
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
         };
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::MoveCargo {
                 commodity: CommodityKind::Bread,
@@ -2371,6 +2396,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let advanced = apply_hypothetical_transition(
@@ -2427,7 +2457,7 @@ mod tests {
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PickUpGroundLot,
         };
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
@@ -2435,6 +2465,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         assert!(apply_hypothetical_transition(&goal, semantics, state, &[lot], None).is_none());
@@ -2461,7 +2496,7 @@ mod tests {
             is_materialization_barrier: false,
             transition_kind: PlannerTransitionKind::PutDownGroundLot,
         };
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
@@ -2469,6 +2504,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let advanced =

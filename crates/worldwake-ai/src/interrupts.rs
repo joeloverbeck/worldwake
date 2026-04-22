@@ -1,6 +1,6 @@
 use crate::{
-    AgentDecisionRuntime, DecisionContext, FramePlanRelation, GoalDispatchKey, GoalKey,
-    GoalPriorityClass, RankedGoal, classify_frame_plan_relation,
+    AgendaEntry, AgentDecisionRuntime, DecisionContext, FramePlanRelation, GoalDispatchKey,
+    GoalKey, GoalPriorityClass, classify_frame_plan_relation,
     frame_switch_policy::compare_relation_aware_goal_switch,
     goal_policy::{FreeInterruptRole, PenaltyInterruptEligibility},
     goal_switching::{GoalSwitchKind, compare_goal_switch},
@@ -49,7 +49,7 @@ pub fn evaluate_interrupt(
     if !plan_valid {
         if ranked_candidates
             .first()
-            .is_some_and(|candidate| Some(candidate.grounded.key) == effective_active_goal)
+            .is_some_and(|candidate| Some(candidate.offer.key) == effective_active_goal)
         {
             return InterruptDecision::NoInterrupt;
         }
@@ -65,7 +65,7 @@ pub fn evaluate_interrupt(
     match current_action_interruptibility {
         Interruptibility::NonInterruptible => InterruptDecision::NoInterrupt,
         Interruptibility::InterruptibleWithPenalty => {
-            if penalty_interrupt_trigger(&challenger.grounded.key.kind)
+            if penalty_interrupt_trigger(&challenger.offer.key.kind)
                 == Some(InterruptTrigger::CriticalSurvival)
                 && effective_active_goal.is_some_and(|goal| {
                     penalty_interrupt_trigger(&goal.kind)
@@ -101,11 +101,11 @@ fn effective_active_goal(
         .or_else(|| jc.map(|frame| frame.goal))
 }
 
-fn interrupt_with_penalty(challenger: &RankedGoal) -> InterruptDecision {
+fn interrupt_with_penalty(challenger: &AgendaEntry) -> InterruptDecision {
     if challenger.priority_class != GoalPriorityClass::Critical {
         return InterruptDecision::NoInterrupt;
     }
-    let policy = GoalDispatchKey::from_goal_kind(&challenger.grounded.key.kind)
+    let policy = GoalDispatchKey::from_goal_kind(&challenger.offer.key.kind)
         .declaration()
         .family_policy;
     match policy.penalty_interrupt {
@@ -132,14 +132,14 @@ fn interrupt_freely(
     active_goal: Option<GoalKey>,
     runtime: &AgentDecisionRuntime,
     jc: Option<&IntentionFrame>,
-    challenger: &RankedGoal,
+    challenger: &AgendaEntry,
     ranked_candidates: &OrderedRanked<'_>,
     planned_candidates: Option<&[SelectionCandidatePlan]>,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
     decision_context: DecisionContext,
 ) -> InterruptDecision {
-    let policy = GoalDispatchKey::from_goal_kind(&challenger.grounded.key.kind)
+    let policy = GoalDispatchKey::from_goal_kind(&challenger.offer.key.kind)
         .declaration()
         .family_policy;
     if policy.free_interrupt == FreeInterruptRole::Opportunistic {
@@ -170,7 +170,7 @@ fn interrupt_freely(
     ) {
         return match switch_kind {
             GoalSwitchKind::HigherPriorityGoal
-                if GoalDispatchKey::from_goal_kind(&challenger.grounded.key.kind)
+                if GoalDispatchKey::from_goal_kind(&challenger.offer.key.kind)
                     .declaration()
                     .family_policy
                     .free_interrupt
@@ -226,7 +226,7 @@ fn relation_aware_interrupt_candidate<'a>(
     current_motive: Option<u32>,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
-) -> Option<(&'a RankedGoal, GoalSwitchKind)> {
+) -> Option<(&'a AgendaEntry, GoalSwitchKind)> {
     let planned_candidates = planned_candidates?;
     let planned_by_goal = planned_candidates
         .iter()
@@ -239,11 +239,11 @@ fn relation_aware_interrupt_candidate<'a>(
         .collect::<BTreeMap<_, _>>();
 
     for challenger in ranked_candidates {
-        if Some(challenger.grounded.key) == active_goal {
+        if Some(challenger.offer.key) == active_goal {
             continue;
         }
 
-        let Some(plan) = planned_by_goal.get(&challenger.grounded.key) else {
+        let Some(plan) = planned_by_goal.get(&challenger.offer.key) else {
             continue;
         };
         let relation = classify_frame_plan_relation(jc, plan);
@@ -279,10 +279,10 @@ fn relation_aware_interrupt_candidate<'a>(
 fn best_challenger<'a>(
     current_goal: Option<GoalKey>,
     ranked_candidates: &'a OrderedRanked<'a>,
-) -> Option<&'a RankedGoal> {
+) -> Option<&'a AgendaEntry> {
     ranked_candidates
         .iter()
-        .find(|candidate| Some(candidate.grounded.key) != current_goal)
+        .find(|candidate| Some(candidate.offer.key) != current_goal)
 }
 
 fn current_priority(
@@ -293,7 +293,7 @@ fn current_priority(
     if let Some(current_goal) = active_goal
         && let Some(current) = ranked_candidates
             .iter()
-            .find(|candidate| candidate.grounded.key == current_goal)
+            .find(|candidate| candidate.offer.key == current_goal)
     {
         return Some((current.priority_class, Some(current.motive_score)));
     }
@@ -306,11 +306,11 @@ mod tests {
     use super::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
     use crate::plan_selection::SelectionCandidatePlan;
     use crate::{
-        AgentDecisionRuntime, CommodityPurpose, DecisionContext, GoalKey, GoalPriorityClass,
-        GroundedGoal, PlannedPlan, RankedGoal,
+        AgendaEntry, AgentDecisionRuntime, CommodityPurpose, DecisionContext, GoalKey, GoalOffer,
+        GoalPriorityClass, PlannedPlan,
     };
     use std::collections::BTreeSet;
-    use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKind, Permille};
+    use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKind, Permille, Tick};
     use worldwake_sim::Interruptibility;
 
     fn entity(slot: u32) -> EntityId {
@@ -320,13 +320,22 @@ mod tests {
         }
     }
 
-    fn ranked(kind: GoalKind, priority_class: GoalPriorityClass, motive_score: u32) -> RankedGoal {
-        RankedGoal {
-            grounded: GroundedGoal {
+    fn ranked(kind: GoalKind, priority_class: GoalPriorityClass, motive_score: u32) -> AgendaEntry {
+        AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(kind),
+                anchor: worldwake_core::OpportunityAnchor::None,
+            },
+            offer: GoalOffer {
                 anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(kind),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class,
             motive_score,
@@ -334,6 +343,12 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
@@ -379,7 +394,7 @@ mod tests {
         }
     }
 
-    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+    fn ordered(ranked: &[AgendaEntry]) -> crate::ranking::OrderedRanked<'_> {
         crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
     }
 

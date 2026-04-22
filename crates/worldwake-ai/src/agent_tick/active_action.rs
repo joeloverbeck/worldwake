@@ -1,7 +1,7 @@
 use worldwake_core::{
-    ActionInterruptReasonTag, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile,
-    ContentionIntents, DiscrepancyMemory, EntityId, FrameState, IntentionFrame, Permille,
-    PlanInvalidationReason, ReplanReason, Tick,
+    ActionInterruptReasonTag, BlockerMemory, CauseRef, CognitiveProfile, ContentionIntents,
+    DiscrepancyMemory, EntityId, FrameState, IntentionFrame, Permille, PlanInvalidationReason,
+    ReplanReason, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionHandlerRegistry, InterruptReason, Interruptibility, PerAgentBeliefView,
@@ -20,7 +20,7 @@ use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update,
 };
 use crate::{
-    AgentDecisionRuntime, DecisionContext, InterruptDecision, PendingRepairContext,
+    AgendaEntry, AgentDecisionRuntime, DecisionContext, InterruptDecision, PendingRepairContext,
     PlanFailureContext, PlanTerminalKind, PlannedStep, classify_frame_plan_relation,
     evaluate_interrupt, handle_plan_failure, has_frame, ranking::OrderedRanked,
 };
@@ -39,7 +39,7 @@ pub(super) fn active_action_for_agent(
 fn should_build_interrupt_plans(
     interruptibility: Interruptibility,
     runtime: &AgentDecisionRuntime,
-    active_goal: Option<ActiveGoal>,
+    active_goal: Option<&AgendaEntry>,
     jc: Option<&IntentionFrame>,
 ) -> bool {
     if interruptibility != Interruptibility::FreelyInterruptible {
@@ -53,7 +53,7 @@ fn should_build_interrupt_plans(
 pub(super) fn handle_active_action_phase(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<ActiveGoal>,
+    active_goal: &mut Option<AgendaEntry>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     blocked_memory: &mut BlockerMemory,
@@ -82,7 +82,7 @@ pub(super) fn handle_active_action_phase(
     // the expensive GOAP search for NonInterruptible and InterruptibleWithPenalty
     // actions.
     let needs_plans =
-        should_build_interrupt_plans(interruptibility, runtime, *active_goal, jc.as_ref());
+        should_build_interrupt_plans(interruptibility, runtime, active_goal.as_ref(), jc.as_ref());
     let planned_candidates = needs_plans.then(|| {
         build_candidate_plans(
             ctx.world,
@@ -107,7 +107,7 @@ pub(super) fn handle_active_action_phase(
     let selection_plans = planned_candidates
         .as_ref()
         .map(super::planning::CandidatePlanningPass::selection_plans);
-    let active_goal_key = active_goal.map(|ag| ag.goal_key);
+    let active_goal_key = active_goal.as_ref().map(|ag| ag.key.goal_key);
     let decision = evaluate_interrupt(
         runtime,
         active_goal_key,
@@ -203,7 +203,7 @@ pub(super) fn goal_switch_margin_details(
 /// intention frame (or `None` if it was cleared).
 pub(super) fn advance_completed_step(
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<ActiveGoal>,
+    active_goal: &mut Option<AgendaEntry>,
     facility_intents: &mut ContentionIntents,
     jc: Option<&IntentionFrame>,
     completed_op_kind: crate::PlannerOpKind,
@@ -237,10 +237,6 @@ pub(super) fn advance_completed_step(
 
     match plan.terminal_kind {
         PlanTerminalKind::ProgressBarrier => {
-            *active_goal = Some(ActiveGoal {
-                goal_key: plan.goal,
-                adopted_at: tick,
-            });
             runtime.current_plan = None;
             runtime.current_step_index = 0;
             runtime.dirty.insert(DirtySet::PLAN_FINISHED);
@@ -403,9 +399,13 @@ fn map_interrupt_reason(reason: InterruptReason) -> ActionInterruptReasonTag {
 mod tests {
     use super::{map_replan_reason, resolve_replan_reason, should_build_interrupt_plans};
     use crate::failure_handling::{ExecutionFailure, FailureClassification};
-    use crate::{AgentDecisionRuntime, PlannedPlan, PlannedStep};
+    use crate::{
+        AgendaEntry, AgendaEntryKey, AgendaOrigin, AgendaPhase, AgentDecisionRuntime,
+        FeasibilityHint, GoalOffer, KillCondition, PlannedPlan, PlannedStep,
+    };
+    use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, ActiveGoal, EntityId, GoalKey, GoalKind, IntentionFrame, OpportunityAnchor,
+        ActionDefId, EntityId, GoalKey, GoalKind, IntentionFrame, OpportunityAnchor,
         PlanInvalidationReason, ReplanReason, Tick,
     };
     use worldwake_sim::{
@@ -418,6 +418,38 @@ mod tests {
         EntityId {
             slot,
             generation: 0,
+        }
+    }
+
+    fn committed_goal(goal_key: GoalKey, tick: Tick) -> AgendaEntry {
+        AgendaEntry {
+            key: AgendaEntryKey {
+                goal_key,
+                anchor: OpportunityAnchor::None,
+            },
+            offer: GoalOffer {
+                key: goal_key,
+                anchor: OpportunityAnchor::None,
+                evidence_entities: BTreeSet::new(),
+                evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
+            },
+            phase: AgendaPhase::Committed,
+            origin: AgendaOrigin::NeedDrive,
+            introduced_tick: tick,
+            last_reconsidered_tick: tick,
+            revival_trigger: None,
+            kill_condition: KillCondition::External,
+            priority_class: crate::GoalPriorityClass::Background,
+            motive_score: 0,
+            provenance: None,
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: FeasibilityHint::Uncertain,
         }
     }
 
@@ -454,10 +486,7 @@ mod tests {
         assert!(should_build_interrupt_plans(
             Interruptibility::FreelyInterruptible,
             &runtime,
-            Some(ActiveGoal {
-                goal_key: current_goal,
-                adopted_at: Tick(5),
-            }),
+            Some(&committed_goal(current_goal, Tick(5))),
             Option::<&IntentionFrame>::None,
         ));
     }

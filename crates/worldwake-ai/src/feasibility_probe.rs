@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::agent_tick::portfolio::FeasibilityVerdict;
 use crate::failure_handling::place_has_local_commodity_support;
-use crate::goal_model::RankedGoal;
+use crate::goal_model::AgendaEntry;
 use crate::{GoalKindPlannerExt, PlannerOpKind, PlannerOpSemantics};
 use worldwake_core::{
     ActionDefId, BlockerKey, BlockerMemory, Discrepancy, DiscrepancyMemory, EntityId, GoalKind,
@@ -26,7 +26,7 @@ pub(crate) struct ProbeContext<'a> {
     pub(crate) agent_place: Option<EntityId>,
 }
 
-pub(crate) fn probe(ranked: &RankedGoal, context: &ProbeContext<'_>) -> FeasibilityVerdict {
+pub(crate) fn probe(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> FeasibilityVerdict {
     let blocker_key = blocker_key_for_probe(ranked);
     if let Some(entry) = context
         .discrepancy_memory
@@ -68,30 +68,30 @@ pub(crate) fn probe(ranked: &RankedGoal, context: &ProbeContext<'_>) -> Feasibil
     FeasibilityVerdict::Plausible
 }
 
-fn blocker_key_for_probe(ranked: &RankedGoal) -> BlockerKey {
-    let anchor_place = match ranked.grounded.anchor {
+fn blocker_key_for_probe(ranked: &AgendaEntry) -> BlockerKey {
+    let anchor_place = match ranked.offer.anchor {
         OpportunityAnchor::Place(place) => Some(place),
         OpportunityAnchor::Entity(_) | OpportunityAnchor::None => None,
     };
-    let anchor_target = match ranked.grounded.anchor {
+    let anchor_target = match ranked.offer.anchor {
         OpportunityAnchor::Entity(target) => Some(target),
         OpportunityAnchor::Place(_) | OpportunityAnchor::None => None,
     };
 
     BlockerKey {
-        goal_key: ranked.grounded.key,
-        place: anchor_place.or(ranked.grounded.key.place),
-        target: anchor_target.or(ranked.grounded.key.entity),
+        goal_key: ranked.offer.key,
+        place: anchor_place.or(ranked.offer.key.place),
+        target: anchor_target.or(ranked.offer.key.entity),
         // The standalone probe runs before root candidate expansion, so it can
         // only honestly query the goal/anchor-scoped blocker lane here.
         action_def: None,
     }
 }
 
-fn known_target_failure(ranked: &RankedGoal, context: &ProbeContext<'_>) -> Option<Discrepancy> {
-    let target = match ranked.grounded.anchor {
+fn known_target_failure(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Option<Discrepancy> {
+    let target = match ranked.offer.anchor {
         OpportunityAnchor::Entity(target) => Some(target),
-        OpportunityAnchor::Place(_) | OpportunityAnchor::None => ranked.grounded.key.entity,
+        OpportunityAnchor::Place(_) | OpportunityAnchor::None => ranked.offer.key.entity,
     };
 
     if let Some(target) = target {
@@ -130,9 +130,9 @@ fn known_target_failure(ranked: &RankedGoal, context: &ProbeContext<'_>) -> Opti
         }
     }
 
-    let place = match ranked.grounded.anchor {
+    let place = match ranked.offer.anchor {
         OpportunityAnchor::Place(place) => Some(place),
-        OpportunityAnchor::Entity(_) | OpportunityAnchor::None => ranked.grounded.key.place,
+        OpportunityAnchor::Entity(_) | OpportunityAnchor::None => ranked.offer.key.place,
     };
     if let (Some(agent_place), Some(target_place)) = (context.agent_place, place)
         && agent_place != target_place
@@ -144,7 +144,7 @@ fn known_target_failure(ranked: &RankedGoal, context: &ProbeContext<'_>) -> Opti
     None
 }
 
-fn requires_exact_identity_target(ranked: &RankedGoal, context: &ProbeContext<'_>) -> bool {
+fn requires_exact_identity_target(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> bool {
     relevant_action_defs(ranked, context.semantics_table)
         .into_iter()
         .filter_map(|def_id| context.action_defs.get(def_id))
@@ -152,25 +152,25 @@ fn requires_exact_identity_target(ranked: &RankedGoal, context: &ProbeContext<'_
 }
 
 fn current_place_support_failure(
-    ranked: &RankedGoal,
+    ranked: &AgendaEntry,
     context: &ProbeContext<'_>,
 ) -> Option<Discrepancy> {
     let (GoalKind::AcquireCommodity { commodity, .. } | GoalKind::RestockCommodity { commodity }) =
-        ranked.grounded.key.kind
+        ranked.offer.key.kind
     else {
         return None;
     };
-    let place = match ranked.grounded.anchor {
+    let place = match ranked.offer.anchor {
         OpportunityAnchor::Place(place) => Some(place),
         OpportunityAnchor::Entity(target) => context
             .belief_view
             .effective_place(target)
-            .or(ranked.grounded.key.place),
-        OpportunityAnchor::None => ranked.grounded.key.place.or_else(|| {
+            .or(ranked.offer.key.place),
+        OpportunityAnchor::None => ranked.offer.key.place.or_else(|| {
             let agent_place = context.agent_place?;
-            let has_local_evidence = ranked.grounded.evidence_places.contains(&agent_place)
+            let has_local_evidence = ranked.offer.evidence_places.contains(&agent_place)
                 || ranked
-                    .grounded
+                    .offer
                     .evidence_entities
                     .iter()
                     .copied()
@@ -184,7 +184,7 @@ fn current_place_support_failure(
     }
 
     let local_evidence_entities = ranked
-        .grounded
+        .offer
         .evidence_entities
         .iter()
         .copied()
@@ -232,7 +232,7 @@ fn entity_supports_commodity(
 }
 
 fn has_local_goal_affordance(
-    ranked: &RankedGoal,
+    ranked: &AgendaEntry,
     context: &ProbeContext<'_>,
     local_evidence_entities: &[EntityId],
 ) -> bool {
@@ -264,7 +264,7 @@ fn has_local_goal_affordance(
     })
 }
 
-fn has_relevant_affordance(ranked: &RankedGoal, context: &ProbeContext<'_>) -> bool {
+fn has_relevant_affordance(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> bool {
     let relevant_defs = relevant_action_defs(ranked, context.semantics_table);
     if relevant_defs.is_empty() {
         return false;
@@ -281,10 +281,10 @@ fn has_relevant_affordance(ranked: &RankedGoal, context: &ProbeContext<'_>) -> b
 }
 
 fn relevant_action_defs(
-    ranked: &RankedGoal,
+    ranked: &AgendaEntry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
 ) -> BTreeSet<ActionDefId> {
-    let relevant_ops = ranked.grounded.key.kind.relevant_op_kinds();
+    let relevant_ops = ranked.offer.key.kind.relevant_op_kinds();
     semantics_table
         .iter()
         .filter(|(_, semantics)| relevant_ops.contains(&semantics.op_kind))
@@ -296,7 +296,7 @@ fn relevant_action_defs(
 mod tests {
     use super::{ProbeContext, blocker_key_for_probe, probe};
     use crate::{
-        GoalPriorityClass, GroundedGoal, PlannerOpSemantics, RankedGoal,
+        AgendaEntry, GoalOffer, GoalPriorityClass, PlannerOpSemantics,
         agent_tick::portfolio::FeasibilityVerdict, build_semantics_table,
         feasibility::FeasibilityHint,
     };
@@ -329,13 +329,22 @@ mod tests {
         }
     }
 
-    fn ranked_goal(kind: GoalKind, anchor: OpportunityAnchor) -> RankedGoal {
-        RankedGoal {
-            grounded: GroundedGoal {
+    fn ranked_goal(kind: GoalKind, anchor: OpportunityAnchor) -> AgendaEntry {
+        AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: kind.into(),
+                anchor,
+            },
+            offer: GoalOffer {
                 key: kind.into(),
                 anchor,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class: GoalPriorityClass::High,
             motive_score: 500,
@@ -343,6 +352,12 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: FeasibilityHint::Uncertain,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
@@ -748,8 +763,16 @@ mod tests {
         let harness = ProbeHarness::sleep_only();
         let agent = entity(1);
         let place = entity(2);
-        let ranked = RankedGoal {
-            grounded: GroundedGoal {
+        let ranked = AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Apple,
+                    purpose: crate::CommodityPurpose::SelfConsume,
+                }
+                .into(),
+                anchor: OpportunityAnchor::None,
+            },
+            offer: GoalOffer {
                 key: GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: crate::CommodityPurpose::SelfConsume,
@@ -758,6 +781,11 @@ mod tests {
                 anchor: OpportunityAnchor::None,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::from([place]),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class: GoalPriorityClass::High,
             motive_score: 500,
@@ -765,6 +793,13 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: FeasibilityHint::Uncertain,
+
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         };
         let mut view = MockView::default();
         view.alive.insert(agent);

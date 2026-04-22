@@ -2,9 +2,9 @@
 
 use crate::BeliefStoreDiff;
 use crate::{
-    AcquisitionExhaustionTracker, ActiveGoal, AgendaProfile, AgentBeliefStore, AgentData,
-    ArtifactHeader, ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory,
-    BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
+    AcquisitionExhaustionTracker, AgendaProfile, AgentBeliefStore, AgentData, ArtifactHeader,
+    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory, BountyTerms,
+    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
     CommodityValuationProfile, CommunicationProfile, Container, ContentionDispositionProfile,
     ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
     DeprivationExposure, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
@@ -273,8 +273,8 @@ mod tests {
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        AcquisitionExhaustionTracker, ActionDefId, ActiveGoal, AgendaProfile, AgentBeliefStore,
-        AgentData, ArtifactHeader, ArtifactKind, ArtifactPostingProfile, ArtifactState, BanditCamp,
+        AcquisitionExhaustionTracker, ActionDefId, AgendaProfile, AgentBeliefStore, AgentData,
+        ArtifactHeader, ArtifactKind, ArtifactPostingProfile, ArtifactState, BanditCamp,
         BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState, BodyPart, BountyTarget,
         BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
         CommunicationProfile, Container, ContentionIntents, ContentionPolicy, ContentionQueue,
@@ -725,10 +725,6 @@ mod tests {
                 departure_tick: Tick(13),
                 arrival_tick: Tick(21),
             }),
-            ComponentValue::ActiveGoal(ActiveGoal {
-                goal_key: GoalKey::from(GoalKind::Sleep),
-                adopted_at: Tick(10),
-            }),
             ComponentValue::ContentionIntents(ContentionIntents {
                 intents: BTreeMap::from([(
                     entity(40),
@@ -957,7 +953,6 @@ mod tests {
                 ComponentKind::BanditFactionPolicy,
                 ComponentKind::ProductionJob,
                 ComponentKind::InTransitOnEdge,
-                ComponentKind::ActiveGoal,
                 ComponentKind::ContentionIntents,
                 ComponentKind::IntentionFrame,
                 ComponentKind::IntentionDispositionProfile,

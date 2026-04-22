@@ -533,7 +533,7 @@ fn blocked_leg_target(step: &PlannedStep) -> Option<EntityId> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{GoalPriorityClass, GroundedGoal, RankedGoal};
+    use crate::{AgendaEntry, GoalOffer, GoalPriorityClass};
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
@@ -824,13 +824,22 @@ mod tests {
         }
     }
 
-    fn make_ranked_goal(priority_class: GoalPriorityClass) -> RankedGoal {
-        RankedGoal {
-            grounded: GroundedGoal {
+    fn make_ranked_goal(priority_class: GoalPriorityClass) -> AgendaEntry {
+        AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::new(GoalKind::Sleep),
+                anchor: worldwake_core::OpportunityAnchor::None,
+            },
+            offer: GoalOffer {
                 anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::new(GoalKind::Sleep),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class,
             motive_score: 100,
@@ -838,10 +847,16 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
-    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+    fn ordered(ranked: &[AgendaEntry]) -> crate::ranking::OrderedRanked<'_> {
         crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
     }
 

@@ -18,18 +18,18 @@ use crate::plan_step_expectations::{
 };
 use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
 use crate::{
-    AcceptedRepairProvenance, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
+    AcceptedRepairProvenance, AgendaEntry, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
     ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    RankedGoal, authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
+    authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
     ranking::OrderedRanked, revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 use worldwake_core::{
-    ActionDefId, ActiveGoal, BlockerMemory, CognitiveProfile, DecisionEventPayload,
-    DiscrepancyMemory, EntityId, EventLog, EventTag, ExecutionBudget, GoalCommittedPayload,
-    GoalKey, GoalKind, GoalRejectionReason, IntentionFrame, OpportunityAnchor, Permille,
-    PlanAdoptedPayload, RejectedAlternativeSummary, RepairKind, Tick,
+    ActionDefId, BlockerMemory, CognitiveProfile, DecisionEventPayload, DiscrepancyMemory,
+    EntityId, EventLog, EventTag, ExecutionBudget, GoalCommittedPayload, GoalKey, GoalKind,
+    GoalRejectionReason, IntentionFrame, OpportunityAnchor, Permille, PlanAdoptedPayload,
+    RejectedAlternativeSummary, RepairKind, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, ActionPayload, GoalBeliefView, RecipeRegistry, RuntimeBeliefView,
@@ -98,8 +98,8 @@ impl CandidatePlanningPass {
             .iter()
             .filter_map(|kind| {
                 self.portfolio.slots.get(kind).map(|slot| OpportunityKey {
-                    goal_key: slot.ranked.grounded.key,
-                    anchor: slot.ranked.grounded.anchor,
+                    goal_key: slot.ranked.offer.key,
+                    anchor: slot.ranked.offer.anchor,
                 })
             })
             .collect()
@@ -119,7 +119,7 @@ impl CandidatePlanningPass {
                     (
                         *kind,
                         PortfolioSlotTrace {
-                            goal_key: slot.ranked.grounded.key,
+                            goal_key: slot.ranked.offer.key,
                             motive_score: slot.ranked.motive_score,
                             feasibility: slot.feasibility.clone(),
                         },
@@ -237,8 +237,8 @@ fn selected_plan_value(
     side_benefit_weight: Permille,
 ) -> Option<PlanValue> {
     let ranked = ranked_candidates.iter().find(|candidate| {
-        candidate.grounded.key == selected_plan.opportunity.goal_key
-            && candidate.grounded.anchor == selected_plan.opportunity.anchor
+        candidate.offer.key == selected_plan.opportunity.goal_key
+            && candidate.offer.anchor == selected_plan.opportunity.anchor
     })?;
     Some(crate::build_plan_value(
         selected_plan.clone(),
@@ -303,11 +303,11 @@ pub(super) fn summarize_plan_replacement(
     })
 }
 
-pub(super) fn summarize_ranked_goal(ranked: &RankedGoal) -> RankedGoalSummary {
+pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
     RankedGoalSummary {
         opportunity: OpportunityKey {
-            goal_key: ranked.grounded.key,
-            anchor: ranked.grounded.anchor,
+            goal_key: ranked.offer.key,
+            anchor: ranked.offer.anchor,
         },
         priority_class: ranked.priority_class,
         motive_score: ranked.motive_score,
@@ -364,8 +364,8 @@ pub(super) fn build_candidate_plans(
             opportunity_admitted_by_exhaustion(
                 exhaustion_cache,
                 OpportunityKey {
-                    goal_key: c.grounded.key,
-                    anchor: c.grounded.anchor,
+                    goal_key: c.offer.key,
+                    anchor: c.offer.anchor,
                 },
                 current_tick,
             )
@@ -411,8 +411,8 @@ pub(super) fn build_candidate_plans(
         .values()
         .filter_map(|slot| {
             let is_committed = committed_opportunity.is_some_and(|committed| {
-                committed.goal_key == slot.ranked.grounded.key
-                    && committed.anchor == slot.ranked.grounded.anchor
+                committed.goal_key == slot.ranked.offer.key
+                    && committed.anchor == slot.ranked.offer.anchor
             });
             (!is_committed
                 && matches!(
@@ -420,8 +420,8 @@ pub(super) fn build_candidate_plans(
                     crate::agent_tick::portfolio::FeasibilityVerdict::RejectedBeforeSearch { .. }
                 ))
             .then_some(OpportunityKey {
-                goal_key: slot.ranked.grounded.key,
-                anchor: slot.ranked.grounded.anchor,
+                goal_key: slot.ranked.offer.key,
+                anchor: slot.ranked.offer.anchor,
             })
         })
         .collect();
@@ -437,8 +437,8 @@ pub(super) fn build_candidate_plans(
         .iter()
         .filter_map(|ranked| {
             let opp = OpportunityKey {
-                goal_key: ranked.grounded.key,
-                anchor: ranked.grounded.anchor,
+                goal_key: ranked.offer.key,
+                anchor: ranked.offer.anchor,
             };
             (!rejected_opportunities.contains(&opp)).then_some(opp)
         })
@@ -461,8 +461,8 @@ pub(super) fn build_candidate_plans(
         .map(|ranked| {
             (
                 OpportunityKey {
-                    goal_key: ranked.grounded.key,
-                    anchor: ranked.grounded.anchor,
+                    goal_key: ranked.offer.key,
+                    anchor: ranked.offer.anchor,
                 },
                 ranked,
             )
@@ -475,7 +475,7 @@ pub(super) fn build_candidate_plans(
             .get(opportunity)
             .expect("search order must map back to an admitted opportunity");
         if let Some(found_goal) = continue_same_goal_after_found
-            && ranked.grounded.key != found_goal
+            && ranked.offer.key != found_goal
         {
             break;
         }
@@ -485,17 +485,17 @@ pub(super) fn build_candidate_plans(
         let snapshot = build_planning_snapshot_with_blocked_facility_uses(
             &view,
             agent,
-            &ranked.grounded.evidence_entities,
-            &ranked.grounded.evidence_places,
+            &ranked.offer.evidence_entities,
+            &ranked.offer.evidence_places,
             cognitive.snapshot_travel_horizon,
             blocked_memory,
             current_tick,
-            ranked.grounded.key.kind.relevant_op_kinds(),
+            ranked.offer.key.kind.relevant_op_kinds(),
             cognitive.max_snapshot_entities_per_place,
         );
         let opportunity = OpportunityKey {
-            goal_key: ranked.grounded.key,
-            anchor: ranked.grounded.anchor,
+            goal_key: ranked.offer.key,
+            anchor: ranked.offer.anchor,
         };
         // Apply search budget backoff for goals with 3+ consecutive exhaustion
         // failures. Each failure beyond the 2nd halves the budget (floor 16).
@@ -514,7 +514,7 @@ pub(super) fn build_candidate_plans(
         };
         let result = search_plan_with_trace_metadata(
             &snapshot,
-            &ranked.grounded,
+            &ranked.offer,
             semantics_table,
             action_defs,
             action_handlers,
@@ -540,11 +540,11 @@ pub(super) fn build_candidate_plans(
                 if plan.steps.first().is_some_and(|step| {
                     step.op_kind == crate::PlannerOpKind::Harvest
                         && matches!(
-                            ranked.grounded.key.kind,
+                            ranked.offer.key.kind,
                             GoalKind::AcquireCommodity { .. } | GoalKind::RestockCommodity { .. }
                         )
                         && matches!(
-                            ranked.grounded.anchor,
+                            ranked.offer.anchor,
                             OpportunityAnchor::Place(place)
                                 if SpatialBeliefView::effective_place(&view, agent) == Some(place)
                         )
@@ -659,10 +659,9 @@ pub(super) fn selection_candidates(plans: &[CandidatePlanSearch]) -> Vec<Selecti
 fn ranked_goal_for_opportunity<'a>(
     ranked_candidates: &'a OrderedRanked<'a>,
     opportunity: OpportunityKey,
-) -> Option<&'a RankedGoal> {
+) -> Option<&'a AgendaEntry> {
     ranked_candidates.iter().find(|candidate| {
-        candidate.grounded.key == opportunity.goal_key
-            && candidate.grounded.anchor == opportunity.anchor
+        candidate.offer.key == opportunity.goal_key && candidate.offer.anchor == opportunity.anchor
     })
 }
 
@@ -674,8 +673,8 @@ fn summarize_snapshot_continuation(
     let top = ranked_candidates.first();
     let current = ranked_goal_for_opportunity(ranked_candidates, current_opportunity);
     let top_opportunity = top.map(|ranked| OpportunityKey {
-        goal_key: ranked.grounded.key,
-        anchor: ranked.grounded.anchor,
+        goal_key: ranked.offer.key,
+        anchor: ranked.offer.anchor,
     });
     let motive_delta = top
         .zip(current)
@@ -873,7 +872,7 @@ fn build_rejected_alternatives(
 
     let mut rejected_by_goal = BTreeMap::<GoalKey, RejectedGoal>::new();
     for slot in portfolio.slots.values() {
-        if slot.ranked.grounded.key == committed_goal {
+        if slot.ranked.offer.key == committed_goal {
             continue;
         }
         if matches!(
@@ -881,9 +880,9 @@ fn build_rejected_alternatives(
             FeasibilityVerdict::RejectedBeforeSearch { .. }
         ) {
             rejected_by_goal.insert(
-                slot.ranked.grounded.key,
+                slot.ranked.offer.key,
                 RejectedGoal {
-                    goal_key: slot.ranked.grounded.key,
+                    goal_key: slot.ranked.offer.key,
                     motive_score: slot.ranked.motive_score,
                     rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
                 },
@@ -893,10 +892,10 @@ fn build_rejected_alternatives(
 
     for candidate in ranked_candidates
         .iter()
-        .filter(|candidate| candidate.grounded.key != committed_goal)
+        .filter(|candidate| candidate.offer.key != committed_goal)
     {
         rejected_by_goal
-            .entry(candidate.grounded.key)
+            .entry(candidate.offer.key)
             .and_modify(|existing| {
                 if matches!(existing.rejection_reason, GoalRejectionReason::LowerMotive)
                     && candidate.motive_score > existing.motive_score
@@ -905,7 +904,7 @@ fn build_rejected_alternatives(
                 }
             })
             .or_insert(RejectedGoal {
-                goal_key: candidate.grounded.key,
+                goal_key: candidate.offer.key,
                 motive_score: candidate.motive_score,
                 rejection_reason: GoalRejectionReason::LowerMotive,
             });
@@ -940,7 +939,7 @@ fn emit_plan_selection_events(
 ) {
     let committed = ranked_candidates
         .iter()
-        .find(|candidate| candidate.grounded.key == selected_plan.goal)
+        .find(|candidate| candidate.offer.key == selected_plan.goal)
         .expect("selected plan must map to a ranked goal");
     emit_decision_event(
         event_log,
@@ -1100,7 +1099,7 @@ fn adopt_selected_plan(
     world: &mut worldwake_core::World,
     event_log: &mut EventLog,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<ActiveGoal>,
+    active_goal: &mut Option<AgendaEntry>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: EntityId,
@@ -1116,10 +1115,10 @@ fn adopt_selected_plan(
     facility_intents.intents.clear();
     runtime.accepted_repair = classify_accepted_repair(runtime, &selected_plan, recipe_registry);
     runtime.pending_repair_context = None;
-    *active_goal = Some(ActiveGoal {
-        goal_key: selected_plan.goal,
-        adopted_at: tick,
-    });
+    *active_goal = ranked_candidates
+        .iter()
+        .find(|candidate| candidate.key == selected_plan.opportunity)
+        .map(|candidate| AgendaEntry::committed_from(candidate, tick));
     *jc = prepared_frame;
     let _ = persist_expectation_store_update(world, event_log, agent, tick, |store| {
         let expired = expire_plan_step_expectations(store);
@@ -1139,7 +1138,7 @@ fn adopt_selected_plan(
     runtime.last_priority_class = ranked_candidates
         .iter()
         .find(|candidate| {
-            Some(candidate.grounded.key) == active_goal.as_ref().map(|ag| ag.goal_key)
+            Some(candidate.offer.key) == active_goal.as_ref().map(|ag| ag.key.goal_key)
         })
         .map(|candidate| candidate.priority_class);
 }
@@ -1149,7 +1148,7 @@ fn clear_current_plan(
     world: &mut worldwake_core::World,
     event_log: &mut EventLog,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<ActiveGoal>,
+    active_goal: &mut Option<AgendaEntry>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     ranked_candidates: &OrderedRanked<'_>,
@@ -1181,7 +1180,7 @@ pub(super) fn plan_and_validate_next_step(
     event_log: &mut EventLog,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<ActiveGoal>,
+    active_goal: &mut Option<AgendaEntry>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
@@ -1201,7 +1200,7 @@ pub(super) fn plan_and_validate_next_step(
 ) -> (Option<PlannedStep>, Option<bool>) {
     let planning_start = Instant::now();
     let result = (|| {
-        let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
+        let active_goal_key = active_goal.as_ref().map(|ag| ag.key.goal_key);
         let committed_opportunity = runtime
             .current_plan
             .as_ref()
@@ -1361,7 +1360,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     event_log: &mut EventLog,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
-    active_goal: &mut Option<ActiveGoal>,
+    active_goal: &mut Option<AgendaEntry>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
@@ -1505,7 +1504,9 @@ pub(super) fn plan_and_validate_next_step_traced(
                 .map(|plan| plan.opportunity)
                 .filter(|opportunity| {
                     Some(opportunity.goal_key)
-                        == active_goal.as_ref().map(|active_goal| active_goal.goal_key)
+                        == active_goal
+                            .as_ref()
+                            .map(|active_goal| active_goal.key.goal_key)
                 }),
             discrepancy_memory,
             blocked_memory,
@@ -1564,7 +1565,7 @@ pub(super) fn plan_and_validate_next_step_traced(
         );
 
         let selection_plans = selection_candidates(&plans.plans);
-        let current_goal_before_selection = active_goal.as_ref().map(|ag| ag.goal_key);
+        let current_goal_before_selection = active_goal.as_ref().map(|ag| ag.key.goal_key);
 
         if let Some(selected_plan) = select_best_plan(
             ranked_candidates,
@@ -1621,10 +1622,10 @@ pub(super) fn plan_and_validate_next_step_traced(
             if let Some(prev) = previous_goal
                 && prev != selected_goal
             {
-                let prev_rank = ranked_candidates.iter().find(|c| c.grounded.key == prev);
+                let prev_rank = ranked_candidates.iter().find(|c| c.offer.key == prev);
                 let new_rank = ranked_candidates
                     .iter()
-                    .find(|c| c.grounded.key == selected_goal);
+                    .find(|c| c.offer.key == selected_goal);
                 let kind = match (prev_rank, new_rank) {
                     (Some(p), Some(n)) if n.priority_class > p.priority_class => {
                         crate::GoalSwitchKind::HigherPriorityGoal
@@ -1784,10 +1785,10 @@ mod tests {
         summarize_snapshot_continuation,
     };
     use crate::{
-        AgentDecisionRuntime, DirtySet, ExhaustionEntry, ExhaustionInvalidationCondition,
-        ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, GroundedGoal,
-        OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan,
-        PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture, RankedGoal,
+        AgendaEntry, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
+        ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind, GoalOffer,
+        GoalPriorityClass, OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind,
+        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture,
         agent_tick::portfolio::{FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind},
         build_semantics_table,
         decision_trace::{
@@ -1819,7 +1820,7 @@ mod tests {
         GoalKey::from(GoalKind::ConsumeOwnedCommodity { commodity })
     }
 
-    fn ordered(ranked: &[RankedGoal]) -> crate::ranking::OrderedRanked<'_> {
+    fn ordered(ranked: &[AgendaEntry]) -> crate::ranking::OrderedRanked<'_> {
         crate::ranking::OrderedRanked::from_sorted_for_test(ranked)
     }
 
@@ -1910,8 +1911,8 @@ mod tests {
         anchor: OpportunityAnchor,
         evidence_entities: BTreeSet<worldwake_core::EntityId>,
         evidence_places: BTreeSet<worldwake_core::EntityId>,
-    ) -> GroundedGoal {
-        GroundedGoal {
+    ) -> GoalOffer {
+        GoalOffer {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity,
                 purpose: CommodityPurpose::SelfConsume,
@@ -1919,6 +1920,11 @@ mod tests {
             anchor,
             evidence_entities,
             evidence_places,
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         }
     }
 
@@ -2103,7 +2109,7 @@ mod tests {
             BTreeSet::new(),
             BTreeSet::from([orchard]),
         ))];
-        let goal = ranked_candidates[0].grounded.key;
+        let goal = ranked_candidates[0].offer.key;
         let selected_plan = PlannedPlan::new(
             OpportunityKey {
                 goal_key: goal,
@@ -2382,15 +2388,25 @@ mod tests {
         assert_eq!(repair.substitute_target, None);
     }
 
-    fn ranked_goal(goal: GroundedGoal) -> RankedGoal {
-        RankedGoal {
-            grounded: goal,
+    fn ranked_goal(goal: GoalOffer) -> AgendaEntry {
+        AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: goal.key,
+                anchor: goal.anchor,
+            },
+            offer: goal,
             priority_class: GoalPriorityClass::High,
             motive_score: 100,
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: FeasibilityHint::Likely,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
@@ -2401,12 +2417,17 @@ mod tests {
         let third = GoalKey::from(GoalKind::Relieve);
         let fourth = GoalKey::from(GoalKind::ReduceDanger);
         let ranked_candidates = vec![
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: selected_goal,
                     anchor: OpportunityAnchor::None,
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 120,
@@ -2414,13 +2435,29 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: selected_goal,
+                    anchor: OpportunityAnchor::None,
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: runner_up,
                     anchor: OpportunityAnchor::None,
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 110,
@@ -2428,13 +2465,29 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: runner_up,
+                    anchor: OpportunityAnchor::None,
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: third,
                     anchor: OpportunityAnchor::None,
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 90,
@@ -2442,13 +2495,29 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: third,
+                    anchor: OpportunityAnchor::None,
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: fourth,
                     anchor: OpportunityAnchor::None,
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 80,
@@ -2456,6 +2525,17 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: fourth,
+                    anchor: OpportunityAnchor::None,
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
         ];
         let selected_plan = PlannedPlan::new(
@@ -2533,13 +2613,18 @@ mod tests {
             kind: GoalKind,
             motive_score: u32,
             anchor: OpportunityAnchor,
-        ) -> RankedGoal {
-            RankedGoal {
-                grounded: GroundedGoal {
+        ) -> AgendaEntry {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: GoalKey::from(kind),
                     anchor,
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score,
@@ -2547,6 +2632,16 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: GoalKey::from(kind),
+                    anchor,
+                },
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             }
         }
 
@@ -2626,12 +2721,17 @@ mod tests {
             },
         });
         let ranked_candidates = vec![
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: survival_goal,
                     anchor: OpportunityAnchor::None,
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 900,
@@ -2639,13 +2739,29 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: survival_goal,
+                    anchor: OpportunityAnchor::None,
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: commitment_goal,
                     anchor: OpportunityAnchor::Place(posting_place),
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 800,
@@ -2653,13 +2769,29 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: commitment_goal,
+                    anchor: OpportunityAnchor::Place(posting_place),
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: selected_goal,
                     anchor: OpportunityAnchor::Place(entity(45)),
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 600,
@@ -2667,6 +2799,17 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: selected_goal,
+                    anchor: OpportunityAnchor::Place(entity(45)),
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
         ];
         let selected_plan = PlannedPlan::new(
@@ -2884,13 +3027,18 @@ mod tests {
         opportunity: OpportunityKey,
         priority_class: GoalPriorityClass,
         motive_score: u32,
-    ) -> RankedGoal {
-        RankedGoal {
-            grounded: GroundedGoal {
+    ) -> AgendaEntry {
+        AgendaEntry {
+            offer: GoalOffer {
                 key: opportunity.goal_key,
                 anchor: opportunity.anchor,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class,
             motive_score,
@@ -2898,6 +3046,16 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: FeasibilityHint::Likely,
+            key: worldwake_core::OpportunityKey {
+                goal_key: opportunity.goal_key,
+                anchor: opportunity.anchor,
+            },
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         }
     }
 
@@ -2991,12 +3149,17 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
         let ranked_candidates = vec![
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: goal,
                     anchor: OpportunityAnchor::None,
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 800,
@@ -3004,15 +3167,31 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::None,
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
-            RankedGoal {
-                grounded: GroundedGoal {
+            AgendaEntry {
+                offer: GoalOffer {
                     key: GoalKey::from(GoalKind::SellCommodity {
                         commodity: CommodityKind::Apple,
                     }),
                     anchor: OpportunityAnchor::Place(market),
                     evidence_entities: BTreeSet::new(),
                     evidence_places: BTreeSet::new(),
+                    obligation_source: None,
+                    commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                    required_information_gaps: Vec::new(),
+                    invalidators: Vec::new(),
+                    learned_expectation_refs: Vec::new(),
                 },
                 priority_class: GoalPriorityClass::Low,
                 motive_score: 300,
@@ -3020,6 +3199,17 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Likely,
+                key: worldwake_core::OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(market),
+                },
+
+                phase: crate::AgendaPhase::Pending,
+                origin: crate::AgendaOrigin::NeedDrive,
+                introduced_tick: Tick(0),
+                last_reconsidered_tick: Tick(0),
+                revival_trigger: None,
+                kill_condition: crate::KillCondition::External,
             },
         ];
         let plan_value = selected_plan_value(
@@ -3328,7 +3518,7 @@ mod tests {
         let semantics = build_semantics_table(&defs);
         let scheduler = Scheduler::new(SystemManifest::canonical());
         let ranked_candidates = vec![
-            ranked_goal(GroundedGoal {
+            ranked_goal(GoalOffer {
                 key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
@@ -3336,12 +3526,22 @@ mod tests {
                 anchor: worldwake_core::OpportunityAnchor::None,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             }),
-            ranked_goal(GroundedGoal {
+            ranked_goal(GoalOffer {
                 key: GoalKey::from(GoalKind::Sleep),
                 anchor: worldwake_core::OpportunityAnchor::Place(market),
                 evidence_entities: BTreeSet::from([seller]),
                 evidence_places: BTreeSet::from([market]),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             }),
         ];
         let budget = ProfileFixture {
@@ -3529,8 +3729,8 @@ mod tests {
             ..ProfileFixture::default()
         };
         let exhausted = OpportunityKey {
-            goal_key: ranked_candidates[0].grounded.key,
-            anchor: ranked_candidates[0].grounded.anchor,
+            goal_key: ranked_candidates[0].offer.key,
+            anchor: ranked_candidates[0].offer.anchor,
         };
         let exhaustion_cache = BTreeMap::from([(
             exhausted,
@@ -3861,24 +4061,39 @@ mod tests {
             goal_key: goal,
             anchor: OpportunityAnchor::Place(entity(62)),
         };
-        let sleep_goal = GroundedGoal {
+        let sleep_goal = GoalOffer {
             key: GoalKey::from(GoalKind::Sleep),
             anchor: OpportunityAnchor::Place(entity(63)),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let _ranked_candidates = [
-            ranked_goal(GroundedGoal {
+            ranked_goal(GoalOffer {
                 key: goal,
                 anchor: market.anchor,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             }),
-            ranked_goal(GroundedGoal {
+            ranked_goal(GoalOffer {
                 key: goal,
                 anchor: orchard.anchor,
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             }),
             ranked_goal(sleep_goal.clone()),
         ];
@@ -4059,8 +4274,8 @@ mod tests {
         let exhaustion_cache = BTreeMap::from([
             (
                 OpportunityKey {
-                    goal_key: ranked_candidates[3].grounded.key,
-                    anchor: ranked_candidates[3].grounded.anchor,
+                    goal_key: ranked_candidates[3].offer.key,
+                    anchor: ranked_candidates[3].offer.anchor,
                 },
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::FrontierExhausted,
@@ -4072,8 +4287,8 @@ mod tests {
             ),
             (
                 OpportunityKey {
-                    goal_key: ranked_candidates[2].grounded.key,
-                    anchor: ranked_candidates[2].grounded.anchor,
+                    goal_key: ranked_candidates[2].offer.key,
+                    anchor: ranked_candidates[2].offer.anchor,
                 },
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -4085,8 +4300,8 @@ mod tests {
             ),
             (
                 OpportunityKey {
-                    goal_key: ranked_candidates[1].grounded.key,
-                    anchor: ranked_candidates[1].grounded.anchor,
+                    goal_key: ranked_candidates[1].offer.key,
+                    anchor: ranked_candidates[1].offer.anchor,
                 },
                 ExhaustionEntry {
                     retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -4131,12 +4346,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 OpportunityKey {
-                    goal_key: ranked_candidates[0].grounded.key,
-                    anchor: ranked_candidates[0].grounded.anchor,
+                    goal_key: ranked_candidates[0].offer.key,
+                    anchor: ranked_candidates[0].offer.anchor,
                 },
                 OpportunityKey {
-                    goal_key: ranked_candidates[1].grounded.key,
-                    anchor: ranked_candidates[1].grounded.anchor,
+                    goal_key: ranked_candidates[1].offer.key,
+                    anchor: ranked_candidates[1].offer.anchor,
                 },
             ]
         );
@@ -4566,8 +4781,8 @@ mod tests {
             BTreeSet::from([market]),
         ))];
         let opportunity = OpportunityKey {
-            goal_key: ranked_candidates[0].grounded.key,
-            anchor: ranked_candidates[0].grounded.anchor,
+            goal_key: ranked_candidates[0].offer.key,
+            anchor: ranked_candidates[0].offer.anchor,
         };
         // 4 consecutive failures → backoff kicks in at 3+: shift = 4-2 = 2,
         // effective budget = 128 >> 2 = 32
@@ -4679,8 +4894,8 @@ mod tests {
         ];
         let exhaustion_cache = BTreeMap::from([(
             OpportunityKey {
-                goal_key: ranked_candidates[0].grounded.key,
-                anchor: ranked_candidates[0].grounded.anchor,
+                goal_key: ranked_candidates[0].offer.key,
+                anchor: ranked_candidates[0].offer.anchor,
             },
             ExhaustionEntry {
                 retry_state: ExhaustionRetryState::BudgetRetryPending,
@@ -4759,8 +4974,8 @@ mod tests {
             BTreeSet::from([market]),
         ))];
         let opportunity = OpportunityKey {
-            goal_key: ranked_candidates[0].grounded.key,
-            anchor: ranked_candidates[0].grounded.anchor,
+            goal_key: ranked_candidates[0].offer.key,
+            anchor: ranked_candidates[0].offer.anchor,
         };
         let exhaustion_cache = BTreeMap::from([(
             opportunity,

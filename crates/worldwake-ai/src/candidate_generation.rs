@@ -1,5 +1,5 @@
 use crate::{
-    GroundedGoal,
+    GoalOffer,
     decision_trace::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
@@ -187,7 +187,7 @@ pub(crate) struct CandidateSuppressionDiagnostic {
 }
 
 pub(crate) struct CandidateGenerationResult {
-    pub candidates: Vec<GroundedGoal>,
+    pub candidates: Vec<GoalOffer>,
     pub diagnostics: CandidateGenerationDiagnostics,
     /// Violations detected during candidate generation that should be recorded
     /// in the agent's [`ViolationMemory`] by the caller. Generation itself is
@@ -232,7 +232,7 @@ pub fn generate_candidates(
     blocked: &BlockerMemory,
     recipes: &RecipeRegistry,
     current_tick: Tick,
-) -> Vec<GroundedGoal> {
+) -> Vec<GoalOffer> {
     let empty_vm = ViolationMemory::default();
     generate_candidates_with_travel_horizon(
         view,
@@ -368,12 +368,12 @@ fn artifact_posting_profile_for_goal_generation(
 }
 
 fn filter_suppressed_candidates(
-    candidates: Vec<GroundedGoal>,
+    candidates: Vec<GoalOffer>,
     blocked: &BlockerMemory,
     discrepancies: &DiscrepancyMemory,
     current_tick: Tick,
     diagnostics: &mut CandidateGenerationDiagnostics,
-) -> Vec<GroundedGoal> {
+) -> Vec<GoalOffer> {
     let mut blocked_by_goal: BTreeMap<
         GoalKey,
         Vec<(
@@ -439,7 +439,7 @@ enum SuppressionMatch {
 }
 
 fn find_matching_suppression(
-    candidate: &GroundedGoal,
+    candidate: &GoalOffer,
     blocked: &BlockerMemory,
     discrepancies: &DiscrepancyMemory,
     current_tick: Tick,
@@ -487,10 +487,7 @@ fn goal_is_suppressed(
         )
 }
 
-fn candidate_matches_blocker(
-    candidate: &GroundedGoal,
-    blocker: &worldwake_core::BlockerKey,
-) -> bool {
+fn candidate_matches_blocker(candidate: &GoalOffer, blocker: &worldwake_core::BlockerKey) -> bool {
     if blocker.place.is_none() && blocker.target.is_none() && blocker.action_def.is_none() {
         return true;
     }
@@ -515,7 +512,7 @@ fn candidate_matches_blocker(
 }
 
 fn emit_need_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
@@ -532,7 +529,7 @@ fn emit_need_candidates(
 }
 
 fn emit_production_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
@@ -542,7 +539,7 @@ fn emit_production_candidates(
 }
 
 fn emit_enterprise_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -552,7 +549,7 @@ fn emit_enterprise_candidates(
 }
 
 fn emit_bounty_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -694,7 +691,7 @@ fn emit_bounty_candidates(
 }
 
 fn emit_artifact_posting_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -703,7 +700,7 @@ fn emit_artifact_posting_candidates(
 }
 
 fn emit_bounty_posting_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -818,7 +815,7 @@ fn emit_bounty_posting_candidates(
 }
 
 fn emit_notice_posting_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -955,7 +952,7 @@ fn known_controlled_delivery_sources(
 }
 
 fn emit_combat_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -968,7 +965,7 @@ fn emit_combat_candidates(
 }
 
 fn emit_crime_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -977,7 +974,7 @@ fn emit_crime_candidates(
 }
 
 fn emit_patrol_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1004,7 +1001,7 @@ fn emit_patrol_candidates(
 }
 
 fn emit_justice_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1027,7 +1024,7 @@ fn emit_justice_candidates(
 }
 
 fn emit_accusation_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     known_social_observations: &[SocialObservation],
@@ -1108,7 +1105,7 @@ fn known_authority_crime_registers(ctx: &GenerationContext<'_>) -> Vec<(EntityId
 }
 
 fn emit_punishment_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     current_crime_case_claims: &[BelievedInstitutionalClaim],
@@ -1287,7 +1284,7 @@ fn office_governed_faction_for_accused(
 }
 
 fn emit_social_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1439,7 +1436,7 @@ fn emit_social_candidates(
 }
 
 fn emit_regroup_with_faction_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1589,7 +1586,7 @@ fn subject_is_listener_observable_entity_belief(
 }
 
 fn emit_political_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -1784,7 +1781,7 @@ fn support_declaration_matches_candidate(
 }
 
 fn emit_claim_office_candidate(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     office: EntityId,
@@ -1870,7 +1867,7 @@ fn emit_claim_office_candidate(
 }
 
 fn emit_support_candidate_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     office: EntityId,
@@ -2012,7 +2009,7 @@ fn candidate_is_eligible(
 }
 
 fn emit_engage_hostile_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -2093,7 +2090,7 @@ fn emit_engage_hostile_goals(
 }
 
 fn emit_remote_engage_hostile_targets(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     local_hostiles: &BTreeSet<EntityId>,
@@ -2271,7 +2268,7 @@ fn emit_remote_engage_hostile_targets(
 }
 
 fn emit_raid_target_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -2332,7 +2329,7 @@ fn emit_raid_target_goals(
 }
 
 fn emit_remote_raid_targets(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     local_targets: &BTreeSet<EntityId>,
@@ -2535,7 +2532,7 @@ fn emit_remote_raid_targets(
 }
 
 fn emit_self_consume_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
@@ -2562,7 +2559,7 @@ fn emit_self_consume_candidates(
 }
 
 fn emit_exploration_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
@@ -2657,7 +2654,7 @@ fn goal_is_self_care_fallback(goal_kind: GoalKind) -> bool {
 }
 
 fn emit_proactive_exploration_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
@@ -2718,7 +2715,7 @@ fn emit_proactive_exploration_candidates(
 }
 
 fn emit_need_driven_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     need_id: HomeostaticNeedId,
@@ -2829,7 +2826,7 @@ fn emit_need_driven_candidates(
 }
 
 fn emit_sleep_goal(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
@@ -2860,7 +2857,7 @@ fn emit_sleep_goal(
 }
 
 fn emit_relieve_goal(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
@@ -2891,7 +2888,7 @@ fn emit_relieve_goal(
 }
 
 fn emit_wash_goal(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: HomeostaticNeeds,
@@ -3001,7 +2998,7 @@ fn local_wash_access_evidence_at_place(
 }
 
 fn emit_reduce_danger_goal(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3065,7 +3062,7 @@ fn emit_reduce_danger_goal(
 }
 
 fn emit_care_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3202,7 +3199,7 @@ fn social_listeners_at(
 }
 
 fn emit_produce_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
     needs: Option<HomeostaticNeeds>,
@@ -3291,7 +3288,7 @@ fn need_has_direct_acquisition_path(ctx: &GenerationContext<'_>, commodity: Comm
 }
 
 fn emit_restock_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3355,7 +3352,7 @@ fn emit_restock_goals(
 }
 
 fn emit_sell_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3461,7 +3458,7 @@ fn emit_sell_goals(
 }
 
 fn emit_move_cargo_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3555,7 +3552,7 @@ fn deliverable_quantity(
 }
 
 fn emit_disposal_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3596,7 +3593,7 @@ fn emit_disposal_candidates(
 }
 
 fn emit_loot_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3652,7 +3649,7 @@ fn corpse_has_known_loot(view: &dyn GoalBeliefView, corpse: EntityId) -> bool {
 }
 
 fn emit_bury_goals(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3706,7 +3703,7 @@ fn emit_bury_goals(
 }
 
 fn emit_theft_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3820,7 +3817,7 @@ fn belief_provenance_for_contributors(
 
 #[allow(clippy::too_many_arguments)]
 fn emit_candidate(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     emitter: EmitterTag,
     source_evidence: EvidenceSummary,
@@ -3843,16 +3840,21 @@ fn emit_candidate(
         emitter,
         source_evidence,
     });
-    candidates.push(GroundedGoal {
+    candidates.push(GoalOffer {
         key,
         anchor,
         evidence_entities: evidence.entities,
         evidence_places: evidence.places,
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     });
 }
 
 fn emit_recorded_violation_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3874,7 +3876,7 @@ fn emit_recorded_violation_candidates(
 }
 
 fn emit_search_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -3968,7 +3970,7 @@ fn emit_search_candidates(
 /// Emit [`GoalKind::ReportFound`] candidates when the agent has a resolved
 /// Found* expectation and the last-seen record matches the found place.
 fn emit_report_found_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -4070,7 +4072,7 @@ fn overdue_ticks(record: ExpectationRecord, current_tick: Tick) -> u64 {
 /// Emit [`GoalKind::EscortToSafety`] candidates when the agent observes a
 /// wounded co-located entity and knows at least one reachable destination.
 fn emit_escort_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) {
@@ -4163,7 +4165,7 @@ fn emit_escort_candidates(
 /// perception at the agent's current location.  Returns pending violation
 /// records for the caller to apply to [`ViolationMemory`].
 fn emit_expectation_violation_candidates(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
 ) -> Vec<PendingViolationRecord> {
@@ -4291,7 +4293,7 @@ fn emit_expectation_violation_candidates(
 /// Emit an `InvestigateViolation` goal candidate for an `EntityMissing` or
 /// `SupplyDepleted` violation, with belief-observation contradiction provenance.
 fn emit_violation_goal(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     beliefs: &[(EntityId, BelievedEntityState)],
     violation_id: ViolationId,
@@ -4362,7 +4364,7 @@ fn emit_violation_goal(
 
 #[allow(clippy::too_many_arguments)]
 fn emit_candidate_with_trace(
-    candidates: &mut Vec<GroundedGoal>,
+    candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     emitter: EmitterTag,
     source_evidence: EvidenceSummary,
@@ -4385,11 +4387,16 @@ fn emit_candidate_with_trace(
         emitter,
         source_evidence,
     });
-    candidates.push(GroundedGoal {
+    candidates.push(GoalOffer {
         key,
         anchor,
         evidence_entities: evidence.entities,
         evidence_places: evidence.places,
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     });
 
     let trace = evidence_trace.into_public(opportunity);
@@ -6632,7 +6639,7 @@ mod tests {
         }
     }
 
-    fn contains_goal(candidates: &[crate::GroundedGoal], goal: GoalKind) -> bool {
+    fn contains_goal(candidates: &[crate::GoalOffer], goal: GoalKind) -> bool {
         candidates
             .iter()
             .any(|candidate| candidate.key.kind == goal)
@@ -6641,7 +6648,7 @@ mod tests {
     fn free_carry_capacity_candidates(
         view: &TestBeliefView,
         agent: EntityId,
-    ) -> Vec<crate::GroundedGoal> {
+    ) -> Vec<crate::GoalOffer> {
         generate_candidates(
             view,
             agent,
@@ -7383,9 +7390,9 @@ mod tests {
     }
 
     fn goals_for<'a>(
-        candidates: &'a [crate::GroundedGoal],
+        candidates: &'a [crate::GoalOffer],
         goal: &GoalKind,
-    ) -> Vec<&'a crate::GroundedGoal> {
+    ) -> Vec<&'a crate::GoalOffer> {
         candidates
             .iter()
             .filter(|candidate| candidate.key.kind == *goal)
@@ -16246,7 +16253,7 @@ mod tests {
         max_travel: u32,
         belief_staleness: u64,
         route_hops: usize,
-    ) -> (Vec<crate::GroundedGoal>, EntityId) {
+    ) -> (Vec<crate::GoalOffer>, EntityId) {
         let agent = entity(1);
         let target = entity(2);
         let faction = entity(30);

@@ -66,7 +66,6 @@ pub mod factions;
 pub mod goal;
 pub mod ids;
 pub mod institutional;
-pub mod intention;
 pub mod intention_disposition;
 pub mod intention_frame;
 pub mod items;
@@ -198,7 +197,6 @@ pub use institutional::{
     InstitutionalClaim, InstitutionalKnowledgeSource, InstitutionalRecordEntry,
     InstitutionalRecordError, RecordData, RecordEntryId, RecordKind,
 };
-pub use intention::ActiveGoal;
 pub use intention_disposition::IntentionDispositionProfile;
 pub use intention_frame::{
     FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionDomainTag,

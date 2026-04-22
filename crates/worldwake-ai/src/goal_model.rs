@@ -2,8 +2,7 @@ use crate::{
     GoalDispatchKey, PlannedStep, PlannerOpKind, PlannerOpSemantics, PlanningEntityRef,
     PlanningState,
     decision_trace::{
-        CompetitionDiscount, PrerequisiteExclusionReason, PrerequisiteExclusionTrace,
-        PrerequisiteGuidanceTrace, SourceReliabilityDiscount,
+        PrerequisiteExclusionReason, PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace,
     },
     derive_danger_pressure,
     enterprise::{merchant_home_place, restock_gap_at_destination},
@@ -127,7 +126,7 @@ pub(crate) fn epistemic_subject_for_belief(
 }
 
 pub(crate) fn grounded_goal_epistemic_subjects(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
 ) -> Vec<EpistemicSubject> {
     if matches!(goal.key.kind, GoalKind::Accuse { .. }) {
@@ -194,7 +193,7 @@ pub(crate) fn grounded_goal_matches_epistemic_barrier(
 }
 
 pub(crate) fn grounded_goal_allows_local_epistemic_resolution(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     op_kind: PlannerOpKind,
     authoritative_targets: &[EntityId],
 ) -> bool {
@@ -2303,11 +2302,16 @@ pub enum RankedGoalProvenance {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GroundedGoal {
+pub struct GoalOffer {
     pub key: GoalKey,
     pub anchor: worldwake_core::OpportunityAnchor,
     pub evidence_entities: BTreeSet<EntityId>,
     pub evidence_places: BTreeSet<EntityId>,
+    pub obligation_source: Option<EntityId>,
+    pub commitment_impact_if_ignored: Permille,
+    pub required_information_gaps: Vec<worldwake_core::BeliefClaimKey>,
+    pub invalidators: Vec<crate::Invalidator>,
+    pub learned_expectation_refs: Vec<worldwake_core::ExpectationId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2318,7 +2322,7 @@ pub(crate) enum RootCandidateSynthesis {
     TargetDerivationFailed,
 }
 
-impl GroundedGoal {
+impl GoalOffer {
     pub(crate) fn synthesized_root_candidate_targets(
         &self,
         def: &ActionDef,
@@ -2524,21 +2528,12 @@ impl GroundedGoal {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RankedGoal {
-    pub grounded: GroundedGoal,
-    pub priority_class: GoalPriorityClass,
-    pub motive_score: u32,
-    pub provenance: Option<RankedGoalProvenance>,
-    pub source_reliability_discount: Option<SourceReliabilityDiscount>,
-    pub competition_discount: Option<CompetitionDiscount>,
-    pub feasibility: crate::feasibility::FeasibilityHint,
-}
+pub use crate::agenda_types::AgendaEntry;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        GoalKindPlannerExt, GoalPayloadOverrideError, GoalPriorityClass, GroundedGoal, RankedGoal,
+        AgendaEntry, GoalKindPlannerExt, GoalOffer, GoalPayloadOverrideError, GoalPriorityClass,
         RankedGoalProvenanceFamily, RootCandidateSynthesis, grounded_goal_epistemic_subjects,
         grounded_goal_matches_epistemic_barrier,
     };
@@ -2638,7 +2633,7 @@ mod tests {
     #[allow(clippy::too_many_arguments)]
     fn search_plan(
         snapshot: &crate::PlanningSnapshot,
-        goal: &GroundedGoal,
+        goal: &GoalOffer,
         semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
         registry: &ActionDefRegistry,
         handlers: &worldwake_sim::ActionHandlerRegistry,
@@ -2688,8 +2683,8 @@ mod tests {
 
     #[test]
     fn grounded_goal_satisfies_required_bounds() {
-        assert_value_bounds::<GroundedGoal>();
-        assert_value_bounds::<RankedGoal>();
+        assert_value_bounds::<GoalOffer>();
+        assert_value_bounds::<AgendaEntry>();
     }
 
     #[test]
@@ -2701,12 +2696,17 @@ mod tests {
             pre_discount_motive: 700,
             post_discount_motive: 420,
         };
-        let ranked = RankedGoal {
-            grounded: GroundedGoal {
+        let ranked = AgendaEntry {
+            offer: GoalOffer {
                 anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(GoalKind::Sleep),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class: GoalPriorityClass::High,
             motive_score: discount.post_discount_motive,
@@ -2714,6 +2714,17 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: Some(discount.clone()),
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                anchor: worldwake_core::OpportunityAnchor::None,
+            },
+
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         };
 
         assert_eq!(ranked.competition_discount, Some(discount));
@@ -2728,8 +2739,8 @@ mod tests {
             pre_discount_motive: 700,
             post_discount_motive: 350,
         };
-        let ranked = RankedGoal {
-            grounded: GroundedGoal {
+        let ranked = AgendaEntry {
+            offer: GoalOffer {
                 anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
@@ -2737,6 +2748,11 @@ mod tests {
                 }),
                 evidence_entities: BTreeSet::from([entity_id(9, 0)]),
                 evidence_places: BTreeSet::new(),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class: GoalPriorityClass::High,
             motive_score: discount.post_discount_motive,
@@ -2744,6 +2760,17 @@ mod tests {
             source_reliability_discount: Some(discount.clone()),
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                anchor: worldwake_core::OpportunityAnchor::None,
+            },
+
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         };
 
         assert_eq!(ranked.source_reliability_discount, Some(discount));
@@ -2763,31 +2790,47 @@ mod tests {
 
     #[test]
     fn grounded_goal_roundtrips_through_bincode() {
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::TreatWounds {
                 patient: entity_id(7, 1),
             }),
             evidence_entities: BTreeSet::from([entity_id(3, 0), entity_id(3, 1)]),
             evidence_places: BTreeSet::from([entity_id(10, 0)]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let bytes = bincode::serialize(&goal).unwrap();
-        let roundtrip: GroundedGoal = bincode::deserialize(&bytes).unwrap();
+        let roundtrip: GoalOffer = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
     }
 
     #[test]
     fn ranked_goal_roundtrips_through_bincode() {
-        let goal = RankedGoal {
-            grounded: GroundedGoal {
+        let goal = AgendaEntry {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::TreatWounds {
+                    patient: entity_id(7, 1),
+                }),
+                anchor: worldwake_core::OpportunityAnchor::None,
+            },
+            offer: GoalOffer {
                 anchor: worldwake_core::OpportunityAnchor::None,
                 key: GoalKey::from(GoalKind::TreatWounds {
                     patient: entity_id(7, 1),
                 }),
                 evidence_entities: BTreeSet::from([entity_id(3, 0), entity_id(3, 1)]),
                 evidence_places: BTreeSet::from([entity_id(10, 0)]),
+                obligation_source: None,
+                commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+                required_information_gaps: Vec::new(),
+                invalidators: Vec::new(),
+                learned_expectation_refs: Vec::new(),
             },
             priority_class: GoalPriorityClass::High,
             motive_score: 900,
@@ -2795,10 +2838,17 @@ mod tests {
             source_reliability_discount: None,
             competition_discount: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
+
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
         };
 
         let bytes = bincode::serialize(&goal).unwrap();
-        let roundtrip: RankedGoal = bincode::deserialize(&bytes).unwrap();
+        let roundtrip: AgendaEntry = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, goal);
     }
@@ -4834,7 +4884,7 @@ mod tests {
     #[test]
     fn grounded_goal_synthesizes_tell_root_targets_from_goal_identity() {
         let listener = entity(8);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ShareBelief {
                 listener,
@@ -4845,6 +4895,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -4885,7 +4940,7 @@ mod tests {
     #[test]
     fn grounded_goal_synthesizes_accuse_root_targets_from_goal_identity() {
         let accused = entity(10);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::Accuse {
                 crime_register: entity(9),
@@ -4894,6 +4949,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::from([accused]),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -4932,11 +4992,16 @@ mod tests {
     #[test]
     fn grounded_goal_synthesizes_claim_bounty_root_targets_from_goal_identity() {
         let bounty = entity(10);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
             key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
             evidence_entities: BTreeSet::from([bounty]),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -4975,7 +5040,7 @@ mod tests {
     #[test]
     fn grounded_goal_synthesizes_post_notice_root_targets_when_colocated_with_posting_place() {
         let posting_place = entity(10);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
             key: GoalKey::from(GoalKind::PostNotice {
                 posting: ArtifactPostingContext {
@@ -4990,6 +5055,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::from([posting_place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(13),
@@ -5033,7 +5103,7 @@ mod tests {
     fn grounded_goal_synthesizes_post_bounty_root_targets_when_colocated_with_posting_place() {
         let posting_place = entity(10);
         let target = entity(20);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
             key: GoalKey::from(GoalKind::PostBounty {
                 posting: ArtifactPostingContext {
@@ -5053,6 +5123,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::from([target]),
             evidence_places: BTreeSet::from([posting_place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(14),
@@ -5095,13 +5170,18 @@ mod tests {
     #[test]
     fn grounded_goal_synthesizes_establish_camp_root_targets_from_goal_place() {
         let rally_place = entity(14);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(rally_place),
             key: GoalKey::from(GoalKind::EstablishBanditCamp {
                 faction: entity(15),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::from([rally_place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5140,7 +5220,7 @@ mod tests {
     #[test]
     fn grounded_goal_synthesizes_trade_root_targets_from_single_evidence_entity() {
         let seller = entity(11);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
@@ -5148,6 +5228,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::from([seller]),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5187,7 +5272,7 @@ mod tests {
 
     #[test]
     fn grounded_goal_does_not_synthesize_trade_root_targets_from_ambiguous_evidence() {
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
@@ -5195,6 +5280,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::from([entity(11), entity(12)]),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5234,11 +5324,16 @@ mod tests {
 
     #[test]
     fn grounded_goal_reports_unsupported_trade_synthesis_for_unrelated_goal() {
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::Sleep),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5279,11 +5374,16 @@ mod tests {
     #[test]
     fn grounded_goal_does_not_synthesize_attack_root_targets_for_raid_goal() {
         let target = entity(10);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Entity(target),
             key: GoalKey::from(GoalKind::RaidTarget { target }),
             evidence_entities: BTreeSet::from([target]),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5324,11 +5424,16 @@ mod tests {
     #[test]
     fn grounded_goal_does_not_synthesize_attack_root_targets_for_engage_hostile_goal() {
         let target = entity(11);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Entity(target),
             key: GoalKey::from(GoalKind::EngageHostile { target }),
             evidence_entities: BTreeSet::from([target]),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(13),
@@ -5369,7 +5474,7 @@ mod tests {
     #[test]
     fn grounded_goal_synthesizes_investigate_root_targets_only_when_colocated() {
         let place = entity(10);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(place),
             key: GoalKey::from(GoalKind::InvestigateViolation {
                 violation_id: worldwake_core::ViolationId(7),
@@ -5377,6 +5482,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::from([entity(11)]),
             evidence_places: BTreeSet::from([place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(25),
@@ -5424,7 +5534,7 @@ mod tests {
     fn grounded_goal_synthesizes_search_place_root_targets_only_when_colocated() {
         let place = entity(10);
         let subject = entity(11);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(place),
             key: GoalKey::from(GoalKind::SearchForMissing {
                 subject,
@@ -5432,6 +5542,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::from([subject]),
             evidence_places: BTreeSet::from([place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(27),
@@ -5475,7 +5590,7 @@ mod tests {
     fn grounded_goal_synthesizes_report_missing_root_targets_when_local_and_unbound() {
         let place = entity(10);
         let subject = entity(11);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Entity(subject),
             key: GoalKey::from(GoalKind::ReportMissing {
                 subject,
@@ -5484,6 +5599,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::from([subject]),
             evidence_places: BTreeSet::from([place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let def = ActionDef {
             id: ActionDefId(28),
@@ -5795,13 +5915,18 @@ mod tests {
             2,
         );
         let state = PlanningState::new(&snapshot);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(remote),
             key: GoalKey::from(GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::from([source]),
             evidence_places: BTreeSet::from([remote]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         assert_eq!(
@@ -5852,7 +5977,7 @@ mod tests {
             2,
         );
         let state = PlanningState::new(&snapshot);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Entity(accused),
             key: GoalKey::from(GoalKind::Accuse {
                 crime_register: register,
@@ -5861,6 +5986,11 @@ mod tests {
             }),
             evidence_entities: BTreeSet::from([accused, register]),
             evidence_places: BTreeSet::from([theft_place, hall]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         assert!(
@@ -5916,13 +6046,18 @@ mod tests {
             2,
         );
         let state = PlanningState::new(&snapshot);
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(remote),
             key: GoalKey::from(GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::from([source]),
             evidence_places: BTreeSet::from([remote]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
 
         let subjects = grounded_goal_epistemic_subjects(&goal, &state);
@@ -9111,12 +9246,17 @@ mod tests {
         );
     }
 
-    fn claim_office_goal(office: EntityId) -> GroundedGoal {
-        GroundedGoal {
+    fn claim_office_goal(office: EntityId) -> GoalOffer {
+        GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::ClaimOffice { office }),
             evidence_entities: BTreeSet::from([office]),
             evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         }
     }
 
@@ -9161,13 +9301,18 @@ mod tests {
             )],
         );
 
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(remote),
             key: GoalKey::from(GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::from([subject_entity]),
             evidence_places: BTreeSet::from([remote]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9244,13 +9389,18 @@ mod tests {
             )],
         );
 
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(remote),
             key: GoalKey::from(GoalKind::RestockCommodity {
                 commodity: CommodityKind::Bread,
             }),
             evidence_entities: BTreeSet::from([subject_entity]),
             evidence_places: BTreeSet::from([remote]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9323,11 +9473,16 @@ mod tests {
             }],
         );
 
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(rally),
             key: GoalKey::from(GoalKind::RegroupWithFaction { faction }),
             evidence_entities: BTreeSet::from([faction]),
             evidence_places: BTreeSet::from([rally]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9376,11 +9531,16 @@ mod tests {
         view.effective_places.insert(target, town);
         view.entities_at.insert(town, vec![actor, target]);
 
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Entity(target),
             key: GoalKey::from(GoalKind::RaidTarget { target }),
             evidence_entities: BTreeSet::from([target]),
             evidence_places: BTreeSet::from([town]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9467,11 +9627,16 @@ mod tests {
         view.entities_at.insert(road, vec![target]);
         view.hostiles.insert(actor, vec![target]);
 
-        let goal = GroundedGoal {
+        let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Entity(target),
             key: GoalKey::from(GoalKind::RaidTarget { target }),
             evidence_entities: BTreeSet::from([target]),
             evidence_places: BTreeSet::from([road]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(

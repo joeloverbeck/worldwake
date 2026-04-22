@@ -11,7 +11,7 @@ use crate::goal_model::GoalKindPlannerExt;
 use crate::planner_ops::planner_only_candidates;
 use crate::shared_collections::SharedVec;
 use crate::{
-    CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanSearchResult, PlanTerminalKind,
+    CommodityPurpose, GoalKey, GoalKind, GoalOffer, PlanSearchResult, PlanTerminalKind,
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningEntityRef,
     PlanningSnapshot, PlanningState, ProfileFixture, RequiredFact, build_planning_snapshot,
     build_planning_snapshot_with_blocked_facility_uses, build_semantics_table,
@@ -131,7 +131,7 @@ fn commodity_filter_context<'a>(
 #[allow(clippy::too_many_arguments)]
 fn search_plan(
     snapshot: &PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &worldwake_sim::ActionHandlerRegistry,
@@ -161,7 +161,7 @@ fn search_plan(
 #[allow(clippy::too_many_arguments)]
 fn search_plan_with_trace_metadata(
     snapshot: &PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     handlers: &worldwake_sim::ActionHandlerRegistry,
@@ -191,7 +191,7 @@ fn search_plan_with_trace_metadata(
 }
 
 fn build_successor<'snapshot>(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     registry: &ActionDefRegistry,
     node: &SearchNode<'snapshot>,
@@ -213,7 +213,7 @@ fn build_successor<'snapshot>(
 }
 
 fn combined_relevant_places(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     recipes: &RecipeRegistry,
     reasoning: &ProfileFixture,
@@ -223,7 +223,7 @@ fn combined_relevant_places(
 
 fn root_node<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     recipes: &RecipeRegistry,
     reasoning: &ProfileFixture,
 ) -> SearchNode<'snapshot> {
@@ -242,7 +242,7 @@ type TacticalRootSuccessorSet<'snapshot> = (
 
 fn collect_root_non_terminal_successors_for_tactical_goal<'snapshot>(
     snapshot: &'snapshot PlanningSnapshot,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     registry: &ActionDefRegistry,
     handlers: &worldwake_sim::ActionHandlerRegistry,
     reasoning: &ProfileFixture,
@@ -1060,25 +1060,35 @@ fn insert_bread_lot(
     );
 }
 
-fn consume_goal(commodity: CommodityKind) -> GroundedGoal {
-    GroundedGoal {
+fn consume_goal(commodity: CommodityKind) -> GoalOffer {
+    GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity { commodity }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     }
 }
 
-fn acquire_goal_with_purpose(commodity: CommodityKind, purpose: CommodityPurpose) -> GroundedGoal {
-    GroundedGoal {
+fn acquire_goal_with_purpose(commodity: CommodityKind, purpose: CommodityPurpose) -> GoalOffer {
+    GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity { commodity, purpose }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     }
 }
 
-fn acquire_goal(commodity: CommodityKind) -> GroundedGoal {
+fn acquire_goal(commodity: CommodityKind) -> GoalOffer {
     acquire_goal_with_purpose(commodity, CommodityPurpose::SelfConsume)
 }
 
@@ -1453,7 +1463,7 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
     view.commodity_quantities
         .insert((seller, CommodityKind::Bread), Quantity(2));
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -1461,6 +1471,11 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -1572,7 +1587,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
     view.commodity_quantities
         .insert((seller, CommodityKind::Bread), Quantity(2));
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(market),
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -1580,6 +1595,11 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let (registry, handlers) = build_registry();
     let snapshot = build_planning_snapshot(
@@ -1694,7 +1714,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_displayed_sale_lot_with_c
     view.commodity_quantities
         .insert((seller, CommodityKind::Bread), Quantity(2));
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(market),
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -1702,6 +1722,11 @@ fn search_returns_travel_then_trade_barrier_for_remote_displayed_sale_lot_with_c
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let (registry, handlers) = build_registry();
     let snapshot = build_planning_snapshot(
@@ -1796,7 +1821,7 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
     }
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -1804,6 +1829,11 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -1885,7 +1915,7 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
     view.lot_sellers.insert(sale_lot, seller);
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Firewood,
@@ -1893,6 +1923,11 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -2408,7 +2443,7 @@ fn search_rejects_branch_when_duration_estimation_fails() {
         HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
     );
     view.thresholds.insert(actor, DriveThresholds::default());
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -2416,6 +2451,11 @@ fn search_rejects_branch_when_duration_estimation_fails() {
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let (registry, handlers) = build_registry();
@@ -2473,11 +2513,16 @@ fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: acquire_goal(CommodityKind::Bread).key,
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -2546,11 +2591,16 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
         .find(|def| def.name == "pick_up")
         .map(|def| def.id)
         .expect("pick_up action should be registered");
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(orchard),
         key: acquire_goal(CommodityKind::Bread).key,
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([orchard]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -2658,7 +2708,7 @@ fn place_anchored_acquire_search_does_not_retarget_sibling_place_lot() {
         .insert(orchard, vec![(home, NonZeroU32::new(3).unwrap())]);
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(orchard),
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
@@ -2666,6 +2716,11 @@ fn place_anchored_acquire_search_does_not_retarget_sibling_place_lot() {
         }),
         evidence_entities: BTreeSet::from([home_apple, orchard_apple]),
         evidence_places: BTreeSet::from([home, orchard]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -2755,7 +2810,7 @@ fn place_anchored_acquire_search_does_not_escape_blocked_local_lot_to_sibling_pl
         .find(|def| def.name == "pick_up")
         .map(|def| def.id)
         .expect("pick_up action should be registered");
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(orchard),
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
@@ -2763,6 +2818,11 @@ fn place_anchored_acquire_search_does_not_escape_blocked_local_lot_to_sibling_pl
         }),
         evidence_entities: BTreeSet::from([home_apple, orchard_apple]),
         evidence_places: BTreeSet::from([home, orchard]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -2828,11 +2888,16 @@ fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
     view.entity_loads.insert(actor, LoadUnits(0));
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: acquire_goal_with_purpose(CommodityKind::Medicine, CommodityPurpose::SelfConsume).key,
         evidence_entities: BTreeSet::from([medicine]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -2892,11 +2957,16 @@ fn search_returns_partial_pick_up_goal_satisfaction_for_local_food_lot() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: acquire_goal(CommodityKind::Apple).key,
         evidence_entities: BTreeSet::from([apples]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -2986,7 +3056,7 @@ fn cargo_search_finds_pickup_then_travel_plan() {
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
@@ -2994,6 +3064,11 @@ fn cargo_search_finds_pickup_then_travel_plan() {
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([origin, destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -3085,7 +3160,7 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
@@ -3093,6 +3168,11 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([origin, destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -3204,7 +3284,7 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
@@ -3212,6 +3292,11 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([origin, destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -3307,13 +3392,18 @@ fn sell_search_for_stored_home_stock_requires_stage_before_goal_satisfaction() {
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(market),
         key: GoalKey::from(GoalKind::SellCommodity {
             commodity: CommodityKind::Bread,
         }),
         evidence_entities: BTreeSet::from([bread, facility]),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -3440,7 +3530,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
     sync_all_beliefs(&mut world, actor, Tick(1));
 
     let view = PerAgentBeliefView::from_world(actor, &world);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
@@ -3448,6 +3538,11 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([origin, destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
@@ -3574,11 +3669,16 @@ fn search_uses_hypothetical_movement_to_reduce_local_danger() {
     view.hostiles.insert(actor, vec![attacker]);
     view.attackers.insert(actor, vec![attacker]);
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
         evidence_entities: BTreeSet::from([attacker]),
         evidence_places: BTreeSet::from([town, refuge]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -3629,11 +3729,16 @@ fn search_marks_leaf_combat_as_combat_commitment() {
     view.attackers.insert(actor, vec![attacker]);
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
         evidence_entities: BTreeSet::from([attacker]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -3685,11 +3790,16 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
     let (registry, _handlers) = build_registry();
     let semantics_table = build_semantics_table(&registry);
     let defend = registry.iter().find(|def| def.name == "defend").unwrap();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
         evidence_entities: BTreeSet::from([attacker]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -3751,11 +3861,16 @@ fn build_successor_preserves_parent_steps_when_appending_child_step() {
     view.hostiles.insert(actor, vec![attacker]);
     view.attackers.insert(actor, vec![attacker]);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::ReduceDanger),
         evidence_entities: BTreeSet::from([attacker]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -3842,11 +3957,16 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
     let (registry, _handlers) = build_registry();
     let semantics_table = build_semantics_table(&registry);
     let steal = registry.iter().find(|def| def.name == "steal").unwrap();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::StealItem { target_item }),
         evidence_entities: BTreeSet::from([target_item]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -4039,13 +4159,18 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
 
     let (registry, handlers) = build_registry_with_recipes(&recipes);
     let semantics = build_semantics_table(&registry);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([orchard_row]),
         evidence_places: BTreeSet::from([village_square, orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
     let snapshot = build_planning_snapshot(
@@ -4144,11 +4269,16 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
 
     let (registry, handlers) = build_registry_with_recipes(&recipes);
     let semantics = build_semantics_table(&registry);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Wash),
         evidence_entities: BTreeSet::from([wash_basin, well]),
         evidence_places: BTreeSet::from([orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
     let snapshot = build_planning_snapshot(
@@ -4271,11 +4401,16 @@ fn search_local_wash_candidates_require_basin_and_water_source() {
 
     let (registry, handlers) = build_registry_with_recipes(&recipes);
     let semantics_table = build_semantics_table(&registry);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Wash),
         evidence_entities: BTreeSet::from([wash_basin, well]),
         evidence_places: BTreeSet::from([orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
     let snapshot = build_planning_snapshot(
@@ -4590,7 +4725,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
     let semantics = build_semantics_table(&registry);
 
     let short_route_fixture = build_restock_threat_fixture(false);
-    let short_route_goal = GroundedGoal {
+    let short_route_goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(short_route_fixture.remote_farm),
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
@@ -4600,6 +4735,11 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
             short_route_fixture.market,
             short_route_fixture.remote_farm,
         ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let short_route_view =
         PerAgentBeliefView::from_world(short_route_fixture.actor, &short_route_fixture.world);
@@ -4633,7 +4773,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
     );
 
     let safe_route_fixture = build_restock_threat_fixture(true);
-    let safe_route_goal = GroundedGoal {
+    let safe_route_goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(safe_route_fixture.remote_farm),
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
@@ -4643,6 +4783,11 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
             safe_route_fixture.market,
             safe_route_fixture.remote_farm,
         ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let safe_route_view =
         PerAgentBeliefView::from_world(safe_route_fixture.actor, &safe_route_fixture.world);
@@ -4984,13 +5129,18 @@ fn build_contention_care_fixture() -> ContentionCareFixture {
 fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
     let fixture = build_exclusive_orchard_fixture(false);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5038,7 +5188,7 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
 fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_without_grant() {
     let fixture = build_exclusive_orchard_fixture(false);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
@@ -5046,6 +5196,11 @@ fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_witho
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5093,13 +5248,18 @@ fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_witho
 fn search_skips_queue_when_matching_grant_is_already_active() {
     let fixture = build_exclusive_orchard_fixture(true);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5149,7 +5309,7 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
 fn search_acquire_self_consume_skips_queue_when_matching_grant_is_already_active() {
     let fixture = build_exclusive_orchard_fixture(true);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
@@ -5157,6 +5317,11 @@ fn search_acquire_self_consume_skips_queue_when_matching_grant_is_already_active
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5206,13 +5371,18 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
     let mut fixture = build_exclusive_orchard_fixture(false);
     enqueue_actor_for_exclusive_fixture(&mut fixture, Tick(2));
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5260,13 +5430,18 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
 #[test]
 fn search_filters_blocked_facility_use_from_queue_candidates() {
     let fixture = build_exclusive_orchard_fixture(false);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
@@ -5333,13 +5508,18 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
 #[test]
 fn search_trace_records_blocked_facility_use_root_filter() {
     let fixture = build_exclusive_orchard_fixture(false);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
@@ -5461,13 +5641,18 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         orchard_row
     };
     sync_all_beliefs(&mut fixture.world, fixture.actor, Tick(2));
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row, second_orchard]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let mut blocked = BlockerMemory::default();
     blocked.record(Blocker {
@@ -5528,13 +5713,18 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
 #[test]
 fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant() {
     let fixture = build_contention_corpse_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::LootCorpse {
             corpse: fixture.corpse,
         }),
         evidence_entities: BTreeSet::from([fixture.corpse]),
         evidence_places: BTreeSet::from([fixture.town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5605,13 +5795,18 @@ fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant
 #[test]
 fn corpse_loot_goal_searches_queue_step_before_loot_when_corpse_is_contention_managed() {
     let fixture = build_contention_corpse_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::LootCorpse {
             corpse: fixture.corpse,
         }),
         evidence_entities: BTreeSet::from([fixture.corpse]),
         evidence_places: BTreeSet::from([fixture.town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5645,7 +5840,7 @@ fn corpse_loot_goal_searches_queue_step_before_loot_when_corpse_is_contention_ma
 #[test]
 fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant() {
     let fixture = build_contention_corpse_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::BuryCorpse {
             corpse: fixture.corpse,
@@ -5653,6 +5848,11 @@ fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant
         }),
         evidence_entities: BTreeSet::from([fixture.corpse, fixture.grave_plot]),
         evidence_places: BTreeSet::from([fixture.town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5723,7 +5923,7 @@ fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant
 #[test]
 fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_managed() {
     let fixture = build_contention_corpse_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::BuryCorpse {
             corpse: fixture.corpse,
@@ -5731,6 +5931,11 @@ fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_ma
         }),
         evidence_entities: BTreeSet::from([fixture.corpse, fixture.grave_plot]),
         evidence_places: BTreeSet::from([fixture.town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5764,13 +5969,18 @@ fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_ma
 #[test]
 fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant() {
     let fixture = build_contention_care_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds {
             patient: fixture.patient,
         }),
         evidence_entities: BTreeSet::from([fixture.patient]),
         evidence_places: BTreeSet::from([fixture.town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5865,13 +6075,18 @@ fn care_queue_affordance_does_not_expand_when_actor_cannot_currently_heal() {
     let mut event_log = EventLog::new();
     let _ = txn.commit(&mut event_log);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds {
             patient: fixture.patient,
         }),
         evidence_entities: BTreeSet::from([fixture.patient]),
         evidence_places: BTreeSet::from([fixture.town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -5975,13 +6190,18 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         let _ = txn.commit(&mut event_log);
         (actor, orchard_row)
     };
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Apple,
         }),
         evidence_entities: BTreeSet::from([orchard_row]),
         evidence_places: BTreeSet::from([orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     {
         let mut store = world
@@ -6124,7 +6344,7 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
     view.lot_sellers.insert(lot_a, seller_a);
     view.lot_sellers.insert(lot_b, seller_b);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -6132,6 +6352,11 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
         }),
         evidence_entities: BTreeSet::from([seller_b]),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -6440,7 +6665,7 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
         vec![(hostile, combat_belief_at(dangerous_waypoint, Tick(10)))],
     );
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -6448,6 +6673,11 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -6658,7 +6888,7 @@ fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
     view.entity_loads.insert(actor, LoadUnits(0));
     view.entity_loads.insert(bread, LoadUnits(1));
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -6666,6 +6896,11 @@ fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -7281,11 +7516,16 @@ fn combined_places_include_remote_medicine_lot_for_treat_wounds() {
         2,
     );
     let state = PlanningState::new(&snapshot);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let places = combined_relevant_places(
@@ -7314,11 +7554,16 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
     );
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let node = SearchNode {
         state: PlanningState::new(&snapshot).move_actor_to(medicine_place),
@@ -7391,7 +7636,7 @@ fn combined_places_include_grounded_evidence_place_when_goal_has_no_intrinsic_pl
     view.effective_places.insert(actor, village_square);
     view.entities_at.insert(village_square, vec![actor]);
     view.entities_at.insert(orchard_farm, vec![subject]);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::SearchForMissing {
             subject,
@@ -7399,6 +7644,11 @@ fn combined_places_include_grounded_evidence_place_when_goal_has_no_intrinsic_pl
         }),
         evidence_entities: BTreeSet::from([subject]),
         evidence_places: BTreeSet::from([orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -7432,11 +7682,16 @@ fn prune_travel_retains_remote_medicine_branch_for_treat_wounds() {
         2,
     );
     let state = PlanningState::new(&snapshot);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let goal_places = combined_relevant_places(
         &goal,
@@ -7491,11 +7746,16 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
     );
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let node = root_node(
         &snapshot,
@@ -7578,11 +7838,16 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
     let budget = ProfileFixture::default();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::StealItem { target_item }),
         evidence_entities: BTreeSet::from([target_item]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let node = root_node(&snapshot, &goal, &recipes, &budget);
     let rel_defs = relevant_action_defs(&goal, &semantics);
@@ -7695,7 +7960,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
     let budget = ProfileFixture::default();
-    let accuse_goal = GroundedGoal {
+    let accuse_goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Accuse {
             crime_register,
@@ -7704,8 +7969,13 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
         }),
         evidence_entities: BTreeSet::from([accused, crime_register]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
-    let punish_goal = GroundedGoal {
+    let punish_goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::PunishAccused {
             office: faction,
@@ -7717,6 +7987,11 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
         }),
         evidence_entities: BTreeSet::from([punish_accused]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let accuse_defs = relevant_action_defs(&accuse_goal, &semantics);
@@ -7836,7 +8111,7 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
     let reasoning = ProfileFixture::default();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(accused),
         key: GoalKey::from(GoalKind::Accuse {
             crime_register,
@@ -7845,6 +8120,11 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
         }),
         evidence_entities: BTreeSet::from([accused, crime_register]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let node = root_node(&snapshot, &goal, &recipes, &reasoning);
     let accuse_def = registry
@@ -7939,11 +8219,16 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
     let budget = ProfileFixture::default();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
         key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
         evidence_entities: BTreeSet::from([bounty]),
         evidence_places: BTreeSet::from([claim_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let rel_defs = relevant_action_defs(&goal, &semantics);
@@ -8103,11 +8388,16 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
     let (registry, handlers) = build_registry();
     let plan = search_plan(
         &snapshot,
-        &GroundedGoal {
+        &GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
             key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
             evidence_entities: BTreeSet::from([bounty, bread]),
             evidence_places: BTreeSet::from([origin, destination, claim_place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
         },
         &build_semantics_table(&registry),
         &registry,
@@ -8228,11 +8518,16 @@ fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_dea
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
     let budget = ProfileFixture::default();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
         key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
         evidence_entities: BTreeSet::from([bounty, target]),
         evidence_places: BTreeSet::from([claim_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let node = root_node(&snapshot, &goal, &recipes, &budget);
@@ -8368,11 +8663,16 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
     let budget = ProfileFixture::default();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
         key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
         evidence_entities: BTreeSet::from([bounty, bread]),
         evidence_places: BTreeSet::from([origin, destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let node = root_node(&snapshot, &goal, &recipes, &budget);
@@ -8509,11 +8809,16 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
     let budget = ProfileFixture::default();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(bounty),
         key: GoalKey::from(GoalKind::FulfillBounty { bounty }),
         evidence_entities: BTreeSet::from([bounty, bread]),
         evidence_places: BTreeSet::from([destination, claim_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let node = root_node(&snapshot, &goal, &recipes, &budget);
@@ -8573,11 +8878,16 @@ fn test_binding_two_corpses_same_place() {
         .insert((corpse_y, CommodityKind::Coin), Quantity(2));
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::LootCorpse { corpse: corpse_x }),
         evidence_entities: BTreeSet::from([corpse_x, corpse_y]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -8657,11 +8967,16 @@ fn test_binding_two_hostiles_same_place() {
     view.attackers.insert(actor, vec![hostile_a, hostile_b]);
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::EngageHostile { target: hostile_a }),
         evidence_entities: BTreeSet::from([hostile_a, hostile_b]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -8733,11 +9048,16 @@ fn test_binding_flexible_goal_unaffected() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Sleep),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -8797,11 +9117,16 @@ fn test_binding_rejection_trace_populated() {
         .insert((corpse_y, CommodityKind::Coin), Quantity(2));
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::LootCorpse { corpse: corpse_x }),
         evidence_entities: BTreeSet::from([corpse_x, corpse_y]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -8920,7 +9245,7 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -8928,6 +9253,11 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
         }),
         evidence_entities: BTreeSet::from([seller, bread]),
         evidence_places: BTreeSet::from([town, market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -9014,7 +9344,7 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -9022,6 +9352,11 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -9110,7 +9445,7 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -9118,6 +9453,11 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -9276,11 +9616,16 @@ fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds()
         build_branching_care_view();
     view.wounds.insert(patient, vec![wound(400)]);
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -9331,7 +9676,7 @@ fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds()
 #[test]
 fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
     let fixture = build_remote_produce_commodity_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ProduceCommodity {
             recipe_id: fixture.recipe_id,
@@ -9341,6 +9686,11 @@ fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
             prototype_place_entity(PrototypePlace::VillageSquare),
             prototype_place_entity(PrototypePlace::OrchardFarm),
         ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -9417,7 +9767,7 @@ fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
 #[test]
 fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
     let fixture = build_remote_produce_commodity_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ProduceCommodity {
             recipe_id: fixture.recipe_id,
@@ -9427,6 +9777,11 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
             prototype_place_entity(PrototypePlace::VillageSquare),
             prototype_place_entity(PrototypePlace::OrchardFarm),
         ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -9488,11 +9843,16 @@ fn ff_successor_rewrite_uses_relaxed_plan_when_it_exceeds_spatial_heuristic() {
     view.wounds.insert(patient, vec![wound(404)]);
     let (registry, handlers) = build_registry();
     let recipes = RecipeRegistry::new();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([current_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -9618,11 +9978,16 @@ fn ff_successor_rewrite_preserves_spatial_heuristic_when_it_exceeds_relaxed_plan
     let (registry, handlers) = build_registry();
     let semantics = build_semantics_table(&registry);
     let recipes = RecipeRegistry::new();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -9745,11 +10110,16 @@ fn search_trace_metadata_records_ff_heuristic_and_helpful_actions_when_enabled()
     view.wounds.insert(patient, vec![wound(405)]);
     let (registry, handlers) = build_registry();
     let recipes = RecipeRegistry::new();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -9798,7 +10168,7 @@ fn search_trace_metadata_records_ff_heuristic_and_helpful_actions_when_enabled()
 #[test]
 fn search_trace_metadata_disables_ff_fields_when_profile_toggle_is_off() {
     let fixture = build_remote_produce_commodity_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ProduceCommodity {
             recipe_id: fixture.recipe_id,
@@ -9808,6 +10178,11 @@ fn search_trace_metadata_disables_ff_fields_when_profile_toggle_is_off() {
             prototype_place_entity(PrototypePlace::VillageSquare),
             prototype_place_entity(PrototypePlace::OrchardFarm),
         ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -9859,7 +10234,7 @@ fn search_trace_metadata_disables_ff_fields_when_profile_toggle_is_off() {
 #[test]
 fn ff_dead_end_falls_back_to_landmark_guidance_at_root() {
     let fixture = build_remote_produce_commodity_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ProduceCommodity {
             recipe_id: fixture.recipe_id,
@@ -9869,6 +10244,11 @@ fn ff_dead_end_falls_back_to_landmark_guidance_at_root() {
             prototype_place_entity(PrototypePlace::VillageSquare),
             prototype_place_entity(PrototypePlace::OrchardFarm),
         ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -9995,7 +10375,7 @@ fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_s
     };
     sync_all_beliefs(&mut world, actor, Tick(1));
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
@@ -10003,6 +10383,11 @@ fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_s
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([orchard_farm]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
     let snapshot = build_planning_snapshot(
@@ -10071,11 +10456,16 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Sleep),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10127,11 +10517,16 @@ fn local_critical_sleep_returns_progress_barrier_after_one_step() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Sleep),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10195,11 +10590,16 @@ fn search_generic_explore_without_tactical_goal_still_finds_plan() {
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Sleep),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10250,7 +10650,7 @@ fn search_generic_explore_without_tactical_goal_still_finds_plan() {
 #[test]
 fn search_explore_tactical_goal_produced_despite_nonempty_evidence() {
     let (view, actor, origin, destination) = build_two_place_travel_view();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -10258,6 +10658,11 @@ fn search_explore_tactical_goal_produced_despite_nonempty_evidence() {
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10311,7 +10716,7 @@ fn search_evidence_directed_exploration_prefers_evidence_place() {
     view.adjacent
         .insert(fallback_place, vec![(origin, NonZeroU32::new(3).unwrap())]);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -10319,6 +10724,11 @@ fn search_evidence_directed_exploration_prefers_evidence_place() {
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([evidence_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10347,7 +10757,7 @@ fn search_evidence_directed_exploration_prefers_evidence_place() {
 #[test]
 fn search_accuse_satisfy_goal_does_not_install_travel_barrier() {
     let (view, actor, origin, destination) = build_two_place_travel_view();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(entity(99)),
         key: GoalKey::from(GoalKind::Accuse {
             crime_register: entity(98),
@@ -10356,6 +10766,11 @@ fn search_accuse_satisfy_goal_does_not_install_travel_barrier() {
         }),
         evidence_entities: BTreeSet::from([entity(98), entity(99)]),
         evidence_places: BTreeSet::from([destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10407,7 +10822,7 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
         },
     );
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(accused),
         key: GoalKey::from(GoalKind::Accuse {
             crime_register,
@@ -10416,6 +10831,11 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
         }),
         evidence_entities: BTreeSet::from([accused, crime_register]),
         evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10489,7 +10909,7 @@ fn search_acquire_commodity_uses_travel_to_goal() {
         LoadUnits(worldwake_core::load_per_unit(CommodityKind::Bread).0),
     );
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -10497,6 +10917,11 @@ fn search_acquire_commodity_uses_travel_to_goal() {
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10551,13 +10976,18 @@ fn search_patrol_uses_travel_to_goal_for_remote_place() {
             current_index: 0,
         },
     );
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(patrol_place),
         key: GoalKey::from(GoalKind::Patrol {
             place: patrol_place,
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([patrol_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10626,7 +11056,7 @@ fn search_investigate_uses_travel_to_goal() {
             expires_tick: Tick(50),
         }],
     );
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(violation_place),
         key: GoalKey::from(GoalKind::InvestigateViolation {
             violation_id: ViolationId(1),
@@ -10634,6 +11064,11 @@ fn search_investigate_uses_travel_to_goal() {
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([violation_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10727,7 +11162,7 @@ fn search_investigate_allows_local_scene_investigation_despite_stale_remote_evid
         )],
     );
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(violation_place),
         key: GoalKey::from(GoalKind::InvestigateViolation {
             violation_id: ViolationId(1),
@@ -10735,6 +11170,11 @@ fn search_investigate_allows_local_scene_investigation_despite_stale_remote_evid
         }),
         evidence_entities: BTreeSet::from([stale_subject]),
         evidence_places: BTreeSet::from([violation_place, remote_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10771,11 +11211,16 @@ fn search_investigate_allows_local_scene_investigation_despite_stale_remote_evid
 #[test]
 fn search_travel_to_goal_barrier_satisfied_at_destination() {
     let (view, actor, _origin, destination) = build_two_place_travel_view();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(destination),
         key: GoalKey::from(GoalKind::Patrol { place: destination }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -10810,11 +11255,16 @@ fn search_travel_to_goal_candidate_filter() {
         tactical_barrier_reached: false,
         heuristic_ticks: 0,
     };
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(destination),
         key: GoalKey::from(GoalKind::Patrol { place: destination }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([destination]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let travel_id = ActionDefId(100);
     let patrol_id = ActionDefId(101);
@@ -10893,7 +11343,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
         .insert(place, vec![actor, bread_lot, waste_lot, workshop, seller]);
     view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
     view.lot_commodities.insert(waste_lot, CommodityKind::Waste);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -10901,6 +11351,11 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let mut recipes = RecipeRegistry::new();
     recipes.register(RecipeDefinition {
@@ -11094,11 +11549,16 @@ fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft(
     });
     let (registry, _handlers) = build_registry_with_recipes(&recipes);
     let semantics_table = build_semantics_table(&registry);
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -11200,11 +11660,16 @@ fn commodity_relevance_filter_bypasses_non_commodity_goals() {
     view.entities_at.insert(place, vec![actor, lot]);
     view.lot_commodities.insert(lot, CommodityKind::Waste);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::Sleep),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -11282,11 +11747,16 @@ fn commodity_relevance_filter_uses_active_prerequisite_commodity_for_produce_goa
         required_tool_kinds: Vec::new(),
         body_cost_per_tick: BodyCostPerTick::zero(),
     });
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ProduceCommodity { recipe_id }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -11396,7 +11866,7 @@ fn search_pipeline_records_commodity_irrelevant_root_candidate_filtering() {
     view.lot_sellers.insert(bread_lot, seller);
     view.lot_sellers.insert(waste_lot, seller);
 
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -11404,6 +11874,11 @@ fn search_pipeline_records_commodity_irrelevant_root_candidate_filtering() {
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([market]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -11455,11 +11930,16 @@ fn search_treat_wounds_uses_two_phase_pick_up_before_heal() {
         build_branching_care_view();
     view.wounds.insert(patient, vec![wound(401)]);
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -11507,11 +11987,16 @@ fn search_treat_wounds_with_zero_landmarks_preserves_two_phase_plan_shape() {
         build_branching_care_view();
     view.wounds.insert(patient, vec![wound(402)]);
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::TreatWounds { patient }),
         evidence_entities: BTreeSet::from([patient]),
         evidence_places: BTreeSet::from([patient_place, medicine_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -11559,7 +12044,7 @@ fn search_treat_wounds_with_zero_landmarks_preserves_two_phase_plan_shape() {
 #[test]
 fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
     let fixture = build_remote_produce_commodity_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ProduceCommodity {
             recipe_id: fixture.recipe_id,
@@ -11569,6 +12054,11 @@ fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
             prototype_place_entity(PrototypePlace::VillageSquare),
             prototype_place_entity(PrototypePlace::OrchardFarm),
         ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -11646,7 +12136,7 @@ fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
 #[test]
 fn search_produce_commodity_with_zero_landmarks_preserves_two_phase_plan_shape() {
     let fixture = build_remote_produce_commodity_fixture();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ProduceCommodity {
             recipe_id: fixture.recipe_id,
@@ -11656,6 +12146,11 @@ fn search_produce_commodity_with_zero_landmarks_preserves_two_phase_plan_shape()
             prototype_place_entity(PrototypePlace::VillageSquare),
             prototype_place_entity(PrototypePlace::OrchardFarm),
         ]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
     let snapshot = build_planning_snapshot(
@@ -11910,11 +12405,16 @@ fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belie
         &BTreeSet::from([town, archive, hall]),
         2,
     );
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate }),
         evidence_entities: BTreeSet::from([candidate, office, record]),
         evidence_places: BTreeSet::from([archive, hall]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let result = search_plan(
@@ -12002,11 +12502,16 @@ fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_cer
         &BTreeSet::from([town, hall]),
         1,
     );
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::SupportCandidateForOffice { office, candidate }),
         evidence_entities: BTreeSet::from([candidate, office]),
         evidence_places: BTreeSet::from([hall]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let result = search_plan(
@@ -12080,11 +12585,16 @@ fn planned_plan_carries_searched_opportunity_key() {
         goal_key,
         anchor: worldwake_core::OpportunityAnchor::Place(hall),
     };
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: opportunity.anchor,
         key: goal_key,
         evidence_entities: BTreeSet::from([office]),
         evidence_places: BTreeSet::from([hall]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
 
     let result = search_plan(
@@ -12151,11 +12661,16 @@ fn search_trace_records_force_claim_root_candidate_outcomes() {
         &BTreeSet::from([hall]),
         0,
     );
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ClaimOffice { office }),
         evidence_entities: BTreeSet::from([office]),
         evidence_places: BTreeSet::from([hall]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let mut expansions = Vec::new();
 
@@ -12224,11 +12739,16 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
 
     let registry = ActionDefRegistry::new();
     let handlers = worldwake_sim::ActionHandlerRegistry::new();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::ClaimOffice { office }),
         evidence_entities: BTreeSet::from([office]),
         evidence_places: BTreeSet::from([place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -12289,7 +12809,7 @@ fn fulfill_post_notice_search_finds_travel_then_post_notice_progress_barrier() {
         .insert(posting_place, vec![(origin, NonZeroU32::new(1).unwrap())]);
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
         key: GoalKey::from(GoalKind::PostNotice {
             posting: ArtifactPostingContext {
@@ -12304,6 +12824,11 @@ fn fulfill_post_notice_search_finds_travel_then_post_notice_progress_barrier() {
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([posting_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -12377,7 +12902,7 @@ fn fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier() {
         .insert(posting_place, vec![(origin, NonZeroU32::new(1).unwrap())]);
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
         key: GoalKey::from(GoalKind::PostBounty {
             posting: ArtifactPostingContext {
@@ -12397,6 +12922,11 @@ fn fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier() {
         }),
         evidence_entities: BTreeSet::from([target]),
         evidence_places: BTreeSet::from([posting_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -12472,7 +13002,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
     view.thresholds.insert(actor, DriveThresholds::default());
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
@@ -12480,6 +13010,11 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
         }),
         evidence_entities: BTreeSet::from([seller_a, seller_b]),
         evidence_places: BTreeSet::new(),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -12557,13 +13092,18 @@ fn search_trace_records_ask_witness_omission_when_no_stale_epistemic_subjects_ex
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(remote),
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Bread,
         }),
         evidence_entities: BTreeSet::from([subject]),
         evidence_places: BTreeSet::from([remote]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -12640,13 +13180,18 @@ fn search_trace_records_ask_witness_omission_when_no_witness_affordance_exists()
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(remote),
         key: GoalKey::from(GoalKind::RestockCommodity {
             commodity: CommodityKind::Bread,
         }),
         evidence_entities: BTreeSet::from([subject]),
         evidence_places: BTreeSet::from([remote]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -13185,11 +13730,16 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(target),
         key: GoalKey::from(GoalKind::RaidTarget { target }),
         evidence_entities: BTreeSet::from([target]),
         evidence_places: BTreeSet::from([remote_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -13289,11 +13839,16 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Entity(target),
         key: GoalKey::from(GoalKind::EngageHostile { target }),
         evidence_entities: BTreeSet::from([target]),
         evidence_places: BTreeSet::from([remote_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -13364,7 +13919,7 @@ fn explore_location_search_finds_travel_plan_to_target_place() {
     );
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::Place(target_place),
         key: GoalKey::from(GoalKind::ExploreLocation {
             target_place,
@@ -13374,6 +13929,11 @@ fn explore_location_search_finds_travel_plan_to_target_place() {
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([target_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,
@@ -13446,7 +14006,7 @@ fn search_empty_beliefs_exploration_fallback_returns_nearest_travel_barrier() {
         .insert(far_place, vec![(actor_place, NonZeroU32::new(5).unwrap())]);
 
     let (registry, handlers) = build_registry();
-    let goal = GroundedGoal {
+    let goal = GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
@@ -13454,6 +14014,11 @@ fn search_empty_beliefs_exploration_fallback_returns_nearest_travel_barrier() {
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
     };
     let snapshot = build_planning_snapshot(
         &view,

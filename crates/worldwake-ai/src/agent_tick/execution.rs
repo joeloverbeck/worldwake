@@ -12,7 +12,7 @@ use crate::plan_step_expectations::{
 };
 use crate::{AgentDecisionRuntime, PlannedStep, RevalidationOutcome, classify_revalidation};
 use worldwake_core::{
-    ActiveGoal, BeliefSnapshot, BeliefStatusTag, BlockerMemory, BlockerRecordedPayload, CauseRef,
+    BeliefSnapshot, BeliefStatusTag, BlockerMemory, BlockerRecordedPayload, CauseRef,
     ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyEntry, DiscrepancyMemory,
     EntityId, EventTag, LearnedOpportunityMemory, RepairMemory, ReplanTriggeredPayload, Tick,
     VisibilitySpec, WitnessData, WorldTxn,
@@ -677,41 +677,6 @@ pub(super) fn persist_intention_frame(
             .map_err(|error| TickInputError::new(error.to_string()))?;
     } else {
         txn.clear_component_intention_frame(agent)
-            .map_err(|error| TickInputError::new(error.to_string()))?;
-    }
-    let _ = txn.commit(event_log);
-    Ok(())
-}
-
-/// Persist the active goal component to the world, producing a
-/// `ComponentDelta` in the event log. Follows the same diff-and-commit
-/// pattern as `persist_intention_frame`.
-pub(super) fn persist_active_goal(
-    world: &mut worldwake_core::World,
-    event_log: &mut worldwake_core::EventLog,
-    agent: EntityId,
-    tick: Tick,
-    before: Option<&ActiveGoal>,
-    after: Option<&ActiveGoal>,
-) -> Result<(), TickInputError> {
-    if before == after {
-        return Ok(());
-    }
-
-    let mut txn = WorldTxn::new(
-        world,
-        tick,
-        CauseRef::SystemTick(tick),
-        Some(agent),
-        None,
-        VisibilitySpec::Hidden,
-        WitnessData::default(),
-    );
-    if let Some(goal) = after {
-        txn.set_component_active_goal(agent, *goal)
-            .map_err(|error| TickInputError::new(error.to_string()))?;
-    } else {
-        txn.clear_component_active_goal(agent)
             .map_err(|error| TickInputError::new(error.to_string()))?;
     }
     let _ = txn.commit(event_log);

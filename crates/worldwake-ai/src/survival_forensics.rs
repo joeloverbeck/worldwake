@@ -32,7 +32,7 @@ pub struct CriticalWindowFrame {
     pub need_value: Permille,
     pub selected_goal: Option<GoalKey>,
     pub selected_plan_source: Option<SelectedPlanSource>,
-    pub top_competitors: Vec<RankedGoalSnapshot>,
+    pub top_competitors: Vec<AgendaEntrySnapshot>,
     pub active_action: Option<ActiveActionSummary>,
     pub exhaustion_state: Option<ExhaustionSummary>,
     pub blocker_summary: Option<BlockerSummary>,
@@ -40,7 +40,7 @@ pub struct CriticalWindowFrame {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RankedGoalSnapshot {
+pub struct AgendaEntrySnapshot {
     pub goal: GoalKey,
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
@@ -358,7 +358,7 @@ fn selected_plan_source_from_trace(trace: &AgentDecisionTrace) -> Option<Selecte
 fn top_competitors_from_trace(
     trace: &AgentDecisionTrace,
     selected_goal: Option<GoalKey>,
-) -> Vec<RankedGoalSnapshot> {
+) -> Vec<AgendaEntrySnapshot> {
     let DecisionOutcome::Planning(planning) = &trace.outcome else {
         return Vec::new();
     };
@@ -433,8 +433,8 @@ fn blocker_summary(
     })
 }
 
-fn ranked_goal_snapshot(summary: &RankedGoalSummary) -> RankedGoalSnapshot {
-    RankedGoalSnapshot {
+fn ranked_goal_snapshot(summary: &RankedGoalSummary) -> AgendaEntrySnapshot {
+    AgendaEntrySnapshot {
         goal: summary.opportunity.goal_key,
         priority_class: summary.priority_class,
         motive_score: summary.motive_score,

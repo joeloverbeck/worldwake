@@ -2,18 +2,19 @@
 
 mod golden_harness;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use golden_harness::{GoldenHarness, commit_txn, new_txn, seed_actor_local_beliefs};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use worldwake_ai::{
-    AgentDecisionRuntime, AgentTickDriver, DecisionOutcome, DirtySet, PlanTerminalKind, PlannedPlan,
+    AgendaEntry, AgendaOrigin, AgendaPhase, AgentDecisionRuntime, AgentTickDriver, DecisionOutcome,
+    DirtySet, FeasibilityHint, GoalOffer, KillCondition, PlanTerminalKind, PlannedPlan,
 };
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    ActiveGoal, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
+    Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
     DecisionEventPayload, EntityId, EventTag, EventView, ExpectationBasis, ExpectationId,
     ExpectationRecord, ExpectationState, ExpectationStore, GoalKey, GoalKind, GoalRejectionReason,
     OpportunityAnchor, OpportunityKey, PerceptionSource, Tick, ViolationDispositionProfile,
@@ -57,6 +58,35 @@ struct DriverStateMirror {
     runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
 }
 
+fn committed_goal_entry(goal_key: GoalKey, opportunity: OpportunityKey, tick: Tick) -> AgendaEntry {
+    AgendaEntry {
+        key: opportunity,
+        offer: GoalOffer {
+            key: goal_key,
+            anchor: opportunity.anchor,
+            evidence_entities: BTreeSet::default(),
+            evidence_places: BTreeSet::default(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+        },
+        phase: AgendaPhase::Committed,
+        origin: AgendaOrigin::NeedDrive,
+        introduced_tick: tick,
+        last_reconsidered_tick: tick,
+        revival_trigger: None,
+        kill_condition: KillCondition::External,
+        priority_class: worldwake_ai::GoalPriorityClass::Background,
+        motive_score: 0,
+        provenance: None,
+        source_reliability_discount: None,
+        competition_discount: None,
+        feasibility: FeasibilityHint::Uncertain,
+    }
+}
+
 fn inject_prior_commitment(
     harness: &mut GoldenHarness,
     agent: EntityId,
@@ -70,6 +100,14 @@ fn inject_prior_commitment(
             Vec::new(),
             PlanTerminalKind::GoalSatisfied,
         )),
+        agenda_state: worldwake_ai::AgendaState {
+            committed: Some(committed_goal_entry(
+                committed_goal,
+                committed_opportunity,
+                Tick(0),
+            )),
+            ..worldwake_ai::AgendaState::default()
+        },
         dirty: DirtySet::REPLAN_SIGNAL,
         ..AgentDecisionRuntime::default()
     };
@@ -98,17 +136,6 @@ fn inject_prior_commitment(
         Some(committed_opportunity)
     );
     harness.driver.enable_tracing();
-
-    let mut txn = new_txn(&mut harness.world, 0);
-    txn.set_component_active_goal(
-        agent,
-        ActiveGoal {
-            goal_key: committed_goal,
-            adopted_at: Tick(0),
-        },
-    )
-    .expect("golden harness should keep active goals writable");
-    commit_txn(txn, &mut harness.event_log);
 }
 
 fn inject_probe_only_sleep_blocker(harness: &mut GoldenHarness, agent: EntityId, place: EntityId) {
@@ -191,8 +218,7 @@ fn inject_missing_expectation_commitment(
 //
 // Setup: Load the authored `portfolio-planning.ron` scenario, seed explicit
 // local beliefs, seed a scoped blocker-memory entry that only the probe sees
-// for `Sleep`, and inject an overdue `ReportMissing` commitment into runtime
-// and matching `ActiveGoal`.
+// for `Sleep`, and inject an overdue `ReportMissing` commitment into runtime.
 //
 // Proves: on the winning planning tick, the landed portfolio contains exactly
 // three populated slots: rejected survival, rejected commitment, and

@@ -3,9 +3,7 @@ use crate::goal_model::{
     grounded_goal_epistemic_subjects, grounded_goal_matches_epistemic_barrier,
 };
 use crate::planner_ops::{PlannerOpKind, planner_only_candidates};
-use crate::{
-    GoalKindPlannerExt, GroundedGoal, PlannerOpSemantics, PlanningEntityRef, PlanningState,
-};
+use crate::{GoalKindPlannerExt, GoalOffer, PlannerOpSemantics, PlanningEntityRef, PlanningState};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{ActionDefId, BlockerMemory, ContentionStatus, EntityId, GoalKind, Tick};
 use worldwake_sim::{
@@ -61,7 +59,7 @@ pub(super) struct CommodityFilterContext<'a> {
 }
 
 pub(super) fn relevant_action_defs(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
 ) -> BTreeSet<ActionDefId> {
     let relevant_ops = goal.key.kind.relevant_op_kinds();
@@ -180,7 +178,7 @@ pub(super) fn expansion_candidate_trace_from_candidate(
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(super) fn search_candidates(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     node: &SearchNode<'_>,
     context: CandidateSearchContext<'_>,
     binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
@@ -201,7 +199,7 @@ pub(super) fn search_candidates(
 }
 
 pub(super) fn search_candidates_with_expansion_trace(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     node: &SearchNode<'_>,
     context: CandidateSearchContext<'_>,
     trace_sinks: CandidateTraceSinks<'_>,
@@ -455,7 +453,7 @@ pub(super) fn search_candidates_with_expansion_trace(
 }
 
 fn move_cargo_unavailable_for_seller_backed_sale_lot(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     candidate: &SearchCandidate,
     op_kind: PlannerOpKind,
     state: &PlanningState<'_>,
@@ -485,7 +483,7 @@ fn move_cargo_unavailable_for_seller_backed_sale_lot(
 #[cfg(test)]
 pub(super) fn apply_commodity_relevance_filter(
     candidates: &mut Vec<SearchCandidate>,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     context: CommodityFilterContext<'_>,
     root_candidates: Option<&mut Vec<crate::decision_trace::RootCandidateTrace>>,
@@ -504,7 +502,7 @@ pub(super) fn apply_commodity_relevance_filter(
 
 pub(super) fn apply_commodity_relevance_filter_with_expansion_trace(
     candidates: &mut Vec<SearchCandidate>,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     context: CommodityFilterContext<'_>,
     trace_sinks: CandidateFilterTraceSinks<'_>,
@@ -671,7 +669,7 @@ fn payload_commodity_filter_outcome(
 }
 
 fn goal_synthesized_candidates(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -713,7 +711,7 @@ fn goal_synthesized_candidates(
 }
 
 fn synthesized_planning_targets(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     semantics: PlannerOpSemantics,
     authoritative_targets: Vec<EntityId>,
@@ -740,7 +738,7 @@ fn synthesized_planning_targets(
 }
 
 fn record_root_operator_omissions(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -813,7 +811,7 @@ fn record_root_operator_omissions(
 }
 
 fn conditional_ask_witness_omission_trace(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     affordance_candidates: &[SearchCandidate],
@@ -909,7 +907,7 @@ fn intended_exclusive_action(
         .then_some(candidate.def_id)
 }
 
-fn required_trade_counterparty(goal: &GroundedGoal) -> Option<EntityId> {
+fn required_trade_counterparty(goal: &GoalOffer) -> Option<EntityId> {
     let seller = goal.evidence_entities.iter().copied().next()?;
     if goal.evidence_entities.len() != 1 {
         return None;
@@ -922,7 +920,7 @@ fn required_trade_counterparty(goal: &GroundedGoal) -> Option<EntityId> {
     }
 }
 
-fn affordance_matches_grounded_opportunity(goal: &GroundedGoal, affordance: &Affordance) -> bool {
+fn affordance_matches_grounded_opportunity(goal: &GoalOffer, affordance: &Affordance) -> bool {
     let Some(required_counterparty) = required_trade_counterparty(goal) else {
         return true;
     };
@@ -937,7 +935,7 @@ fn affordance_matches_grounded_opportunity(goal: &GroundedGoal, affordance: &Aff
 }
 
 pub(super) fn search_candidates_from_affordance(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
@@ -1065,7 +1063,7 @@ pub(super) fn search_candidates_from_affordance(
 }
 
 fn intended_action_is_currently_affordable(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
@@ -1084,7 +1082,7 @@ fn intended_action_is_currently_affordable(
 }
 
 fn queue_intended_actions_for(
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     state: &PlanningState<'_>,
     registry: &ActionDefRegistry,
     entity: EntityId,
@@ -1174,7 +1172,7 @@ pub(super) fn unsupported_goal(_goal: &GoalKind) -> bool {
 /// place-scoped blocker, `None` otherwise.
 pub(super) fn candidate_blocked_by_place(
     candidate: &SearchCandidate,
-    goal: &GroundedGoal,
+    goal: &GoalOffer,
     node: &SearchNode<'_>,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     blocked: &BlockerMemory,

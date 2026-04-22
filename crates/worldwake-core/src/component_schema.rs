@@ -1715,31 +1715,6 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
-                active_goals,
-                ActiveGoal,
-                insert_active_goal,
-                get_active_goal,
-                get_active_goal_mut,
-                remove_active_goal,
-                has_active_goal,
-                iter_active_goals,
-                insert_component_active_goal,
-                get_component_active_goal,
-                get_component_active_goal_mut,
-                remove_component_active_goal,
-                has_component_active_goal,
-                entities_with_active_goal,
-                query_active_goal,
-                count_with_active_goal,
-                "ActiveGoal",
-                |kind| kind == EntityKind::Agent,
-                ActiveGoal,
-                crate::ActiveGoal,
-                set_component_active_goal,
-                clear_component_active_goal,
-                txn_simple_set
-            }
-            {
                 contention_intents,
                 ContentionIntents,
                 insert_contention_intents,

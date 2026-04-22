@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — adds `agenda_manager.rs` module with `tick_agenda`, revival-trigger evaluation, kill-condition enforcement, capacity eviction, cooldown enforcement, and S110 event emission.
-**Deps**: [archive/tickets/S115AGEMAN-001](../archive/tickets/S115AGEMAN-001.md), [S115AGEMAN-002](S115AGEMAN-002.md)
+**Deps**: [archive/tickets/S115AGEMAN-001](../archive/tickets/S115AGEMAN-001.md), [archive/tickets/S115AGEMAN-002](../archive/tickets/S115AGEMAN-002.md)
 
 ## Problem
 

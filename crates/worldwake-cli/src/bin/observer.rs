@@ -3965,9 +3965,9 @@ mod tests {
         SearchExpansionSummary, SelectionTrace, TargetBeliefPresence,
     };
     use worldwake_ai::{
-        ActiveActionSummary, AgentTickDriver, BlockerSummary, CriticalWindowFrame,
-        CriticalWindowReport, DirtySet, ExhaustionSummary, GoalPriorityClass,
-        LocalSurvivalStateSummary, RankedGoalSnapshot, SelectedPlanSource,
+        ActiveActionSummary, AgendaEntrySnapshot, AgentTickDriver, BlockerSummary,
+        CriticalWindowFrame, CriticalWindowReport, DirtySet, ExhaustionSummary, GoalPriorityClass,
+        LocalSurvivalStateSummary, SelectedPlanSource,
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
@@ -4414,7 +4414,7 @@ mod tests {
                 need_value: Permille::new(940).expect("need value"),
                 selected_goal: Some(GoalKey::from(GoalKind::Sleep)),
                 selected_plan_source: Some(SelectedPlanSource::SearchSelection),
-                top_competitors: vec![RankedGoalSnapshot {
+                top_competitors: vec![AgendaEntrySnapshot {
                     goal: GoalKey::from(GoalKind::Sleep),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 940,
