@@ -1586,28 +1586,26 @@ pub(super) fn plan_and_validate_next_step(
                         prepared_frame,
                         current_place,
                     );
-                } else {
-                    if !resume_pending_repair_plan(
+                } else if !resume_pending_repair_plan(
+                    runtime,
+                    agenda_state,
+                    ranked_candidates,
+                    &view,
+                    agent,
+                    action_defs,
+                    action_handlers,
+                ) {
+                    clear_current_plan(
+                        world,
+                        event_log,
                         runtime,
                         agenda_state,
+                        jc,
+                        facility_intents,
                         ranked_candidates,
-                        &view,
                         agent,
-                        action_defs,
-                        action_handlers,
-                    ) {
-                        clear_current_plan(
-                            world,
-                            event_log,
-                            runtime,
-                            agenda_state,
-                            jc,
-                            facility_intents,
-                            ranked_candidates,
-                            agent,
-                            tick,
-                        );
-                    }
+                        tick,
+                    );
                 }
             }
             runtime.dirty = DirtySet::default();
@@ -1976,28 +1974,26 @@ pub(super) fn plan_and_validate_next_step_traced(
                     prepared_frame,
                     current_place,
                 );
-            } else {
-                if !resume_pending_repair_plan(
+            } else if !resume_pending_repair_plan(
+                runtime,
+                agenda_state,
+                ranked_candidates,
+                &view,
+                agent,
+                action_defs,
+                action_handlers,
+            ) {
+                clear_current_plan(
+                    world,
+                    event_log,
                     runtime,
                     agenda_state,
+                    jc,
+                    facility_intents,
                     ranked_candidates,
-                    &view,
                     agent,
-                    action_defs,
-                    action_handlers,
-                ) {
-                    clear_current_plan(
-                        world,
-                        event_log,
-                        runtime,
-                        agenda_state,
-                        jc,
-                        facility_intents,
-                        ranked_candidates,
-                        agent,
-                        tick,
-                    );
-                }
+                    tick,
+                );
             }
         }
         runtime.dirty = DirtySet::default();

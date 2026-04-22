@@ -303,7 +303,7 @@ mod tests {
         HypotheticalEntityId, KillCondition, OpportunityAnchor, OpportunityKey, PlanTerminalKind,
         PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture, RevivalTrigger,
     };
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::ActionDefId;
     use worldwake_core::{
         BodyPart, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
@@ -357,8 +357,8 @@ mod tests {
         GoalOffer {
             key: goal,
             anchor,
-            evidence_entities: Default::default(),
-            evidence_places: Default::default(),
+            evidence_entities: BTreeSet::default(),
+            evidence_places: BTreeSet::default(),
             obligation_source: None,
             commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
             required_information_gaps: Vec::new(),

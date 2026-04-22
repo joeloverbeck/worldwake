@@ -2636,7 +2636,7 @@ fn format_kill_condition(world: &worldwake_core::World, kill: &KillCondition) ->
     match kill {
         KillCondition::TickExpiry { at_tick } => format!("expires at tick {}", at_tick.0),
         KillCondition::ObligationResolved { expectation } => {
-            format!("until expectation {:?} resolves", expectation)
+            format!("until expectation {expectation:?} resolves")
         }
         KillCondition::TargetDead { target } => {
             format!("until {} dies", entity_display_name(world, *target))
@@ -2653,8 +2653,7 @@ fn write_agenda_state_summary(
     let committed = agenda_state
         .committed
         .as_ref()
-        .map(format_agenda_goal)
-        .unwrap_or_else(|| "none".to_string());
+        .map_or_else(|| "none".to_string(), format_agenda_goal);
     writeln!(
         out,
         "**Agenda state**: committed={committed}, pending={}, suspended={}",
@@ -2666,11 +2665,10 @@ fn write_agenda_state_summary(
     if !agenda_state.pending.is_empty() {
         writeln!(out, "**Pending goals**:").unwrap();
         for entry in agenda_state.pending.values() {
-            let trigger = entry
-                .revival_trigger
-                .as_ref()
-                .map(|trigger| format_revival_trigger(world, trigger))
-                .unwrap_or_else(|| "none".to_string());
+            let trigger = entry.revival_trigger.as_ref().map_or_else(
+                || "none".to_string(),
+                |trigger| format_revival_trigger(world, trigger),
+            );
             writeln!(
                 out,
                 "- {} | revive on {}",
