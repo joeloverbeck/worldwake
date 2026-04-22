@@ -464,7 +464,7 @@ Per spec-drafting-rules.md §5, both fields land on the universal `CognitiveProf
 
 ### Golden test
 
-12. Deferred to `tickets/S114PLASTGUA-014.md`: the authored remote-trade golden premise was rejected in `archive/tickets/S114PLASTGUA-010.md`, and the prerequisite remote sale-stock routing fix has now landed in `archive/tickets/S114PLASTGUA-013.md`. Re-author the scenario so an agent plans to purchase from merchant A, merchant A departs before arrival, guard breach fires on arrival tick via `classify_revalidation`, `ExpectationMismatch` appears in the event log with `expectation_kind: Some(ExpectationKindTag::State)` and `mismatch_detail: Some(GuardInvalidator(TargetMoved))`, `DiscrepancyMemory` records `Discrepancy::BeliefContradicted`, and the agent replans within 2 ticks.
+12. Deferred to `tickets/S114PLASTGUA-015.md`: `archive/tickets/S114PLASTGUA-014.md` landed the last remaining planner/search substrate fix for seller-backed displayed sale stock with known container detail, but the originally drafted fully autonomous stale-window is still disproved on the live branch. Re-author the scenario at the truthful hybrid/local trade-step seam so an agent first selects the remote seller-backed branch, then reaches a concrete local guarded `trade` step, merchant A departs before that step can lawfully enqueue, `ExpectationMismatch` appears in the event log with `expectation_kind: Some(ExpectationKindTag::State)` and `mismatch_detail: Some(GuardInvalidator(TargetMoved))`, `DiscrepancyMemory` records `Discrepancy::BeliefContradicted`, and the agent replans within 2 ticks of the departure.
 
 ## Outcome
 

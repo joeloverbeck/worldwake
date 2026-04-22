@@ -1616,6 +1616,128 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
 }
 
 #[test]
+fn search_returns_travel_then_trade_barrier_for_remote_displayed_sale_lot_with_container_detail() {
+    let actor = entity(1);
+    let town = entity(10);
+    let market = entity(11);
+    let seller = entity(2);
+    let sale_lot = entity(100);
+    let display_container = entity(101);
+    let mut view = TestBeliefView::default();
+    view.alive
+        .extend([actor, seller, town, market, sale_lot, display_container]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(seller, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(market, EntityKind::Place);
+    view.kinds.insert(sale_lot, EntityKind::ItemLot);
+    view.kinds.insert(display_container, EntityKind::Container);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(seller, market);
+    view.effective_places.insert(sale_lot, market);
+    view.effective_places.insert(display_container, market);
+    view.entities_at.insert(town, vec![actor]);
+    view.entities_at
+        .insert(market, vec![seller, sale_lot, display_container]);
+    view.adjacent
+        .insert(town, vec![(market, NonZeroU32::new(4).unwrap())]);
+    view.adjacent
+        .insert(market, vec![(town, NonZeroU32::new(4).unwrap())]);
+    view.lot_commodities.insert(sale_lot, CommodityKind::Bread);
+    view.listed_lots
+        .insert((market, CommodityKind::Bread), vec![sale_lot]);
+    view.lot_sellers.insert(sale_lot, seller);
+    view.direct_containers.insert(sale_lot, display_container);
+    remember_entity(
+        &mut view,
+        actor,
+        seller,
+        BelievedEntityState {
+            believed_kind: Some(EntityKind::Agent),
+            ..believed_entity_state_at(market, Tick(0), None)
+        },
+    );
+    remember_entity(
+        &mut view,
+        actor,
+        sale_lot,
+        BelievedEntityState {
+            believed_kind: Some(EntityKind::ItemLot),
+            ..believed_entity_state_at(market, Tick(0), None)
+        },
+    );
+    remember_entity(
+        &mut view,
+        actor,
+        display_container,
+        BelievedEntityState {
+            believed_kind: Some(EntityKind::Container),
+            ..believed_entity_state_at(market, Tick(0), None)
+        },
+    );
+    view.needs.insert(
+        actor,
+        HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+    );
+    view.thresholds.insert(actor, DriveThresholds::default());
+    view.trade_profiles
+        .insert(actor, sample_trade_disposition_profile());
+    view.merchandise_profiles.insert(
+        seller,
+        MerchandiseProfile {
+            sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+            home_facility: Some(market),
+        },
+    );
+    view.commodity_quantities
+        .insert((actor, CommodityKind::Coin), Quantity(3));
+    view.commodity_quantities
+        .insert((seller, CommodityKind::Bread), Quantity(2));
+
+    let goal = GroundedGoal {
+        anchor: worldwake_core::OpportunityAnchor::Place(market),
+        key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        }),
+        evidence_entities: BTreeSet::from([seller]),
+        evidence_places: BTreeSet::from([market]),
+    };
+    let (registry, handlers) = build_registry();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    )
+    .into_plan()
+    .unwrap();
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 2);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::Travel);
+    assert_eq!(plan.steps[1].op_kind, PlannerOpKind::Trade);
+    assert!(matches!(
+        plan.steps[1].payload_override,
+        Some(ActionPayload::Trade(_))
+    ));
+}
+
+#[test]
 fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() {
     let actor = entity(1);
     let seller = entity(2);
