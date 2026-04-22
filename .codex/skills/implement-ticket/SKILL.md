@@ -9,6 +9,14 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 When several reassessment branches seem applicable at once, use this priority order before coding: prove the live branch first; if the drafted premise is false, rewrite the ticket/spec immediately; if the live branch still supports a narrower complete slice inside the ticket's stated domain, finish that slice and create/update a follow-up ticket for the disproved remainder; use 1-3-1 only when the remaining boundary change is architecturally ambiguous, materially expands scope, or needs a user decision. `references/mismatch-handling.md` is supplemental guidance for that flow and does not override the explicit mixed-outcome and narrowing rules in this skill.
 
+## Top 5 Rules
+
+- Reassess against the live branch first. Do not implement the draft literally until the ticket/spec matches current code.
+- If a narrow production fix lands but the drafted broader golden/E2E story is still false, stop immediately, rewrite the active ticket to the newly proved boundary, and split the remainder to a follow-up ticket before adding more end-to-end proof.
+- Prefer the strongest existing honest proof seam. Extend an existing focused unit/runtime/golden test instead of creating the drafted new file mechanically.
+- Keep Cargo sequential, confirm exact selectors with `-- --list`, and record only truthful verification boundaries.
+- Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
+
 ## Quick Routing
 
 - Start by deciding whether the ticket is really implementation work, validation-suite work, golden/observer proof work, or shared-surface migration work.
@@ -24,6 +32,7 @@ When several reassessment branches seem applicable at once, use this priority or
 - Snapshot the worktree with `git status --short` and classify unrelated dirty paths before coding.
 - Keep Cargo sequential for the entire workflow, including selector-discovery `-- --list` probes.
 - For golden or mixed proof tickets, identify the strongest existing owning golden/test suite before accepting any drafted new-file claim.
+- If a narrow production fix lands but the drafted broader golden/E2E story is still false, stop immediately, rewrite the active ticket to the newly proved boundary, and split the remainder before adding more end-to-end proof.
 - Correct ticket/spec drift before coding when reassessment changes the truthful ownership or proof seam.
 - Close out the ticket file itself with the real scope and verification results; do not leave the correction only in conversation.
 
@@ -66,6 +75,7 @@ When a golden or planner ticket claims one specific operator family, selected pl
 When a golden/observer fixture mismatch could reflect either renderer drift or lawful upstream event/report drift, prove the upstream contract first at the strongest existing lower-layer owning seam already in the repo before editing the fixture. If that lower-layer seam is green and the rendered mismatch matches the live output, narrow the ticket to fixture refresh plus truthful closeout rather than reopening production ownership.
 
 When the ticket is about canonical write ownership, ID allocation, counter integrity, or another “one lawful writer” contract, classify every cited write site before editing: `production writer`, `same-crate test helper`, `fixture/sample payload`, or `already inert`. Do not preserve a drafted production-scope claim if live reassessment shows some cited sites are only test setup or fixtures; correct the ticket first, then decide whether those helper sites still need migration as consistency fallout.
+When a live system already prunes or clears an authoritative derived surface when it becomes invalid, check that same sync seam first for the lawful restoration path when the surface becomes valid again. Prefer extending that existing authoritative reconciliation boundary before moving ownership into AI actions, planner restaging, or golden-only scaffolding.
 
 For additive shared struct/component field tickets, treat the explicit-literal sweep as mandatory before the first focused proof: run a repo-wide search for `Type {` on the changed type, classify the explicit literals by same-crate vs sibling-crate ownership, and expect those explicit constructors to be the first-wave fallout set rather than waiting for the first focused test run to discover them piecemeal.
 When that shared type is an authored scenario/test-facing definition such as `AgentDef`, pre-sweep the same-crate helpers, handlers, lints, and `#[cfg(test)]` modules that build it explicitly before trusting a narrow focused test. Those modules often exhaustively enumerate the struct and are normal current-ticket fallout even when the drafted file list only named the defining scenario module.
@@ -126,6 +136,7 @@ If a golden-driven ticket proves that the scenario contract itself is underspeci
 When a golden reassessment renames a scenario test or changes its authored contract, sweep any tracked `docs/generated/golden-*` inventory, index, or detail artifacts that mirror that scenario and update both test-name references and scenario prose before closeout.
 
 If reassessment exposes a separate architectural concern that must be tracked but is not honestly owned by the current ticket, create or update a dedicated follow-up ticket before proceeding, and rewrite the active ticket so that concern is referenced explicitly as an external dependency or out-of-scope blocker rather than left implicit.
+If a narrow production fix lands and a broader drafted golden/E2E ending is still false afterward, do not keep extending the current ticket in search of a synthetic passing end state. Rewrite the active ticket immediately to the proved boundary, record the exact still-failing higher-level premise, and create or update the follow-up ticket before broader verification and closeout.
 If an investigation/disposition ticket concludes that the live contradiction is already owned by an existing sibling ticket, close the current ticket by recording that conclusion and updating the sibling ticket's scope/deps factually instead of creating a duplicate follow-up.
 When the current ticket resolves a blocker that had previously been split out from an active sibling, immediately update that sibling ticket's `Deps`, verification contract, and blocker wording so it no longer reads as still blocked on the now-completed concern.
 When that follow-up path requires creating a new ticket, read `tickets/README.md` and `tickets/_TEMPLATE.md` first and write the new ticket in full repo-ready form instead of treating it as an informal reassessment note.

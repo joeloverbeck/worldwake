@@ -1,6 +1,6 @@
 use worldwake_core::{
-    CauseRef, CommodityKind, DemandMemory, EntityId, EventLog, EventTag, Quantity, Tick,
-    VisibilitySpec, WitnessData, World, WorldTxn,
+    CauseRef, CommodityKind, DemandMemory, EntityId, EventLog, EventTag, Quantity, SaleListing,
+    Tick, VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -17,7 +17,7 @@ pub fn trade_system_tick(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         system_id: _system_id,
     } = ctx;
 
-    prune_invalid_listings(world, event_log, tick);
+    sync_sale_listings(world, event_log, tick);
 
     let updates = collect_aging_updates(world, tick);
     if updates.is_empty() {
@@ -101,14 +101,29 @@ fn is_listing_valid(world: &World, lot: EntityId) -> bool {
         })
 }
 
-fn prune_invalid_listings(world: &mut World, event_log: &mut EventLog, tick: Tick) {
+fn has_displayed_stock_assignment(world: &World, lot: EntityId) -> bool {
+    world
+        .get_component_stock_assignment(lot)
+        .is_some_and(|assignment| assignment.kind == worldwake_core::StockAssignmentKind::Displayed)
+}
+
+/// Keep `SaleListing` aligned with authoritative displayed-stock validity.
+/// Invalid listings are pruned, and displayed lots that become sale-valid again
+/// regain their listing without requiring a fresh seller-side AI staging loop.
+fn sync_sale_listings(world: &mut World, event_log: &mut EventLog, tick: Tick) {
     let invalid_lots: Vec<EntityId> = world
         .query_sale_listing()
         .filter(|(lot, _)| !is_listing_valid(world, *lot))
         .map(|(lot, _)| lot)
         .collect();
+    let restorable_lots: Vec<EntityId> = world
+        .entities()
+        .filter(|lot| !world.has_component_sale_listing(*lot))
+        .filter(|lot| has_displayed_stock_assignment(world, *lot))
+        .filter(|lot| is_listing_valid(world, *lot))
+        .collect();
 
-    if invalid_lots.is_empty() {
+    if invalid_lots.is_empty() && restorable_lots.is_empty() {
         return;
     }
 
@@ -127,6 +142,11 @@ fn prune_invalid_listings(world: &mut World, event_log: &mut EventLog, tick: Tic
     for lot in &invalid_lots {
         txn.add_target(*lot);
         let _ = txn.clear_component_sale_listing(*lot);
+    }
+
+    for lot in &restorable_lots {
+        txn.add_target(*lot);
+        let _ = txn.set_component_sale_listing(*lot, SaleListing { listed_at: tick });
     }
 
     let _ = txn.commit(event_log);
@@ -886,6 +906,79 @@ mod tests {
         assert!(
             world.get_component_sale_listing(lot).is_some(),
             "valid listing should persist"
+        );
+    }
+
+    #[test]
+    fn displayed_listing_returns_when_seller_returns_to_market() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places: Vec<EntityId> = world.topology().place_ids().collect();
+        let place_a = places[0];
+        let place_b = places[1];
+        let agent = seed_agent(&mut world, "ReturningSeller", None, None);
+        place_agent_at(&mut world, agent, place_a);
+
+        let lot = {
+            let mut txn = new_txn(&mut world, 4);
+            let (facility, _stock_container, display_container) = txn
+                .create_merchant_facility(
+                    place_a,
+                    agent,
+                    worldwake_core::LoadUnits(200),
+                    Some(worldwake_core::LoadUnits(100)),
+                )
+                .unwrap();
+            let display_container =
+                display_container.expect("merchant facility should have display");
+            txn.set_component_merchandise_profile(
+                agent,
+                MerchandiseProfile {
+                    sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                    home_facility: Some(facility),
+                },
+            )
+            .unwrap();
+            let lot = txn
+                .create_item_lot(CommodityKind::Bread, Quantity(3))
+                .unwrap();
+            txn.set_ground_location(lot, place_a).unwrap();
+            txn.put_into_container(lot, display_container).unwrap();
+            txn.set_component_stock_assignment(
+                lot,
+                worldwake_core::StockAssignment {
+                    facility,
+                    kind: worldwake_core::StockAssignmentKind::Displayed,
+                },
+            )
+            .unwrap();
+            txn.set_component_sale_listing(lot, SaleListing { listed_at: Tick(4) })
+                .unwrap();
+            commit_txn(txn);
+            lot
+        };
+
+        {
+            let mut txn = new_txn(&mut world, 5);
+            txn.set_ground_location(agent, place_b).unwrap();
+            commit_txn(txn);
+        }
+
+        let _ = run_trade_tick(&mut world, 6);
+        assert!(
+            world.get_component_sale_listing(lot).is_none(),
+            "seller departure should still prune the displayed lot listing"
+        );
+
+        {
+            let mut txn = new_txn(&mut world, 7);
+            txn.set_ground_location(agent, place_a).unwrap();
+            commit_txn(txn);
+        }
+
+        let _ = run_trade_tick(&mut world, 8);
+        assert!(
+            world.get_component_sale_listing(lot).is_some(),
+            "seller return should restore the displayed lot listing"
         );
     }
 }

@@ -1482,7 +1482,8 @@ fn start_staff_market(
     let payload = staff_market_payload(def, instance)?;
     let commodity = payload.commodity;
     let (_place, _profile) = validate_staff_market_preconditions(txn, instance.actor, commodity)?;
-    // Presence-only: SaleListing is managed by stage_stock_for_sale/unstage_stock.
+    // Presence-only: displayed listing state is staged/unstaged explicitly and
+    // reconciled by the trade system's validity sync.
     // This action represents the merchant being present at the market.
     Ok(Some(ActionState::Empty))
 }
@@ -1508,7 +1509,8 @@ fn commit_staff_market(
 ) -> Result<CommitOutcome, ActionError> {
     let payload = staff_market_payload(def, instance)?;
     let commodity = payload.commodity;
-    // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
+    // Presence-only: displayed listing state is staged/unstaged explicitly and
+    // reconciled by the trade system's validity sync.
     // Record unproductive demand if displayed stock remains unsold.
     if let Some(profile) = txn.get_component_merchandise_profile(instance.actor)
         && let Some(home_facility) = profile.home_facility
@@ -1531,7 +1533,8 @@ fn abort_staff_market(
     _rng: &mut DeterministicRng,
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
-    // Presence-only: SaleListing is managed by stage/unstage, not staff_market.
+    // Presence-only: displayed listing state is staged/unstaged explicitly and
+    // reconciled by the trade system's validity sync.
     Ok(())
 }
 
@@ -3934,7 +3937,8 @@ mod tests {
 
     #[test]
     fn staff_market_commit_preserves_displayed_listings() {
-        // Presence-only: SaleListing is managed by stage/unstage. After
+        // Presence-only: displayed listing state is staged/unstaged explicitly
+        // and reconciled by the trade system's validity sync. After
         // staff_market commit, the displayed lot's SaleListing must remain.
         let mut h = StaffMarketHarness::new();
         let (instance_id, mut active) = h.start_with_active();
@@ -3962,7 +3966,7 @@ mod tests {
             }
         }
 
-        // After commit, listing must still be present (managed by unstage, not staff_market).
+        // After commit, listing must still be present.
         assert!(
             h.world.get_component_sale_listing(h.lot).is_some(),
             "staff_market commit must not remove displayed SaleListing"

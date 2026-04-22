@@ -784,6 +784,153 @@ fn merchant_return_revives_pending_purchase_agenda_entry() {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 86: Seller Return Restores Displayed Listing After Pending Revival
+// Systems: Trade, AI, Needs
+// GoalKinds: AcquireCommodity
+// ActionDomains: Travel, Trade
+// Principles: P1, P3, P4
+// Proves: after buyer-side pending revival is already in place, seller return
+//         restores lawful displayed-lot listing state at the authoritative
+//         trade seam. The later resumed trade-completion story remains a
+//         separate mixed-layer proof seam.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn seller_return_restores_displayed_listing_after_pending_revival() {
+    let mut h = GoldenHarness::with_recipes(Seed([86; 32]), RecipeRegistry::new());
+    h.driver.enable_tracing();
+
+    let (merchant, stock_lot) = seed_merchant(
+        &mut h,
+        "Merchant",
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(3),
+    );
+    let buyer = seed_buyer(&mut h, "Buyer", ORCHARD_FARM, Quantity(3));
+    let purchase_goal = worldwake_ai::GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: worldwake_ai::CommodityPurpose::SelfConsume,
+    });
+
+    set_control_source(&mut h, merchant, ControlSource::Human, 0);
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        buyer,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let mut bound_tick = None;
+    for _ in 0..40 {
+        let tick = h.step_once().tick;
+        let Some(trace) = h
+            .driver
+            .trace_sink()
+            .and_then(|sink| sink.trace_at(buyer, tick))
+        else {
+            continue;
+        };
+        let DecisionOutcome::Planning(planning) = &trace.outcome else {
+            continue;
+        };
+        let Some(selected_plan) = planning.selection.selected_plan.as_ref() else {
+            continue;
+        };
+        if h.world.effective_place(buyer) == Some(VILLAGE_SQUARE)
+            && h.agent_active_action_name(buyer).is_none()
+            && selected_plan
+                .next_step
+                .as_ref()
+                .is_some_and(|step| step.action_name == "trade" && step.targets.contains(&merchant))
+        {
+            bound_tick = Some(tick);
+            let mut txn = new_txn(&mut h.world, tick.0);
+            txn.set_ground_location(merchant, ORCHARD_FARM).unwrap();
+            commit_txn(txn, &mut h.event_log);
+            break;
+        }
+    }
+
+    assert!(
+        bound_tick.is_some(),
+        "buyer should first reach the local trade-step binding against the seller"
+    );
+
+    let mut parked_pending = false;
+    for _ in 0..12 {
+        h.step_once();
+        let Some(runtime) = h.driver.runtime(buyer) else {
+            continue;
+        };
+        if runtime
+            .agenda_state
+            .pending
+            .values()
+            .any(|entry| entry.key.goal_key == purchase_goal)
+        {
+            parked_pending = true;
+            break;
+        }
+    }
+
+    assert!(
+        parked_pending,
+        "seller departure should first park the committed purchase goal in pending"
+    );
+    assert!(
+        h.world.get_component_sale_listing(stock_lot).is_none(),
+        "seller departure should prune the displayed lot listing before return"
+    );
+
+    let return_tick = h.scheduler.current_tick().0;
+    let mut txn = new_txn(&mut h.world, return_tick);
+    txn.set_ground_location(merchant, VILLAGE_SQUARE).unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let mut pending_cleared = false;
+    let mut revived = false;
+    let mut relisted = false;
+    for _ in 0..48 {
+        h.step_once();
+        if let Some(runtime) = h.driver.runtime(buyer) {
+            pending_cleared |= runtime
+                .agenda_state
+                .pending
+                .values()
+                .all(|entry| entry.key.goal_key != purchase_goal);
+            revived |= runtime
+                .agenda_state
+                .committed
+                .as_ref()
+                .is_some_and(|entry| entry.key.goal_key == purchase_goal)
+                || runtime
+                    .current_plan
+                    .as_ref()
+                    .is_some_and(|plan| plan.goal == purchase_goal);
+        }
+        relisted |= h.world.get_component_sale_listing(stock_lot).is_some();
+        if pending_cleared && revived && relisted {
+            break;
+        }
+    }
+
+    assert!(
+        pending_cleared,
+        "seller return should clear the parked pending purchase entry through the real runtime lifecycle"
+    );
+    assert!(
+        revived,
+        "seller return should revive the purchase goal into committed/current-plan state"
+    );
+    assert!(
+        relisted,
+        "seller return should restore a lawful sale listing for the displayed lot"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 77: Unlisted Stock Not Sellable
 // Systems: Trade, AI
 // GoalKinds: AcquireCommodity
