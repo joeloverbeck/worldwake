@@ -464,7 +464,7 @@ Per spec-drafting-rules.md §5, both fields land on the universal `CognitiveProf
 
 ### Golden test
 
-12. New scenario: agent plans to purchase from merchant A; merchant A departs before arrival. Piggybacks on S113's identity-bound target-location envelope (S113 test 12). Guard breach fires on arrival tick via `classify_revalidation`; `ExpectationMismatch` event appears in event log with `expectation_kind: Some(ExpectationKindTag::State)` and `mismatch_detail: Some(GuardInvalidator(TargetMoved))`; `DiscrepancyMemory` records `Discrepancy::BeliefContradicted`; agent replans within 2 ticks.
+12. Deferred pending `tickets/S114PLASTGUA-013.md`: the authored remote-trade golden premise was rejected in `archive/tickets/S114PLASTGUA-010.md` after live reassessment showed the planner does not truthfully hold `Travel -> Trade` against remote displayed sale stock on the current branch. Once the remote sale-stock belief/candidate-generation gap is fixed, re-author the scenario so an agent plans to purchase from merchant A, merchant A departs before arrival, guard breach fires on arrival tick via `classify_revalidation`, `ExpectationMismatch` appears in the event log with `expectation_kind: Some(ExpectationKindTag::State)` and `mismatch_detail: Some(GuardInvalidator(TargetMoved))`, `DiscrepancyMemory` records `Discrepancy::BeliefContradicted`, and the agent replans within 2 ticks.
 
 ## Outcome
 
