@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — wires `agenda_tick_system` into the agent-tick phase between perception and ranking; redirects S74 switch-margin read from rank-derived current to `AgendaState.committed.motive_score`; emits S110 `GoalCommitted`/`GoalSuspended`/`GoalAbandoned` events from `AgendaTransitions`.
-**Deps**: [archive/tickets/S115AGEMAN-003](../archive/tickets/S115AGEMAN-003.md), [S115AGEMAN-004](S115AGEMAN-004.md)
+**Deps**: [archive/tickets/S115AGEMAN-003](../archive/tickets/S115AGEMAN-003.md), [archive/tickets/S115AGEMAN-004](../archive/tickets/S115AGEMAN-004.md)
 
 ## Problem
 
-With `tick_agenda` implemented (ticket 003) and `classify_rejection` landed (ticket 004), the agenda manager still sits un-invoked in the agent-tick flow. S74's switch-margin logic at `active_action.rs:180-199` also still reads the rank-derived "current" goal rather than `AgendaState.committed`. This ticket ties both surfaces together: inserts a new `agenda_tick_system` SystemFn at the correct phase boundary (after belief-update, before candidate generation), routes the resulting `AgendaTransitions` into the event log (S110 event tags), and updates the switch-margin check so commitment decisions read the authoritative agenda state. Without this ticket, the agenda manager is dormant infrastructure.
+With `tick_agenda` implemented (ticket 003) and `classify_rejection` landed (ticket 004), the agenda manager still sits un-invoked in the agent-tick flow. Ticket 004 truthfully routed committed-feasibility rejections through the current planner seam in `agent_tick/planning.rs`; this ticket owns migrating the remaining dormant agenda lifecycle into the intended `agenda_tick_system` path. S74's switch-margin logic at `active_action.rs:180-199` also still reads the rank-derived "current" goal rather than `AgendaState.committed`. This ticket ties both surfaces together: inserts a new `agenda_tick_system` SystemFn at the correct phase boundary (after belief-update, before candidate generation), routes the resulting `AgendaTransitions` into the event log (S110 event tags), and updates the switch-margin check so commitment decisions read the authoritative agenda state. Without this ticket, the agenda manager is dormant infrastructure.
 
 ## Assumption Reassessment (2026-04-22)
 

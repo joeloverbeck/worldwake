@@ -1210,7 +1210,7 @@ fn process_agent(
             &mut current_facility_intents,
             agent,
             &ordered,
-            &discrepancy_memory,
+            &mut discrepancy_memory,
             &blocked_memory,
             default_switch_margin,
             frame_switch_margin,

@@ -432,7 +432,7 @@ S114 ✅ archived (hard deps on S109, S110, S113)
 - [ ] Both specs reassessed post-Phase-7/8 and ticket-decomposed
 - [x] S114 implemented: guard breaches short-circuit revalidation before affordance matching; `ExpectationMismatch` events appear in event log
 - [ ] S115 implemented: committed goals persist across ticks deterministically; pending/suspended surfaced in observer output
-- [ ] S115 D4A classifier lands: the S112 cargo-satisfaction assertion and `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` both pass via the lifecycle classifier, not via ad-hoc `build_candidate_plans` special cases
+- [x] S115 D4A classifier lands: the S112 cargo-satisfaction assertion and `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` both pass via the lifecycle classifier, not via ad-hoc `build_candidate_plans` special cases
 - [ ] Deterministic replay of scenarios produces identical agenda state transitions
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing

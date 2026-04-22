@@ -19,8 +19,8 @@ use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
-    AcceptedRepairProvenance, AgendaEntry, AgentDecisionRuntime, CommodityPurpose, DirtySet,
-    ExhaustionBaseline, ExhaustionInvalidationCondition, ExpectedMaterialization,
+    AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgentDecisionRuntime, CommodityPurpose,
+    DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, ExpectedMaterialization,
     FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
     Invalidator, OpportunityAnchor, OpportunityKey, PlanExpectation, PlanGuard, PlanTerminalKind,
     PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoalProvenance,
@@ -2082,7 +2082,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
         &mut facility_intents,
         harness.actor,
         &ordered(std::slice::from_ref(&goal)),
-        &worldwake_core::DiscrepancyMemory::default(),
+        &mut worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         ProfileFixture::default().switch_margin,
         ProfileFixture::default().switch_margin,
@@ -4023,7 +4023,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &mut facility_intents,
         harness.actor,
         &ordered(&ranked),
-        &worldwake_core::DiscrepancyMemory::default(),
+        &mut worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         budget.switch_margin,
         budget.switch_margin,
@@ -4137,7 +4137,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
         &mut facility_intents,
         harness.actor,
         &ordered(&ranked_after_pickup),
-        &worldwake_core::DiscrepancyMemory::default(),
+        &mut worldwake_core::DiscrepancyMemory::default(),
         &blocked,
         budget.switch_margin,
         budget.switch_margin,
@@ -4783,6 +4783,14 @@ fn cargo_satisfaction_at_destination_while_carrying() {
             commodity: CommodityKind::Bread,
             destination: destination_facility,
         }))
+    );
+    assert_eq!(
+        harness.runtime().and_then(|runtime| runtime
+            .agenda_state
+            .committed
+            .as_ref()
+            .map(|ag| ag.phase)),
+        Some(AgendaPhase::Suspended)
     );
     assert!(harness.runtime().unwrap().current_plan.is_none());
     assert_eq!(harness.active_action_name(), None);
@@ -5977,7 +5985,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             &mut facility_intents,
             harness.actor,
             &ordered(&initial_read.ranked),
-            &worldwake_core::DiscrepancyMemory::default(),
+            &mut worldwake_core::DiscrepancyMemory::default(),
             &blocked,
             budget.switch_margin,
             budget.switch_margin,
@@ -6068,7 +6076,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             &mut facility_intents,
             harness.actor,
             &ordered(&continuation_read.ranked),
-            &worldwake_core::DiscrepancyMemory::default(),
+            &mut worldwake_core::DiscrepancyMemory::default(),
             &blocked,
             budget.switch_margin,
             budget.switch_margin,

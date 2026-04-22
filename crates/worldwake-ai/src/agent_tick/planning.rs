@@ -1,4 +1,5 @@
 use crate::GoalKindPlannerExt;
+use crate::agenda_manager::{RejectionLifecycle, classify_rejection};
 use crate::agent_tick::portfolio::{FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio};
 use crate::candidate_generation::relieved_needs_for_commodity;
 use crate::decision_trace::{
@@ -18,10 +19,11 @@ use crate::plan_step_expectations::{
 };
 use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
 use crate::{
-    AcceptedRepairProvenance, AgendaEntry, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
-    ExhaustionRetryState, OpportunityKey, PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics,
-    authoritative_target, build_planning_snapshot_with_blocked_facility_uses,
-    ranking::OrderedRanked, revalidate_next_step, select_best_plan,
+    AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgentDecisionRuntime, DirtySet,
+    ExhaustionEntry, ExhaustionRetryState, KillCondition, OpportunityKey, PlanValue, PlannedPlan,
+    PlannedStep, PlannerOpSemantics, authoritative_target,
+    build_planning_snapshot_with_blocked_facility_uses, ranking::OrderedRanked,
+    revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -410,15 +412,10 @@ pub(super) fn build_candidate_plans(
         .slots
         .values()
         .filter_map(|slot| {
-            let is_committed = committed_opportunity.is_some_and(|committed| {
-                committed.goal_key == slot.ranked.offer.key
-                    && committed.anchor == slot.ranked.offer.anchor
-            });
-            (!is_committed
-                && matches!(
-                    slot.feasibility,
-                    crate::agent_tick::portfolio::FeasibilityVerdict::RejectedBeforeSearch { .. }
-                ))
+            matches!(
+                slot.feasibility,
+                crate::agent_tick::portfolio::FeasibilityVerdict::RejectedBeforeSearch { .. }
+            )
             .then_some(OpportunityKey {
                 goal_key: slot.ranked.offer.key,
                 anchor: slot.ranked.offer.anchor,
@@ -872,9 +869,6 @@ fn build_rejected_alternatives(
 
     let mut rejected_by_goal = BTreeMap::<GoalKey, RejectedGoal>::new();
     for slot in portfolio.slots.values() {
-        if slot.ranked.offer.key == committed_goal {
-            continue;
-        }
         if matches!(
             slot.feasibility,
             FeasibilityVerdict::RejectedBeforeSearch { .. }
@@ -974,6 +968,108 @@ fn emit_plan_selection_events(
                 .expect("plan step count exceeds u16"),
         }),
     );
+}
+
+fn clear_committed_plan_state(
+    runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
+) {
+    if jc.is_some() {
+        runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::LostPlan);
+    }
+    *jc = None;
+    facility_intents.intents.clear();
+    runtime.materialization_bindings.clear();
+    runtime.current_plan = None;
+    runtime.current_step_index = 0;
+    runtime.step_in_flight = false;
+    runtime.pending_repair_context = None;
+    runtime.accepted_repair = None;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_committed_rejection_lifecycle(
+    world: &worldwake_core::World,
+    scheduler: &Scheduler,
+    runtime: &mut AgentDecisionRuntime,
+    active_goal: &mut Option<AgendaEntry>,
+    jc: &mut Option<IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
+    agent: EntityId,
+    current_tick: Tick,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    recipe_registry: &RecipeRegistry,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    slot: &crate::agent_tick::portfolio::PortfolioSlot,
+) -> bool {
+    if !matches!(
+        slot.feasibility,
+        FeasibilityVerdict::RejectedBeforeSearch { .. }
+    ) {
+        return false;
+    }
+
+    let Some(profile) = world.get_component_agenda_profile(agent) else {
+        return false;
+    };
+    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+    match classify_rejection(
+        agent,
+        &slot.feasibility,
+        &slot.ranked.offer,
+        &view,
+        current_tick,
+        profile.revive_cooldown_ticks,
+    ) {
+        RejectionLifecycle::Satisfied => {
+            clear_committed_plan_state(runtime, jc, facility_intents);
+            if let Some(goal) = active_goal.as_mut() {
+                goal.phase = AgendaPhase::Suspended;
+                goal.revival_trigger = None;
+                goal.kill_condition = KillCondition::External;
+            }
+            true
+        }
+        RejectionLifecycle::InfeasibleUntil { trigger } => {
+            clear_committed_plan_state(runtime, jc, facility_intents);
+            if let Some(goal) = active_goal.as_mut() {
+                goal.phase = AgendaPhase::Pending;
+                goal.revival_trigger = Some(trigger);
+                goal.kill_condition = KillCondition::External;
+            }
+            true
+        }
+        RejectionLifecycle::Dead => {
+            clear_committed_plan_state(runtime, jc, facility_intents);
+            if let FeasibilityVerdict::RejectedBeforeSearch { reason } = slot.feasibility {
+                discrepancy_memory.record(worldwake_core::DiscrepancyEntry {
+                    blocker_key: worldwake_core::BlockerKey {
+                        goal_key: slot.ranked.offer.key,
+                        place: match slot.ranked.offer.anchor {
+                            OpportunityAnchor::Place(place) => Some(place),
+                            OpportunityAnchor::Entity(_) | OpportunityAnchor::None => {
+                                slot.ranked.offer.key.place
+                            }
+                        },
+                        target: match slot.ranked.offer.anchor {
+                            OpportunityAnchor::Entity(target) => Some(target),
+                            OpportunityAnchor::Place(_) | OpportunityAnchor::None => {
+                                slot.ranked.offer.key.entity
+                            }
+                        },
+                        action_def: None,
+                    },
+                    discrepancy: reason,
+                    observed_tick: current_tick,
+                    expires_tick: Tick(current_tick.0.saturating_add(1)),
+                    clearing_condition: worldwake_core::DiscrepancyClearing::TtlExpiry,
+                });
+            }
+            *active_goal = None;
+            true
+        }
+    }
 }
 
 fn opportunity_anchor_entity(anchor: OpportunityAnchor) -> Option<EntityId> {
@@ -1185,7 +1281,7 @@ pub(super) fn plan_and_validate_next_step(
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
     ranked_candidates: &OrderedRanked<'_>,
-    discrepancy_memory: &DiscrepancyMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     blocked_memory: &BlockerMemory,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
@@ -1267,6 +1363,30 @@ pub(super) fn plan_and_validate_next_step(
                     runtime.exhaustion_cache.remove(&plan.opportunity);
                 }
             }
+            let committed_rejection_parked = committed_opportunity
+                .and_then(|opportunity| {
+                    plans.portfolio.slots.values().find(|slot| {
+                        slot.ranked.offer.key == opportunity.goal_key
+                            && slot.ranked.offer.anchor == opportunity.anchor
+                    })
+                })
+                .is_some_and(|slot| {
+                    apply_committed_rejection_lifecycle(
+                        world,
+                        scheduler,
+                        runtime,
+                        active_goal,
+                        jc,
+                        facility_intents,
+                        agent,
+                        tick,
+                        action_defs,
+                        recipe_registry,
+                        discrepancy_memory,
+                        slot,
+                    )
+                });
+
             let selection_plans = selection_candidates(&plans.plans);
 
             if let Some(selected_plan) = select_best_plan(
@@ -1313,7 +1433,7 @@ pub(super) fn plan_and_validate_next_step(
                     prepared_frame,
                     current_place,
                 );
-            } else {
+            } else if !committed_rejection_parked {
                 clear_current_plan(
                     world,
                     event_log,
@@ -1365,7 +1485,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: worldwake_core::EntityId,
     ranked_candidates: &OrderedRanked<'_>,
-    discrepancy_memory: &DiscrepancyMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
     blocked_memory: &BlockerMemory,
     default_switch_margin: Permille,
     frame_switch_margin: Permille,
@@ -1493,21 +1613,23 @@ pub(super) fn plan_and_validate_next_step_traced(
             runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
         );
 
+        let committed_opportunity = runtime
+            .current_plan
+            .as_ref()
+            .map(|plan| plan.opportunity)
+            .filter(|opportunity| {
+                Some(opportunity.goal_key)
+                    == active_goal
+                        .as_ref()
+                        .map(|active_goal| active_goal.key.goal_key)
+            });
+
         let plans = build_candidate_plans(
             world,
             scheduler,
             agent,
             ranked_candidates,
-            runtime
-                .current_plan
-                .as_ref()
-                .map(|plan| plan.opportunity)
-                .filter(|opportunity| {
-                    Some(opportunity.goal_key)
-                        == active_goal
-                            .as_ref()
-                            .map(|active_goal| active_goal.key.goal_key)
-                }),
+            committed_opportunity,
             discrepancy_memory,
             blocked_memory,
             tick,
@@ -1563,6 +1685,30 @@ pub(super) fn plan_and_validate_next_step_traced(
             cognitive.max_candidates_to_plan,
             &plans.plans,
         );
+
+        let committed_rejection_parked = committed_opportunity
+            .and_then(|opportunity| {
+                plans.portfolio.slots.values().find(|slot| {
+                    slot.ranked.offer.key == opportunity.goal_key
+                        && slot.ranked.offer.anchor == opportunity.anchor
+                })
+            })
+            .is_some_and(|slot| {
+                apply_committed_rejection_lifecycle(
+                    world,
+                    scheduler,
+                    runtime,
+                    active_goal,
+                    jc,
+                    facility_intents,
+                    agent,
+                    tick,
+                    action_defs,
+                    recipe_registry,
+                    discrepancy_memory,
+                    slot,
+                )
+            });
 
         let selection_plans = selection_candidates(&plans.plans);
         let current_goal_before_selection = active_goal.as_ref().map(|ag| ag.key.goal_key);
@@ -1662,7 +1808,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                 prepared_frame,
                 current_place,
             );
-        } else {
+        } else if !committed_rejection_parked {
             clear_current_plan(
                 world,
                 event_log,
@@ -3997,7 +4143,7 @@ mod tests {
             &mut facility_intents,
             agent,
             &ordered(&ranked_candidates),
-            &worldwake_core::DiscrepancyMemory::default(),
+            &mut worldwake_core::DiscrepancyMemory::default(),
             &worldwake_core::BlockerMemory::default(),
             worldwake_core::Permille::new(0).unwrap(),
             worldwake_core::Permille::new(0).unwrap(),

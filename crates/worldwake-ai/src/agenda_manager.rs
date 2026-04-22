@@ -1,10 +1,11 @@
 use crate::{
-    AgendaEntry, AgendaEntryKey, AgendaPhase, AgendaState, KillCondition, RevivalTrigger, ranking,
+    AgendaEntry, AgendaEntryKey, AgendaPhase, AgendaState, GoalKind, GoalOffer, KillCondition,
+    RevivalTrigger, enterprise::restock_gap_at_destination, ranking,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    AgendaProfile, BlockerKey, DiscrepancyMemory, EntityId, ExpectationId, ExpectationState,
-    OpportunityAnchor, Tick,
+    AgendaProfile, BlockerKey, CommodityKind, Discrepancy, DiscrepancyMemory, EntityId,
+    ExpectationId, ExpectationState, OpportunityAnchor, Quantity, Tick,
 };
 use worldwake_sim::GoalBeliefView;
 
@@ -27,6 +28,100 @@ pub enum CommitTransition {
     Cleared {
         previous_key: AgendaEntryKey,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RejectionLifecycle {
+    Satisfied,
+    InfeasibleUntil { trigger: RevivalTrigger },
+    Dead,
+}
+
+pub(crate) fn classify_rejection(
+    actor: EntityId,
+    probe_verdict: &crate::agent_tick::portfolio::FeasibilityVerdict,
+    offer: &GoalOffer,
+    beliefs: &impl GoalBeliefView,
+    tick: Tick,
+    revive_cooldown_ticks: u32,
+) -> RejectionLifecycle {
+    if goal_post_conditions_already_satisfied(actor, offer, beliefs) {
+        return RejectionLifecycle::Satisfied;
+    }
+
+    let reason = match probe_verdict {
+        crate::agent_tick::portfolio::FeasibilityVerdict::RejectedBeforeSearch { reason } => {
+            *reason
+        }
+        crate::agent_tick::portfolio::FeasibilityVerdict::Plausible => {
+            unreachable!("classify_rejection only accepts rejected probe verdicts")
+        }
+    };
+
+    match reason {
+        Discrepancy::MissingObservation => {
+            let place = offer_anchor_place(offer).or_else(|| {
+                offer_anchor_entity(offer).and_then(|entity| beliefs.effective_place(entity))
+            });
+            if let Some(kind) = offer_commodity(offer) {
+                RejectionLifecycle::InfeasibleUntil {
+                    trigger: RevivalTrigger::CommodityAvailable {
+                        place: place.expect("commodity revival trigger needs a place"),
+                        kind,
+                        min: Quantity(1),
+                    },
+                }
+            } else {
+                let target = offer_anchor_entity(offer)
+                    .or(offer.key.entity)
+                    .expect("target-present revival trigger needs a target");
+                RejectionLifecycle::InfeasibleUntil {
+                    trigger: RevivalTrigger::TargetPresent {
+                        target,
+                        place: place
+                            .or_else(|| beliefs.effective_place(target))
+                            .expect("target-present revival trigger needs a place"),
+                    },
+                }
+            }
+        }
+        Discrepancy::RouteUnknown => RejectionLifecycle::InfeasibleUntil {
+            trigger: RevivalTrigger::RouteLearned {
+                from: beliefs
+                    .effective_place(actor)
+                    .expect("route-learned revival trigger needs actor place"),
+                to: offer_anchor_place(offer)
+                    .or_else(|| {
+                        offer_anchor_entity(offer)
+                            .and_then(|entity| beliefs.effective_place(entity))
+                    })
+                    .expect("route-learned revival trigger needs destination place"),
+            },
+        },
+        Discrepancy::PartialExecutionDrift
+        | Discrepancy::BeliefStale
+        | Discrepancy::SearchBudgetExhausted => RejectionLifecycle::InfeasibleUntil {
+            trigger: RevivalTrigger::TickElapsed {
+                at_tick: Tick(tick.0.saturating_add(u64::from(revive_cooldown_ticks))),
+            },
+        },
+        Discrepancy::NoWillingCounterparty => {
+            let counterparty = offer_anchor_entity(offer)
+                .or(offer.key.entity)
+                .expect("counterparty revival trigger needs counterparty entity");
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::CounterpartyAvailable {
+                    counterparty,
+                    place: offer_anchor_place(offer)
+                        .or_else(|| beliefs.effective_place(counterparty))
+                        .expect("counterparty revival trigger needs a place"),
+                },
+            }
+        }
+        Discrepancy::BeliefContradicted
+        | Discrepancy::NoLegalBinding
+        | Discrepancy::ImproperPlanningState => RejectionLifecycle::Dead,
+    }
 }
 
 pub fn tick_agenda(
@@ -350,6 +445,44 @@ fn expectation_is_resolved(
         })
 }
 
+fn goal_post_conditions_already_satisfied(
+    actor: EntityId,
+    offer: &GoalOffer,
+    beliefs: &impl GoalBeliefView,
+) -> bool {
+    match offer.key.kind {
+        GoalKind::MoveCargo {
+            commodity,
+            destination,
+        } => {
+            let destination_place = beliefs.effective_place(destination).unwrap_or(destination);
+            (beliefs.effective_place(actor) == Some(destination_place)
+                && beliefs.commodity_quantity(actor, commodity) > Quantity(0))
+                || restock_gap_at_destination(beliefs, actor, destination, commodity).is_none()
+        }
+        _ => false,
+    }
+}
+
+fn offer_commodity(offer: &GoalOffer) -> Option<CommodityKind> {
+    match offer.key.kind {
+        GoalKind::AcquireCommodity { commodity, .. }
+        | GoalKind::ConsumeOwnedCommodity { commodity }
+        | GoalKind::RestockCommodity { commodity }
+        | GoalKind::MoveCargo { commodity, .. }
+        | GoalKind::SellCommodity { commodity } => Some(commodity),
+        _ => None,
+    }
+}
+
+fn offer_anchor_place(offer: &GoalOffer) -> Option<EntityId> {
+    anchor_place(offer.anchor).or(offer.key.place)
+}
+
+fn offer_anchor_entity(offer: &GoalOffer) -> Option<EntityId> {
+    anchor_entity(offer.anchor).or(offer.key.entity)
+}
+
 fn blocker_key_from(entry: &AgendaEntry) -> BlockerKey {
     BlockerKey {
         goal_key: entry.offer.key,
@@ -375,7 +508,10 @@ fn anchor_entity(anchor: OpportunityAnchor) -> Option<EntityId> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AgendaTransitions, CommitTransition, tick_agenda};
+    use super::{
+        AgendaTransitions, CommitTransition, RejectionLifecycle, classify_rejection, tick_agenda,
+    };
+    use crate::agent_tick::portfolio::FeasibilityVerdict;
     use crate::{
         AgendaEntry, AgendaOrigin, AgendaPhase, AgendaState, FeasibilityHint, GoalKey, GoalKind,
         GoalOffer, GoalPriorityClass, KillCondition, RevivalTrigger,
@@ -384,9 +520,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         AgendaProfile, BeliefConfidencePolicy, CommodityConsumableProfile, CommodityKind,
-        DriveThresholds, EntityId, EntityKind, ExpectationBasis, ExpectationId, ExpectationRecord,
-        ExpectationState, ExpectationStore, LoadUnits, MerchandiseProfile, OpportunityAnchor,
-        OpportunityKey, Quantity, ResourceSource, Tick, UniqueItemKind, WorkstationTag,
+        DemandObservation, DemandObservationReason, Discrepancy, DriveThresholds, EntityId,
+        EntityKind, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
+        ExpectationStore, LoadUnits, MerchandiseProfile, OpportunityAnchor, OpportunityKey,
+        Quantity, ResourceSource, Tick, UniqueItemKind, WorkstationTag,
     };
     use worldwake_sim::GoalBeliefView;
 
@@ -411,6 +548,7 @@ mod tests {
         incapacitated: BTreeSet<EntityId>,
         adjacency: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         expectation_store: Option<ExpectationStore>,
+        demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
     }
 
     impl GoalBeliefView for MockGoalBeliefView {
@@ -601,8 +739,8 @@ mod tests {
             None
         }
 
-        fn demand_memory(&self, _agent: EntityId) -> Vec<worldwake_core::DemandObservation> {
-            Vec::new()
+        fn demand_memory(&self, agent: EntityId) -> Vec<worldwake_core::DemandObservation> {
+            self.demand_memory.get(&agent).cloned().unwrap_or_default()
         }
 
         fn corpse_entities_at(&self, _place: EntityId) -> Vec<EntityId> {
@@ -657,6 +795,32 @@ mod tests {
             suspended_capacity: 8,
             revive_cooldown_ticks: 4,
         }
+    }
+
+    fn demand(place: EntityId, commodity: CommodityKind, quantity: u32) -> DemandObservation {
+        DemandObservation {
+            commodity,
+            quantity: Quantity(quantity),
+            place,
+            tick: Tick(1),
+            counterparty: None,
+            reason: DemandObservationReason::WantedToBuyButNoSeller,
+        }
+    }
+
+    fn classify(
+        goal: GoalKind,
+        anchor: OpportunityAnchor,
+        reason: Discrepancy,
+    ) -> RejectionLifecycle {
+        classify_rejection(
+            AGENT,
+            &FeasibilityVerdict::RejectedBeforeSearch { reason },
+            &goal_offer(goal, anchor),
+            &MockGoalBeliefView::default(),
+            Tick(10),
+            default_profile().revive_cooldown_ticks,
+        )
     }
 
     #[test]
@@ -1000,6 +1164,241 @@ mod tests {
         assert_eq!(
             state.committed.as_ref().map(|entry| entry.key),
             Some(committed_key)
+        );
+    }
+
+    #[test]
+    fn classify_rejection_missing_observation_for_commodity_goal_uses_commodity_trigger() {
+        assert_eq!(
+            classify(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                },
+                OpportunityAnchor::Place(PLACE),
+                Discrepancy::MissingObservation,
+            ),
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::CommodityAvailable {
+                    place: PLACE,
+                    kind: CommodityKind::Bread,
+                    min: Quantity(1),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejection_missing_observation_for_target_goal_uses_target_present_trigger() {
+        let mut beliefs = MockGoalBeliefView::default();
+        beliefs.entity_places.insert(TARGET, PLACE);
+        assert_eq!(
+            classify_rejection(
+                AGENT,
+                &FeasibilityVerdict::RejectedBeforeSearch {
+                    reason: Discrepancy::MissingObservation,
+                },
+                &goal_offer(
+                    GoalKind::SearchForMissing {
+                        subject: TARGET,
+                        last_seen: None,
+                    },
+                    OpportunityAnchor::Entity(TARGET),
+                ),
+                &beliefs,
+                Tick(10),
+                default_profile().revive_cooldown_ticks,
+            ),
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::TargetPresent {
+                    target: TARGET,
+                    place: PLACE,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejection_route_unknown_uses_route_learned_trigger() {
+        let mut beliefs = MockGoalBeliefView::default();
+        beliefs.entity_places.insert(AGENT, PLACE);
+        beliefs.entity_places.insert(
+            TARGET,
+            EntityId {
+                slot: 4,
+                generation: 0,
+            },
+        );
+        assert_eq!(
+            classify_rejection(
+                AGENT,
+                &FeasibilityVerdict::RejectedBeforeSearch {
+                    reason: Discrepancy::RouteUnknown,
+                },
+                &goal_offer(
+                    GoalKind::SearchForMissing {
+                        subject: TARGET,
+                        last_seen: None
+                    },
+                    OpportunityAnchor::Entity(TARGET)
+                ),
+                &beliefs,
+                Tick(10),
+                default_profile().revive_cooldown_ticks,
+            ),
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::RouteLearned {
+                    from: PLACE,
+                    to: EntityId {
+                        slot: 4,
+                        generation: 0
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejection_partial_execution_drift_uses_tick_elapsed_trigger() {
+        assert_eq!(
+            classify(
+                GoalKind::Sleep,
+                OpportunityAnchor::Place(PLACE),
+                Discrepancy::PartialExecutionDrift,
+            ),
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::TickElapsed { at_tick: Tick(14) },
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejection_belief_stale_uses_tick_elapsed_trigger() {
+        assert_eq!(
+            classify(
+                GoalKind::Sleep,
+                OpportunityAnchor::Place(PLACE),
+                Discrepancy::BeliefStale,
+            ),
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::TickElapsed { at_tick: Tick(14) },
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejection_no_willing_counterparty_uses_counterparty_trigger() {
+        let mut beliefs = MockGoalBeliefView::default();
+        beliefs.entity_places.insert(TARGET, PLACE);
+        assert_eq!(
+            classify_rejection(
+                AGENT,
+                &FeasibilityVerdict::RejectedBeforeSearch {
+                    reason: Discrepancy::NoWillingCounterparty,
+                },
+                &goal_offer(
+                    GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                    },
+                    OpportunityAnchor::Entity(TARGET),
+                ),
+                &beliefs,
+                Tick(10),
+                default_profile().revive_cooldown_ticks,
+            ),
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::CounterpartyAvailable {
+                    counterparty: TARGET,
+                    place: PLACE,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejection_search_budget_exhausted_uses_tick_elapsed_trigger() {
+        assert_eq!(
+            classify(
+                GoalKind::Sleep,
+                OpportunityAnchor::Place(PLACE),
+                Discrepancy::SearchBudgetExhausted,
+            ),
+            RejectionLifecycle::InfeasibleUntil {
+                trigger: RevivalTrigger::TickElapsed { at_tick: Tick(14) },
+            }
+        );
+    }
+
+    #[test]
+    fn classify_rejection_belief_contradicted_is_dead() {
+        assert_eq!(
+            classify(
+                GoalKind::Sleep,
+                OpportunityAnchor::Place(PLACE),
+                Discrepancy::BeliefContradicted,
+            ),
+            RejectionLifecycle::Dead
+        );
+    }
+
+    #[test]
+    fn classify_rejection_no_legal_binding_is_dead() {
+        assert_eq!(
+            classify(
+                GoalKind::Sleep,
+                OpportunityAnchor::Place(PLACE),
+                Discrepancy::NoLegalBinding,
+            ),
+            RejectionLifecycle::Dead
+        );
+    }
+
+    #[test]
+    fn classify_rejection_improper_planning_state_is_dead() {
+        assert_eq!(
+            classify(
+                GoalKind::Sleep,
+                OpportunityAnchor::Place(PLACE),
+                Discrepancy::ImproperPlanningState,
+            ),
+            RejectionLifecycle::Dead
+        );
+    }
+
+    #[test]
+    fn classify_rejection_satisfied_move_cargo_short_circuits_reason_mapping() {
+        let destination = EntityId {
+            slot: 9,
+            generation: 0,
+        };
+        let mut beliefs = MockGoalBeliefView::default();
+        beliefs.entity_places.insert(destination, destination);
+        beliefs
+            .controlled_quantities
+            .insert((AGENT, destination, CommodityKind::Bread), Quantity(2));
+        beliefs
+            .demand_memory
+            .insert(AGENT, vec![demand(destination, CommodityKind::Bread, 2)]);
+
+        assert_eq!(
+            classify_rejection(
+                AGENT,
+                &FeasibilityVerdict::RejectedBeforeSearch {
+                    reason: Discrepancy::NoLegalBinding,
+                },
+                &goal_offer(
+                    GoalKind::MoveCargo {
+                        commodity: CommodityKind::Bread,
+                        destination,
+                    },
+                    OpportunityAnchor::Place(destination),
+                ),
+                &beliefs,
+                Tick(10),
+                default_profile().revive_cooldown_ticks,
+            ),
+            RejectionLifecycle::Satisfied
         );
     }
 }
