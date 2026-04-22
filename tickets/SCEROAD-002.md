@@ -15,7 +15,8 @@ Recent S122 follow-through also exposed a second gap: a survival golden can pass
 
 1. All five scenario files live at `scenarios/survival-baseline.ron`, `scenarios/survival-scattered.ron`, `scenarios/survival-contested.ron`, `scenarios/drive-escalation-wash-priority.ron`, `scenarios/cli-evaluation.ron`. Backing goldens confirmed present: `crates/worldwake-ai/tests/golden_survival_baseline.rs`, `golden_survival_scattered.rs`, `golden_survival_contested.rs`, `golden_drive_escalation_wash_priority.rs`. `cli-evaluation.ron` has no `survival_health_contract` and no golden, intentionally — this resolves the spec's two "Open items for authoring time" (trace landed scenarios to backing goldens, confirm `survival-baseline.ron` has a backing observer-level golden).
 2. Design doc §3 feature catalog lists ~33 features, each mapped to profile structs confirmed present in `crates/worldwake-core/src/` (see SCEROAD-001 Assumption Reassessment #1). Section 7 gating rules reference fields confirmed present in `UtilityProfile`, `TellProfile`, `MetabolismProfile`, `DriveEscalationProfile`, `PerceptionProfile`, `CommunicationProfile`, and `PlaceVisibilityProfile`.
-3. This is a documentation-only ticket. Shared abstraction boundary under audit: the Section 3 feature catalog, which must stay in lockstep with SCEROAD-001's `FEATURES` table. There is no runtime symbol surface to validate beyond reference accuracy.
+3. Live SCEROAD-001 output now also surfaces two authored-field warnings in `docs/generated/scenario-coverage.md`: `cli-evaluation.ron` contains `intention_disposition` and `last_seen_memory`, but neither is mapped to a current feature row. This ticket must treat that warning state truthfully: either classify those fields as intentionally outside the gameplay-feature catalog or extend the editorial contract to explain how warning-only authored fields are handled. The roadmap must not imply the generator is wrong simply because those warnings exist.
+4. This is a documentation-only ticket. Shared abstraction boundary under audit: the Section 3 feature catalog, which must stay in lockstep with SCEROAD-001's `FEATURES` table. There is no runtime symbol surface to validate beyond reference accuracy.
 
 ## Architecture Check
 
@@ -57,6 +58,7 @@ Include the **Non-golden-backed scenarios** subsection for `cli-evaluation.ron` 
 For the landed survival entries, add one short "Why this golden is valid" paragraph that names the feature-specific invariant beyond survival and the proof surface the golden uses for that invariant.
 
 **Section 6 — Maintenance Workflow.** Reproduce the three procedures from design doc §6: "Adding a new roadmap entry", "Authoring a scenario for a planned entry", "Handling schema drift", "Closing out an entry". Reference `cargo run -p worldwake-cli --bin scenario-coverage -- --write` for regeneration and `--check` for CI integration.
+Make the live warning path explicit: when the generated companion reports authored fields that are not mapped to a gameplay feature row, the roadmap doc must either classify them as intentionally non-feature/editorial exclusions or point to the follow-up that will add them, rather than treating those warnings as unexplained noise.
 
 **Section 7 — Detection Rule Appendix.** Reproduce the formal rule and the gating-fields-per-profile table from design doc §7. Include the world-feature gates subsection. This appendix must match SCEROAD-001's detection logic field-for-field — when that logic changes, this appendix changes in the same PR.
 
@@ -91,6 +93,7 @@ At the top of the doc, link to `docs/generated/scenario-coverage.md`, `docs/FOUN
 3. Manual cross-check: Section 3 Feature Catalog row count matches SCEROAD-001's `FEATURES` entry count; feature names match exactly.
 4. Manual cross-check: Section 7 gating-fields table matches SCEROAD-001's gating logic field-for-field.
 5. Manual cross-check: every planned and landed scenario entry names a feature-specific invariant beyond "agents survive", identifies the proof surface, and states the accepted or excluded rival lawful branches.
+6. Manual cross-check: any warning rows currently emitted by `docs/generated/scenario-coverage.md` are accounted for explicitly in the roadmap doc as either intentional exclusions from the gameplay-feature catalog or concrete follow-up work.
 6. Existing suite: `./scripts/verify.sh` remains green (no code changes, but confirms the doc-only change didn't break lints that reach into `docs/`).
 
 ### Invariants
