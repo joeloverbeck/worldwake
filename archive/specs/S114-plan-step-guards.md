@@ -6,7 +6,7 @@ Annotate each `PlannedStep` with explicit *guards* (required-believed-facts, min
 
 ## Phase and Status
 
-Phase 9: Belief-First Continual Planning Structural. Status: Draft.
+Phase 9: Belief-First Continual Planning Structural. Status: COMPLETED.
 
 ## Crates
 
@@ -464,8 +464,25 @@ Per spec-drafting-rules.md §5, both fields land on the universal `CognitiveProf
 
 ### Golden test
 
-12. Deferred to `tickets/S114PLASTGUA-015.md`: `archive/tickets/S114PLASTGUA-014.md` landed the last remaining planner/search substrate fix for seller-backed displayed sale stock with known container detail, but the originally drafted fully autonomous stale-window is still disproved on the live branch. Re-author the scenario at the truthful hybrid/local trade-step seam so an agent first selects the remote seller-backed branch, then reaches a concrete local guarded `trade` step, merchant A departs before that step can lawfully enqueue, `ExpectationMismatch` appears in the event log with `expectation_kind: Some(ExpectationKindTag::State)` and `mismatch_detail: Some(GuardInvalidator(TargetMoved))`, `DiscrepancyMemory` records `Discrepancy::BeliefContradicted`, and the agent replans within 2 ticks of the departure.
+12. Paired proof surface after `archive/tickets/S114PLASTGUA-015.md`: `archive/tickets/S114PLASTGUA-014.md` landed the last remaining planner/search substrate fix for seller-backed displayed sale stock with known container detail, but the originally drafted fully autonomous stale-window remains disproved on the live branch. The truthful validation split is now: `crates/worldwake-ai/tests/golden_merchant_selling.rs::remote_branch_selection_reaches_local_trade_binding_before_merchant_departure` proves that the buyer first selects the remote seller-backed branch and later reaches a concrete local guarded `trade` step, while `agent_tick::tests::revalidation_guard_breach_emits_expectation_mismatch_before_enqueue` proves that the guarded trade step emits `ExpectationMismatch` with `expectation_kind: Some(ExpectationKindTag::State)`, `mismatch_detail: Some(GuardInvalidator(TargetMoved))`, and `DiscrepancyMemory = Discrepancy::BeliefContradicted` at the honest AI pre-enqueue execution boundary.
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-22.
+
+- Landed the full S114 plan-step guard and expectation-monitoring surface across the staged S114 ticket family: `PlanGuard` / `PlanExpectation` runtime types, `ExpectationKindTag` and `ExpectationBasis::PlanStepCompletion`, widened `ExpectationMismatchPayload`, declarative `ActionDef` guard/expectation templates, AI-side revalidation plus mismatch emission, and the profile-driven cognitive parameters that govern tolerance and confidence ceilings.
+- Corrected one false dependency during implementation: `RequiredFact::RouteKnown` now explicitly binds to the already-live `route_exists(...)` belief-view seam, so no separate route-known adjunct spec was required after reassessment.
+- Closed validation item 12 truthfully with a paired proof surface rather than the original single autonomous golden narrative. `archive/tickets/S114PLASTGUA-014.md` landed the last planner/search substrate fix, `archive/tickets/S114PLASTGUA-015.md` landed the merchant-selling golden for remote branch selection plus local guarded `trade` binding, and the focused `agent_tick::tests::revalidation_guard_breach_emits_expectation_mismatch_before_enqueue` proof remains the honest owner of the mismatch event and discrepancy-memory boundary.
+
+### Deviations
+
+- The originally drafted “single autonomous merchant-departure golden proves the whole guard-breach chain” acceptance story was false on the live branch because the post-arrival stale window collapses into `BlockingFact::TooExpensive`. The spec now records the truthful paired proof surface instead of preserving that obsolete narrative.
+
+### Verification Result
+
+- Passed the focused S114 ticket-family proofs recorded in:
+  - `archive/tickets/S114PLASTGUA-014.md`
+  - `archive/tickets/S114PLASTGUA-015.md`
+- Specifically, the final validation split for item 12 is:
+  - `cargo test -p worldwake-ai --test golden_merchant_selling remote_branch_selection_reaches_local_trade_binding_before_merchant_departure -- --exact`
+  - `cargo test -p worldwake-ai --lib agent_tick::tests::revalidation_guard_breach_emits_expectation_mismatch_before_enqueue -- --exact`
