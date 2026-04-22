@@ -7,6 +7,9 @@ use super::{
     runtime_belief_view,
 };
 use crate::failure_handling::exact_target_belief_discrepancy;
+use crate::plan_step_expectations::{
+    expire_plan_step_expectations, persist_expectation_store_update,
+};
 use crate::{AgentDecisionRuntime, PlannedStep, RevalidationOutcome, classify_revalidation};
 use worldwake_core::{
     ActiveGoal, BeliefSnapshot, BeliefStatusTag, BlockerMemory, BlockerRecordedPayload, CauseRef,
@@ -63,6 +66,15 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
         );
         *jc = updated_jc;
         if handled {
+            if runtime.current_plan.is_none() {
+                let _ = persist_expectation_store_update(
+                    ctx.world,
+                    ctx.event_log,
+                    agent,
+                    tick,
+                    expire_plan_step_expectations,
+                )?;
+            }
             return Ok(());
         }
         let classification = classify_revalidation(
@@ -158,6 +170,15 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
         );
         *jc = updated_jc;
         if handled {
+            if runtime.current_plan.is_none() {
+                let _ = persist_expectation_store_update(
+                    ctx.world,
+                    ctx.event_log,
+                    agent,
+                    tick,
+                    expire_plan_step_expectations,
+                )?;
+            }
             return finalize_agent_tick(
                 ctx.world,
                 ctx.event_log,

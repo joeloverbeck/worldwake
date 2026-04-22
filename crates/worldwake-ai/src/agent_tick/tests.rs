@@ -39,7 +39,8 @@ use worldwake_core::{
     DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
     DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
     EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
-    ExpectationKindTag, ExpectationMismatchPayload, ExplorationProfile, FrameAssumption,
+    ExpectationBasis, ExpectationId, ExpectationKindTag, ExpectationMismatchPayload,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationProfile, FrameAssumption,
     FrameClearReason, FrameState, GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload,
     GoalRejectionReason, GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
@@ -2001,7 +2002,7 @@ fn grant_arrival_replan_can_select_direct_harvest_step() {
     let mut facility_intents = worldwake_core::ContentionIntents::default();
     let mut event_log = EventLog::new();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
-        &harness.world,
+        &mut harness.world,
         &mut event_log,
         &harness.scheduler,
         &mut runtime,
@@ -2975,6 +2976,134 @@ fn goal_completion_records_goal_satisfied_clear_reason() {
 }
 
 #[test]
+fn committed_step_fulfills_matching_plan_step_expectations_in_world_store() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let goal = GoalKey::from(GoalKind::Sleep);
+    let actor_place = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("actor should have a ground place");
+    let plan = PlannedPlan::new(
+        default_opportunity(goal),
+        goal,
+        vec![PlannedStep {
+            def_id: ActionDefId(41),
+            targets: vec![PlanningEntityRef::Authoritative(harness.actor)],
+            target_place: Some(actor_place),
+            payload_override: None,
+            op_kind: PlannerOpKind::Sleep,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
+        }],
+        PlanTerminalKind::GoalSatisfied,
+    );
+
+    {
+        let mut store = worldwake_core::ExpectationStore::default();
+        store.records.insert(
+            ExpectationId(0),
+            ExpectationRecord {
+                id: ExpectationId(0),
+                owner: harness.actor,
+                subject: harness.actor,
+                expected_place: actor_place,
+                deadline_tick: Tick(8),
+                grace_ticks: 2,
+                basis: ExpectationBasis::PlanStepCompletion {
+                    step_index: 0,
+                    kind_tag: ExpectationKindTag::Immediate,
+                },
+                state: ExpectationState::Active,
+                created_tick: Tick(2),
+            },
+        );
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_expectation_store(harness.actor, store)
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            current_plan: Some(plan.clone()),
+            current_step_index: 0,
+            step_in_flight: true,
+            ..AgentDecisionRuntime::default()
+        },
+    );
+
+    let mut active_goal = Some(worldwake_core::ActiveGoal {
+        goal_key: goal,
+        adopted_at: Tick(2),
+    });
+    let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
+    let profile_fixture = ProfileFixture::default();
+    let profile = cognitive(&profile_fixture);
+    let budget = execution_budget(&profile_fixture);
+    let semantics = build_semantics_table(&harness.defs);
+    let mut ctx = super::AgentTickContext {
+        world: &mut harness.world,
+        event_log: &mut harness.event_log,
+        scheduler: &mut harness.scheduler,
+        rng: &mut harness.rng,
+        action_defs: &harness.defs,
+        action_handlers: &harness.handlers,
+        recipe_registry: &harness.recipes,
+        semantics_table: &semantics,
+        cognitive: &profile,
+        execution_budget: &budget,
+        tick: Tick(3),
+    };
+
+    let result = super::reconcile_in_flight_state(
+        &mut ctx,
+        harness
+            .driver
+            .runtime_by_agent
+            .get_mut(&harness.actor)
+            .expect("runtime should exist"),
+        &mut active_goal,
+        &mut None,
+        &mut facility_intents,
+        &mut blocked_memory,
+        &mut discrepancy_memory,
+        None,
+        harness.actor,
+        super::InFlightReconciliation {
+            replan_signals: &[],
+            start_failures: &[],
+            committed_actions: &[CommittedAction {
+                actor: harness.actor,
+                def_id: ActionDefId(41),
+                instance_id: worldwake_sim::ActionInstanceId(1),
+                tick: Tick(3),
+                outcome: CommitOutcome::empty(),
+            }],
+        },
+    )
+    .unwrap();
+
+    assert_eq!(active_goal, None);
+    assert!(result.completed_plan.is_some());
+    assert_eq!(
+        harness
+            .world
+            .get_component_expectation_store(harness.actor)
+            .and_then(|store| store.records.get(&ExpectationId(0)))
+            .map(|record| record.state),
+        Some(ExpectationState::Resolved {
+            outcome: ExpectationOutcome::Fulfilled,
+        })
+    );
+}
+
+#[test]
 fn apply_step_materialization_bindings_binds_expected_outputs() {
     let mut runtime = crate::AgentDecisionRuntime::default();
     let step = hypothetical_step(4, 7);
@@ -3204,115 +3333,6 @@ fn goal_stability_across_cargo_materialization_continuity() {
         ..ProfileFixture::default()
     };
     let semantics = crate::build_semantics_table(&harness.defs);
-    let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
-    let grounded = crate::generate_candidates(
-        &view,
-        harness.actor,
-        &BlockerMemory::default(),
-        &harness.recipes,
-        Tick(0),
-    )
-    .into_iter()
-    .find(|candidate| candidate.key == expected_goal)
-    .expect("owned ground lot with home-market demand should emit MoveCargo");
-    assert_eq!(
-        grounded.evidence_entities,
-        [original_lot, destination_facility].into_iter().collect()
-    );
-    assert_eq!(
-        grounded.evidence_places,
-        [origin, destination].into_iter().collect()
-    );
-    let snapshot = crate::build_planning_snapshot(
-        &view,
-        harness.actor,
-        &grounded.evidence_entities,
-        &grounded.evidence_places,
-        1,
-    );
-    let planning_state = crate::PlanningState::new(&snapshot);
-    let planning_affordances = worldwake_sim::get_affordances(
-        &planning_state,
-        harness.actor,
-        &harness.defs,
-        &harness.handlers,
-    );
-    assert!(
-        planning_affordances.iter().any(|affordance| {
-            harness
-                .defs
-                .get(affordance.def_id)
-                .is_some_and(|def| def.name == "pick_up")
-        }),
-        "planning state should expose pick_up affordance for owned ground cargo"
-    );
-    let pick_up_def = harness
-        .defs
-        .iter()
-        .find(|def| def.name == "pick_up")
-        .map(|def| def.id)
-        .expect("pick_up action should be registered");
-    let travel_def = harness
-        .defs
-        .iter()
-        .find(|def| def.name == "travel")
-        .map(|def| def.id)
-        .expect("travel action should be registered");
-    let store_stock_def = harness
-        .defs
-        .iter()
-        .find(|def| def.name == "store_stock")
-        .map(|def| def.id)
-        .expect("store_stock action should be registered");
-    let carried_hypothetical = crate::HypotheticalEntityId(0);
-    let pick_up = PlannedStep {
-        def_id: pick_up_def,
-        targets: vec![PlanningEntityRef::Authoritative(original_lot)],
-        target_place: None,
-        payload_override: Some(ActionPayload::Transport(TransportActionPayload {
-            quantity: Quantity(2),
-        })),
-        op_kind: PlannerOpKind::MoveCargo,
-        estimated_ticks: 1,
-        is_materialization_barrier: false,
-        expected_materializations: vec![ExpectedMaterialization {
-            tag: MaterializationTag::SplitOffLot,
-            hypothetical_id: carried_hypothetical,
-        }],
-        guard: None,
-        expectations: Vec::new(),
-    };
-    let travel = PlannedStep {
-        def_id: travel_def,
-        targets: vec![PlanningEntityRef::Authoritative(destination)],
-        target_place: None,
-        payload_override: None,
-        op_kind: PlannerOpKind::Travel,
-        estimated_ticks: 1,
-        is_materialization_barrier: false,
-        expected_materializations: Vec::new(),
-        guard: None,
-        expectations: Vec::new(),
-    };
-    let store_stock = PlannedStep {
-        def_id: store_stock_def,
-        targets: vec![PlanningEntityRef::Hypothetical(carried_hypothetical)],
-        target_place: None,
-        payload_override: None,
-        op_kind: PlannerOpKind::StockManagement,
-        estimated_ticks: 1,
-        is_materialization_barrier: false,
-        expected_materializations: Vec::new(),
-        guard: None,
-        expectations: Vec::new(),
-    };
-    let initial_plan = PlannedPlan::new(
-        default_opportunity(expected_goal),
-        expected_goal,
-        vec![pick_up.clone(), travel, store_stock],
-        PlanTerminalKind::GoalSatisfied,
-    );
-
     let mut blocked = BlockerMemory::default();
     let mut fi = ContentionIntents::default();
     let utility = harness
@@ -3320,50 +3340,161 @@ fn goal_stability_across_cargo_materialization_continuity() {
         .get_component_utility_profile(harness.actor)
         .cloned()
         .unwrap_or_default();
-    assert_eq!(pick_up.op_kind, PlannerOpKind::MoveCargo);
-    assert_eq!(
-        pick_up.targets,
-        vec![PlanningEntityRef::Authoritative(original_lot)]
-    );
+    let (pick_up, mut runtime, mut active_goal_state, ranked) = {
+        let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
+        let grounded = crate::generate_candidates(
+            &view,
+            harness.actor,
+            &BlockerMemory::default(),
+            &harness.recipes,
+            Tick(0),
+        )
+        .into_iter()
+        .find(|candidate| candidate.key == expected_goal)
+        .expect("owned ground lot with home-market demand should emit MoveCargo");
+        assert_eq!(
+            grounded.evidence_entities,
+            [original_lot, destination_facility].into_iter().collect()
+        );
+        assert_eq!(
+            grounded.evidence_places,
+            [origin, destination].into_iter().collect()
+        );
+        let snapshot = crate::build_planning_snapshot(
+            &view,
+            harness.actor,
+            &grounded.evidence_entities,
+            &grounded.evidence_places,
+            1,
+        );
+        let planning_state = crate::PlanningState::new(&snapshot);
+        let planning_affordances = worldwake_sim::get_affordances(
+            &planning_state,
+            harness.actor,
+            &harness.defs,
+            &harness.handlers,
+        );
+        assert!(
+            planning_affordances.iter().any(|affordance| {
+                harness
+                    .defs
+                    .get(affordance.def_id)
+                    .is_some_and(|def| def.name == "pick_up")
+            }),
+            "planning state should expose pick_up affordance for owned ground cargo"
+        );
+        let pick_up_def = harness
+            .defs
+            .iter()
+            .find(|def| def.name == "pick_up")
+            .map(|def| def.id)
+            .expect("pick_up action should be registered");
+        let travel_def = harness
+            .defs
+            .iter()
+            .find(|def| def.name == "travel")
+            .map(|def| def.id)
+            .expect("travel action should be registered");
+        let store_stock_def = harness
+            .defs
+            .iter()
+            .find(|def| def.name == "store_stock")
+            .map(|def| def.id)
+            .expect("store_stock action should be registered");
+        let carried_hypothetical = crate::HypotheticalEntityId(0);
+        let pick_up = PlannedStep {
+            def_id: pick_up_def,
+            targets: vec![PlanningEntityRef::Authoritative(original_lot)],
+            target_place: None,
+            payload_override: Some(ActionPayload::Transport(TransportActionPayload {
+                quantity: Quantity(2),
+            })),
+            op_kind: PlannerOpKind::MoveCargo,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: vec![ExpectedMaterialization {
+                tag: MaterializationTag::SplitOffLot,
+                hypothetical_id: carried_hypothetical,
+            }],
+            guard: None,
+            expectations: Vec::new(),
+        };
+        let travel = PlannedStep {
+            def_id: travel_def,
+            targets: vec![PlanningEntityRef::Authoritative(destination)],
+            target_place: None,
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
+        };
+        let store_stock = PlannedStep {
+            def_id: store_stock_def,
+            targets: vec![PlanningEntityRef::Hypothetical(carried_hypothetical)],
+            target_place: None,
+            payload_override: None,
+            op_kind: PlannerOpKind::StockManagement,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
+        };
+        let initial_plan = PlannedPlan::new(
+            default_opportunity(expected_goal),
+            expected_goal,
+            vec![pick_up.clone(), travel, store_stock],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        assert_eq!(pick_up.op_kind, PlannerOpKind::MoveCargo);
+        assert_eq!(
+            pick_up.targets,
+            vec![PlanningEntityRef::Authoritative(original_lot)]
+        );
 
-    let mut runtime = crate::AgentDecisionRuntime {
-        current_plan: Some(initial_plan),
-        current_step_index: 0,
-        step_in_flight: false,
-        dirty: crate::DirtySet::default(),
-        ..crate::AgentDecisionRuntime::default()
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(initial_plan),
+            current_step_index: 0,
+            step_in_flight: false,
+            dirty: crate::DirtySet::default(),
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let active_goal_state = Some(worldwake_core::ActiveGoal {
+            goal_key: expected_goal,
+            adopted_at: Tick(1),
+        });
+        update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
+
+        let ranked = refresh_runtime_for_read_phase(
+            &harness.world,
+            &harness.scheduler,
+            &harness.defs,
+            &mut runtime,
+            None,
+            &mut fi,
+            &mut blocked,
+            &mut ViolationMemory::default(),
+            harness.actor,
+            &[],
+            ReadPhaseContext {
+                recipe_registry: &harness.recipes,
+                utility: &utility,
+                tick: Tick(1),
+                travel_horizon: budget.snapshot_travel_horizon,
+                structural_block_ticks: budget.structural_block_ticks,
+            },
+            false,
+        )
+        .ranked;
+        (pick_up, runtime, active_goal_state, ranked)
     };
-    let mut active_goal_state = Some(worldwake_core::ActiveGoal {
-        goal_key: expected_goal,
-        adopted_at: Tick(1),
-    });
-    update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
-
-    let ranked = refresh_runtime_for_read_phase(
-        &harness.world,
-        &harness.scheduler,
-        &harness.defs,
-        &mut runtime,
-        None,
-        &mut fi,
-        &mut blocked,
-        &mut ViolationMemory::default(),
-        harness.actor,
-        &[],
-        ReadPhaseContext {
-            recipe_registry: &harness.recipes,
-            utility: &utility,
-            tick: Tick(1),
-            travel_horizon: budget.snapshot_travel_horizon,
-            structural_block_ticks: budget.structural_block_ticks,
-        },
-        false,
-    )
-    .ranked;
     let mut jc = None;
     let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (next_step, next_step_valid) = plan_and_validate_next_step(
-        &harness.world,
+        &mut harness.world,
         &mut harness.event_log,
         &harness.scheduler,
         &mut runtime,
@@ -3390,6 +3521,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     assert_eq!(next_step, pick_up);
     assert_eq!(next_step_valid, Some(true));
 
+    let view = PerAgentBeliefView::from_world(harness.actor, &harness.world);
     update_runtime_observation_snapshot(&view, harness.actor, &mut runtime);
 
     let carried_water = {
@@ -3470,7 +3602,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     .ranked;
     let mut jc2 = None;
     let (next_step, next_step_valid) = plan_and_validate_next_step(
-        &harness.world,
+        &mut harness.world,
         &mut harness.event_log,
         &harness.scheduler,
         &mut runtime,
@@ -5312,7 +5444,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let mut facility_intents = worldwake_core::ContentionIntents::default();
     let (_, initial_valid, initial_continued, _, initial_selection, _, _) =
         plan_and_validate_next_step_traced(
-            &harness.world,
+            &mut harness.world,
             &mut harness.event_log,
             &harness.scheduler,
             runtime,
@@ -5403,7 +5535,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
     let mut jc2 = None;
     let (continued_step, continued_valid, plan_continued, _, continuation_selection, _, _) =
         plan_and_validate_next_step_traced(
-            &harness.world,
+            &mut harness.world,
             &mut harness.event_log,
             &harness.scheduler,
             runtime,

@@ -40,7 +40,9 @@ use crate::decision_trace::{
 };
 use crate::{
     AcceptedRepairProvenance, AgentDecisionRuntime, PlannerOpSemantics, authoritative_target,
-    build_semantics_table, frame_runtime_snapshot, ranking::OrderedRanked,
+    build_semantics_table, frame_runtime_snapshot,
+    plan_step_expectations::{expire_plan_step_expectations, persist_expectation_store_update},
+    ranking::OrderedRanked,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -537,14 +539,21 @@ fn process_agent(
 
     // ── Dead-agent early return ──
     {
-        let view = runtime_belief_view(
-            agent,
-            ctx.world,
-            ctx.scheduler,
-            action_defs,
-            recipe_registry,
-        );
-        if view.is_dead(agent) || !view.is_alive(agent) {
+        let dead_agent = {
+            let view = runtime_belief_view(
+                agent,
+                ctx.world,
+                ctx.scheduler,
+                action_defs,
+                recipe_registry,
+            );
+            let dead = view.is_dead(agent) || !view.is_alive(agent);
+            if dead {
+                update_runtime_observation_snapshot(&view, agent, runtime);
+            }
+            dead
+        };
+        if dead_agent {
             if let Some(goal_key) = original_active_goal.map(|goal| goal.goal_key) {
                 emit_decision_event(
                     ctx.event_log,
@@ -580,7 +589,13 @@ fn process_agent(
             runtime.pending_repair_context = None;
             runtime.accepted_repair = None;
             runtime.dead_cleanup_done = true;
-            update_runtime_observation_snapshot(&view, agent, runtime);
+            let _ = persist_expectation_store_update(
+                ctx.world,
+                ctx.event_log,
+                agent,
+                tick,
+                expire_plan_step_expectations,
+            )?;
             persist_intention_frame(
                 ctx.world,
                 ctx.event_log,
@@ -718,6 +733,13 @@ fn process_agent(
                         tick,
                         cognitive.structural_block_ticks,
                     );
+                    let _ = persist_expectation_store_update(
+                        ctx.world,
+                        ctx.event_log,
+                        agent,
+                        tick,
+                        expire_plan_step_expectations,
+                    )?;
                     runtime.current_plan = None;
                     runtime.current_step_index = 0;
                     runtime.materialization_bindings.clear();
@@ -766,6 +788,11 @@ fn process_agent(
         },
         tracing,
     );
+    if read_result.pursuit_invalidation.is_some() && runtime.current_plan.is_none() {
+        let _ = persist_expectation_store_update(ctx.world, ctx.event_log, agent, tick, |store| {
+            expire_plan_step_expectations(store)
+        })?;
+    }
     let pursuit_invalidation = read_result.pursuit_invalidation;
     if let Some(pursuit_invalidation) = pursuit_invalidation
         && let Some(goal_key) = original_plan_goal.or(active_goal_key)
@@ -1223,6 +1250,10 @@ fn process_agent(
             cognitive.structural_block_ticks,
         );
         if exhausted {
+            let _ =
+                persist_expectation_store_update(ctx.world, ctx.event_log, agent, tick, |store| {
+                    expire_plan_step_expectations(store)
+                })?;
             let frame_ref = current_frame.as_ref().unwrap();
             if let Some(ref mut ft) = frame_transitions {
                 ft.push(FrameTransitionKind::Exhausted {

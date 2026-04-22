@@ -13,6 +13,9 @@ use worldwake_sim::{
 use crate::candidate_generation::generate_candidates_with_memories_with_travel_horizon;
 use crate::failure_handling::ExecutionFailure;
 use crate::knowledge_path::KnowledgePath;
+use crate::plan_step_expectations::{
+    fulfill_plan_step_expectations, persist_expectation_store_update,
+};
 use crate::ranking::rank_candidates_with_memories;
 use crate::{
     AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
@@ -619,6 +622,13 @@ pub(super) fn reconcile_in_flight_state(
     }
 
     runtime.step_in_flight = false;
+    let completed_step_index = runtime
+        .current_step_index
+        .try_into()
+        .expect("step index exceeds u16");
+    let _ = persist_expectation_store_update(ctx.world, ctx.event_log, agent, ctx.tick, |store| {
+        fulfill_plan_step_expectations(store, completed_step_index)
+    })?;
     *jc = advance_completed_step(
         runtime,
         active_goal,

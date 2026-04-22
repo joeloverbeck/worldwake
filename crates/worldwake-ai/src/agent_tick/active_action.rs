@@ -16,6 +16,9 @@ use super::{
 };
 use crate::DirtySet;
 use crate::failure_handling::{ExecutionFailure, FailureClassification};
+use crate::plan_step_expectations::{
+    expire_plan_step_expectations, persist_expectation_store_update,
+};
 use crate::{
     AgentDecisionRuntime, DecisionContext, InterruptDecision, PendingRepairContext,
     PlanFailureContext, PlanTerminalKind, PlannedStep, classify_frame_plan_relation,
@@ -283,10 +286,13 @@ pub(super) fn handle_current_step_failure(
     belief_discrepancy: Option<worldwake_core::Discrepancy>,
     plan_invalidation_reason: Option<PlanInvalidationReason>,
 ) -> Result<ReplanReason, TickInputError> {
+    let tick = ctx.tick;
+    let _ = persist_expectation_store_update(ctx.world, ctx.event_log, agent, tick, |store| {
+        expire_plan_step_expectations(store)
+    })?;
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
     let cognitive = ctx.cognitive;
-    let tick = ctx.tick;
     let view = PerAgentBeliefView::from_world(agent, world);
     let goal_key = active_goal.unwrap_or_else(|| {
         runtime

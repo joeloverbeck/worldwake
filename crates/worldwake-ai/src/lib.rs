@@ -28,6 +28,7 @@ pub mod plan_guard;
 pub mod plan_guard_build;
 pub mod plan_revalidation;
 pub mod plan_selection;
+mod plan_step_expectations;
 pub mod planner_duration_contract;
 pub mod planner_ops;
 pub mod planning_snapshot;
