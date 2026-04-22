@@ -298,10 +298,10 @@ mod tests {
         has_active_frame_travel, has_frame,
     };
     use crate::{
-        CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition, GoalKey,
-        GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        ProfileFixture,
+        AgendaEntry, AgendaOrigin, AgendaPhase, CommodityPurpose, DirtySet, ExhaustionBaseline,
+        ExhaustionInvalidationCondition, FeasibilityHint, GoalKey, GoalOffer, GoalPriorityClass,
+        HypotheticalEntityId, KillCondition, OpportunityAnchor, OpportunityKey, PlanTerminalKind,
+        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture, RevivalTrigger,
     };
     use std::collections::BTreeMap;
     use worldwake_core::ActionDefId;
@@ -351,6 +351,47 @@ mod tests {
             steps,
             PlanTerminalKind::GoalSatisfied,
         )
+    }
+
+    fn sample_goal_offer(goal: GoalKey, anchor: OpportunityAnchor) -> GoalOffer {
+        GoalOffer {
+            key: goal,
+            anchor,
+            evidence_entities: Default::default(),
+            evidence_places: Default::default(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+        }
+    }
+
+    fn sample_agenda_entry(
+        goal: GoalKey,
+        anchor: OpportunityAnchor,
+        phase: AgendaPhase,
+        tick: Tick,
+    ) -> AgendaEntry {
+        AgendaEntry {
+            key: OpportunityKey {
+                goal_key: goal,
+                anchor,
+            },
+            offer: sample_goal_offer(goal, anchor),
+            phase,
+            origin: AgendaOrigin::NeedDrive,
+            introduced_tick: tick,
+            last_reconsidered_tick: tick,
+            revival_trigger: None,
+            kill_condition: KillCondition::External,
+            priority_class: GoalPriorityClass::Background,
+            motive_score: 42,
+            provenance: None,
+            source_reliability_discount: None,
+            competition_discount: None,
+            feasibility: FeasibilityHint::Uncertain,
+        }
     }
 
     fn sample_travel_frame(goal: GoalKey, destination: EntityId) -> IntentionFrame {
@@ -498,7 +539,47 @@ mod tests {
                 },
                 sample_step(2, PlannerOpKind::Consume),
             ])),
-            agenda_state: crate::AgendaState::default(),
+            agenda_state: {
+                let committed_goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
+                let pending_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                });
+                let suspended_goal = GoalKey::from(worldwake_core::GoalKind::MoveCargo {
+                    commodity: CommodityKind::Bread,
+                    destination: entity(44),
+                });
+                let committed = sample_agenda_entry(
+                    committed_goal,
+                    OpportunityAnchor::Place(entity(17)),
+                    AgendaPhase::Committed,
+                    Tick(11),
+                );
+                let mut pending = sample_agenda_entry(
+                    pending_goal,
+                    OpportunityAnchor::Place(entity(18)),
+                    AgendaPhase::Pending,
+                    Tick(12),
+                );
+                pending.revival_trigger = Some(RevivalTrigger::CommodityAvailable {
+                    place: entity(18),
+                    kind: CommodityKind::Water,
+                    min: Quantity(2),
+                });
+                let mut suspended = sample_agenda_entry(
+                    suspended_goal,
+                    OpportunityAnchor::Entity(entity(88)),
+                    AgendaPhase::Suspended,
+                    Tick(13),
+                );
+                suspended.kill_condition = KillCondition::TickExpiry { at_tick: Tick(25) };
+
+                crate::AgendaState {
+                    committed: Some(committed),
+                    pending: BTreeMap::from([(pending.key, pending)]),
+                    suspended: BTreeMap::from([(suspended.key, suspended)]),
+                }
+            },
             current_step_index: 1,
             last_frame_clear_reason: Some(FrameClearReason::PlanFailed),
             step_in_flight: true,
@@ -600,6 +681,7 @@ mod tests {
             runtime.materialization_bindings
         );
         assert_eq!(decoded.exhaustion_cache, runtime.exhaustion_cache);
+        assert_eq!(decoded.agenda_state, runtime.agenda_state);
 
         // Previously-skipped fields are now serialized for lossless save/load.
         assert_eq!(

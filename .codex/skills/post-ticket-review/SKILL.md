@@ -19,11 +19,12 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 1. Use the provided ticket name if supplied.
 2. If the just-finished ticket was already archived this session, use that archived ticket.
-3. Otherwise, search active tickets for the most recently touched candidate.
-4. Confirm the implementation state is present locally (committed or not).
-5. Record whether the completed ticket is tracked or untracked in the current worktree so the report can describe archival state accurately.
-6. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
-7. If the target ticket cannot be identified confidently, stop and ask.
+3. Before attempting any archive move, check whether the worktree is already in the manual-archive fallback state for this ticket: `D tickets/<id>.md` plus `?? archive/tickets/<id>.md`, with the active path absent and the archive path present. If so, treat the ticket as already manually archived in the current worktree and use the archived path directly.
+4. Otherwise, search active tickets for the most recently touched candidate.
+5. Confirm the implementation state is present locally (committed or not).
+6. Record whether the completed ticket is tracked or untracked in the current worktree so the report can describe archival state accurately.
+7. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
+8. If the target ticket cannot be identified confidently, stop and ask.
 
 ### 2. Check archival readiness
 
@@ -33,6 +34,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 3. Fix factual, unambiguous handoff issues directly: missing/incomplete `Outcome`, inaccurate verification notes, archival mechanics per [docs/archival-workflow.md](../../../docs/archival-workflow.md).
    - If the completed ticket is untracked, do not rely on ordinary `git diff` output for ticket-body validation. Read the live ticket file directly before archival, then confirm archival state with `git status` plus a direct existence check on the original path after the move.
    - If a repo-local archival helper you would normally use is missing in the current checkout, fall back to the manual move-and-verify workflow in [docs/archival-workflow.md](../../../docs/archival-workflow.md) and mention that fallback explicitly in the report.
+   - If the active path is already absent while `git status` shows `D tickets/<id>.md` and `?? archive/tickets/<id>.md`, do not attempt a second move. Treat that as an already-completed manual fallback in the current worktree, validate the archived file's contents, and report the exact transition state explicitly.
    - For active tickets, compare the live ticket's `Problem`, `What to Change`, `Acceptance Criteria`, `Invariants`, and `Test Plan` against the landed diff before deciding archival readiness. If any of those sections still overclaim the result or describe a stronger end state than the code actually landed, treat that as an unresolved in-scope handoff failure and block archival.
 4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
    - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
@@ -138,11 +140,12 @@ Create high-confidence tickets directly. Ask before creating only when scope or 
 
 **Ticket**: <path>
 **Review date**: YYYY-MM-DD
-**Implementation state reviewed**: <worktree/index/committed summary, including tracked vs untracked ticket state when relevant>
+**Implementation state reviewed**: <worktree/index/committed summary, including tracked vs untracked ticket state when relevant; if manual archival was already in progress, name the exact `D tickets/...` + `?? archive/tickets/...` pattern>
 
 ## Archival Status
 
 - <archived / already archived / blocked>
+- <if manual fallback was already in progress, say so explicitly: e.g. "archived via manual fallback; worktree currently shows tracked deletion at the active path plus untracked archive file">
 - <Outcome + verification notes check result>
 - <validated unchanged / factually corrected>
 - <any ticket updates made before archival>

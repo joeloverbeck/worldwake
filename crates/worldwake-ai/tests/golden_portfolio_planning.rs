@@ -16,8 +16,9 @@ use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::Scenari
 use worldwake_core::{
     Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
     DecisionEventPayload, EntityId, EventTag, EventView, ExpectationBasis, ExpectationId,
-    ExpectationRecord, ExpectationState, ExpectationStore, GoalKey, GoalKind, GoalRejectionReason,
-    OpportunityAnchor, OpportunityKey, PerceptionSource, Tick, ViolationDispositionProfile,
+    ExpectationRecord, ExpectationState, ExpectationStore, GoalAbandonReason, GoalAbandonedPayload,
+    GoalKey, GoalKind, GoalRejectionReason, OpportunityAnchor, OpportunityKey, PerceptionSource,
+    Tick, ViolationDispositionProfile,
 };
 use worldwake_sim::SaveableRuntime;
 
@@ -378,5 +379,58 @@ fn portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal() {
         }),
         "goal commit payload should include the rejected commitment slot: {:?}",
         payload.rejected_alternatives
+    );
+
+    let abandoned_event = harness
+        .event_log
+        .events_by_tag(EventTag::GoalAbandoned)
+        .iter()
+        .filter_map(|id| harness.event_log.get(*id))
+        .find(|record| {
+            matches!(
+                record.decision_payload(),
+                Some(DecisionEventPayload::GoalAbandoned(GoalAbandonedPayload {
+                    goal_key,
+                    reason: GoalAbandonReason::GoalSwitched { new_goal, .. },
+                    ..
+                })) if *goal_key == rejected_commitment_goal && *new_goal == committed_goal
+            )
+        })
+        .expect("classifier dead-routing should abandon the stale commitment when the economic goal wins");
+
+    assert!(
+        abandoned_event.tick() <= commit_tick,
+        "dead-routed abandonment should happen no later than the winning economic commit"
+    );
+
+    let restored_state: DriverStateMirror = bincode::deserialize(
+        &harness
+            .driver
+            .save_runtime_state()
+            .expect("golden harness runtime should serialize after planning"),
+    )
+    .expect("golden harness runtime mirror should deserialize after planning");
+    let restored_runtime = restored_state
+        .runtime_by_agent
+        .get(&agent)
+        .expect("golden harness should preserve runtime for the planner agent");
+
+    assert_eq!(
+        restored_runtime
+            .agenda_state
+            .committed
+            .as_ref()
+            .map(|entry| entry.key.goal_key),
+        Some(committed_goal),
+        "the feasible economic goal should become the sole committed agenda entry"
+    );
+    assert!(
+        !restored_runtime
+            .agenda_state
+            .pending
+            .values()
+            .chain(restored_runtime.agenda_state.suspended.values())
+            .any(|entry| entry.key.goal_key == rejected_commitment_goal),
+        "dead-routed commitment should not linger in pending or suspended agenda state"
     );
 }
