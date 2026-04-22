@@ -22,9 +22,9 @@ use crate::{
     AcceptedRepairProvenance, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
     ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
     GoalKind, GoalPriorityClass, HypotheticalEntityId, Invalidator, OpportunityAnchor,
-    OpportunityKey, PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-    PlanningEntityRef, RankedGoal, RankedGoalProvenance, SelectedPlanReplacementKind,
-    build_semantics_table,
+    OpportunityKey, PlanExpectation, PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep,
+    PlannerOpKind, PlanningEntityRef, RankedGoal, RankedGoalProvenance,
+    SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -46,14 +46,14 @@ use worldwake_core::{
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
     IntentionDispositionProfile, IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes,
     LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
-    MetabolismProfile, MismatchDetail, OfficeData, PatrolProfile, PatrolRoute, PendingEvent,
-    PerceptionProfile, PerceptionSource, Permille, Place, PortfolioSlotWeights, Quantity,
-    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
-    RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
-    ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
-    ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
-    build_prototype_world,
+    MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData, PatrolProfile,
+    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place,
+    PortfolioSlotWeights, Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind,
+    RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed, StatePredicate,
+    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
+    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    WoundList, build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -88,6 +88,33 @@ fn default_opportunity(goal_key: GoalKey) -> OpportunityKey {
         goal_key,
         anchor: OpportunityAnchor::None,
     }
+}
+
+fn expectation_test_step(kind: crate::ExpectationKind) -> PlannedStep {
+    PlannedStep {
+        def_id: ActionDefId(41),
+        targets: Vec::new(),
+        target_place: None,
+        payload_override: None,
+        op_kind: PlannerOpKind::Sleep,
+        estimated_ticks: 1,
+        is_materialization_barrier: false,
+        expected_materializations: Vec::new(),
+        guard: None,
+        expectations: vec![PlanExpectation {
+            kind,
+            observe_by: Some(Tick(5)),
+        }],
+    }
+}
+
+fn seed_plan_step_expectation_store(harness: &mut Harness, record: ExpectationRecord) {
+    let mut store = worldwake_core::ExpectationStore::default();
+    store.records.insert(record.id, record);
+    let mut txn = new_txn(&mut harness.world, 0);
+    txn.set_component_expectation_store(harness.actor, store)
+        .unwrap();
+    commit_txn(txn);
 }
 
 fn patrol_profile(base_dwell_ticks: u32, vigilance: u16, motive: u16) -> PatrolProfile {
@@ -3100,6 +3127,473 @@ fn committed_step_fulfills_matching_plan_step_expectations_in_world_store() {
         Some(ExpectationState::Resolved {
             outcome: ExpectationOutcome::Fulfilled,
         })
+    );
+}
+
+#[test]
+fn overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let goal = GoalKey::from(GoalKind::Sleep);
+    let predicate = StatePredicate::ActorHoldsCommodity {
+        kind: CommodityKind::Bread,
+        min_quantity: Quantity(2),
+    };
+    let plan = PlannedPlan::new(
+        default_opportunity(goal),
+        goal,
+        vec![expectation_test_step(crate::ExpectationKind::State {
+            predicate,
+        })],
+        PlanTerminalKind::GoalSatisfied,
+    );
+    let actor = harness.actor;
+    let actor_place = harness
+        .world
+        .effective_place(actor)
+        .expect("actor should have an effective place");
+    seed_plan_step_expectation_store(
+        &mut harness,
+        ExpectationRecord {
+            id: ExpectationId(0),
+            owner: actor,
+            subject: actor,
+            expected_place: actor_place,
+            deadline_tick: Tick(5),
+            grace_ticks: 1,
+            basis: ExpectationBasis::PlanStepCompletion {
+                step_index: 0,
+                kind_tag: ExpectationKindTag::State,
+            },
+            state: ExpectationState::Overdue,
+            created_tick: Tick(2),
+        },
+    );
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            current_plan: Some(plan),
+            ..AgentDecisionRuntime::default()
+        },
+    );
+
+    let profile_fixture = ProfileFixture::default();
+    let profile = cognitive(&profile_fixture);
+    let budget = execution_budget(&profile_fixture);
+    let semantics = build_semantics_table(&harness.defs);
+    let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut ctx = super::AgentTickContext {
+        world: &mut harness.world,
+        event_log: &mut harness.event_log,
+        scheduler: &mut harness.scheduler,
+        rng: &mut harness.rng,
+        action_defs: &harness.defs,
+        action_handlers: &harness.handlers,
+        recipe_registry: &harness.recipes,
+        semantics_table: &semantics,
+        cognitive: &profile,
+        execution_budget: &budget,
+        tick: Tick(7),
+    };
+
+    super::process_overdue_plan_step_expectations(
+        &mut ctx,
+        harness
+            .driver
+            .runtime_by_agent
+            .get_mut(&harness.actor)
+            .expect("runtime should exist"),
+        &mut blocked_memory,
+        &mut discrepancy_memory,
+        harness.actor,
+    )
+    .expect("overdue plan-step expectations should process");
+
+    let mismatch_events = harness
+        .event_log
+        .events_by_tag(EventTag::ExpectationMismatch);
+    assert_eq!(mismatch_events.len(), 1);
+    assert_eq!(
+        harness
+            .event_log
+            .get(mismatch_events[0])
+            .and_then(|record| record.decision_payload()),
+        Some(&DecisionEventPayload::ExpectationMismatch(
+            ExpectationMismatchPayload {
+                agent: harness.actor,
+                goal_key: goal,
+                step_index: 0,
+                expected_materializations: Vec::new(),
+                expectation_kind: Some(ExpectationKindTag::State),
+                mismatch_detail: Some(MismatchDetail::StateUnmet { predicate }),
+            }
+        ))
+    );
+    assert_eq!(discrepancy_memory.entries.len(), 1);
+    let entry = discrepancy_memory.entries.values().next().unwrap();
+    assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+    assert_eq!(
+        harness
+            .world
+            .get_component_expectation_store(harness.actor)
+            .and_then(|store| store.records.get(&ExpectationId(0)))
+            .map(|record| record.state),
+        Some(ExpectationState::Resolved {
+            outcome: ExpectationOutcome::ReturnedLate,
+        })
+    );
+    assert!(
+        harness
+            .runtime()
+            .expect("runtime should exist")
+            .dirty
+            .contains(DirtySet::REPLAN_SIGNAL)
+    );
+}
+
+#[test]
+fn overdue_plan_step_expectation_expires_when_plan_moved_on() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let actor = harness.actor;
+    let actor_place = harness
+        .world
+        .effective_place(actor)
+        .expect("actor should have an effective place");
+    seed_plan_step_expectation_store(
+        &mut harness,
+        ExpectationRecord {
+            id: ExpectationId(0),
+            owner: actor,
+            subject: actor,
+            expected_place: actor_place,
+            deadline_tick: Tick(5),
+            grace_ticks: 1,
+            basis: ExpectationBasis::PlanStepCompletion {
+                step_index: 5,
+                kind_tag: ExpectationKindTag::Immediate,
+            },
+            state: ExpectationState::Overdue,
+            created_tick: Tick(2),
+        },
+    );
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            current_plan: Some(PlannedPlan::new(
+                default_opportunity(GoalKey::from(GoalKind::Sleep)),
+                GoalKey::from(GoalKind::Sleep),
+                vec![expectation_test_step(crate::ExpectationKind::Immediate {
+                    event_tag: EventTag::ExpectationMismatch,
+                })],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            ..AgentDecisionRuntime::default()
+        },
+    );
+
+    let profile_fixture = ProfileFixture::default();
+    let profile = cognitive(&profile_fixture);
+    let budget = execution_budget(&profile_fixture);
+    let semantics = build_semantics_table(&harness.defs);
+    let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut ctx = super::AgentTickContext {
+        world: &mut harness.world,
+        event_log: &mut harness.event_log,
+        scheduler: &mut harness.scheduler,
+        rng: &mut harness.rng,
+        action_defs: &harness.defs,
+        action_handlers: &harness.handlers,
+        recipe_registry: &harness.recipes,
+        semantics_table: &semantics,
+        cognitive: &profile,
+        execution_budget: &budget,
+        tick: Tick(7),
+    };
+
+    super::process_overdue_plan_step_expectations(
+        &mut ctx,
+        harness
+            .driver
+            .runtime_by_agent
+            .get_mut(&harness.actor)
+            .expect("runtime should exist"),
+        &mut blocked_memory,
+        &mut discrepancy_memory,
+        harness.actor,
+    )
+    .expect("stale overdue record should expire");
+
+    assert!(
+        harness
+            .event_log
+            .events_by_tag(EventTag::ExpectationMismatch)
+            .is_empty()
+    );
+    assert!(discrepancy_memory.entries.is_empty());
+    assert_eq!(
+        harness
+            .world
+            .get_component_expectation_store(harness.actor)
+            .and_then(|store| store.records.get(&ExpectationId(0)))
+            .map(|record| record.state),
+        Some(ExpectationState::Expired)
+    );
+}
+
+#[test]
+fn overdue_plan_step_expectation_classifies_discrepancy_per_kind() {
+    let cases = [
+        (
+            ExpectationKindTag::Immediate,
+            crate::ExpectationKind::Immediate {
+                event_tag: EventTag::ExpectationMismatch,
+            },
+            Discrepancy::PartialExecutionDrift,
+        ),
+        (
+            ExpectationKindTag::State,
+            crate::ExpectationKind::State {
+                predicate: StatePredicate::ActorHoldsCommodity {
+                    kind: CommodityKind::Bread,
+                    min_quantity: Quantity(2),
+                },
+            },
+            Discrepancy::BeliefContradicted,
+        ),
+        (
+            ExpectationKindTag::Informed,
+            crate::ExpectationKind::Informed {
+                observation: ObservationPredicate::EntityPerceivedAtPlace {
+                    entity: entity(200),
+                    place: entity(201),
+                },
+            },
+            Discrepancy::MissingObservation,
+        ),
+        (
+            ExpectationKindTag::Regression,
+            crate::ExpectationKind::Regression {
+                predicate: StatePredicate::EntityAtPlace {
+                    entity: entity(210),
+                    place: entity(211),
+                },
+            },
+            Discrepancy::BeliefContradicted,
+        ),
+    ];
+
+    for (index, (kind_tag, expectation, expected_discrepancy)) in cases.into_iter().enumerate() {
+        let mut harness = Harness::new(ControlSource::Ai);
+        let actor = harness.actor;
+        let goal = GoalKey::from(GoalKind::Sleep);
+        let actor_place = harness
+            .world
+            .effective_place(actor)
+            .expect("actor should have an effective place");
+        seed_plan_step_expectation_store(
+            &mut harness,
+            ExpectationRecord {
+                id: ExpectationId(0),
+                owner: actor,
+                subject: actor,
+                expected_place: actor_place,
+                deadline_tick: Tick(5),
+                grace_ticks: 1,
+                basis: ExpectationBasis::PlanStepCompletion {
+                    step_index: 0,
+                    kind_tag,
+                },
+                state: ExpectationState::Overdue,
+                created_tick: Tick(2),
+            },
+        );
+        harness.driver.runtime_by_agent.insert(
+            harness.actor,
+            AgentDecisionRuntime {
+                current_plan: Some(PlannedPlan::new(
+                    default_opportunity(goal),
+                    goal,
+                    vec![expectation_test_step(expectation)],
+                    PlanTerminalKind::GoalSatisfied,
+                )),
+                ..AgentDecisionRuntime::default()
+            },
+        );
+
+        let profile_fixture = ProfileFixture::default();
+        let profile = cognitive(&profile_fixture);
+        let budget = execution_budget(&profile_fixture);
+        let semantics = build_semantics_table(&harness.defs);
+        let mut blocked_memory = BlockerMemory::default();
+        let mut discrepancy_memory = DiscrepancyMemory::default();
+        let mut ctx = super::AgentTickContext {
+            world: &mut harness.world,
+            event_log: &mut harness.event_log,
+            scheduler: &mut harness.scheduler,
+            rng: &mut harness.rng,
+            action_defs: &harness.defs,
+            action_handlers: &harness.handlers,
+            recipe_registry: &harness.recipes,
+            semantics_table: &semantics,
+            cognitive: &profile,
+            execution_budget: &budget,
+            tick: Tick(7 + index as u64),
+        };
+
+        super::process_overdue_plan_step_expectations(
+            &mut ctx,
+            harness
+                .driver
+                .runtime_by_agent
+                .get_mut(&harness.actor)
+                .expect("runtime should exist"),
+            &mut blocked_memory,
+            &mut discrepancy_memory,
+            harness.actor,
+        )
+        .expect("classification should process");
+
+        let entry = discrepancy_memory.entries.values().next().unwrap();
+        assert_eq!(entry.discrepancy, expected_discrepancy);
+    }
+}
+
+#[test]
+fn overdue_plan_step_expectation_processes_after_sim_marks_record_overdue() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let goal = GoalKey::from(GoalKind::Sleep);
+    let actor = harness.actor;
+    let actor_place = harness
+        .world
+        .effective_place(actor)
+        .expect("actor should have an effective place");
+    seed_plan_step_expectation_store(
+        &mut harness,
+        ExpectationRecord {
+            id: ExpectationId(0),
+            owner: actor,
+            subject: actor,
+            expected_place: actor_place,
+            deadline_tick: Tick(5),
+            grace_ticks: 1,
+            basis: ExpectationBasis::PlanStepCompletion {
+                step_index: 0,
+                kind_tag: ExpectationKindTag::Immediate,
+            },
+            state: ExpectationState::Active,
+            created_tick: Tick(0),
+        },
+    );
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            current_plan: Some(PlannedPlan::new(
+                default_opportunity(goal),
+                goal,
+                vec![expectation_test_step(crate::ExpectationKind::Immediate {
+                    event_tag: EventTag::ExpectationMismatch,
+                })],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            ..AgentDecisionRuntime::default()
+        },
+    );
+
+    let mut expectation_rng = DeterministicRng::new(Seed([9; 32]));
+    let active_actions = BTreeMap::new();
+    worldwake_systems::check_overdue_expectations(SystemExecutionContext {
+        world: &mut harness.world,
+        event_log: &mut harness.event_log,
+        rng: &mut expectation_rng,
+        active_actions: &active_actions,
+        action_defs: &harness.defs,
+        politics_trace: None,
+        perception_trace: None,
+        tick: Tick(6),
+        system_id: SystemId::ExpectationCheck,
+    })
+    .expect("grace edge should not mark overdue");
+    assert_eq!(
+        harness
+            .world
+            .get_component_expectation_store(harness.actor)
+            .and_then(|store| store.records.get(&ExpectationId(0)))
+            .map(|record| record.state),
+        Some(ExpectationState::Active)
+    );
+
+    worldwake_systems::check_overdue_expectations(SystemExecutionContext {
+        world: &mut harness.world,
+        event_log: &mut harness.event_log,
+        rng: &mut expectation_rng,
+        active_actions: &active_actions,
+        action_defs: &harness.defs,
+        politics_trace: None,
+        perception_trace: None,
+        tick: Tick(7),
+        system_id: SystemId::ExpectationCheck,
+    })
+    .expect("sim expectation check should mark overdue");
+    assert_eq!(
+        harness
+            .world
+            .get_component_expectation_store(harness.actor)
+            .and_then(|store| store.records.get(&ExpectationId(0)))
+            .map(|record| record.state),
+        Some(ExpectationState::Overdue)
+    );
+
+    let profile_fixture = ProfileFixture::default();
+    let profile = cognitive(&profile_fixture);
+    let budget = execution_budget(&profile_fixture);
+    let semantics = build_semantics_table(&harness.defs);
+    let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut ctx = super::AgentTickContext {
+        world: &mut harness.world,
+        event_log: &mut harness.event_log,
+        scheduler: &mut harness.scheduler,
+        rng: &mut harness.rng,
+        action_defs: &harness.defs,
+        action_handlers: &harness.handlers,
+        recipe_registry: &harness.recipes,
+        semantics_table: &semantics,
+        cognitive: &profile,
+        execution_budget: &budget,
+        tick: Tick(7),
+    };
+
+    super::process_overdue_plan_step_expectations(
+        &mut ctx,
+        harness
+            .driver
+            .runtime_by_agent
+            .get_mut(&harness.actor)
+            .expect("runtime should exist"),
+        &mut blocked_memory,
+        &mut discrepancy_memory,
+        harness.actor,
+    )
+    .expect("AI overdue consumer should process same-tick overdue state");
+
+    assert_eq!(discrepancy_memory.entries.len(), 1);
+    assert_eq!(
+        harness
+            .world
+            .get_component_expectation_store(harness.actor)
+            .and_then(|store| store.records.get(&ExpectationId(0)))
+            .map(|record| record.state),
+        Some(ExpectationState::Resolved {
+            outcome: ExpectationOutcome::ReturnedLate,
+        })
+    );
+    assert_eq!(
+        harness
+            .event_log
+            .events_by_tag(EventTag::ExpectationMismatch)
+            .len(),
+        1
     );
 }
 

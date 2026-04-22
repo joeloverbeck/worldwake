@@ -1,9 +1,9 @@
 # S114PLASTGUA-009: AI-side plan-step mismatch tick step — emission + discrepancy classification
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium-Large
-**Engine Changes**: Yes — new AI-side tick step reads `PlanStepCompletion`-basis `Overdue` records, emits `EventTag::ExpectationMismatch`, classifies discrepancies, transitions record state; `classify_discrepancy` promoted to `pub(crate)`.
+**Engine Changes**: Yes — the AI agent tick now consumes `PlanStepCompletion`-basis `Overdue` records before planning, emits `EventTag::ExpectationMismatch`, records same-tick discrepancy memory, and transitions records to `Resolved { ReturnedLate }` / `Expired`; `classify_discrepancy` is now `pub(crate)` and shares a new reusable failure-recording helper.
 **Deps**: `archive/tickets/S114PLASTGUA-003.md`, `archive/tickets/S114PLASTGUA-004.md`, `archive/tickets/S114PLASTGUA-005.md`, `archive/tickets/S114PLASTGUA-008.md`
 
 ## Problem
@@ -25,6 +25,7 @@ S114 D6 (post-F1 correction) places plan-step-specific mismatch handling on the 
 7. Existing tests in `expectation_check.rs` at lines 157, 218, 232, 271, 312 cover `RoutineReturn`-basis overdue behavior — they assert only the `Active → Overdue` transition. They stay green because this ticket does not touch `check_overdue_expectations`. A new test exercising `PlanStepCompletion`-basis transition is already covered by the widened `check_overdue_expectations` generic behavior, but an additional AI-side test covers the emission + classification path.
 8. Authoritative-to-AI Impact Rule (CLAUDE.md): this ticket gates no new action preconditions; it observes a state transition and reacts. Items 1-5 of the rule are `pass` / `N/A`. Item 6 (payload revalidation): no payload-override changes here. Item 7 (golden tests): must stay green — ticket 010 provides the positive-case golden.
 9. Mismatch + correction: `archive/tickets/S114PLASTGUA-007.md` landed `PlanInvalidationReason::ExpectationMismatch` classification and replan-reason preservation, but it did **not** land guard-breach `DecisionEventPayload::ExpectationMismatch` emission or `MismatchDetail::GuardInvalidator(...)` plumbing. Follow-up ticket `archive/tickets/S114PLASTGUA-011.md` now owns that delivered AI execution/start-failure producer path. This ticket remains the overdue-record consumer path only.
+10. `ExpectationMismatchPayload` widening from ticket 005 is already live in `worldwake-core`; this ticket does not touch core schema. The live owned surface is the AI overdue-record consumer path plus same-crate discrepancy-recording reuse.
 
 ## Architecture Check
 
@@ -47,93 +48,34 @@ S114 D6 (post-F1 correction) places plan-step-specific mismatch handling on the 
 
 In `crates/worldwake-ai/src/failure_handling.rs:133`, change `fn classify_discrepancy(...)` → `pub(crate) fn classify_discrepancy(...)`.
 
-### 2. New module `crates/worldwake-ai/src/agent_tick/plan_step_expectations.rs`
+### 2. Add the overdue-record consumer at the live agent-tick seam
 
-```rust
-use worldwake_core::{
-    EntityId, EventTag, ExpectationBasis, ExpectationKindTag, ExpectationMismatchPayload,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore,
-    MaterializationTag, MismatchDetail, StatePredicate, Tick, World, WorldTxn,
-};
+Implement `process_overdue_plan_step_expectations` directly in `crates/worldwake-ai/src/agent_tick/mod.rs`, immediately after in-flight reconciliation and before the read/planning phase. The helper should:
 
-pub(crate) fn tick_plan_step_mismatches(
-    agent: EntityId,
-    tick: Tick,
-    world: &mut World,
-    event_log: &mut EventLog,
-) -> Result<(), TickError> {
-    let store = world.get_component_expectation_store(agent)
-        .ok_or(TickError::MissingStore)?;
+- scan the agent's `ExpectationStore` for `PlanStepCompletion` + `Overdue` records
+- resolve the current step from `AgentDecisionRuntime::current_plan`
+- emit `ExpectationMismatch` through the existing `emit_expectation_mismatch` helper with populated `expectation_kind` and derived overdue-path `MismatchDetail`
+- map `ExpectationKindTag` to the S114 discrepancy class, record that through the shared AI failure-recording helper, and mark the runtime dirty for same-tick replanning
+- batch-transition processed records to `Resolved { outcome: ReturnedLate }` and stale records to `Expired`
 
-    let current_plan = world.runtime_of(agent).and_then(|r| r.current_plan.as_ref());
+### 3. Wire into the agent tick entry
 
-    let overdue_ids: Vec<_> = store.records.iter()
-        .filter(|(_, r)| matches!(r.basis, ExpectationBasis::PlanStepCompletion { .. }))
-        .filter(|(_, r)| r.state == ExpectationState::Overdue)
-        .map(|(id, _)| *id)
-        .collect();
+Invoke `process_overdue_plan_step_expectations` in `crates/worldwake-ai/src/agent_tick/mod.rs` between in-flight reconciliation and the read/planning phase so the fresh discrepancy is visible to same-tick replanning.
 
-    for id in overdue_ids {
-        let record = /* fetch from store */;
-        let (step_index, kind_tag) = match record.basis {
-            ExpectationBasis::PlanStepCompletion { step_index, kind_tag } => (step_index, kind_tag),
-            _ => unreachable!(),
-        };
+### 4. Cover the live seam with focused tests
 
-        let step = current_plan
-            .and_then(|p| p.steps.get(step_index as usize));
+Add focused `agent_tick` tests for:
 
-        let Some(step) = step else {
-            // Plan moved on — expire the record, skip emission
-            transition_record(world, agent, id, ExpectationState::Expired)?;
-            continue;
-        };
-
-        let mismatch_detail = derive_mismatch_detail(step, kind_tag);
-        let payload = ExpectationMismatchPayload {
-            agent,
-            goal_key: current_plan.map(|p| p.goal).unwrap_or_default(),
-            step_index,
-            expected_materializations: /* from step.expected_materializations */,
-            expectation_kind: Some(kind_tag),
-            mismatch_detail: Some(mismatch_detail),
-        };
-
-        emit_expectation_mismatch(event_log, tick, agent, payload);
-
-        let discrepancy_kind = match kind_tag {
-            ExpectationKindTag::Immediate => Discrepancy::PartialExecutionDrift,
-            ExpectationKindTag::State => Discrepancy::BeliefContradicted,
-            ExpectationKindTag::Informed => Discrepancy::MissingObservation,
-            ExpectationKindTag::Regression => Discrepancy::BeliefContradicted,
-        };
-        crate::failure_handling::classify_discrepancy(
-            agent, current_plan.map(|p| p.goal), discrepancy_kind, world, tick,
-        )?;
-
-        transition_record(world, agent, id, ExpectationState::Resolved {
-            outcome: ExpectationOutcome::ReturnedLate,
-        })?;
-    }
-    Ok(())
-}
-```
-
-`derive_mismatch_detail` inspects the `PlanExpectation.kind` and produces the corresponding `MismatchDetail` variant (`StateUnmet { predicate }` for `ExpectationKind::State`/`Regression`, `ObservationMissing { predicate }` for `ExpectationKind::Informed`, `GuardInvalidator(...)` deferred to ticket 007's breach path).
-
-### 3. Wire into agent tick entry
-
-In `crates/worldwake-ai/src/agent_tick/mod.rs`, invoke `tick_plan_step_mismatches` between observation and planning phases — exact insertion point depends on the current tick phasing; verify at implementation time.
-
-### 4. Declare the new module
-
-`crates/worldwake-ai/src/agent_tick/mod.rs` gets `mod plan_step_expectations;`.
+- populated mismatch emission on an overdue state expectation
+- stale `step_index` expiry with no emission
+- all four `ExpectationKindTag -> Discrepancy` mappings
+- sim `check_overdue_expectations` handoff into the AI overdue consumer at the post-grace tick
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/failure_handling.rs` (modify — promote `classify_discrepancy`)
-- `crates/worldwake-ai/src/agent_tick/plan_step_expectations.rs` (new)
-- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — module declaration + tick-sequence wiring)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — overdue consumer wiring + helper)
+- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — focused overdue consumer coverage)
 
 ## Out of Scope
 
@@ -146,11 +88,10 @@ In `crates/worldwake-ai/src/agent_tick/mod.rs`, invoke `tick_plan_step_mismatche
 
 ### Tests That Must Pass
 
-1. `plan_step_expectation_tick_emits_mismatch_on_overdue_state_record` — setup: inject a `PlanStepCompletion`-basis `Overdue` record into an agent's store; run the tick step; assert exactly one `DecisionEventPayload::ExpectationMismatch` event in the log with `expectation_kind: Some(ExpectationKindTag::State)` and `mismatch_detail: Some(StateUnmet { predicate })`.
-2. `plan_step_expectation_tick_expires_record_when_plan_moved_on` — setup: record references `step_index = 5` but `current_plan` has only 3 steps; run tick; assert record transitions to `Expired` and no event is emitted.
-3. `plan_step_expectation_tick_classifies_discrepancy_per_kind` — four parameterized tests covering the `ExpectationKindTag → Discrepancy` mapping from spec D6 step 3.
-4. `plan_step_expectation_tick_transitions_to_resolved_returned_late` — post-tick state is `Resolved { outcome: ReturnedLate }`.
-5. `immediate_expectation_fires_mismatch_at_tick_plus_one_over_grace` — end-to-end: adopt a plan at `Tick(0)` with an `Immediate` expectation `observe_by: Tick(5)`, agent profile `expectation_tolerance_ticks: 1`. At `Tick(7)`, sim's `check_overdue_expectations` transitions to `Overdue`; AI tick emits `ExpectationMismatch`. (Maps to spec test #4, adjusted for grace.)
+1. `overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy` — inject an overdue state expectation, run the helper, assert the emitted payload, discrepancy memory entry, and `Resolved { ReturnedLate }` state.
+2. `overdue_plan_step_expectation_expires_when_plan_moved_on` — inject an overdue record whose `step_index` is no longer valid, run the helper, assert `Expired` with no emission.
+3. `overdue_plan_step_expectation_classifies_discrepancy_per_kind` — cover the `ExpectationKindTag -> Discrepancy` mapping for `Immediate`, `State`, `Informed`, and `Regression`.
+4. `overdue_plan_step_expectation_processes_after_sim_marks_record_overdue` — prove the sim `check_overdue_expectations` `Active -> Overdue` handoff and the same-tick AI consumer after grace elapses.
 6. Existing `check_overdue_expectations` tests at `expectation_check.rs:157,218,232,271,312` stay green.
 7. Existing goldens (`golden_survival_*`, `golden_planner_pathology`, `golden_portfolio_planning`) stay green — agents without `PlanStepCompletion`-basis records see no behavioral change.
 
@@ -165,14 +106,38 @@ In `crates/worldwake-ai/src/agent_tick/mod.rs`, invoke `tick_plan_step_mismatche
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/agent_tick/plan_step_expectations.rs` tests module (new) — acceptance tests 1-4.
-2. Integration test in `crates/worldwake-ai/src/agent_tick/tests.rs` (modify) — end-to-end tick 5.
-3. Existing `crates/worldwake-systems/src/expectation_check.rs` tests — no changes; must stay green.
+1. `crates/worldwake-ai/src/agent_tick/tests.rs` — all four overdue-consumer focused tests above.
+2. Existing `crates/worldwake-systems/src/expectation_check.rs` tests — no changes; must stay green.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai plan_step_expectations`
-2. `cargo test -p worldwake-ai agent_tick`
-3. `cargo test -p worldwake-systems expectation_check`
-4. `cargo test -p worldwake-ai` (full AI-crate suite)
-5. `scripts/verify.sh`
+1. `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy -- --exact`
+2. `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_expires_when_plan_moved_on -- --exact`
+3. `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_classifies_discrepancy_per_kind -- --exact`
+4. `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_processes_after_sim_marks_record_overdue -- --exact`
+5. `cargo test -p worldwake-systems expectation_check`
+6. `cargo test -p worldwake-ai`
+7. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-22.
+
+- Added `process_overdue_plan_step_expectations` to the live `agent_tick` pipeline so `PlanStepCompletion` overdue records now emit `DecisionEventPayload::ExpectationMismatch`, map to the S114 discrepancy classes, mark the runtime dirty for replanning, and transition to `Resolved { outcome: ReturnedLate }` or `Expired`.
+- Promoted `classify_discrepancy` to `pub(crate)` and extracted `record_failure_classification` so the overdue consumer can reuse the existing blocker/discrepancy recording path without duplicating S109 memory semantics.
+- Added focused `agent_tick` coverage for emission, stale-step expiry, class mapping, and the sim-to-AI overdue handoff after grace elapses.
+
+## Deviations
+
+- The overdue consumer landed in `crates/worldwake-ai/src/agent_tick/mod.rs` instead of a new `agent_tick/plan_step_expectations.rs` module. The crate already had a top-level `plan_step_expectations.rs` for expectation-store persistence helpers, and reusing the live `agent_tick` event/runtime seams kept the patch smaller and avoided splitting one concern across two similarly named modules.
+- Ticket 005's `ExpectationMismatchPayload` widening was already present on the live branch, so this ticket did not modify `worldwake-core`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_expires_when_plan_moved_on -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_classifies_discrepancy_per_kind -- --exact`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_processes_after_sim_marks_record_overdue -- --exact`
+- Passed `cargo test -p worldwake-systems expectation_check`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`

@@ -58,63 +58,14 @@ pub fn handle_plan_failure(
         context.execution_failure,
         context.belief_discrepancy,
     );
-    let mut blocker_key = BlockerKey {
-        goal_key: context.goal_key,
-        place: related_place(
-            context.view,
-            context.agent,
-            &context.goal_key,
-            context.failed_step,
-        ),
-        target: related_entity(context.failed_step),
-        action_def: Some(context.failed_step.def_id),
-    };
-
-    if should_scope_local_commodity_unavailability_to_place(
-        context.view,
-        context.agent,
-        &blocker_key,
-        context.failed_step,
-    ) {
-        blocker_key.target = None;
-    }
-
-    let recorded = match classification {
-        FailureClassification::Blocker(blocking_fact) => {
-            let expires_tick =
-                context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
-            let (clearing_condition, baseline_snapshot) =
-                derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
-            blocked_memory.record(Blocker {
-                blocker_key,
-                blocking_fact,
-                diagnostic_context: None,
-                observed_tick: context.current_tick,
-                expires_tick,
-                clearing_condition,
-                baseline_snapshot,
-            });
-            FailureClassification::Blocker(blocking_fact)
-        }
-        FailureClassification::Discrepancy(discrepancy) => {
-            let expires_tick =
-                context.current_tick + u64::from(discrepancy_ttl(discrepancy, cognitive));
-            discrepancy_memory.record(DiscrepancyEntry {
-                blocker_key,
-                discrepancy,
-                observed_tick: context.current_tick,
-                expires_tick,
-                clearing_condition: derive_discrepancy_clearing(
-                    discrepancy,
-                    &blocker_key,
-                    context.execution_failure,
-                ),
-            });
-            FailureClassification::Discrepancy(discrepancy)
-        }
-    };
-    runtime.dirty.insert(DirtySet::REPLAN_SIGNAL);
-    recorded
+    record_failure_classification(
+        context,
+        classification,
+        runtime,
+        blocked_memory,
+        discrepancy_memory,
+        cognitive,
+    )
 }
 
 pub fn clear_resolved_failures(
@@ -130,7 +81,7 @@ pub fn clear_resolved_failures(
     discrepancy_memory.clear_by_condition(|entry| is_discrepancy_cleared(view, agent, entry));
 }
 
-fn classify_discrepancy(
+pub(crate) fn classify_discrepancy(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     goal_key: &GoalKey,
@@ -219,6 +170,73 @@ fn classify_discrepancy(
     }
 
     FailureClassification::Discrepancy(Discrepancy::ImproperPlanningState)
+}
+
+pub(crate) fn record_failure_classification(
+    context: &PlanFailureContext<'_>,
+    classification: FailureClassification,
+    runtime: &mut AgentDecisionRuntime,
+    blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    cognitive: &CognitiveProfile,
+) -> FailureClassification {
+    let mut blocker_key = BlockerKey {
+        goal_key: context.goal_key,
+        place: related_place(
+            context.view,
+            context.agent,
+            &context.goal_key,
+            context.failed_step,
+        ),
+        target: related_entity(context.failed_step),
+        action_def: Some(context.failed_step.def_id),
+    };
+
+    if should_scope_local_commodity_unavailability_to_place(
+        context.view,
+        context.agent,
+        &blocker_key,
+        context.failed_step,
+    ) {
+        blocker_key.target = None;
+    }
+
+    let recorded = match classification {
+        FailureClassification::Blocker(blocking_fact) => {
+            let expires_tick =
+                context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
+            let (clearing_condition, baseline_snapshot) =
+                derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
+            blocked_memory.record(Blocker {
+                blocker_key,
+                blocking_fact,
+                diagnostic_context: None,
+                observed_tick: context.current_tick,
+                expires_tick,
+                clearing_condition,
+                baseline_snapshot,
+            });
+            FailureClassification::Blocker(blocking_fact)
+        }
+        FailureClassification::Discrepancy(discrepancy) => {
+            let expires_tick =
+                context.current_tick + u64::from(discrepancy_ttl(discrepancy, cognitive));
+            discrepancy_memory.record(DiscrepancyEntry {
+                blocker_key,
+                discrepancy,
+                observed_tick: context.current_tick,
+                expires_tick,
+                clearing_condition: derive_discrepancy_clearing(
+                    discrepancy,
+                    &blocker_key,
+                    context.execution_failure,
+                ),
+            });
+            FailureClassification::Discrepancy(discrepancy)
+        }
+    };
+    runtime.dirty.insert(DirtySet::REPLAN_SIGNAL);
+    recorded
 }
 
 pub fn discrepancy_for_target_belief_status(

@@ -23,7 +23,8 @@ use frame::{
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
-    CompletedPlanSummary, InFlightReconciliation, ReadPhaseContext, reconcile_in_flight_state,
+    CompletedPlanSummary, ExpectationMismatchContext, InFlightReconciliation, ReadPhaseContext,
+    emit_expectation_mismatch, reconcile_in_flight_state,
     refresh_runtime_for_read_phase_with_memories, update_runtime_observation_snapshot,
 };
 use planning::{
@@ -40,7 +41,9 @@ use crate::decision_trace::{
 };
 use crate::{
     AcceptedRepairProvenance, AgentDecisionRuntime, PlannerOpSemantics, authoritative_target,
-    build_semantics_table, frame_runtime_snapshot,
+    build_semantics_table,
+    failure_handling::{classify_discrepancy, record_failure_classification},
+    frame_runtime_snapshot,
     plan_step_expectations::{expire_plan_step_expectations, persist_expectation_store_update},
     ranking::OrderedRanked,
 };
@@ -252,6 +255,192 @@ pub(super) fn emit_decision_event(
         tags: BTreeSet::from([tag]),
         decision_payload: Some(decision_payload),
     }));
+}
+
+fn overdue_discrepancy(
+    kind_tag: worldwake_core::ExpectationKindTag,
+) -> worldwake_core::Discrepancy {
+    match kind_tag {
+        worldwake_core::ExpectationKindTag::Immediate => {
+            worldwake_core::Discrepancy::PartialExecutionDrift
+        }
+        worldwake_core::ExpectationKindTag::State
+        | worldwake_core::ExpectationKindTag::Regression => {
+            worldwake_core::Discrepancy::BeliefContradicted
+        }
+        worldwake_core::ExpectationKindTag::Informed => {
+            worldwake_core::Discrepancy::MissingObservation
+        }
+    }
+}
+
+fn overdue_mismatch_detail(
+    step: &crate::PlannedStep,
+    kind_tag: worldwake_core::ExpectationKindTag,
+) -> Option<worldwake_core::MismatchDetail> {
+    step.expectations
+        .iter()
+        .find_map(|expectation| match expectation.kind {
+            crate::ExpectationKind::Immediate { .. }
+                if kind_tag == worldwake_core::ExpectationKindTag::Immediate =>
+            {
+                None
+            }
+            crate::ExpectationKind::State { predicate }
+                if kind_tag == worldwake_core::ExpectationKindTag::State =>
+            {
+                Some(worldwake_core::MismatchDetail::StateUnmet { predicate })
+            }
+            crate::ExpectationKind::Informed { observation }
+                if kind_tag == worldwake_core::ExpectationKindTag::Informed =>
+            {
+                Some(worldwake_core::MismatchDetail::ObservationMissing {
+                    predicate: observation,
+                })
+            }
+            crate::ExpectationKind::Regression { predicate }
+                if kind_tag == worldwake_core::ExpectationKindTag::Regression =>
+            {
+                Some(worldwake_core::MismatchDetail::StateUnmet { predicate })
+            }
+            _ => None,
+        })
+}
+
+pub(super) fn process_overdue_plan_step_expectations(
+    ctx: &mut AgentTickContext<'_>,
+    runtime: &mut AgentDecisionRuntime,
+    blocked_memory: &mut worldwake_core::BlockerMemory,
+    discrepancy_memory: &mut worldwake_core::DiscrepancyMemory,
+    agent: EntityId,
+) -> Result<(), TickInputError> {
+    let overdue_ids = ctx
+        .world
+        .get_component_expectation_store(agent)
+        .map(|store| {
+            store
+                .records
+                .values()
+                .filter_map(|record| match (record.basis, record.state) {
+                    (
+                        worldwake_core::ExpectationBasis::PlanStepCompletion { .. },
+                        worldwake_core::ExpectationState::Overdue,
+                    ) => Some(record.id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if overdue_ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut expired_ids = Vec::new();
+    let mut resolved_ids = Vec::new();
+
+    for overdue_id in overdue_ids {
+        let Some(record) = ctx
+            .world
+            .get_component_expectation_store(agent)
+            .and_then(|store| store.records.get(&overdue_id))
+            .copied()
+        else {
+            continue;
+        };
+        let worldwake_core::ExpectationBasis::PlanStepCompletion {
+            step_index,
+            kind_tag,
+        } = record.basis
+        else {
+            continue;
+        };
+
+        let Some(plan) = runtime.current_plan.as_ref() else {
+            expired_ids.push(overdue_id);
+            continue;
+        };
+        let Some(step) = plan.steps.get(usize::from(step_index)) else {
+            expired_ids.push(overdue_id);
+            continue;
+        };
+        let goal_key = plan.goal;
+        let step = step.clone();
+
+        emit_expectation_mismatch(
+            ctx.event_log,
+            ctx.tick,
+            agent,
+            goal_key,
+            usize::from(step_index),
+            &step,
+            ExpectationMismatchContext {
+                expectation_kind: Some(kind_tag),
+                mismatch_detail: overdue_mismatch_detail(&step, kind_tag),
+            },
+        );
+
+        {
+            let view = runtime_belief_view(
+                agent,
+                ctx.world,
+                ctx.scheduler,
+                ctx.action_defs,
+                ctx.recipe_registry,
+            );
+            let failure_context = crate::PlanFailureContext {
+                view: &view,
+                agent,
+                goal_key,
+                failed_step: &step,
+                execution_failure: None,
+                belief_discrepancy: Some(overdue_discrepancy(kind_tag)),
+                current_tick: ctx.tick,
+            };
+            let classification = classify_discrepancy(
+                &view,
+                agent,
+                &goal_key,
+                &step,
+                None,
+                failure_context.belief_discrepancy,
+            );
+            let _ = record_failure_classification(
+                &failure_context,
+                classification,
+                runtime,
+                blocked_memory,
+                discrepancy_memory,
+                ctx.cognitive,
+            );
+        }
+
+        resolved_ids.push(overdue_id);
+    }
+
+    let _ = persist_expectation_store_update(ctx.world, ctx.event_log, agent, ctx.tick, |store| {
+        let mut changed = false;
+        for record_id in &expired_ids {
+            if let Some(record) = store.records.get_mut(record_id)
+                && record.state == worldwake_core::ExpectationState::Overdue
+            {
+                record.state = worldwake_core::ExpectationState::Expired;
+                changed = true;
+            }
+        }
+        for record_id in &resolved_ids {
+            if let Some(record) = store.records.get_mut(record_id)
+                && record.state == worldwake_core::ExpectationState::Overdue
+            {
+                record.state = worldwake_core::ExpectationState::Resolved {
+                    outcome: worldwake_core::ExpectationOutcome::ReturnedLate,
+                };
+                changed = true;
+            }
+        }
+        changed
+    })?;
+
+    Ok(())
 }
 
 fn emit_plan_invalidated(
@@ -663,6 +852,14 @@ fn process_agent(
     {
         emit_repair_applied(ctx.event_log, tick, agent, payload);
     }
+
+    process_overdue_plan_step_expectations(
+        ctx,
+        runtime,
+        &mut blocked_memory,
+        &mut discrepancy_memory,
+        agent,
+    )?;
 
     // Detect progress recorded during reconciliation (advance_completed_step).
     if let Some(ref mut ft) = frame_transitions {
