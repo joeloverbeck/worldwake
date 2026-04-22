@@ -112,6 +112,19 @@ impl AgentTickDriver {
         self.trace_sink.as_ref()
     }
 
+    /// Read-only access to persisted per-agent runtime state for diagnostic
+    /// and observer tooling.
+    #[must_use]
+    pub fn runtime(&self, agent: EntityId) -> Option<&AgentDecisionRuntime> {
+        self.runtime_by_agent.get(&agent)
+    }
+
+    /// Replace the persisted runtime snapshot for one agent. Used by tooling
+    /// and harnesses that need to seed or restore a specific runtime state.
+    pub fn set_runtime(&mut self, agent: EntityId, runtime: AgentDecisionRuntime) {
+        self.runtime_by_agent.insert(agent, runtime);
+    }
+
     /// Mutable access to the trace sink (for tests).
     pub fn trace_sink_mut(&mut self) -> Option<&mut DecisionTraceSink> {
         self.trace_sink.as_mut()

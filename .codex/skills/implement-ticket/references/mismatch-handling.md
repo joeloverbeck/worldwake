@@ -46,7 +46,7 @@ If all owned proof surfaces already pass and the live outcome is only factual va
 | Low-risk factual mismatch (stale reference, path, command) | Auto-correct; record note |
 | One correction reveals a second contradiction in the same surface | Rerun boundary check before coding; do not treat first correction as final |
 | Later reassessment shows a subdomain can no longer land and no ticket owns it | Create or update follow-up ticket chain immediately |
-| Architectural, ambiguous, or changes owned boundary | Stop; use 1-3-1 (1 problem, 3 options, 1 recommendation) |
+| Architectural or ambiguous contradiction, or boundary change that is not a directionally unambiguous narrowing | Stop; use 1-3-1 (1 problem, 3 options, 1 recommendation) |
 | Adjacent blocker exposed by verification -- small, local, needed for verification | Absorb; note why in ticket |
 | Adjacent blocker -- broad or would expand ticket materially | Stop; use 1-3-1 |
 | Deeper shared-layer contradiction outside ticket scope | Do not pull into ticket; use 1-3-1 |
@@ -54,6 +54,7 @@ If all owned proof surfaces already pass and the live outcome is only factual va
 When using 1-3-1, evaluate each option against the relevant FOUNDATIONS principles. Name the principle numbers and state whether each option aligns or violates. A FOUNDATIONS violation disqualifies an option regardless of implementation simplicity.
 
 Do not silently skip deliverables. Do not weaken the ticket without user confirmation.
+Exception: if focused live evidence makes the narrower honest contract directionally unambiguous and the remaining disproved work is handed off explicitly to a follow-up ticket, you may rewrite the active ticket to that narrower complete slice without stopping for 1-3-1. In that case, update the affected sections immediately, record why the narrowing is safe, and name the follow-up owner for the deferred remainder.
 
 When the user confirms a direction that changes architecture boundary, affected files, or proof surface, apply the affected section updates rule above before coding.
 

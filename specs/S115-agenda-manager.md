@@ -348,10 +348,11 @@ No sim-layer belief-view accessor. `worldwake-sim::GoalBeliefView` cannot expose
 15. Existing goldens pass (`scenarios/survival-baseline.ron`, `scenarios/survival-contested.ron`, `crates/worldwake-ai/tests/golden_planner_pathology.rs`).
 16. `ActiveGoal` removal validation: grep confirms zero remaining references to `ActiveGoal`, `get_component_active_goal`, `set_component_active_goal` outside this spec and outside archive/.
 
-### Golden test
+### Golden and observer proof status
 
-17. New scenario `golden_agenda_lifecycle.rs`: agent's purchase goal becomes pending when merchant departs, revives when merchant returns, commits, and completes — all transitions visible in event log and in final agenda state.
-18. Extension of `golden_agenda_lifecycle.rs`: agent's cargo-delivery goal reaches destination, the D4A classifier demotes it to `Suspended` (satisfied), and the suspended entry appears in observer output for one post-satisfaction tick before `KillCondition::External` clears it.
+17. Observer agenda-state rendering is now covered by focused `crates/worldwake-cli/src/bin/observer.rs::tests::format_report_renders_agenda_state_summary`, which proves committed/pending/suspended summary lines plus pending revival-trigger and suspended kill-condition text against live `AgendaState`.
+18. The drafted merchant purchase-revival golden seam was falsified on the live branch during ticket `S115AGEMAN-007`: after the buyer reaches the local trade-binding seam and the merchant departs, `AgendaState.committed` stays populated instead of parking the goal into `pending`. That runtime contradiction is owned by active ticket `S115AGEMAN-008`.
+19. The cargo satisfied-path lifecycle remains covered at the focused runtime seam (`crates/worldwake-ai/src/agent_tick/tests.rs::cargo_satisfaction_at_destination_while_carrying`). No dedicated cargo observer/golden scenario has landed yet.
 
 ## Outcome
 

@@ -9,7 +9,7 @@ Post-implementation review and follow-up planning. Archives the completed ticket
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), [tickets/README.md](../../../tickets/README.md), and [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) before making changes.
 
-**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), archive it, create new tickets in `tickets/`, update existing active tickets, factually update active specs under `specs/` when the completed ticket's landed contract makes the drift unambiguous.
+**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), apply mechanical path/link rewrites caused solely by moving the completed ticket into `archive/`, archive it, create new tickets in `tickets/`, update existing active tickets, factually update active specs under `specs/` when the completed ticket's landed contract makes the drift unambiguous.
 
 **Forbidden**: modifying production code or tests.
 
@@ -47,6 +47,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 9. After moving the ticket, inspect `git status` for both the archived path and the original active path. Record which post-archive state occurred, and mention it explicitly in the report:
    - tracked rename / move into the archive path
    - tracked deletion at the active path plus untracked archive file
+10. Re-read the archived ticket after the move and fix any purely mechanical path fallout caused by relocation (for example relative markdown links in `Deps`, archive-ticket references, or other moved-path links inside the archived file). Treat these edits as archival mechanics, not scope changes.
 
 ### 3. Establish the review surface
 
@@ -204,7 +205,7 @@ If no follow-up tickets are warranted, still report reviewed areas and state tha
 
 - Do not modify production code or tests.
 - Review local implementation state as it exists now, committed or not.
-- Only change the completed ticket's `Outcome`, verification notes, and archival mechanics.
+- Only change the completed ticket's `Outcome`, verification notes, and archival mechanics, including move-induced path rewrites inside the archived ticket.
 - Every finding must be backed by concrete code, test, trace, ticket, or documentation evidence.
 - Reject any follow-up suggestion that would violate [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md).
 - Use 1-3-1 when archival readiness, ticket decomposition, or dependency ordering is genuinely ambiguous.
