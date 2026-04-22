@@ -931,6 +931,151 @@ fn seller_return_restores_displayed_listing_after_pending_revival() {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 87: Seller Return Completes Resumed Purchase After Live Three-Coin Offer
+// Systems: Trade, AI, Needs
+// GoalKinds: AcquireCommodity
+// ActionDomains: Travel, Trade
+// Principles: P1, P3, P4
+// Proves: after seller departure parks a buyer's concrete local bread purchase
+//         into pending, seller return revives the goal and the resumed purchase
+//         commits through the authoritative trade path at the live three-coin
+//         unit-purchase price instead of looping forever on
+//         `InsufficientPayment`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn seller_return_completes_resumed_purchase_after_live_offer_refresh() {
+    let mut h = GoldenHarness::with_recipes(Seed([87; 32]), RecipeRegistry::new());
+    h.driver.enable_tracing();
+
+    let (merchant, _stock_lot) = seed_merchant(
+        &mut h,
+        "Merchant",
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(3),
+    );
+    let buyer = seed_buyer(&mut h, "Buyer", ORCHARD_FARM, Quantity(3));
+    let purchase_goal = worldwake_ai::GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: worldwake_ai::CommodityPurpose::SelfConsume,
+    });
+
+    set_control_source(&mut h, merchant, ControlSource::Human, 0);
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        buyer,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let mut bound_tick = None;
+    for _ in 0..40 {
+        let tick = h.step_once().tick;
+        let Some(trace) = h
+            .driver
+            .trace_sink()
+            .and_then(|sink| sink.trace_at(buyer, tick))
+        else {
+            continue;
+        };
+        let DecisionOutcome::Planning(planning) = &trace.outcome else {
+            continue;
+        };
+        let Some(selected_plan) = planning.selection.selected_plan.as_ref() else {
+            continue;
+        };
+        if h.world.effective_place(buyer) == Some(VILLAGE_SQUARE)
+            && h.agent_active_action_name(buyer).is_none()
+            && selected_plan
+                .next_step
+                .as_ref()
+                .is_some_and(|step| step.action_name == "trade" && step.targets.contains(&merchant))
+        {
+            bound_tick = Some(tick);
+            let mut txn = new_txn(&mut h.world, tick.0);
+            txn.set_ground_location(merchant, ORCHARD_FARM).unwrap();
+            commit_txn(txn, &mut h.event_log);
+            break;
+        }
+    }
+
+    assert!(
+        bound_tick.is_some(),
+        "buyer should first reach the local trade-step binding against the seller"
+    );
+
+    let mut parked_pending = false;
+    for _ in 0..12 {
+        h.step_once();
+        let Some(runtime) = h.driver.runtime(buyer) else {
+            continue;
+        };
+        if runtime
+            .agenda_state
+            .pending
+            .values()
+            .any(|entry| entry.key.goal_key == purchase_goal)
+        {
+            parked_pending = true;
+            break;
+        }
+    }
+
+    assert!(
+        parked_pending,
+        "seller departure should first park the committed purchase goal in pending"
+    );
+    assert!(
+        h.event_log.events_by_tag(EventTag::Trade).is_empty(),
+        "no trade should commit before the seller returns"
+    );
+
+    let return_tick = h.scheduler.current_tick().0;
+    let mut txn = new_txn(&mut h.world, return_tick);
+    txn.set_ground_location(merchant, VILLAGE_SQUARE).unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let mut pending_cleared = false;
+    let mut resumed_trade_committed = false;
+    for _ in 0..64 {
+        h.step_once();
+        if let Some(runtime) = h.driver.runtime(buyer) {
+            pending_cleared |= runtime
+                .agenda_state
+                .pending
+                .values()
+                .all(|entry| entry.key.goal_key != purchase_goal);
+        }
+        resumed_trade_committed |= !h.event_log.events_by_tag(EventTag::Trade).is_empty()
+            && h.agent_commodity_qty(buyer, CommodityKind::Bread) == Quantity(1);
+        if pending_cleared && resumed_trade_committed {
+            break;
+        }
+    }
+
+    assert!(
+        pending_cleared,
+        "seller return should clear the parked pending purchase entry through the real runtime lifecycle"
+    );
+    assert!(
+        resumed_trade_committed,
+        "seller return should revive and complete the resumed bread purchase instead of re-entering an InsufficientPayment loop"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(buyer, CommodityKind::Bread),
+        Quantity(1),
+        "buyer should finish the resumed purchase with one bread, matching the revived plan's requested quantity"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(buyer, CommodityKind::Coin),
+        Quantity(0),
+        "buyer should spend the full three-coin unit-purchase price on the resumed purchase"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 77: Unlisted Stock Not Sellable
 // Systems: Trade, AI
 // GoalKinds: AcquireCommodity

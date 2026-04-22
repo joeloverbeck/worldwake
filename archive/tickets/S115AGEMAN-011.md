@@ -51,7 +51,7 @@ Broader resumed-purchase completion is deferred. If live evidence still disprove
 - `crates/worldwake-ai/src/goal_model.rs` (modify)
 - `crates/worldwake-systems/src/trade_actions.rs` (modify)
 - `tickets/S115AGEMAN-011.md` (modify)
-- `tickets/S115AGEMAN-012.md` (new)
+- `archive/tickets/S115AGEMAN-012.md` (new)
 
 ## Out of Scope
 
@@ -98,7 +98,7 @@ Completed on 2026-04-22.
 ## Deviations
 
 - The drafted stronger “seller return resumed purchase completes” ending is still false after the opening-offer alignment. Focused golden repro showed repeated buyer-side `InsufficientPayment` aborts with no post-return trade commit even after the revived/current plan carried `offered_quantity = Quantity(3)`.
-- Follow-up ticket [`S115AGEMAN-012`](../../tickets/S115AGEMAN-012.md) now owns that later authoritative pricing contradiction.
+- Follow-up ticket [`S115AGEMAN-012`](./S115AGEMAN-012.md) now owns that later authoritative pricing contradiction.
 
 ## Verification Result
 

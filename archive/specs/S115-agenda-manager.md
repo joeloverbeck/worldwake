@@ -1,12 +1,14 @@
 # S115: Agenda Manager with Goal Lifecycle
 
+**Status**: COMPLETED
+
 ## Summary
 
 Add an `AgendaState` that tracks goals through a three-state lifecycle (`committed`, `pending`, `suspended`) with origin, freshness, revival trigger, and kill condition per entry. Replaces the current "rank everything fresh every tick" model with an explicit agenda manager: committed goals persist across ticks under margin-based commitment (S74); pending goals wait for a revival condition (resource appears, route becomes safe, counterparty arrives); suspended goals are dormant but not abandoned. The agenda is also the architectural home for distinguishing *satisfied* from *truly-infeasible* from *infeasible-until-belief-changes* goals — a distinction the S112 feasibility probe collapses into a single opaque `RejectedBeforeSearch { reason: Discrepancy }` today, forcing downstream callers to re-derive the intent by inspecting `Discrepancy` variants. Rename `GroundedGoal` → `GoalOffer` and `RankedGoal` → `AgendaEntry` to reflect their lifecycle role. `AgendaEntry` absorbs the existing `ActiveGoal` component's role (goal_key + adopted_at) so a single authority tracks the agent's committed goal (FND-28). `exhausted` and `abandoned` states are deferred — Phase 7 scenarios have not yet demonstrated a need to distinguish them from `DiscrepancyMemory` entries.
 
 ## Phase and Status
 
-Phase 9: Belief-First Continual Planning Structural. Status: Draft.
+Phase 9: Belief-First Continual Planning Structural. Status: Completed.
 
 ## Crates
 
@@ -351,9 +353,35 @@ No sim-layer belief-view accessor. `worldwake-sim::GoalBeliefView` cannot expose
 ### Golden and observer proof status
 
 17. Observer agenda-state rendering is now covered by focused `crates/worldwake-cli/src/bin/observer.rs::tests::format_report_renders_agenda_state_summary`, which proves committed/pending/suspended summary lines plus pending revival-trigger and suspended kill-condition text against live `AgendaState`.
-18. The drafted merchant purchase-revival golden seam was falsified on the live branch during ticket `S115AGEMAN-007`: after the buyer reaches the local trade-binding seam and the merchant departs, `AgendaState.committed` stays populated instead of parking the goal into `pending`. Archived ticket `S115AGEMAN-008` resolved that buyer-side contradiction by parking the goal into `pending` and reviving it back into `committed/current_plan`; ticket `S115AGEMAN-009` then restored the separate seller-side displayed-listing relist seam on return. Ticket `S115AGEMAN-010` tightened the lower-layer repair seam so resumed pending-repair trade plans refresh explicit payload variants from the current live affordance and stale payload-variant steps no longer survive validator-only revalidation; archived ticket `S115AGEMAN-011` then aligned buyer opening-offer synthesis with the live one-tick trade contract, and follow-up ticket `S115AGEMAN-012` now owns the still-false later authoritative resumed trade-completion remainder.
+18. The drafted merchant purchase-revival golden seam was falsified on the live branch during ticket `S115AGEMAN-007`: after the buyer reaches the local trade-binding seam and the merchant departs, `AgendaState.committed` stays populated instead of parking the goal into `pending`. Archived ticket `S115AGEMAN-008` resolved that buyer-side contradiction by parking the goal into `pending` and reviving it back into `committed/current_plan`; ticket `S115AGEMAN-009` then restored the separate seller-side displayed-listing relist seam on return. Ticket `S115AGEMAN-010` tightened the lower-layer repair seam so resumed pending-repair trade plans refresh explicit payload variants from the current live affordance and stale payload-variant steps no longer survive validator-only revalidation; archived ticket `S115AGEMAN-011` then aligned buyer opening-offer synthesis with the live one-tick trade contract; ticket `S115AGEMAN-012` completed the remaining authoritative reservation seam by excluding seller-side `WantedToSellButNoBuyer` frustration memory from seller demand pricing, and Scenario 87 now proves the revived three-coin unit purchase eventually commits after seller return.
 19. The cargo satisfied-path lifecycle remains covered at the focused runtime seam (`crates/worldwake-ai/src/agent_tick/tests.rs::cargo_satisfaction_at_destination_while_carrying`). No dedicated cargo observer/golden scenario has landed yet.
 
 ## Outcome
 
-To be filled in at completion.
+Completed on 2026-04-22.
+
+- Landed the agenda substrate across `AgendaProfile`, `AgendaState`, `GoalOffer` / `AgendaEntry`, the `tick_agenda(...)` manager flow, and the D4A lifecycle classifier that decodes `RejectedBeforeSearch { reason }` into `Satisfied` / `InfeasibleUntil { trigger }` / `Dead`.
+- Removed the live `ActiveGoal` authority path, migrated committed-goal state into the ai runtime agenda state, and surfaced committed / pending / suspended agenda rendering in the observer.
+- Landed the truthful live integration seam rather than the stronger earlier draft: `tick_agenda(...)` runs after candidate generation, feasibility annotation, and ranking; downstream planning still consumes the fresh ranked feed; executable commitment still finalizes at selected-plan adoption.
+- Closed the motivating merchant-selling lifecycle chain through the archived `S115AGEMAN-008` through `S115AGEMAN-012` tickets: buyer-side pending parking and revival now work after seller return, seller relisting is restored, resumed repair plans refresh against live affordances, buyer opening offers follow the live one-tick trade contract, and the revived purchase now eventually commits after seller return.
+
+## Deviations
+
+- The earlier drafted `agenda_tick_system before candidate generation` seam was falsified on the live branch and was not shipped.
+- The stronger rewrite that would have made the merged agenda-manager ordered pool the sole downstream planning feed was also falsified. The live implementation keeps lifecycle state in `AgendaState`, but planning and interrupt evaluation still consume the fresh ranked feed.
+- `GoalCommitted` emission remains at selected-plan adoption so executable commitment and event ordering stay aligned; S115 did not move that event emission into `AgendaTransitions`.
+- The resumed seller-return trade proof landed at the truthful eventual unit-purchase contract, not a same-tick full-lot completion.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai agenda_manager::tests -- --list`
+- Passed `cargo test -p worldwake-ai agent_tick::tests::cargo_satisfaction_at_destination_while_carrying -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_portfolio_planning portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_exploration golden_s107_cooldown_spaces_proactive_exploration_attempts -- --exact`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test -p worldwake-ai --test golden_merchant_selling`
+- Passed `cargo test -p worldwake-systems --lib trade_actions::tests::trade_affordance_uses_reservation_price_when_deadline_is_one_tick -- --exact`
+- Passed `cargo test -p worldwake-systems --lib trade_actions::tests::single_tick_trade_commits_when_opening_offer_matches_overlap_price -- --exact`
+- Passed `cargo test -p worldwake-systems --lib trade_actions::tests::seller_no_buyer_memory_does_not_raise_reservation_above_overlapping_price -- --exact`
+- Passed `cargo fmt --all`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

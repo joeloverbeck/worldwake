@@ -855,7 +855,16 @@ fn remembered_demand_pressure(
         memory
             .observations
             .iter()
-            .filter(|obs| obs.commodity == commodity)
+            .filter(|obs| {
+                obs.commodity == commodity
+                    && matches!(
+                        obs.reason,
+                        DemandObservationReason::WantedToBuyButNoSeller
+                            | DemandObservationReason::WantedToBuyButSellerOutOfStock
+                            | DemandObservationReason::WantedToBuyButTooExpensive
+                            | DemandObservationReason::TradeAgreed
+                    )
+            })
             .map(|obs| obs.quantity.0)
             .sum()
     })
@@ -2721,6 +2730,53 @@ mod tests {
                 .world
                 .controlled_commodity_quantity(harness.actor, CommodityKind::Coin),
             Quantity(0)
+        );
+    }
+
+    #[test]
+    fn seller_no_buyer_memory_does_not_raise_reservation_above_overlapping_price() {
+        let mut harness = TradeHarness::new(
+            CommodityKind::Coin,
+            Quantity(3),
+            CommodityKind::Bread,
+            Quantity(3),
+            1,
+            HomeostaticNeeds::new(pm(900), pm(0), pm(0), pm(0), pm(0)),
+        );
+        harness.payload.offered_quantity = Quantity(3);
+        harness.set_counterparty_demand_memory(vec![
+            DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(5),
+                place: harness.place,
+                tick: Tick(3),
+                counterparty: None,
+                reason: DemandObservationReason::WantedToBuyButSellerOutOfStock,
+            },
+            DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+                place: harness.place,
+                tick: Tick(4),
+                counterparty: Some(harness.actor),
+                reason: DemandObservationReason::WantedToSellButNoBuyer,
+            },
+            DemandObservation {
+                commodity: CommodityKind::Bread,
+                quantity: Quantity(1),
+                place: harness.place,
+                tick: Tick(5),
+                counterparty: Some(harness.actor),
+                reason: DemandObservationReason::WantedToSellButNoBuyer,
+            },
+        ]);
+
+        let (instance_id, mut active) = harness.start_with_active();
+        let outcome = harness.tick(instance_id, &mut active, 4).unwrap();
+
+        assert!(
+            matches!(outcome, TickOutcome::Committed { .. }),
+            "seller-side no-buyer frustration memory should not make an already-overlapping three-coin trade fail with InsufficientPayment"
         );
     }
 
