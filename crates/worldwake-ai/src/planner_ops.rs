@@ -1,10 +1,13 @@
 use crate::{
-    GoalKey, GoalKind, GoalKindPlannerExt, GroundedGoal, HypotheticalEntityId, PlanningEntityRef,
-    PlanningState,
+    GoalKey, GoalKind, GoalKindPlannerExt, GroundedGoal, HypotheticalEntityId, PlanExpectation,
+    PlanGuard, PlanningEntityRef, PlanningState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, ActionDomain, EntityId, EntityKind, Quantity, load_per_unit};
+use worldwake_core::{
+    ActionDefId, ActionDomain, BeliefClaimKey, EntityBeliefAspect, EntityId, EntityKind, Quantity,
+    Tick, load_per_unit,
+};
 use worldwake_sim::{
     ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView, MaterializationTag,
 };
@@ -814,11 +817,42 @@ pub struct ExpectedMaterialization {
 pub struct PlannedStep {
     pub def_id: ActionDefId,
     pub targets: Vec<PlanningEntityRef>,
+    pub target_place: Option<EntityId>,
     pub payload_override: Option<ActionPayload>,
     pub op_kind: PlannerOpKind,
     pub estimated_ticks: u32,
     pub is_materialization_barrier: bool,
     pub expected_materializations: Vec<ExpectedMaterialization>,
+    pub guard: Option<PlanGuard>,
+    pub expectations: Vec<PlanExpectation>,
+}
+
+impl PlannedStep {
+    #[must_use]
+    pub fn primary_target(&self) -> Option<EntityId> {
+        match self.targets.first().copied() {
+            Some(PlanningEntityRef::Authoritative(entity)) => Some(entity),
+            Some(PlanningEntityRef::Hypothetical(_)) | None => None,
+        }
+    }
+
+    #[must_use]
+    pub fn target_place(&self) -> Option<EntityId> {
+        self.target_place
+    }
+
+    #[must_use]
+    pub fn target_claim(&self) -> Option<BeliefClaimKey> {
+        Some(BeliefClaimKey {
+            subject: self.primary_target()?,
+            aspect: EntityBeliefAspect::Location,
+        })
+    }
+
+    #[must_use]
+    pub fn expected_complete_tick(&self, start_tick: Tick) -> Tick {
+        Tick(start_tick.0.saturating_add(u64::from(self.estimated_ticks)))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -993,11 +1027,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, BodyCostPerTick, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DriveThresholds, EntityId, EntityKind, HomeostaticNeeds,
-        InTransitOnEdge, LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, Quantity,
-        RecipeId, ResourceSource, TellTopic, TickRange, TradeDispositionProfile, UniqueItemKind,
-        WorkstationTag, Wound, load_per_unit,
+        ActionDefId, ActionDomain, BeliefClaimKey, BodyCostPerTick, CommodityConsumableProfile,
+        CommodityKind, DemandObservation, DriveThresholds, EntityBeliefAspect, EntityId,
+        EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, TellTopic, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, load_per_unit,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionPayload, BribeActionPayload,
@@ -1024,6 +1058,7 @@ mod tests {
                 PlanningEntityRef::Authoritative(entity(3)),
                 PlanningEntityRef::Authoritative(entity(4)),
             ],
+            target_place: Some(entity(4)),
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: entity(3),
                 sale_lot: EntityId {
@@ -1038,6 +1073,8 @@ mod tests {
             estimated_ticks: 5,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1045,11 +1082,14 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(8),
             targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: Some(target),
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 2,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1131,6 +1171,63 @@ mod tests {
             PlanTerminalKind::GoalSatisfied,
         );
         assert_eq!(non_travel_plan.terminal_travel_destination(), None);
+    }
+
+    #[test]
+    fn planned_step_primary_target_returns_authoritative_first_target_only() {
+        let authoritative = sample_step();
+        assert_eq!(authoritative.primary_target(), Some(entity(3)));
+
+        let hypothetical = PlannedStep {
+            targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(9))],
+            ..sample_step()
+        };
+        assert_eq!(hypothetical.primary_target(), None);
+
+        let empty = PlannedStep {
+            targets: Vec::new(),
+            ..sample_step()
+        };
+        assert_eq!(empty.primary_target(), None);
+    }
+
+    #[test]
+    fn planned_step_target_place_and_claim_are_independent() {
+        let step = sample_step();
+        assert_eq!(step.target_place(), Some(entity(4)));
+        assert_eq!(
+            step.target_claim(),
+            Some(BeliefClaimKey {
+                subject: entity(3),
+                aspect: EntityBeliefAspect::Location,
+            })
+        );
+
+        let hypothetical = PlannedStep {
+            targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(4))],
+            target_place: Some(entity(9)),
+            ..sample_step()
+        };
+        assert_eq!(hypothetical.target_place(), Some(entity(9)));
+        assert_eq!(hypothetical.target_claim(), None);
+    }
+
+    #[test]
+    fn planned_step_expected_complete_tick_saturates() {
+        let step = PlannedStep {
+            estimated_ticks: 3,
+            ..sample_step()
+        };
+        assert_eq!(step.expected_complete_tick(Tick(10)), Tick(13));
+
+        let saturated = PlannedStep {
+            estimated_ticks: u32::MAX,
+            ..sample_step()
+        };
+        assert_eq!(
+            saturated.expected_complete_tick(Tick(u64::MAX - 1)),
+            Tick(u64::MAX)
+        );
     }
 
     #[derive(Default)]
@@ -1609,11 +1706,14 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(2),
                 targets: vec![PlanningEntityRef::Authoritative(entity(6))],
+                target_place: Some(entity(6)),
                 payload_override: None,
                 op_kind: PlannerOpKind::Sleep,
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );

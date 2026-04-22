@@ -1,11 +1,16 @@
 use super::active_action::handle_current_step_failure;
-use super::observation::update_runtime_observation_snapshot;
+use super::observation::{
+    ExpectationMismatchContext, emit_expectation_mismatch, update_runtime_observation_snapshot,
+};
 use super::{
     AgentTickContext, emit_decision_event, handle_recoverable_travel_step_blockage,
     runtime_belief_view,
 };
 use crate::failure_handling::exact_target_belief_discrepancy;
-use crate::{AgentDecisionRuntime, PlannedStep};
+use crate::plan_step_expectations::{
+    expire_plan_step_expectations, persist_expectation_store_update,
+};
+use crate::{AgentDecisionRuntime, PlannedStep, RevalidationOutcome, classify_revalidation};
 use worldwake_core::{
     ActiveGoal, BeliefSnapshot, BeliefStatusTag, BlockerMemory, BlockerRecordedPayload, CauseRef,
     ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyEntry, DiscrepancyMemory,
@@ -61,9 +66,58 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
         );
         *jc = updated_jc;
         if handled {
+            if runtime.current_plan.is_none() {
+                let _ = persist_expectation_store_update(
+                    ctx.world,
+                    ctx.event_log,
+                    agent,
+                    tick,
+                    expire_plan_step_expectations,
+                )?;
+            }
             return Ok(());
         }
+        let classification = classify_revalidation(
+            &view,
+            agent,
+            runtime
+                .current_step_index
+                .try_into()
+                .expect("current step index exceeds u16"),
+            step,
+            &runtime.materialization_bindings,
+            ctx.action_defs,
+            ctx.action_handlers,
+        );
+        let (plan_invalidation_reason, expectation_kind, mismatch_detail) = match classification {
+            RevalidationOutcome::Valid => (None, None, None),
+            RevalidationOutcome::Invalidated {
+                reason,
+                expectation_kind,
+                mismatch_detail,
+            } => (Some(reason), expectation_kind, mismatch_detail),
+        };
         let belief_discrepancy = exact_target_belief_discrepancy(&view, agent, step);
+        let mismatch_goal_key =
+            active_goal.or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal));
+        if let (
+            Some(goal_key),
+            Some(worldwake_core::PlanInvalidationReason::ExpectationMismatch { .. }),
+        ) = (mismatch_goal_key, plan_invalidation_reason)
+        {
+            emit_expectation_mismatch(
+                ctx.event_log,
+                tick,
+                agent,
+                goal_key,
+                runtime.current_step_index,
+                step,
+                ExpectationMismatchContext {
+                    expectation_kind,
+                    mismatch_detail,
+                },
+            );
+        }
         let replan_reason = handle_current_step_failure(
             ctx,
             runtime,
@@ -76,6 +130,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             step,
             None,
             belief_discrepancy,
+            plan_invalidation_reason,
         )?;
         if let Some(goal_key) = active_goal {
             emit_decision_event(
@@ -115,6 +170,15 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
         );
         *jc = updated_jc;
         if handled {
+            if runtime.current_plan.is_none() {
+                let _ = persist_expectation_store_update(
+                    ctx.world,
+                    ctx.event_log,
+                    agent,
+                    tick,
+                    expire_plan_step_expectations,
+                )?;
+            }
             return finalize_agent_tick(
                 ctx.world,
                 ctx.event_log,
@@ -146,6 +210,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             facility_intents,
             agent,
             step,
+            None,
             None,
             None,
         )?;

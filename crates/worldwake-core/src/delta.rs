@@ -594,6 +594,8 @@ mod tests {
                 route_unknown_backoff_ticks: 201,
                 search_exhaustion_backoff_ticks: 101,
                 partial_drift_backoff_ticks: 5,
+                expectation_tolerance_ticks: 7,
+                guard_min_confidence_ceiling: Permille::new(875).unwrap(),
                 repair_memory_ticks: 144,
                 learned_opportunity_memory_ticks: 72,
                 initial_cooldown_ticks: 7,

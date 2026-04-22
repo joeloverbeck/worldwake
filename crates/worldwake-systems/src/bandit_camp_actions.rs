@@ -66,6 +66,8 @@ fn establish_camp_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 

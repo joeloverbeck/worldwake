@@ -1183,6 +1183,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: crate::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         registry.register(ActionDef {
             id: ActionDefId(1),
@@ -1202,6 +1204,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(1),
             binding_strictness: crate::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         registry.register(ActionDef {
             id: ActionDefId(2),
@@ -1224,6 +1228,8 @@ mod tests {
             }),
             handler: ActionHandlerId(1),
             binding_strictness: crate::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         registry
     }
@@ -1260,6 +1266,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: crate::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         registry.register(ActionDef {
             id: ActionDefId(4),
@@ -1291,6 +1299,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(2),
             binding_strictness: crate::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         registry
     }
@@ -1343,6 +1353,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness,
+            guard_template: None,
+            expectation_template: vec![],
         }
     }
 

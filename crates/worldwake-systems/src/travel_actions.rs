@@ -58,6 +58,8 @@ pub fn register_travel_actions(
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentRouteStep,
+        guard_template: None,
+        expectation_template: vec![],
     })
 }
 

@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DecisionEventPayload,
-    DiscrepancyMemory, EntityId, EventTag, ExpectationMismatchPayload, GoalKey,
-    LearnedOpportunityMemory, PlanInvalidationReason, Quantity, RepairMemory, ReplanReason, Tick,
-    UniqueItemKind,
+    DiscrepancyMemory, EntityId, EventTag, ExpectationKindTag, ExpectationMismatchPayload, GoalKey,
+    LearnedOpportunityMemory, MismatchDetail, PlanInvalidationReason, Quantity, RepairMemory,
+    ReplanReason, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -13,6 +13,9 @@ use worldwake_sim::{
 use crate::candidate_generation::generate_candidates_with_memories_with_travel_horizon;
 use crate::failure_handling::ExecutionFailure;
 use crate::knowledge_path::KnowledgePath;
+use crate::plan_step_expectations::{
+    fulfill_plan_step_expectations, persist_expectation_store_update,
+};
 use crate::ranking::rank_candidates_with_memories;
 use crate::{
     AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep, RankedGoal,
@@ -93,13 +96,20 @@ pub(crate) struct ReadPhaseResult {
         std::collections::BTreeSet<worldwake_core::HomeostaticNeedId>,
 }
 
-fn emit_expectation_mismatch(
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct ExpectationMismatchContext {
+    pub(super) expectation_kind: Option<ExpectationKindTag>,
+    pub(super) mismatch_detail: Option<MismatchDetail>,
+}
+
+pub(super) fn emit_expectation_mismatch(
     event_log: &mut worldwake_core::EventLog,
     tick: Tick,
     agent: EntityId,
     goal_key: worldwake_core::GoalKey,
     step_index: usize,
     step: &PlannedStep,
+    context: ExpectationMismatchContext,
 ) {
     emit_decision_event(
         event_log,
@@ -115,6 +125,8 @@ fn emit_expectation_mismatch(
                 .iter()
                 .map(|expected| expected.tag)
                 .collect(),
+            expectation_kind: context.expectation_kind,
+            mismatch_detail: context.mismatch_detail,
         }),
     );
 }
@@ -497,6 +509,7 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             Some(ExecutionFailure::Replan(signal)),
             None,
+            None,
         )?;
         return Ok(ReconciliationResult {
             completed_plan: None,
@@ -518,6 +531,7 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             Some(ExecutionFailure::Start(start_failure)),
             None,
+            None,
         )?;
         return Ok(ReconciliationResult {
             completed_plan: None,
@@ -538,6 +552,7 @@ pub(super) fn reconcile_in_flight_state(
             facility_intents,
             agent,
             &step,
+            None,
             None,
             None,
         )?;
@@ -572,6 +587,7 @@ pub(super) fn reconcile_in_flight_state(
             goal_key,
             runtime.current_step_index,
             &step,
+            ExpectationMismatchContext::default(),
         );
         let invalidation_reason = PlanInvalidationReason::ExpectationMismatch {
             step_index: runtime
@@ -591,6 +607,7 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             None,
             None,
+            None,
         )?;
         return Ok(ReconciliationResult {
             completed_plan: None,
@@ -605,6 +622,13 @@ pub(super) fn reconcile_in_flight_state(
     }
 
     runtime.step_in_flight = false;
+    let completed_step_index = runtime
+        .current_step_index
+        .try_into()
+        .expect("step index exceeds u16");
+    let _ = persist_expectation_store_update(ctx.world, ctx.event_log, agent, ctx.tick, |store| {
+        fulfill_plan_step_expectations(store, completed_step_index)
+    })?;
     *jc = advance_completed_step(
         runtime,
         active_goal,
@@ -853,7 +877,9 @@ pub(super) fn unique_item_signature(
 
 #[cfg(test)]
 mod tests {
-    use super::{emit_expectation_mismatch, reinstate_current_plan_candidate};
+    use super::{
+        ExpectationMismatchContext, emit_expectation_mismatch, reinstate_current_plan_candidate,
+    };
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, ExpectedMaterialization, GroundedGoal,
         HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
@@ -890,11 +916,14 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(1),
                 targets: vec![PlanningEntityRef::Authoritative(market)],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: 3,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::ProgressBarrier,
         );
@@ -1012,6 +1041,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(7),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Craft,
             estimated_ticks: 2,
@@ -1020,6 +1050,8 @@ mod tests {
                 hypothetical_id: HypotheticalEntityId(3),
                 tag: MaterializationTag::SplitOffLot,
             }],
+            guard: None,
+            expectations: Vec::new(),
         };
 
         emit_expectation_mismatch(
@@ -1029,6 +1061,7 @@ mod tests {
             goal_key,
             5,
             &step,
+            ExpectationMismatchContext::default(),
         );
 
         let events = event_log.events_by_tag(EventTag::ExpectationMismatch);
@@ -1045,6 +1078,8 @@ mod tests {
                     goal_key,
                     step_index: 5,
                     expected_materializations: vec![MaterializationTag::SplitOffLot],
+                    expectation_kind: None,
+                    mismatch_detail: None,
                 }
             )
         );

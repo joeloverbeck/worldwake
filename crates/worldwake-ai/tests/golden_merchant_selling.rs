@@ -524,6 +524,117 @@ fn buyer_trades_against_listed_lot() {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 84: Remote Branch Selection Reaches Local Trade Binding
+// Systems: Trade, AI, Needs
+// GoalKinds: AcquireCommodity
+// ActionDomains: Travel, Trade
+// Principles: P1, P3, P4
+// Proves: buyer first selects the remote seller-backed `Travel -> Trade` path
+//         and, after arrival, reaches a concrete local `trade` next step before
+//         seller departure. The mismatch event itself stays owned by the
+//         focused `agent_tick` execution proof.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn remote_branch_selection_reaches_local_trade_binding_before_merchant_departure() {
+    let mut h = GoldenHarness::with_recipes(Seed([84; 32]), RecipeRegistry::new());
+    h.driver.enable_tracing();
+
+    let (merchant, _stock_lot) = seed_merchant(
+        &mut h,
+        "Merchant",
+        VILLAGE_SQUARE,
+        CommodityKind::Bread,
+        Quantity(3),
+    );
+    let buyer = seed_buyer(&mut h, "Buyer", ORCHARD_FARM, Quantity(3));
+
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_agent_data(
+            merchant,
+            worldwake_core::AgentData {
+                control_source: ControlSource::Human,
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    seed_actor_world_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        buyer,
+        Tick(0),
+        worldwake_core::PerceptionSource::Inference,
+    );
+
+    let mut saw_remote_trade_branch = false;
+    let mut saw_local_trade_binding = false;
+
+    for _ in 0..40 {
+        let tick = h.step_once().tick;
+        let Some(trace) = h
+            .driver
+            .trace_sink()
+            .and_then(|sink| sink.trace_at(buyer, tick))
+        else {
+            continue;
+        };
+        let DecisionOutcome::Planning(planning) = &trace.outcome else {
+            continue;
+        };
+        let Some(selected_plan) = planning.selection.selected_plan.as_ref() else {
+            continue;
+        };
+
+        if !saw_remote_trade_branch
+            && selected_plan
+                .next_step
+                .as_ref()
+                .is_some_and(|step| step.action_name == "travel")
+            && selected_plan
+                .steps
+                .iter()
+                .any(|step| step.action_name == "trade" && step.targets.contains(&merchant))
+        {
+            saw_remote_trade_branch = true;
+        }
+
+        if h.world.effective_place(buyer) == Some(VILLAGE_SQUARE)
+            && h.agent_active_action_name(buyer).is_none()
+            && selected_plan
+                .next_step
+                .as_ref()
+                .is_some_and(|step| step.action_name == "trade" && step.targets.contains(&merchant))
+        {
+            saw_local_trade_binding = true;
+            break;
+        }
+    }
+
+    assert!(
+        saw_remote_trade_branch,
+        "buyer should first select a remote branch whose next step is travel and whose path retains a later trade step against the seller"
+    );
+    assert!(
+        saw_local_trade_binding,
+        "after arrival, buyer should reach a local trade next step bound to the seller before departure"
+    );
+    assert_eq!(
+        h.agent_commodity_qty(buyer, CommodityKind::Bread),
+        Quantity(0),
+        "this golden stops at the local trade-step binding seam before any trade commits"
+    );
+    assert!(
+        h.event_log
+            .events_by_tag(EventTag::ExpectationMismatch)
+            .is_empty(),
+        "the mismatch event stays owned by the focused AI execution proof rather than this earlier golden boundary"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 77: Unlisted Stock Not Sellable
 // Systems: Trade, AI
 // GoalKinds: AcquireCommodity

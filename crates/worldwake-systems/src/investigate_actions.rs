@@ -62,6 +62,8 @@ fn investigate_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDe
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 

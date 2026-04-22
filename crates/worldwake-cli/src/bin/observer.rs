@@ -4242,6 +4242,8 @@ mod tests {
                 goal_key: acquire_goal,
                 step_index: 1,
                 expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
+                expectation_kind: None,
+                mismatch_detail: None,
             }),
         );
         emit_decision_event(

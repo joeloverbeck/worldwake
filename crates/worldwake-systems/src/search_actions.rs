@@ -63,6 +63,8 @@ fn search_place_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -492,21 +494,17 @@ mod tests {
             .get_component_expectation_store(actor)
             .cloned()
             .unwrap_or_default();
-        let id = ExpectationId(store.records.len() as u64 + 1);
-        store.records.insert(
+        let id = store.allocate_record(|id| ExpectationRecord {
             id,
-            ExpectationRecord {
-                id,
-                owner: actor,
-                subject,
-                expected_place,
-                deadline_tick: Tick(5),
-                grace_ticks: 1,
-                basis: ExpectationBasis::RoutineReturn,
-                state,
-                created_tick: Tick(1),
-            },
-        );
+            owner: actor,
+            subject,
+            expected_place,
+            deadline_tick: Tick(5),
+            grace_ticks: 1,
+            basis: ExpectationBasis::RoutineReturn,
+            state,
+            created_tick: Tick(1),
+        });
         txn.set_component_expectation_store(actor, store).unwrap();
         commit_txn(txn);
         id

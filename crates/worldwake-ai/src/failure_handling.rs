@@ -58,63 +58,14 @@ pub fn handle_plan_failure(
         context.execution_failure,
         context.belief_discrepancy,
     );
-    let mut blocker_key = BlockerKey {
-        goal_key: context.goal_key,
-        place: related_place(
-            context.view,
-            context.agent,
-            &context.goal_key,
-            context.failed_step,
-        ),
-        target: related_entity(context.failed_step),
-        action_def: Some(context.failed_step.def_id),
-    };
-
-    if should_scope_local_commodity_unavailability_to_place(
-        context.view,
-        context.agent,
-        &blocker_key,
-        context.failed_step,
-    ) {
-        blocker_key.target = None;
-    }
-
-    let recorded = match classification {
-        FailureClassification::Blocker(blocking_fact) => {
-            let expires_tick =
-                context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
-            let (clearing_condition, baseline_snapshot) =
-                derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
-            blocked_memory.record(Blocker {
-                blocker_key,
-                blocking_fact,
-                diagnostic_context: None,
-                observed_tick: context.current_tick,
-                expires_tick,
-                clearing_condition,
-                baseline_snapshot,
-            });
-            FailureClassification::Blocker(blocking_fact)
-        }
-        FailureClassification::Discrepancy(discrepancy) => {
-            let expires_tick =
-                context.current_tick + u64::from(discrepancy_ttl(discrepancy, cognitive));
-            discrepancy_memory.record(DiscrepancyEntry {
-                blocker_key,
-                discrepancy,
-                observed_tick: context.current_tick,
-                expires_tick,
-                clearing_condition: derive_discrepancy_clearing(
-                    discrepancy,
-                    &blocker_key,
-                    context.execution_failure,
-                ),
-            });
-            FailureClassification::Discrepancy(discrepancy)
-        }
-    };
-    runtime.dirty.insert(DirtySet::REPLAN_SIGNAL);
-    recorded
+    record_failure_classification(
+        context,
+        classification,
+        runtime,
+        blocked_memory,
+        discrepancy_memory,
+        cognitive,
+    )
 }
 
 pub fn clear_resolved_failures(
@@ -130,7 +81,7 @@ pub fn clear_resolved_failures(
     discrepancy_memory.clear_by_condition(|entry| is_discrepancy_cleared(view, agent, entry));
 }
 
-fn classify_discrepancy(
+pub(crate) fn classify_discrepancy(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     goal_key: &GoalKey,
@@ -219,6 +170,73 @@ fn classify_discrepancy(
     }
 
     FailureClassification::Discrepancy(Discrepancy::ImproperPlanningState)
+}
+
+pub(crate) fn record_failure_classification(
+    context: &PlanFailureContext<'_>,
+    classification: FailureClassification,
+    runtime: &mut AgentDecisionRuntime,
+    blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    cognitive: &CognitiveProfile,
+) -> FailureClassification {
+    let mut blocker_key = BlockerKey {
+        goal_key: context.goal_key,
+        place: related_place(
+            context.view,
+            context.agent,
+            &context.goal_key,
+            context.failed_step,
+        ),
+        target: related_entity(context.failed_step),
+        action_def: Some(context.failed_step.def_id),
+    };
+
+    if should_scope_local_commodity_unavailability_to_place(
+        context.view,
+        context.agent,
+        &blocker_key,
+        context.failed_step,
+    ) {
+        blocker_key.target = None;
+    }
+
+    let recorded = match classification {
+        FailureClassification::Blocker(blocking_fact) => {
+            let expires_tick =
+                context.current_tick + u64::from(blocking_fact_ttl(blocking_fact, cognitive));
+            let (clearing_condition, baseline_snapshot) =
+                derive_clearing_condition(context.view, context.agent, blocking_fact, &blocker_key);
+            blocked_memory.record(Blocker {
+                blocker_key,
+                blocking_fact,
+                diagnostic_context: None,
+                observed_tick: context.current_tick,
+                expires_tick,
+                clearing_condition,
+                baseline_snapshot,
+            });
+            FailureClassification::Blocker(blocking_fact)
+        }
+        FailureClassification::Discrepancy(discrepancy) => {
+            let expires_tick =
+                context.current_tick + u64::from(discrepancy_ttl(discrepancy, cognitive));
+            discrepancy_memory.record(DiscrepancyEntry {
+                blocker_key,
+                discrepancy,
+                observed_tick: context.current_tick,
+                expires_tick,
+                clearing_condition: derive_discrepancy_clearing(
+                    discrepancy,
+                    &blocker_key,
+                    context.execution_failure,
+                ),
+            });
+            FailureClassification::Discrepancy(discrepancy)
+        }
+    };
+    runtime.dirty.insert(DirtySet::REPLAN_SIGNAL);
+    recorded
 }
 
 pub fn discrepancy_for_target_belief_status(
@@ -1732,6 +1750,8 @@ mod tests {
             search_exhaustion_backoff_ticks: CognitiveProfile::default()
                 .search_exhaustion_backoff_ticks,
             partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
+            expectation_tolerance_ticks: CognitiveProfile::default().expectation_tolerance_ticks,
+            guard_min_confidence_ceiling: CognitiveProfile::default().guard_min_confidence_ceiling,
             repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
             learned_opportunity_memory_ticks: CognitiveProfile::default()
                 .learned_opportunity_memory_ticks,
@@ -1793,6 +1813,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(1),
             targets: vec![PlanningEntityRef::Authoritative(counterparty)],
+            target_place: None,
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty,
                 sale_lot: TRADE_SALE_LOT,
@@ -1804,6 +1825,8 @@ mod tests {
             estimated_ticks: 3,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1818,11 +1841,14 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(2),
             targets: vec![PlanningEntityRef::Authoritative(place)],
+            target_place: Some(place),
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 2,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1830,6 +1856,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(3),
             targets: vec![PlanningEntityRef::Authoritative(workstation)],
+            target_place: None,
             payload_override: Some(ActionPayload::Craft(CraftActionPayload {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::Mill,
@@ -1841,6 +1868,8 @@ mod tests {
             estimated_ticks: 4,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1852,6 +1881,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(6),
             targets: Vec::new(),
+            target_place: None,
             payload_override: Some(ActionPayload::DeclareSupport(DeclareSupportActionPayload {
                 office,
                 candidate,
@@ -1860,6 +1890,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: true,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1867,6 +1899,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(4),
             targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: None,
             payload_override: Some(ActionPayload::Combat(CombatActionPayload {
                 target,
                 weapon: worldwake_core::CombatWeaponRef::Unarmed,
@@ -1875,6 +1908,8 @@ mod tests {
             estimated_ticks: 0,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1882,11 +1917,14 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(5),
             targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(9))],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Consume,
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -1995,11 +2033,14 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(7),
             targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::MoveCargo,
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -3107,11 +3148,14 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(5),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Sleep,
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
         let signal = ReplanNeeded {
             agent,

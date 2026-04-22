@@ -1,14 +1,34 @@
 use crate::{
-    MaterializationBindings, PlannedPlan, PlannedStep, PlannerOpKind, authoritative_target,
-    decision_trace::PursuitInvalidationReason, resolve_planning_targets_with,
+    Invalidator, MaterializationBindings, PlannedPlan, PlannedStep, PlannerOpKind, RequiredFact,
+    authoritative_target, decision_trace::PursuitInvalidationReason, resolve_planning_targets_with,
 };
 use std::collections::BTreeSet;
-use worldwake_core::{EntityId, GoalKind, Tick, belief_confidence};
+use worldwake_core::{
+    BeliefClaimKey, EntityBeliefAspect, EntityId, ExpectationKindTag, GoalKind, InvalidatorTag,
+    MismatchDetail, Permille, Tick, belief_confidence,
+};
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, Affordance, RuntimeBeliefView, TargetSpec,
     belief_view::BeliefStatus, evaluate_constraint, evaluate_precondition,
     get_affordances_for_defs, requested_affordance_matches,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RevalidationOutcome {
+    Valid,
+    Invalidated {
+        reason: worldwake_core::PlanInvalidationReason,
+        expectation_kind: Option<ExpectationKindTag>,
+        mismatch_detail: Option<MismatchDetail>,
+    },
+}
+
+impl RevalidationOutcome {
+    #[must_use]
+    pub const fn is_valid(self) -> bool {
+        matches!(self, Self::Valid)
+    }
+}
 
 #[must_use]
 pub fn revalidate_next_step(
@@ -19,18 +39,43 @@ pub fn revalidate_next_step(
     registry: &ActionDefRegistry,
     handlers: &ActionHandlerRegistry,
 ) -> bool {
+    classify_revalidation(view, actor, 0, step, bindings, registry, handlers).is_valid()
+}
+
+#[must_use]
+pub fn classify_revalidation(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    step_index: u16,
+    step: &PlannedStep,
+    bindings: &MaterializationBindings,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+) -> RevalidationOutcome {
+    if let Some(guard) = &step.guard
+        && let Some(invalidator) = check_guard(view, actor, guard)
+    {
+        return RevalidationOutcome::Invalidated {
+            reason: worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index },
+            expectation_kind: guard_expectation_kind(guard, invalidator),
+            mismatch_detail: Some(MismatchDetail::GuardInvalidator(invalidator_tag(
+                invalidator,
+            ))),
+        };
+    }
+
     let Some(def) = registry.get(step.def_id) else {
-        return false;
+        return invalidated_target_gone(step, actor);
     };
     let Some(handler) = handlers.get(def.handler) else {
-        return false;
+        return invalidated_target_gone(step, actor);
     };
     let Some(targets) = resolve_planning_targets_with(&step.targets, |id| bindings.resolve(id))
     else {
-        return false;
+        return invalidated_target_gone(step, actor);
     };
     if exact_target_belief_contradicted(view, actor, &targets, def) {
-        return false;
+        return invalidated_target_gone(step, actor);
     }
     let single_def = BTreeSet::from([step.def_id]);
     let affordance_match = get_affordances_for_defs(view, actor, registry, handlers, &single_def)
@@ -46,9 +91,200 @@ pub fn revalidate_next_step(
                 view,
             )
         });
-    affordance_match
+    if affordance_match
         || revalidate_best_effort_payload_override_step(view, actor, step, &targets, def, handler)
         || revalidate_exact_target_step(view, actor, step, &targets, def, handler)
+    {
+        RevalidationOutcome::Valid
+    } else {
+        invalidated_target_gone(step, actor)
+    }
+}
+
+fn invalidated_target_gone(step: &PlannedStep, actor: EntityId) -> RevalidationOutcome {
+    RevalidationOutcome::Invalidated {
+        reason: worldwake_core::PlanInvalidationReason::TargetGone {
+            target: step.primary_target().unwrap_or(actor),
+        },
+        expectation_kind: None,
+        mismatch_detail: None,
+    }
+}
+
+fn guard_expectation_kind(
+    guard: &crate::PlanGuard,
+    invalidator: Invalidator,
+) -> Option<ExpectationKindTag> {
+    match invalidator {
+        Invalidator::TargetMoved { .. }
+        | Invalidator::CommodityDepleted { .. }
+        | Invalidator::BeliefStatusChange { .. } => Some(ExpectationKindTag::State),
+        Invalidator::NewBlockerRecorded { .. } => {
+            (!guard.required_facts.is_empty()).then_some(ExpectationKindTag::State)
+        }
+    }
+}
+
+const fn invalidator_tag(invalidator: Invalidator) -> InvalidatorTag {
+    match invalidator {
+        Invalidator::BeliefStatusChange { .. } => InvalidatorTag::BeliefStatusChange,
+        Invalidator::TargetMoved { .. } => InvalidatorTag::TargetMoved,
+        Invalidator::CommodityDepleted { .. } => InvalidatorTag::CommodityDepleted,
+        Invalidator::NewBlockerRecorded { .. } => InvalidatorTag::NewBlockerRecorded,
+    }
+}
+
+fn check_guard(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    guard: &crate::PlanGuard,
+) -> Option<Invalidator> {
+    let effective_min_confidence = guard.min_confidence.min(
+        view.cognitive_profile(actor)
+            .unwrap_or_default()
+            .guard_min_confidence_ceiling,
+    );
+
+    for fact in &guard.required_facts {
+        match *fact {
+            RequiredFact::TargetPresent { target, at_place } => {
+                let belief = view.believed_target_location(actor, target);
+                let claim = BeliefClaimKey {
+                    subject: target,
+                    aspect: EntityBeliefAspect::Location,
+                };
+                if belief.value != Some(at_place) {
+                    if let Some(invalidator) = target_moved_invalidator(guard, target) {
+                        return Some(invalidator);
+                    }
+                    return fallback_invalidator(guard);
+                }
+                if belief_status_changed(belief.status, belief.confidence, effective_min_confidence)
+                {
+                    if let Some(invalidator) = belief_status_change_invalidator(guard, claim) {
+                        return Some(invalidator);
+                    }
+                    return fallback_invalidator(guard);
+                }
+            }
+            RequiredFact::CommodityAvailable {
+                place,
+                kind,
+                min_quantity,
+            } => {
+                let belief = view.believed_commodity_stock(actor, place, kind);
+                if belief.value < min_quantity
+                    || belief_status_changed(
+                        belief.status,
+                        belief.confidence,
+                        effective_min_confidence,
+                    )
+                {
+                    if let Some(invalidator) = commodity_depleted_invalidator(guard, place, kind) {
+                        return Some(invalidator);
+                    }
+                    return fallback_invalidator(guard);
+                }
+            }
+            RequiredFact::RouteKnown { from, to } => {
+                if !view.route_exists(from, to) {
+                    return fallback_invalidator(guard);
+                }
+            }
+            RequiredFact::ResourceAccess {
+                resource,
+                agent_holds_permission,
+            } => {
+                if view.can_control(actor, resource) != agent_holds_permission {
+                    return fallback_invalidator(guard);
+                }
+            }
+        }
+    }
+
+    for invalidator in &guard.invalidators {
+        match *invalidator {
+            Invalidator::BeliefStatusChange { claim } => {
+                if claim.aspect == EntityBeliefAspect::Location {
+                    let belief = view.believed_target_location(actor, claim.subject);
+                    if belief_status_changed(
+                        belief.status,
+                        belief.confidence,
+                        effective_min_confidence,
+                    ) {
+                        return Some(*invalidator);
+                    }
+                }
+            }
+            Invalidator::TargetMoved { .. } | Invalidator::CommodityDepleted { .. } => {}
+            Invalidator::NewBlockerRecorded { baseline_tick } => {
+                if view.blocker_memory(actor).is_some_and(|memory| {
+                    memory
+                        .intents
+                        .values()
+                        .any(|blocker| blocker.observed_tick > baseline_tick)
+                }) {
+                    return Some(*invalidator);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn belief_status_changed(
+    status: BeliefStatus,
+    confidence: Permille,
+    effective_min_confidence: Permille,
+) -> bool {
+    matches!(status, BeliefStatus::Stale | BeliefStatus::Contradicted)
+        || confidence < effective_min_confidence
+}
+
+fn target_moved_invalidator(guard: &crate::PlanGuard, target: EntityId) -> Option<Invalidator> {
+    guard.invalidators.iter().copied().find(|invalidator| {
+        matches!(
+            invalidator,
+            Invalidator::TargetMoved {
+                target: invalidator_target,
+            } if *invalidator_target == target
+        )
+    })
+}
+
+fn belief_status_change_invalidator(
+    guard: &crate::PlanGuard,
+    claim: BeliefClaimKey,
+) -> Option<Invalidator> {
+    guard.invalidators.iter().copied().find(|invalidator| {
+        matches!(
+            invalidator,
+            Invalidator::BeliefStatusChange {
+                claim: invalidator_claim,
+            } if *invalidator_claim == claim
+        )
+    })
+}
+
+fn commodity_depleted_invalidator(
+    guard: &crate::PlanGuard,
+    place: EntityId,
+    kind: worldwake_core::CommodityKind,
+) -> Option<Invalidator> {
+    guard.invalidators.iter().copied().find(|invalidator| {
+        matches!(
+            invalidator,
+            Invalidator::CommodityDepleted {
+                place: invalidator_place,
+                kind: invalidator_kind,
+            } if *invalidator_place == place && *invalidator_kind == kind
+        )
+    })
+}
+
+fn fallback_invalidator(guard: &crate::PlanGuard) -> Option<Invalidator> {
+    guard.invalidators.first().copied()
 }
 
 fn exact_target_belief_contradicted(
@@ -246,21 +482,25 @@ pub fn is_pursuit_plan_invalid(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_pursuit_plan_invalid, revalidate_next_step};
+    use super::{
+        RevalidationOutcome, classify_revalidation, is_pursuit_plan_invalid, revalidate_next_step,
+    };
     use crate::decision_trace::PursuitInvalidationReason;
     use crate::{
-        ExpectedMaterialization, HypotheticalEntityId, MaterializationBindings, PlanTerminalKind,
-        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        ExpectedMaterialization, HypotheticalEntityId, Invalidator, MaterializationBindings,
+        PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        RequiredFact,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BelievedEntityState, BodyCostPerTick, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
-        EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, OpportunityAnchor, OpportunityKey, PerceptionSource,
-        Permille, PursuitProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
+        ActionDefId, BeliefClaimKey, BelievedEntityState, BodyCostPerTick, CognitiveProfile,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, ExpectationKindTag, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, InvalidatorTag, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, MismatchDetail, OpportunityAnchor, OpportunityKey, PerceptionSource,
+        Permille, PlanInvalidationReason, PursuitProfile, Quantity, RecipeId, ResourceSource, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
@@ -277,14 +517,18 @@ mod tests {
         kinds: BTreeMap<EntityId, EntityKind>,
         effective_places: BTreeMap<EntityId, EntityId>,
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
+        routes: BTreeSet<(EntityId, EntityId)>,
         adjacent_places: BTreeMap<EntityId, Vec<EntityId>>,
         adjacent_with_ticks: BTreeMap<EntityId, Vec<(EntityId, NonZeroU32)>>,
         lot_commodities: BTreeMap<EntityId, CommodityKind>,
         commodity_quantities: BTreeMap<(EntityId, CommodityKind), Quantity>,
+        believed_commodity_stocks:
+            BTreeMap<(EntityId, EntityId, CommodityKind), BeliefValue<Quantity>>,
         carry_capacities: BTreeMap<EntityId, LoadUnits>,
         entity_loads: BTreeMap<EntityId, LoadUnits>,
         entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
         pursuit_profiles: BTreeMap<EntityId, PursuitProfile>,
+        cognitive_profiles: BTreeMap<EntityId, CognitiveProfile>,
         believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
     }
 
@@ -342,6 +586,9 @@ mod tests {
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             Some(MetabolismProfile::default())
         }
+        fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
+            self.cognitive_profiles.get(&agent).copied()
+        }
     }
 
     impl SpatialBeliefView for TestBeliefView {
@@ -364,8 +611,8 @@ mod tests {
                 .unwrap_or_default()
         }
 
-        fn route_exists(&self, _from: EntityId, _to: EntityId) -> bool {
-            false
+        fn route_exists(&self, from: EntityId, to: EntityId) -> bool {
+            self.routes.contains(&(from, to))
         }
 
         fn in_transit_state(&self, _entity: EntityId) -> Option<InTransitOnEdge> {
@@ -548,6 +795,18 @@ mod tests {
         fn known_recipes(&self, _agent: EntityId) -> Vec<RecipeId> {
             Vec::new()
         }
+
+        fn believed_commodity_stock(
+            &self,
+            agent: EntityId,
+            place: EntityId,
+            kind: CommodityKind,
+        ) -> BeliefValue<Quantity> {
+            self.believed_commodity_stocks
+                .get(&(agent, place, kind))
+                .copied()
+                .unwrap_or_else(|| worldwake_sim::belief_view::stale_default_value(Quantity(0)))
+        }
     }
 
     impl worldwake_sim::FacilityBeliefView for TestBeliefView {
@@ -665,6 +924,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -702,6 +963,8 @@ mod tests {
             }),
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -765,6 +1028,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -821,6 +1086,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -878,6 +1145,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -886,11 +1155,14 @@ mod tests {
         PlannedStep {
             def_id,
             targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: Some(target),
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -904,6 +1176,54 @@ mod tests {
             acquired_tick: Tick(4),
             claimed_event_tick: Some(Tick(4)),
             status,
+        }
+    }
+
+    fn target_location_belief_with_confidence(
+        place: Option<EntityId>,
+        confidence: Permille,
+        status: BeliefStatus,
+    ) -> BeliefValue<Option<EntityId>> {
+        BeliefValue {
+            value: place,
+            confidence,
+            acquired_tick: Tick(4),
+            claimed_event_tick: Some(Tick(4)),
+            status,
+        }
+    }
+
+    fn stock_belief(
+        quantity: Quantity,
+        confidence: Permille,
+        status: BeliefStatus,
+    ) -> BeliefValue<Quantity> {
+        BeliefValue {
+            value: quantity,
+            confidence,
+            acquired_tick: Tick(4),
+            claimed_event_tick: Some(Tick(4)),
+            status,
+        }
+    }
+
+    fn guarded_step(
+        def_id: ActionDefId,
+        target: EntityId,
+        place: EntityId,
+        guard: PlanGuard,
+    ) -> PlannedStep {
+        PlannedStep {
+            def_id,
+            targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: Some(place),
+            payload_override: None,
+            op_kind: PlannerOpKind::Trade,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: Some(guard),
+            expectations: Vec::new(),
         }
     }
 
@@ -1020,11 +1340,14 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(0),
             targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(3))],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         let (registry, handlers) = build_registry();
@@ -1055,6 +1378,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(0),
             targets: vec![PlanningEntityRef::Hypothetical(hypothetical)],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
@@ -1063,6 +1387,8 @@ mod tests {
                 tag: worldwake_sim::MaterializationTag::SplitOffLot,
                 hypothetical_id: hypothetical,
             }],
+            guard: None,
+            expectations: Vec::new(),
         };
         let mut bindings = MaterializationBindings::new();
         bindings.bind(hypothetical, destination);
@@ -1204,6 +1530,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(0),
             targets: vec![PlanningEntityRef::Authoritative(accused)],
+            target_place: None,
             payload_override: Some(ActionPayload::Accuse(worldwake_sim::AccuseActionPayload {
                 violation_id: worldwake_core::ViolationId(7),
             })),
@@ -1211,6 +1538,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         let (registry, handlers) = build_specific_entity_payload_registry();
@@ -1237,6 +1566,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(0),
             targets: vec![PlanningEntityRef::Authoritative(place)],
+            target_place: None,
             payload_override: Some(ActionPayload::PostBounty(
                 worldwake_sim::PostBountyActionPayload {
                     posting_place: place,
@@ -1255,6 +1585,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         };
 
         let (registry, handlers) = build_explicit_payload_registry();
@@ -1266,6 +1598,347 @@ mod tests {
             &registry,
             &handlers,
         ));
+    }
+
+    #[test]
+    fn classify_revalidation_fires_target_moved_on_believed_location_divergence() {
+        let actor = entity(1);
+        let merchant = entity(2);
+        let market = entity(10);
+        let elsewhere = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, merchant, market, elsewhere]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(merchant, EntityKind::Agent);
+        view.kinds.insert(market, EntityKind::Place);
+        view.kinds.insert(elsewhere, EntityKind::Place);
+        view.effective_places.insert(actor, market);
+        view.believed_target_locations.insert(
+            (actor, merchant),
+            target_location_belief(Some(elsewhere), BeliefStatus::Certain),
+        );
+
+        let (registry, handlers) = build_specific_entity_payload_registry();
+        let outcome = classify_revalidation(
+            &view,
+            actor,
+            4,
+            &guarded_step(
+                ActionDefId(0),
+                merchant,
+                market,
+                PlanGuard {
+                    required_facts: vec![RequiredFact::TargetPresent {
+                        target: merchant,
+                        at_place: market,
+                    }],
+                    min_confidence: pm(500),
+                    invalidators: vec![
+                        Invalidator::TargetMoved { target: merchant },
+                        Invalidator::BeliefStatusChange {
+                            claim: BeliefClaimKey {
+                                subject: merchant,
+                                aspect: worldwake_core::EntityBeliefAspect::Location,
+                            },
+                        },
+                    ],
+                },
+            ),
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        );
+
+        assert_eq!(
+            outcome,
+            RevalidationOutcome::Invalidated {
+                reason: PlanInvalidationReason::ExpectationMismatch { step_index: 4 },
+                expectation_kind: Some(ExpectationKindTag::State),
+                mismatch_detail: Some(MismatchDetail::GuardInvalidator(
+                    InvalidatorTag::TargetMoved,
+                )),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_revalidation_fires_on_low_confidence() {
+        let actor = entity(1);
+        let merchant = entity(2);
+        let market = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, merchant, market]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(merchant, EntityKind::Agent);
+        view.kinds.insert(market, EntityKind::Place);
+        view.effective_places.insert(actor, market);
+        view.believed_target_locations.insert(
+            (actor, merchant),
+            target_location_belief_with_confidence(Some(market), pm(500), BeliefStatus::Probable),
+        );
+
+        let (registry, handlers) = build_specific_entity_payload_registry();
+        let outcome = classify_revalidation(
+            &view,
+            actor,
+            1,
+            &guarded_step(
+                ActionDefId(0),
+                merchant,
+                market,
+                PlanGuard {
+                    required_facts: vec![RequiredFact::TargetPresent {
+                        target: merchant,
+                        at_place: market,
+                    }],
+                    min_confidence: pm(700),
+                    invalidators: vec![Invalidator::BeliefStatusChange {
+                        claim: BeliefClaimKey {
+                            subject: merchant,
+                            aspect: worldwake_core::EntityBeliefAspect::Location,
+                        },
+                    }],
+                },
+            ),
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        );
+
+        assert_eq!(
+            outcome,
+            RevalidationOutcome::Invalidated {
+                reason: PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+                expectation_kind: Some(ExpectationKindTag::State),
+                mismatch_detail: Some(MismatchDetail::GuardInvalidator(
+                    InvalidatorTag::BeliefStatusChange,
+                )),
+            }
+        );
+    }
+
+    #[test]
+    fn classify_revalidation_ignores_irrelevant_drift() {
+        let actor = entity(1);
+        let merchant = entity(2);
+        let market = entity(10);
+        let unrelated_place = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive
+            .extend([actor, merchant, market, unrelated_place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(merchant, EntityKind::Agent);
+        view.kinds.insert(market, EntityKind::Place);
+        view.kinds.insert(unrelated_place, EntityKind::Place);
+        view.effective_places.insert(actor, market);
+        view.believed_target_locations.insert(
+            (actor, merchant),
+            target_location_belief(Some(market), BeliefStatus::Certain),
+        );
+        view.believed_commodity_stocks.insert(
+            (actor, unrelated_place, CommodityKind::Bread),
+            stock_belief(Quantity(0), pm(1000), BeliefStatus::Certain),
+        );
+
+        let (registry, handlers) = build_specific_entity_payload_registry();
+        let outcome = classify_revalidation(
+            &view,
+            actor,
+            0,
+            &guarded_step(
+                ActionDefId(0),
+                merchant,
+                market,
+                PlanGuard {
+                    required_facts: vec![RequiredFact::TargetPresent {
+                        target: merchant,
+                        at_place: market,
+                    }],
+                    min_confidence: pm(500),
+                    invalidators: vec![Invalidator::TargetMoved { target: merchant }],
+                },
+            ),
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        );
+
+        assert_eq!(outcome, RevalidationOutcome::Valid);
+    }
+
+    #[test]
+    fn classify_revalidation_respects_profile_confidence_ceiling() {
+        let actor = entity(1);
+        let merchant = entity(2);
+        let market = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, merchant, market]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(merchant, EntityKind::Agent);
+        view.kinds.insert(market, EntityKind::Place);
+        view.effective_places.insert(actor, market);
+        view.believed_target_locations.insert(
+            (actor, merchant),
+            target_location_belief_with_confidence(Some(market), pm(500), BeliefStatus::Probable),
+        );
+        view.cognitive_profiles.insert(
+            actor,
+            CognitiveProfile {
+                guard_min_confidence_ceiling: pm(400),
+                ..CognitiveProfile::default()
+            },
+        );
+
+        let (registry, handlers) = build_specific_entity_payload_registry();
+        let outcome = classify_revalidation(
+            &view,
+            actor,
+            3,
+            &guarded_step(
+                ActionDefId(0),
+                merchant,
+                market,
+                PlanGuard {
+                    required_facts: vec![RequiredFact::TargetPresent {
+                        target: merchant,
+                        at_place: market,
+                    }],
+                    min_confidence: pm(700),
+                    invalidators: vec![Invalidator::BeliefStatusChange {
+                        claim: BeliefClaimKey {
+                            subject: merchant,
+                            aspect: worldwake_core::EntityBeliefAspect::Location,
+                        },
+                    }],
+                },
+            ),
+            &MaterializationBindings::new(),
+            &registry,
+            &handlers,
+        );
+
+        assert_eq!(outcome, RevalidationOutcome::Valid);
+    }
+
+    #[test]
+    fn classify_revalidation_route_known_reads_route_exists() {
+        let actor = entity(1);
+        let from = entity(10);
+        let to = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(actor);
+        view.kinds.insert(from, EntityKind::Place);
+        view.kinds.insert(to, EntityKind::Place);
+        view.effective_places.insert(actor, from);
+        view.adjacent_places.insert(from, vec![to]);
+        view.adjacent_with_ticks
+            .insert(from, vec![(to, NonZeroU32::new(1).unwrap())]);
+
+        let (registry, handlers) = build_registry();
+        let step = PlannedStep {
+            def_id: ActionDefId(0),
+            targets: vec![PlanningEntityRef::Authoritative(to)],
+            target_place: Some(to),
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: Some(PlanGuard {
+                required_facts: vec![RequiredFact::RouteKnown { from, to }],
+                min_confidence: pm(500),
+                invalidators: vec![Invalidator::NewBlockerRecorded {
+                    baseline_tick: Tick(0),
+                }],
+            }),
+            expectations: Vec::new(),
+        };
+
+        assert_eq!(
+            classify_revalidation(
+                &view,
+                actor,
+                2,
+                &step,
+                &MaterializationBindings::new(),
+                &registry,
+                &handlers,
+            ),
+            RevalidationOutcome::Invalidated {
+                reason: PlanInvalidationReason::ExpectationMismatch { step_index: 2 },
+                expectation_kind: Some(ExpectationKindTag::State),
+                mismatch_detail: Some(MismatchDetail::GuardInvalidator(
+                    InvalidatorTag::NewBlockerRecorded,
+                )),
+            }
+        );
+
+        view.routes.insert((from, to));
+        assert_eq!(
+            classify_revalidation(
+                &view,
+                actor,
+                2,
+                &step,
+                &MaterializationBindings::new(),
+                &registry,
+                &handlers,
+            ),
+            RevalidationOutcome::Valid
+        );
+    }
+
+    #[test]
+    fn revalidate_next_step_delegates_to_classify_revalidation() {
+        let actor = entity(1);
+        let merchant = entity(2);
+        let market = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, merchant, market]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(merchant, EntityKind::Agent);
+        view.kinds.insert(market, EntityKind::Place);
+        view.effective_places.insert(actor, market);
+        view.believed_target_locations.insert(
+            (actor, merchant),
+            target_location_belief(Some(market), BeliefStatus::Certain),
+        );
+
+        let (registry, handlers) = build_specific_entity_payload_registry();
+        let step = guarded_step(
+            ActionDefId(0),
+            merchant,
+            market,
+            PlanGuard {
+                required_facts: vec![RequiredFact::TargetPresent {
+                    target: merchant,
+                    at_place: market,
+                }],
+                min_confidence: pm(500),
+                invalidators: vec![Invalidator::TargetMoved { target: merchant }],
+            },
+        );
+
+        assert_eq!(
+            revalidate_next_step(
+                &view,
+                actor,
+                &step,
+                &MaterializationBindings::new(),
+                &registry,
+                &handlers,
+            ),
+            classify_revalidation(
+                &view,
+                actor,
+                0,
+                &step,
+                &MaterializationBindings::new(),
+                &registry,
+                &handlers,
+            )
+            .is_valid()
+        );
     }
 
     // ── Pursuit plan validity tests ──────────────────────────────────
@@ -1281,20 +1954,26 @@ mod tests {
                 PlannedStep {
                     def_id: ActionDefId(10),
                     targets: vec![PlanningEntityRef::Authoritative(destination)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: PlannerOpKind::Travel,
                     estimated_ticks: 3,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 },
                 PlannedStep {
                     def_id: ActionDefId(11),
                     targets: vec![PlanningEntityRef::Authoritative(target)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: PlannerOpKind::Attack,
                     estimated_ticks: 0,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 },
             ],
             PlanTerminalKind::GoalSatisfied,
@@ -1483,11 +2162,14 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Sleep,
                 estimated_ticks: 5,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );

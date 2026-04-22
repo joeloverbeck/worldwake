@@ -28,9 +28,9 @@ use worldwake_core::{
     ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
-    EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey, GoalKind,
-    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey,
+    GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
     OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
     ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
@@ -3892,6 +3892,11 @@ fn emit_search_candidates(
         if record.owner != ctx.agent || record.state != ExpectationState::Overdue {
             continue;
         }
+        if matches!(record.basis, ExpectationBasis::PlanStepCompletion { .. }) {
+            // Plan-step expectation mismatches route through plan discrepancy
+            // handling, not the social missing-response candidate path.
+            continue;
+        }
 
         strongest_by_subject
             .entry(record.subject)
@@ -4052,6 +4057,7 @@ fn expectation_basis_weight(record: ExpectationRecord) -> u8 {
         worldwake_core::ExpectationBasis::DeliveryCommitment { .. } => 2,
         worldwake_core::ExpectationBasis::RoutineReturn
         | worldwake_core::ExpectationBasis::SocialPromise => 1,
+        worldwake_core::ExpectationBasis::PlanStepCompletion { .. } => 0,
     }
 }
 
@@ -5137,6 +5143,9 @@ fn local_unpossessed_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) {
             continue;
         }
+        if view.seller_for_sale_lot(entity).is_some() {
+            continue;
+        }
         if view.direct_container(entity).is_some() || view.direct_possessor(entity).is_some() {
             continue;
         }
@@ -5541,11 +5550,11 @@ mod tests {
         DemandObservationReason, Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile,
         DiversificationProfile, DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag,
         EntityId, EntityKind, EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis,
-        ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
-        GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
+        ExpectationId, ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
+        ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
         OpportunityAnchor, OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
         PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
         Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
@@ -7670,6 +7679,73 @@ mod tests {
                 commodity: CommodityKind::Apple,
             }
         ));
+    }
+
+    #[test]
+    fn remote_listed_sale_lot_does_not_emit_loose_lot_acquire_evidence() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let home = entity(10);
+        let market = entity(11);
+        let listed_lot = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller, home, market, listed_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(home, EntityKind::Place);
+        view.entity_kinds.insert(market, EntityKind::Place);
+        view.entity_kinds.insert(listed_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, market);
+        view.effective_places.insert(listed_lot, market);
+        view.entities_at.insert(home, vec![agent]);
+        view.entities_at.insert(market, vec![seller, listed_lot]);
+        view.adjacent_places.insert(home, vec![market]);
+        view.adjacent_places.insert(market, vec![home]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.merchandise_profiles.insert(
+            seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
+                home_facility: Some(market),
+            },
+        );
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(3));
+        view.lot_commodities
+            .insert(listed_lot, CommodityKind::Bread);
+        view.listed_lots
+            .insert((market, CommodityKind::Bread), vec![listed_lot]);
+        view.lot_sellers.insert(listed_lot, seller);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        let acquire_goal = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.key
+                    == GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                    })
+                    && candidate.anchor == worldwake_core::OpportunityAnchor::Place(market)
+            })
+            .expect("remote listed sale lot should emit an acquire goal");
+
+        assert_eq!(acquire_goal.evidence_places, BTreeSet::from([market]));
+        assert_eq!(acquire_goal.evidence_entities, BTreeSet::from([seller]));
+        assert!(
+            !acquire_goal.evidence_entities.contains(&listed_lot),
+            "listed sale lots must stay seller-backed evidence, not loose-cargo evidence"
+        );
     }
 
     #[test]
@@ -15355,6 +15431,55 @@ mod tests {
                 expectation_id: Some(ExpectationId(1)),
             }
         ));
+    }
+
+    #[test]
+    fn plan_step_completion_expectations_do_not_emit_missing_response_goals() {
+        let agent = entity(1);
+        let subject = entity(2);
+        let home = entity(10);
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        view.entities_at.insert(home, vec![agent]);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.expectation_stores.insert(
+            agent,
+            expectation_store([overdue_expectation(
+                1,
+                agent,
+                subject,
+                home,
+                4,
+                ExpectationBasis::PlanStepCompletion {
+                    step_index: 3,
+                    kind_tag: ExpectationKindTag::State,
+                },
+            )]),
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(10),
+            6,
+            false,
+        );
+
+        assert!(!result.candidates.iter().any(|candidate| {
+            matches!(
+                candidate.key.kind,
+                GoalKind::SearchForMissing { subject: goal_subject, .. }
+                    | GoalKind::ReportMissing { subject: goal_subject, .. }
+                    if goal_subject == subject
+            )
+        }));
     }
 
     fn belief_at_place(place: EntityId, tick: Tick) -> BelievedEntityState {

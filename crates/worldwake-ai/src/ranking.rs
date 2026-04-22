@@ -1133,6 +1133,7 @@ fn expectation_basis_weight(basis: ExpectationBasis) -> u8 {
         ExpectationBasis::DutyAssignment { .. } | ExpectationBasis::EscortObligation { .. } => 3,
         ExpectationBasis::DeliveryCommitment { .. } => 2,
         ExpectationBasis::RoutineReturn | ExpectationBasis::SocialPromise => 1,
+        ExpectationBasis::PlanStepCompletion { .. } => 0, // plan-step expectations are agent-internal; no social-obligation weight
     }
 }
 

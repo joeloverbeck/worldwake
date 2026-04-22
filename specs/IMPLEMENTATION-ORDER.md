@@ -413,24 +413,24 @@ Follow-on to Phase 8. Deferred from the Phase 8 scope because these specs depend
 ### Dependency Graph
 
 ```text
-S114 (hard deps on S109, S110, S113)
+S114 ✅ archived (hard deps on S109, S110, S113)
   │
   └── S115 (hard deps on S110, S112, S114; soft dep on S123)
 ```
 
 ### Active Execution Steps
 
-**Wave 1**:
-- **S114**: Plan Step Guards and Expectation Monitoring — annotate `PlannedStep` with `PlanGuard` (required facts, min confidence, invalidators) and `PlanExpectation` (immediate / state / informed / regression); new `expectation_monitor_system` SystemFn; guard breaches emit `ExpectationMismatch` events and typed discrepancies.
+**Completed in Wave 1**:
+- **S114**: ✅ COMPLETED — archived at [archive/specs/S114-plan-step-guards.md](/home/joeloverbeck/projects/worldwake/archive/specs/S114-plan-step-guards.md). Landed the staged plan-step guard and expectation-monitoring wave across the S114 ticket family: `PlanGuard` / `PlanExpectation`, `ExpectationBasis::PlanStepCompletion`, widened `ExpectationMismatchPayload`, declarative `ActionDef` templates, AI-side mismatch emission, and the truthful paired proof surface for merchant-departure guard breach (golden branch-selection/local trade binding plus focused `agent_tick` mismatch/discrepancy proof).
 
-**Wave 2** (after Wave 1):
+**Remaining active work**:
 - **S115**: Agenda Manager with Goal Lifecycle — `AgendaState` with `committed`/`pending`/`suspended` entries, each with origin, freshness, revival trigger, kill condition; rename `GroundedGoal` → `GoalOffer`, `RankedGoal` → `AgendaEntry`; new `agenda_tick_system` SystemFn; margin-based commit (S74) reads the agenda manager. Now also owns the *feasibility-rejection lifecycle classifier* (D4A) that decodes S112's `RejectedBeforeSearch { reason }` into `Satisfied` / `InfeasibleUntil { trigger }` / `Dead` lifecycle states, replacing the S112-era `search_order` special case that kept rejected committed opportunities in the search queue.
   - soft dep on S123: if S123 lands first, S115's tick_agenda consumes `OrderedRanked<'_>` directly; otherwise S115 includes the migration in its own ticket set.
 
 ### Phase 9 Gate
 
 - [ ] Both specs reassessed post-Phase-7/8 and ticket-decomposed
-- [ ] S114 implemented: guard breaches short-circuit revalidation before affordance matching; `ExpectationMismatch` events appear in event log
+- [x] S114 implemented: guard breaches short-circuit revalidation before affordance matching; `ExpectationMismatch` events appear in event log
 - [ ] S115 implemented: committed goals persist across ticks deterministically; pending/suspended surfaced in observer output
 - [ ] S115 D4A classifier lands: the S112 cargo-satisfaction assertion and `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal` both pass via the lifecycle classifier, not via ad-hoc `build_candidate_plans` special cases
 - [ ] Deterministic replay of scenarios produces identical agenda state transitions

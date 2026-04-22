@@ -423,6 +423,8 @@ fn attack_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -480,6 +482,8 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -523,6 +527,8 @@ fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -577,6 +583,8 @@ fn bury_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -613,6 +621,8 @@ fn queue_for_corpse_use_action_def(id: ActionDefId, handler: ActionHandlerId) ->
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -853,6 +863,8 @@ fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -889,6 +901,8 @@ fn queue_for_care_target_action_def(id: ActionDefId, handler: ActionHandlerId) -
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 

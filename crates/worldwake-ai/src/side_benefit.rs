@@ -162,11 +162,14 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(1),
             targets: vec![PlanningEntityRef::Authoritative(place)],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 3,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -176,11 +179,14 @@ mod tests {
             targets: vec![PlanningEntityRef::Hypothetical(
                 crate::HypotheticalEntityId(7),
             )],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 3,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 

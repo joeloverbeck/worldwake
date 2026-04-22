@@ -120,6 +120,8 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         payload: ActionPayload::None,
         handler: relieve_wilderness_handler,
         binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
+        guard_template: None,
+        expectation_template: vec![],
     });
 }
 
@@ -175,6 +177,8 @@ fn register_def(
             }
             other => panic!("unexpected needs action {other}"),
         },
+        guard_template: None,
+        expectation_template: vec![],
     })
 }
 

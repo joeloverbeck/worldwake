@@ -13,6 +13,9 @@ use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goa
 use crate::feasibility_probe;
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
+use crate::plan_step_expectations::{
+    expire_plan_step_expectations, persist_expectation_store_update, write_plan_step_expectations,
+};
 use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
 use crate::{
     AcceptedRepairProvenance, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
@@ -1094,16 +1097,20 @@ fn classify_accepted_repair(
 
 #[allow(clippy::too_many_arguments)]
 fn adopt_selected_plan(
+    world: &mut worldwake_core::World,
+    event_log: &mut EventLog,
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
-    view: &dyn RuntimeBeliefView,
     agent: EntityId,
     ranked_candidates: &OrderedRanked<'_>,
     selected_plan: PlannedPlan,
     recipe_registry: &RecipeRegistry,
     tick: Tick,
+    cognitive: &CognitiveProfile,
+    prepared_frame: Option<IntentionFrame>,
+    current_place: EntityId,
 ) {
     runtime.materialization_bindings.clear();
     facility_intents.intents.clear();
@@ -1113,10 +1120,19 @@ fn adopt_selected_plan(
         goal_key: selected_plan.goal,
         adopted_at: tick,
     });
-    *jc = update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
-    if let Some(frame) = jc.as_mut() {
-        frame.assumptions = populate_assumptions(frame, agent, view);
-    }
+    *jc = prepared_frame;
+    let _ = persist_expectation_store_update(world, event_log, agent, tick, |store| {
+        let expired = expire_plan_step_expectations(store);
+        let wrote = write_plan_step_expectations(
+            store,
+            agent,
+            current_place,
+            &selected_plan,
+            tick,
+            cognitive.expectation_tolerance_ticks,
+        );
+        expired || wrote
+    });
     runtime.current_plan = Some(selected_plan);
     runtime.current_step_index = 0;
     runtime.step_in_flight = false;
@@ -1128,12 +1144,17 @@ fn adopt_selected_plan(
         .map(|candidate| candidate.priority_class);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn clear_current_plan(
+    world: &mut worldwake_core::World,
+    event_log: &mut EventLog,
     runtime: &mut AgentDecisionRuntime,
     active_goal: &mut Option<ActiveGoal>,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     ranked_candidates: &OrderedRanked<'_>,
+    agent: EntityId,
+    tick: Tick,
 ) {
     if jc.is_some() {
         runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::LostPlan);
@@ -1142,6 +1163,9 @@ fn clear_current_plan(
     runtime.materialization_bindings.clear();
     facility_intents.intents.clear();
     *active_goal = None;
+    let _ = persist_expectation_store_update(world, event_log, agent, tick, |store| {
+        expire_plan_step_expectations(store)
+    });
     runtime.current_plan = None;
     runtime.current_step_index = 0;
     runtime.step_in_flight = false;
@@ -1153,7 +1177,7 @@ fn clear_current_plan(
 
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
 pub(super) fn plan_and_validate_next_step(
-    world: &worldwake_core::World,
+    world: &mut worldwake_core::World,
     event_log: &mut EventLog,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
@@ -1177,8 +1201,6 @@ pub(super) fn plan_and_validate_next_step(
 ) -> (Option<PlannedStep>, Option<bool>) {
     let planning_start = Instant::now();
     let result = (|| {
-        // A second read view covers plan selection and step validation after the active-action fork.
-        let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
         let active_goal_key = active_goal.as_ref().map(|ag| ag.goal_key);
         let committed_opportunity = runtime
             .current_plan
@@ -1187,6 +1209,9 @@ pub(super) fn plan_and_validate_next_step(
             .filter(|opportunity| Some(opportunity.goal_key) == active_goal_key);
         let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
         if should_plan {
+            // This read view is scoped to planning so world mutation can happen
+            // afterwards at the plan-adoption / plan-clear seam.
+            let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
             if let Some(step) = try_continue_snapshot_plan(
                 &view,
                 runtime,
@@ -1266,30 +1291,46 @@ pub(super) fn plan_and_validate_next_step(
                     &selected_plan,
                     cognitive.decision_history_alternatives,
                 );
+                let mut prepared_frame =
+                    update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+                if let Some(frame) = prepared_frame.as_mut() {
+                    frame.assumptions = populate_assumptions(frame, agent, &view);
+                }
+                let current_place = SpatialBeliefView::effective_place(&view, agent)
+                    .expect("plan adoption expects actor to have an effective place");
                 adopt_selected_plan(
+                    world,
+                    event_log,
                     runtime,
                     active_goal,
                     jc,
                     facility_intents,
-                    &view,
                     agent,
                     ranked_candidates,
                     selected_plan,
                     recipe_registry,
                     tick,
+                    cognitive,
+                    prepared_frame,
+                    current_place,
                 );
             } else {
                 clear_current_plan(
+                    world,
+                    event_log,
                     runtime,
                     active_goal,
                     jc,
                     facility_intents,
                     ranked_candidates,
+                    agent,
+                    tick,
                 );
             }
             runtime.dirty = DirtySet::default();
         }
 
+        let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
         let next_step = current_step(runtime).cloned();
         let next_step_valid = next_step.as_ref().map(|step| {
             revalidate_next_step(
@@ -1316,7 +1357,7 @@ pub(super) fn plan_and_validate_next_step(
     clippy::trivially_copy_pass_by_ref
 )]
 pub(super) fn plan_and_validate_next_step_traced(
-    world: &worldwake_core::World,
+    world: &mut worldwake_core::World,
     event_log: &mut EventLog,
     scheduler: &Scheduler,
     runtime: &mut AgentDecisionRuntime,
@@ -1368,7 +1409,6 @@ pub(super) fn plan_and_validate_next_step_traced(
     }
 
     // Traced path: inline the logic to capture intermediate results.
-    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
     let mut plan_search_trace = PlanSearchTrace {
         attempts: Vec::new(),
         same_goal_trace: None,
@@ -1388,6 +1428,9 @@ pub(super) fn plan_and_validate_next_step_traced(
 
     let should_plan = !runtime.dirty.is_empty() || has_pending_budget_retry(runtime, tick);
     if should_plan {
+        // This read view is scoped to planning so world mutation can happen
+        // afterwards at the plan-adoption / plan-clear seam.
+        let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
         if runtime.dirty.is_snapshot_only()
             && let Some(plan_for_trace) = runtime.current_plan.as_ref()
         {
@@ -1595,43 +1638,46 @@ pub(super) fn plan_and_validate_next_step_traced(
                 });
             }
 
-            runtime.materialization_bindings.clear();
-            facility_intents.intents.clear();
-            *active_goal = Some(ActiveGoal {
-                goal_key: selected_plan.goal,
-                adopted_at: tick,
-            });
-            *jc = update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
-            if let Some(frame) = jc.as_mut() {
+            let mut prepared_frame =
+                update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+            if let Some(frame) = prepared_frame.as_mut() {
                 frame.assumptions = populate_assumptions(frame, agent, &view);
             }
-            runtime.current_plan = Some(selected_plan);
-            runtime.current_step_index = 0;
-            runtime.step_in_flight = false;
-            runtime.last_priority_class = ranked_candidates
-                .iter()
-                .find(|candidate| {
-                    Some(candidate.grounded.key) == active_goal.as_ref().map(|ag| ag.goal_key)
-                })
-                .map(|candidate| candidate.priority_class);
+            let current_place = SpatialBeliefView::effective_place(&view, agent)
+                .expect("plan adoption expects actor to have an effective place");
+            adopt_selected_plan(
+                world,
+                event_log,
+                runtime,
+                active_goal,
+                jc,
+                facility_intents,
+                agent,
+                ranked_candidates,
+                selected_plan,
+                recipe_registry,
+                tick,
+                cognitive,
+                prepared_frame,
+                current_place,
+            );
         } else {
-            if jc.is_some() {
-                runtime.last_frame_clear_reason = Some(worldwake_core::FrameClearReason::LostPlan);
-            }
-            *jc = None;
-            runtime.materialization_bindings.clear();
-            facility_intents.intents.clear();
-            *active_goal = None;
-            runtime.current_plan = None;
-            runtime.current_step_index = 0;
-            runtime.step_in_flight = false;
-            runtime.last_priority_class = ranked_candidates
-                .first()
-                .map(|candidate| candidate.priority_class);
+            clear_current_plan(
+                world,
+                event_log,
+                runtime,
+                active_goal,
+                jc,
+                facility_intents,
+                ranked_candidates,
+                agent,
+                tick,
+            );
         }
         runtime.dirty = DirtySet::default();
     }
 
+    let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
     let next_step = current_step(runtime).cloned();
     let next_step_valid = next_step.as_ref().map(|step| {
         revalidate_next_step(
@@ -1834,6 +1880,8 @@ mod tests {
             search_exhaustion_backoff_ticks: CognitiveProfile::default()
                 .search_exhaustion_backoff_ticks,
             partial_drift_backoff_ticks: CognitiveProfile::default().partial_drift_backoff_ticks,
+            expectation_tolerance_ticks: CognitiveProfile::default().expectation_tolerance_ticks,
+            guard_min_confidence_ceiling: CognitiveProfile::default().guard_min_confidence_ceiling,
             repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
             learned_opportunity_memory_ticks: CognitiveProfile::default()
                 .learned_opportunity_memory_ticks,
@@ -2044,6 +2092,7 @@ mod tests {
         };
         let (defs, _handlers, recipes) = build_full_registries();
         let scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut event_log = EventLog::new();
         let mut runtime = AgentDecisionRuntime::default();
         let mut active_goal = None;
         let mut frame = None;
@@ -2064,27 +2113,48 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(1),
                 targets: vec![PlanningEntityRef::Authoritative(orchard)],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );
-        let view = super::runtime_belief_view(agent, &world, &scheduler, &defs, &recipes);
+        let (prepared_frame, current_place) = {
+            let view = super::runtime_belief_view(agent, &world, &scheduler, &defs, &recipes);
+            let mut prepared_frame = super::update_frame_for_adopted_plan(
+                frame.as_ref(),
+                &selected_plan,
+                Tick(5),
+                &mut runtime,
+            );
+            if let Some(frame) = prepared_frame.as_mut() {
+                frame.assumptions = super::populate_assumptions(frame, agent, &view);
+            }
+            let current_place = worldwake_sim::SpatialBeliefView::effective_place(&view, agent)
+                .expect("adopted test agent should have an effective place");
+            (prepared_frame, current_place)
+        };
 
         super::adopt_selected_plan(
+            &mut world,
+            &mut event_log,
             &mut runtime,
             &mut active_goal,
             &mut frame,
             &mut facility_intents,
-            &view,
             agent,
             &ordered(&ranked_candidates),
             selected_plan,
             &recipes,
             Tick(5),
+            &CognitiveProfile::default(),
+            prepared_frame,
+            current_place,
         );
 
         let frame = frame.expect("adopting a plan should create an intention frame");
@@ -2102,11 +2172,14 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(1),
             targets: vec![PlanningEntityRef::Authoritative(destination)],
+            target_place: Some(destination),
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -2114,6 +2187,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(2),
             targets: vec![PlanningEntityRef::Authoritative(counterparty)],
+            target_place: None,
             payload_override: Some(ActionPayload::Trade(worldwake_sim::TradeActionPayload {
                 counterparty,
                 sale_lot: entity(600),
@@ -2125,6 +2199,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -2132,6 +2208,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(3),
             targets: vec![PlanningEntityRef::Authoritative(entity(700))],
+            target_place: Some(entity(700)),
             payload_override: Some(ActionPayload::Craft(worldwake_sim::CraftActionPayload {
                 recipe_id,
                 required_workstation_tag: WorkstationTag::Mill,
@@ -2143,6 +2220,8 @@ mod tests {
             estimated_ticks: 1,
             is_materialization_barrier: false,
             expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
         }
     }
 
@@ -2385,11 +2464,14 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Sleep,
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );
@@ -2593,11 +2675,14 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(7),
                 targets: Vec::new(),
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::StockManagement,
                 estimated_ticks: 1,
                 is_materialization_barrier: false,
                 expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
             }],
             PlanTerminalKind::GoalSatisfied,
         );
@@ -2881,20 +2966,26 @@ mod tests {
                 PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(market)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 3,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 },
                 PlannedStep {
                     def_id: ActionDefId(2),
                     targets: vec![crate::PlanningEntityRef::Authoritative(orchard)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 },
             ],
             PlanTerminalKind::GoalSatisfied,
@@ -2969,6 +3060,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         action_defs.register(ActionDef {
             id: ActionDefId(1),
@@ -2988,17 +3081,22 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: BindingStrictness::FungibleEquivalentCommodity,
+            guard_template: None,
+            expectation_template: vec![],
         });
 
         let exact = super::summarize_step(
             &PlannedStep {
                 def_id: ActionDefId(0),
                 targets: vec![],
+                target_place: None,
                 payload_override: None,
                 op_kind: crate::PlannerOpKind::Heal,
                 estimated_ticks: 3,
                 is_materialization_barrier: false,
                 expected_materializations: vec![],
+                guard: None,
+                expectations: Vec::new(),
             },
             &action_defs,
         );
@@ -3006,11 +3104,14 @@ mod tests {
             &PlannedStep {
                 def_id: ActionDefId(1),
                 targets: vec![],
+                target_place: None,
                 payload_override: None,
                 op_kind: crate::PlannerOpKind::Consume,
                 estimated_ticks: 2,
                 is_materialization_barrier: false,
                 expected_materializations: vec![],
+                guard: None,
+                expectations: Vec::new(),
             },
             &action_defs,
         );
@@ -3525,11 +3626,14 @@ mod tests {
                 vec![PlannedStep {
                     def_id: ActionDefId(9),
                     targets: vec![crate::PlanningEntityRef::Authoritative(remote_destination)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 }],
                 PlanTerminalKind::GoalSatisfied,
             ))),
@@ -3684,7 +3788,7 @@ mod tests {
 
         let mut event_log = EventLog::new();
         let (_, _, _, plan_search_trace, _, _, _) = super::plan_and_validate_next_step_traced(
-            &world,
+            &mut world,
             &mut event_log,
             &scheduler,
             &mut runtime,

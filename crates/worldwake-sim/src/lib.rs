@@ -53,7 +53,11 @@ pub mod tick_input_producer;
 pub mod tick_step;
 pub mod trade_valuation;
 
-pub use action_def::{ActionDef, BindingStrictness};
+pub use action_def::{
+    ActionDef, BindingStrictness, ClaimSource, EntitySource, ExpectationTemplateSpec,
+    GuardTemplateSpec, InvalidatorSpec, KindSource, ObservationPredicateSpec, PlaceSource,
+    QuantitySource, RequiredFactSpec, StatePredicateSpec,
+};
 pub use action_def_registry::ActionDefRegistry;
 pub use action_duration::ActionDuration;
 pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};

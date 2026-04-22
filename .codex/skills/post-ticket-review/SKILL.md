@@ -32,6 +32,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
    - Compare the ticket's completion notes against the full landed local touched-file set, not just the original planned file list. Include factual compile/lint fallout or local test-fixture updates in `Outcome` when they were part of the real implementation handoff.
 3. Fix factual, unambiguous handoff issues directly: missing/incomplete `Outcome`, inaccurate verification notes, archival mechanics per [docs/archival-workflow.md](../../../docs/archival-workflow.md).
    - If the completed ticket is untracked, do not rely on ordinary `git diff` output for ticket-body validation. Read the live ticket file directly before archival, then confirm archival state with `git status` plus a direct existence check on the original path after the move.
+   - If a repo-local archival helper you would normally use is missing in the current checkout, fall back to the manual move-and-verify workflow in [docs/archival-workflow.md](../../../docs/archival-workflow.md) and mention that fallback explicitly in the report.
 4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
    - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
    - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up.
@@ -40,7 +41,9 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 6. Do not revise the ticket's problem statement, scope, or acceptance criteria except for factual completion notes required by archival mechanics.
 7. If archival readiness is ambiguous, apply the 1-3-1 rule.
 8. Archive if ready. If a prior review pass blocked archival, treat this pass as the authoritative handoff step only after remaining in-scope implementation has landed.
-9. After moving the ticket, inspect `git status` for both the archived path and the original active path. Record whether archival preserved tracked state or left the archive file untracked, and mention that explicitly in the report.
+9. After moving the ticket, inspect `git status` for both the archived path and the original active path. Record which post-archive state occurred, and mention it explicitly in the report:
+   - tracked rename / move into the archive path
+   - tracked deletion at the active path plus untracked archive file
 
 ### 3. Establish the review surface
 

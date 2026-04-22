@@ -4,6 +4,17 @@ How to classify a ticket's shape before running the full workflow, and which fas
 
 Before running the full workflow, classify the ticket:
 
+## Canonical writer / allocator integrity quick path
+
+When the ticket's core invariant is that one store, helper, allocator, or writer must become the canonical owner of IDs, counters, or another serialized write contract:
+
+1. Sweep every cited write site before coding and classify each as `production writer`, `same-crate test helper`, `fixture/sample payload`, or `already inert`.
+2. Correct the ticket immediately if its drafted production-scope claim collapses test helpers or fixtures into live runtime ownership.
+3. Land the owner-side helper or allocator first in the canonical crate/module, including stale-state repair when the persisted counter or serialized write contract can already drift on the live branch.
+4. Migrate the real production writer next, then migrate any helper-only sites that should use the same path for consistency or proof honesty.
+5. Add focused proof for fresh allocation/write advancement, stale-state repair if applicable, and serialization/round-trip preservation when the counter or write contract persists across saves or component state.
+6. Close out the ticket with the truthful ownership split: which sites were production, which were helper-only, and which helper migrations landed as consistency fallout rather than as newly discovered runtime ownership.
+
 ## Shared field/type migration quick path
 
 When the ticket migrates a shared field, enum payload, or other cross-crate type surface:

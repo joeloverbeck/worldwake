@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 36;
+pub const SAVE_FORMAT_VERSION: u32 = 40;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -796,6 +796,8 @@ mod tests {
                     goal_key: trade_goal,
                     step_index: 1,
                     expected_materializations: vec![MaterializationTag::SplitOffLot],
+                    expectation_kind: None,
+                    mismatch_detail: None,
                 }),
             ),
             (

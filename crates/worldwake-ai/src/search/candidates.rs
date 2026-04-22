@@ -9,9 +9,9 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{ActionDefId, BlockerMemory, ContentionStatus, EntityId, GoalKind, Tick};
 use worldwake_sim::{
-    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, FacilityBeliefView,
-    InventoryBeliefView, QueueForFacilityUsePayload, RecipeRegistry, SpatialBeliefView,
-    get_affordances_for_defs,
+    ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, EconomicBeliefView,
+    FacilityBeliefView, InventoryBeliefView, QueueForFacilityUsePayload, RecipeRegistry,
+    SpatialBeliefView, get_affordances_for_defs,
 };
 
 use super::SearchNode;
@@ -392,6 +392,12 @@ pub(super) fn search_candidates_with_expansion_trace(
             .key
             .kind
             .candidate_is_available(&node.state, semantics.op_kind)
+            || move_cargo_unavailable_for_seller_backed_sale_lot(
+                goal,
+                &candidate,
+                semantics.op_kind,
+                &node.state,
+            )
         {
             update_root_candidate_outcome(
                 &mut root_candidates,
@@ -446,6 +452,33 @@ pub(super) fn search_candidates_with_expansion_trace(
         filtered.push(candidate);
     }
     filtered
+}
+
+fn move_cargo_unavailable_for_seller_backed_sale_lot(
+    goal: &GroundedGoal,
+    candidate: &SearchCandidate,
+    op_kind: PlannerOpKind,
+    state: &PlanningState<'_>,
+) -> bool {
+    if op_kind != PlannerOpKind::MoveCargo {
+        return false;
+    }
+    if !matches!(
+        goal.key.kind,
+        GoalKind::AcquireCommodity { .. }
+            | GoalKind::ConsumeOwnedCommodity { .. }
+            | GoalKind::RestockCommodity { .. }
+            | GoalKind::TreatWounds { .. }
+    ) {
+        return false;
+    }
+
+    let Some(target) = candidate.authoritative_targets.first().copied() else {
+        return false;
+    };
+    state
+        .seller_for_sale_lot(target)
+        .is_some_and(|seller| seller != state.snapshot().actor())
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -1,7 +1,7 @@
 use worldwake_core::{
     ActionInterruptReasonTag, ActiveGoal, BlockerMemory, CauseRef, CognitiveProfile,
     ContentionIntents, DiscrepancyMemory, EntityId, FrameState, IntentionFrame, Permille,
-    ReplanReason, Tick,
+    PlanInvalidationReason, ReplanReason, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionHandlerRegistry, InterruptReason, Interruptibility, PerAgentBeliefView,
@@ -16,6 +16,9 @@ use super::{
 };
 use crate::DirtySet;
 use crate::failure_handling::{ExecutionFailure, FailureClassification};
+use crate::plan_step_expectations::{
+    expire_plan_step_expectations, persist_expectation_store_update,
+};
 use crate::{
     AgentDecisionRuntime, DecisionContext, InterruptDecision, PendingRepairContext,
     PlanFailureContext, PlanTerminalKind, PlannedStep, classify_frame_plan_relation,
@@ -281,11 +284,15 @@ pub(super) fn handle_current_step_failure(
     step: &PlannedStep,
     execution_failure: Option<ExecutionFailure<'_>>,
     belief_discrepancy: Option<worldwake_core::Discrepancy>,
+    plan_invalidation_reason: Option<PlanInvalidationReason>,
 ) -> Result<ReplanReason, TickInputError> {
+    let tick = ctx.tick;
+    let _ = persist_expectation_store_update(ctx.world, ctx.event_log, agent, tick, |store| {
+        expire_plan_step_expectations(store)
+    })?;
     let world = &mut *ctx.world;
     let event_log = &mut *ctx.event_log;
     let cognitive = ctx.cognitive;
-    let tick = ctx.tick;
     let view = PerAgentBeliefView::from_world(agent, world);
     let goal_key = active_goal.unwrap_or_else(|| {
         runtime
@@ -321,7 +328,8 @@ pub(super) fn handle_current_step_failure(
         facility_intents,
         cognitive,
     );
-    let replan_reason = map_replan_reason(execution_failure, classification);
+    let replan_reason =
+        resolve_replan_reason(plan_invalidation_reason, execution_failure, classification);
     runtime.step_in_flight = false;
     runtime.current_step_index = 0;
     persist_blocked_memory(
@@ -341,6 +349,17 @@ pub(super) fn handle_current_step_failure(
         discrepancy_memory,
     )?;
     Ok(replan_reason)
+}
+
+fn resolve_replan_reason(
+    plan_invalidation_reason: Option<PlanInvalidationReason>,
+    execution_failure: Option<ExecutionFailure<'_>>,
+    classification: FailureClassification,
+) -> ReplanReason {
+    plan_invalidation_reason.map_or_else(
+        || map_replan_reason(execution_failure, classification),
+        |reason| ReplanReason::PlanInvalidated { reason },
+    )
 }
 
 fn map_replan_reason(
@@ -382,12 +401,12 @@ fn map_interrupt_reason(reason: InterruptReason) -> ActionInterruptReasonTag {
 
 #[cfg(test)]
 mod tests {
-    use super::{map_replan_reason, should_build_interrupt_plans};
+    use super::{map_replan_reason, resolve_replan_reason, should_build_interrupt_plans};
     use crate::failure_handling::{ExecutionFailure, FailureClassification};
     use crate::{AgentDecisionRuntime, PlannedPlan, PlannedStep};
     use worldwake_core::{
         ActionDefId, ActiveGoal, EntityId, GoalKey, GoalKind, IntentionFrame, OpportunityAnchor,
-        ReplanReason, Tick,
+        PlanInvalidationReason, ReplanReason, Tick,
     };
     use worldwake_sim::{
         AbortReason, ActionInstanceId, ActionStartFailure, ActionStartFailureReason,
@@ -418,11 +437,14 @@ mod tests {
                 vec![PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(7))],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 3,
                     is_materialization_barrier: false,
                     expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
                 }],
                 crate::PlanTerminalKind::ProgressBarrier,
             )),
@@ -505,5 +527,23 @@ mod tests {
         );
 
         assert_eq!(reason, ReplanReason::ActionStartFailed);
+    }
+
+    #[test]
+    fn explicit_plan_invalidation_reason_overrides_failure_classification() {
+        let start_failure = sample_start_failure();
+
+        let reason = resolve_replan_reason(
+            Some(PlanInvalidationReason::ExpectationMismatch { step_index: 2 }),
+            Some(ExecutionFailure::Start(&start_failure)),
+            FailureClassification::Blocker(worldwake_core::BlockingFact::NoKnownPath),
+        );
+
+        assert_eq!(
+            reason,
+            ReplanReason::PlanInvalidated {
+                reason: PlanInvalidationReason::ExpectationMismatch { step_index: 2 },
+            }
+        );
     }
 }

@@ -15,9 +15,10 @@ use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView,
-    Interruptibility, PayloadEntityRole, PerAgentBeliefView, Precondition, RecipeRegistry,
-    RuntimeBeliefView, StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload,
-    TradeRejectionReason, commodity_opportunity_score, evaluate_trade_bundle,
+    GuardTemplateSpec, Interruptibility, InvalidatorSpec, PayloadEntityRole, PerAgentBeliefView,
+    Precondition, RecipeRegistry, RequiredFactSpec, RuntimeBeliefView, StaffMarketPayload,
+    TargetSpec, TradeAcceptance, TradeActionPayload, TradeRejectionReason,
+    commodity_opportunity_score, evaluate_trade_bundle,
 };
 
 pub fn register_trade_action(
@@ -73,6 +74,15 @@ fn trade_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: Some(GuardTemplateSpec {
+            required_facts: vec![RequiredFactSpec::TargetPresent],
+            min_confidence: worldwake_core::Permille::new(500).unwrap(),
+            invalidators: vec![
+                InvalidatorSpec::TargetMoved,
+                InvalidatorSpec::BeliefStatusChange,
+            ],
+        }),
+        expectation_template: vec![],
     }
 }
 
@@ -1358,6 +1368,8 @@ fn staff_market_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -1606,8 +1618,9 @@ mod tests {
     use worldwake_sim::{
         ActionAbortRequestReason, ActionDefRegistry, ActionError, ActionExecutionAuthority,
         ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionState, ActionStatus,
-        Affordance, DeterministicRng, ExternalAbortReason, PayloadEntityRole, PerAgentBeliefView,
-        TickOutcome, TradeActionPayload, abort_action, get_affordances, start_action, tick_action,
+        Affordance, DeterministicRng, ExternalAbortReason, InvalidatorSpec, PayloadEntityRole,
+        PerAgentBeliefView, RequiredFactSpec, TickOutcome, TradeActionPayload, abort_action,
+        get_affordances, start_action, tick_action,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -1937,6 +1950,29 @@ mod tests {
         assert_eq!(apple_count, 2);
         assert_eq!(bread_count, 1);
         assert_ne!(seller_a, seller_b);
+    }
+
+    #[test]
+    fn register_trade_action_populates_guard_template() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let def_id = register_trade_action(&mut defs, &mut handlers);
+        let def = defs.get(def_id).expect("trade action should be registered");
+
+        let guard = def
+            .guard_template
+            .as_ref()
+            .expect("trade action should have a guard template");
+
+        assert_eq!(guard.required_facts, vec![RequiredFactSpec::TargetPresent]);
+        assert_eq!(
+            guard.invalidators,
+            vec![
+                InvalidatorSpec::TargetMoved,
+                InvalidatorSpec::BeliefStatusChange,
+            ]
+        );
+        assert_eq!(guard.min_confidence, pm(500));
     }
 
     #[test]
