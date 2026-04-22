@@ -332,6 +332,9 @@ fn revalidate_best_effort_payload_override_step(
     {
         return false;
     }
+    if !(handler.affordance_payloads)(def, actor, targets, view).is_empty() {
+        return false;
+    }
 
     (handler.payload_override_is_valid)(def, actor, targets, payload_override, view)
 }
@@ -1151,6 +1154,83 @@ mod tests {
         (registry, handlers)
     }
 
+    fn trade_payload_override_is_valid(
+        def: &ActionDef,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+        _view: &dyn RuntimeBeliefView,
+    ) -> bool {
+        if def.name != "trade:test" {
+            return false;
+        }
+        let Some(payload) = payload.as_trade() else {
+            return false;
+        };
+        let Some(counterparty) = targets.first().copied() else {
+            return false;
+        };
+        payload.counterparty == counterparty
+            && actor != counterparty
+            && payload.offered_commodity == CommodityKind::Coin
+            && payload.requested_quantity == Quantity(1)
+            && (Quantity(1)..=Quantity(4)).contains(&payload.offered_quantity)
+    }
+
+    fn build_trade_payload_variant_registry() -> (ActionDefRegistry, ActionHandlerRegistry) {
+        let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(
+            ActionHandler::new(noop_start, noop_tick, noop_commit, noop_abort)
+                .with_affordance_payloads(|_, actor, targets, _| {
+                    let Some(counterparty) = targets.first().copied() else {
+                        return Vec::new();
+                    };
+                    if actor == counterparty {
+                        return Vec::new();
+                    }
+                    vec![ActionPayload::Trade(worldwake_sim::TradeActionPayload {
+                        counterparty,
+                        sale_lot: entity(42),
+                        offered_commodity: CommodityKind::Coin,
+                        offered_quantity: Quantity(3),
+                        requested_quantity: Quantity(1),
+                    })]
+                })
+                .with_payload_override_validator(trade_payload_override_is_valid),
+        );
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "trade:test".to_string(),
+            domain: worldwake_core::ActionDomain::Trade,
+            actor_constraints: vec![Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: EntityKind::Agent,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        });
+        (registry, handlers)
+    }
+
     fn sample_step(def_id: ActionDefId, target: EntityId) -> PlannedStep {
         PlannedStep {
             def_id,
@@ -1598,6 +1678,52 @@ mod tests {
             &registry,
             &handlers,
         ));
+    }
+
+    #[test]
+    fn explicit_trade_payload_variants_require_exact_affordance_match() {
+        let actor = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, seller, place]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(seller, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(seller, place);
+
+        let step = PlannedStep {
+            def_id: ActionDefId(0),
+            targets: vec![PlanningEntityRef::Authoritative(seller)],
+            target_place: None,
+            payload_override: Some(ActionPayload::Trade(worldwake_sim::TradeActionPayload {
+                counterparty: seller,
+                sale_lot: entity(42),
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
+            })),
+            op_kind: PlannerOpKind::Trade,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
+        };
+
+        let (registry, handlers) = build_trade_payload_variant_registry();
+        assert!(
+            !revalidate_next_step(
+                &view,
+                actor,
+                &step,
+                &MaterializationBindings::new(),
+                &registry,
+                &handlers,
+            ),
+            "stale trade payloads should not survive revalidation when live affordances expose a different concrete bundle"
+        );
     }
 
     #[test]

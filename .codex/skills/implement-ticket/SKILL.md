@@ -7,12 +7,12 @@ description: "Implement or reassess a Worldwake ticket. Use when asked to work f
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. If that doc does not cover the exact planner boundary under audit, record the gap and fall back to the landed implementation/spec/ticket chain instead of treating the contract as unknowable. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase. Do not stop at intermediate reassessment or partial fallout; continue until the ticket is completed, fully verified, or blocked by a user decision that requires 1-3-1.
 
-When several reassessment branches seem applicable at once, use this priority order before coding: prove the live branch first; if the drafted premise is false, rewrite the ticket/spec immediately; if the live branch still supports a narrower complete slice inside the ticket's stated domain, finish that slice and create/update a follow-up ticket for the disproved remainder; use 1-3-1 only when the remaining boundary change is architecturally ambiguous, materially expands scope, or needs a user decision. `references/mismatch-handling.md` is supplemental guidance for that flow and does not override the explicit mixed-outcome and narrowing rules in this skill.
+When several reassessment branches seem applicable at once, use this priority order before coding: prove the live branch first; if the drafted premise is false, rewrite the ticket/spec immediately; if the live branch still supports a narrower complete slice inside the ticket's stated domain, finish that slice and create/update a follow-up ticket for the disproved remainder; use 1-3-1 only when the remaining boundary change is architecturally ambiguous, materially expands scope, or needs a user decision. Follow the canonical mixed-outcome branch in `Mixed outcome: narrow fix landed, broader golden still false` below. `references/mismatch-handling.md` is supplemental guidance for that flow and does not override the explicit mixed-outcome and narrowing rules in this skill.
 
 ## Top 5 Rules
 
 - Reassess against the live branch first. Do not implement the draft literally until the ticket/spec matches current code.
-- If a narrow production fix lands but the drafted broader golden/E2E story is still false, stop immediately, rewrite the active ticket to the newly proved boundary, and split the remainder to a follow-up ticket before adding more end-to-end proof.
+- If a narrow production fix lands but the drafted broader golden/E2E story is still false, follow `Mixed outcome: narrow fix landed, broader golden still false` below.
 - Prefer the strongest existing honest proof seam. Extend an existing focused unit/runtime/golden test instead of creating the drafted new file mechanically.
 - Keep Cargo sequential, confirm exact selectors with `-- --list`, and record only truthful verification boundaries.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
@@ -32,11 +32,22 @@ When several reassessment branches seem applicable at once, use this priority or
 - Snapshot the worktree with `git status --short` and classify unrelated dirty paths before coding.
 - Keep Cargo sequential for the entire workflow, including selector-discovery `-- --list` probes.
 - For golden or mixed proof tickets, identify the strongest existing owning golden/test suite before accepting any drafted new-file claim.
-- If a narrow production fix lands but the drafted broader golden/E2E story is still false, stop immediately, rewrite the active ticket to the newly proved boundary, and split the remainder before adding more end-to-end proof.
+- If a narrow production fix lands but the drafted broader golden/E2E story is still false, follow `Mixed outcome: narrow fix landed, broader golden still false` below.
 - Correct ticket/spec drift before coding when reassessment changes the truthful ownership or proof seam.
 - Close out the ticket file itself with the real scope and verification results; do not leave the correction only in conversation.
 
 Cargo commands are an explicit exception to the repo's general parallel-read/tool-call habit: run Cargo sequentially throughout this workflow, including `cargo test ... -- --list`, focused tests, compile-only passes, broad crate/workspace tests, and clippy runs. In Codex, do not use `multi_tool_use.parallel` for any Cargo command, including `-- --list` probes. Do not launch multiple Cargo commands in parallel unless the user explicitly asks for that tradeoff.
+
+## Mixed outcome: narrow fix landed, broader golden still false
+
+Use this branch whenever focused live proof confirms a real narrow production fix inside the ticket's domain, but the drafted higher-level golden/E2E ending still does not hold afterward.
+
+1. Land the narrow production fix at the strongest honest owning seam.
+2. Stop before adding more exploratory end-to-end proof edits for the drafted broader ending.
+3. Rewrite the active ticket/spec immediately to the newly proved boundary.
+4. Record the exact still-false higher-level premise and the focused evidence that disproved it.
+5. Create or update the follow-up ticket that owns the deferred broader seam before broader verification and closeout.
+6. During closeout, record the split explicitly: landed narrow boundary, focused and broadened commands, concrete reason the broader premise stayed false, and the follow-up owner.
 
 ## Workflow
 
@@ -97,7 +108,7 @@ Load `references/reassessment-checks.md`. For planner-root, snapshot-completenes
 For belief-barrier or snapshot-admission tickets, explicitly classify each planner-visible carrier under audit as `authoritative local`, `belief-backed remote`, `explicit evidence`, or `out of scope` before changing code, so remote omniscience can be removed without accidentally stripping lawful local visibility.
 For golden E2E tickets, explicitly decide whether reassessment disproved the ticket's invariant or only disproved the drafted proof seam. If the invariant still holds but live replanning, control flow, or timing removes the authored autonomous observation window, rewrite the ticket/spec to the strongest honest proof seam before coding instead of treating the whole contract as false.
 If reassessment first shows the drafted carrier is wrong and then shows the scenario never reaches that failure boundary at all, do a second-pass rewrite from “wrong carrier” to “wrong branch”: rename the ticket/test to the first actually reachable live contract and update acceptance wording before implementing.
-When reassessment or the first focused proof shows a mixed outcome — a narrow production bug inside the ticket's stated domain is real and fixable, but the drafted higher-level golden/E2E premise still does not hold afterward — keep those two conclusions separate. Land the narrow production fix, rewrite the active ticket/spec to that truthful boundary before broader verification, and create or update a follow-up ticket for the still-false higher-level proof seam instead of forcing the current ticket to overclaim end-to-end success.
+When reassessment or the first focused proof shows a mixed outcome — a narrow production bug inside the ticket's stated domain is real and fixable, but the drafted higher-level golden/E2E premise still does not hold afterward — keep those two conclusions separate and follow `Mixed outcome: narrow fix landed, broader golden still false` above.
 When a first-pass ticket/spec rewrite itself later proves too strong under focused live evidence, do not treat that rewritten boundary as sacred. If the live branch still supports a narrower complete slice that honestly resolves the real contradiction the ticket owns, rewrite the active ticket/spec again to that narrower boundary and finish it rather than forcing the stronger rewrite through or leaving the ticket artificially incomplete.
 
 When a ticket or spec uses generic domain language such as “affordance presence”, “local support”, or “relevant local state”, bind that phrase to the exact live carrier before coding. If the branch uses concrete place tags, workstation markers, item lots, resource sources, or another existing convention rather than a dedicated helper/type named in the prose, record that narrowing and implement against the live carrier instead of inventing a new abstraction by default.
@@ -136,7 +147,7 @@ If a golden-driven ticket proves that the scenario contract itself is underspeci
 When a golden reassessment renames a scenario test or changes its authored contract, sweep any tracked `docs/generated/golden-*` inventory, index, or detail artifacts that mirror that scenario and update both test-name references and scenario prose before closeout.
 
 If reassessment exposes a separate architectural concern that must be tracked but is not honestly owned by the current ticket, create or update a dedicated follow-up ticket before proceeding, and rewrite the active ticket so that concern is referenced explicitly as an external dependency or out-of-scope blocker rather than left implicit.
-If a narrow production fix lands and a broader drafted golden/E2E ending is still false afterward, do not keep extending the current ticket in search of a synthetic passing end state. Rewrite the active ticket immediately to the proved boundary, record the exact still-failing higher-level premise, and create or update the follow-up ticket before broader verification and closeout.
+If a narrow production fix lands and a broader drafted golden/E2E ending is still false afterward, do not keep extending the current ticket in search of a synthetic passing end state; follow `Mixed outcome: narrow fix landed, broader golden still false` above.
 If an investigation/disposition ticket concludes that the live contradiction is already owned by an existing sibling ticket, close the current ticket by recording that conclusion and updating the sibling ticket's scope/deps factually instead of creating a duplicate follow-up.
 When the current ticket resolves a blocker that had previously been split out from an active sibling, immediately update that sibling ticket's `Deps`, verification contract, and blocker wording so it no longer reads as still blocked on the now-completed concern.
 When that follow-up path requires creating a new ticket, read `tickets/README.md` and `tickets/_TEMPLATE.md` first and write the new ticket in full repo-ready form instead of treating it as an informal reassessment note.
@@ -224,7 +235,7 @@ If reassessment or verification narrowed the owned seam, introduced a private he
 When a golden/observer ticket closes as fixture-only after upstream contract verification, record that shape explicitly in closeout: name the lower-layer proof that kept production ownership honest, list any suspected production/emitter files as `no-change cited files`, and state that the landed diff was fixture truthing rather than a code-path fix.
 If broadened verification proves the landed contract differs from the drafted invariant or top-level ticket summary, update the ticket's header fields and any now-false acceptance or invariant wording as part of closeout instead of recording the difference only under `Deviations`.
 If implementation added a focused proof that the drafted `Test Plan` omitted but the ticket's own invariants or verification layers required, update the ticket's `Acceptance Criteria`, `New/Modified Tests`, and command wording together during closeout so the final handoff reflects the real proof surface coherently.
-When the ticket lands a truthful narrow fix but a drafted broader golden/E2E premise remains disproved, make that split explicit in closeout. Record the landed production boundary, list the exact focused and broadened commands that proved only that boundary, state the concrete reason the higher-level premise still failed on the live branch, and name the follow-up ticket/spec item that now owns the deferred proof seam.
+When the ticket lands a truthful narrow fix but a drafted broader golden/E2E premise remains disproved, make that split explicit in closeout by following `Mixed outcome: narrow fix landed, broader golden still false` above.
 
 ### 8. Close the loop on the ticket
 

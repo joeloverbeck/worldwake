@@ -34,7 +34,7 @@ use worldwake_core::{
 };
 use worldwake_sim::{
     ActionHandlerRegistry, ActionPayload, GoalBeliefView, RecipeRegistry, RuntimeBeliefView,
-    Scheduler, SpatialBeliefView,
+    Scheduler, SpatialBeliefView, get_affordances_for_defs,
 };
 
 use super::{
@@ -1156,6 +1156,69 @@ fn repair_route_signature(plan: &PlannedPlan) -> Vec<EntityId> {
         .collect()
 }
 
+fn refresh_resume_payload_from_live_affordance(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    step: &mut PlannedStep,
+    bindings: &crate::MaterializationBindings,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+) {
+    let Some(def) = action_defs.get(step.def_id) else {
+        return;
+    };
+    let Some(handler) = action_handlers.get(def.handler) else {
+        return;
+    };
+    if !matches!(def.payload, ActionPayload::None) || step.payload_override.is_none() {
+        return;
+    }
+    let Some(targets) =
+        crate::resolve_planning_targets_with(&step.targets, |id| bindings.resolve(id))
+    else {
+        return;
+    };
+    if (handler.affordance_payloads)(def, actor, &targets, view).is_empty() {
+        return;
+    }
+
+    let single_def = BTreeSet::from([step.def_id]);
+    let mut matching_affordances =
+        get_affordances_for_defs(view, actor, action_defs, action_handlers, &single_def)
+            .into_iter()
+            .filter(|affordance| affordance.bound_targets == targets);
+    let Some(rebound_payload) = matching_affordances
+        .next()
+        .and_then(|affordance| affordance.payload_override)
+    else {
+        return;
+    };
+    if matching_affordances.next().is_some() {
+        return;
+    }
+    step.payload_override = Some(rebound_payload);
+}
+
+fn refresh_resume_plan_payloads_from_live_affordances(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    plan: &mut PlannedPlan,
+    bindings: &crate::MaterializationBindings,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+) {
+    for step in &mut plan.steps {
+        refresh_resume_payload_from_live_affordance(
+            view,
+            actor,
+            step,
+            bindings,
+            action_defs,
+            action_handlers,
+        );
+    }
+}
+
 fn classify_accepted_repair(
     runtime: &AgentDecisionRuntime,
     selected_plan: &PlannedPlan,
@@ -1236,6 +1299,10 @@ fn resume_pending_repair_plan(
     runtime: &mut AgentDecisionRuntime,
     agenda_state: &AgendaState,
     ranked_candidates: &OrderedRanked<'_>,
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
 ) -> bool {
     let Some(committed) = agenda_state.committed.as_ref() else {
         return false;
@@ -1253,7 +1320,16 @@ fn resume_pending_repair_plan(
         return false;
     }
 
-    runtime.current_plan = Some(pending.failed_plan.clone());
+    let mut resumed_plan = pending.failed_plan.clone();
+    refresh_resume_plan_payloads_from_live_affordances(
+        view,
+        agent,
+        &mut resumed_plan,
+        &runtime.materialization_bindings,
+        action_defs,
+        action_handlers,
+    );
+    runtime.current_plan = Some(resumed_plan);
     runtime.current_step_index = usize::from(pending.failed_step_index);
     runtime.step_in_flight = false;
     runtime.accepted_repair = None;
@@ -1511,7 +1587,15 @@ pub(super) fn plan_and_validate_next_step(
                         current_place,
                     );
                 } else {
-                    if !resume_pending_repair_plan(runtime, agenda_state, ranked_candidates) {
+                    if !resume_pending_repair_plan(
+                        runtime,
+                        agenda_state,
+                        ranked_candidates,
+                        &view,
+                        agent,
+                        action_defs,
+                        action_handlers,
+                    ) {
                         clear_current_plan(
                             world,
                             event_log,
@@ -1893,7 +1977,15 @@ pub(super) fn plan_and_validate_next_step_traced(
                     current_place,
                 );
             } else {
-                if !resume_pending_repair_plan(runtime, agenda_state, ranked_candidates) {
+                if !resume_pending_repair_plan(
+                    runtime,
+                    agenda_state,
+                    ranked_candidates,
+                    &view,
+                    agent,
+                    action_defs,
+                    action_handlers,
+                ) {
                     clear_current_plan(
                         world,
                         event_log,
@@ -2044,9 +2136,11 @@ mod tests {
         build_prototype_world,
     };
     use worldwake_sim::{
-        ActionDef, ActionDefRegistry, ActionHandlerId, ActionHandlerRegistry, ActionPayload,
-        BindingStrictness, DurationExpr, Interruptibility, PerAgentBeliefView, RecipeDefinition,
-        RecipeRegistry, Scheduler, SystemManifest,
+        ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
+        ActionHandlerId, ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState,
+        BindingStrictness, CommitOutcome, DeterministicRng, DurationExpr, Interruptibility,
+        PerAgentBeliefView, Precondition, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+        Scheduler, SystemManifest, TargetSpec,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -2316,6 +2410,131 @@ mod tests {
         let recipes = RecipeRegistry::new();
         let registries = build_full_action_registries(&recipes).unwrap();
         (registries.defs, registries.handlers, recipes)
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_start(
+        _def: &ActionDef,
+        _instance: &mut worldwake_sim::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<Option<ActionState>, ActionError> {
+        Ok(None)
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_tick(
+        _def: &ActionDef,
+        _instance: &mut worldwake_sim::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<ActionProgress, ActionError> {
+        Ok(ActionProgress::Complete)
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_commit(
+        _def: &ActionDef,
+        _instance: &worldwake_sim::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
+        _event_log: &EventLog,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<CommitOutcome, ActionError> {
+        Ok(CommitOutcome::empty())
+    }
+
+    #[allow(clippy::unnecessary_wraps)]
+    fn noop_abort(
+        _def: &ActionDef,
+        _instance: &worldwake_sim::ActionInstance,
+        _context: &ActionExecutionContext<'_>,
+        _reason: &worldwake_sim::AbortReason,
+        _event_log: &EventLog,
+        _rng: &mut DeterministicRng,
+        _txn: &mut WorldTxn<'_>,
+    ) -> Result<(), ActionError> {
+        Ok(())
+    }
+
+    fn resume_trade_payload_override_is_valid(
+        def: &ActionDef,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+        _view: &dyn RuntimeBeliefView,
+    ) -> bool {
+        if def.name != "trade:resume-test" {
+            return false;
+        }
+        let Some(payload) = payload.as_trade() else {
+            return false;
+        };
+        let Some(counterparty) = targets.first().copied() else {
+            return false;
+        };
+        payload.counterparty == counterparty
+            && actor != counterparty
+            && payload.sale_lot == entity(600)
+            && payload.offered_commodity == CommodityKind::Coin
+            && payload.requested_quantity == Quantity(1)
+            && (Quantity(1)..=Quantity(4)).contains(&payload.offered_quantity)
+    }
+
+    fn build_resume_trade_registry() -> (ActionDefRegistry, ActionHandlerRegistry) {
+        let mut registry = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        handlers.register(
+            ActionHandler::new(noop_start, noop_tick, noop_commit, noop_abort)
+                .with_affordance_payloads(|_, actor, targets, _| {
+                    let Some(counterparty) = targets.first().copied() else {
+                        return Vec::new();
+                    };
+                    if actor == counterparty {
+                        return Vec::new();
+                    }
+                    vec![ActionPayload::Trade(worldwake_sim::TradeActionPayload {
+                        counterparty,
+                        sale_lot: entity(600),
+                        offered_commodity: CommodityKind::Coin,
+                        offered_quantity: Quantity(3),
+                        requested_quantity: Quantity(1),
+                    })]
+                })
+                .with_payload_override_validator(resume_trade_payload_override_is_valid),
+        );
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "trade:resume-test".to_string(),
+            domain: worldwake_core::ActionDomain::Trade,
+            actor_constraints: vec![worldwake_sim::Constraint::ActorAlive],
+            targets: vec![TargetSpec::EntityAtActorPlace {
+                kind: worldwake_core::EntityKind::Agent,
+            }],
+            preconditions: vec![
+                Precondition::TargetExists(0),
+                Precondition::TargetKind {
+                    target_index: 0,
+                    kind: worldwake_core::EntityKind::Agent,
+                },
+            ],
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        });
+        (registry, handlers)
     }
 
     #[test]
@@ -2739,18 +2958,45 @@ mod tests {
     #[test]
     fn resume_pending_repair_plan_restores_failed_trade_plan_when_counterparty_trigger_revives() {
         let market = entity(603);
-        let seller = entity(604);
+        let mut world = World::new(cargo_topology(entity(602), market)).unwrap();
+        let (agent, seller) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Buyer", ControlSource::Ai).unwrap();
+            let seller = txn.create_agent("Seller", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, market).unwrap();
+            txn.set_ground_location(seller, market).unwrap();
+            commit_txn(txn);
+            (agent, seller)
+        };
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
         });
+        let failed_trade_step = PlannedStep {
+            def_id: ActionDefId(0),
+            targets: vec![PlanningEntityRef::Authoritative(seller)],
+            target_place: None,
+            payload_override: Some(ActionPayload::Trade(worldwake_sim::TradeActionPayload {
+                counterparty: seller,
+                sale_lot: entity(600),
+                offered_commodity: CommodityKind::Coin,
+                offered_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
+            })),
+            op_kind: PlannerOpKind::Trade,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: None,
+            expectations: Vec::new(),
+        };
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
                 goal_key: goal,
                 anchor: OpportunityAnchor::Place(market),
             },
             goal,
-            vec![trade_step(seller)],
+            vec![failed_trade_step],
             PlanTerminalKind::GoalSatisfied,
         );
         let mut runtime = AgentDecisionRuntime {
@@ -2784,13 +3030,30 @@ mod tests {
             BTreeSet::from([seller]),
             BTreeSet::from([market]),
         ))];
+        let (defs, handlers) = build_resume_trade_registry();
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let recipes = RecipeRegistry::new();
+        let view = super::runtime_belief_view(agent, &world, &scheduler, &defs, &recipes);
 
         assert!(super::resume_pending_repair_plan(
             &mut runtime,
             &agenda_state,
             &ordered(&ranked_candidates),
+            &view,
+            agent,
+            &defs,
+            &handlers,
         ));
-        assert_eq!(runtime.current_plan, Some(failed_plan));
+        assert_eq!(
+            runtime
+                .current_plan
+                .as_ref()
+                .and_then(|plan| plan.steps.first())
+                .and_then(|step| step.payload_override.as_ref())
+                .and_then(ActionPayload::as_trade)
+                .map(|payload| payload.offered_quantity),
+            Some(Quantity(3))
+        );
         assert_eq!(runtime.current_step_index, 0);
         assert!(!runtime.step_in_flight);
     }
