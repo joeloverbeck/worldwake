@@ -351,7 +351,7 @@ No sim-layer belief-view accessor. `worldwake-sim::GoalBeliefView` cannot expose
 ### Golden and observer proof status
 
 17. Observer agenda-state rendering is now covered by focused `crates/worldwake-cli/src/bin/observer.rs::tests::format_report_renders_agenda_state_summary`, which proves committed/pending/suspended summary lines plus pending revival-trigger and suspended kill-condition text against live `AgendaState`.
-18. The drafted merchant purchase-revival golden seam was falsified on the live branch during ticket `S115AGEMAN-007`: after the buyer reaches the local trade-binding seam and the merchant departs, `AgendaState.committed` stays populated instead of parking the goal into `pending`. That runtime contradiction is owned by active ticket `S115AGEMAN-008`.
+18. The drafted merchant purchase-revival golden seam was falsified on the live branch during ticket `S115AGEMAN-007`: after the buyer reaches the local trade-binding seam and the merchant departs, `AgendaState.committed` stays populated instead of parking the goal into `pending`. Archived ticket `S115AGEMAN-008` resolved that buyer-side contradiction by parking the goal into `pending` and reviving it back into `committed/current_plan`; active ticket `S115AGEMAN-009` now owns the separate seller-side market-restaging / trade-completion remainder.
 19. The cargo satisfied-path lifecycle remains covered at the focused runtime seam (`crates/worldwake-ai/src/agent_tick/tests.rs::cargo_satisfaction_at_destination_while_carrying`). No dedicated cargo observer/golden scenario has landed yet.
 
 ## Outcome

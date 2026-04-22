@@ -21,7 +21,7 @@ use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trac
 use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     DirtySet, ExhaustionEntry, ExhaustionRetryState, KillCondition, OpportunityKey, PlanValue,
-    PlannedPlan, PlannedStep, PlannerOpSemantics, authoritative_target,
+    PlannedPlan, PlannedStep, PlannerOpSemantics, RevivalTrigger, authoritative_target,
     build_planning_snapshot_with_blocked_facility_uses, ranking::OrderedRanked,
     revalidate_next_step, select_best_plan,
 };
@@ -1113,6 +1113,41 @@ fn repair_trade_counterparty(plan: &PlannedPlan) -> Option<EntityId> {
         })
 }
 
+fn pending_trigger_from_failed_plan(plan: &PlannedPlan) -> Option<RevivalTrigger> {
+    let counterparty = repair_trade_counterparty(plan)?;
+    let place = match plan.opportunity.anchor {
+        OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place) => Some(place),
+        OpportunityAnchor::None => plan
+            .goal
+            .place
+            .or_else(|| plan.steps.iter().find_map(|step| step.target_place)),
+    }?;
+    Some(RevivalTrigger::CounterpartyAvailable {
+        counterparty,
+        place,
+    })
+}
+
+fn park_committed_goal_from_failed_repair(
+    runtime: &mut AgentDecisionRuntime,
+    agenda_state: &mut AgendaState,
+) {
+    let Some(trigger) = runtime
+        .pending_repair_context
+        .as_ref()
+        .and_then(|pending| pending_trigger_from_failed_plan(&pending.failed_plan))
+    else {
+        return;
+    };
+    let Some(mut goal) = agenda_state.committed.take() else {
+        return;
+    };
+    goal.phase = AgendaPhase::Pending;
+    goal.revival_trigger = Some(trigger);
+    goal.kill_condition = KillCondition::External;
+    agenda_state.pending.insert(goal.key, goal);
+}
+
 fn repair_route_signature(plan: &PlannedPlan) -> Vec<EntityId> {
     plan.steps
         .iter()
@@ -1197,6 +1232,39 @@ fn classify_accepted_repair(
     None
 }
 
+fn resume_pending_repair_plan(
+    runtime: &mut AgentDecisionRuntime,
+    agenda_state: &AgendaState,
+    ranked_candidates: &OrderedRanked<'_>,
+) -> bool {
+    let Some(committed) = agenda_state.committed.as_ref() else {
+        return false;
+    };
+    let Some(pending) = runtime.pending_repair_context.as_ref() else {
+        return false;
+    };
+    let Some(trigger) = pending_trigger_from_failed_plan(&pending.failed_plan) else {
+        return false;
+    };
+    if pending.failed_plan.goal != committed.key.goal_key
+        || committed.phase != AgendaPhase::Committed
+        || committed.revival_trigger.as_ref() != Some(&trigger)
+    {
+        return false;
+    }
+
+    runtime.current_plan = Some(pending.failed_plan.clone());
+    runtime.current_step_index = usize::from(pending.failed_step_index);
+    runtime.step_in_flight = false;
+    runtime.accepted_repair = None;
+    runtime.last_priority_class = ranked_candidates
+        .iter()
+        .find(|candidate| candidate.key == committed.key)
+        .map(|candidate| candidate.priority_class)
+        .or(Some(committed.priority_class));
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn adopt_selected_plan(
     world: &mut worldwake_core::World,
@@ -1251,7 +1319,7 @@ fn clear_current_plan(
     world: &mut worldwake_core::World,
     event_log: &mut EventLog,
     runtime: &mut AgentDecisionRuntime,
-    _agenda_state: &mut AgendaState,
+    agenda_state: &mut AgendaState,
     jc: &mut Option<IntentionFrame>,
     facility_intents: &mut worldwake_core::ContentionIntents,
     ranked_candidates: &OrderedRanked<'_>,
@@ -1271,6 +1339,7 @@ fn clear_current_plan(
     runtime.current_step_index = 0;
     runtime.step_in_flight = false;
     runtime.accepted_repair = None;
+    park_committed_goal_from_failed_repair(runtime, agenda_state);
     runtime.last_priority_class = ranked_candidates
         .first()
         .map(|candidate| candidate.priority_class);
@@ -1442,17 +1511,19 @@ pub(super) fn plan_and_validate_next_step(
                         current_place,
                     );
                 } else {
-                    clear_current_plan(
-                        world,
-                        event_log,
-                        runtime,
-                        agenda_state,
-                        jc,
-                        facility_intents,
-                        ranked_candidates,
-                        agent,
-                        tick,
-                    );
+                    if !resume_pending_repair_plan(runtime, agenda_state, ranked_candidates) {
+                        clear_current_plan(
+                            world,
+                            event_log,
+                            runtime,
+                            agenda_state,
+                            jc,
+                            facility_intents,
+                            ranked_candidates,
+                            agent,
+                            tick,
+                        );
+                    }
                 }
             }
             runtime.dirty = DirtySet::default();
@@ -1822,17 +1893,19 @@ pub(super) fn plan_and_validate_next_step_traced(
                     current_place,
                 );
             } else {
-                clear_current_plan(
-                    world,
-                    event_log,
-                    runtime,
-                    agenda_state,
-                    jc,
-                    facility_intents,
-                    ranked_candidates,
-                    agent,
-                    tick,
-                );
+                if !resume_pending_repair_plan(runtime, agenda_state, ranked_candidates) {
+                    clear_current_plan(
+                        world,
+                        event_log,
+                        runtime,
+                        agenda_state,
+                        jc,
+                        facility_intents,
+                        ranked_candidates,
+                        agent,
+                        tick,
+                    );
+                }
             }
         }
         runtime.dirty = DirtySet::default();
@@ -1945,10 +2018,11 @@ mod tests {
         summarize_snapshot_continuation,
     };
     use crate::{
-        AgendaEntry, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
+        AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
         ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind, GoalOffer,
-        GoalPriorityClass, OpportunityAnchor, OpportunityKey, PlanSearchResult, PlanTerminalKind,
-        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture,
+        GoalPriorityClass, KillCondition, OpportunityAnchor, OpportunityKey, PlanSearchResult,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        ProfileFixture, RevivalTrigger,
         agent_tick::portfolio::{FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind},
         build_semantics_table,
         decision_trace::{
@@ -2546,6 +2620,179 @@ mod tests {
         assert_eq!(repair.goal_key, goal);
         assert_eq!(repair.repair_kind, RepairKind::AlternateRoute);
         assert_eq!(repair.substitute_target, None);
+    }
+
+    #[test]
+    fn pending_trigger_from_failed_plan_uses_trade_counterparty_and_place() {
+        let market = entity(501);
+        let seller = entity(502);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let failed_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(market),
+            },
+            goal,
+            vec![travel_step(market), trade_step(seller)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+
+        assert_eq!(
+            super::pending_trigger_from_failed_plan(&failed_plan),
+            Some(RevivalTrigger::CounterpartyAvailable {
+                counterparty: seller,
+                place: market,
+            })
+        );
+    }
+
+    #[test]
+    fn clear_current_plan_parks_committed_trade_goal_into_pending_repair() {
+        let market = entity(601);
+        let seller = entity(602);
+        let mut world = World::new(cargo_topology(entity(600), market)).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Buyer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, market).unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let mut event_log = EventLog::new();
+        let failed_goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let failed_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: failed_goal,
+                anchor: OpportunityAnchor::Place(market),
+            },
+            failed_goal,
+            vec![trade_step(seller)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = AgentDecisionRuntime {
+            current_plan: Some(failed_plan.clone()),
+            pending_repair_context: Some(crate::PendingRepairContext {
+                failed_plan,
+                failed_step_index: 0,
+            }),
+            ..AgentDecisionRuntime::default()
+        };
+        let mut agenda_state = AgendaState {
+            committed: Some(AgendaEntry::committed_from(
+                &ranked_goal(acquire_goal(
+                    CommodityKind::Bread,
+                    OpportunityAnchor::Place(market),
+                    BTreeSet::from([seller]),
+                    BTreeSet::from([market]),
+                )),
+                Tick(7),
+            )),
+            ..AgendaState::default()
+        };
+        let mut frame = None;
+        let mut facility_intents = ContentionIntents::default();
+        let ranked_candidates = vec![ranked_goal(acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(market),
+            BTreeSet::from([seller]),
+            BTreeSet::from([market]),
+        ))];
+
+        super::clear_current_plan(
+            &mut world,
+            &mut event_log,
+            &mut runtime,
+            &mut agenda_state,
+            &mut frame,
+            &mut facility_intents,
+            &ordered(&ranked_candidates),
+            agent,
+            Tick(8),
+        );
+
+        assert!(runtime.current_plan.is_none());
+        assert!(frame.is_none());
+        assert!(facility_intents.intents.is_empty());
+        assert!(agenda_state.committed.is_none());
+        let pending = agenda_state
+            .pending
+            .values()
+            .find(|entry| entry.key.goal_key == failed_goal)
+            .expect("failed trade commitment should park in pending");
+        assert_eq!(pending.phase, AgendaPhase::Pending);
+        assert_eq!(
+            pending.revival_trigger,
+            Some(RevivalTrigger::CounterpartyAvailable {
+                counterparty: seller,
+                place: market,
+            })
+        );
+        assert_eq!(pending.kill_condition, KillCondition::External);
+    }
+
+    #[test]
+    fn resume_pending_repair_plan_restores_failed_trade_plan_when_counterparty_trigger_revives() {
+        let market = entity(603);
+        let seller = entity(604);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let failed_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(market),
+            },
+            goal,
+            vec![trade_step(seller)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = AgentDecisionRuntime {
+            pending_repair_context: Some(crate::PendingRepairContext {
+                failed_plan: failed_plan.clone(),
+                failed_step_index: 0,
+            }),
+            ..AgentDecisionRuntime::default()
+        };
+        let committed = AgendaEntry::committed_from(
+            &ranked_goal(acquire_goal(
+                CommodityKind::Bread,
+                OpportunityAnchor::Place(market),
+                BTreeSet::from([seller]),
+                BTreeSet::from([market]),
+            )),
+            Tick(9),
+        );
+        let mut committed = committed;
+        committed.revival_trigger = Some(RevivalTrigger::CounterpartyAvailable {
+            counterparty: seller,
+            place: market,
+        });
+        let agenda_state = AgendaState {
+            committed: Some(committed),
+            ..AgendaState::default()
+        };
+        let ranked_candidates = vec![ranked_goal(acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(market),
+            BTreeSet::from([seller]),
+            BTreeSet::from([market]),
+        ))];
+
+        assert!(super::resume_pending_repair_plan(
+            &mut runtime,
+            &agenda_state,
+            &ordered(&ranked_candidates),
+        ));
+        assert_eq!(runtime.current_plan, Some(failed_plan));
+        assert_eq!(runtime.current_step_index, 0);
+        assert!(!runtime.step_in_flight);
     }
 
     fn ranked_goal(goal: GoalOffer) -> AgendaEntry {

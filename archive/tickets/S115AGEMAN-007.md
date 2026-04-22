@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — observer report rendering + ai runtime read accessor for tooling/tests.
-**Deps**: [archive/tickets/S115AGEMAN-005](./S115AGEMAN-005.md), [tickets/S115AGEMAN-008](../../tickets/S115AGEMAN-008.md)
+**Deps**: [archive/tickets/S115AGEMAN-005](./S115AGEMAN-005.md), [archive/tickets/S115AGEMAN-008](./S115AGEMAN-008.md)
 
 ## Problem
 
@@ -16,7 +16,7 @@
 2. The observer can lawfully read AI runtime state directly through `AgentTickDriver`; no new sim-layer accessor or trait is needed. The landed change adds a small read-only runtime accessor on `AgentTickDriver`.
 3. The cargo `Suspended` lifecycle seam is already covered by focused runtime proof in `crates/worldwake-ai/src/agent_tick/tests.rs::cargo_satisfaction_at_destination_while_carrying`; the live missing slice here was observer rendering, not a second cargo golden.
 4. The drafted new golden/scenario plan drifted. Existing `crates/worldwake-ai/tests/golden_merchant_selling.rs::remote_branch_selection_reaches_local_trade_binding_before_merchant_departure` already owns the earlier merchant-purchase golden substrate.
-5. Focused live repro disproved the drafted purchase-revival golden premise on the current branch. Running the buyer to the real local trade-binding seam, then moving the merchant away, left `runtime.agenda_state.committed` populated and never parked the goal into `pending` across ticks 10-49. That contradiction is now isolated under `tickets/S115AGEMAN-008`.
+5. Focused live repro disproved the drafted purchase-revival golden premise on the current branch. Running the buyer to the real local trade-binding seam, then moving the merchant away, left `runtime.agenda_state.committed` populated and never parked the goal into `pending` across ticks 10-49. That contradiction is now recorded in archived ticket `S115AGEMAN-008`.
 6. The observer surface can truthfully render pending counts, suspended counts, pending revival triggers, and suspended kill conditions from the live `AgendaState` shape. It cannot truthfully render a distinct suspended "reason label" because that data is not stored on `AgendaEntry`.
 7. Correction applied: ticket says "new golden_agenda_lifecycle scenario"; live code has an already-covered cargo runtime seam plus a disproved purchase-revival golden premise; correction is to narrow this ticket to observer agenda-state rendering and move the production/golden remainder to `S115AGEMAN-008`.
 
@@ -55,7 +55,7 @@ Add a unit test in `observer.rs` that seeds `AgendaState` through `AgentTickDriv
 - `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — read/runtime seeding helpers for tooling/tests)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — render agenda-state summary + focused test)
 - `tickets/S115AGEMAN-007.md` (modify — truthful closeout)
-- `tickets/S115AGEMAN-008.md` (new follow-up ticket for disproved golden/production seam)
+- `archive/tickets/S115AGEMAN-008.md` (follow-up ticket that resolved the disproved golden / production seam)
 
 ## Out of Scope
 

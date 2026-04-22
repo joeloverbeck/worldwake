@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 17
 - Files contributing `golden_*` tests: 17
-- Total `golden_*` tests: 109
+- Total `golden_*` tests: 111
 
 ## Per-File Inventory
 
@@ -20,7 +20,7 @@ Do not hand-edit it.
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 11 |
 | `golden_item_decay.rs` | 1 |
-| `golden_merchant_selling.rs` | 9 |
+| `golden_merchant_selling.rs` | 11 |
 | `golden_offices.rs` | 12 |
 | `golden_perception_exposure.rs` | 7 |
 | `golden_planner_pathology.rs` | 3 |
@@ -96,6 +96,8 @@ Do not hand-edit it.
 
 - `staff_market_retains_displayed_listing_through_presence_cycle`
 - `buyer_trades_against_listed_lot`
+- `remote_branch_selection_reaches_local_trade_binding_before_merchant_departure`
+- `merchant_return_revives_pending_purchase_agenda_entry`
 - `unlisted_stock_not_sellable`
 - `unstage_round_trip_preserves_storage_contract`
 - `buyer_discovers_listed_lots_not_unlisted_stock`
