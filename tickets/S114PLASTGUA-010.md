@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — golden test authoring only.
-**Deps**: `archive/tickets/S114PLASTGUA-001.md`, `archive/tickets/S114PLASTGUA-002.md`, `archive/tickets/S114PLASTGUA-003.md`, `archive/tickets/S114PLASTGUA-004.md`, `archive/tickets/S114PLASTGUA-005.md`, `archive/tickets/S114PLASTGUA-006.md`, `tickets/S114PLASTGUA-007.md`, `tickets/S114PLASTGUA-008.md`, `tickets/S114PLASTGUA-009.md`
+**Deps**: `archive/tickets/S114PLASTGUA-001.md`, `archive/tickets/S114PLASTGUA-002.md`, `archive/tickets/S114PLASTGUA-003.md`, `archive/tickets/S114PLASTGUA-004.md`, `archive/tickets/S114PLASTGUA-005.md`, `archive/tickets/S114PLASTGUA-006.md`, `archive/tickets/S114PLASTGUA-007.md`, `tickets/S114PLASTGUA-008.md`, `tickets/S114PLASTGUA-009.md`, `archive/tickets/S114PLASTGUA-011.md`
 
 ## Problem
 
@@ -21,7 +21,7 @@ S114 spec validation test 12 is the integration proof that guard + expectation i
    - `golden_survival_contested` — same
    All three must stay green — running `cargo test -p worldwake-ai golden_survival` is the gate.
 5. Test 9 in the spec (existing target-gone golden) claims that *with* guards, the `BeliefContradicted` path is taken instead of `AssumptionFailed`. Identify the existing target-gone golden test at implementation time via `rg -l 'AssumptionFailed' crates/worldwake-ai/tests` — the scenario likely already exists but its post-condition assertions must be updated to match the new causal pathway.
-6. Shared boundary under audit: the golden-test narrative contract. The scenario must prove end-to-end: guard breach → classify_revalidation returns Invalidated → action-start route-to-failure → event-log emission → discrepancy record → agent replans. This spans guard-check (ticket 007), plan-adoption records (ticket 008), overdue emission path (ticket 009) — all three must integrate correctly under tick pipeline.
+6. Shared boundary under audit: the golden-test narrative contract. The scenario must prove end-to-end: guard breach → classify_revalidation returns Invalidated → action-start route-to-failure → event-log emission → discrepancy record → agent replans. This now spans guard-check + replan preservation (ticket 007), plan-adoption records (ticket 008), overdue emission path (ticket 009), and the separate guard-breach start-failure emission path (ticket 011).
 7. Scenario isolation choice: the scenario isolates the guard-breach branch by removing lawful competing affordances. The intended branch is "buyer attempts trade with merchant → guard fires `TargetMoved` → replan." Lawful competing affordances excluded from setup: no alternative merchants at the arrival place (so the planner cannot sidestep the scenario by swapping counterparties); no high-priority needs that would override the trade goal mid-execution.
 8. Ordering contract: this test relies on authoritative world-state ordering (merchant moves before buyer arrives), action lifecycle ordering (buyer's `Trade` action starts at arrival tick, revalidation runs at start), and decision-trace ordering (post-breach replan is the next goal decision). All three are distinct proof surfaces per `docs/golden-e2e-testing.md`.
 

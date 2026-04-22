@@ -89,7 +89,9 @@ pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_guard_build::{build_plan_expectations, build_plan_guard};
-pub use plan_revalidation::{is_pursuit_plan_invalid, revalidate_next_step};
+pub use plan_revalidation::{
+    RevalidationOutcome, classify_revalidation, is_pursuit_plan_invalid, revalidate_next_step,
+};
 pub use plan_selection::{SelectionPolicy, select_best_plan};
 pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{

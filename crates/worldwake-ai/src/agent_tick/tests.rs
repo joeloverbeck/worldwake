@@ -1,5 +1,5 @@
 use super::candidates::abandon_expired_facility_queues_with_limit;
-use super::execution::resolve_step_targets;
+use super::execution::{enqueue_valid_step_or_handle_failure, resolve_step_targets};
 use super::observation::{
     ReadPhaseContext, facility_queue_patience_exhausted, refresh_runtime_for_read_phase,
     update_runtime_observation_snapshot,
@@ -21,9 +21,10 @@ use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
     AcceptedRepairProvenance, AgentDecisionRuntime, CommodityPurpose, DirtySet, ExhaustionBaseline,
     ExhaustionInvalidationCondition, ExpectedMaterialization, FrameSwitchMarginSource, GoalKey,
-    GoalKind, GoalPriorityClass, HypotheticalEntityId, OpportunityAnchor, OpportunityKey,
-    PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoal,
-    RankedGoalProvenance, SelectedPlanReplacementKind, build_semantics_table,
+    GoalKind, GoalPriorityClass, HypotheticalEntityId, Invalidator, OpportunityAnchor,
+    OpportunityKey, PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+    PlanningEntityRef, RankedGoal, RankedGoalProvenance, SelectedPlanReplacementKind,
+    build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -38,15 +39,16 @@ use worldwake_core::{
     DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
     DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
     EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
-    ExplorationProfile, FrameAssumption, FrameClearReason, FrameState, GoalAbandonReason,
-    GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
-    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
-    KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
-    MetabolismProfile, OfficeData, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
-    PerceptionSource, Permille, Place, PortfolioSlotWeights, Quantity, QueuedContentionIntent,
-    RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind, RepairMemory,
-    ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
+    ExpectationKindTag, ExpectationMismatchPayload, ExplorationProfile, FrameAssumption,
+    FrameClearReason, FrameState, GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload,
+    GoalRejectionReason, GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    IntentionDispositionProfile, IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes,
+    LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
+    MetabolismProfile, MismatchDetail, OfficeData, PatrolProfile, PatrolRoute, PendingEvent,
+    PerceptionProfile, PerceptionSource, Permille, Place, PortfolioSlotWeights, Quantity,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
+    RepairMemory, ResourceSource, Seed, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick,
     ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile,
     ViolationMemory, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World,
     WorldTxn, Wound, WoundCause, WoundId, WoundList, build_believed_entity_state,
@@ -5045,6 +5047,223 @@ fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
     assert!(
         harness.scheduler.action_start_failures().is_empty(),
         "agent tick should consume this agent's structured start failures once they are reconciled"
+    );
+}
+
+#[test]
+fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
+    let mut harness = Harness::new(ControlSource::Ai).with_full_action_registries();
+    {
+        let mut txn = new_txn(&mut harness.world, 0);
+        txn.set_component_homeostatic_needs(
+            harness.actor,
+            HomeostaticNeeds::new(
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+    let origin = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("actor should start at a place");
+    let destination = harness
+        .world
+        .topology()
+        .place_ids()
+        .find(|place| *place != origin)
+        .expect("prototype world should have a second place");
+    let merchant = {
+        let mut txn = new_txn(&mut harness.world, 1);
+        let merchant = txn.create_agent("Merchant", ControlSource::Ai).unwrap();
+        txn.set_ground_location(merchant, origin).unwrap();
+        commit_txn(txn);
+        merchant
+    };
+    sync_selected_beliefs(
+        &mut harness.world,
+        harness.actor,
+        &[merchant],
+        Tick(1),
+        PerceptionSource::DirectObservation,
+    );
+    relocate_entity(&mut harness.world, merchant, destination, Tick(2));
+    sync_selected_beliefs(
+        &mut harness.world,
+        harness.actor,
+        &[merchant],
+        Tick(2),
+        PerceptionSource::DirectObservation,
+    );
+
+    let trade_id = harness
+        .defs
+        .iter()
+        .find(|def| def.name == "trade")
+        .map(|def| def.id)
+        .expect("full registries should include trade");
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let trade_step = PlannedStep {
+        def_id: trade_id,
+        targets: vec![PlanningEntityRef::Authoritative(merchant)],
+        target_place: Some(origin),
+        payload_override: None,
+        op_kind: PlannerOpKind::Trade,
+        estimated_ticks: 1,
+        is_materialization_barrier: false,
+        expected_materializations: Vec::new(),
+        guard: Some(PlanGuard {
+            required_facts: vec![crate::RequiredFact::TargetPresent {
+                target: merchant,
+                at_place: origin,
+            }],
+            min_confidence: Permille::new(500).unwrap(),
+            invalidators: vec![
+                Invalidator::TargetMoved { target: merchant },
+                Invalidator::BeliefStatusChange {
+                    claim: worldwake_core::BeliefClaimKey {
+                        subject: merchant,
+                        aspect: worldwake_core::EntityBeliefAspect::Location,
+                    },
+                },
+            ],
+        }),
+        expectations: Vec::new(),
+    };
+    harness.driver.runtime_by_agent.insert(
+        harness.actor,
+        AgentDecisionRuntime {
+            current_plan: Some(PlannedPlan::new(
+                default_opportunity(goal),
+                goal,
+                vec![trade_step],
+                PlanTerminalKind::GoalSatisfied,
+            )),
+            ..AgentDecisionRuntime::default()
+        },
+    );
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_active_goal(
+            harness.actor,
+            worldwake_core::ActiveGoal {
+                goal_key: goal,
+                adopted_at: Tick(2),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    let cognitive = harness
+        .world
+        .get_component_cognitive_profile(harness.actor)
+        .copied()
+        .unwrap_or_default();
+    let execution_budget = ExecutionBudget::default();
+    let semantics_table = build_semantics_table(&harness.defs);
+    let mut runtime = harness
+        .driver
+        .runtime_by_agent
+        .remove(&harness.actor)
+        .expect("runtime should exist");
+    let mut current_frame = None;
+    let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
+    let original_blocked = blocked_memory.clone();
+    let original_discrepancy_memory = discrepancy_memory.clone();
+    let original_violation_memory = ViolationMemory::default();
+    let violation_memory = ViolationMemory::default();
+    let original_repair_memory = RepairMemory::default();
+    let repair_memory = RepairMemory::default();
+    let original_learned_opportunity_memory = LearnedOpportunityMemory::default();
+    let learned_opportunity_memory = LearnedOpportunityMemory::default();
+    let step = runtime
+        .current_plan
+        .as_ref()
+        .and_then(|plan| plan.steps.first())
+        .cloned()
+        .expect("runtime should retain the test step");
+    let mut ctx = super::AgentTickContext {
+        world: &mut harness.world,
+        event_log: &mut harness.event_log,
+        scheduler: &mut harness.scheduler,
+        rng: &mut harness.rng,
+        action_defs: &harness.defs,
+        action_handlers: &harness.handlers,
+        recipe_registry: &harness.recipes,
+        semantics_table: &semantics_table,
+        cognitive: &cognitive,
+        execution_budget: &execution_budget,
+        tick: Tick(3),
+    };
+    enqueue_valid_step_or_handle_failure(
+        &mut ctx,
+        &mut runtime,
+        Some(goal),
+        &mut current_frame,
+        &mut blocked_memory,
+        &mut discrepancy_memory,
+        &mut facility_intents,
+        harness.actor,
+        Tick(3),
+        &original_blocked,
+        &original_discrepancy_memory,
+        &original_violation_memory,
+        &violation_memory,
+        &original_repair_memory,
+        &repair_memory,
+        &original_learned_opportunity_memory,
+        &learned_opportunity_memory,
+        &step,
+        false,
+    )
+    .expect("guard-breach start failure handling should succeed");
+
+    assert_eq!(ctx.scheduler.input_queue().len(), 0);
+    assert_eq!(ctx.scheduler.active_actions().len(), 0);
+    let mismatch_events = harness
+        .event_log
+        .events_by_tag(EventTag::ExpectationMismatch);
+    assert_eq!(mismatch_events.len(), 1);
+    assert_eq!(
+        harness
+            .event_log
+            .get(mismatch_events[0])
+            .and_then(|record| record.decision_payload()),
+        Some(&DecisionEventPayload::ExpectationMismatch(
+            ExpectationMismatchPayload {
+                agent: harness.actor,
+                goal_key: goal,
+                step_index: 0,
+                expected_materializations: Vec::new(),
+                expectation_kind: Some(ExpectationKindTag::State),
+                mismatch_detail: Some(MismatchDetail::GuardInvalidator(
+                    InvalidatorTag::TargetMoved,
+                )),
+            }
+        )),
+        "guard-breach start failure should emit the same-tick expectation mismatch payload before replan"
+    );
+    assert!(runtime.current_plan.is_none());
+    assert_eq!(runtime.current_step_index, 0);
+
+    assert_eq!(
+        harness
+            .world
+            .get_component_active_goal(harness.actor)
+            .map(|active| active.goal_key),
+        Some(goal),
+        "this focused execution proof stops at the pre-enqueue branch and does not run the later active-goal persistence cleanup"
     );
 }
 

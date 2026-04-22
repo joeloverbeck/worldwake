@@ -10,7 +10,7 @@
 
 S114 D6 (post-F1 correction) places plan-step-specific mismatch handling on the AI side because worldwake-systems cannot depend on worldwake-ai (per the one-way `ai → systems → sim → core` crate dependency graph). Sim's `check_overdue_expectations` keeps its generic `Active → Overdue` transition; the AI tick step owns step resolution, event emission, discrepancy classification, and state transition to `Resolved { ReturnedLate }` / `Expired`. Without this consumer, the records written in ticket 008 sit as silent state — no surprise signal (FND-17), no discrepancy learning (S109).
 
-## Assumption Reassessment (2026-04-21)
+## Assumption Reassessment (2026-04-22)
 
 1. Sim-side `check_overdue_expectations` at `crates/worldwake-systems/src/expectation_check.rs:7` already transitions records `Active → Overdue` generically (confirmed via file read: body filters `state == Active` regardless of `basis`). No widening is required there for plan-step-specific behavior — the AI tick step is the interpretation layer.
 2. `classify_discrepancy` is currently private at `crates/worldwake-ai/src/failure_handling.rs:133`. It must be promoted to `pub(crate)` (or moved to a shared AI-crate helper module) so the new tick step can call it. Its existing callers at `failure_handling.rs:53` continue to work; no external crate relies on it.
@@ -24,6 +24,7 @@ S114 D6 (post-F1 correction) places plan-step-specific mismatch handling on the 
 6. `ExpectationOutcome::ReturnedLate` at `expectation.rs:54` already exists. The spec says implementation time may introduce a new outcome if none fits; `ReturnedLate` is semantically appropriate for plan-step overdue and does not require a new variant.
 7. Existing tests in `expectation_check.rs` at lines 157, 218, 232, 271, 312 cover `RoutineReturn`-basis overdue behavior — they assert only the `Active → Overdue` transition. They stay green because this ticket does not touch `check_overdue_expectations`. A new test exercising `PlanStepCompletion`-basis transition is already covered by the widened `check_overdue_expectations` generic behavior, but an additional AI-side test covers the emission + classification path.
 8. Authoritative-to-AI Impact Rule (CLAUDE.md): this ticket gates no new action preconditions; it observes a state transition and reacts. Items 1-5 of the rule are `pass` / `N/A`. Item 6 (payload revalidation): no payload-override changes here. Item 7 (golden tests): must stay green — ticket 010 provides the positive-case golden.
+9. Mismatch + correction: `archive/tickets/S114PLASTGUA-007.md` landed `PlanInvalidationReason::ExpectationMismatch` classification and replan-reason preservation, but it did **not** land guard-breach `DecisionEventPayload::ExpectationMismatch` emission or `MismatchDetail::GuardInvalidator(...)` plumbing. Follow-up ticket `archive/tickets/S114PLASTGUA-011.md` now owns that delivered AI execution/start-failure producer path. This ticket remains the overdue-record consumer path only.
 
 ## Architecture Check
 
@@ -136,7 +137,7 @@ In `crates/worldwake-ai/src/agent_tick/mod.rs`, invoke `tick_plan_step_mismatche
 
 ## Out of Scope
 
-- Guard-breach emission from the revalidation path (ticket 007 handles the `GuardInvalidator` `MismatchDetail` case).
+- Guard-breach emission from the revalidation path (`archive/tickets/S114PLASTGUA-011.md` owns the landed `GuardInvalidator` `MismatchDetail` case on the AI execution/start-failure path).
 - Changing sim-side `check_overdue_expectations` (unchanged — the whole point of F1's resolution).
 - New golden scenarios (ticket 010).
 - New `ExpectationOutcome` variant beyond `ReturnedLate`.

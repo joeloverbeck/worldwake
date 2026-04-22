@@ -2,7 +2,7 @@
 
 ## Summary
 
-Annotate each `PlannedStep` with explicit *guards* (required-believed-facts, minimum-confidence thresholds, invalidators) and *expectations* (expected observations the step should produce). Revalidation reads guards to classify drift as irrelevant, repairable, plan-invalidating, or goal-changing — not just "affordance still matches." Expectations persist across tick boundaries by reusing the existing `ExpectationStore` / `ExpectationRecord` infrastructure (extended with a new `ExpectationBasis::PlanStepCompletion` variant); the existing `check_overdue_expectations` SystemFn is widened to emit `EventTag::ExpectationMismatch` on state transitions. Guard templates and expectation templates live on `ActionDef` as serializable declarative specs; closures are never stored. Scoped to four core guard/expectation kinds (immediate / state / informed / regression); danger-spike, counterparty-unwilling, resource-partial, partial-execution-drift kinds are deferred.
+Annotate each `PlannedStep` with explicit *guards* (required-believed-facts, minimum-confidence thresholds, invalidators) and *expectations* (expected observations the step should produce). Revalidation reads guards to classify drift as irrelevant, repairable, plan-invalidating, or goal-changing — not just "affordance still matches." Expectations persist across tick boundaries by reusing the existing `ExpectationStore` / `ExpectationRecord` infrastructure (extended with a new `ExpectationBasis::PlanStepCompletion` variant); sim's existing `check_overdue_expectations` SystemFn still performs the generic `Active -> Overdue` transition, and the AI-side D6 tick step emits `EventTag::ExpectationMismatch` when plan-step records become overdue. Guard templates and expectation templates live on `ActionDef` as serializable declarative specs; closures are never stored. Scoped to four core guard/expectation kinds (immediate / state / informed / regression); danger-spike, counterparty-unwilling, resource-partial, partial-execution-drift kinds are deferred.
 
 ## Phase and Status
 
@@ -370,7 +370,7 @@ pub struct ExpectationMismatchPayload {
     pub expectation_kind: Option<ExpectationKindTag>,
     /// NEW: the breached guard invalidator when the mismatch fired through
     /// revalidation's guard-check pass, or the unmet state predicate when
-    /// the mismatch fired through `check_overdue_expectations`.
+    /// the mismatch fired through the AI-side overdue-record tick step.
     pub mismatch_detail: Option<MismatchDetail>,
 }
 
@@ -460,7 +460,7 @@ Per spec-drafting-rules.md §5, both fields land on the universal `CognitiveProf
 
 9. Existing target-gone golden: with guards, the `Discrepancy::BeliefContradicted` replan path is taken (S109), not the `AssumptionFailed` fallback.
 10. Survival scenarios pass: no increase in false-positive guard breaches on trivial paths (eat, sleep, wash). Specifically `golden_survival_baseline`, `golden_survival_scattered`, `golden_survival_contested` stay green.
-11. `check_overdue_expectations` unit tests continue to pass (existing `RoutineReturn`-basis coverage) and gain a new test that a `PlanStepCompletion` basis transitions `Active → Overdue` and emits `ExpectationMismatch`.
+11. `check_overdue_expectations` unit tests continue to pass (existing `RoutineReturn`-basis coverage) and gain a new test that a `PlanStepCompletion` basis transitions `Active → Overdue`; focused AI-tick coverage separately proves the follow-on `ExpectationMismatch` emission.
 
 ### Golden test
 

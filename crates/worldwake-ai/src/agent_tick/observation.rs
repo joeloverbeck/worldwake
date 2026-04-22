@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DecisionEventPayload,
-    DiscrepancyMemory, EntityId, EventTag, ExpectationMismatchPayload, GoalKey,
-    LearnedOpportunityMemory, PlanInvalidationReason, Quantity, RepairMemory, ReplanReason, Tick,
-    UniqueItemKind,
+    DiscrepancyMemory, EntityId, EventTag, ExpectationKindTag, ExpectationMismatchPayload, GoalKey,
+    LearnedOpportunityMemory, MismatchDetail, PlanInvalidationReason, Quantity, RepairMemory,
+    ReplanReason, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -93,13 +93,20 @@ pub(crate) struct ReadPhaseResult {
         std::collections::BTreeSet<worldwake_core::HomeostaticNeedId>,
 }
 
-fn emit_expectation_mismatch(
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct ExpectationMismatchContext {
+    pub(super) expectation_kind: Option<ExpectationKindTag>,
+    pub(super) mismatch_detail: Option<MismatchDetail>,
+}
+
+pub(super) fn emit_expectation_mismatch(
     event_log: &mut worldwake_core::EventLog,
     tick: Tick,
     agent: EntityId,
     goal_key: worldwake_core::GoalKey,
     step_index: usize,
     step: &PlannedStep,
+    context: ExpectationMismatchContext,
 ) {
     emit_decision_event(
         event_log,
@@ -115,8 +122,8 @@ fn emit_expectation_mismatch(
                 .iter()
                 .map(|expected| expected.tag)
                 .collect(),
-            expectation_kind: None,
-            mismatch_detail: None,
+            expectation_kind: context.expectation_kind,
+            mismatch_detail: context.mismatch_detail,
         }),
     );
 }
@@ -499,6 +506,7 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             Some(ExecutionFailure::Replan(signal)),
             None,
+            None,
         )?;
         return Ok(ReconciliationResult {
             completed_plan: None,
@@ -520,6 +528,7 @@ pub(super) fn reconcile_in_flight_state(
             &step,
             Some(ExecutionFailure::Start(start_failure)),
             None,
+            None,
         )?;
         return Ok(ReconciliationResult {
             completed_plan: None,
@@ -540,6 +549,7 @@ pub(super) fn reconcile_in_flight_state(
             facility_intents,
             agent,
             &step,
+            None,
             None,
             None,
         )?;
@@ -574,6 +584,7 @@ pub(super) fn reconcile_in_flight_state(
             goal_key,
             runtime.current_step_index,
             &step,
+            ExpectationMismatchContext::default(),
         );
         let invalidation_reason = PlanInvalidationReason::ExpectationMismatch {
             step_index: runtime
@@ -591,6 +602,7 @@ pub(super) fn reconcile_in_flight_state(
             facility_intents,
             agent,
             &step,
+            None,
             None,
             None,
         )?;
@@ -855,7 +867,9 @@ pub(super) fn unique_item_signature(
 
 #[cfg(test)]
 mod tests {
-    use super::{emit_expectation_mismatch, reinstate_current_plan_candidate};
+    use super::{
+        ExpectationMismatchContext, emit_expectation_mismatch, reinstate_current_plan_candidate,
+    };
     use crate::{
         AgentDecisionRuntime, CommodityPurpose, ExpectedMaterialization, GroundedGoal,
         HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
@@ -1037,6 +1051,7 @@ mod tests {
             goal_key,
             5,
             &step,
+            ExpectationMismatchContext::default(),
         );
 
         let events = event_log.events_by_tag(EventTag::ExpectationMismatch);
