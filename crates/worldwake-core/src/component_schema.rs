@@ -930,6 +930,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                agenda_profiles,
+                AgendaProfile,
+                insert_agenda_profile,
+                get_agenda_profile,
+                get_agenda_profile_mut,
+                remove_agenda_profile,
+                has_agenda_profile,
+                iter_agenda_profiles,
+                insert_component_agenda_profile,
+                get_component_agenda_profile,
+                get_component_agenda_profile_mut,
+                remove_component_agenda_profile,
+                has_component_agenda_profile,
+                entities_with_agenda_profile,
+                query_agenda_profile,
+                count_with_agenda_profile,
+                "AgendaProfile",
+                |kind| kind == EntityKind::Agent,
+                AgendaProfile,
+                crate::AgendaProfile,
+                set_component_agenda_profile,
+                clear_component_agenda_profile,
+                txn_simple_set
+            }
+            {
                 acquisition_exhaustion_trackers,
                 AcquisitionExhaustionTracker,
                 insert_acquisition_exhaustion_tracker,

@@ -25,6 +25,7 @@
 //! forbidden patterns.
 
 pub mod action_domain;
+pub mod agenda_profile;
 pub mod allocator;
 pub mod bandit_camp;
 pub mod belief;
@@ -101,6 +102,7 @@ pub mod world_txn;
 pub mod wounds;
 
 pub use action_domain::ActionDomain;
+pub use agenda_profile::AgendaProfile;
 pub use allocator::EntityAllocator;
 pub use bandit_camp::{BanditCamp, BanditFactionPolicy};
 pub use belief::{

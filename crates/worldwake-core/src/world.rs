@@ -1,27 +1,27 @@
 //! Authoritative world boundary over entity lifecycle, component tables, and topology.
 
 use crate::{
-    AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
-    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory, BountyTerms,
-    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap, CommodityKind,
-    CommodityValuationProfile, CommunicationProfile, ComponentTables, ComponentValue, Container,
-    ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt,
-    DemandMemory, DeprivationExposure, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
-    DriveEscalationProfile, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
-    EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
-    FactionData, GroundSince, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastProactiveExplorationTick,
-    LastSeenMemory, LearnedOpportunityMemory, LoadUnits, LotOperation, MemoryCapacityProfile,
-    MerchandiseProfile, MetabolismProfile, Name, NoticeContent, ObligationExecutionTracker,
-    ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-    PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PlaceVisibilityProfile,
-    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
-    PursuitProfile, Quantity, RecordData, RelationTables, RepairMemory, ResourceSource,
-    RouteExperience, SaleListing, SceneEvidence, SourceReliability, StockAssignment,
-    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick,
-    Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
-    component_schema::with_component_schema_entries,
+    AcquisitionExhaustionTracker, ActiveGoal, AgendaProfile, AgentBeliefStore, AgentData,
+    ArtifactHeader, ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory,
+    BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityDecayMap,
+    CommodityKind, CommodityValuationProfile, CommunicationProfile, ComponentTables,
+    ComponentValue, Container, ContentionDispositionProfile, ContentionIntents, ContentionPolicy,
+    ContentionQueue, DeadAt, DemandMemory, DeprivationExposure, DiscrepancyMemory, DisposalProfile,
+    DiversificationProfile, DriveEscalationProfile, DriveThresholds, EntityAllocator, EntityId,
+    EntityKind, EntityMeta, EpistemicDispositionProfile, EventId, ExecutionBudget,
+    ExpectationStore, ExplorationProfile, FactionData, GroundSince, HomeostaticNeeds,
+    InTransitOnEdge, IntentionDispositionProfile, IntentionFrame, ItemLot,
+    JusticeDispositionProfile, KnownRecipes, LastProactiveExplorationTick, LastSeenMemory,
+    LearnedOpportunityMemory, LoadUnits, LotOperation, MemoryCapacityProfile, MerchandiseProfile,
+    MetabolismProfile, Name, NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile,
+    OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
+    PerceptionProfile, PlaceTag, PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile,
+    ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
+    RecordData, RelationTables, RepairMemory, ResourceSource, RouteExperience, SaleListing,
+    SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences,
+    TellProfile, TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
+    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -181,6 +181,7 @@ impl World {
             world.insert_component_perception_profile(entity, PerceptionProfile::default())?;
             world.insert_component_tell_profile(entity, TellProfile::default())?;
             world.insert_component_cognitive_profile(entity, CognitiveProfile::default())?;
+            world.insert_component_agenda_profile(entity, AgendaProfile::default())?;
             world.insert_component_acquisition_exhaustion_tracker(
                 entity,
                 AcquisitionExhaustionTracker::default(),
@@ -646,12 +647,12 @@ impl World {
 mod tests {
     use super::World;
     use crate::{
-        AgentBeliefStore, AgentData, ArtifactPostingProfile, BanditCamp, BanditFactionPolicy,
-        BeliefConfidencePolicy, BelievedEntityState, BodyPart, CarryCapacity, CombatProfile,
-        CommodityKind, CommunicationProfile, Container, ControlSource, DeadAt, DemandMemory,
-        DeprivationExposure, DeprivationKind, DisposalProfile, DriveThresholds, EffectiveRight,
-        EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData, FactionPurpose,
-        GroundSince, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
+        AgendaProfile, AgentBeliefStore, AgentData, ArtifactPostingProfile, BanditCamp,
+        BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState, BodyPart, CarryCapacity,
+        CombatProfile, CommodityKind, CommunicationProfile, Container, ControlSource, DeadAt,
+        DemandMemory, DeprivationExposure, DeprivationKind, DisposalProfile, DriveThresholds,
+        EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData,
+        FactionPurpose, GroundSince, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
         InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits,
         LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
         OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
@@ -1300,6 +1301,10 @@ mod tests {
         assert_eq!(
             world.get_component_tell_profile(id),
             Some(&TellProfile::default())
+        );
+        assert_eq!(
+            world.get_component_agenda_profile(id),
+            Some(&AgendaProfile::default())
         );
         assert_eq!(
             world.get_component_disposal_profile(id),

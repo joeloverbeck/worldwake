@@ -2,9 +2,9 @@
 
 use crate::BeliefStoreDiff;
 use crate::{
-    AcquisitionExhaustionTracker, ActiveGoal, AgentBeliefStore, AgentData, ArtifactHeader,
-    ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory, BountyTerms,
-    CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
+    AcquisitionExhaustionTracker, ActiveGoal, AgendaProfile, AgentBeliefStore, AgentData,
+    ArtifactHeader, ArtifactPostingProfile, BanditCamp, BanditFactionPolicy, BlockerMemory,
+    BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
     CommodityValuationProfile, CommunicationProfile, Container, ContentionDispositionProfile,
     ContentionIntents, ContentionPolicy, ContentionQueue, DeadAt, DemandMemory,
     DeprivationExposure, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
@@ -273,8 +273,8 @@ mod tests {
         RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
     };
     use crate::{
-        AcquisitionExhaustionTracker, ActionDefId, ActiveGoal, AgentBeliefStore, AgentData,
-        ArtifactHeader, ArtifactKind, ArtifactPostingProfile, ArtifactState, BanditCamp,
+        AcquisitionExhaustionTracker, ActionDefId, ActiveGoal, AgendaProfile, AgentBeliefStore,
+        AgentData, ArtifactHeader, ArtifactKind, ArtifactPostingProfile, ArtifactState, BanditCamp,
         BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState, BodyPart, BountyTarget,
         BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
         CommunicationProfile, Container, ContentionIntents, ContentionPolicy, ContentionQueue,
@@ -606,6 +606,11 @@ mod tests {
                 decision_history_alternatives: 5,
                 slot_weights: PortfolioSlotWeights::default(),
             }),
+            ComponentValue::AgendaProfile(AgendaProfile {
+                pending_capacity: 16,
+                suspended_capacity: 8,
+                revive_cooldown_ticks: 4,
+            }),
             ComponentValue::ExplorationProfile(ExplorationProfile {
                 curiosity_weight: Permille::new(650).unwrap(),
                 need_activation_threshold: Permille::new(450).unwrap(),
@@ -921,6 +926,7 @@ mod tests {
                 ComponentKind::TellProfile,
                 ComponentKind::CommunicationProfile,
                 ComponentKind::CognitiveProfile,
+                ComponentKind::AgendaProfile,
                 ComponentKind::AcquisitionExhaustionTracker,
                 ComponentKind::ExplorationProfile,
                 ComponentKind::DiversificationProfile,

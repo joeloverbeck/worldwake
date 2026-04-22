@@ -417,8 +417,10 @@ fn spawn_agent(
     let tell = agent_def.tell_profile.unwrap_or_default();
     txn.set_component_tell_profile(agent_id, tell)?;
     let cognitive = agent_def.cognitive_profile.unwrap_or_default();
+    let agenda_profile = agent_def.agenda_profile.unwrap_or_default();
     let execution_budget = agent_def.execution_budget.unwrap_or_default();
     txn.set_component_cognitive_profile(agent_id, cognitive)?;
+    txn.set_component_agenda_profile(agent_id, agenda_profile)?;
     txn.set_component_execution_budget(agent_id, execution_budget)?;
     let epistemic = agent_def.epistemic_disposition.clone().unwrap_or_default();
     txn.set_component_epistemic_disposition_profile(agent_id, epistemic)?;
@@ -630,10 +632,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
-        ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity, CognitiveProfile,
-        CommodityDecayMap, CommodityKind, CommodityValuationProfile, CommunicationProfile,
-        ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
-        DriveEscalationParams, DriveEscalationProfile, DriveThresholds,
+        AgendaProfile, ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity,
+        CognitiveProfile, CommodityDecayMap, CommodityKind, CommodityValuationProfile,
+        CommunicationProfile, ContentionDispositionProfile, ControlSource, DisposalProfile,
+        DiversificationProfile, DriveEscalationParams, DriveEscalationProfile, DriveThresholds,
         EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeedId,
         HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
         LastProactiveExplorationTick, LastSeenMemory, LoadUnits, MultiplierPermille,
@@ -657,6 +659,7 @@ mod tests {
             perception_profile: None,
             tell_profile: None,
             cognitive_profile: None,
+            agenda_profile: None,
             execution_budget: None,
             epistemic_disposition: None,
             intention_disposition: None,
@@ -727,6 +730,33 @@ mod tests {
         let place_id = world.effective_place(agent_id).unwrap();
         let place = world.topology().place(place_id).unwrap();
         assert_eq!(place.name, "Village");
+    }
+
+    #[test]
+    fn test_spawn_agent_applies_authored_agenda_profile() {
+        let def = ScenarioDef {
+            agents: vec![AgentDef {
+                agenda_profile: Some(AgendaProfile {
+                    pending_capacity: 20,
+                    suspended_capacity: 4,
+                    revive_cooldown_ticks: 2,
+                }),
+                ..minimal_agent("Alice", "Village", ControlSource::Ai)
+            }],
+            ..minimal_def()
+        };
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world.entities_with_name_and_agent_data().next().unwrap();
+
+        assert_eq!(
+            world.get_component_agenda_profile(agent),
+            Some(&AgendaProfile {
+                pending_capacity: 20,
+                suspended_capacity: 4,
+                revive_cooldown_ticks: 2,
+            })
+        );
     }
 
     #[test]
