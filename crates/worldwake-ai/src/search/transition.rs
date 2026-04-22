@@ -6,17 +6,36 @@ use crate::goal_model::{
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
     GoalKindPlannerExt, GroundedGoal, PlanTerminalKind, PlannedStep, PlannerOpKind,
-    PlannerOpSemantics, PlanningEntityRef, apply_hypothetical_transition,
+    PlannerOpSemantics, PlanningEntityRef, apply_hypothetical_transition, build_plan_expectations,
+    build_plan_guard,
 };
 use heuristic::{
     combined_relevant_places_for_tactical, compute_heuristic, compute_landmark_heuristic,
 };
 use std::collections::BTreeMap;
-use worldwake_core::{ActionDefId, ExecutionBudget};
+use worldwake_core::{ActionDefId, EntityKind, ExecutionBudget};
 use worldwake_sim::{ActionDefRegistry, RecipeRegistry, TemporalBeliefView};
 
 use super::heuristic;
 use super::landmarks::{LandmarkSet, planning_facts_from_state};
+
+fn resolve_step_target_place(
+    state: &crate::PlanningState<'_>,
+    targets: &[PlanningEntityRef],
+) -> Option<worldwake_core::EntityId> {
+    let primary = targets.first().copied()?;
+    if let Some(place) = state.effective_place_ref(primary) {
+        return Some(place);
+    }
+    match primary {
+        PlanningEntityRef::Authoritative(entity)
+            if state.entity_kind_ref(primary) == Some(EntityKind::Place) =>
+        {
+            Some(entity)
+        }
+        PlanningEntityRef::Authoritative(_) | PlanningEntityRef::Hypothetical(_) => None,
+    }
+}
 
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
@@ -151,9 +170,11 @@ pub(super) fn build_successor_detailed<'snapshot>(
             .collect(),
         _ => transition.targets.clone(),
     };
-    let step = PlannedStep {
+    let target_place = resolve_step_target_place(&node.state, &step_targets);
+    let mut step = PlannedStep {
         def_id: candidate.def_id,
         targets: step_targets,
+        target_place,
         payload_override,
         op_kind: semantics.op_kind,
         estimated_ticks,
@@ -162,6 +183,9 @@ pub(super) fn build_successor_detailed<'snapshot>(
         guard: None,
         expectations: Vec::new(),
     };
+    let adoption_tick = node.state.current_tick();
+    step.guard = build_plan_guard(def, &step, adoption_tick);
+    step.expectations = build_plan_expectations(def, &step, adoption_tick);
     let terminal = terminal_kind(goal, &transition.state, &step, tactical_goal);
     if !semantics.may_appear_mid_plan && terminal.is_none() {
         return Err(crate::decision_trace::RootCandidateSkipReason::NonTerminalLeafOnly);

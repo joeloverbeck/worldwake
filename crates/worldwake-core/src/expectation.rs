@@ -1,8 +1,6 @@
 //! Expectation, last-seen, and search substrate types shared across crates.
 
-use crate::{
-    CommodityKind, Component, EntityId, EvidenceKind, ExpectationKindTag, Quantity, Tick,
-};
+use crate::{CommodityKind, Component, EntityId, EvidenceKind, ExpectationKindTag, Quantity, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;

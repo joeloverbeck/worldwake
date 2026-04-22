@@ -892,6 +892,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(1),
                 targets: vec![PlanningEntityRef::Authoritative(market)],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: 3,
@@ -1016,6 +1017,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(7),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Craft,
             estimated_ticks: 2,

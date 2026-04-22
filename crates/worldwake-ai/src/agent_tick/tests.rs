@@ -287,6 +287,7 @@ fn save_runtime_state_serializes_persisted_driver_state() {
         vec![PlannedStep {
             def_id: ActionDefId(9),
             targets: vec![PlanningEntityRef::Authoritative(place)],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 3,
@@ -1356,6 +1357,7 @@ fn barrier_step() -> PlannedStep {
     PlannedStep {
         def_id: ActionDefId(8),
         targets: vec![PlanningEntityRef::Authoritative(entity(11))],
+        target_place: Some(entity(11)),
         payload_override: None,
         op_kind: PlannerOpKind::Trade,
         estimated_ticks: 3,
@@ -1370,6 +1372,7 @@ fn travel_step(def_id: u32, target: EntityId) -> PlannedStep {
     PlannedStep {
         def_id: ActionDefId(def_id),
         targets: vec![PlanningEntityRef::Authoritative(target)],
+        target_place: Some(target),
         payload_override: None,
         op_kind: PlannerOpKind::Travel,
         estimated_ticks: 1,
@@ -1386,6 +1389,7 @@ fn hypothetical_step(def_id: u32, hypothetical: u32) -> PlannedStep {
         targets: vec![PlanningEntityRef::Hypothetical(
             crate::HypotheticalEntityId(hypothetical),
         )],
+        target_place: None,
         payload_override: None,
         op_kind: PlannerOpKind::MoveCargo,
         estimated_ticks: 1,
@@ -2875,6 +2879,7 @@ fn suspended_detour_completion_preserves_commitment_and_reactivates_it() {
             vec![PlannedStep {
                 def_id: ActionDefId(9),
                 targets: vec![PlanningEntityRef::Authoritative(entity(12))],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Consume,
                 estimated_ticks: 1,
@@ -3058,6 +3063,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
             PlannedStep {
                 def_id: ActionDefId(4),
                 targets: vec![PlanningEntityRef::Authoritative(entity(11))],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::MoveCargo,
                 estimated_ticks: 1,
@@ -3072,6 +3078,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
             PlannedStep {
                 def_id: ActionDefId(5),
                 targets: vec![PlanningEntityRef::Authoritative(entity(22))],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: 2,
@@ -3083,6 +3090,7 @@ fn materialized_pickup_binding_survives_intervening_travel_until_put_down_resolu
             PlannedStep {
                 def_id: ActionDefId(6),
                 targets: vec![PlanningEntityRef::Hypothetical(hypothetical_id)],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::MoveCargo,
                 estimated_ticks: 1,
@@ -3258,6 +3266,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let pick_up = PlannedStep {
         def_id: pick_up_def,
         targets: vec![PlanningEntityRef::Authoritative(original_lot)],
+        target_place: None,
         payload_override: Some(ActionPayload::Transport(TransportActionPayload {
             quantity: Quantity(2),
         })),
@@ -3274,6 +3283,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let travel = PlannedStep {
         def_id: travel_def,
         targets: vec![PlanningEntityRef::Authoritative(destination)],
+        target_place: None,
         payload_override: None,
         op_kind: PlannerOpKind::Travel,
         estimated_ticks: 1,
@@ -3285,6 +3295,7 @@ fn goal_stability_across_cargo_materialization_continuity() {
     let store_stock = PlannedStep {
         def_id: store_stock_def,
         targets: vec![PlanningEntityRef::Hypothetical(carried_hypothetical)],
+        target_place: None,
         payload_override: None,
         op_kind: PlannerOpKind::StockManagement,
         estimated_ticks: 1,
@@ -4931,6 +4942,7 @@ fn planning_trace_includes_scheduler_start_failures_for_wound_abort_reasons() {
     let heal_step = PlannedStep {
         def_id: heal_id,
         targets: vec![PlanningEntityRef::Authoritative(harness.actor)],
+        target_place: None,
         payload_override: None,
         op_kind: PlannerOpKind::Heal,
         estimated_ticks: 1,
@@ -5271,6 +5283,7 @@ fn summarize_plan_replacement_records_same_goal_sibling_replacement() {
             PlannedStep {
                 def_id: ActionDefId(2),
                 targets: vec![PlanningEntityRef::Authoritative(orchard_source)],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Harvest,
                 estimated_ticks: 1,

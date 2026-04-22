@@ -89,6 +89,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(id.0),
             binding_strictness: crate::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         }
     }
 

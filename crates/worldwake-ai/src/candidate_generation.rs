@@ -29,8 +29,8 @@ use worldwake_core::{
     BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
     EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey, GoalKind,
-    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey,
+    GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
     OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
     ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
@@ -3892,10 +3892,7 @@ fn emit_search_candidates(
         if record.owner != ctx.agent || record.state != ExpectationState::Overdue {
             continue;
         }
-        if matches!(
-            record.basis,
-            ExpectationBasis::PlanStepCompletion { .. }
-        ) {
+        if matches!(record.basis, ExpectationBasis::PlanStepCompletion { .. }) {
             // Plan-step expectation mismatches route through plan discrepancy
             // handling, not the social missing-response candidate path.
             continue;
@@ -5550,12 +5547,11 @@ mod tests {
         DemandObservationReason, Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile,
         DiversificationProfile, DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag,
         EntityId, EntityKind, EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis,
-        ExpectationId, ExpectationKindTag, ExpectationRecord, ExpectationState,
-        ExpectationStore, ExplorationProfile,
-        GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds,
-        InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
+        ExpectationId, ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
+        ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
         OpportunityAnchor, OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
         PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
         Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,

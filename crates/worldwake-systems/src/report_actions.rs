@@ -91,6 +91,8 @@ fn report_missing_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 
@@ -125,6 +127,8 @@ fn report_found_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 

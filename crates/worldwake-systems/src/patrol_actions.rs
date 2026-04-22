@@ -58,6 +58,8 @@ fn patrol_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentRouteStep,
+        guard_template: None,
+        expectation_template: vec![],
     }
 }
 

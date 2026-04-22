@@ -1252,6 +1252,7 @@ mod tests {
                 let step = PlannedStep {
                     def_id: ActionDefId(0),
                     targets: vec![],
+                    target_place: None,
                     payload_override: None,
                     op_kind: op,
                     estimated_ticks: 1,

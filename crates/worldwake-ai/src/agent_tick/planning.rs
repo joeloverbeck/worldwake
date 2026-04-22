@@ -2066,6 +2066,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(1),
                 targets: vec![PlanningEntityRef::Authoritative(orchard)],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: 1,
@@ -2106,6 +2107,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(1),
             targets: vec![PlanningEntityRef::Authoritative(destination)],
+            target_place: Some(destination),
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
@@ -2120,6 +2122,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(2),
             targets: vec![PlanningEntityRef::Authoritative(counterparty)],
+            target_place: None,
             payload_override: Some(ActionPayload::Trade(worldwake_sim::TradeActionPayload {
                 counterparty,
                 sale_lot: entity(600),
@@ -2140,6 +2143,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(3),
             targets: vec![PlanningEntityRef::Authoritative(entity(700))],
+            target_place: Some(entity(700)),
             payload_override: Some(ActionPayload::Craft(worldwake_sim::CraftActionPayload {
                 recipe_id,
                 required_workstation_tag: WorkstationTag::Mill,
@@ -2395,6 +2399,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(1),
                 targets: Vec::new(),
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Sleep,
                 estimated_ticks: 1,
@@ -2605,6 +2610,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(7),
                 targets: Vec::new(),
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::StockManagement,
                 estimated_ticks: 1,
@@ -2895,6 +2901,7 @@ mod tests {
                 PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(market)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 3,
@@ -2906,6 +2913,7 @@ mod tests {
                 PlannedStep {
                     def_id: ActionDefId(2),
                     targets: vec![crate::PlanningEntityRef::Authoritative(orchard)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,
@@ -2987,6 +2995,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         action_defs.register(ActionDef {
             id: ActionDefId(1),
@@ -3006,12 +3016,15 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: BindingStrictness::FungibleEquivalentCommodity,
+            guard_template: None,
+            expectation_template: vec![],
         });
 
         let exact = super::summarize_step(
             &PlannedStep {
                 def_id: ActionDefId(0),
                 targets: vec![],
+                target_place: None,
                 payload_override: None,
                 op_kind: crate::PlannerOpKind::Heal,
                 estimated_ticks: 3,
@@ -3026,6 +3039,7 @@ mod tests {
             &PlannedStep {
                 def_id: ActionDefId(1),
                 targets: vec![],
+                target_place: None,
                 payload_override: None,
                 op_kind: crate::PlannerOpKind::Consume,
                 estimated_ticks: 2,
@@ -3547,6 +3561,7 @@ mod tests {
                 vec![PlannedStep {
                     def_id: ActionDefId(9),
                     targets: vec![crate::PlanningEntityRef::Authoritative(remote_destination)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,

@@ -665,6 +665,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -702,6 +704,8 @@ mod tests {
             }),
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -765,6 +769,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -821,6 +827,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -878,6 +886,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
         (registry, handlers)
     }
@@ -886,6 +896,7 @@ mod tests {
         PlannedStep {
             def_id,
             targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: Some(target),
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
@@ -1022,6 +1033,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(0),
             targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(3))],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
@@ -1059,6 +1071,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(0),
             targets: vec![PlanningEntityRef::Hypothetical(hypothetical)],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 1,
@@ -1210,6 +1223,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(0),
             targets: vec![PlanningEntityRef::Authoritative(accused)],
+            target_place: None,
             payload_override: Some(ActionPayload::Accuse(worldwake_sim::AccuseActionPayload {
                 violation_id: worldwake_core::ViolationId(7),
             })),
@@ -1245,6 +1259,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(0),
             targets: vec![PlanningEntityRef::Authoritative(place)],
+            target_place: None,
             payload_override: Some(ActionPayload::PostBounty(
                 worldwake_sim::PostBountyActionPayload {
                     posting_place: place,
@@ -1291,6 +1306,7 @@ mod tests {
                 PlannedStep {
                     def_id: ActionDefId(10),
                     targets: vec![PlanningEntityRef::Authoritative(destination)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: PlannerOpKind::Travel,
                     estimated_ticks: 3,
@@ -1302,6 +1318,7 @@ mod tests {
                 PlannedStep {
                     def_id: ActionDefId(11),
                     targets: vec![PlanningEntityRef::Authoritative(target)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: PlannerOpKind::Attack,
                     estimated_ticks: 0,
@@ -1497,6 +1514,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(0),
                 targets: Vec::new(),
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Sleep,
                 estimated_ticks: 5,

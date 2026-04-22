@@ -320,6 +320,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(def_id),
             targets: vec![PlanningEntityRef::Authoritative(entity(def_id + 100))],
+            target_place: Some(entity(def_id + 100)),
             payload_override: None,
             op_kind,
             estimated_ticks: 1,

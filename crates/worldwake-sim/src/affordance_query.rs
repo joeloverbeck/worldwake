@@ -1115,6 +1115,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(id.0),
             binding_strictness: BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         }
     }
 
@@ -1675,6 +1677,8 @@ mod tests {
             }),
             handler: ActionHandlerId(0),
             binding_strictness: BindingStrictness::EquivalentWorkstationTagAtSamePlace,
+            guard_template: None,
+            expectation_template: vec![],
         });
         let handlers = handler_registry(registry.len());
 
@@ -1855,6 +1859,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
 
         let affordances = get_affordances(&view, actor, &registry, &handlers);
@@ -1967,6 +1973,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         });
 
         let affordances = get_affordances(&view, actor, &registry, &handlers);

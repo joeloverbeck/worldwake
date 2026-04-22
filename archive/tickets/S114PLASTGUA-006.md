@@ -1,9 +1,9 @@
 # S114PLASTGUA-006: ActionDef template specs + build_plan_guard / build_plan_expectations
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — two new fields on `ActionDef` (widespread construction-site impact); new `plan_guard_build.rs` module; `trade` action's guard_template populated; `SAVE_FORMAT_VERSION` bump.
+**Engine Changes**: Yes — two new fields on `ActionDef` (widespread construction-site impact); new `plan_guard_build.rs` module; `PlannedStep` now stores resolved `target_place`; production planner wiring for guard/expectation build; `trade` action's guard_template populated; `SAVE_FORMAT_VERSION` bump.
 **Deps**: `archive/tickets/S114PLASTGUA-001.md`, `archive/tickets/S114PLASTGUA-003.md`
 
 ## Problem
@@ -12,11 +12,11 @@ S114 D3 establishes declarative, serializable guard + expectation authoring on `
 
 ## Assumption Reassessment (2026-04-21)
 
-1. `ActionDef` at `crates/worldwake-sim/src/action_def.rs:27` has 17 existing fields and derives `Clone, Debug, Eq, PartialEq, Serialize, Deserialize`. No `Default` impl. Adding two new fields forces every literal-enumerating construction site to explicitly initialize them.
+1. `ActionDef` at `crates/worldwake-sim/src/action_def.rs:22` already includes the earlier S108 `binding_strictness` addition and now has 18 existing fields while still deriving `Clone, Debug, Eq, PartialEq, Serialize, Deserialize`. No `Default` impl. Adding two new fields here still forces every literal-enumerating construction site to explicitly initialize them.
 2. `rg -c 'ActionDef \{' crates` returns 170 occurrences across 41 files — the construction-site count includes the struct definition line and some type-reference lines, but the majority are literal enumerations inside test helpers and action-registration functions (`register_*_action`). All literal-enumerating sites must be updated. This is the dominant effort driver — the change itself is mechanical (add two lines per literal).
 3. S114 spec D3 at `specs/S114-plan-step-guards.md:172-233` defines the template types (`GuardTemplateSpec`, `ExpectationTemplateSpec`, `RequiredFactSpec`, `InvalidatorSpec`, `StatePredicateSpec`, `ObservationPredicateSpec`) and the two pure build functions.
 4. The `trade` action is registered at `crates/worldwake-systems/src/trade_actions.rs:23` (`register_trade_action`) with the literal `ActionDef` at `trade_actions.rs:38` (name `"trade"`, `ActionDomain::Trade`). This is the action ticket 010's golden test will exercise, so its `guard_template` must carry `TargetPresent` required fact + `TargetMoved` invalidator.
-5. Shared boundary under audit: `ActionDef`'s `Serialize + Deserialize` surface + the ~170 literal-enumeration sites. `SAVE_FORMAT_VERSION = 36` at `crates/worldwake-sim/src/save_load.rs:6` (current baseline) — this ticket bumps it by 1.
+5. Shared boundary under audit: `ActionDef`'s `Serialize + Deserialize` surface + the ~170 literal-enumeration sites. `SAVE_FORMAT_VERSION = 39` at `crates/worldwake-sim/src/save_load.rs:6` (current baseline after S114PLASTGUA-005) — this ticket bumps it by 1.
 6. Existing `ActionDef` tests at `action_def.rs:48-280`:
    - `action_def_satisfies_required_traits` (line 114) — no change needed; trait bounds identical.
    - `action_def_requires_all_expected_fields_with_concrete_non_optional_semantics` (line 119) — assertion-by-field; both new fields must be added to the assertion list.
@@ -32,9 +32,9 @@ S114 D3 establishes declarative, serializable guard + expectation authoring on `
 1. Serialization contract (`ActionDef` with / without `guard_template = Some(_)` round-trips through bincode) → new focused unit tests in `action_def.rs` tests module.
 2. Pure build-function contract (`build_plan_guard(ActionDef, PlannedStep, Tick)` translates `GuardTemplateSpec::TargetPresent` into concrete `RequiredFact::TargetPresent` with `step.primary_target()` + `step.target_place()`; returns `None` when `guard_template = None`) → focused unit tests in `plan_guard_build.rs`.
 3. Workspace compile after construction-site updates → `cargo build --workspace` succeeds.
-4. Existing `ActionDef` semantics tests (all 17 fields still required non-optionally, plus the two new optional-semantic fields) → updated `action_def_requires_all_expected_fields_with_concrete_non_optional_semantics` test.
+4. Existing `ActionDef` semantics tests (all 18 existing fields still required non-optionally, plus the two new optional-semantic fields) → updated `action_def_requires_all_expected_fields_with_concrete_non_optional_semantics` test.
 5. `trade` action registration continues to exercise every pre-S114 scenario (no regression in `cargo test -p worldwake-systems trade_actions`) — guard_template population adds a new optional field, does not replace any existing field.
-6. Single-layer (sim-crate struct layout + AI-crate pure fns + widespread construction-site updates); downstream consumers arrive in tickets 008 / 009 / 010.
+6. Shared sim/AI surface plus first live planner consumer: `ActionDef` and template specs land in sim, `PlannedStep` now stores resolved `target_place` in AI, and planner search builds the first production guard/expectation consumer here. Downstream revalidation / expectation lifecycle consumers remain tickets 007 / 008 / 009 / 010.
 
 ## What to Change
 
@@ -175,3 +175,28 @@ In `crates/worldwake-sim/src/save_load.rs:6`, increment by 1 relative to the cur
 3. `cargo test -p worldwake-systems trade_actions`
 4. `cargo build --workspace` (ensures all 170 construction sites are covered)
 5. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-22.
+
+- Added serializable guard/expectation template specs to `crates/worldwake-sim/src/action_def.rs`, extended `ActionDef` with `guard_template` and `expectation_template`, updated the explicit-field semantics test, and added focused bincode round-trip coverage for both empty and populated template cases.
+- Re-exported the new template-spec surface from `crates/worldwake-sim/src/lib.rs` and updated the explicit `ActionDef { ... }` construction sites touched by the workspace compile fallout so the new fields are always enumerated directly.
+- Extended `crates/worldwake-ai/src/planner_ops.rs` so `PlannedStep` stores a resolved `target_place` instead of inferring place from `primary_target()`. This keeps place-valued guard/expectation bindings concrete for entity-targeted actions such as `trade` while preserving explicit `None` for steps that do not have a lawful place.
+- Added `crates/worldwake-ai/src/plan_guard_build.rs` and exported it from `crates/worldwake-ai/src/lib.rs`; the pure builders translate the current step-bound template bindings into runtime `PlanGuard` / `PlanExpectation` values and are covered by focused unit tests.
+- Wired the live planner search path in `crates/worldwake-ai/src/search/transition.rs` so `build_plan_guard` / `build_plan_expectations` run when a `PlannedStep` is constructed; authored `ActionDef` templates now reach production plans instead of staying test-only substrate.
+- Strengthened the reachable-seller search proof in `crates/worldwake-ai/src/search/tests.rs` so the real `trade` plan step is required to carry the authored `TargetPresent` guard facts and invalidators with the correct market-place binding.
+- Populated the real `trade` action's `guard_template` in `crates/worldwake-systems/src/trade_actions.rs` with `TargetPresent`, `TargetMoved`, and `BeliefStatusChange`, and added a registration test that proves the action now carries the template.
+- Bumped `SAVE_FORMAT_VERSION` in `crates/worldwake-sim/src/save_load.rs` from `39` to `40` for the widened serialized `ActionDef` surface.
+- Truth-in-advertising note: the shipped builder currently resolves the step-bound sources used by this ticket's real action/template path; actor-bound source variants remain inert until a later ticket threads actor-place context into the builder inputs.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim action_def`
+- Passed `cargo test -p worldwake-ai --lib planner_ops::tests::planned_step_target_place_and_claim_are_independent -- --exact`
+- Passed `cargo test -p worldwake-ai plan_guard_build`
+- Passed `cargo test -p worldwake-ai --lib search::tests::search_returns_travel_then_trade_barrier_for_reachable_seller -- --exact`
+- Passed `cargo test -p worldwake-systems trade_actions`
+- Passed `cargo build --workspace`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`

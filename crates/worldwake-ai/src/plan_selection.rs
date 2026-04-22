@@ -187,6 +187,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(def_id),
                 targets: vec![PlanningEntityRef::Authoritative(entity(def_id))],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: ticks,
@@ -214,6 +215,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(def_id),
                 targets: vec![PlanningEntityRef::Authoritative(entity(def_id))],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Travel,
                 estimated_ticks: ticks,
@@ -774,6 +776,7 @@ mod tests {
                 PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![PlanningEntityRef::Authoritative(entity(11))],
+                    target_place: None,
                     payload_override: None,
                     op_kind: PlannerOpKind::Travel,
                     estimated_ticks: 5,
@@ -785,6 +788,7 @@ mod tests {
                 PlannedStep {
                     def_id: ActionDefId(2),
                     targets: vec![PlanningEntityRef::Authoritative(entity(12))],
+                    target_place: None,
                     payload_override: None,
                     op_kind: PlannerOpKind::Travel,
                     estimated_ticks: 4,
@@ -1105,6 +1109,7 @@ mod tests {
                 ..PlannedStep {
                     def_id: ActionDefId(1),
                     targets: Vec::new(),
+                    target_place: None,
                     payload_override: None,
                     op_kind: PlannerOpKind::Travel,
                     estimated_ticks: 3,
@@ -1122,6 +1127,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(2),
                 targets: vec![PlanningEntityRef::Authoritative(entity(2))],
+                target_place: None,
                 payload_override: None,
                 op_kind: PlannerOpKind::Consume,
                 estimated_ticks: 1,

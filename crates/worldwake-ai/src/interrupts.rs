@@ -645,6 +645,7 @@ mod tests {
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(1))],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,
@@ -860,6 +861,7 @@ mod tests {
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(1))],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,
@@ -893,6 +895,7 @@ mod tests {
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(2),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(2))],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,
@@ -953,6 +956,7 @@ mod tests {
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(1))],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Harvest,
                     estimated_ticks: 6,
@@ -1163,6 +1167,7 @@ mod tests {
                 vec![crate::PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(destination)],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 2,
@@ -1210,6 +1215,7 @@ mod tests {
                     vec![crate::PlannedStep {
                         def_id: ActionDefId(2),
                         targets: vec![crate::PlanningEntityRef::Authoritative(entity(99))],
+                        target_place: None,
                         payload_override: None,
                         op_kind: crate::PlannerOpKind::Travel,
                         estimated_ticks: 1,
@@ -1229,6 +1235,7 @@ mod tests {
                     vec![crate::PlannedStep {
                         def_id: ActionDefId(3),
                         targets: vec![crate::PlanningEntityRef::Authoritative(entity(3))],
+                        target_place: None,
                         payload_override: None,
                         op_kind: crate::PlannerOpKind::Consume,
                         estimated_ticks: 1,

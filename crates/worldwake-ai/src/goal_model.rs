@@ -3019,6 +3019,7 @@ mod tests {
             def_id: ActionDefId(77),
             op_kind: PlannerOpKind::Tell,
             targets: vec![crate::PlanningEntityRef::Authoritative(entity_id(6, 0))],
+            target_place: None,
             payload_override: None,
             estimated_ticks: 2,
             is_materialization_barrier: false,
@@ -4155,6 +4156,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -4244,6 +4247,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::MoveCargo,
@@ -4313,6 +4318,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4384,6 +4391,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4461,6 +4470,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4522,6 +4533,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -4585,6 +4598,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::SearchPlace,
@@ -4649,6 +4664,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ReportMissing,
@@ -4714,6 +4731,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Accuse,
@@ -4786,6 +4805,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Exile,
@@ -4845,6 +4866,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4890,6 +4913,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Accuse,
@@ -4931,6 +4956,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ClaimBounty,
@@ -4982,6 +5009,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostNotice,
@@ -5043,6 +5072,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostBounty,
@@ -5090,6 +5121,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::EstablishCamp,
@@ -5136,6 +5169,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5181,6 +5216,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5223,6 +5260,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5266,6 +5305,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Attack,
@@ -5309,6 +5350,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Attack,
@@ -5353,6 +5396,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -5406,6 +5451,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::SearchPlace,
@@ -5456,6 +5503,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ReportMissing,
@@ -5510,6 +5559,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -5673,6 +5724,7 @@ mod tests {
         let sleep_step = PlannedStep {
             def_id: ActionDefId(2),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Sleep,
             estimated_ticks: 1,
@@ -5684,6 +5736,7 @@ mod tests {
         let barrier_step = PlannedStep {
             def_id: ActionDefId(1),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Harvest,
             estimated_ticks: 3,
@@ -6147,6 +6200,7 @@ mod tests {
         let queue_step = PlannedStep {
             def_id: ActionDefId(7),
             targets: Vec::new(),
+            target_place: None,
             payload_override: Some(ActionPayload::QueueForFacilityUse(
                 QueueForFacilityUsePayload {
                     intended_action: ActionDefId(19),
@@ -6351,6 +6405,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let declare_semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -6430,6 +6486,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -6453,6 +6511,7 @@ mod tests {
         assert!(goal.is_progress_barrier(&PlannedStep {
             def_id: def.id,
             targets: Vec::new(),
+            target_place: None,
             payload_override: Some(payload),
             op_kind: PlannerOpKind::DeclareSupport,
             estimated_ticks: 1,
@@ -6486,6 +6545,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -6524,6 +6585,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PressForceClaim,
@@ -8791,6 +8854,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(77),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::DeclareSupport,
             estimated_ticks: 1,
@@ -9802,6 +9866,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(200),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::StaffMarket,
             estimated_ticks: 5,
@@ -9824,6 +9889,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(201),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 2,
@@ -10524,6 +10590,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::MoveCargo,
@@ -10643,6 +10711,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostBounty,
@@ -10714,6 +10784,8 @@ mod tests {
             payload: ActionPayload::None,
             handler: ActionHandlerId(0),
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostNotice,
@@ -10741,6 +10813,7 @@ mod tests {
         assert!(goal.is_progress_barrier(&PlannedStep {
             def_id: def.id,
             targets: Vec::new(),
+            target_place: None,
             payload_override: Some(payload),
             op_kind: PlannerOpKind::PostNotice,
             estimated_ticks: 1,

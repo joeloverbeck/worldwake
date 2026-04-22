@@ -418,6 +418,7 @@ mod tests {
                 vec![PlannedStep {
                     def_id: ActionDefId(1),
                     targets: vec![crate::PlanningEntityRef::Authoritative(entity(7))],
+                    target_place: None,
                     payload_override: None,
                     op_kind: crate::PlannerOpKind::Travel,
                     estimated_ticks: 3,

@@ -817,6 +817,7 @@ pub struct ExpectedMaterialization {
 pub struct PlannedStep {
     pub def_id: ActionDefId,
     pub targets: Vec<PlanningEntityRef>,
+    pub target_place: Option<EntityId>,
     pub payload_override: Option<ActionPayload>,
     pub op_kind: PlannerOpKind,
     pub estimated_ticks: u32,
@@ -837,7 +838,7 @@ impl PlannedStep {
 
     #[must_use]
     pub fn target_place(&self) -> Option<EntityId> {
-        self.primary_target()
+        self.target_place
     }
 
     #[must_use]
@@ -1057,6 +1058,7 @@ mod tests {
                 PlanningEntityRef::Authoritative(entity(3)),
                 PlanningEntityRef::Authoritative(entity(4)),
             ],
+            target_place: Some(entity(4)),
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty: entity(3),
                 sale_lot: EntityId {
@@ -1080,6 +1082,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(8),
             targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: Some(target),
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 2,
@@ -1189,9 +1192,9 @@ mod tests {
     }
 
     #[test]
-    fn planned_step_target_place_and_claim_follow_primary_target() {
+    fn planned_step_target_place_and_claim_are_independent() {
         let step = sample_step();
-        assert_eq!(step.target_place(), Some(entity(3)));
+        assert_eq!(step.target_place(), Some(entity(4)));
         assert_eq!(
             step.target_claim(),
             Some(BeliefClaimKey {
@@ -1202,9 +1205,10 @@ mod tests {
 
         let hypothetical = PlannedStep {
             targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(4))],
+            target_place: Some(entity(9)),
             ..sample_step()
         };
-        assert_eq!(hypothetical.target_place(), None);
+        assert_eq!(hypothetical.target_place(), Some(entity(9)));
         assert_eq!(hypothetical.target_claim(), None);
     }
 
@@ -1702,6 +1706,7 @@ mod tests {
             vec![PlannedStep {
                 def_id: ActionDefId(2),
                 targets: vec![PlanningEntityRef::Authoritative(entity(6))],
+                target_place: Some(entity(6)),
                 payload_override: None,
                 op_kind: PlannerOpKind::Sleep,
                 estimated_ticks: 1,

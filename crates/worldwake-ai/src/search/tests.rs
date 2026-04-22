@@ -13,7 +13,7 @@ use crate::shared_collections::SharedVec;
 use crate::{
     CommodityPurpose, GoalKey, GoalKind, GroundedGoal, PlanSearchResult, PlanTerminalKind,
     PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningEntityRef,
-    PlanningSnapshot, PlanningState, ProfileFixture, build_planning_snapshot,
+    PlanningSnapshot, PlanningState, ProfileFixture, RequiredFact, build_planning_snapshot,
     build_planning_snapshot_with_blocked_facility_uses, build_semantics_table,
 };
 use std::cmp::Ordering;
@@ -1088,12 +1088,14 @@ fn sample_step(
     estimated_ticks: u32,
     targets: Vec<EntityId>,
 ) -> PlannedStep {
+    let target_place = targets.first().copied();
     PlannedStep {
         def_id: ActionDefId(def_id),
         targets: targets
             .into_iter()
             .map(PlanningEntityRef::Authoritative)
             .collect(),
+        target_place,
         payload_override: None,
         op_kind,
         estimated_ticks,
@@ -1491,6 +1493,19 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
         plan.steps[1].payload_override,
         Some(ActionPayload::Trade(_))
     ));
+    let trade_guard = plan.steps[1]
+        .guard
+        .as_ref()
+        .expect("trade step should carry the authored guard template");
+    assert_eq!(
+        trade_guard.required_facts,
+        vec![RequiredFact::TargetPresent {
+            target: seller,
+            at_place: market,
+        }]
+    );
+    assert_eq!(trade_guard.invalidators.len(), 2);
+    assert!(plan.steps[1].expectations.is_empty());
 }
 
 #[test]

@@ -1795,6 +1795,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(1),
             targets: vec![PlanningEntityRef::Authoritative(counterparty)],
+            target_place: None,
             payload_override: Some(ActionPayload::Trade(TradeActionPayload {
                 counterparty,
                 sale_lot: TRADE_SALE_LOT,
@@ -1822,6 +1823,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(2),
             targets: vec![PlanningEntityRef::Authoritative(place)],
+            target_place: Some(place),
             payload_override: None,
             op_kind: PlannerOpKind::Travel,
             estimated_ticks: 2,
@@ -1836,6 +1838,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(3),
             targets: vec![PlanningEntityRef::Authoritative(workstation)],
+            target_place: None,
             payload_override: Some(ActionPayload::Craft(CraftActionPayload {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::Mill,
@@ -1860,6 +1863,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(6),
             targets: Vec::new(),
+            target_place: None,
             payload_override: Some(ActionPayload::DeclareSupport(DeclareSupportActionPayload {
                 office,
                 candidate,
@@ -1877,6 +1881,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(4),
             targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: None,
             payload_override: Some(ActionPayload::Combat(CombatActionPayload {
                 target,
                 weapon: worldwake_core::CombatWeaponRef::Unarmed,
@@ -1894,6 +1899,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(5),
             targets: vec![PlanningEntityRef::Hypothetical(HypotheticalEntityId(9))],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Consume,
             estimated_ticks: 1,
@@ -2009,6 +2015,7 @@ mod tests {
         PlannedStep {
             def_id: ActionDefId(7),
             targets: vec![PlanningEntityRef::Authoritative(target)],
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::MoveCargo,
             estimated_ticks: 1,
@@ -3123,6 +3130,7 @@ mod tests {
         let step = PlannedStep {
             def_id: ActionDefId(5),
             targets: Vec::new(),
+            target_place: None,
             payload_override: None,
             op_kind: PlannerOpKind::Sleep,
             estimated_ticks: 1,
