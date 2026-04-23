@@ -11,14 +11,15 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EligibilityRule, EntityId,
-    EntityKind, EventLog, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
-    ExpectationState, ExpectationStore, ExplorationProfile, KnownRecipes,
-    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
-    MerchandiseProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolRoute, Place,
-    ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind, ResourceSource,
-    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
-    World, WorldTxn, default_commodity_decay_map, hash_world,
+    ArtifactHeader, ArtifactKind, ArtifactState, CarryCapacity, CauseRef, ControlSource,
+    DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+    KnownRecipes, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+    LoadUnits, MerchandiseProfile, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
+    OfficeForceState, PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+    RecordData, RecordKind, ResourceSource, Seed, SocialObservation, SocialObservationDetail, Tick,
+    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
+    WorldTxn, default_commodity_decay_map, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -277,6 +278,10 @@ fn spawn_entities(
         spawn_office(&mut txn, office_def, names, &mut facility_locations)?;
     }
 
+    for notice_def in &def.notices {
+        spawn_notice(&mut txn, notice_def, names)?;
+    }
+
     for item_def in &def.items {
         spawn_item(&mut txn, item_def, names, place_names, &agent_locations)?;
     }
@@ -492,6 +497,16 @@ fn spawn_agent(
     txn.set_component_expectation_store(agent_id, expectation_store)?;
     let last_seen_memory = last_seen_memory_from_def(agent_def.last_seen_memory.as_ref(), names)?;
     txn.set_component_last_seen_memory(agent_id, last_seen_memory)?;
+    if let Some(observations_def) = agent_def.social_observations.as_ref() {
+        let mut belief_store = txn
+            .get_component_agent_belief_store(agent_id)
+            .cloned()
+            .unwrap_or_default();
+        belief_store
+            .social_observations
+            .extend(social_observations_from_def(observations_def, names)?);
+        txn.set_component_agent_belief_store(agent_id, belief_store)?;
+    }
     let obligation_satiation_profile = agent_def
         .obligation_satiation_profile
         .clone()
@@ -693,6 +708,63 @@ fn spawn_office(
     Ok(())
 }
 
+fn spawn_notice(
+    txn: &mut WorldTxn<'_>,
+    notice_def: &types::NoticeDef,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<(), ScenarioError> {
+    let issuer = resolve_name(names, &notice_def.issuer, "notice issuer")?;
+    let location = resolve_name(names, &notice_def.location, "notice location")?;
+    let issuing_authority = notice_def
+        .issuing_authority
+        .as_ref()
+        .map(|name| resolve_name(names, name, "notice issuing_authority"))
+        .transpose()?;
+    let jurisdiction = notice_def
+        .jurisdiction
+        .as_ref()
+        .map(|name| resolve_name(names, name, "notice jurisdiction"))
+        .transpose()?;
+    let topic = notice_topic_from_def(&notice_def.topic, names)?;
+
+    let artifact = txn.create_entity(EntityKind::SocialArtifact);
+    txn.set_component_artifact_header(
+        artifact,
+        ArtifactHeader {
+            kind: ArtifactKind::Notice,
+            issuer,
+            issuing_authority,
+            created_at: Tick(0),
+            expires_at: notice_def.expires_at.map(Tick),
+            state: ArtifactState::Active,
+            jurisdiction,
+        },
+    )?;
+    txn.set_component_notice_content(artifact, NoticeContent { topic })?;
+    txn.set_ground_location(artifact, location)?;
+    Ok(())
+}
+
+fn notice_topic_from_def(
+    topic: &types::NoticeTopicDef,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<NoticeTopic, ScenarioError> {
+    match topic {
+        types::NoticeTopicDef::ThreatWarning { place } => Ok(NoticeTopic::ThreatWarning {
+            place: resolve_name(names, place, "notice threat_warning place")?,
+        }),
+        types::NoticeTopicDef::OfficeVacancy { office } => Ok(NoticeTopic::OfficeVacancy {
+            office: resolve_name(names, office, "notice office_vacancy office")?,
+        }),
+        types::NoticeTopicDef::CommodityShortage { commodity, place } => {
+            Ok(NoticeTopic::CommodityShortage {
+                commodity: *commodity,
+                place: resolve_name(names, place, "notice commodity_shortage place")?,
+            })
+        }
+    }
+}
+
 fn expectation_store_from_def(
     owner: EntityId,
     def: Option<&types::ExpectationStoreDef>,
@@ -844,6 +916,31 @@ fn last_seen_provenance_from_def(
     })
 }
 
+fn social_observations_from_def(
+    defs: &[types::SocialObservationDef],
+    names: &BTreeMap<String, EntityId>,
+) -> Result<Vec<SocialObservation>, ScenarioError> {
+    defs.iter()
+        .map(|def| {
+            let place = resolve_name(names, &def.place, "social observation place")?;
+            let detail = match &def.detail {
+                types::SocialObservationDetailDef::WitnessedConflict { actor, target } => {
+                    SocialObservationDetail::WitnessedConflict {
+                        actor: resolve_name(names, actor, "social observation actor")?,
+                        target: resolve_name(names, target, "social observation target")?,
+                    }
+                }
+            };
+            Ok(SocialObservation {
+                detail,
+                place,
+                observed_tick: Tick(def.observed_tick),
+                source: def.source,
+            })
+        })
+        .collect()
+}
+
 /// Spawn a single item lot at a place or on an agent.
 fn spawn_item(
     txn: &mut WorldTxn<'_>,
@@ -978,6 +1075,7 @@ mod tests {
             preference_profile: None,
             expectation_store: None,
             last_seen_memory: None,
+            social_observations: None,
             obligation_satiation_profile: None,
             drive_thresholds: None,
             drive_escalation_profile: None,
@@ -1011,6 +1109,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Village", ControlSource::Human)],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1042,6 +1141,153 @@ mod tests {
         let place_id = world.effective_place(agent_id).unwrap();
         let place = world.topology().place(place_id).unwrap();
         assert_eq!(place.name, "Village");
+    }
+
+    #[test]
+    fn test_spawn_notice_artifact_from_scenario() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Square".into(),
+                tags: vec![PlaceTag::Village],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![minimal_agent("Herald", "Square", ControlSource::Human)],
+            offices: vec![],
+            notices: vec![NoticeDef {
+                issuer: "Herald".into(),
+                location: "Square".into(),
+                issuing_authority: None,
+                expires_at: Some(18),
+                jurisdiction: Some("Square".into()),
+                topic: NoticeTopicDef::ThreatWarning {
+                    place: "Square".into(),
+                },
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let square = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        let herald = world
+            .entities_with_name_and_agent_data()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|name| name.0 == "Herald")
+            })
+            .expect("scenario should spawn notice issuer");
+        let notice = world
+            .entities_effectively_at(square)
+            .into_iter()
+            .find(|entity| world.get_component_artifact_header(*entity).is_some())
+            .expect("scenario should spawn a notice artifact at the square");
+
+        assert_eq!(
+            world.get_component_artifact_header(notice),
+            Some(&ArtifactHeader {
+                kind: ArtifactKind::Notice,
+                issuer: herald,
+                issuing_authority: None,
+                created_at: Tick(0),
+                expires_at: Some(Tick(18)),
+                state: ArtifactState::Active,
+                jurisdiction: Some(square),
+            })
+        );
+        assert_eq!(
+            world.get_component_notice_content(notice),
+            Some(&NoticeContent {
+                topic: NoticeTopic::ThreatWarning { place: square },
+            })
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_with_social_observations_override() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Square".into(),
+                tags: vec![PlaceTag::Village],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![
+                minimal_agent("Rival", "Square", ControlSource::None),
+                AgentDef {
+                    social_observations: Some(vec![SocialObservationDef {
+                        place: "Square".into(),
+                        observed_tick: 7,
+                        source: worldwake_core::PerceptionSource::DirectObservation,
+                        detail: SocialObservationDetailDef::WitnessedConflict {
+                            actor: "Claimant".into(),
+                            target: "Rival".into(),
+                        },
+                    }]),
+                    ..minimal_agent("Claimant", "Square", ControlSource::Ai)
+                },
+            ],
+            offices: vec![],
+            notices: vec![],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let square = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        let claimant = world
+            .entities_with_name_and_agent_data()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|name| name.0 == "Claimant")
+            })
+            .expect("scenario should spawn claimant");
+        let rival = world
+            .entities_with_name_and_agent_data()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|name| name.0 == "Rival")
+            })
+            .expect("scenario should spawn rival");
+
+        assert_eq!(
+            world
+                .get_component_agent_belief_store(claimant)
+                .expect("scenario should keep claimant belief store")
+                .social_observations,
+            vec![SocialObservation {
+                detail: SocialObservationDetail::WitnessedConflict {
+                    actor: claimant,
+                    target: rival,
+                },
+                place: square,
+                observed_tick: Tick(7),
+                source: worldwake_core::PerceptionSource::DirectObservation,
+            }]
+        );
     }
 
     #[test]
@@ -1119,6 +1365,7 @@ mod tests {
                 minimal_agent("Bob", "Forest", ControlSource::Ai),
             ],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1164,6 +1411,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1198,6 +1446,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1237,6 +1486,7 @@ mod tests {
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1275,6 +1525,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Scout", "Forest", ControlSource::Ai)],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1323,6 +1574,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Trader", "Market", ControlSource::Ai)],
             offices: vec![],
+            notices: vec![],
             items: vec![ItemDef {
                 commodity: CommodityKind::Apple,
                 quantity: Quantity(10),
@@ -1374,6 +1626,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Warrior", "Camp", ControlSource::Human)],
             offices: vec![],
+            notices: vec![],
             items: vec![ItemDef {
                 commodity: CommodityKind::Sword,
                 quantity: Quantity(1),
@@ -1429,6 +1682,7 @@ mod tests {
             }],
             agents: vec![],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1485,6 +1739,7 @@ mod tests {
             }],
             agents: vec![],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1543,6 +1798,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Lost", "Nowhere", ControlSource::Ai)],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1586,6 +1842,7 @@ mod tests {
             edges: vec![],
             agents: vec![],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Forge Bench".into()),
@@ -1659,6 +1916,7 @@ mod tests {
                 ..minimal_agent("Forager", "Orchard", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1709,6 +1967,7 @@ mod tests {
             edges: vec![],
             agents: vec![],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("North Orchard".into()),
@@ -1773,6 +2032,7 @@ mod tests {
                 ..minimal_agent("Water Bearer", "Village", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Village Well".into()),
@@ -1855,6 +2115,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Merchant", "Market", ControlSource::Ai)],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Merchant Stall".into()),
@@ -1939,6 +2200,7 @@ mod tests {
             edges: vec![],
             agents: vec![minimal_agent("Bot", "Void", ControlSource::Ai)],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1979,6 +2241,7 @@ mod tests {
                 ..minimal_agent("Hungry", "Home", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2095,6 +2358,7 @@ mod tests {
                 ..minimal_agent("Scout", "Town", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2142,6 +2406,7 @@ mod tests {
                 ..minimal_agent("Searcher", "Home", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2191,6 +2456,7 @@ mod tests {
                 ..minimal_agent("Herald", "Home", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2304,6 +2570,7 @@ mod tests {
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2365,6 +2632,7 @@ mod tests {
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2417,6 +2685,7 @@ mod tests {
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2512,6 +2781,7 @@ mod tests {
                 ..minimal_agent("Guard", "Gate", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2622,6 +2892,7 @@ mod tests {
                 ..minimal_agent("Guard", "Gate", ControlSource::Ai)
             }],
             offices: vec![],
+            notices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

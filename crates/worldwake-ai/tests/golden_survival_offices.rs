@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
-use worldwake_core::{DriveThresholds, GoalKind, PerceptionSource, Tick};
+use worldwake_core::{DriveThresholds, GoalKind, NoticeTopic, Tick};
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
@@ -27,9 +27,12 @@ struct OfficesObservation {
     agent: AgentSurvivalObservation,
     stuck_idle_windows: Vec<StuckIdleWindow>,
     first_claim_selection_tick: Tick,
+    first_post_notice_selection_tick: Tick,
+    first_post_notice_commit_tick: Tick,
     first_press_force_claim_tick: Tick,
     first_control_tick: Tick,
     first_holder_tick: Tick,
+    posted_threat_warning_exists: bool,
 }
 
 fn scenario_path() -> PathBuf {
@@ -41,18 +44,6 @@ fn load_survival_offices_harness() -> (GoldenHarness, ScenarioDef) {
     let def = load_scenario_file(&path).expect("survival offices scenario should parse");
     let spawned = spawn_scenario(&def).expect("survival offices scenario should spawn");
     let mut harness = GoldenHarness::from_simulation_state(&spawned.state);
-    let agent = harness
-        .world
-        .query_name_and_agent_data()
-        .find_map(|(entity, name, _)| (name.0 == "Claimant Rhea").then_some(entity))
-        .expect("scenario should include Claimant Rhea");
-    seed_actor_local_beliefs(
-        &mut harness.world,
-        &mut harness.event_log,
-        agent,
-        Tick(0),
-        PerceptionSource::DirectObservation,
-    );
     harness.driver.enable_tracing();
     harness.enable_action_tracing();
     (harness, def)
@@ -99,6 +90,8 @@ fn run_survival_offices() -> OfficesObservation {
     let mut idle_state: (Option<u32>, u16, u32) = (None, 0, 0);
 
     let mut first_claim_selection_tick = None;
+    let mut first_post_notice_selection_tick = None;
+    let mut first_post_notice_commit_tick = None;
     let mut first_press_force_claim_tick = None;
     let mut first_control_tick = None;
     let mut first_holder_tick = None;
@@ -161,6 +154,40 @@ fn run_survival_offices() -> OfficesObservation {
             first_claim_selection_tick = first_claim_selection_tick.or(maybe_tick);
         }
 
+        if first_post_notice_selection_tick.is_none() {
+            let maybe_tick = h
+                .driver
+                .trace_sink()
+                .expect("decision tracing should be enabled")
+                .trace_at(agent, tick)
+                .and_then(|trace| match &trace.outcome {
+                    DecisionOutcome::Planning(planning)
+                        if planning.selection.selected_goal().is_some_and(|goal| {
+                            matches!(
+                                goal.kind,
+                                GoalKind::PostNotice {
+                                    topic: NoticeTopic::ThreatWarning { .. },
+                                    ..
+                                }
+                            )
+                        }) =>
+                    {
+                        Some(trace.tick)
+                    }
+                    _ => None,
+                });
+            first_post_notice_selection_tick = first_post_notice_selection_tick.or(maybe_tick);
+        }
+
+        if first_post_notice_commit_tick.is_none()
+            && action_sink.events_for_at(agent, tick).iter().any(|event| {
+                event.action_name == "post_notice"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            })
+        {
+            first_post_notice_commit_tick = Some(tick);
+        }
+
         if first_press_force_claim_tick.is_none()
             && action_sink.events_for_at(agent, tick).iter().any(|event| {
                 event.action_name == "press_force_claim"
@@ -196,6 +223,51 @@ fn run_survival_offices() -> OfficesObservation {
         .into_iter()
         .map(|trace| format!("{:?}: {}", trace.tick, trace.outcome.summary()))
         .collect::<Vec<_>>();
+    let post_notice_attempt_summaries = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .traces_for(agent)
+        .into_iter()
+        .filter_map(|trace| match &trace.outcome {
+            DecisionOutcome::Planning(planning) => Some((trace.tick, planning)),
+            _ => None,
+        })
+        .flat_map(|(tick, planning)| {
+            planning
+                .planning
+                .attempts
+                .iter()
+                .filter(|attempt| {
+                    matches!(
+                        attempt.goal.kind,
+                        GoalKind::PostNotice {
+                            topic: NoticeTopic::ThreatWarning { .. },
+                            ..
+                        }
+                    )
+                })
+                .map(move |attempt| {
+                    let root = attempt
+                        .expansion_summaries
+                        .iter()
+                        .find(|summary| summary.depth == 0);
+                    format!(
+                        "{tick:?}: outcome={:?}, roots={:?}, omissions={:?}, bindings={:?}",
+                        attempt.outcome,
+                        root.map(|summary| &summary.root_candidates),
+                        root.map(|summary| &summary.root_omissions),
+                        attempt.binding_rejections,
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    let posted_threat_warning_exists = h.world.query_artifact_header().any(|(artifact, header)| {
+        header.created_at > Tick(0)
+            && h.world
+                .get_component_notice_content(artifact)
+                .is_some_and(|content| matches!(content.topic, NoticeTopic::ThreatWarning { .. }))
+    });
 
     OfficesObservation {
         contract,
@@ -208,24 +280,35 @@ fn run_survival_offices() -> OfficesObservation {
         stuck_idle_windows,
         first_claim_selection_tick: first_claim_selection_tick.unwrap_or_else(|| {
             panic!(
-                "scenario should select ClaimOffice under survival pressure; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
+                "scenario should select ClaimOffice under survival pressure; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
+            )
+        }),
+        first_post_notice_selection_tick: first_post_notice_selection_tick.unwrap_or_else(|| {
+            panic!(
+                "scenario should select PostNotice from authored warning substrate; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
+            )
+        }),
+        first_post_notice_commit_tick: first_post_notice_commit_tick.unwrap_or_else(|| {
+            panic!(
+                "scenario should commit post_notice from authored warning substrate; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
             )
         }),
         first_press_force_claim_tick: first_press_force_claim_tick.unwrap_or_else(|| {
             panic!(
-                "scenario should commit press_force_claim after consulting the register; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
+                "scenario should commit press_force_claim after consulting the register; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
             )
         }),
         first_control_tick: first_control_tick.unwrap_or_else(|| {
             panic!(
-                "scenario should establish office control after press_force_claim; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
+                "scenario should establish office control after press_force_claim; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
             )
         }),
         first_holder_tick: first_holder_tick.unwrap_or_else(|| {
             panic!(
-                "scenario should install the holder after force-control delay; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
+                "scenario should install the holder after force-control delay; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
             )
         }),
+        posted_threat_warning_exists,
     }
 }
 
@@ -241,18 +324,21 @@ fn run_survival_offices() -> OfficesObservation {
 // Principles: 6, 7, 14, 20
 //
 // Setup: Run the authored survival offices scenario for 1440 ticks. `Claimant
-//   Rhea` starts at `Council Green` with one vacant force-law office and the
-//   co-located survival substrate needed to keep eating, drinking, relieving,
-//   washing, and sleeping in the same place. That makes the row about
-//   force-law office pressure competing with ongoing self-care rather than
+//   Rhea` starts at `Council Green` with one vacant force-law office, authored
+//   remembered local conflict memory, and the co-located survival substrate
+//   needed to keep eating, drinking, relieving, washing, and sleeping in the
+//   same place. That makes the row about force-law office pressure and
+//   autonomous notice posting competing with ongoing self-care rather than
 //   travel or consult-record gating.
 //
 // Proves: the tracked agent satisfies the authored survival-health contract,
-//   selects `ClaimOffice`, commits `press_force_claim`, becomes force
-//   controller, and only later installs as office holder after the force-law
-//   hold delay.
+//   selects `ClaimOffice`, selects and commits `PostNotice` from the authored
+//   warning substrate, commits `press_force_claim`, becomes force controller,
+//   and only later installs as office holder after the force-law hold delay.
 //
-// Chain: vacant force-law office under survival pressure -> ClaimOffice
+// Chain: authored remembered local conflict -> PostNotice selected and
+//   committed -> new threat-warning notice artifact exists; in the same
+//   authored survival run a vacant force-law office under survival pressure -> ClaimOffice
 //   selected -> press_force_claim commits -> office controller mutates ->
 //   delayed office holder installation.
 #[test]
@@ -292,12 +378,20 @@ fn survival_offices_proves_force_law_uptake() {
         "press_force_claim must follow ClaimOffice selection; observation={observation:?}"
     );
     assert!(
+        observation.first_post_notice_selection_tick <= observation.first_post_notice_commit_tick,
+        "post_notice must follow PostNotice selection; observation={observation:?}"
+    );
+    assert!(
         observation.first_press_force_claim_tick <= observation.first_control_tick,
         "force control must not appear before the press_force_claim commit; observation={observation:?}"
     );
     assert!(
         observation.first_control_tick <= observation.first_holder_tick,
         "holder installation must follow force control and hold delay; observation={observation:?}"
+    );
+    assert!(
+        observation.posted_threat_warning_exists,
+        "post_notice should leave a threat-warning notice artifact created during the run; observation={observation:?}"
     );
 }
 

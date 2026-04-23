@@ -13,10 +13,11 @@ use worldwake_core::{
     ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
     DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
     HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
-    MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille,
-    PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-    SuccessionLaw, TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
+    PerceptionSource, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
+    Quantity, SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
+    items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -30,6 +31,8 @@ pub struct ScenarioDef {
     pub agents: Vec<AgentDef>,
     #[serde(default)]
     pub offices: Vec<OfficeDef>,
+    #[serde(default)]
+    pub notices: Vec<NoticeDef>,
     #[serde(default)]
     pub items: Vec<ItemDef>,
     #[serde(default)]
@@ -67,6 +70,51 @@ pub struct OfficeDef {
 #[serde(deny_unknown_fields)]
 pub enum EligibilityRuleDef {
     FactionMember(String),
+}
+
+/// An authored notice artifact using string references instead of `EntityId`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NoticeDef {
+    pub issuer: String,
+    pub location: String,
+    #[serde(default)]
+    pub issuing_authority: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<u64>,
+    #[serde(default)]
+    pub jurisdiction: Option<String>,
+    pub topic: NoticeTopicDef,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum NoticeTopicDef {
+    ThreatWarning {
+        place: String,
+    },
+    OfficeVacancy {
+        office: String,
+    },
+    CommodityShortage {
+        commodity: CommodityKind,
+        place: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SocialObservationDef {
+    pub place: String,
+    pub observed_tick: u64,
+    pub source: PerceptionSource,
+    pub detail: SocialObservationDetailDef,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum SocialObservationDetailDef {
+    WitnessedConflict { actor: String, target: String },
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -262,6 +310,8 @@ pub struct AgentDef {
     #[serde(default)]
     pub last_seen_memory: Option<LastSeenMemoryDef>,
     #[serde(default)]
+    pub social_observations: Option<Vec<SocialObservationDef>>,
+    #[serde(default)]
     pub obligation_satiation_profile: Option<ObligationSatiationProfile>,
     #[serde(default)]
     pub drive_thresholds: Option<DriveThresholds>,
@@ -435,12 +485,90 @@ mod tests {
         assert_eq!(def.agents[0].location, "Village");
         assert_eq!(def.agents[0].control, ControlSource::Human);
         assert_eq!(def.agents[0].diversification_profile, None);
+        assert_eq!(def.agents[0].social_observations, None);
         assert_eq!(def.agents[0].drive_escalation_profile, None);
         assert_eq!(def.agents[0].agenda_profile, None);
         assert!(def.items.is_empty());
         assert!(def.facilities.is_empty());
+        assert!(def.notices.is_empty());
         assert!(def.resource_sources.is_empty());
         assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_notice_authors() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+            ],
+            notices: [
+                (
+                    issuer: "Alice",
+                    location: "Village",
+                    expires_at: 18,
+                    topic: ThreatWarning(place: "Village"),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(def.notices.len(), 1);
+        let notice = &def.notices[0];
+        assert_eq!(notice.issuer, "Alice");
+        assert_eq!(notice.location, "Village");
+        assert_eq!(notice.expires_at, Some(18));
+        assert_eq!(notice.issuing_authority, None);
+        assert_eq!(notice.jurisdiction, None);
+        match &notice.topic {
+            NoticeTopicDef::ThreatWarning { place } => assert_eq!(place, "Village"),
+            other => panic!("expected threat-warning notice, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_agent_social_observations() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (
+                    name: "Alice",
+                    location: "Village",
+                    control: Human,
+                    social_observations: [
+                        (
+                            place: "Village",
+                            observed_tick: 7,
+                            source: DirectObservation,
+                            detail: WitnessedConflict(actor: "Alice", target: "Alice"),
+                        ),
+                    ],
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let observations = def.agents[0]
+            .social_observations
+            .as_ref()
+            .expect("social observations should deserialize");
+        assert_eq!(observations.len(), 1);
+        assert_eq!(observations[0].place, "Village");
+        assert_eq!(observations[0].observed_tick, 7);
+        assert_eq!(observations[0].source, PerceptionSource::DirectObservation);
+        assert_eq!(
+            observations[0].detail,
+            SocialObservationDetailDef::WitnessedConflict {
+                actor: "Alice".into(),
+                target: "Alice".into(),
+            }
+        );
     }
 
     #[test]

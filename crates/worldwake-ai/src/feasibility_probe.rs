@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::agent_tick::portfolio::FeasibilityVerdict;
 use crate::failure_handling::place_has_local_commodity_support;
-use crate::goal_model::AgendaEntry;
+use crate::goal_model::{AgendaEntry, RootCandidateSynthesis};
 use crate::{GoalKindPlannerExt, PlannerOpKind, PlannerOpSemantics};
 use worldwake_core::{
     ActionDefId, BlockerKey, BlockerMemory, Discrepancy, DiscrepancyMemory, EntityId, GoalKind,
@@ -59,7 +59,8 @@ pub(crate) fn probe(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> Feasibi
         return FeasibilityVerdict::RejectedBeforeSearch { reason };
     }
 
-    if !has_relevant_affordance(ranked, context) {
+    if !has_relevant_affordance(ranked, context) && !has_synthesized_root_candidate(ranked, context)
+    {
         return FeasibilityVerdict::RejectedBeforeSearch {
             reason: Discrepancy::MissingObservation,
         };
@@ -280,6 +281,27 @@ fn has_relevant_affordance(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> 
     .is_empty()
 }
 
+fn has_synthesized_root_candidate(ranked: &AgendaEntry, context: &ProbeContext<'_>) -> bool {
+    relevant_action_defs(ranked, context.semantics_table)
+        .into_iter()
+        .filter_map(|def_id| {
+            Some((
+                context.action_defs.get(def_id)?,
+                *context.semantics_table.get(&def_id)?,
+            ))
+        })
+        .any(|(def, semantics)| {
+            matches!(
+                ranked.offer.synthesized_root_candidate_targets(
+                    def,
+                    semantics,
+                    context.agent_place
+                ),
+                RootCandidateSynthesis::Targets(_)
+            )
+        })
+}
+
 fn relevant_action_defs(
     ranked: &AgendaEntry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
@@ -303,14 +325,14 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, BeliefConfidencePolicy, Blocker,
-        BlockerClearingCondition, BlockerMemory, BlockingFact, BodyCostPerTick, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, Discrepancy,
-        DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EntityId,
-        EntityKind, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-        LoadUnits, MerchandiseProfile, MetabolismProfile, OpportunityAnchor, Permille, Quantity,
-        RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
-        VisibilitySpec, WorkstationTag, Wound,
+        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingContext,
+        BeliefConfidencePolicy, Blocker, BlockerClearingCondition, BlockerMemory, BlockingFact,
+        BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
+        DriveThresholds, EntityId, EntityKind, GoalKind, HomeostaticNeeds, InTransitOnEdge,
+        IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic,
+        OpportunityAnchor, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionExecutionContext,
@@ -318,7 +340,7 @@ mod tests {
         ActionState, CombatBeliefView, CommitOutcome, Constraint, ControlBeliefView, DurationExpr,
         EconomicBeliefView, EntityBeliefView, FacilityBeliefView, Interruptibility,
         InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView,
-        SocialBeliefView, SpatialBeliefView, TemporalBeliefView,
+        SocialBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
         belief_view::{BeliefStatus, BeliefValue},
     };
 
@@ -423,6 +445,49 @@ mod tests {
                 domain: ActionDomain::Care,
                 actor_constraints: vec![Constraint::ActorAlive],
                 targets: vec![worldwake_sim::TargetSpec::SpecificEntity(entity(999))],
+                preconditions: Vec::new(),
+                reservation_requirements: Vec::new(),
+                duration: DurationExpr::Fixed(NonZeroU32::new(1).expect("nonzero")),
+                body_cost_per_tick: BodyCostPerTick::zero(),
+                attention_cost: Permille::ZERO,
+                interruptibility: Interruptibility::FreelyInterruptible,
+                commit_conditions: Vec::new(),
+                visibility: VisibilitySpec::SamePlace,
+                causal_event_tags: BTreeSet::new(),
+                payload: ActionPayload::None,
+                handler,
+                binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+                guard_template: None,
+                expectation_template: vec![],
+            });
+
+            Self {
+                semantics: build_semantics_table(&defs),
+                defs,
+                handlers,
+            }
+        }
+
+        fn post_notice_only() -> Self {
+            let mut handlers = ActionHandlerRegistry::new();
+            let handler = handlers.register(ActionHandler::new(
+                noop_start,
+                noop_tick,
+                noop_commit,
+                noop_abort,
+            ));
+
+            let mut defs = ActionDefRegistry::new();
+            defs.register(ActionDef {
+                id: ActionDefId(0),
+                name: "post_notice".to_owned(),
+                domain: ActionDomain::Social,
+                actor_constraints: vec![
+                    Constraint::ActorAlive,
+                    Constraint::ActorHasControl,
+                    Constraint::ActorNotInTransit,
+                ],
+                targets: vec![TargetSpec::ActorPlace],
                 preconditions: Vec::new(),
                 reservation_requirements: Vec::new(),
                 duration: DurationExpr::Fixed(NonZeroU32::new(1).expect("nonzero")),
@@ -756,6 +821,45 @@ mod tests {
                 reason: Discrepancy::MissingObservation,
             }
         );
+    }
+
+    #[test]
+    fn probe_accepts_post_notice_via_synthesized_root_candidate_without_affordance() {
+        let harness = ProbeHarness::post_notice_only();
+        let agent = entity(1);
+        let place = entity(2);
+        let ranked = ranked_goal(
+            GoalKind::PostNotice {
+                posting: ArtifactPostingContext {
+                    posting_place: place,
+                    issuing_authority: None,
+                    expires_at: Some(Tick(12)),
+                    jurisdiction: Some(place),
+                },
+                topic: NoticeTopic::ThreatWarning { place },
+            },
+            OpportunityAnchor::Place(place),
+        );
+        let mut view = MockView::default();
+        view.alive.extend([agent, place]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(place, EntityKind::Place);
+        view.places.insert(agent, place);
+
+        let verdict = probe(
+            &ranked,
+            &probe_context(
+                &harness,
+                &view,
+                agent,
+                Some(place),
+                &DiscrepancyMemory::default(),
+                &BlockerMemory::default(),
+                Tick(5),
+            ),
+        );
+
+        assert_eq!(verdict, FeasibilityVerdict::Plausible);
     }
 
     #[test]

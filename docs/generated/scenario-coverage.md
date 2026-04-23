@@ -11,6 +11,7 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 - cli-evaluation: agent field `last_seen_memory` is not mapped by any FeatureDef
 - survival-ask-consult: agent field `expectation_store` is not mapped by any FeatureDef
 - survival-ask-consult: agent field `last_seen_memory` is not mapped by any FeatureDef
+- survival-offices: agent field `social_observations` is not mapped by any FeatureDef
 
 ## Feature x Scenario Matrix
 
@@ -42,7 +43,7 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Facility-queue contention | ✅ | — | — | — | — | — | — | — | — | — | — | — |
 | Offices / succession / force-claim | — | ✅ | — | — | — | — | ✅ | — | — | — | — | — |
 | Bounty posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Notice posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Notice posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Theft | ✅ | — | — | — | — | — | — | — | — | — | — | — |
 | Justice / accusation | ✅ | — | — | — | — | — | — | — | — | — | — | — |
 | Violation investigation | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — |
@@ -410,7 +411,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 ### scenarios/survival-offices.ron
 
 - Seed: 611011
-- Agents: 1 Ai
+- Agents: 1 Ai, 1 None
 - Places: 1
 - Survival contract: max_critical 220, elevated_idle 30, families [Eat, Drink, Sleep, Relieve, Wash]
 
@@ -423,6 +424,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Need-driven exploration
 - Activation-decay perception
 - Offices / succession / force-claim
+- Notice posting
 
 **Present-but-inactive features**
 - Travel physiology
@@ -430,7 +432,6 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Consult-record
 - Production (facility-backed craft)
 - Bounty posting
-- Notice posting
 - Escort
 - Report / witness
 

@@ -1,6 +1,6 @@
 # S111OFFNOT-001: Author a truthful notice-posting proof seam for `survival-offices`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario-authorable threat-warning or office-vacancy posting substrate
@@ -91,3 +91,22 @@ Once the posting seam is truly proven, update `docs/scenario-roadmap.md`, `docs/
 2. `cargo test -p worldwake-ai --test golden_survival_offices -- --ignored --test-threads=1`
 3. `cargo run -p worldwake-cli --bin scenario-coverage -- --write`
 4. `python3 scripts/golden_inventory.py --write --check-docs`
+
+## Outcome
+
+- Completed: 2026-04-24
+- Landed the roadmap-owned `survival-offices` notice-posting seam by extending scenario authoring with authored notices and authored `social_observations`, updating `scenarios/survival-offices.ron`, and rewriting `crates/worldwake-ai/tests/golden_survival_offices.rs` so the scenario itself proves autonomous `PostNotice` alongside the existing office / force-claim survival branch.
+- The live implementation also required a production AI fix outside the original drafted file list: `crates/worldwake-ai/src/feasibility_probe.rs` was rejecting `PostNotice` before planner search when the branch depended on a synthesized root candidate rather than a live affordance. The landed diff now allows that lawful synthesized-root path and adds focused regression coverage for it, plus a lower-layer search regression covering the same-place `PostNotice` progress-barrier seam.
+- Scenario-schema fallout extended beyond the drafted scenario modules. The landing updated `worldwake-cli` scenario helpers/tests, `crates/worldwake-cli/src/bin/scenario_coverage.rs`, and one cross-crate `ScenarioDef` literal in `crates/worldwake-ai/tests/golden_survival_baseline.rs` so the new authored fields remain constructible and the generated coverage/docs stay truthful.
+- Deviations from plan: the autonomous notice path remained the truthful threat-warning branch rather than office-vacancy notice generation; no broadening of `emit_notice_posting_candidates` to office-vacancy posting was required. The final diff also preserved one truthful generated warning row: `survival-offices: agent field social_observations is not mapped by any FeatureDef`. Per the live roadmap policy, that warning is expected until or unless the feature catalog explicitly promotes that field.
+- Verification results:
+  - `cargo fmt --all`
+  - `cargo test -p worldwake-cli --lib scenario::types::tests::test_scenario_def_deserializes_notice_authors -- --exact`
+  - `cargo test -p worldwake-cli --lib scenario::types::tests::test_scenario_def_deserializes_agent_social_observations -- --exact`
+  - `cargo test -p worldwake-cli --lib scenario::tests::test_spawn_notice_artifact_from_scenario -- --exact`
+  - `cargo test -p worldwake-cli --lib scenario::tests::test_spawn_agent_with_social_observations_override -- --exact`
+  - `cargo test -p worldwake-ai --lib feasibility_probe::tests::probe_accepts_post_notice_via_synthesized_root_candidate_without_affordance -- --exact`
+  - `cargo test -p worldwake-ai --test golden_survival_offices survival_offices_proves_force_law_uptake -- --ignored --exact`
+  - `cargo test -p worldwake-ai --test golden_survival_offices -- --ignored --test-threads=1`
+  - `cargo run -p worldwake-cli --bin scenario-coverage -- --write`
+  - `python3 scripts/golden_inventory.py --write --check-docs`

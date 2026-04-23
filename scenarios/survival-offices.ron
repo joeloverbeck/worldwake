@@ -1,9 +1,9 @@
 // Survival offices scenario for Worldwake.
 //
-// Purpose: move roadmap row 11 forward with a truthful survival-backed office
-// proof seam. The authored runtime today can land force-law office uptake under
-// survival pressure through the consultable OfficeRegister path, but autonomous
-// notice posting still lacks a clean scenario-authored proof surface.
+// Purpose: land roadmap row 11 with a truthful survival-backed office and
+// notice-posting proof seam. `Claimant Rhea` starts with authored remembered
+// local conflict memory, so the same survival scenario can now exercise both
+// `ClaimOffice` and autonomous `PostNotice` without test-only belief seeding.
 //
 // Lawful competing affordances intentionally constrained:
 // - no social relay, trade, justice, theft, or combat branches
@@ -31,16 +31,29 @@
     ],
     agents: [
         (
+            name: "Rival Rowan",
+            location: "Council Green",
+            control: None,
+        ),
+        (
             name: "Claimant Rhea",
             location: "Council Green",
             control: Ai,
             known_recipes: ["Harvest Apples", "Harvest Water"],
+            social_observations: [
+                (
+                    place: "Council Green",
+                    observed_tick: 0,
+                    source: DirectObservation,
+                    detail: WitnessedConflict(actor: "Claimant Rhea", target: "Rival Rowan"),
+                ),
+            ],
             needs: (
-                hunger: 420,
-                thirst: 260,
-                fatigue: 180,
-                bladder: 220,
-                dirtiness: 180,
+                hunger: 150,
+                thirst: 120,
+                fatigue: 100,
+                bladder: 120,
+                dirtiness: 100,
             ),
             utility_profile: (
                 hunger_weight: 760,
@@ -50,14 +63,19 @@
                 dirtiness_weight: 620,
                 pain_weight: 500,
                 danger_weight: 500,
-                enterprise_weight: 860,
+                enterprise_weight: 700,
                 social_weight: 0,
                 activity_awareness_weight: 0,
                 side_benefit_weight: 0,
                 bounty_posting_weight: 0,
-                notice_posting_weight: 0,
+                notice_posting_weight: 900,
                 courage: 500,
                 care_weight: 0,
+            ),
+            artifact_posting_profile: (
+                threat_warning_ttl: 48,
+                office_vacancy_ttl: 48,
+                bounty_ttl: 48,
             ),
             perception_profile: (
                 entity_activation_threshold: 64,
