@@ -1,4 +1,4 @@
-//! Golden tests for S116 drive escalation behavior.
+//! Golden tests for the survival drive-escalation roadmap landing.
 
 mod golden_harness;
 
@@ -7,44 +7,33 @@ use std::path::PathBuf;
 
 use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, GoalKind, PlanSearchOutcome};
-use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
+use worldwake_cli::scenario::{
+    load_scenario_file, spawn_scenario,
+    types::{ScenarioDef, SurvivalCriticalRunLimitsDef},
+};
 use worldwake_core::{
-    AgentBeliefStore, CommodityKind, EntityId, EventTag, EventView, ExplorationProfile,
-    HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile, PerceptionSource, Quantity,
-    ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
+    AgentBeliefStore, CommodityKind, DriveThresholds, EntityId, EventTag, EventView,
+    ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile, PerceptionSource,
+    Quantity, ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
-const WASH_PRIORITY_TICKS: u32 = 800;
+const SURVIVAL_TICKS: u32 = 1440;
 const BELIEF_ONLY_TICKS: u32 = 400;
-const MAX_CRITICAL_DIRTINESS_RUN_TICKS: u32 = 250;
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct NeedRunTracker {
-    current: u32,
-    max: u32,
-}
-
-impl NeedRunTracker {
-    fn observe(&mut self, needs: &HomeostaticNeeds, threshold: u16) {
-        if needs.dirtiness >= pm(threshold) {
-            self.current += 1;
-            self.max = self.max.max(self.current);
-        } else {
-            self.current = 0;
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct WashPriorityAgentObservation {
+struct AgentSurvivalObservation {
+    alive: bool,
+    critical_thresholds: DriveThresholds,
+    critical_need_runs: SurvivalNeedRunTracker,
     wash_commits: u32,
-    critical_dirtiness_run_max: u32,
+    committed_actions: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct WashPriorityObservation {
-    agents: BTreeMap<String, WashPriorityAgentObservation>,
+struct SurvivalDriveEscalationObservation {
+    contract: worldwake_cli::scenario::types::SurvivalHealthContractDef,
+    agents: BTreeMap<String, AgentSurvivalObservation>,
+    stuck_idle_windows: Vec<StuckIdleWindow>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -65,14 +54,13 @@ struct EscalationReliefObservation {
 }
 
 fn scenario_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scenarios/drive-escalation-wash-priority.ron")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/survival-drive-escalation.ron")
 }
 
 fn load_drive_escalation_harness() -> (GoldenHarness, ScenarioDef) {
     let path = scenario_path();
-    let def = load_scenario_file(&path).expect("drive-escalation scenario should parse");
-    let spawned = spawn_scenario(&def).expect("drive-escalation scenario should spawn");
+    let def = load_scenario_file(&path).expect("survival drive-escalation scenario should parse");
+    let spawned = spawn_scenario(&def).expect("survival drive-escalation scenario should spawn");
     let mut harness = GoldenHarness::from_simulation_state(&spawned.state);
     let agents = harness
         .world
@@ -100,10 +88,31 @@ fn named_agents(h: &GoldenHarness) -> BTreeMap<String, EntityId> {
         .collect()
 }
 
-fn run_dirtiness_wash_cycle_under_priority_override() -> WashPriorityObservation {
-    let (mut h, _) = load_drive_escalation_harness();
+fn contract_run_limit_overrides(
+    limits: Option<&SurvivalCriticalRunLimitsDef>,
+) -> SurvivalCriticalRunLimitOverrides {
+    let Some(limits) = limits else {
+        return SurvivalCriticalRunLimitOverrides::default();
+    };
+
+    SurvivalCriticalRunLimitOverrides {
+        hunger: limits.hunger,
+        thirst: limits.thirst,
+        fatigue: limits.fatigue,
+        bladder: limits.bladder,
+        dirtiness: limits.dirtiness,
+    }
+}
+
+fn run_survival_drive_escalation() -> SurvivalDriveEscalationObservation {
+    let (mut h, def) = load_drive_escalation_harness();
+    let contract = expect_survival_health_contract(
+        def.survival_health_contract.as_ref(),
+        "survival drive escalation",
+    )
+    .clone();
     let agents = named_agents(&h);
-    let thresholds = agents
+    let critical_thresholds = agents
         .iter()
         .map(|(name, agent)| {
             (
@@ -111,25 +120,30 @@ fn run_dirtiness_wash_cycle_under_priority_override() -> WashPriorityObservation
                 h.world
                     .get_component_drive_thresholds(*agent)
                     .expect("scenario agents should have drive thresholds")
-                    .dirtiness
-                    .critical()
-                    .value(),
+                    .to_owned(),
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let mut runs = agents
+    let mut critical_need_runs = agents
         .keys()
         .cloned()
-        .map(|name| (name, NeedRunTracker::default()))
+        .map(|name| (name, SurvivalNeedRunTracker::default()))
         .collect::<BTreeMap<_, _>>();
     let mut wash_commits = agents
         .keys()
         .cloned()
         .map(|name| (name, 0u32))
         .collect::<BTreeMap<_, _>>();
+    let mut idle_state: BTreeMap<String, (Option<u32>, u16, u32)> = agents
+        .keys()
+        .cloned()
+        .map(|name| (name, (None, 0, 0)))
+        .collect();
+    let mut stuck_idle_windows = Vec::new();
 
-    for tick_num in 0..WASH_PRIORITY_TICKS {
+    for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
+        let tick = Tick(u64::from(tick_num));
 
         let action_sink = h
             .action_trace_sink()
@@ -140,16 +154,45 @@ fn run_dirtiness_wash_cycle_under_priority_override() -> WashPriorityObservation
                 .world
                 .get_component_homeostatic_needs(*agent)
                 .expect("scenario agents should have needs");
-            runs.get_mut(agent_name)
+            critical_need_runs
+                .get_mut(agent_name)
                 .expect("run tracker should exist")
                 .observe(
                     needs,
-                    *thresholds
+                    critical_thresholds
                         .get(agent_name)
                         .expect("threshold should exist for agent"),
                 );
 
-            for event in action_sink.events_for_at(*agent, Tick(u64::from(tick_num))) {
+            let had_action = action_sink
+                .events_for_at(*agent, tick)
+                .iter()
+                .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
+            let (start, max_need, count) = idle_state
+                .get_mut(agent_name)
+                .expect("every agent should have idle state");
+            if had_action {
+                if let Some(s) = start.take()
+                    && *count >= contract.max_idle_window_ticks_with_elevated_need
+                    && *max_need > contract.elevated_need_floor.value()
+                {
+                    stuck_idle_windows.push(StuckIdleWindow {
+                        agent_name: agent_name.clone(),
+                        start_tick: s,
+                        end_tick: tick_num.saturating_sub(1),
+                        max_need_at_start: *max_need,
+                    });
+                }
+                *count = 0;
+            } else {
+                if start.is_none() {
+                    *start = Some(tick_num);
+                    *max_need = max_need_value(needs);
+                }
+                *count += 1;
+            }
+
+            for event in action_sink.events_for_at(*agent, tick) {
                 if matches!(event.kind, ActionTraceKind::Committed { .. })
                     && event.action_name == "wash"
                 {
@@ -161,25 +204,41 @@ fn run_dirtiness_wash_cycle_under_priority_override() -> WashPriorityObservation
         }
     }
 
+    let action_sink = h
+        .action_trace_sink()
+        .expect("action tracing should be enabled");
     let agents = agents
-        .into_keys()
-        .map(|name| {
+        .into_iter()
+        .map(|(name, agent)| {
             (
                 name.clone(),
-                WashPriorityAgentObservation {
+                AgentSurvivalObservation {
+                    alive: !h.agent_is_dead(agent),
+                    critical_thresholds: *critical_thresholds
+                        .get(&name)
+                        .expect("final thresholds should exist"),
+                    critical_need_runs: critical_need_runs
+                        .remove(&name)
+                        .expect("final run tracker should exist"),
                     wash_commits: *wash_commits
                         .get(&name)
                         .expect("final wash count should exist"),
-                    critical_dirtiness_run_max: runs
-                        .remove(&name)
-                        .expect("final run tracker should exist")
-                        .max,
+                    committed_actions: action_sink
+                        .events_for(agent)
+                        .iter()
+                        .filter(|event| matches!(event.kind, ActionTraceKind::Committed { .. }))
+                        .map(|event| event.action_name.clone())
+                        .collect(),
                 },
             )
         })
         .collect();
 
-    WashPriorityObservation { agents }
+    SurvivalDriveEscalationObservation {
+        contract,
+        agents,
+        stuck_idle_windows,
+    }
 }
 
 fn build_belief_only_wash_harness() -> (GoldenHarness, EntityId) {
@@ -410,7 +469,7 @@ fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
     let mut observed_actions = Vec::new();
     let mut observed_escalation_events = Vec::new();
 
-    for tick_num in 0..WASH_PRIORITY_TICKS {
+    for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
 
         let action_sink = h
@@ -485,12 +544,12 @@ fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
     }
 
     panic!(
-        "scenario should emit a dirtiness escalation_end event within {WASH_PRIORITY_TICKS} ticks; observed_actions={observed_actions:?}; observed_escalation_events={observed_escalation_events:?}"
+        "scenario should emit a dirtiness escalation_end event within {SURVIVAL_TICKS} ticks; observed_actions={observed_actions:?}; observed_escalation_events={observed_escalation_events:?}"
     );
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 164: Sustained Dirtiness Escalation Restores Wash Cycles
+// Scenario: Survival Drive Escalation
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Travel, Production
@@ -499,37 +558,73 @@ fn run_escalation_fades_after_relief() -> EscalationReliefObservation {
 // Places: Base Camp, Central Crossing, Spring Basin, East Orchard
 // Principles: 3, 11, 20, 22
 //
-// Setup: Load the authored `drive-escalation-wash-priority.ron` scenario with
-// two agents whose dirtiness starts near or above critical, whose hunger
-// weight (750) still exceeds dirtiness weight (625), and whose only wash-capable
+// Setup: Load the authored `survival-drive-escalation.ron` scenario with two
+// agents whose dirtiness starts near or above critical, whose hunger weight
+// (750) still exceeds dirtiness weight (625), and whose only wash-capable
 // water source sits two hops from the orchard food hub.
 //
 // Proves: sustained critical dirtiness now produces repeated wash cycles
-// instead of the chronic "stay at food, relieve outdoors, wash too rarely"
-// equilibrium seen in the motivating contested report.
+// inside a 1440-tick survival-health-contract scenario instead of the chronic
+// "stay at food, relieve outdoors, wash too rarely" equilibrium seen in the
+// motivating contested report.
 //
 // Chain: outdoor relief at the orchard -> dirtiness remains critical long
 // enough to grow escalation -> Wash motive overtakes hunger-driven orchard
 // looping -> repeated wash commits reset the critical run length.
 #[test]
 #[ignore = "CI-only: long-running drive-escalation scenario; run via golden-drive-escalation workflow"]
-fn dirtiness_wash_cycle_under_priority_override() {
-    let observation = run_dirtiness_wash_cycle_under_priority_override();
+fn survival_drive_escalation_lands_row_four() {
+    let observation = run_survival_drive_escalation();
+    let run_limit_overrides =
+        contract_run_limit_overrides(observation.contract.critical_run_limits.as_ref());
+    let repeated_wash_agent_exists = observation
+        .agents
+        .values()
+        .any(|agent| agent.wash_commits >= 4);
 
     for (agent_name, agent) in &observation.agents {
         assert!(
-            agent.wash_commits >= 4,
-            "{agent_name} should complete at least 4 wash cycles in {WASH_PRIORITY_TICKS} ticks; observation={agent:?}"
+            agent.alive,
+            "{agent_name} should remain alive for the full {SURVIVAL_TICKS}-tick scenario; observation={agent:?}"
+        );
+        assert_authored_critical_runs_with_overrides(
+            observation.contract.max_authored_critical_run_ticks,
+            run_limit_overrides,
+            agent_name,
+            &agent.critical_thresholds,
+            &agent.critical_need_runs,
+        );
+        assert_required_self_care_families(
+            &observation.contract.required_self_care_families,
+            agent_name,
+            &agent.committed_actions,
+            "survival-drive-escalation",
         );
         assert!(
-            agent.critical_dirtiness_run_max < MAX_CRITICAL_DIRTINESS_RUN_TICKS,
-            "{agent_name} dirtiness should not stay critical for {MAX_CRITICAL_DIRTINESS_RUN_TICKS} consecutive ticks; observation={agent:?}"
+            agent.wash_commits >= 1,
+            "{agent_name} should complete at least 1 wash cycle in {SURVIVAL_TICKS} ticks; observation={agent:?}"
+        );
+        assert!(
+            agent.committed_actions.contains("relieve_wilderness"),
+            "{agent_name} should still incur wilderness relief pressure in the authored branch; observation={agent:?}"
         );
     }
+    assert!(
+        repeated_wash_agent_exists,
+        "the scenario should produce at least one repeated wash-cycling agent within {SURVIVAL_TICKS} ticks; observation={observation:?}"
+    );
+    assert_no_stuck_idle_windows(
+        observation
+            .contract
+            .max_idle_window_ticks_with_elevated_need,
+        observation.contract.elevated_need_floor.value(),
+        "survival-drive-escalation",
+        &observation.stuck_idle_windows,
+    );
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 165: Escalation Preserves Belief-Only Wash Planning
+// Scenario: Escalation Preserves Belief-Only Wash Planning
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, PlanningSnapshot
@@ -590,7 +685,7 @@ fn escalation_respects_belief_only_planning() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 166: Dirtiness Escalation Ends Immediately After Wash Relief
+// Scenario: Dirtiness Escalation Ends Immediately After Wash Relief
 // ---------------------------------------------------------------------------
 //
 // Systems: Needs, AI, Event Log
@@ -599,8 +694,9 @@ fn escalation_respects_belief_only_planning() {
 // Places: Base Camp, Central Crossing, Spring Basin, East Orchard
 // Principles: 3, 11, 29
 //
-// Setup: Reuse the authored drive-escalation scenario and watch for the first
-// `EventTag::Escalation` dirtiness end transition after a committed wash.
+// Setup: Reuse the authored survival drive-escalation scenario and watch for
+// the first `EventTag::Escalation` dirtiness end transition after a committed
+// wash.
 //
 // Proves: escalation falls away through the physical wash relief path itself:
 // the dirtiness counter resets to zero and the authoritative hidden

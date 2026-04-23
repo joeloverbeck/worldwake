@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 17
 - Files contributing `golden_*` tests: 17
-- Total `golden_*` tests: 111
+- Total `golden_*` tests: 113
 
 ## Per-File Inventory
 
@@ -16,11 +16,10 @@ Do not hand-edit it.
 | `golden_activation_decay.rs` | 6 |
 | `golden_ai_decisions.rs` | 15 |
 | `golden_decision_history_events.rs` | 1 |
-| `golden_drive_escalation_wash_priority.rs` | 3 |
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 11 |
 | `golden_item_decay.rs` | 1 |
-| `golden_merchant_selling.rs` | 11 |
+| `golden_merchant_selling.rs` | 13 |
 | `golden_offices.rs` | 12 |
 | `golden_perception_exposure.rs` | 7 |
 | `golden_planner_pathology.rs` | 3 |
@@ -28,6 +27,7 @@ Do not hand-edit it.
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_survival_baseline.rs` | 7 |
 | `golden_survival_contested.rs` | 7 |
+| `golden_survival_drive_escalation.rs` | 3 |
 | `golden_survival_scattered.rs` | 6 |
 | `golden_travel_physiology.rs` | 12 |
 
@@ -62,12 +62,6 @@ Do not hand-edit it.
 
 - `survival_baseline_emits_goal_commit_and_plan_adoption_in_order`
 
-### `golden_drive_escalation_wash_priority.rs`
-
-- `dirtiness_wash_cycle_under_priority_override`
-- `escalation_respects_belief_only_planning`
-- `escalation_fades_after_relief`
-
 ### `golden_experience_preferences.rs`
 
 - `golden_hostile_completed_travel_flips_next_route_choice`
@@ -98,6 +92,8 @@ Do not hand-edit it.
 - `buyer_trades_against_listed_lot`
 - `remote_branch_selection_reaches_local_trade_binding_before_merchant_departure`
 - `merchant_return_revives_pending_purchase_agenda_entry`
+- `seller_return_restores_displayed_listing_after_pending_revival`
+- `seller_return_completes_resumed_purchase_after_live_offer_refresh`
 - `unlisted_stock_not_sellable`
 - `unstage_round_trip_preserves_storage_contract`
 - `buyer_discovers_listed_lots_not_unlisted_stock`
@@ -168,6 +164,12 @@ Do not hand-edit it.
 - `no_budget_exhaustion_on_survival_goals`
 - `no_stuck_idle_windows_with_elevated_needs`
 - `per_need_critical_run_limit_override_beats_default_for_dirtiness_only`
+
+### `golden_survival_drive_escalation.rs`
+
+- `survival_drive_escalation_lands_row_four`
+- `escalation_respects_belief_only_planning`
+- `escalation_fades_after_relief`
 
 ### `golden_survival_scattered.rs`
 

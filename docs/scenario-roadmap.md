@@ -37,7 +37,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Basic needs (Relieve) | `needs` + non-zero bladder utility + `metabolism_profile` + `drive_thresholds` | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`needs_actions.rs`](../crates/worldwake-systems/src/needs_actions.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Basic needs (Wash) | `needs` + non-zero dirtiness utility + `metabolism_profile` + `drive_thresholds` + wash-capable water path | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`needs_actions.rs`](../crates/worldwake-systems/src/needs_actions.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Travel physiology | Any non-zero travel multiplier or wilderness relief dirtiness penalty in `metabolism_profile` | [`needs.rs`](../crates/worldwake-systems/src/needs.rs), [`travel_actions.rs`](../crates/worldwake-systems/src/travel_actions.rs) | Landed in [§5.2](#52-landed-2-survival-scattered) |
-| Drive escalation | Authored `drive_escalation_profile` present and non-default | [`drive_escalation_profile.rs`](../crates/worldwake-core/src/drive_escalation_profile.rs), [`needs.rs`](../crates/worldwake-systems/src/needs.rs) | Not yet landed in scenario coverage; auxiliary golden evidence in [§5.4](#54-auxiliary-and-non-roadmap-scenarios) |
+| Drive escalation | Authored `drive_escalation_profile` present and non-default | [`drive_escalation_profile.rs`](../crates/worldwake-core/src/drive_escalation_profile.rs), [`needs.rs`](../crates/worldwake-systems/src/needs.rs) | Landed in [§5.4](#54-landed-4-survival-drive-escalation) |
 | Need-driven exploration | `exploration_profile` active | [`exploration.rs`](../crates/worldwake-core/src/exploration.rs), AI planner + perception | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Activation-decay perception | `perception_profile` active | [`perception.rs`](../crates/worldwake-systems/src/perception.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Place concealment | Any place `visibility_profile.base_concealment > 0` | [`observation_context.rs`](../crates/worldwake-core/src/observation_context.rs), [`perception.rs`](../crates/worldwake-systems/src/perception.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
@@ -86,7 +86,7 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-baseline.ron` | Basic needs (Eat/Drink/Sleep/Relieve/Wash), Need-driven exploration, Activation-decay perception |
 | Landed in `survival-scattered.ron` | Travel physiology |
 | Landed in `survival-contested.ron` | No new structural feature rows; the landing is a stronger survival-under-contention proof for the already-landed baseline + travel stack |
-| Auxiliary golden evidence only | Drive escalation via `drive-escalation-wash-priority.ron` and [`golden_drive_escalation_wash_priority.rs`](../crates/worldwake-ai/tests/golden_drive_escalation_wash_priority.rs) |
+| Landed in `survival-drive-escalation.ron` | Drive escalation |
 | CLI-only structural coverage | Place concealment, Tell / peer info transfer, Ask-about-person, Consult-record, Obligation satiation, Experience preferences, Production (multi-input recipes), Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Disposal, Facility-queue contention, Bounty posting, Notice posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search, Stock / transport |
 | Authored but still gated inactive | Report / witness |
 | Planned with no current scenario activation | Diversification / curiosity, Item decay, Offices / succession / force-claim, Bandit camps |
@@ -146,7 +146,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 1 | `survival-baseline` | Survival substrate, exploration, activation-decay perception | Landed | Baseline self-care loop |
 | 2 | `survival-scattered` | Travel physiology | Landed | First spatial/adversarial stress without new social systems |
 | 3 | `survival-contested` | Survival under contention and route invalidation | Landed | Multi-agent pressure on the already-landed stack |
-| 4 | `survival-drive-escalation` | Authored drive-escalation coverage inside a survival-health-contract scenario | Planned | Existing S116 auxiliary proof should become a true roadmap landing before later social features depend on it |
+| 4 | `survival-drive-escalation` | Authored drive-escalation coverage inside a survival-health-contract scenario | Landed | Converts the old auxiliary wash-priority proof into a real survival-contract landing before later social features depend on it |
 | 5 | `survival-tell` | Tell / peer info transfer | Planned | First belief-mutation feature under survival pressure |
 | 6 | `survival-ask-consult` | Ask-about-person + consult-record | Planned | Explicit epistemic actions competing with self-care |
 | 7 | `survival-preferences` | Experience preferences + diversification / curiosity | Planned | Learned preference loops can destabilize exploration and self-care |
@@ -163,26 +163,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 
 ### 4.3 Planned Entry Summaries
 
-#### 4.3.1 `survival-drive-escalation`
-
-**Status**: Planned  
-**Source scenario**: `--`  
-**Backing goldens**: `--`  
-**Depends on**: rows 1-3, S116 substrate already proven in auxiliary form
-
-**Architectural risk rationale**  
-Drive escalation already has focused auxiliary proof, but it is not yet represented as a landed survival-contract scenario. Converting it into a full roadmap row closes the gap between isolated behavior proof and coexistence proof.
-
-**Must-exercise behaviors**  
-At least one agent must enter sustained critical dirtiness, later commit `wash`, and still satisfy the survival-health contract.
-
-**Must-prove invariants**  
-The backing golden must prove both the survival envelope and the escalation-specific branch that turns repeated critical dirtiness into wash relief, while still rejecting omniscient remote wash planning.
-
-**Deliberately inactive**  
-All social, trade, justice, office, theft, patrol, pursuit, combat, and artifact systems.
-
-#### 4.3.2 Remaining planned rows
+#### 4.3 Remaining planned rows
 
 Rows 5-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
 
@@ -261,19 +242,29 @@ The golden proves a specific contention-era causal branch: both north-side and s
 - Drive escalation as an authored feature row
 - All social, trade, justice, office, patrol, pursuit, theft, combat, artifact, and concealment features
 
-### 5.4 Auxiliary and Non-Roadmap Scenarios
+### 5.4 Landed #4: `survival-drive-escalation`
 
-#### `drive-escalation-wash-priority.ron`
+**Status**: Landed  
+**Source scenario**: [`scenarios/survival-drive-escalation.ron`](../scenarios/survival-drive-escalation.ron)  
+**Backing goldens**: [`golden_survival_drive_escalation.rs`](../crates/worldwake-ai/tests/golden_survival_drive_escalation.rs)
 
-- Source scenario: [`scenarios/drive-escalation-wash-priority.ron`](../scenarios/drive-escalation-wash-priority.ron)
-- Backing golden: [`golden_drive_escalation_wash_priority.rs`](../crates/worldwake-ai/tests/golden_drive_escalation_wash_priority.rs)
-- Status in this roadmap: auxiliary golden evidence, not a landed feature row
+**Authored envelope**
+- Seed: `116006`
+- Agents: `2`
+- Places: `3`
+- Survival health contract: `max_authored_critical_run_ticks = 250`, `max_idle_window_ticks_with_elevated_need = 60`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.dirtiness = 1300`
 
-Why it is auxiliary:
+**New landed feature row**
+- Drive escalation
 
-- It has no authored `survival_health_contract`, so it is not a survival-roadmap scenario.
-- The live generator counts `Drive escalation` as active only when a non-default authored `drive_escalation_profile` is present. This scenario relies on the universal default profile instead.
-- The golden is still useful: it proves repeated wash commits under sustained critical dirtiness and separately proves that escalation does not invent remote wash knowledge. That evidence should inform row 4, not silently satisfy it.
+**Why this golden is valid**
+
+The golden now proves the drive-escalation branch inside a real 1440-tick survival scenario rather than an auxiliary harness-only setup. It asserts that both agents survive, satisfy the authored self-care contract, repeatedly commit `wash`, and still hit `relieve_wilderness` under sustained dirtiness pressure. Companion tests retain the narrower architectural boundaries that matter for this row: escalation does not invent remote wash knowledge, and the authoritative `escalation_end:Dirtiness:*` event follows wash relief immediately.
+
+**Deliberately inactive**
+- All social, trade, justice, office, patrol, pursuit, theft, combat, artifact, and concealment features
+
+### 5.5 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 
@@ -369,5 +360,5 @@ This appendix describes structural activation only. It does not prove that a gol
 ### 7.3 Important Consequences
 
 - `cli-evaluation.ron` can be structurally rich without proving feature landings.
-- `drive-escalation-wash-priority.ron` can be golden-backed without counting as active `Drive escalation` under the current generator rule.
+- `survival-drive-escalation.ron` now counts as active `Drive escalation` because it authors a non-default `drive_escalation_profile` inside a survival-contract scenario.
 - Any change to the generator's feature list or gates must update this appendix and the catalog in the same PR.

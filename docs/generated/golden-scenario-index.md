@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 91
-- Contributing golden test files: 16
-- Associated tests: 110
+- Scenario blocks: 90
+- Contributing golden test files: 15
+- Associated tests: 109
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -141,51 +141,6 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: when top-priority need (thirst) has no viable plan, agent falls back to next-best addressable need (hunger) instead of going idle indefinitely.
 
 **Cross-system chain**: unsatisfiable top need -> planner exhausts thirst-relief candidates -> falls back to hunger-relief -> agent eats or sleeps.
-
-### Scenario 164: Sustained Dirtiness Escalation Restores Wash Cycles
-
-- Source: `golden_drive_escalation_wash_priority.rs:493`
-- Systems: AI, Needs, Travel, Production
-- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Relieve
-- ActionDomains: Needs, Travel, Production
-- Places: Base Camp, Central Crossing, Spring Basin, East Orchard
-- Principles: 3, 11, 20, 22
-
-**Setup**: Load the authored `drive-escalation-wash-priority.ron` scenario with
-
-**Proves**: sustained critical dirtiness now produces repeated wash cycles
-
-**Cross-system chain**: outdoor relief at the orchard -> dirtiness remains critical long
-
-### Scenario 165: Escalation Preserves Belief-Only Wash Planning
-
-- Source: `golden_drive_escalation_wash_priority.rs:532`
-- Systems: AI, Needs, PlanningSnapshot
-- GoalKinds: Wash, Relieve
-- ActionDomains: Needs
-- Places: Orchard Farm, Village Square
-- Principles: 7, 14, 15, 20
-
-**Setup**: Direct-harness agent at outdoor Orchard Farm with no food, thirst, or
-
-**Proves**: drive escalation does not synthesize remote wash knowledge. Dirtiness
-
-**Cross-system chain**: repeated relieve_wilderness -> dirtiness crosses critical and stays
-
-### Scenario 166: Dirtiness Escalation Ends Immediately After Wash Relief
-
-- Source: `golden_drive_escalation_wash_priority.rs:593`
-- Systems: Needs, AI, Event Log
-- GoalKinds: Wash, Relieve
-- ActionDomains: Needs, Travel, Production
-- Places: Base Camp, Central Crossing, Spring Basin, East Orchard
-- Principles: 3, 11, 29
-
-**Setup**: Reuse the authored drive-escalation scenario and watch for the first
-
-**Proves**: escalation falls away through the physical wash relief path itself:
-
-**Cross-system chain**: sustained critical dirtiness -> escalation begin -> committed wash ->
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
@@ -443,9 +398,29 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: after a buyer reaches a concrete local `trade` binding, seller departure parks the committed purchase goal into pending with a counterparty-based revival trigger; seller return then revives the agenda entry back into live committed/current-plan state. Seller-side market-presence restaging remains a separate seam.
 
-### Scenario 77: Unlisted Stock Not Sellable
+### Scenario 86: Seller Return Restores Displayed Listing After Pending Revival
 
 - Source: `golden_merchant_selling.rs:787`
+- Systems: Trade, AI, Needs
+- GoalKinds: AcquireCommodity
+- ActionDomains: Travel, Trade
+- Principles: P1, P3, P4
+
+**Proves**: after buyer-side pending revival is already in place, seller return restores lawful displayed-lot listing state at the authoritative trade seam. The later resumed trade-completion story remains a separate mixed-layer proof seam.
+
+### Scenario 87: Seller Return Completes Resumed Purchase After Live Three-Coin Offer
+
+- Source: `golden_merchant_selling.rs:934`
+- Systems: Trade, AI, Needs
+- GoalKinds: AcquireCommodity
+- ActionDomains: Travel, Trade
+- Principles: P1, P3, P4
+
+**Proves**: after seller departure parks a buyer's concrete local bread purchase into pending, seller return revives the goal and the resumed purchase commits through the authoritative trade path at the live three-coin unit-purchase price instead of looping forever on `InsufficientPayment`.
+
+### Scenario 77: Unlisted Stock Not Sellable
+
+- Source: `golden_merchant_selling.rs:1079`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -455,7 +430,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 79b: Unstage Round Trip Preserves Storage Contract
 
-- Source: `golden_merchant_selling.rs:939`
+- Source: `golden_merchant_selling.rs:1231`
 - Systems: Trade, AI
 - ActionDomains: Trade
 - Principles: P4, P24
@@ -464,7 +439,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `golden_merchant_selling.rs:953`
+- Source: `golden_merchant_selling.rs:1245`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -474,7 +449,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:1021`
+- Source: `golden_merchant_selling.rs:1313`
 - Systems: Trade
 - Principles: P3, P7
 
@@ -482,15 +457,15 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:1078`
+- Source: `golden_merchant_selling.rs:1370`
 - Systems: Trade
 - Principles: P3, P4
 
 **Proves**: SaleListing pruned within one tick of seller death
 
-### Scenario 86: Demand Memory Raises Sell Ranking
+### Scenario 88: Demand Memory Raises Sell Ranking
 
-- Source: `golden_merchant_selling.rs:1150`
+- Source: `golden_merchant_selling.rs:1442`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -499,7 +474,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `golden_merchant_selling.rs:1222`
+- Source: `golden_merchant_selling.rs:1514`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)

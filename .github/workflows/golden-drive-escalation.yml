@@ -22,7 +22,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [wash_priority]
+        include:
+          - scenario: survival_drive_escalation
+            test_target: golden_survival_drive_escalation
 
     steps:
       - name: Checkout
@@ -39,5 +41,5 @@ jobs:
         with:
           key: golden-drive-escalation-${{ matrix.scenario }}
 
-      - name: Run golden_drive_escalation_${{ matrix.scenario }}
-        run: cargo test --release -p worldwake-ai --test golden_drive_escalation_${{ matrix.scenario }} -- --ignored --test-threads=1
+      - name: Run ${{ matrix.test_target }}
+        run: cargo test --release -p worldwake-ai --test ${{ matrix.test_target }} -- --ignored --test-threads=1
