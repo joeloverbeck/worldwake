@@ -1,6 +1,6 @@
 # SCEROAD-003: Wire `scenario-coverage --check` into `scripts/verify.sh`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None — build/CI script edit only.
@@ -80,3 +80,17 @@ Use the same `echo "[verify] ..."` pattern as the existing steps for consistency
 1. `./scripts/verify.sh` on a clean tree — must pass.
 2. Induce drift: `echo "DRIFT" >> docs/generated/scenario-coverage.md && ./scripts/verify.sh` — must fail in the new step; then `git checkout -- docs/generated/scenario-coverage.md` to revert.
 3. `cargo run -p worldwake-cli --bin scenario-coverage -- --check` — standalone sanity check.
+
+## Outcome
+
+Completed on 2026-04-23.
+
+- Added the `scenario-coverage --check` gate to the end of `scripts/verify.sh`, preserving the script as the single CI verification entrypoint used by `.github/workflows/ci.yml`.
+- Kept the check ordered after workspace tests and both clippy lanes, matching the ticket's fast-fail ordering invariant and the live design-doc contract that this is a structural-coverage drift gate only.
+- Verified the manual drift path with a temporary backup/restore of `docs/generated/scenario-coverage.md`; the induced drift failed specifically at the new `scenario-coverage --check` step and the generated file was restored afterward.
+
+## Verification Result
+
+- Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
+- Passed `./scripts/verify.sh`
+- Confirmed induced drift fails `./scripts/verify.sh` at `cargo run -p worldwake-cli --bin scenario-coverage -- --check` with `generated output drifted: rerun cargo run -p worldwake-cli --bin scenario-coverage -- --write`

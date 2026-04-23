@@ -8,7 +8,7 @@
 
 ## Problem
 
-Goldens are now backed by `scenarios/*.ron` observer runs (see design doc `docs/plans/2026-04-19-scenario-roadmap-doc-design.md`, §Brainstorm Context). Without a machine-readable coverage snapshot, designers must read every RON by hand to judge which gameplay features are truly active — and profiles like `TellProfile` are easy to misclassify as "covered" when every gating field is zero. The editorial roadmap (SCEROAD-002) needs an evidence companion that CI can diff to keep doc and scenarios in lockstep.
+Goldens are now backed by `scenarios/*.ron` observer runs (see design doc `archive/brainstorming/2026-04-19-scenario-roadmap-doc-design.md`, §Brainstorm Context). Without a machine-readable coverage snapshot, designers must read every RON by hand to judge which gameplay features are truly active — and profiles like `TellProfile` are easy to misclassify as "covered" when every gating field is zero. The editorial roadmap (SCEROAD-002) needs an evidence companion that CI can diff to keep doc and scenarios in lockstep.
 This ticket only establishes structural/activation evidence. It must not overclaim that an active feature is therefore validly proved by a scenario golden; scenario-golden causal validity is owned by `docs/golden-e2e-testing.md` and the roadmap contracts in SCEROAD-002.
 
 ## Assumption Reassessment (2026-04-19)

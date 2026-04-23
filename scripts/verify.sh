@@ -15,3 +15,6 @@ cargo clippy --workspace
 
 echo "[verify] cargo clippy --workspace --all-targets -- -D warnings"
 cargo clippy --workspace --all-targets -- -D warnings
+
+echo "[verify] cargo run -p worldwake-cli --bin scenario-coverage -- --check"
+cargo run -p worldwake-cli --bin scenario-coverage -- --check
