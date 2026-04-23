@@ -1,20 +1,20 @@
 # S124CANOPPEXP-004: Surface canonical incident through DecisionEventPayload
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — decision-history event payload surface
-**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`, `archive/tickets/S124CANOPPEXP-002.md`
+**Deps**: `archive/specs/S124-canonical-opportunity-expectation-failure.md`, `archive/tickets/S124CANOPPEXP-002.md`
 
 ## Problem
 
-S110 delivered [`DecisionEventPayload`](../crates/worldwake-core/src/decision_event_payload.rs) at `worldwake-core/src/decision_event_payload.rs:10` with 11 variants (`GoalOffered`, `GoalSuppressed`, `GoalCommitted`, `GoalSuspended`, `GoalAbandoned`, `PlanAdopted`, `PlanInvalidated`, `ExpectationMismatch`, `RepairApplied`, `ReplanTriggered`, `BlockerRecorded`). Ticket `S124CANOPPEXP-002` introduces `OpportunityExpectationFailureIncident` as a runtime-only reasoning artifact in `worldwake-ai`, but the canonical contradiction currently does not travel through the decision-history event surface. That means future debugging and trace inspection cannot answer "which committed opportunity failed, which concrete source was being trusted, which phase detected the contradiction, what the cause was, and what attribution outcome resulted" from the authoritative event log — it can only answer through ad hoc ai-layer inspection.
+S110 delivered [`DecisionEventPayload`](../../crates/worldwake-core/src/decision_event_payload.rs) at `worldwake-core/src/decision_event_payload.rs:10` with 11 variants (`GoalOffered`, `GoalSuppressed`, `GoalCommitted`, `GoalSuspended`, `GoalAbandoned`, `PlanAdopted`, `PlanInvalidated`, `ExpectationMismatch`, `RepairApplied`, `ReplanTriggered`, `BlockerRecorded`). Ticket `S124CANOPPEXP-002` introduces `OpportunityExpectationFailureIncident` as a runtime-only reasoning artifact in `worldwake-ai`, but the canonical contradiction currently does not travel through the decision-history event surface. That means future debugging and trace inspection cannot answer "which committed opportunity failed, which concrete source was being trusted, which phase detected the contradiction, what the cause was, and what attribution outcome resulted" from the authoritative event log — it can only answer through ad hoc ai-layer inspection.
 
 This ticket extends `DecisionEventPayload` to surface the incident, with the ai-layer emitter living adjacent to `apply_source_reliability_failure_observations` so every attribution decision produces one event.
 
 ## Assumption Reassessment (2026-04-23)
 
-1. `DecisionEventPayload` is defined at [`crates/worldwake-core/src/decision_event_payload.rs:10`](../crates/worldwake-core/src/decision_event_payload.rs). Its 11 variants are all concrete payloads (no `Raw` or catch-all). `ExpectationMismatchPayload` at lines 214-221 currently has fields `agent`, `goal_key`, `step_index`, `expected_materializations`, `expectation_kind: Option<ExpectationKindTag>`, `mismatch_detail: Option<MismatchDetail>`. `ExpectationKindTag` is a separate enum in core used for general step-level expectation mismatch, not for source-backed expectation failure.
+1. `DecisionEventPayload` is defined at [`crates/worldwake-core/src/decision_event_payload.rs:10`](../../crates/worldwake-core/src/decision_event_payload.rs). Its 11 variants are all concrete payloads (no `Raw` or catch-all). `ExpectationMismatchPayload` at lines 214-221 currently has fields `agent`, `goal_key`, `step_index`, `expected_materializations`, `expectation_kind: Option<ExpectationKindTag>`, `mismatch_detail: Option<MismatchDetail>`. `ExpectationKindTag` is a separate enum in core used for general step-level expectation mismatch, not for source-backed expectation failure.
 2. Existing emit sites confirmed via grep — 17+ `DecisionEventPayload::` construction sites across `agent_tick/mod.rs`, `agent_tick/execution.rs`, `agent_tick/observation.rs`, and `agent_tick/tests.rs`. All emit into the decision-event log; none currently surface source-reliability attribution outcomes.
 3. Shared abstraction boundary under audit: `DecisionEventPayload` in `worldwake-core` is the canonical decision-history surface. The incident type `OpportunityExpectationFailureIncident` in `worldwake-ai` (ticket 002) is a runtime-only reasoning artifact. This ticket bridges the two: the ai-layer emitter reads the incident + attribution outcome and constructs a core-resident payload. The incident itself stays in ai; only the flattened trace payload lives in core.
 4. Two implementation options per spec D6:
@@ -129,6 +129,7 @@ Add a focused unit test that constructs a `SourceExpectationFailurePayload` with
 - `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — mapping helper + emit in writer)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — assertion on emitted event)
 - `crates/worldwake-core/src/decision_event_payload.rs` or sibling test file (modify — round-trip test)
+- `crates/worldwake-cli/src/bin/observer.rs` (modify — exhaustive decision-event rendering fallout from the new variant)
 
 ## Out of Scope
 
@@ -168,3 +169,27 @@ Add a focused unit test that constructs a `SourceExpectationFailurePayload` with
 3. `cargo test -p worldwake-ai --test golden_survival_preferences survival_preferences_keeps_proactive_diversification_alive_under_survival -- --ignored --exact --test-threads=1`
 4. `cargo test --workspace`
 5. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-23.
+
+- Added a dedicated `DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload)` variant in `worldwake-core` with core-resident mirror tags for expectation kind, failure phase, failure cause, source identity, and attribution outcome.
+- Added the matching `EventTag::SourceExpectationFailure`, re-exported the new core payload/tag types, and extended the core decision-payload roundtrip coverage to include the new payload and variant.
+- Mapped AI-layer `OpportunityExpectationFailureIncident` values into the new core payload in `crates/worldwake-ai/src/agent_tick/mod.rs`, and emitted one decision-history event per attributed incident with `SourceReliabilityDecremented`, `SourceInvalidatedFrameReconsidered`, or `CoalescedDuplicate` attribution outcomes.
+- Updated the focused AI writer test to assert the emitted decision-history events, including duplicate coalescing semantics and invalidated-source attribution.
+- Absorbed truthful workspace fallout in `crates/worldwake-cli/src/bin/observer.rs` so the observer's exhaustive `DecisionEventPayload` rendering stays aligned with the expanded decision-history surface.
+
+## Deviations
+
+- The landed bridge uses spec/ticket option B: a dedicated `DecisionEventPayload::SourceExpectationFailure` variant, not an optional nested field on `ExpectationMismatchPayload`.
+- The observer binary was not listed in the drafted file set, but `cargo test --workspace` exposed it as current-ticket fallout because it exhaustively matches decision-event variants.
+- `./scripts/verify.sh` was not run in this implementation pass; the broader proof surface was `cargo test --workspace`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib decision_event_payload`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::tests::apply_source_reliability_failure_observations_coalesces_duplicates_and_enforces_limits -- --exact`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace`
+- Passed `cargo fmt --all`

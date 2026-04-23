@@ -13,7 +13,7 @@ The goal is not to preserve every current detection seam. The goal is to make "I
 
 ## Phase and Status
 
-Phase 8 Adjunct: Belief-First Continual Planning Foundation. Status: Draft.
+Phase 8 Adjunct: Belief-First Continual Planning Foundation. Status: Completed 2026-04-23; archive this spec.
 
 ## Crates
 
@@ -347,3 +347,29 @@ No new types are added to `worldwake-core`. All new runtime types live in `world
 - If a naming choice conflicts with existing symbols, preserve the architectural boundary, not the draft names. In particular, the incident struct name may be shortened (e.g., `SourceExpectationFailure`) as long as all three detection sites exchange the same type.
 - Save format already handles the committed_source field (v42). Adding `OpportunityExpectationKind` to `PlannedPlan` requires bumping the save format again; plan this bump as part of the D1 ticket, not as a separate deliverable.
 - If future work proves a non-acquisition goal (e.g., `GoalKind::Attack` with `ConcreteTargetPresence`) needs the same substrate, extend `OpportunityExpectationKind` with a new variant and add a detection site. Do not generalize the expectation-kind enum until such a case is concrete.
+
+## Outcome
+
+Completed on 2026-04-23 through the archived ticket chain:
+
+- `archive/tickets/S124OPEXFAL-001.md`
+- `archive/tickets/S124CANOPPEXP-001.md`
+- `archive/tickets/S124CANOPPEXP-002.md`
+- `archive/tickets/S124CANOPPEXP-003.md`
+- `archive/tickets/S124CANOPPEXP-004.md`
+
+The landed implementation preserved this spec's canonical boundary: AI-layer detection sites now exchange one normalized expectation-failure incident shape, the AI-side attribution path records source-backed expectation failures through the decision-history surface, and source-reliability fallout remains distinct from the systems-layer authoritative action-outcome writers.
+
+At decomposition time, D6 took the spec-permitted dedicated payload route rather than extending `ExpectationMismatch` in place. The shipped decision-history surface uses a dedicated `DecisionEventPayload::SourceExpectationFailure` variant with matching core event-tag support and observer rendering. That is within the explicit option set documented in D6.
+
+The draft note that D1 would require a new persisted `OpportunityExpectationKind` on `PlannedPlan` did not survive reassessment as a necessary boundary. The truthful landed seam kept committed-source provenance on `PlannedPlan`, normalized runtime incidents in `worldwake-ai`, and recorded the contradiction through the canonical decision-history event family without widening the persisted retained-plan carrier beyond the already-landed committed-source field.
+
+Verification recorded during the landing and closeout:
+
+- `cargo test -p worldwake-core --lib decision_event_payload`
+- `cargo test -p worldwake-ai --lib agent_tick::tests::apply_source_reliability_failure_observations_coalesces_duplicates_and_enforces_limits -- --exact`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- `cargo fmt --all`
+
+`./scripts/verify.sh` was not run as part of the archival handoff.

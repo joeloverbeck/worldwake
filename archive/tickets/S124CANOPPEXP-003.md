@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — AI-layer reconsideration routing, typed discrepancy taxonomy, save-format bump
-**Deps**: `../../specs/S124-canonical-opportunity-expectation-failure.md`, `S124CANOPPEXP-002.md`
+**Deps**: `archive/specs/S124-canonical-opportunity-expectation-failure.md`, `S124CANOPPEXP-002.md`
 
 ## Problem
 

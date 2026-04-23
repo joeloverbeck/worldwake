@@ -1,7 +1,7 @@
 use crate::{
-    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, Discrepancy, EntityId,
+    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy, EntityId,
     ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey, MaterializationTag,
-    MismatchDetail, Permille, SuspensionReason, Tick,
+    MismatchDetail, OpportunityKey, Permille, SuspensionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -16,6 +16,7 @@ pub enum DecisionEventPayload {
     PlanAdopted(PlanAdoptedPayload),
     PlanInvalidated(PlanInvalidatedPayload),
     ExpectationMismatch(ExpectationMismatchPayload),
+    SourceExpectationFailure(SourceExpectationFailurePayload),
     RepairApplied(RepairAppliedPayload),
     ReplanTriggered(ReplanTriggeredPayload),
     BlockerRecorded(BlockerRecordedPayload),
@@ -221,6 +222,51 @@ pub struct ExpectationMismatchPayload {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SourceExpectationFailurePayload {
+    pub agent: EntityId,
+    pub opportunity: OpportunityKey,
+    pub source: SourceKeyPayload,
+    pub expectation_kind: OpportunityExpectationKindTag,
+    pub phase: ExpectationFailurePhaseTag,
+    pub cause: ExpectationFailureCauseTag,
+    pub detected_at_tick: Tick,
+    pub attribution_outcome: SourceAttributionOutcomeTag,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct SourceKeyPayload {
+    pub entity: EntityId,
+    pub commodity: CommodityKind,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum OpportunityExpectationKindTag {
+    AcquireCommodityFromConcreteSource,
+    RestockCommodityFromConcreteSource,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ExpectationFailurePhaseTag {
+    Observation,
+    CandidateGeneration,
+    Search,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ExpectationFailureCauseTag {
+    SourceAbsentLocally,
+    SourceDepletedLocally,
+    SameGoalSearchInfeasibleWhileSiblingSucceeded,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum SourceAttributionOutcomeTag {
+    SourceReliabilityDecremented,
+    SourceInvalidatedFrameReconsidered,
+    CoalescedDuplicate,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RepairAppliedPayload {
     pub agent: EntityId,
     pub goal_key: GoalKey,
@@ -290,16 +336,19 @@ mod tests {
     use super::{
         ActionInterruptReasonTag, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
         DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary,
-        ExpectationMismatchPayload, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload,
-        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
-        GoalSwitchReason, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
-        PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
-        ReplanReason, ReplanTriggeredPayload,
+        ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationMismatchPayload,
+        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload,
+        GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
+        OpportunityExpectationKindTag, PlanAdoptedPayload, PlanInvalidatedPayload,
+        PlanInvalidationReason, PursuitInvalidationReasonTag, RejectedAlternativeSummary,
+        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
+        SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
         ExpectationKindTag, FrameAssumption, FrameClearReason, InvalidatorTag, MaterializationTag,
-        MismatchDetail, ObservationPredicate, SuspensionReason, Tick,
+        MismatchDetail, ObservationPredicate, OpportunityAnchor, OpportunityKey, SuspensionReason,
+        Tick,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -332,6 +381,25 @@ mod tests {
             confidence: crate::Permille::new(425).unwrap(),
             status: BeliefStatusTag::Stale,
             acquired_tick: Tick(17),
+        }
+    }
+
+    fn sample_source_expectation_failure_payload() -> SourceExpectationFailurePayload {
+        SourceExpectationFailurePayload {
+            agent: entity_id(8, 0),
+            opportunity: OpportunityKey {
+                goal_key: sample_goal_key(),
+                anchor: OpportunityAnchor::Place(entity_id(8, 1)),
+            },
+            source: SourceKeyPayload {
+                entity: entity_id(8, 2),
+                commodity: CommodityKind::Apple,
+            },
+            expectation_kind: OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+            phase: ExpectationFailurePhaseTag::Observation,
+            cause: ExpectationFailureCauseTag::SourceDepletedLocally,
+            detected_at_tick: Tick(33),
+            attribution_outcome: SourceAttributionOutcomeTag::SourceReliabilityDecremented,
         }
     }
 
@@ -397,6 +465,9 @@ mod tests {
                     InvalidatorTag::TargetMoved,
                 )),
             }),
+            DecisionEventPayload::SourceExpectationFailure(
+                sample_source_expectation_failure_payload(),
+            ),
             DecisionEventPayload::RepairApplied(RepairAppliedPayload {
                 agent: entity_id(10, 0),
                 goal_key: sample_goal_key(),
@@ -446,6 +517,12 @@ mod tests {
         assert_value_bounds::<PlanInvalidationReason>();
         assert_copy_value_bounds::<PursuitInvalidationReasonTag>();
         assert_value_bounds::<ExpectationMismatchPayload>();
+        assert_value_bounds::<SourceExpectationFailurePayload>();
+        assert_value_bounds::<SourceKeyPayload>();
+        assert_copy_value_bounds::<OpportunityExpectationKindTag>();
+        assert_copy_value_bounds::<ExpectationFailurePhaseTag>();
+        assert_copy_value_bounds::<ExpectationFailureCauseTag>();
+        assert_copy_value_bounds::<SourceAttributionOutcomeTag>();
         assert_value_bounds::<RepairAppliedPayload>();
         assert_copy_value_bounds::<RepairKind>();
         assert_value_bounds::<ReplanTriggeredPayload>();
@@ -488,6 +565,16 @@ mod tests {
 
         assert_eq!(decoded_empty, empty);
         assert_eq!(decoded_populated, populated);
+    }
+
+    #[test]
+    fn source_expectation_failure_payload_roundtrips_through_bincode() {
+        let payload = sample_source_expectation_failure_payload();
+        let bytes = bincode::serialize(&payload).expect("source expectation failure serializes");
+        let roundtrip: SourceExpectationFailurePayload =
+            bincode::deserialize(&bytes).expect("source expectation failure deserializes");
+
+        assert_eq!(roundtrip, payload);
     }
 
     #[test]

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI committed-plan runtime carrier, save format version
-**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`, `archive/tickets/S124OPEXFAL-001.md` (landed)
+**Deps**: `archive/specs/S124-canonical-opportunity-expectation-failure.md`, `archive/tickets/S124OPEXFAL-001.md` (landed)
 
 ## Problem
 

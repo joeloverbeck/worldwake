@@ -150,12 +150,14 @@ pub use crime::{
 };
 pub use decision_event_payload::{
     ActionInterruptReasonTag, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
-    DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary, ExpectationMismatchPayload,
-    GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload,
-    GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
+    DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary, ExpectationFailureCauseTag,
+    ExpectationFailurePhaseTag, ExpectationMismatchPayload, GoalAbandonReason,
+    GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload, GoalRejectionReason,
+    GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, OpportunityExpectationKindTag,
     PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
     PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
-    ReplanReason, ReplanTriggeredPayload,
+    ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
+    SourceExpectationFailurePayload, SourceKeyPayload,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,

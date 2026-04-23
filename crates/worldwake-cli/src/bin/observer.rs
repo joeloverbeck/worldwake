@@ -372,6 +372,7 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::PlanAdopted(inner) => inner.agent,
         DecisionEventPayload::PlanInvalidated(inner) => inner.agent,
         DecisionEventPayload::ExpectationMismatch(inner) => inner.agent,
+        DecisionEventPayload::SourceExpectationFailure(inner) => inner.agent,
         DecisionEventPayload::RepairApplied(inner) => inner.agent,
         DecisionEventPayload::ReplanTriggered(inner) => inner.agent,
         DecisionEventPayload::BlockerRecorded(inner) => inner.agent,
@@ -388,6 +389,7 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::PlanAdopted(_) => "PlanAdopted",
         DecisionEventPayload::PlanInvalidated(_) => "PlanInvalidated",
         DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
+        DecisionEventPayload::SourceExpectationFailure(_) => "SourceExpectationFailure",
         DecisionEventPayload::RepairApplied(_) => "RepairApplied",
         DecisionEventPayload::ReplanTriggered(_) => "ReplanTriggered",
         DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
@@ -450,6 +452,15 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
         DecisionEventPayload::ExpectationMismatch(inner) => format!(
             "goal={:?} step={} expected={:?}",
             inner.goal_key.kind, inner.step_index, inner.expected_materializations
+        ),
+        DecisionEventPayload::SourceExpectationFailure(inner) => format!(
+            "opportunity={:?} source={:?}:{:?} phase={:?} cause={:?} outcome={:?}",
+            inner.opportunity.goal_key.kind,
+            inner.source.entity,
+            inner.source.commodity,
+            inner.phase,
+            inner.cause,
+            inner.attribution_outcome
         ),
         DecisionEventPayload::RepairApplied(inner) => format!(
             "goal={:?} step={} kind={:?} target={:?}",

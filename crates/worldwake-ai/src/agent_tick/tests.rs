@@ -41,21 +41,23 @@ use worldwake_core::{
     DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
     DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
     EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
-    ExpectationBasis, ExpectationId, ExpectationKindTag, ExpectationMismatchPayload,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationProfile, FrameAssumption,
-    FrameClearReason, FrameState, GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload,
-    GoalRejectionReason, GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    IntentionDispositionProfile, IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes,
-    LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
-    MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData, PatrolProfile,
-    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place,
-    PortfolioSlotWeights, Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind,
-    RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed, SourceKey,
-    StatePredicate, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory,
-    Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-    WoundCause, WoundId, WoundList, build_believed_entity_state, build_prototype_world,
+    ExpectationBasis, ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId,
+    ExpectationKindTag, ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, ExplorationProfile, FrameAssumption, FrameClearReason, FrameState,
+    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason,
+    GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain,
+    IntentionFrame, InvalidatorTag, KnownRecipes, LearnedOpportunityMemory, LoadUnits,
+    MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, MismatchDetail,
+    ObservationPredicate, OfficeData, OpportunityExpectationKindTag, PatrolProfile, PatrolRoute,
+    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, PortfolioSlotWeights,
+    Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload,
+    RepairKind, RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
+    SourceExpectationFailurePayload, SourceKey, SourceKeyPayload, StatePredicate, SuccessionLaw,
+    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
+    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -6346,7 +6348,7 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
         cause: ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
     };
 
-    super::apply_source_reliability_failure_observations(
+    let applied = super::apply_source_reliability_failure_observations(
         &mut harness.world,
         &mut harness.event_log,
         harness.actor,
@@ -6358,6 +6360,46 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
         ],
     )
     .expect("source reliability persistence should succeed");
+    super::emit_source_expectation_failure_events(
+        &mut harness.event_log,
+        harness.actor,
+        &[
+            OpportunityExpectationFailureIncident {
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(800)),
+                },
+                source: SourceKey {
+                    entity: source_a,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                detected_at_tick: Tick(20),
+                phase: ExpectationFailurePhase::Observation,
+                cause: ExpectationFailureCause::SourceDepletedLocally,
+            },
+            OpportunityExpectationFailureIncident {
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(800)),
+                },
+                source: SourceKey {
+                    entity: source_a,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                detected_at_tick: Tick(20),
+                phase: ExpectationFailurePhase::Observation,
+                cause: ExpectationFailureCause::SourceDepletedLocally,
+            },
+            search_incident.clone(),
+        ],
+        &applied,
+        Some(SourceKey {
+            entity: source_b,
+            commodity: CommodityKind::Apple,
+        }),
+    );
 
     let updated = harness
         .world
@@ -6392,6 +6434,75 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
         })
+    );
+    let source_failure_events = harness
+        .event_log
+        .events_by_tag(EventTag::SourceExpectationFailure);
+    assert_eq!(source_failure_events.len(), 3);
+    let payloads: Vec<_> = source_failure_events
+        .iter()
+        .map(|event_id| {
+            harness
+                .event_log
+                .get(*event_id)
+                .and_then(|record| record.decision_payload())
+                .cloned()
+                .expect("source expectation failure payload should be present")
+        })
+        .collect();
+    assert_eq!(
+        payloads,
+        vec![
+            DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
+                agent: harness.actor,
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(800)),
+                },
+                source: SourceKeyPayload {
+                    entity: source_a,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+                phase: ExpectationFailurePhaseTag::Observation,
+                cause: ExpectationFailureCauseTag::SourceDepletedLocally,
+                detected_at_tick: Tick(20),
+                attribution_outcome: SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+            }),
+            DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
+                agent: harness.actor,
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(800)),
+                },
+                source: SourceKeyPayload {
+                    entity: source_a,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+                phase: ExpectationFailurePhaseTag::Observation,
+                cause: ExpectationFailureCauseTag::SourceDepletedLocally,
+                detected_at_tick: Tick(20),
+                attribution_outcome: SourceAttributionOutcomeTag::CoalescedDuplicate,
+            }),
+            DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
+                agent: harness.actor,
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(801)),
+                },
+                source: SourceKeyPayload {
+                    entity: source_b,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+                phase: ExpectationFailurePhaseTag::Search,
+                cause: ExpectationFailureCauseTag::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+                detected_at_tick: Tick(20),
+                attribution_outcome:
+                    SourceAttributionOutcomeTag::SourceInvalidatedFrameReconsidered,
+            }),
+        ]
     );
 }
 

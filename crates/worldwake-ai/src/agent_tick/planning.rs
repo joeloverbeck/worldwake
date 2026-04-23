@@ -1627,6 +1627,10 @@ pub(super) fn plan_and_validate_next_step(
                         )
                     };
                     if !failed_sources.is_empty() {
+                        let committed_source_before_invalidation = runtime
+                            .current_plan
+                            .as_ref()
+                            .and_then(|plan| plan.committed_source);
                         let applied_failures =
                             super::apply_source_reliability_failure_observations(
                                 world,
@@ -1636,14 +1640,26 @@ pub(super) fn plan_and_validate_next_step(
                                 &failed_sources,
                             )
                             .expect("planning-stage source reliability persistence should succeed");
-                        let _ = super::invalidate_committed_source_after_reliability_failure(
-                            runtime,
-                            jc.as_ref(),
-                            facility_intents,
-                            discrepancy_memory,
+                        let invalidated =
+                            super::invalidate_committed_source_after_reliability_failure(
+                                runtime,
+                                jc.as_ref(),
+                                facility_intents,
+                                discrepancy_memory,
+                                &applied_failures,
+                                tick,
+                                cognitive.structural_block_ticks,
+                            );
+                        super::emit_source_expectation_failure_events(
+                            event_log,
+                            agent,
+                            &failed_sources,
                             &applied_failures,
-                            tick,
-                            cognitive.structural_block_ticks,
+                            if invalidated {
+                                committed_source_before_invalidation
+                            } else {
+                                None
+                            },
                         );
                     }
                     let refreshed_view =
@@ -1996,6 +2012,10 @@ pub(super) fn plan_and_validate_next_step_traced(
                     )
                 };
                 if !failed_sources.is_empty() {
+                    let committed_source_before_invalidation = runtime
+                        .current_plan
+                        .as_ref()
+                        .and_then(|plan| plan.committed_source);
                     let applied_failures = super::apply_source_reliability_failure_observations(
                         world,
                         event_log,
@@ -2004,7 +2024,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                         &failed_sources,
                     )
                     .expect("planning-stage source reliability persistence should succeed");
-                    let _ = super::invalidate_committed_source_after_reliability_failure(
+                    let invalidated = super::invalidate_committed_source_after_reliability_failure(
                         runtime,
                         jc.as_ref(),
                         facility_intents,
@@ -2012,6 +2032,17 @@ pub(super) fn plan_and_validate_next_step_traced(
                         &applied_failures,
                         tick,
                         cognitive.structural_block_ticks,
+                    );
+                    super::emit_source_expectation_failure_events(
+                        event_log,
+                        agent,
+                        &failed_sources,
+                        &applied_failures,
+                        if invalidated {
+                            committed_source_before_invalidation
+                        } else {
+                            None
+                        },
                     );
                 }
                 let refreshed_view =
