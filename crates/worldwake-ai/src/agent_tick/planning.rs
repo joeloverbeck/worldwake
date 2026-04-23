@@ -23,7 +23,8 @@ use crate::{
     DirtySet, ExhaustionEntry, ExhaustionRetryState, KillCondition, OpportunityKey, PlanValue,
     PlannedPlan, PlannedStep, PlannerOpSemantics, RevivalTrigger, authoritative_target,
     build_planning_snapshot_with_blocked_facility_uses, planner_ops::committed_source_for_offer,
-    ranking::OrderedRanked, revalidate_next_step, select_best_plan,
+    planner_ops::expectation_kind_for_offer, ranking::OrderedRanked, revalidate_next_step,
+    select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -1402,11 +1403,17 @@ fn adopt_selected_plan(
         .iter()
         .find(|candidate| candidate.key == selected_plan.opportunity)
         .map(|candidate| AgendaEntry::committed_from(candidate, tick));
-    if selected_plan.committed_source.is_none() {
-        selected_plan.committed_source = ranked_candidates
+    if (selected_plan.committed_source.is_none() || selected_plan.expectation_kind.is_none())
+        && let Some(candidate) = ranked_candidates
             .iter()
             .find(|candidate| candidate.key == selected_plan.opportunity)
-            .and_then(|candidate| committed_source_for_offer(&candidate.offer));
+    {
+        if selected_plan.committed_source.is_none() {
+            selected_plan.committed_source = committed_source_for_offer(&candidate.offer);
+        }
+        if selected_plan.expectation_kind.is_none() {
+            selected_plan.expectation_kind = expectation_kind_for_offer(&candidate.offer);
+        }
     }
     *jc = prepared_frame;
     let _ = persist_expectation_store_update(world, event_log, agent, tick, |store| {
@@ -2192,9 +2199,9 @@ mod tests {
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
         ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind, GoalOffer,
-        GoalPriorityClass, KillCondition, OpportunityAnchor, OpportunityKey, PlanSearchResult,
-        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        ProfileFixture, RevivalTrigger,
+        GoalPriorityClass, KillCondition, OpportunityAnchor, OpportunityExpectationKind,
+        OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan, PlannedStep,
+        PlannerOpKind, PlanningEntityRef, ProfileFixture, RevivalTrigger,
         agent_tick::portfolio::{FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind},
         build_semantics_table,
         decision_trace::{
@@ -2715,6 +2722,97 @@ mod tests {
                 entity: source,
                 commodity: CommodityKind::Apple,
             })
+        );
+        assert_eq!(
+            runtime
+                .current_plan
+                .as_ref()
+                .and_then(|plan| plan.expectation_kind),
+            Some(OpportunityExpectationKind::AcquireCommodityFromConcreteSource)
+        );
+    }
+
+    #[test]
+    fn adopt_selected_plan_leaves_expectation_kind_empty_without_concrete_source() {
+        let origin = entity(101);
+        let orchard = entity(102);
+        let mut world = World::new(cargo_topology(origin, orchard)).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Hungry", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, origin).unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let (defs, _handlers, recipes) = build_full_registries();
+        let scheduler = Scheduler::new(SystemManifest::canonical());
+        let mut event_log = EventLog::new();
+        let mut runtime = AgentDecisionRuntime::default();
+        let mut agenda_state = AgendaState::default();
+        let mut frame = None;
+        let mut facility_intents = ContentionIntents::default();
+        let ranked_candidates = vec![ranked_goal(acquire_goal(
+            CommodityKind::Apple,
+            OpportunityAnchor::Place(orchard),
+            BTreeSet::new(),
+            BTreeSet::from([orchard]),
+        ))];
+        let goal = ranked_candidates[0].offer.key;
+        let selected_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(orchard),
+            },
+            goal,
+            vec![travel_step(orchard)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let (prepared_frame, current_place) = {
+            let view = super::runtime_belief_view(agent, &world, &scheduler, &defs, &recipes);
+            let mut prepared_frame = super::update_frame_for_adopted_plan(
+                frame.as_ref(),
+                &selected_plan,
+                Tick(5),
+                &mut runtime,
+            );
+            if let Some(frame) = prepared_frame.as_mut() {
+                frame.assumptions = super::populate_assumptions(frame, agent, &view);
+            }
+            let current_place = worldwake_sim::SpatialBeliefView::effective_place(&view, agent)
+                .expect("adopted test agent should have an effective place");
+            (prepared_frame, current_place)
+        };
+
+        super::adopt_selected_plan(
+            &mut world,
+            &mut event_log,
+            &mut runtime,
+            &mut agenda_state,
+            &mut frame,
+            &mut facility_intents,
+            agent,
+            &ordered(&ranked_candidates),
+            selected_plan,
+            &recipes,
+            Tick(5),
+            &CognitiveProfile::default(),
+            prepared_frame,
+            current_place,
+        );
+
+        assert_eq!(
+            runtime
+                .current_plan
+                .as_ref()
+                .and_then(|plan| plan.committed_source),
+            None
+        );
+        assert_eq!(
+            runtime
+                .current_plan
+                .as_ref()
+                .and_then(|plan| plan.expectation_kind),
+            None
         );
     }
 

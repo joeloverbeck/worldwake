@@ -954,12 +954,20 @@ pub enum PlanTerminalKind {
     CombatCommitment,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum OpportunityExpectationKind {
+    AcquireCommodityFromConcreteSource,
+    RestockCommodityFromConcreteSource,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PlannedPlan {
     pub goal: GoalKey,
     pub opportunity: worldwake_core::OpportunityKey,
     #[serde(default)]
     pub committed_source: Option<SourceKey>,
+    #[serde(default)]
+    pub expectation_kind: Option<OpportunityExpectationKind>,
     pub steps: Vec<PlannedStep>,
     pub total_estimated_ticks: u32,
     pub terminal_kind: PlanTerminalKind,
@@ -977,6 +985,7 @@ impl PlannedPlan {
             goal,
             opportunity,
             committed_source: None,
+            expectation_kind: None,
             total_estimated_ticks: total_estimated_ticks(&steps),
             steps,
             terminal_kind,
@@ -986,6 +995,15 @@ impl PlannedPlan {
     #[must_use]
     pub fn with_committed_source(mut self, committed_source: Option<SourceKey>) -> Self {
         self.committed_source = committed_source;
+        self
+    }
+
+    #[must_use]
+    pub fn with_expectation_kind(
+        mut self,
+        expectation_kind: Option<OpportunityExpectationKind>,
+    ) -> Self {
+        self.expectation_kind = expectation_kind;
         self
     }
 
@@ -1027,6 +1045,25 @@ pub(crate) fn committed_source_for_offer(offer: &GoalOffer) -> Option<SourceKey>
         return None;
     }
     Some(SourceKey { entity, commodity })
+}
+
+#[must_use]
+pub(crate) fn expectation_kind_for_offer(offer: &GoalOffer) -> Option<OpportunityExpectationKind> {
+    let kind = match offer.key.kind {
+        GoalKind::AcquireCommodity { .. } => {
+            OpportunityExpectationKind::AcquireCommodityFromConcreteSource
+        }
+        GoalKind::RestockCommodity { .. } => {
+            OpportunityExpectationKind::RestockCommodityFromConcreteSource
+        }
+        _ => return None,
+    };
+    let mut sources = offer.evidence_entities.iter().copied();
+    sources.next()?;
+    if sources.next().is_some() {
+        return None;
+    }
+    Some(kind)
 }
 
 fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — AI-layer detection sites, single shared writer signature, source-reliability attribution rules
-**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`, `tickets/S124CANOPPEXP-001.md`
+**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`, `archive/tickets/S124CANOPPEXP-001.md`
 
 ## Problem
 

@@ -300,8 +300,9 @@ mod tests {
     use crate::{
         AgendaEntry, AgendaOrigin, AgendaPhase, CommodityPurpose, DirtySet, ExhaustionBaseline,
         ExhaustionInvalidationCondition, FeasibilityHint, GoalKey, GoalOffer, GoalPriorityClass,
-        HypotheticalEntityId, KillCondition, OpportunityAnchor, OpportunityKey, PlanTerminalKind,
-        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, ProfileFixture, RevivalTrigger,
+        HypotheticalEntityId, KillCondition, OpportunityAnchor, OpportunityExpectationKind,
+        OpportunityKey, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
+        PlanningEntityRef, ProfileFixture, RevivalTrigger,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::ActionDefId;
@@ -532,13 +533,18 @@ mod tests {
             worldwake_core::Permille::new(100).unwrap(),
         );
         let runtime = AgentDecisionRuntime {
-            current_plan: Some(sample_plan(vec![
-                PlannedStep {
-                    targets: vec![PlanningEntityRef::Authoritative(entity(77))],
-                    ..sample_step(1, PlannerOpKind::Travel)
-                },
-                sample_step(2, PlannerOpKind::Consume),
-            ])),
+            current_plan: Some(
+                sample_plan(vec![
+                    PlannedStep {
+                        targets: vec![PlanningEntityRef::Authoritative(entity(77))],
+                        ..sample_step(1, PlannerOpKind::Travel)
+                    },
+                    sample_step(2, PlannerOpKind::Consume),
+                ])
+                .with_expectation_kind(Some(
+                    OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                )),
+            ),
             agenda_state: {
                 let committed_goal = GoalKey::from(worldwake_core::GoalKind::Sleep);
                 let pending_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
