@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 169: Survival Tell Lands Roadmap Row Five
 
-- Source: `golden_survival_tell.rs:401`
+- Source: `golden_survival_tell.rs:400`
 - Systems: AI, Needs, Travel, Production, Tell
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve, ShareBelief
 - ActionDomains: Needs, Travel, Production, Social

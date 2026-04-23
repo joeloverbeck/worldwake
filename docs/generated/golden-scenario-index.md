@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 92
-- Contributing golden test files: 17
-- Associated tests: 111
+- Scenario blocks: 93
+- Contributing golden test files: 18
+- Associated tests: 113
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -872,7 +872,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 170: Survival Ask-Consult Lands Roadmap Row Six
 
-- Source: `golden_survival_ask_consult.rs:369`
+- Source: `golden_survival_ask_consult.rs:366`
 - Systems: AI, Needs, Travel, Search, Epistemic, Offices
 - GoalKinds: SearchForMissing, ClaimOffice, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve
 - ActionDomains: Needs, Travel, Epistemic, Social
@@ -1050,6 +1050,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 
+### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
+
+- Source: `golden_survival_preferences.rs:266`
+- Systems: AI, Needs, Travel, Production, proactive diversification
+- GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
+- ActionDomains: Travel, Production, Needs
+- Places: Willow Camp, Familiar Orchard, Novel Grove
+- Principles: 6, 7, 14, 20, 22, 22A
+
+**Setup**: Run the authored survival preferences scenario for 1440 ticks. The
+
+**Proves**: the agent satisfies the authored survival contract; proactive
+
+**Cross-system chain**: proactive ExploreLocation selection -> travel arrival at Novel Grove
+
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
 - Source: `golden_survival_scattered.rs:322`
@@ -1142,7 +1157,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 169: Survival Tell Lands Roadmap Row Five
 
-- Source: `golden_survival_tell.rs:401`
+- Source: `golden_survival_tell.rs:400`
 - Systems: AI, Needs, Travel, Production, Tell
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve, ShareBelief
 - ActionDomains: Needs, Travel, Production, Social

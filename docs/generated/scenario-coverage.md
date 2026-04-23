@@ -14,46 +14,46 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 
 ## Feature x Scenario Matrix
 
-| Feature | cli-evaluation | survival-ask-consult | survival-baseline | survival-contested | survival-drive-escalation | survival-scattered | survival-tell |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Travel physiology | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ |
-| Drive escalation | — | — | — | — | ✅ | — | ✅ |
-| Need-driven exploration | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Activation-decay perception | ✅ | ✅ | ✅ | ✅ | — | ✅ | — |
-| Place concealment | ✅ | — | — | — | — | — | — |
-| Tell / peer info transfer | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ✅ |
-| Ask-about-person | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ |
-| Consult-record | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ |
-| Obligation satiation | ✅ | — | — | — | — | — | — |
-| Diversification / curiosity | — | — | — | — | — | — | — |
-| Experience preferences | ✅ | — | — | — | — | — | — |
-| Production (multi-input recipes) | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Merchant selling | ✅ | — | — | — | — | — | — |
-| Trade negotiation | ✅ | — | — | — | — | — | — |
-| Commodity valuation | ✅ | — | — | — | — | — | — |
-| Substitute preferences | ✅ | — | — | — | — | — | — |
-| Item decay | — | — | — | — | — | — | — |
-| Disposal | ✅ | — | — | — | — | — | — |
-| Facility-queue contention | ✅ | — | — | — | — | — | — |
-| Offices / succession / force-claim | — | ✅ | — | — | — | — | — |
-| Bounty posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Notice posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Theft | ✅ | — | — | — | — | — | — |
-| Justice / accusation | ✅ | — | — | — | — | — | — |
-| Violation investigation | ✅ | ✅ | — | — | — | — | — |
-| Patrol | ✅ | — | — | — | — | — | — |
-| Pursuit | ✅ | — | — | — | — | — | — |
-| Combat | ✅ | — | — | — | — | — | — |
-| Escort | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Bandit camps | — | — | — | — | — | — | — |
-| Report / witness | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ |
-| Search | ✅ | ✅ | — | — | — | — | — |
-| Stock / transport | ✅ | — | — | — | — | — | — |
+| Feature | cli-evaluation | survival-ask-consult | survival-baseline | survival-contested | survival-drive-escalation | survival-preferences | survival-scattered | survival-tell |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Travel physiology | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Drive escalation | — | — | — | — | ✅ | — | — | ✅ |
+| Need-driven exploration | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Activation-decay perception | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
+| Place concealment | ✅ | — | — | — | — | — | — | — |
+| Tell / peer info transfer | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ✅ |
+| Ask-about-person | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ |
+| Consult-record | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ |
+| Obligation satiation | ✅ | — | — | — | — | — | — | — |
+| Diversification / curiosity | — | — | — | — | — | ✅ | — | — |
+| Experience preferences | ✅ | — | — | — | — | ✅ | — | — |
+| Production (multi-input recipes) | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Merchant selling | ✅ | — | — | — | — | — | — | — |
+| Trade negotiation | ✅ | — | — | — | — | — | — | — |
+| Commodity valuation | ✅ | — | — | — | — | — | — | — |
+| Substitute preferences | ✅ | — | — | — | — | — | — | — |
+| Item decay | — | — | — | — | — | — | — | — |
+| Disposal | ✅ | — | — | — | — | — | — | — |
+| Facility-queue contention | ✅ | — | — | — | — | — | — | — |
+| Offices / succession / force-claim | — | ✅ | — | — | — | — | — | — |
+| Bounty posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Notice posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Theft | ✅ | — | — | — | — | — | — | — |
+| Justice / accusation | ✅ | — | — | — | — | — | — | — |
+| Violation investigation | ✅ | ✅ | — | — | — | — | — | — |
+| Patrol | ✅ | — | — | — | — | — | — | — |
+| Pursuit | ✅ | — | — | — | — | — | — | — |
+| Combat | ✅ | — | — | — | — | — | — | — |
+| Escort | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Bandit camps | — | — | — | — | — | — | — | — |
+| Report / witness | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ |
+| Search | ✅ | ✅ | — | — | — | — | — | — |
+| Stock / transport | ✅ | — | — | — | — | — | — | — |
 
 Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absent.
 
@@ -347,6 +347,64 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - visibility_profile places: none
 - facilities: 3
 - resource sources: 2
+- known_recipes union: Harvest Apples, Harvest Water
+
+### scenarios/survival-preferences.ron
+
+- Seed: 619007
+- Agents: 2 Ai
+- Places: 3
+- Survival contract: max_critical 240, elevated_idle 45, families [Eat, Drink, Sleep, Relieve, Wash]
+
+**Active features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Travel physiology
+- Need-driven exploration
+- Activation-decay perception
+- Diversification / curiosity
+- Experience preferences
+
+**Present-but-inactive features**
+- Tell / peer info transfer
+- Ask-about-person
+- Consult-record
+- Production (multi-input recipes)
+- Bounty posting
+- Notice posting
+- Escort
+- Report / witness
+
+**Absent features**
+- Drive escalation
+- Place concealment
+- Obligation satiation
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Bandit camps
+- Search
+- Stock / transport
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- facilities: 4
+- resource sources: 3
 - known_recipes union: Harvest Apples, Harvest Water
 
 ### scenarios/survival-scattered.ron

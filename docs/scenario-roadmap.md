@@ -45,8 +45,8 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Ask-about-person | Non-zero `social_weight` plus `communication_profile` and `epistemic_disposition` | [`ask_about_person_actions.rs`](../crates/worldwake-systems/src/ask_about_person_actions.rs), epistemic surfaces | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
 | Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
 | Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Planned |
-| Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | In progress in `survival-preferences.ron`; survival-golden diversification proof landed, full row still blocked by [`tickets/SURVPREF-001.md`](../tickets/SURVPREF-001.md) |
+| Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | In progress in `survival-preferences.ron`; focused auxiliary proof exists, survival-row closure still blocked by [`tickets/SURVPREF-001.md`](../tickets/SURVPREF-001.md) |
 | Production (multi-input recipes) | Authored recipe set with at least one multi-input recipe | [`production_actions.rs`](../crates/worldwake-systems/src/production_actions.rs) | Planned; current survival scenarios remain structurally inactive under the live rule |
 | Merchant selling | `merchandise_profile` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Trade negotiation | `trade_disposition` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
@@ -89,9 +89,10 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-drive-escalation.ron` | Drive escalation |
 | Landed in `survival-tell.ron` | Tell / peer info transfer |
 | Landed in `survival-ask-consult.ron` | Ask-about-person, Consult-record |
-| Structural coverage only, not yet landed | Place concealment, Obligation satiation, Experience preferences, Production (multi-input recipes), Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Disposal, Facility-queue contention, Bounty posting, Notice posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search, Stock / transport |
+| In progress in `survival-preferences.ron` | Diversification / curiosity, Experience preferences |
+| Structural coverage only, not yet landed | Place concealment, Obligation satiation, Production (multi-input recipes), Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Disposal, Facility-queue contention, Bounty posting, Notice posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search, Stock / transport |
 | Authored but still gated inactive | Report / witness |
-| Planned with no current scenario activation | Diversification / curiosity, Item decay, Offices / succession / force-claim, Bandit camps |
+| Planned with no current scenario activation | Item decay, Offices / succession / force-claim, Bandit camps |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and now `survival-ask-consult.ron` can expose future social or institutional substrate without automatically promoting every structurally active row to `Landed`.
 
@@ -151,7 +152,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 4 | `survival-drive-escalation` | Authored drive-escalation coverage inside a survival-health-contract scenario | Landed | Converts the old auxiliary wash-priority proof into a real survival-contract landing before later social features depend on it |
 | 5 | `survival-tell` | Tell / peer info transfer | Landed | First belief-mutation feature under survival pressure |
 | 6 | `survival-ask-consult` | Ask-about-person + consult-record | Landed | Explicit epistemic actions competing with self-care |
-| 7 | `survival-preferences` | Experience preferences + diversification / curiosity | Planned | Learned preference loops can destabilize exploration and self-care |
+| 7 | `survival-preferences` | Experience preferences + diversification / curiosity | In Progress | `survival-preferences.ron` now proves proactive diversification under survival, but full row closure still needs a truthful stale familiar-source preference-memory seam (`SURVPREF-001`) |
 | 8 | `survival-production` | Production (multi-input recipes) | Planned | Deeper prerequisite chains and facility dependence |
 | 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | Planned | Multi-agent coordination and ownership-sensitive planning |
 | 10 | `survival-items-decay` | Item decay + disposal | Planned | Ongoing world maintenance pressure added to survival/trade |
@@ -165,9 +166,22 @@ Use this template for both planned entries and retrospective landed entries. A r
 
 ### 4.3 Planned Entry Summaries
 
-#### 4.3 Remaining planned rows
+#### 4.3 Current in-progress row
 
-Rows 7-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
+### 7. `survival-preferences`
+
+**Status**: In Progress  
+**Source scenario**: [`scenarios/survival-preferences.ron`](../scenarios/survival-preferences.ron)  
+**Backing goldens**: [`golden_survival_preferences.rs`](../crates/worldwake-ai/tests/golden_survival_preferences.rs)  
+**Depends on**: landed rows 1-6
+
+`survival-preferences.ron` now keeps the survival loop alive while a tracked scout proactively discovers `Novel Grove` and later successfully recovers apples there. That truthfully advances the diversification / curiosity half of row 7 inside a real 1440-tick survival scenario.
+
+The row is not yet `Landed` because the experience-preferences half is still missing a truthful survival-time failure-memory closure. Focused auxiliary coverage already proves preference behavior outside roadmap ownership, but the scenario-backed row still needs the stale familiar-source failure to persist into durable preference state before the later branch shift can be claimed. That blocker is owned by [`tickets/SURVPREF-001.md`](../tickets/SURVPREF-001.md).
+
+#### 4.4 Remaining planned rows
+
+Rows 8-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
 
 ## 5. Landed Scenarios
 
