@@ -11,9 +11,12 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EntityId, EntityKind, EventLog,
-    ExplorationProfile, KnownRecipes, LastProactiveExplorationTick, LoadUnits, MerchandiseProfile,
-    PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy, ResourceSource,
+    CarryCapacity, CauseRef, ControlSource, DeprivationExposure, EligibilityRule, EntityId,
+    EntityKind, EventLog, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, ExpectationStore, ExplorationProfile, KnownRecipes,
+    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
+    MerchandiseProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolRoute, Place,
+    ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind, ResourceSource,
     Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
     World, WorldTxn, default_commodity_decay_map, hash_world,
 };
@@ -270,6 +273,10 @@ fn spawn_entities(
         spawn_agent(&mut txn, recipes, agent_def, names, &mut agent_locations)?;
     }
 
+    for office_def in &def.offices {
+        spawn_office(&mut txn, office_def, names, &mut facility_locations)?;
+    }
+
     for item_def in &def.items {
         spawn_item(&mut txn, item_def, names, place_names, &agent_locations)?;
     }
@@ -370,6 +377,7 @@ fn spawn_agent(
     )?;
 
     let agent_id = txn.create_agent(&agent_def.name, agent_def.control)?;
+    names.insert(agent_def.name.clone(), agent_id);
 
     let needs = agent_def.needs.unwrap_or_default();
     txn.set_component_homeostatic_needs(agent_id, needs)?;
@@ -430,9 +438,10 @@ fn spawn_agent(
     txn.set_component_communication_profile(agent_id, communication)?;
     let preference = agent_def.preference_profile.unwrap_or_default();
     txn.set_component_preference_profile(agent_id, preference)?;
-    let expectation_store = agent_def.expectation_store.clone().unwrap_or_default();
+    let expectation_store =
+        expectation_store_from_def(agent_id, agent_def.expectation_store.as_ref(), names)?;
     txn.set_component_expectation_store(agent_id, expectation_store)?;
-    let last_seen_memory = agent_def.last_seen_memory.clone().unwrap_or_default();
+    let last_seen_memory = last_seen_memory_from_def(agent_def.last_seen_memory.as_ref(), names)?;
     txn.set_component_last_seen_memory(agent_id, last_seen_memory)?;
     let obligation_satiation_profile = agent_def
         .obligation_satiation_profile
@@ -529,8 +538,273 @@ fn spawn_agent(
 
     txn.set_ground_location(agent_id, place_id)?;
     agent_locations.insert(agent_id, place_id);
-    names.insert(agent_def.name.clone(), agent_id);
     Ok(())
+}
+
+fn spawn_office(
+    txn: &mut WorldTxn<'_>,
+    office_def: &types::OfficeDef,
+    names: &mut BTreeMap<String, EntityId>,
+    facility_locations: &mut BTreeMap<EntityId, EntityId>,
+) -> Result<(), ScenarioError> {
+    let seat = resolve_name(
+        names,
+        &office_def.seat,
+        &format!("office '{}' seat", office_def.name),
+    )?;
+
+    let eligibility_rules = office_def
+        .eligibility_rules
+        .iter()
+        .map(|rule| match rule {
+            types::EligibilityRuleDef::FactionMember(name) => resolve_name(
+                names,
+                name,
+                &format!("office '{}' faction eligibility", office_def.name),
+            )
+            .map(EligibilityRule::FactionMember),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let office = txn.create_office(&office_def.name)?;
+    txn.set_ground_location(office, seat)?;
+    txn.set_component_office_data(
+        office,
+        OfficeData {
+            title: office_def.name.clone(),
+            seat,
+            jurisdiction: BTreeSet::from([seat]),
+            succession_law: office_def.succession_law.clone(),
+            eligibility_rules,
+            succession_period_ticks: office_def.succession_period_ticks,
+            vacancy_since: Some(Tick(0)),
+        },
+    )?;
+    if matches!(
+        office_def.succession_law,
+        worldwake_core::SuccessionLaw::Force
+    ) {
+        let hold_ticks = u32::try_from(office_def.succession_period_ticks)
+            .ok()
+            .and_then(std::num::NonZeroU32::new)
+            .ok_or_else(|| {
+                ScenarioError::Validation(format!(
+                    "office '{}' force succession_period_ticks must fit in non-zero u32",
+                    office_def.name
+                ))
+            })?;
+        txn.set_component_office_force_profile(
+            office,
+            OfficeForceProfile {
+                uncontested_hold_ticks: hold_ticks,
+                vacancy_claim_grace_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                challenger_presence_grace_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        )?;
+        txn.set_component_office_force_state(
+            office,
+            OfficeForceState {
+                control_since: None,
+                challenged_since: None,
+                contested_since: None,
+                last_uncontested_tick: None,
+            },
+        )?;
+    }
+
+    for kind in [RecordKind::OfficeRegister, RecordKind::SupportLedger] {
+        let exists = txn
+            .query_record_data()
+            .any(|(_, record)| record.record_kind == kind && record.home_place == seat);
+        if !exists {
+            let record = txn.create_record(RecordData {
+                record_kind: kind,
+                home_place: seat,
+                issuer: seat,
+                consultation_ticks: 4,
+                max_entries_per_consult: 6,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })?;
+            facility_locations.insert(record, seat);
+        }
+    }
+
+    let office_register = txn
+        .query_record_data()
+        .find_map(|(record, data)| {
+            (data.record_kind == RecordKind::OfficeRegister && data.home_place == seat)
+                .then_some(record)
+        })
+        .ok_or_else(|| {
+            ScenarioError::Validation(format!(
+                "office '{}' requires an OfficeRegister at its seat",
+                office_def.name
+            ))
+        })?;
+    txn.append_record_entry(
+        office_register,
+        worldwake_core::InstitutionalClaim::OfficeHolder {
+            office,
+            holder: None,
+            effective_tick: Tick(0),
+        },
+    )?;
+
+    facility_locations.insert(office, seat);
+    names.insert(office_def.name.clone(), office);
+    Ok(())
+}
+
+fn expectation_store_from_def(
+    owner: EntityId,
+    def: Option<&types::ExpectationStoreDef>,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<ExpectationStore, ScenarioError> {
+    let Some(def) = def else {
+        return Ok(ExpectationStore::default());
+    };
+
+    let mut store = ExpectationStore::default();
+    for record_def in &def.records {
+        let subject = resolve_name(names, &record_def.subject, "expectation subject")?;
+        let expected_place = resolve_name(
+            names,
+            &record_def.expected_place,
+            "expectation expected_place",
+        )?;
+        let basis = expectation_basis_from_def(&record_def.basis, names)?;
+        let state = expectation_state_from_def(&record_def.state, names)?;
+        store.allocate_record(|id| ExpectationRecord {
+            id,
+            owner,
+            subject,
+            expected_place,
+            deadline_tick: Tick(record_def.deadline_tick),
+            grace_ticks: record_def.grace_ticks,
+            basis,
+            state,
+            created_tick: Tick(record_def.created_tick),
+        });
+    }
+    Ok(store)
+}
+
+fn expectation_basis_from_def(
+    def: &types::ExpectationBasisDef,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<ExpectationBasis, ScenarioError> {
+    Ok(match def {
+        types::ExpectationBasisDef::DutyAssignment { office } => ExpectationBasis::DutyAssignment {
+            office: resolve_name(names, office, "expectation duty office")?,
+        },
+        types::ExpectationBasisDef::DeliveryCommitment {
+            commodity,
+            quantity,
+        } => ExpectationBasis::DeliveryCommitment {
+            commodity: *commodity,
+            quantity: *quantity,
+        },
+        types::ExpectationBasisDef::RoutineReturn => ExpectationBasis::RoutineReturn,
+        types::ExpectationBasisDef::EscortObligation { charge } => {
+            ExpectationBasis::EscortObligation {
+                charge: resolve_name(names, charge, "expectation escort charge")?,
+            }
+        }
+        types::ExpectationBasisDef::SocialPromise => ExpectationBasis::SocialPromise,
+        types::ExpectationBasisDef::PlanStepCompletion {
+            step_index,
+            kind_tag,
+        } => ExpectationBasis::PlanStepCompletion {
+            step_index: *step_index,
+            kind_tag: *kind_tag,
+        },
+    })
+}
+
+fn expectation_state_from_def(
+    def: &types::ExpectationStateDef,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<ExpectationState, ScenarioError> {
+    Ok(match def {
+        types::ExpectationStateDef::Active => ExpectationState::Active,
+        types::ExpectationStateDef::Overdue => ExpectationState::Overdue,
+        types::ExpectationStateDef::Resolved { outcome } => ExpectationState::Resolved {
+            outcome: expectation_outcome_from_def(outcome, names)?,
+        },
+        types::ExpectationStateDef::Expired => ExpectationState::Expired,
+    })
+}
+
+fn expectation_outcome_from_def(
+    def: &types::ExpectationOutcomeDef,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<ExpectationOutcome, ScenarioError> {
+    Ok(match def {
+        types::ExpectationOutcomeDef::Fulfilled => ExpectationOutcome::Fulfilled,
+        types::ExpectationOutcomeDef::FoundSafe { at_place } => ExpectationOutcome::FoundSafe {
+            at_place: resolve_name(names, at_place, "expectation outcome place")?,
+        },
+        types::ExpectationOutcomeDef::FoundWounded { at_place } => {
+            ExpectationOutcome::FoundWounded {
+                at_place: resolve_name(names, at_place, "expectation outcome place")?,
+            }
+        }
+        types::ExpectationOutcomeDef::FoundDead { at_place } => ExpectationOutcome::FoundDead {
+            at_place: resolve_name(names, at_place, "expectation outcome place")?,
+        },
+        types::ExpectationOutcomeDef::NotFound => ExpectationOutcome::NotFound,
+        types::ExpectationOutcomeDef::ReturnedLate => ExpectationOutcome::ReturnedLate,
+    })
+}
+
+fn last_seen_memory_from_def(
+    def: Option<&types::LastSeenMemoryDef>,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<LastSeenMemory, ScenarioError> {
+    let Some(def) = def else {
+        return Ok(LastSeenMemory::default());
+    };
+
+    let mut records = BTreeMap::new();
+    for record_def in &def.records {
+        let subject = resolve_name(names, &record_def.subject, "last_seen subject")?;
+        records.insert(
+            subject,
+            LastSeenRecord {
+                subject,
+                place: resolve_name(names, &record_def.place, "last_seen place")?,
+                observed_tick: Tick(record_def.observed_tick),
+                source: resolve_name(names, &record_def.source, "last_seen source")?,
+                provenance: last_seen_provenance_from_def(&record_def.provenance, names)?,
+            },
+        );
+    }
+
+    Ok(LastSeenMemory {
+        records,
+        capacity: def.capacity,
+    })
+}
+
+fn last_seen_provenance_from_def(
+    def: &types::LastSeenProvenanceDef,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<LastSeenProvenance, ScenarioError> {
+    Ok(match def {
+        types::LastSeenProvenanceDef::DirectObservation => LastSeenProvenance::DirectObservation,
+        types::LastSeenProvenanceDef::Hearsay {
+            original_observer,
+            chain_depth,
+        } => LastSeenProvenance::Hearsay {
+            original_observer: resolve_name(
+                names,
+                original_observer,
+                "last_seen hearsay original_observer",
+            )?,
+            chain_depth: *chain_depth,
+        },
+    })
 }
 
 /// Spawn a single item lot at a place or on an agent.
@@ -699,6 +973,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Village", ControlSource::Human)],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -806,6 +1081,7 @@ mod tests {
                 minimal_agent("Alice", "Town", ControlSource::Human),
                 minimal_agent("Bob", "Forest", ControlSource::Ai),
             ],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -850,6 +1126,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -883,6 +1160,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -921,6 +1199,7 @@ mod tests {
                 }),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -958,6 +1237,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Scout", "Forest", ControlSource::Ai)],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1005,6 +1285,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Trader", "Market", ControlSource::Ai)],
+            offices: vec![],
             items: vec![ItemDef {
                 commodity: CommodityKind::Apple,
                 quantity: Quantity(10),
@@ -1055,6 +1336,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Warrior", "Camp", ControlSource::Human)],
+            offices: vec![],
             items: vec![ItemDef {
                 commodity: CommodityKind::Sword,
                 quantity: Quantity(1),
@@ -1109,6 +1391,7 @@ mod tests {
                 bidirectional: false,
             }],
             agents: vec![],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1164,6 +1447,7 @@ mod tests {
                 bidirectional: true,
             }],
             agents: vec![],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1221,6 +1505,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Lost", "Nowhere", ControlSource::Ai)],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1263,6 +1548,7 @@ mod tests {
             ],
             edges: vec![],
             agents: vec![],
+            offices: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Forge Bench".into()),
@@ -1334,6 +1620,7 @@ mod tests {
                 known_recipes: Some(vec!["Harvest Apples".into(), "Unknown Recipe".into()]),
                 ..minimal_agent("Forager", "Orchard", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1383,6 +1670,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![],
+            offices: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("North Orchard".into()),
@@ -1445,6 +1733,7 @@ mod tests {
                 known_recipes: Some(vec!["Harvest Water".into()]),
                 ..minimal_agent("Water Bearer", "Village", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Village Well".into()),
@@ -1540,6 +1829,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Bot", "Void", ControlSource::Ai)],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1579,6 +1869,7 @@ mod tests {
                 needs: Some(custom_needs),
                 ..minimal_agent("Hungry", "Home", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1694,6 +1985,7 @@ mod tests {
                 diversification_profile: Some(profile),
                 ..minimal_agent("Scout", "Town", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1722,11 +2014,11 @@ mod tests {
 
     #[test]
     fn test_spawn_agent_with_last_seen_memory_override() {
-        let custom_memory = LastSeenMemory {
-            records: BTreeMap::new(),
+        let custom_memory = types::LastSeenMemoryDef {
+            records: Vec::new(),
             capacity: 50,
         };
-        let custom_expectation_store = ExpectationStore::default();
+        let custom_expectation_store = types::ExpectationStoreDef::default();
         let def = ScenarioDef {
             seed: 1,
             places: vec![PlaceDef {
@@ -1740,6 +2032,7 @@ mod tests {
                 last_seen_memory: Some(custom_memory.clone()),
                 ..minimal_agent("Searcher", "Home", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1758,11 +2051,14 @@ mod tests {
 
         assert_eq!(
             world.get_component_expectation_store(agent),
-            Some(&custom_expectation_store)
+            Some(&ExpectationStore::default())
         );
         assert_eq!(
             world.get_component_last_seen_memory(agent),
-            Some(&custom_memory)
+            Some(&LastSeenMemory {
+                records: BTreeMap::new(),
+                capacity: 50,
+            })
         );
     }
 
@@ -1785,6 +2081,7 @@ mod tests {
                 artifact_posting_profile: Some(custom_profile.clone()),
                 ..minimal_agent("Herald", "Home", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1897,6 +2194,7 @@ mod tests {
                 exploration_profile: Some(custom_exploration),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1957,6 +2255,7 @@ mod tests {
                 obligation_satiation_profile: Some(custom_profile.clone()),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2008,6 +2307,7 @@ mod tests {
                 drive_escalation_profile: Some(custom_profile.clone()),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2102,6 +2402,7 @@ mod tests {
                 substitute_preferences: Some(substitute_preferences.clone()),
                 ..minimal_agent("Guard", "Gate", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2211,6 +2512,7 @@ mod tests {
                 }),
                 ..minimal_agent("Guard", "Gate", ControlSource::Ai)
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

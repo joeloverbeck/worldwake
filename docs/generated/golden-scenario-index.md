@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 91
-- Contributing golden test files: 16
-- Associated tests: 110
+- Scenario blocks: 92
+- Contributing golden test files: 17
+- Associated tests: 111
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -870,6 +870,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: local resource-source beliefs + recipe knowledge -> harvest plan -> committed harvest action -> committed consume action -> lower thirst/hunger.
 
+### Scenario 170: Survival Ask-Consult Lands Roadmap Row Six
+
+- Source: `golden_survival_ask_consult.rs:369`
+- Systems: AI, Needs, Travel, Search, Epistemic, Offices
+- GoalKinds: SearchForMissing, ClaimOffice, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve
+- ActionDomains: Needs, Travel, Epistemic, Social
+- Places: Commons Hall, North Orchard
+- Principles: 6, 7, 14, 15, 20
+
+**Setup**: Run the authored survival ask-consult scenario for 1440 ticks. The
+
+**Proves**: the tracked survival agents satisfy the authored survival-health
+
+**Cross-system chain**: overdue expectation -> witness returns under survival pressure ->
+
 ### Scenario 148: Survival Baseline Keeps All Agents Alive For 1440 Ticks
 
 - Source: `golden_survival_baseline.rs:298`
@@ -1127,7 +1142,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 169: Survival Tell Lands Roadmap Row Five
 
-- Source: `golden_survival_tell.rs:386`
+- Source: `golden_survival_tell.rs:401`
 - Systems: AI, Needs, Travel, Production, Tell
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve, ShareBelief
 - ActionDomains: Needs, Travel, Production, Social

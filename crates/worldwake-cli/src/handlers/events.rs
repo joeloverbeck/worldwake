@@ -305,6 +305,7 @@ mod tests {
                 substitute_preferences: None,
                 known_recipes: None,
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

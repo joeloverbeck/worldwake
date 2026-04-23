@@ -12,12 +12,11 @@ use worldwake_core::{
     CommodityDecayMap, CommodityValuationProfile, CommunicationProfile,
     ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
     DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-    ExpectationStore, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastSeenMemory, MetabolismProfile, ObligationSatiationProfile, PatrolProfile,
-    PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
-    Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, TradeDispositionProfile,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, items::CommodityKind,
-    topology::PlaceTag,
+    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, MetabolismProfile,
+    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile,
+    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, SuccessionLaw, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -29,6 +28,8 @@ pub struct ScenarioDef {
     pub edges: Vec<EdgeDef>,
     #[serde(default)]
     pub agents: Vec<AgentDef>,
+    #[serde(default)]
+    pub offices: Vec<OfficeDef>,
     #[serde(default)]
     pub items: Vec<ItemDef>,
     #[serde(default)]
@@ -49,8 +50,120 @@ pub struct ScenarioDef {
     pub scenario_lint_overrides: BTreeMap<crate::scenario::lints::LintRule, String>,
 }
 
+/// An authored office entity plus its automatically maintained local records.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfficeDef {
+    pub name: String,
+    pub seat: String,
+    pub succession_law: SuccessionLaw,
+    pub succession_period_ticks: u64,
+    #[serde(default)]
+    pub eligibility_rules: Vec<EligibilityRuleDef>,
+}
+
+/// Scenario-specific eligibility rule using string references instead of `EntityId`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum EligibilityRuleDef {
+    FactionMember(String),
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectationStoreDef {
+    #[serde(default)]
+    pub records: Vec<ExpectationRecordDef>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectationRecordDef {
+    pub subject: String,
+    pub expected_place: String,
+    pub deadline_tick: u64,
+    pub grace_ticks: u64,
+    pub basis: ExpectationBasisDef,
+    pub state: ExpectationStateDef,
+    pub created_tick: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ExpectationBasisDef {
+    DutyAssignment {
+        office: String,
+    },
+    DeliveryCommitment {
+        commodity: CommodityKind,
+        quantity: Quantity,
+    },
+    RoutineReturn,
+    EscortObligation {
+        charge: String,
+    },
+    SocialPromise,
+    PlanStepCompletion {
+        step_index: u16,
+        kind_tag: worldwake_core::ExpectationKindTag,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ExpectationStateDef {
+    Active,
+    Overdue,
+    Resolved { outcome: ExpectationOutcomeDef },
+    Expired,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ExpectationOutcomeDef {
+    Fulfilled,
+    FoundSafe { at_place: String },
+    FoundWounded { at_place: String },
+    FoundDead { at_place: String },
+    NotFound,
+    ReturnedLate,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LastSeenMemoryDef {
+    #[serde(default)]
+    pub records: Vec<LastSeenRecordDef>,
+    #[serde(default = "default_last_seen_capacity")]
+    pub capacity: u16,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LastSeenRecordDef {
+    pub subject: String,
+    pub place: String,
+    pub observed_tick: u64,
+    pub source: String,
+    pub provenance: LastSeenProvenanceDef,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum LastSeenProvenanceDef {
+    DirectObservation,
+    Hearsay {
+        original_observer: String,
+        chain_depth: u8,
+    },
+}
+
 fn default_compaction_interval() -> u32 {
     50
+}
+
+const fn default_last_seen_capacity() -> u16 {
+    20
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -145,9 +258,9 @@ pub struct AgentDef {
     #[serde(default)]
     pub preference_profile: Option<PreferenceProfile>,
     #[serde(default)]
-    pub expectation_store: Option<ExpectationStore>,
+    pub expectation_store: Option<ExpectationStoreDef>,
     #[serde(default)]
-    pub last_seen_memory: Option<LastSeenMemory>,
+    pub last_seen_memory: Option<LastSeenMemoryDef>,
     #[serde(default)]
     pub obligation_satiation_profile: Option<ObligationSatiationProfile>,
     #[serde(default)]
