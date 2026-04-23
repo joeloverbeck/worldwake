@@ -1627,14 +1627,24 @@ pub(super) fn plan_and_validate_next_step(
                         )
                     };
                     if !failed_sources.is_empty() {
-                        super::apply_source_reliability_failure_observations(
-                            world,
-                            event_log,
-                            agent,
+                        let applied_failures =
+                            super::apply_source_reliability_failure_observations(
+                                world,
+                                event_log,
+                                agent,
+                                tick,
+                                &failed_sources,
+                            )
+                            .expect("planning-stage source reliability persistence should succeed");
+                        let _ = super::invalidate_committed_source_after_reliability_failure(
+                            runtime,
+                            jc.as_ref(),
+                            facility_intents,
+                            discrepancy_memory,
+                            &applied_failures,
                             tick,
-                            &failed_sources,
-                        )
-                        .expect("planning-stage source reliability persistence should succeed");
+                            cognitive.structural_block_ticks,
+                        );
                     }
                     let refreshed_view =
                         runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
@@ -1986,7 +1996,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                     )
                 };
                 if !failed_sources.is_empty() {
-                    super::apply_source_reliability_failure_observations(
+                    let applied_failures = super::apply_source_reliability_failure_observations(
                         world,
                         event_log,
                         agent,
@@ -1994,6 +2004,15 @@ pub(super) fn plan_and_validate_next_step_traced(
                         &failed_sources,
                     )
                     .expect("planning-stage source reliability persistence should succeed");
+                    let _ = super::invalidate_committed_source_after_reliability_failure(
+                        runtime,
+                        jc.as_ref(),
+                        facility_intents,
+                        discrepancy_memory,
+                        &applied_failures,
+                        tick,
+                        cognitive.structural_block_ticks,
+                    );
                 }
                 let refreshed_view =
                     runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);

@@ -526,6 +526,26 @@ pub(super) fn record_assumption_failure(
     });
 }
 
+pub(super) fn record_source_invalidation(
+    frame: &IntentionFrame,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    tick: Tick,
+    structural_block_ticks: u32,
+) {
+    discrepancy_memory.record(DiscrepancyEntry {
+        blocker_key: BlockerKey {
+            goal_key: frame.goal,
+            place: None,
+            target: None,
+            action_def: None,
+        },
+        discrepancy: Discrepancy::SourceInvalidated,
+        observed_tick: tick,
+        expires_tick: tick + u64::from(structural_block_ticks),
+        clearing_condition: DiscrepancyClearing::TtlExpiry,
+    });
+}
+
 fn blocked_leg_target(step: &PlannedStep) -> Option<EntityId> {
     step.targets.first().copied().and_then(authoritative_target)
 }
@@ -1730,5 +1750,42 @@ mod tests {
         let entry = memory.entries.values().next().unwrap();
         assert_eq!(entry.observed_tick, Tick(40));
         assert_eq!(entry.expires_tick, Tick(40 + u64::from(ttl)));
+    }
+
+    #[test]
+    fn record_source_invalidation_uses_structural_block_ticks_without_target() {
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let frame = IntentionFrame {
+            goal,
+            domain: IntentionDomain::Errand {
+                destination: make_entity(40),
+            },
+            assumptions: vec![FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place: make_entity(40),
+            }],
+            state: FrameState::Exhausted,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 3,
+        };
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(12);
+        let ttl = 17;
+
+        record_source_invalidation(&frame, &mut memory, tick, ttl);
+
+        let entry = memory.entries.values().next().unwrap();
+        assert_eq!(entry.discrepancy, Discrepancy::SourceInvalidated);
+        assert_eq!(entry.blocker_key.goal_key, goal);
+        assert_eq!(entry.blocker_key.place, None);
+        assert_eq!(entry.blocker_key.target, None);
+        assert_eq!(entry.observed_tick, tick);
+        assert_eq!(entry.expires_tick, Tick(12 + u64::from(ttl)));
+        assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
     }
 }

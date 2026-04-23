@@ -19,7 +19,7 @@ use execution::{
 use frame::{
     AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
     handle_recoverable_travel_step_blockage, populate_assumptions, record_assumption_failure,
-    update_frame_for_adopted_plan,
+    record_source_invalidation, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
@@ -1043,13 +1043,22 @@ fn process_agent(
         memory_capacity,
     );
     if !read_result.pending_source_reliability_failures.is_empty() {
-        apply_source_reliability_failure_observations(
+        let applied_failures = apply_source_reliability_failure_observations(
             ctx.world,
             ctx.event_log,
             agent,
             tick,
             &read_result.pending_source_reliability_failures,
         )?;
+        let _ = invalidate_committed_source_after_reliability_failure(
+            runtime,
+            current_frame.as_ref(),
+            &mut current_facility_intents,
+            &mut discrepancy_memory,
+            &applied_failures,
+            tick,
+            cognitive.structural_block_ticks,
+        );
     }
     if !read_result.pending_acquisition_exhaustion_resets.is_empty() {
         apply_acquisition_exhaustion_tracker_resets(
@@ -1995,6 +2004,37 @@ pub(super) fn apply_source_reliability_failure_observations(
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     Ok(applied)
+}
+
+pub(super) fn invalidate_committed_source_after_reliability_failure(
+    runtime: &mut AgentDecisionRuntime,
+    frame: Option<&IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
+    discrepancy_memory: &mut worldwake_core::DiscrepancyMemory,
+    applied_failures: &BTreeMap<worldwake_core::SourceKey, BTreeSet<ExpectationFailureCause>>,
+    tick: Tick,
+    structural_block_ticks: u32,
+) -> bool {
+    let Some(plan) = runtime.current_plan.as_ref() else {
+        return false;
+    };
+    let Some(source) = plan.committed_source else {
+        return false;
+    };
+    if !applied_failures.contains_key(&source) {
+        return false;
+    }
+
+    if let Some(frame) = frame {
+        record_source_invalidation(frame, discrepancy_memory, tick, structural_block_ticks);
+    }
+    runtime.current_plan = None;
+    runtime.current_step_index = 0;
+    runtime.step_in_flight = false;
+    runtime.materialization_bindings.clear();
+    facility_intents.intents.clear();
+    runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
+    true
 }
 
 fn apply_acquisition_exhaustion_tracker_increments(

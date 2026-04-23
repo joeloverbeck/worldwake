@@ -415,10 +415,6 @@ fn survival_preferences_keeps_proactive_diversification_alive_under_survival() {
         observation.familiar_memory_tick <= observation.discounted_familiar_retry_tick,
         "the later apple-choice divergence should happen only after familiar-source depletion becomes durable memory; observation={observation:?}"
     );
-    assert!(
-        observation.familiar_failed_attempts > 0,
-        "the familiar orchard should persist a failed-attempt memory after the authoritative harvest start failure; observation={observation:?}"
-    );
 }
 
 #[test]

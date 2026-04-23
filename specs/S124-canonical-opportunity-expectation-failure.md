@@ -29,7 +29,7 @@ Phase 8 Adjunct: Belief-First Continual Planning Foundation. Status: Draft.
 - `archive/specs/S109-typed-discrepancy-taxonomy.md` - hard (landed). Defines `Discrepancy`, `BlockerMemory`, `DiscrepancyMemory`, `RepairMemory`, `LearnedOpportunityMemory`. Expectation failures must continue to route through typed, inspectable discrepancy memory rather than silent suppression.
 - `archive/specs/S110-decision-history-events.md` - hard (landed). `DecisionEventPayload` (with variants `GoalOffered`, `GoalAbandoned`, `PlanInvalidated`, `ExpectationMismatch`, `BlockerRecorded`, etc.) is the canonical trace surface D6 extends.
 - `archive/specs/S112-portfolio-planning.md` - soft (landed). Search/probe stages may produce expectation-failure incidents, but only through the shared substrate defined here.
-- `archive/specs/S122-frame-assumption-commodity-availability.md` - motivating evidence only (landed). S122 proved that frame-level contradiction handling is required; `record_assumption_failure(...)` at `crates/worldwake-ai/src/agent_tick/frame.rs:496` is the S122 entrypoint D5 extends. S122 did not unify source-backed attribution.
+- `archive/specs/S122-frame-assumption-commodity-availability.md` - motivating evidence only (landed). S122 proved that frame-level contradiction handling is required; `record_assumption_failure(...)` at `crates/worldwake-ai/src/agent_tick/frame.rs:496` is the S122 entrypoint whose module-local reconsideration seam D5 extends. S122 did not unify source-backed attribution.
 
 ## Problem Statement
 
@@ -55,7 +55,7 @@ That is the gap this spec closes.
 2. Every AI-layer expectation contradiction for a source-backed opportunity must be representable as one normalized runtime incident type, regardless of whether it was detected during observation, candidate generation, or search.
 3. AI-layer source-reliability updates must flow through one evolved attribution function (`apply_source_reliability_failure_observations` taking normalized incidents), not multiple seam-specific primitives. Systems-layer writes from authoritative action outcomes remain a separate lawful path under FND-26.
 4. The architecture must distinguish "the source failed" from "the goal remains valid but this source/path did not."
-5. Intention reconsideration must remain stable but explicit: commitments persist until contradicted by concrete evidence, then revise through the existing `record_assumption_failure(...)` entrypoint at `crates/worldwake-ai/src/agent_tick/frame.rs:496`, extended with a `SourceInvalidated` outcome where appropriate.
+5. Intention reconsideration must remain stable but explicit: commitments persist until contradicted by concrete evidence, then revise through the existing frame-level reconsideration seam at `crates/worldwake-ai/src/agent_tick/frame.rs`, recording `Discrepancy::SourceInvalidated` and clearing the committed source plan for replanning where appropriate.
 6. No global abstract trust scores, no magical confidence math, no backward-compatibility shadow paths.
 
 ## Non-Goals
@@ -90,7 +90,7 @@ Worldwake should copy the architecture shape, not the academic abstractions: exp
 | FND-14 / FND-14A | Observation-stage contradiction uses the agent's belief/perception boundary; the candidate-generation `SupplyDepleted` case uses same-tick co-located observation of physical resource-source quantity (FND-14A). Social facts (ownership, rights) are never inferred from co-location. |
 | FND-17 (Violated Expectation) | The spec makes expectation contradiction an explicit runtime artifact (`OpportunityExpectationFailureIncident`) instead of an impoverished `BTreeSet<SourceKey>` exchange. |
 | FND-20 (Bounded Practical Reasoning) | Observation, candidate generation, and search may each detect contradictions, but the AI-layer attribution path updates reliability through one evolved bounded function. No omniscient reconciliation pass. |
-| FND-21 (Revisable Commitments) | Intentions stay committed until a contradiction record says otherwise; reconsideration is explicit and routed through the S122-landed `record_assumption_failure(...)` entrypoint with a `SourceInvalidated` outcome tag for source-backed failures. |
+| FND-21 (Revisable Commitments) | Intentions stay committed until a contradiction record says otherwise; reconsideration is explicit and routed through the S122-landed frame reconsideration seam, which records `Discrepancy::SourceInvalidated` and clears the committed source plan for replanning on source-backed failures. |
 | FND-22A (Learning) | Learning is durable, concrete, source-scoped via `SourceKey`, and attributable to a named incident with phase and cause. |
 | FND-26 (State-mediated interaction) | Action execution, perception, planning, and ranking communicate via stored state, not direct cross-module decisions. The two lawful write paths (AI-layer attribution vs. systems-layer authoritative-action recording) mutate the same `SourceReliability` component through non-overlapping triggering events; no direct cross-path call is introduced. |
 | FND-28 (No backward compatibility) | The evolved `apply_source_reliability_failure_observations` replaces the `BTreeSet<SourceKey>` exchange shape without adding a parallel helper. No shim may be added that re-introduces source rehydration; the helper `hydrate_reinstated_current_plan_source_entity` is already gone. |
@@ -179,15 +179,15 @@ Systems-layer writers in `production_actions.rs` and `trade_actions.rs` are **no
 
 This evolved function remains the single AI-layer writer of source-failure aftermath. The existing three call sites (`agent_tick/mod.rs:1045`, `planning.rs:1608`, `planning.rs:1966`) are updated to build incidents at the detection site and pass them through. Systems-layer writes via `experience_recording.rs` remain untouched.
 
-### D5. Intention reconsideration policy via `record_assumption_failure`
+### D5. Intention reconsideration policy via the frame reconsideration seam
 
-S22 landed `IntentionFrame` and its lifecycle; S122 landed `record_assumption_failure(...)` at `crates/worldwake-ai/src/agent_tick/frame.rs:496` as the entrypoint for turning assumption failures into typed discrepancies and reconsideration signals. S124 extends that entrypoint (or its caller chain) to distinguish source-invalidation from goal-invalidation for source-backed acquisitions:
+S22 landed `IntentionFrame` and its lifecycle; S122 landed `record_assumption_failure(...)` at `crates/worldwake-ai/src/agent_tick/frame.rs:496` as the existing assumption-failure recorder inside the frame reconsideration module. S124 extends that module-level seam and its caller chain to distinguish source-invalidation from goal-invalidation for source-backed acquisitions:
 
-- If the attribution function in D4 recorded a source-reliability decrement for the currently committed opportunity, the frame is reconsidered through `record_assumption_failure` with a `SourceInvalidated` outcome tag, not `GoalInvalidated`.
+- If the attribution function in D4 recorded a source-reliability decrement for the currently committed opportunity, the caller chain records `Discrepancy::SourceInvalidated` through sibling helper `record_source_invalidation(...)`, clears the committed plan for replanning, and preserves the goal kind for next-tick sibling-source selection.
 - If a same-goal sibling source remains viable on the next tick, ranking naturally replaces the current opportunity while keeping the goal kind. No direct cross-tick manipulation of `IntentionFrame` state is required.
 - If no same-goal sibling is viable, the frame clears through the existing failure/discrepancy path and later ranking determines the next goal.
 
-This distinction is mandatory. It prevents source-learning from masquerading as goal rejection and keeps the causal story faithful. No parallel reconsideration mechanism is added — the deliverable is an extension of the S122 entrypoint.
+This distinction is mandatory. It prevents source-learning from masquerading as goal rejection and keeps the causal story faithful. No parallel reconsideration mechanism is added — the deliverable is an extension of the existing frame reconsideration seam plus the writer-summary caller hook.
 
 ### D6. Decision-trace surface via `DecisionEventPayload`
 
@@ -231,7 +231,7 @@ This spec does not require immediate generalization to every target-backed goal.
 1. Candidate generation/ranking produces a source-backed opportunity with concrete source evidence (`GoalOffer::evidence_entities`).
 2. Adoption in `crates/worldwake-ai/src/agent_tick/planning.rs` stores `PlannedPlan.committed_source` (landed via `S124OPEXFAL-001`) and the new `OpportunityExpectationKind` on the runtime carrier.
 3. AI-layer detection sites (`observation.rs:329`, `candidate_generation.rs:4172`, `planning.rs:341`) emit `OpportunityExpectationFailureIncident` values tagged with phase and cause.
-4. The evolved `apply_source_reliability_failure_observations(...)` at `agent_tick/mod.rs:1904` applies attribution rules and writes to `SourceReliability`, records to discrepancy memory via the existing `record_assumption_failure` entrypoint where appropriate, and surfaces through `DecisionEventPayload`.
+4. The evolved `apply_source_reliability_failure_observations(...)` at `agent_tick/mod.rs:1904` applies attribution rules and writes to `SourceReliability`; when the committed source is among the applied failures, the caller chain records `Discrepancy::SourceInvalidated` via the frame module's sibling helper and clears the committed plan for replanning. Decision-event surfacing remains owned by D6.
 5. Next-tick ranking consumes the updated `SourceReliability` component and discounts the failed source-backed opportunity.
 
 ### B. Canonical boundary
@@ -267,7 +267,7 @@ After S124, the following are not allowed as independent architectural paths:
    - candidate-generation-time belief-vs-observation mismatch (`candidate_generation.rs::emit_expectation_violation_candidates`, `SupplyDepleted` violation),
    - same-goal search from the agent's own belief state (`planning.rs::same_goal_search_failed_source_keys`).
 3. The detecting site emits `OpportunityExpectationFailureIncident` tied to `PlannedPlan.committed_source` and the `OpportunityExpectationKind` carried on the retained plan.
-4. `apply_source_reliability_failure_observations` applies attribution rules (D4), updates `SourceReliability`, records typed discrepancies through `record_assumption_failure` where appropriate, and emits `DecisionEventPayload` entries.
+4. `apply_source_reliability_failure_observations` applies attribution rules (D4), updates `SourceReliability`, and feeds the caller-side source-invalidation hook that records `Discrepancy::SourceInvalidated` plus committed-plan replanning where appropriate. `DecisionEventPayload` surfacing remains a separate D6 concern.
 5. Ranking on a later tick reads `SourceReliability` via the existing belief-view accessor and discounts the failed source-backed opportunity.
 
 Authoritative action outcomes reach `SourceReliability` through the parallel systems-layer path (`experience_recording.rs`); no AI-layer code queries that path directly, and no systems-layer code calls into AI-layer attribution. Both paths write the same component, and the next-tick ranking reads the resulting aggregate state.
@@ -335,7 +335,7 @@ No new types are added to `worldwake-core`. All new runtime types live in `world
 1. Exactly one AI-layer function (`apply_source_reliability_failure_observations`) mutates source-reliability memory from expectation contradiction; no parallel AI-layer helper is introduced. Systems-layer writers in `experience_recording.rs` remain the only writers of authoritative-action outcomes and are out of scope.
 2. All three AI-layer detection sites (`observation.rs`, `candidate_generation.rs`, `planning.rs`) exchange `OpportunityExpectationFailureIncident` values with the writer, not bare `BTreeSet<SourceKey>`.
 3. Same-goal sibling success records source failure against the current concrete source without rejecting the entire goal kind.
-4. Observation-proven local absence/depletion (including the `SupplyDepleted` case from `candidate_generation.rs:4237-4250`) attributes to source reliability; precondition mismatches that are not observation-proven absence do not touch source reliability and are routed to discrepancy memory through the existing `record_assumption_failure` entrypoint.
+4. Observation-proven local absence/depletion (including the `SupplyDepleted` case from `candidate_generation.rs:4237-4250`) attributes to source reliability; precondition mismatches that are not observation-proven absence do not touch source reliability and continue to use the existing generic discrepancy path rather than the source-invalidation seam.
 5. Retained-current-plan handling already consumes `PlannedPlan.committed_source` directly (delivered by `S124OPEXFAL-001`); this invariant must not regress.
 6. Decision traces expose the failed source-backed expectation through `DecisionEventPayload` with enough detail to explain the switch or discount.
 7. The design remains concrete, local, and belief-first, with no abstract confidence score layer or compatibility shim.

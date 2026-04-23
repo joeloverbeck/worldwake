@@ -10,10 +10,10 @@ use super::planning::{
 use super::{
     AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
     committed_action_for_step, effective_goal_switch_margin,
-    handle_recoverable_travel_step_blockage, persist_blocked_memory, persist_discrepancy_memory,
-    plan_and_validate_next_step_traced, record_learned_opportunities_from_read_phase,
-    record_repair_memory_from_completed_plan, update_exploration_counter_for_adopted_goal,
-    update_frame_for_adopted_plan,
+    handle_recoverable_travel_step_blockage, invalidate_committed_source_after_reliability_failure,
+    persist_blocked_memory, persist_discrepancy_memory, plan_and_validate_next_step_traced,
+    record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
+    update_exploration_counter_for_adopted_goal, update_frame_for_adopted_plan,
 };
 use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
@@ -7516,6 +7516,81 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
         Tick(5 + u64::from(cognitive.structural_block_ticks))
     );
     assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
+}
+
+#[test]
+fn committed_source_invalidation_records_source_invalidated_and_forces_replan() {
+    let source = SourceKey {
+        entity: entity(41),
+        commodity: CommodityKind::Apple,
+    };
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let opportunity = OpportunityKey {
+        goal_key: goal,
+        anchor: OpportunityAnchor::Entity(source.entity),
+    };
+    let mut runtime = AgentDecisionRuntime {
+        current_plan: Some(
+            PlannedPlan::new(opportunity, goal, vec![], PlanTerminalKind::GoalSatisfied)
+                .with_committed_source(Some(source)),
+        ),
+        current_step_index: 2,
+        step_in_flight: true,
+        ..AgentDecisionRuntime::default()
+    };
+    let frame = IntentionFrame {
+        goal,
+        domain: IntentionDomain::Errand {
+            destination: entity(99),
+        },
+        assumptions: vec![FrameAssumption::CommodityAvailableAt {
+            commodity: CommodityKind::Apple,
+            place: entity(99),
+        }],
+        state: FrameState::Active,
+        established_at: Tick(1),
+        last_progress_tick: None,
+        stalled_ticks: 0,
+        patience_limit: 8,
+    };
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
+    facility_intents.intents.insert(
+        entity(7),
+        QueuedContentionIntent {
+            goal_key: goal,
+            intended_action: ActionDefId(8),
+        },
+    );
+    let applied_failures = BTreeMap::from([(
+        source,
+        BTreeSet::from([ExpectationFailureCause::SourceDepletedLocally]),
+    )]);
+
+    let invalidated = invalidate_committed_source_after_reliability_failure(
+        &mut runtime,
+        Some(&frame),
+        &mut facility_intents,
+        &mut discrepancy_memory,
+        &applied_failures,
+        Tick(10),
+        25,
+    );
+
+    assert!(invalidated);
+    assert!(runtime.current_plan.is_none());
+    assert_eq!(runtime.current_step_index, 0);
+    assert!(!runtime.step_in_flight);
+    assert!(runtime.dirty.contains(DirtySet::REPLAN_SIGNAL));
+    assert!(facility_intents.intents.is_empty());
+    let entry = discrepancy_memory.entries.values().next().unwrap();
+    assert_eq!(entry.discrepancy, Discrepancy::SourceInvalidated);
+    assert_eq!(entry.blocker_key.goal_key, goal);
+    assert_eq!(entry.blocker_key.place, None);
+    assert_eq!(entry.blocker_key.target, None);
 }
 
 #[test]

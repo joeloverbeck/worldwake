@@ -24,8 +24,6 @@ When several reassessment branches seem applicable at once, use this priority or
 - For tooling/report/generator tickets, first confirm the canonical read-only input boundary and whether every claimed output row or classification is actually derivable from that boundary. If the draft asks the tool to infer runtime-only or later-stage facts from a narrower authored schema, rewrite the ticket to the honest schema-owned seam before coding.
 - For golden/observer proof tickets, first decide whether the mismatch is renderer/fixture drift or a real upstream event/report contract regression. Prove the upstream contract at the strongest existing lower-layer owning seam before editing any fixture, and if that contract is still honest, narrow the ticket to fixture truthing plus closeout.
 - For validation-suite / tests-only tickets, diff the drafted `Files to Touch`, `New/Modified Tests`, and `Acceptance Criteria` against the live branch immediately; record `already landed`, `still live`, and `no-change cited files` before planning new tests.
-- If the strongest honest proof seam already exists in a focused unit/runtime/golden test, extend that seam instead of creating the drafted new file mechanically.
-- If focused proof goes green but broadened verification fails in an unrelated existing fixture or test family, isolate that blocker, create or update its owner ticket, and keep the current ticket scoped to the proved invariant.
 
 ## Always First
 
@@ -34,7 +32,6 @@ When several reassessment branches seem applicable at once, use this priority or
 - Snapshot the worktree with `git status --short` and classify unrelated dirty paths before coding.
 - Keep Cargo sequential for the entire workflow, including selector-discovery `-- --list` probes.
 - For golden or mixed proof tickets, identify the strongest existing owning golden/test suite before accepting any drafted new-file claim.
-- If a narrow production fix lands but the drafted broader golden/E2E story is still false, follow `Mixed outcome: narrow fix landed, broader golden still false` below.
 - Correct ticket/spec drift before coding when reassessment changes the truthful ownership or proof seam.
 - Close out the ticket file itself with the real scope and verification results; do not leave the correction only in conversation.
 
@@ -52,6 +49,8 @@ Use this branch whenever focused live proof confirms a real narrow production fi
    If the disproved remainder is still in the same scenario/domain but now clearly belongs to a later authoritative boundary, create a new follow-up ticket for that later boundary instead of stretching the current ticket back upward.
 6. During closeout, record the split explicitly: landed narrow boundary, focused and broadened commands, concrete reason the broader premise stayed false, and the follow-up owner.
 7. If you added a temporary exploratory golden/test only to prove or disprove the stronger end state, remove or rewrite it before final verification when that stronger contract remains false.
+
+Do not use this branch when broader verification fails only because an existing golden assertion still encodes a stronger subclaim than the current ticket now truthfully owns. If the same scenario still proves the ticket's real integration seam, narrow that assertion in-scope, rerun the golden, and close out without manufacturing a follow-up ticket.
 
 ## Workflow
 
@@ -237,6 +236,7 @@ When a ticket or spec explicitly fixes a public or shared API shape that conflic
 When a golden/test-only ticket is green at its owned proof seam and existing lower-layer coverage still proves the production contract, a broader same-crate rerun may still expose an unrelated golden in another family. Isolate that failure, hand it off explicitly, and keep the current ticket closed as test-only rather than reopening production ownership by default.
 When a golden ticket's live proof seam changes during reassessment, also update any scenario metadata comments or other doc-feeding annotations inside the golden test file before regenerating inventory/docs. Before running `golden_inventory.py`, sweep the edited golden file for duplicate `Scenario NN` identifiers so renumbering or inserting a scenario does not break doc regeneration with a duplicate-id error. Generated golden docs reflect those metadata blocks, so stale labels there will silently publish the wrong scenario summary even when the executable assertions are correct.
 When broadened verification fails only because an observer/report/golden fixture still reflects the old truthful output and the new output matches the landed contract, refresh that fixture in-scope, rerun the exact snapshot/fixture test that failed, and only then continue to broader workspace verification. Record the fixture refresh explicitly in closeout instead of treating it as invisible fallout.
+When broadened verification fails only because an existing golden assertion still encodes a stronger subclaim than the ticket now truthfully owns, narrow that assertion in-scope instead of treating the result as a mixed-outcome split. Record the assertion rewrite explicitly in closeout so the ticket shows that the scenario still proves the landed seam, but no longer proves the older stronger claim.
 When a ticket owns golden inventory regeneration, expect broad generated-doc fallout under `docs/generated/`, not just the one newly added scenario-detail page named in the draft. Treat those regenerated inventory/index/detail files as in-scope whenever they change solely because the new or renamed golden now contributes to the published inventory surface, and report that broader generated-doc update honestly in closeout.
 When a ticket's manual smoke needs synthetic authored input, prefer a disposable repo-local temp file or another cleanup-safe local fixture path over ad hoc external temp locations. Record the exact command/output honestly in the ticket closeout, then remove the temporary file before finalizing the session.
 When a manual probe temporarily dirties a tracked file to prove a generator, report, or drift-check failure mode, prefer a temp backup/restore or another non-destructive restoration path over drafted cleanup like `git checkout -- ...` unless the worktree has first been confirmed clean and that destructive restore is itself the honest contract under test.

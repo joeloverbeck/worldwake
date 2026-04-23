@@ -157,7 +157,7 @@ Migrate assertions in existing focused tests to the new incident shape:
 
 - `OpportunityExpectationKind` enum definition and `PlannedPlan.expectation_kind` field — delivered by ticket `S124CANOPPEXP-001`.
 - Systems-layer writers at `crates/worldwake-systems/src/experience_recording.rs` — they remain a separate lawful path for authoritative action outcomes (spec Non-Goal).
-- Reconsideration policy extensions (`SourceInvalidated` outcome in `record_assumption_failure`) — delivered by ticket `S124CANOPPEXP-003`.
+- Reconsideration policy extensions (`Discrepancy::SourceInvalidated` plus committed-plan invalidation hook) — delivered by ticket `S124CANOPPEXP-003`.
 - Decision-trace surface via `DecisionEventPayload` — delivered by ticket `S124CANOPPEXP-004`.
 - Authoritative-start-rejected or authoritative-outcome-contradicted causes — intentionally excluded from the incident enum per spec D2.
 - Unifying the AI-layer attribution function with systems-layer writers — explicit Non-Goal.

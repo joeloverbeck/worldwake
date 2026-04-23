@@ -135,7 +135,7 @@ Add a focused unit test that constructs a `SourceExpectationFailurePayload` with
 - The ai-layer incident type (`OpportunityExpectationFailureIncident`) and its enums — delivered by ticket `S124CANOPPEXP-002`.
 - Adding `Serialize`/`Deserialize` to the ai-layer runtime types — explicitly avoided per ticket 002 scoping; core tag mirrors are the chosen integration.
 - Observer binary / decision-trace tooling consumers that read the new event — downstream of this ticket, not part of its scope (follow-up if needed).
-- Reconsideration routing (`SourceInvalidated` outcome) — delivered by ticket `S124CANOPPEXP-003`.
+- Reconsideration routing (`Discrepancy::SourceInvalidated` plus committed-plan invalidation hook) — delivered by ticket `S124CANOPPEXP-003`.
 - Surfacing systems-layer authoritative-action reliability writes (from `experience_recording.rs`) through `DecisionEventPayload` — they remain on the existing authoritative event path; bridging them into decision-history is out of scope.
 
 ## Acceptance Criteria

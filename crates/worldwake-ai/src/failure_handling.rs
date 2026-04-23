@@ -1349,6 +1349,7 @@ fn discrepancy_ttl(discrepancy: Discrepancy, cognitive: &CognitiveProfile) -> u3
     match discrepancy {
         Discrepancy::BeliefStale => cognitive.stale_belief_backoff_ticks,
         Discrepancy::BeliefContradicted => cognitive.contradicted_belief_backoff_ticks,
+        Discrepancy::SourceInvalidated => cognitive.contradicted_belief_backoff_ticks,
         Discrepancy::ImproperPlanningState => cognitive.improper_state_backoff_ticks,
         Discrepancy::MissingObservation => cognitive.missing_observation_backoff_ticks,
         Discrepancy::NoLegalBinding => cognitive.no_legal_binding_backoff_ticks,

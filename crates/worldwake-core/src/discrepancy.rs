@@ -8,6 +8,8 @@ pub enum Discrepancy {
     BeliefStale,
     /// New evidence directly contradicts a previously believed claim.
     BeliefContradicted,
+    /// A committed concrete source failed while the broader goal may still hold.
+    SourceInvalidated,
     /// Planning assumed a state that should never have been treated as valid.
     ImproperPlanningState,
     /// The agent lacks a needed observation to continue safely.
@@ -135,7 +137,7 @@ mod tests {
 
     #[test]
     fn discrepancy_roundtrips_through_bincode() {
-        let discrepancy = Discrepancy::BeliefContradicted;
+        let discrepancy = Discrepancy::SourceInvalidated;
 
         let bytes = bincode::serialize(&discrepancy).unwrap();
         let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();
