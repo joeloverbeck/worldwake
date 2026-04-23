@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — AI-layer intention-frame reconsideration routing
-**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`, `tickets/S124CANOPPEXP-002.md`
+**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`, `archive/tickets/S124CANOPPEXP-002.md`
 
 ## Problem
 

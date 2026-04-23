@@ -21,10 +21,12 @@ use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition,
-    ExpectedMaterialization, FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass,
-    HypotheticalEntityId, Invalidator, OpportunityAnchor, OpportunityKey, PlanExpectation,
-    PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-    RankedGoalProvenance, SelectedPlanReplacementKind, build_semantics_table,
+    ExpectationFailureCause, ExpectationFailurePhase, ExpectedMaterialization,
+    FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
+    Invalidator, OpportunityAnchor, OpportunityExpectationFailureIncident,
+    OpportunityExpectationKind, OpportunityKey, PlanExpectation, PlanGuard, PlanTerminalKind,
+    PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoalProvenance,
+    SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -6228,7 +6230,10 @@ fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detect
         .with_committed_source(Some(SourceKey {
             entity: place,
             commodity: CommodityKind::Apple,
-        })),
+        }))
+        .with_expectation_kind(Some(
+            OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        )),
     );
 
     let read = refresh_runtime_for_read_phase(
@@ -6254,10 +6259,139 @@ fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detect
 
     assert_eq!(
         read.pending_source_reliability_failures,
-        BTreeSet::from([SourceKey {
-            entity: place,
+        vec![OpportunityExpectationFailureIncident {
+            opportunity: OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(place),
+            },
+            source: SourceKey {
+                entity: place,
+                commodity: CommodityKind::Apple,
+            },
+            expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+            detected_at_tick: Tick(1),
+            phase: ExpectationFailurePhase::Observation,
+            cause: ExpectationFailureCause::SourceDepletedLocally,
+        }]
+    );
+}
+
+#[test]
+fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforces_limits() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let old_source = entity(700);
+    let source_a = entity(701);
+    let source_b = entity(702);
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+
+    let mut preference = harness
+        .world
+        .get_component_preference_profile(harness.actor)
+        .copied()
+        .unwrap_or_default();
+    preference.memory_retention_ticks = 5;
+    preference.source_memory_capacity = 8;
+
+    let mut reliability = worldwake_core::SourceReliability::default();
+    reliability.sources.insert(
+        SourceKey {
+            entity: old_source,
             commodity: CommodityKind::Apple,
-        }])
+        },
+        worldwake_core::ReliabilityRecord {
+            successful_acquisitions: 0,
+            failed_attempts: 3,
+            last_attempt_tick: Tick(1),
+        },
+    );
+
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_preference_profile(harness.actor, preference)
+            .unwrap();
+        txn.set_component_source_reliability(harness.actor, reliability)
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    let duplicate_incident = OpportunityExpectationFailureIncident {
+        opportunity: OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(entity(800)),
+        },
+        source: SourceKey {
+            entity: source_a,
+            commodity: CommodityKind::Apple,
+        },
+        expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        detected_at_tick: Tick(20),
+        phase: ExpectationFailurePhase::Observation,
+        cause: ExpectationFailureCause::SourceDepletedLocally,
+    };
+    let search_incident = OpportunityExpectationFailureIncident {
+        opportunity: OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(entity(801)),
+        },
+        source: SourceKey {
+            entity: source_b,
+            commodity: CommodityKind::Apple,
+        },
+        expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        detected_at_tick: Tick(20),
+        phase: ExpectationFailurePhase::Search,
+        cause: ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+    };
+
+    super::apply_source_reliability_failure_observations(
+        &mut harness.world,
+        &mut harness.event_log,
+        harness.actor,
+        Tick(20),
+        &[
+            duplicate_incident.clone(),
+            duplicate_incident,
+            search_incident.clone(),
+        ],
+    )
+    .expect("source reliability persistence should succeed");
+
+    let updated = harness
+        .world
+        .get_component_source_reliability(harness.actor)
+        .expect("source reliability should exist after persistence");
+
+    assert!(
+        !updated.sources.contains_key(&SourceKey {
+            entity: old_source,
+            commodity: CommodityKind::Apple,
+        }),
+        "expired source should be pruned by enforce_limits"
+    );
+    assert_eq!(
+        updated.sources.get(&SourceKey {
+            entity: source_a,
+            commodity: CommodityKind::Apple,
+        }),
+        Some(&worldwake_core::ReliabilityRecord {
+            successful_acquisitions: 0,
+            failed_attempts: 1,
+            last_attempt_tick: Tick(20),
+        })
+    );
+    assert_eq!(
+        updated.sources.get(&SourceKey {
+            entity: source_b,
+            commodity: CommodityKind::Apple,
+        }),
+        Some(&worldwake_core::ReliabilityRecord {
+            successful_acquisitions: 0,
+            failed_attempts: 1,
+            last_attempt_tick: Tick(20),
+        })
     );
 }
 

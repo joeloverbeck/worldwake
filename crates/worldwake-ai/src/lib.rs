@@ -25,6 +25,7 @@ mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
 pub mod knowledge_path;
+pub mod opportunity_expectation_failure;
 pub mod perf_telemetry;
 pub mod plan_guard;
 pub mod plan_guard_build;
@@ -95,6 +96,9 @@ pub use goal_policy::{
 };
 pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
+pub use opportunity_expectation_failure::{
+    ExpectationFailureCause, ExpectationFailurePhase, OpportunityExpectationFailureIncident,
+};
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_guard_build::{build_plan_expectations, build_plan_guard};
 pub use plan_revalidation::{

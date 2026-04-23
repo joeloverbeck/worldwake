@@ -20,8 +20,9 @@ use crate::plan_step_expectations::{
 use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
 use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
-    DirtySet, ExhaustionEntry, ExhaustionRetryState, KillCondition, OpportunityKey, PlanValue,
-    PlannedPlan, PlannedStep, PlannerOpSemantics, RevivalTrigger, authoritative_target,
+    DirtySet, ExhaustionEntry, ExhaustionRetryState, ExpectationFailureCause,
+    ExpectationFailurePhase, KillCondition, OpportunityExpectationFailureIncident, OpportunityKey,
+    PlanValue, PlannedPlan, PlannedStep, PlannerOpSemantics, RevivalTrigger, authoritative_target,
     build_planning_snapshot_with_blocked_facility_uses, planner_ops::committed_source_for_offer,
     planner_ops::expectation_kind_for_offer, ranking::OrderedRanked, revalidate_next_step,
     select_best_plan,
@@ -31,7 +32,7 @@ use std::time::Instant;
 use worldwake_core::{
     ActionDefId, BlockerMemory, CognitiveProfile, DecisionEventPayload, DiscrepancyMemory,
     EntityId, EventLog, EventTag, ExecutionBudget, GoalKind, IntentionFrame, OpportunityAnchor,
-    Permille, PlanAdoptedPayload, RepairKind, SourceKey, Tick,
+    Permille, PlanAdoptedPayload, RepairKind, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, ActionPayload, GoalBeliefView, RecipeRegistry, RuntimeBeliefView,
@@ -339,40 +340,53 @@ pub(super) fn determine_selected_plan_source(
     }
 }
 
-fn same_goal_search_failed_source_keys(
+fn same_goal_search_failure_incidents(
     current_plan: Option<&PlannedPlan>,
     selected_plan: &PlannedPlan,
     selection_plans: &[SelectionCandidatePlan],
     current_place: Option<EntityId>,
-) -> BTreeSet<SourceKey> {
+    tick: Tick,
+) -> Vec<OpportunityExpectationFailureIncident> {
     let Some(current_plan) = current_plan else {
-        return BTreeSet::new();
+        return Vec::new();
     };
     let Some(current_place) = current_place else {
-        return BTreeSet::new();
+        return Vec::new();
     };
     if selected_plan.goal != current_plan.goal
         || selected_plan.opportunity == current_plan.opportunity
         || current_plan.opportunity.anchor != OpportunityAnchor::Place(current_place)
     {
-        return BTreeSet::new();
+        return Vec::new();
     }
 
     let current_failed_search = selection_plans.iter().any(|plan| {
         plan.searched_opportunity == current_plan.opportunity && plan.found_plan.is_none()
     });
     if !current_failed_search {
-        return BTreeSet::new();
+        return Vec::new();
     }
 
     let selected_sibling_found = selection_plans.iter().any(|plan| {
         plan.searched_opportunity == selected_plan.opportunity && plan.found_plan.is_some()
     });
     if !selected_sibling_found {
-        return BTreeSet::new();
+        return Vec::new();
     }
 
-    current_plan.committed_source.into_iter().collect()
+    let (Some(source), Some(expectation_kind)) =
+        (current_plan.committed_source, current_plan.expectation_kind)
+    else {
+        return Vec::new();
+    };
+    vec![OpportunityExpectationFailureIncident {
+        opportunity: current_plan.opportunity,
+        source,
+        expectation_kind,
+        detected_at_tick: tick,
+        phase: ExpectationFailurePhase::Search,
+        cause: ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+    }]
 }
 
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
@@ -1604,11 +1618,12 @@ pub(super) fn plan_and_validate_next_step(
                 ) {
                     let failed_sources = {
                         let current_place = SpatialBeliefView::effective_place(&view, agent);
-                        same_goal_search_failed_source_keys(
+                        same_goal_search_failure_incidents(
                             runtime.current_plan.as_ref(),
                             &selected_plan,
                             &selection_plans,
                             current_place,
+                            tick,
                         )
                     };
                     if !failed_sources.is_empty() {
@@ -1962,11 +1977,12 @@ pub(super) fn plan_and_validate_next_step_traced(
             ) {
                 let failed_sources = {
                     let current_place = SpatialBeliefView::effective_place(&view, agent);
-                    same_goal_search_failed_source_keys(
+                    same_goal_search_failure_incidents(
                         runtime.current_plan.as_ref(),
                         &selected_plan,
                         &selection_plans,
                         current_place,
+                        tick,
                     )
                 };
                 if !failed_sources.is_empty() {
@@ -2198,10 +2214,11 @@ mod tests {
     };
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
-        ExhaustionInvalidationCondition, ExhaustionRetryState, GoalKey, GoalKind, GoalOffer,
-        GoalPriorityClass, KillCondition, OpportunityAnchor, OpportunityExpectationKind,
-        OpportunityKey, PlanSearchResult, PlanTerminalKind, PlannedPlan, PlannedStep,
-        PlannerOpKind, PlanningEntityRef, ProfileFixture, RevivalTrigger,
+        ExhaustionInvalidationCondition, ExhaustionRetryState, ExpectationFailureCause,
+        ExpectationFailurePhase, GoalKey, GoalKind, GoalOffer, GoalPriorityClass, KillCondition,
+        OpportunityAnchor, OpportunityExpectationKind, OpportunityKey, PlanSearchResult,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
+        ProfileFixture, RevivalTrigger,
         agent_tick::portfolio::{FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind},
         build_semantics_table,
         decision_trace::{
@@ -2209,6 +2226,7 @@ mod tests {
             TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
+        plan_selection::SelectionCandidatePlan,
         search::SearchTraceMetadata,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -2813,6 +2831,76 @@ mod tests {
                 .as_ref()
                 .and_then(|plan| plan.expectation_kind),
             None
+        );
+    }
+
+    #[test]
+    fn same_goal_search_failure_incidents_emit_search_incident_for_committed_source() {
+        let place = entity(500);
+        let sibling_place = entity(501);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let current_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(place),
+            },
+            goal,
+            vec![travel_step(place)],
+            PlanTerminalKind::GoalSatisfied,
+        )
+        .with_committed_source(Some(SourceKey {
+            entity: place,
+            commodity: CommodityKind::Apple,
+        }))
+        .with_expectation_kind(Some(
+            OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        ));
+        let selected_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(sibling_place),
+            },
+            goal,
+            vec![travel_step(sibling_place)],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let selection_plans = vec![
+            SelectionCandidatePlan {
+                searched_opportunity: current_plan.opportunity,
+                found_plan: None,
+                perceived_cost: None,
+            },
+            SelectionCandidatePlan {
+                searched_opportunity: selected_plan.opportunity,
+                found_plan: Some(selected_plan.clone()),
+                perceived_cost: None,
+            },
+        ];
+
+        let incidents = super::same_goal_search_failure_incidents(
+            Some(&current_plan),
+            &selected_plan,
+            &selection_plans,
+            Some(place),
+            Tick(11),
+        );
+
+        assert_eq!(
+            incidents,
+            vec![crate::OpportunityExpectationFailureIncident {
+                opportunity: current_plan.opportunity,
+                source: SourceKey {
+                    entity: place,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                detected_at_tick: Tick(11),
+                phase: ExpectationFailurePhase::Search,
+                cause: ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+            }]
         );
     }
 

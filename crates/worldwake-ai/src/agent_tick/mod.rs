@@ -40,8 +40,9 @@ use crate::decision_trace::{
     SelectionTrace,
 };
 use crate::{
-    AcceptedRepairProvenance, AgendaPhase, AgendaTickPolicy, AgentDecisionRuntime, KillCondition,
-    PlannerOpSemantics,
+    AcceptedRepairProvenance, AgendaPhase, AgendaTickPolicy, AgentDecisionRuntime,
+    ExpectationFailureCause, ExpectationFailurePhase, KillCondition,
+    OpportunityExpectationFailureIncident, PlannerOpSemantics,
     agenda_manager::goal_post_conditions_already_satisfied,
     authoritative_target, build_semantics_table,
     failure_handling::{classify_discrepancy, record_failure_classification},
@@ -1906,20 +1907,67 @@ pub(super) fn apply_source_reliability_failure_observations(
     event_log: &mut worldwake_core::EventLog,
     agent: EntityId,
     tick: Tick,
-    failed_sources: &BTreeSet<worldwake_core::SourceKey>,
-) -> Result<(), TickInputError> {
-    if failed_sources.is_empty() {
-        return Ok(());
+    incidents: &[OpportunityExpectationFailureIncident],
+) -> Result<BTreeMap<worldwake_core::SourceKey, BTreeSet<ExpectationFailureCause>>, TickInputError>
+{
+    if incidents.is_empty() {
+        return Ok(BTreeMap::new());
     }
     let Some(profile) = world.get_component_preference_profile(agent).copied() else {
-        return Ok(());
+        return Ok(BTreeMap::new());
     };
+
+    let mut applied =
+        BTreeMap::<worldwake_core::SourceKey, BTreeSet<ExpectationFailureCause>>::new();
+    let mut unique_sources = BTreeMap::<worldwake_core::SourceKey, Tick>::new();
+    let mut seen = BTreeSet::new();
+    for incident in incidents {
+        let should_apply = match (incident.phase, incident.cause) {
+            (
+                ExpectationFailurePhase::Observation | ExpectationFailurePhase::CandidateGeneration,
+                ExpectationFailureCause::SourceAbsentLocally
+                | ExpectationFailureCause::SourceDepletedLocally,
+            ) => true,
+            (
+                ExpectationFailurePhase::Search,
+                ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+            ) => true,
+            _ => false,
+        };
+        if !should_apply {
+            continue;
+        }
+
+        let identity = (
+            incident.opportunity,
+            incident.source,
+            incident.phase,
+            incident.detected_at_tick,
+        );
+        if !seen.insert(identity) {
+            continue;
+        }
+
+        unique_sources
+            .entry(incident.source)
+            .and_modify(|recorded_tick| {
+                *recorded_tick = (*recorded_tick).max(incident.detected_at_tick);
+            })
+            .or_insert(incident.detected_at_tick);
+        applied
+            .entry(incident.source)
+            .or_default()
+            .insert(incident.cause);
+    }
+    if unique_sources.is_empty() {
+        return Ok(applied);
+    }
 
     let mut reliability = world
         .get_component_source_reliability(agent)
         .cloned()
         .unwrap_or_default();
-    for source_key in failed_sources {
+    for (source_key, detected_at_tick) in &unique_sources {
         let record =
             reliability
                 .sources
@@ -1927,10 +1975,10 @@ pub(super) fn apply_source_reliability_failure_observations(
                 .or_insert(worldwake_core::ReliabilityRecord {
                     successful_acquisitions: 0,
                     failed_attempts: 0,
-                    last_attempt_tick: tick,
+                    last_attempt_tick: *detected_at_tick,
                 });
         record.failed_attempts = record.failed_attempts.saturating_add(1);
-        record.last_attempt_tick = tick;
+        record.last_attempt_tick = *detected_at_tick;
     }
     reliability.enforce_limits(tick, &profile);
 
@@ -1946,7 +1994,7 @@ pub(super) fn apply_source_reliability_failure_observations(
     txn.set_component_source_reliability(agent, reliability)
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
-    Ok(())
+    Ok(applied)
 }
 
 fn apply_acquisition_exhaustion_tracker_increments(

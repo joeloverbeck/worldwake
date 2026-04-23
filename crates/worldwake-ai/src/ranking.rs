@@ -21,9 +21,9 @@
 
 use crate::{
     AgendaEntry, DecisionContext, GoalKindPlannerExt, GoalOffer, GoalPolicyOutcome,
-    GoalPriorityClass, RankedDriveGoalProvenance, RankedDriveKind, RankedDriveMotiveInput,
-    RankedGoalProvenance, RankedGoalProvenanceFamily, RankedPriorityAdjustment, assess_danger,
-    classify_band,
+    GoalPriorityClass, OpportunityExpectationFailureIncident, RankedDriveGoalProvenance,
+    RankedDriveKind, RankedDriveMotiveInput, RankedGoalProvenance, RankedGoalProvenanceFamily,
+    RankedPriorityAdjustment, assess_danger, classify_band,
     decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
@@ -442,11 +442,15 @@ fn apply_source_reliability_discount(
 pub(crate) fn apply_pending_source_reliability_failures(
     ranked: &mut Vec<AgendaEntry>,
     inputs: &PendingSourceReliabilityInputs<'_>,
-    pending_failures: &BTreeSet<SourceKey>,
+    pending_failures: &[OpportunityExpectationFailureIncident],
 ) {
     if pending_failures.is_empty() {
         return;
     }
+    let pending_failure_sources = pending_failures
+        .iter()
+        .map(|incident| incident.source)
+        .collect::<Vec<_>>();
 
     let context = RankingContext::with_memories(
         inputs.view,
@@ -467,7 +471,7 @@ pub(crate) fn apply_pending_source_reliability_failures(
             entity: source_entity,
             commodity,
         };
-        if !pending_failures.contains(&source_key) {
+        if !pending_failure_sources.contains(&source_key) {
             continue;
         }
 
@@ -484,7 +488,7 @@ pub(crate) fn apply_pending_source_reliability_failures(
             &entry.offer,
             &context,
             pre_source_motive,
-            pending_failures,
+            &pending_failure_sources,
         );
         let post_source_motive = source_reliability_discount
             .as_ref()
@@ -517,7 +521,7 @@ fn apply_source_reliability_discount_with_pending_failures(
     candidate: &GoalOffer,
     context: &RankingContext<'_>,
     motive_score: u32,
-    pending_failures: &BTreeSet<SourceKey>,
+    pending_failures: &[SourceKey],
 ) -> Option<SourceReliabilityDiscount> {
     if motive_score == 0 {
         return None;
@@ -2251,8 +2255,10 @@ mod tests {
         apply_source_reliability_discount, build_decision_context,
     };
     use crate::{
-        AgendaEntry, GoalKey, GoalKind, GoalOffer, GoalPriorityClass, RankedDriveGoalProvenance,
-        RankedDriveKind, RankedDriveMotiveInput, RankedGoalProvenance, RankedPriorityAdjustment,
+        AgendaEntry, ExpectationFailureCause, ExpectationFailurePhase, GoalKey, GoalKind,
+        GoalOffer, GoalPriorityClass, OpportunityExpectationFailureIncident,
+        OpportunityExpectationKind, RankedDriveGoalProvenance, RankedDriveKind,
+        RankedDriveMotiveInput, RankedGoalProvenance, RankedPriorityAdjustment,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -5325,6 +5331,10 @@ mod tests {
             OpportunityAnchor::Place(familiar_place)
         );
         assert_eq!(ranked[0].source_reliability_discount, None);
+        let familiar_opportunity = worldwake_core::OpportunityKey {
+            goal_key: ranked[0].offer.key,
+            anchor: ranked[0].offer.anchor,
+        };
 
         super::apply_pending_source_reliability_failures(
             &mut ranked,
@@ -5337,10 +5347,17 @@ mod tests {
                 repair_memory: super::empty_repair_memory(),
                 learned_opportunity_memory: super::empty_learned_opportunity_memory(),
             },
-            &BTreeSet::from([SourceKey {
-                entity: familiar_source,
-                commodity: CommodityKind::Bread,
-            }]),
+            &[OpportunityExpectationFailureIncident {
+                opportunity: familiar_opportunity,
+                source: SourceKey {
+                    entity: familiar_source,
+                    commodity: CommodityKind::Bread,
+                },
+                expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                detected_at_tick: current_tick(),
+                phase: ExpectationFailurePhase::Observation,
+                cause: ExpectationFailureCause::SourceDepletedLocally,
+            }],
         );
 
         assert_eq!(

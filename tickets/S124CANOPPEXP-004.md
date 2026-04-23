@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — decision-history event payload surface
-**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`, `tickets/S124CANOPPEXP-002.md`
+**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`, `archive/tickets/S124CANOPPEXP-002.md`
 
 ## Problem
 
