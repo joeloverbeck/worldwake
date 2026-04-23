@@ -22,15 +22,15 @@ use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     DirtySet, ExhaustionEntry, ExhaustionRetryState, KillCondition, OpportunityKey, PlanValue,
     PlannedPlan, PlannedStep, PlannerOpSemantics, RevivalTrigger, authoritative_target,
-    build_planning_snapshot_with_blocked_facility_uses, ranking::OrderedRanked,
-    revalidate_next_step, select_best_plan,
+    build_planning_snapshot_with_blocked_facility_uses, planner_ops::committed_source_for_offer,
+    ranking::OrderedRanked, revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 use worldwake_core::{
     ActionDefId, BlockerMemory, CognitiveProfile, DecisionEventPayload, DiscrepancyMemory,
     EntityId, EventLog, EventTag, ExecutionBudget, GoalKind, IntentionFrame, OpportunityAnchor,
-    Permille, PlanAdoptedPayload, RepairKind, Tick,
+    Permille, PlanAdoptedPayload, RepairKind, SourceKey, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, ActionPayload, GoalBeliefView, RecipeRegistry, RuntimeBeliefView,
@@ -336,6 +336,42 @@ pub(super) fn determine_selected_plan_source(
         );
         SelectedPlanSource::RetainedCurrentPlan
     }
+}
+
+fn same_goal_search_failed_source_keys(
+    current_plan: Option<&PlannedPlan>,
+    selected_plan: &PlannedPlan,
+    selection_plans: &[SelectionCandidatePlan],
+    current_place: Option<EntityId>,
+) -> BTreeSet<SourceKey> {
+    let Some(current_plan) = current_plan else {
+        return BTreeSet::new();
+    };
+    let Some(current_place) = current_place else {
+        return BTreeSet::new();
+    };
+    if selected_plan.goal != current_plan.goal
+        || selected_plan.opportunity == current_plan.opportunity
+        || current_plan.opportunity.anchor != OpportunityAnchor::Place(current_place)
+    {
+        return BTreeSet::new();
+    }
+
+    let current_failed_search = selection_plans.iter().any(|plan| {
+        plan.searched_opportunity == current_plan.opportunity && plan.found_plan.is_none()
+    });
+    if !current_failed_search {
+        return BTreeSet::new();
+    }
+
+    let selected_sibling_found = selection_plans.iter().any(|plan| {
+        plan.searched_opportunity == selected_plan.opportunity && plan.found_plan.is_some()
+    });
+    if !selected_sibling_found {
+        return BTreeSet::new();
+    }
+
+    current_plan.committed_source.into_iter().collect()
 }
 
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
@@ -1351,7 +1387,7 @@ fn adopt_selected_plan(
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: EntityId,
     ranked_candidates: &OrderedRanked<'_>,
-    selected_plan: PlannedPlan,
+    mut selected_plan: PlannedPlan,
     recipe_registry: &RecipeRegistry,
     tick: Tick,
     cognitive: &CognitiveProfile,
@@ -1366,6 +1402,12 @@ fn adopt_selected_plan(
         .iter()
         .find(|candidate| candidate.key == selected_plan.opportunity)
         .map(|candidate| AgendaEntry::committed_from(candidate, tick));
+    if selected_plan.committed_source.is_none() {
+        selected_plan.committed_source = ranked_candidates
+            .iter()
+            .find(|candidate| candidate.key == selected_plan.opportunity)
+            .and_then(|candidate| committed_source_for_offer(&candidate.offer));
+    }
     *jc = prepared_frame;
     let _ = persist_expectation_store_update(world, event_log, agent, tick, |store| {
         let expired = expire_plan_step_expectations(store);
@@ -1553,6 +1595,27 @@ pub(super) fn plan_and_validate_next_step(
                         frame_switch_margin,
                     },
                 ) {
+                    let failed_sources = {
+                        let current_place = SpatialBeliefView::effective_place(&view, agent);
+                        same_goal_search_failed_source_keys(
+                            runtime.current_plan.as_ref(),
+                            &selected_plan,
+                            &selection_plans,
+                            current_place,
+                        )
+                    };
+                    if !failed_sources.is_empty() {
+                        super::apply_source_reliability_failure_observations(
+                            world,
+                            event_log,
+                            agent,
+                            tick,
+                            &failed_sources,
+                        )
+                        .expect("planning-stage source reliability persistence should succeed");
+                    }
+                    let refreshed_view =
+                        runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
                     emit_plan_selection_events(
                         event_log,
                         tick,
@@ -1566,9 +1629,9 @@ pub(super) fn plan_and_validate_next_step(
                     let mut prepared_frame =
                         update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
                     if let Some(frame) = prepared_frame.as_mut() {
-                        frame.assumptions = populate_assumptions(frame, agent, &view);
+                        frame.assumptions = populate_assumptions(frame, agent, &refreshed_view);
                     }
-                    let current_place = SpatialBeliefView::effective_place(&view, agent)
+                    let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                         .expect("plan adoption expects actor to have an effective place");
                     adopt_selected_plan(
                         world,
@@ -1890,6 +1953,27 @@ pub(super) fn plan_and_validate_next_step_traced(
                     frame_switch_margin,
                 },
             ) {
+                let failed_sources = {
+                    let current_place = SpatialBeliefView::effective_place(&view, agent);
+                    same_goal_search_failed_source_keys(
+                        runtime.current_plan.as_ref(),
+                        &selected_plan,
+                        &selection_plans,
+                        current_place,
+                    )
+                };
+                if !failed_sources.is_empty() {
+                    super::apply_source_reliability_failure_observations(
+                        world,
+                        event_log,
+                        agent,
+                        tick,
+                        &failed_sources,
+                    )
+                    .expect("planning-stage source reliability persistence should succeed");
+                }
+                let refreshed_view =
+                    runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
                 emit_plan_selection_events(
                     event_log,
                     tick,
@@ -1954,9 +2038,9 @@ pub(super) fn plan_and_validate_next_step_traced(
                 let mut prepared_frame =
                     update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
                 if let Some(frame) = prepared_frame.as_mut() {
-                    frame.assumptions = populate_assumptions(frame, agent, &view);
+                    frame.assumptions = populate_assumptions(frame, agent, &refreshed_view);
                 }
-                let current_place = SpatialBeliefView::effective_place(&view, agent)
+                let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                     .expect("plan adoption expects actor to have an effective place");
                 adopt_selected_plan(
                     world,
@@ -2127,9 +2211,9 @@ mod tests {
         CommodityPurpose, ContentionIntents, ControlSource, DecisionEventPayload, EntityId,
         EventLog, EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
         GoalRejectionReason, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille,
-        Place, PlanAdoptedPayload, Quantity, RepairKind, Tick, Topology, TravelEdge, TravelEdgeId,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
-        build_prototype_world,
+        Place, PlanAdoptedPayload, Quantity, RepairKind, SourceKey, Tick, Topology, TravelEdge,
+        TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -2537,6 +2621,7 @@ mod tests {
     fn adopt_selected_plan_populates_expected_commodity_assumption_immediately() {
         let origin = entity(91);
         let orchard = entity(92);
+        let source = entity(93);
         let mut world = World::new(cargo_topology(origin, orchard)).unwrap();
         let agent = {
             let mut txn = new_txn(&mut world, 1);
@@ -2555,7 +2640,7 @@ mod tests {
         let ranked_candidates = vec![ranked_goal(acquire_goal(
             CommodityKind::Apple,
             OpportunityAnchor::Place(orchard),
-            BTreeSet::new(),
+            BTreeSet::from([source]),
             BTreeSet::from([orchard]),
         ))];
         let goal = ranked_candidates[0].offer.key;
@@ -2620,6 +2705,16 @@ mod tests {
                     commodity: CommodityKind::Apple,
                     place: orchard,
                 })
+        );
+        assert_eq!(
+            runtime
+                .current_plan
+                .as_ref()
+                .and_then(|plan| plan.committed_source),
+            Some(SourceKey {
+                entity: source,
+                commodity: CommodityKind::Apple,
+            })
         );
     }
 

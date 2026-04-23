@@ -35,7 +35,7 @@ use worldwake_core::{
     OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
     ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
     Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
+    SocialObservationDetail, SourceKey, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
     ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
     current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
@@ -193,6 +193,9 @@ pub(crate) struct CandidateGenerationResult {
     /// in the agent's [`ViolationMemory`] by the caller. Generation itself is
     /// side-effect-free; the caller applies these after the read phase.
     pub pending_violations: Vec<PendingViolationRecord>,
+    /// Locally observed familiar sources that proved depleted and should count
+    /// as failed source attempts once the read phase persists memory updates.
+    pub pending_source_reliability_failures: BTreeSet<SourceKey>,
     /// Need-specific tracker resets detected during candidate generation.
     /// The caller applies them during the write phase.
     pub pending_acquisition_exhaustion_resets: BTreeSet<HomeostaticNeedId>,
@@ -289,6 +292,7 @@ pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_source_reliability_failures: BTreeSet::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
     }
@@ -336,7 +340,7 @@ pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
         &mut pending_acquisition_exhaustion_resets,
     );
     emit_proactive_exploration_candidates(&mut candidates, &mut diagnostics, &ctx, needs);
-    let pending_violations =
+    let (pending_violations, pending_source_reliability_failures) =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
     let candidates = filter_suppressed_candidates(
@@ -351,6 +355,7 @@ pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
         candidates,
         diagnostics,
         pending_violations,
+        pending_source_reliability_failures,
         pending_acquisition_exhaustion_resets,
     }
 }
@@ -4168,8 +4173,9 @@ fn emit_expectation_violation_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
-) -> Vec<PendingViolationRecord> {
+) -> (Vec<PendingViolationRecord>, BTreeSet<SourceKey>) {
     let mut pending = Vec::new();
+    let mut pending_source_reliability_failures = BTreeSet::new();
     let mut next_violation_id = ctx.violation_memory.next_violation_id();
 
     // Early return: agent must have a current place (not in transit).
@@ -4179,17 +4185,7 @@ fn emit_expectation_violation_candidates(
             .push(ViolationDetectionOmission {
                 reason: ViolationDetectionOmissionReason::AgentInTransit,
             });
-        return pending;
-    };
-
-    // Early return: agent must have a ViolationDispositionProfile.
-    let Some(profile) = ctx.view.violation_disposition_profile(ctx.agent) else {
-        diagnostics
-            .omitted_violation_detection
-            .push(ViolationDetectionOmission {
-                reason: ViolationDetectionOmissionReason::MissingViolationDispositionProfile,
-            });
-        return pending;
+        return (pending, pending_source_reliability_failures);
     };
 
     let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
@@ -4247,6 +4243,12 @@ fn emit_expectation_violation_candidates(
                 resource_source.commodity,
             ) == Quantity(0)
         {
+            if ctx.view.preference_profile(ctx.agent).is_some() {
+                pending_source_reliability_failures.insert(SourceKey {
+                    entity: *entity_id,
+                    commodity: resource_source.commodity,
+                });
+            }
             violations.push((
                 ViolationKind::SupplyDepleted {
                     commodity: resource_source.commodity,
@@ -4257,6 +4259,16 @@ fn emit_expectation_violation_candidates(
             ));
         }
     }
+
+    // Early return: agent must have a ViolationDispositionProfile.
+    let Some(profile) = ctx.view.violation_disposition_profile(ctx.agent) else {
+        diagnostics
+            .omitted_violation_detection
+            .push(ViolationDetectionOmission {
+                reason: ViolationDetectionOmissionReason::MissingViolationDispositionProfile,
+            });
+        return (pending, pending_source_reliability_failures);
+    };
 
     let ttl = profile.violation_memory_retention_ticks;
 
@@ -4287,7 +4299,7 @@ fn emit_expectation_violation_candidates(
         }
     }
 
-    pending
+    (pending, pending_source_reliability_failures)
 }
 
 /// Emit an `InvestigateViolation` goal candidate for an `EntityMissing` or
@@ -5563,12 +5575,12 @@ mod tests {
         InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
         LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
         OpportunityAnchor, OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
-        PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts,
-        Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind,
-        ResourceSource, RewardSource, RightKind, SharedTellState, SocialObservation,
-        SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick,
-        TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        PlaceVisitRecord, PreferenceProfile, ProofRequirement, PunishmentFineSelectionTrace,
+        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
+        SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic,
+        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
@@ -5614,6 +5626,7 @@ mod tests {
         sources_at: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        preference_profiles: BTreeMap<EntityId, PreferenceProfile>,
         utility_profiles: BTreeMap<EntityId, UtilityProfile>,
         artifact_posting_profiles: BTreeMap<EntityId, ArtifactPostingProfile>,
         exploration_profiles: BTreeMap<EntityId, ExplorationProfile>,
@@ -5701,6 +5714,7 @@ mod tests {
                 sources_at: BTreeMap::new(),
                 demand_memory: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
+                preference_profiles: BTreeMap::new(),
                 utility_profiles: BTreeMap::new(),
                 artifact_posting_profiles: BTreeMap::new(),
                 exploration_profiles: BTreeMap::new(),
@@ -5889,6 +5903,10 @@ mod tests {
 
         fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
             self.utility_profiles.get(&agent).cloned()
+        }
+
+        fn preference_profile(&self, agent: EntityId) -> Option<PreferenceProfile> {
+            self.preference_profiles.get(&agent).copied()
         }
 
         fn artifact_posting_profile(&self, agent: EntityId) -> Option<ArtifactPostingProfile> {
@@ -15642,7 +15660,7 @@ mod tests {
 
     // Test 2: SupplyDepleted violation detected, InvestigateViolation candidate emitted
     #[test]
-    fn violation_supply_depleted_emits_investigate_candidate() {
+    fn violation_supply_depleted_emits_investigate_candidate_and_pending_source_failure() {
         let agent = entity(1);
         let place = entity(10);
         let source_entity = entity(3);
@@ -15652,6 +15670,8 @@ mod tests {
         view.effective_places.insert(agent, place);
         view.violation_disposition_profiles
             .insert(agent, default_violation_profile());
+        view.preference_profiles
+            .insert(agent, PreferenceProfile::default());
         // Agent believes source has apples (qty 5) at place.
         view.beliefs.insert(
             agent,
@@ -15687,6 +15707,13 @@ mod tests {
         assert!(
             result.candidates.iter().any(|c| c.key == goal_key),
             "Expected InvestigateViolation candidate for depleted supply"
+        );
+        assert_eq!(
+            result.pending_source_reliability_failures,
+            BTreeSet::from([worldwake_core::SourceKey {
+                entity: source_entity,
+                commodity: CommodityKind::Apple,
+            }])
         );
     }
 

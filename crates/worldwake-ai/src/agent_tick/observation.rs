@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DecisionEventPayload,
     DiscrepancyMemory, EntityId, EventTag, ExpectationKindTag, ExpectationMismatchPayload, GoalKey,
-    LearnedOpportunityMemory, MismatchDetail, PlanInvalidationReason, Quantity, RepairMemory,
-    ReplanReason, Tick, UniqueItemKind,
+    LearnedOpportunityMemory, MismatchDetail, OpportunityAnchor, PlanInvalidationReason, Quantity,
+    RepairMemory, ReplanReason, SourceKey, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
@@ -91,6 +91,9 @@ pub(crate) struct ReadPhaseResult {
     pub(super) decision_context: DecisionContext,
     /// When a pursuit plan was invalidated, records the reason.
     pub(super) pursuit_invalidation: Option<crate::PursuitInvalidationReason>,
+    /// Need-specific tracker resets detected during candidate generation.
+    pub(super) pending_source_reliability_failures:
+        std::collections::BTreeSet<worldwake_core::SourceKey>,
     /// Need-specific tracker resets detected during candidate generation.
     pub(super) pending_acquisition_exhaustion_resets:
         std::collections::BTreeSet<worldwake_core::HomeostaticNeedId>,
@@ -252,6 +255,9 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         tracing,
     );
     reinstate_current_plan_candidate(&mut candidates, runtime, active_goal);
+    candidates.pending_source_reliability_failures.extend(
+        pending_local_source_reliability_failures(&view, agent, runtime.current_plan.as_ref()),
+    );
 
     // Apply deferred violation records from candidate generation.
     for pending in &candidates.pending_violations {
@@ -280,10 +286,24 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         repair_memory,
         learned_opportunity_memory,
     );
+    let mut ranked = outcome.ranked;
+    crate::ranking::apply_pending_source_reliability_failures(
+        &mut ranked,
+        &crate::ranking::PendingSourceReliabilityInputs {
+            view: &view,
+            agent,
+            current_tick: phase.tick,
+            utility: phase.utility,
+            decision_context: dc,
+            repair_memory,
+            learned_opportunity_memory,
+        },
+        &candidates.pending_source_reliability_failures,
+    );
 
     ReadPhaseResult {
         offered: candidates.diagnostics.offers,
-        ranked: outcome.ranked,
+        ranked,
         generated_keys,
         candidate_evidence,
         fully_blocked_desires: candidates.diagnostics.fully_blocked_desires,
@@ -301,8 +321,37 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         omitted_violation_detection: candidates.diagnostics.omitted_violation_detection,
         decision_context: dc,
         pursuit_invalidation,
+        pending_source_reliability_failures: candidates.pending_source_reliability_failures,
         pending_acquisition_exhaustion_resets: candidates.pending_acquisition_exhaustion_resets,
     }
+}
+
+fn pending_local_source_reliability_failures(
+    view: &dyn RuntimeBeliefView,
+    agent: EntityId,
+    current_plan: Option<&crate::PlannedPlan>,
+) -> BTreeSet<SourceKey> {
+    let Some(current_place) = view.effective_place(agent) else {
+        return BTreeSet::new();
+    };
+    if view.preference_profile(agent).is_none() {
+        return BTreeSet::new();
+    }
+    let Some(plan) = current_plan else {
+        return BTreeSet::new();
+    };
+    if plan.opportunity.anchor != OpportunityAnchor::Place(current_place) {
+        return BTreeSet::new();
+    }
+    let Some(source_key) = plan.committed_source else {
+        return BTreeSet::new();
+    };
+    if view.locally_observed_commodity_quantity(agent, source_key.entity, source_key.commodity)
+        != Quantity(0)
+    {
+        return BTreeSet::new();
+    }
+    BTreeSet::from([source_key])
 }
 
 fn reinstate_current_plan_candidate(
@@ -951,6 +1000,7 @@ mod tests {
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_source_reliability_failures: BTreeSet::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 
@@ -995,6 +1045,7 @@ mod tests {
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_source_reliability_failures: BTreeSet::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 
@@ -1038,6 +1089,7 @@ mod tests {
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_source_reliability_failures: BTreeSet::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 

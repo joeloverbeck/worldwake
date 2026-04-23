@@ -43,6 +43,7 @@ Depending on live feasibility, this workflow should end with one of these outcom
    - `docs/scenario-roadmap.md` updated to `Landed`
 2. **Truthful partial progress with blockers**
    - authored scenario and/or partial proof changes only if they match a truthful narrower seam
+   - if the row owns multiple feature rows, classify each owned feature explicitly as `landed here`, `structurally active only`, or `blocked`; do not let one proven feature silently land the whole row
    - one or more new or updated tickets in `tickets/` for the architectural gap
    - `docs/scenario-roadmap.md` updated to reflect `Drafting` / `In Progress` / auxiliary status rather than a false landing
 3. **Reassessment only**
@@ -64,6 +65,7 @@ Examples:
 Before assuming a new file is required, check whether an existing auxiliary or partial scenario/golden already owns part of the contract.
 If the row is currently owned only by an auxiliary scenario/golden pair, prefer promoting that owner into the roadmap naming shape instead of cloning it into parallel files.
 Also check whether the scenario belongs in an existing family matrix workflow or needs a new family workflow. Follow the existing repo convention shown by `golden-survival.yml` and `golden-drive-escalation.yml`: one matrix workflow per long-running scenario family.
+If a roadmap-named scenario/golden exists but only a narrower seam is currently proven, keep the roadmap file names when they are still the truthful row owner, but narrow the test names, scenario comments, and roadmap prose to the actually proven seam instead of claiming the full row landed.
 
 Auxiliary-promotion pattern:
 
@@ -202,6 +204,8 @@ CI ownership rules for these scenario-backed goldens:
 - wire the suite into the family matrix workflow under `.github/workflows/`
 - if the scenario belongs to an existing family such as `survival` or `drive-escalation`, append it to that matrix instead of creating a redundant workflow
 - if the scenario starts a genuinely new family, create `.github/workflows/golden-<family>.yml` following the existing family-per-matrix convention
+- if the result is truthful partial progress but the roadmap-named scenario/golden remains the real owning proof surface for that row, wire it into CI now rather than leaving roadmap-owned proof orphaned from automation
+- if the result is only exploratory or auxiliary evidence and is not the truthful roadmap-row owner, keep it out of roadmap-family CI and describe it that way explicitly
 
 The owning workflow should run the ignored test explicitly in CI, typically in the same shape as the existing workflows:
 

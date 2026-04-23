@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
     ActionDefId, ActionDomain, BeliefClaimKey, EntityBeliefAspect, EntityId, EntityKind, Quantity,
-    Tick, load_per_unit,
+    SourceKey, Tick, load_per_unit,
 };
 use worldwake_sim::{
     ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView, MaterializationTag,
@@ -958,6 +958,8 @@ pub enum PlanTerminalKind {
 pub struct PlannedPlan {
     pub goal: GoalKey,
     pub opportunity: worldwake_core::OpportunityKey,
+    #[serde(default)]
+    pub committed_source: Option<SourceKey>,
     pub steps: Vec<PlannedStep>,
     pub total_estimated_ticks: u32,
     pub terminal_kind: PlanTerminalKind,
@@ -974,10 +976,17 @@ impl PlannedPlan {
         Self {
             goal,
             opportunity,
+            committed_source: None,
             total_estimated_ticks: total_estimated_ticks(&steps),
             steps,
             terminal_kind,
         }
+    }
+
+    #[must_use]
+    pub fn with_committed_source(mut self, committed_source: Option<SourceKey>) -> Self {
+        self.committed_source = committed_source;
+        self
     }
 
     #[must_use]
@@ -1003,6 +1012,21 @@ impl PlannedPlan {
             .and_then(|step| step.targets.first().copied())
             .and_then(authoritative_target)
     }
+}
+
+#[must_use]
+pub(crate) fn committed_source_for_offer(offer: &GoalOffer) -> Option<SourceKey> {
+    let (GoalKind::AcquireCommodity { commodity, .. } | GoalKind::RestockCommodity { commodity }) =
+        offer.key.kind
+    else {
+        return None;
+    };
+    let mut sources = offer.evidence_entities.iter().copied();
+    let entity = sources.next()?;
+    if sources.next().is_some() {
+        return None;
+    }
+    Some(SourceKey { entity, commodity })
 }
 
 fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {

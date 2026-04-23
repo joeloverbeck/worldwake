@@ -103,6 +103,8 @@ Prefer small, distinct tickets split by architectural concern. Use the 1-3-1 rul
 | Active ticket partially covers the concern | Update that ticket factually to capture it accurately |
 | No active ticket covers the concern | Create a new follow-up ticket |
 
+When a new or newly updated active spec in `specs/` already owns the architectural design for the concern, treat that spec as the architectural owner. Any follow-up ticket created in this review must be a bounded implementation slice derived from that spec rather than a competing design artifact, and the report should say so explicitly. If that derivation would still be confusing because no decomposition pass has happened yet, cite the spec as the owner and recommend decomposition first instead of creating an ambiguous ticket.
+
 #### Active-ticket maintenance checks
 
 Run these checks before archival to keep the active roadmap accurate:
@@ -122,6 +124,9 @@ When a new ticket is warranted:
 1. Create from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) per [tickets/README.md](../../../tickets/README.md).
 2. Before drafting a new ticket, inspect adjacent active tickets in the same family plus nearby active specs to confirm the concern is not already owned. If a sibling already covers the exact remainder, cite or factually update it instead of duplicating the ticket.
 3. If the new ticket is being exposed by a narrowed implementation or roadmap gap, inspect adjacent active tickets/specs first so the new ticket and any dependency updates are authored together.
+   If a new active spec was authored or updated earlier in the same session and it already owns the architectural redesign, either:
+   - create the first bounded implementation ticket explicitly as "derived from <spec>", with `Deps` pointing at that spec, or
+   - stop at citing the spec and recommend decomposition first when ownership would otherwise be ambiguous.
 4. Reassess against current code and docs before finalizing.
 5. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
 6. Keep bounded to one coherent concern.
