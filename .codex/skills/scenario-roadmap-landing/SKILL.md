@@ -25,6 +25,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 - Resolve the exact roadmap row first. Do not start coding from the user phrase alone.
 - Treat roadmap landing as a three-layer contract: structural activation, behavioral proof, and causal validity.
 - A 1440-tick survival pass is necessary but not sufficient.
+- When the outcome is partial progress, distinguish explicitly between `what was implemented` and `why the row is still not Landed`.
 - Scenario-backed proof must assert the mechanic's intended behavior, not just the presence of a goal or action name.
 - Scenario-backed roadmap goldens are CI-owned long-running suites. They must be wired through `.github/workflows/golden-<family>.yml`, marked `#[ignore]` for ordinary local/workspace lanes, and not treated as regular-lane coverage.
 - If the live architecture cannot yet support the truthful golden, create or update ticket(s) in `tickets/` instead of weakening the scenario, weakening the golden, or falsely marking the roadmap row landed.
@@ -156,6 +157,7 @@ Scenario design rules:
 - Explicitly isolate rival lawful branches only when they would obscure the owned contract.
 - If a competing branch is part of the architecture contract, keep it and prove the branching behavior instead.
 - For cumulative mechanics, name the concrete threshold/cadence/capacity math in the scenario-owning ticket or notes before trusting the setup.
+- For trade rows, validate the authored economy math early: merchant stock volume, buyer purchasing power, self-care supply, and carry-capacity/load limits. Do this before spending repeated long reruns on golden debugging.
 
 For social or belief-transport rows, verify the information path explicitly. A scenario is invalid if the intended behavior only works through omniscient setup assumptions.
 When a survival contract legitimately needs an uneven bound across need families, encode that as scenario-authored per-need overrides instead of inventing a stronger global cap and then forcing the codebase to satisfy it.
@@ -291,7 +293,7 @@ Then update `docs/scenario-roadmap.md` as needed. Common sections that need edit
 - `Landed Scenarios`
 - `Auxiliary and Non-Roadmap Scenarios`
 - `Maintenance Workflow` or detection appendix when the generator rule itself changed
-- any row-ordinal or range prose that changed because a planned row became landed (for example `Rows 8-17` becoming `Rows 9-17`)
+- any row-ordinal or range prose that changed because the row status moved at all, not just `Landed` transitions (for example a `Remaining planned rows` sentence that still says `Rows 9-17` after row 9 became `In Progress`)
 
 Update the roadmap to match the true result:
 
@@ -299,6 +301,14 @@ Update the roadmap to match the true result:
 - if the outcome is narrower, rewrite the row rather than overclaiming
 - if an auxiliary scenario now became a true roadmap row, move or rewrite the auxiliary caveat accordingly
 - if the generated companion shows additional active features beyond the requested row, classify each one explicitly as either newly landed here or merely structurally active because of shared substrate; do not let those sibling rows inherit `Landed` status by implication
+
+When the row ends `In Progress`, prefer a concrete partial-progress writeup over vague prose. A good pattern is:
+
+- `Scenario-owned progress`: feature rows or seams now truthfully proved here
+- `Structurally active only`: sibling rows activated by shared authored substrate but not behaviorally proven
+- `Blocked`: the exact remaining feature row or seam plus its owning ticket
+
+For multi-feature rows, do not collapse these into a single status sentence. Write the row prose so a later reader can tell exactly which part moved forward and which part still blocks `Landed`.
 
 Also make the CI ownership truthful in the same pass:
 
@@ -368,3 +378,7 @@ Use a concise closeout shaped like this:
 ```
 
 If the row did not fully land, say that directly. Name the blocker and the owning ticket instead of implying success.
+If the row did not fully land, also separate:
+
+- what was implemented this session
+- what remains blocked before `Landed`

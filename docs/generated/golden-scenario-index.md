@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 94
-- Contributing golden test files: 19
-- Associated tests: 115
+- Scenario blocks: 95
+- Contributing golden test files: 20
+- Associated tests: 117
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1184,6 +1184,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: both agents satisfy the authored survival-health contract, and the
 
 **Cross-system chain**: same-place orchard observation by scout -> return to camp under
+
+### Scenario 173: Survival Trade Proves the Live Market Branch
+
+- Source: `golden_survival_trade.rs:328`
+- Systems: AI, Needs, Trade, Travel, Perception
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
+- ActionDomains: Trade, Travel, Needs
+- Places: Market Square, South Orchard
+- Principles: 6, 7, 8, 14, 20
+
+**Setup**: Run the authored survival trade scenario for 1440 ticks. The buyer
+
+**Proves**: both agents satisfy the authored survival-health contract; the
+
+**Cross-system chain**: merchant-owned bread stock -> committed stage_stock_for_sale ->
 
 ### Scenario 58: Travel Need Escalation
 

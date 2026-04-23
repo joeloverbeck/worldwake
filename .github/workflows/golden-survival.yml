@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [ask_consult, baseline, contested, preferences, production, scattered, tell]
+        scenario: [ask_consult, baseline, contested, preferences, production, scattered, tell, trade]
 
     steps:
       - name: Checkout
