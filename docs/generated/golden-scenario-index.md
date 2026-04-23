@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 93
-- Contributing golden test files: 18
-- Associated tests: 113
+- Scenario blocks: 94
+- Contributing golden test files: 19
+- Associated tests: 115
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1052,7 +1052,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 
-- Source: `golden_survival_preferences.rs:266`
+- Source: `golden_survival_preferences.rs:353`
 - Systems: AI, Needs, Travel, Production, proactive diversification
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Travel, Production, Needs
@@ -1064,6 +1064,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the agent satisfies the authored survival contract; proactive
 
 **Cross-system chain**: proactive ExploreLocation selection -> travel arrival at Novel Grove
+
+### Scenario 172: Survival Production Lands Roadmap Row Eight
+
+- Source: `golden_survival_production.rs:254`
+- Systems: AI, Needs, Production
+- GoalKinds: ProduceCommodity, ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
+- ActionDomains: Production, Needs
+- Places: Bakery Yard
+- Principles: 6, 8, 14, 20
+
+**Setup**: Run the authored survival production scenario for 1440 ticks. The
+
+**Proves**: the agent satisfies the authored survival contract, selects a real
+
+**Cross-system chain**: local mill + possessed Firewood belief -> selected ProduceCommodity
 
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 

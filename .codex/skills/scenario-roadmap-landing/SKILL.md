@@ -106,9 +106,10 @@ For the requested row:
 
 1. Enumerate the exact feature rows it is meant to activate or upgrade.
 2. Name the exact backing systems, goal/action families, and authored substrate that must be present.
-3. Check `crates/worldwake-cli/src/bin/scenario_coverage.rs` when needed to verify the live structural activation rule.
-4. Check existing scenarios and goldens to see what is already proven, what is only structurally active, and what is only auxiliary evidence.
-5. Check whether the row's required substrate will also make later roadmap rows structurally active under the generator. If it does, record that upfront and keep those rows separate from the requested landing unless the new golden actually proves them.
+3. Verify that the row's feature label and activation prose still match the live mechanic contract. If the roadmap wording overstates the shipped seam, narrow the roadmap/generator wording first instead of forcing implementation to satisfy stale editorial text.
+4. Check `crates/worldwake-cli/src/bin/scenario_coverage.rs` when needed to verify the live structural activation rule.
+5. Check existing scenarios and goldens to see what is already proven, what is only structurally active, and what is only auxiliary evidence.
+6. Check whether the row's required substrate will also make later roadmap rows structurally active under the generator. If it does, record that upfront and keep those rows separate from the requested landing unless the new golden actually proves them.
 
 Do not collapse these categories:
 
@@ -158,6 +159,8 @@ Scenario design rules:
 
 For social or belief-transport rows, verify the information path explicitly. A scenario is invalid if the intended behavior only works through omniscient setup assumptions.
 When a survival contract legitimately needs an uneven bound across need families, encode that as scenario-authored per-need overrides instead of inventing a stronger global cap and then forcing the codebase to satisfy it.
+
+Before deeper proof/debugging, do a scenario-lint preflight on the authored file or its owning golden once. Treat scenario-spawn lint failures as part of the authoring loop, not as late proof surprises.
 
 ### 4. Write the golden around the mechanic, not the label
 
@@ -288,6 +291,7 @@ Then update `docs/scenario-roadmap.md` as needed. Common sections that need edit
 - `Landed Scenarios`
 - `Auxiliary and Non-Roadmap Scenarios`
 - `Maintenance Workflow` or detection appendix when the generator rule itself changed
+- any row-ordinal or range prose that changed because a planned row became landed (for example `Rows 8-17` becoming `Rows 9-17`)
 
 Update the roadmap to match the true result:
 
