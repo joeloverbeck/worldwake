@@ -3898,7 +3898,11 @@ fn emit_theft_candidates(
         if ctx.view.entity_kind(item) != Some(EntityKind::ItemLot) {
             continue;
         }
-        let Some(owner) = ctx.view.believed_owner_of(item) else {
+        let Some(owner) = ctx
+            .view
+            .believed_owner_of(item)
+            .or_else(|| ctx.view.seller_for_sale_lot(item))
+        else {
             continue;
         };
         if owner == ctx.agent || ctx.view.can_control(ctx.agent, item) {
@@ -11404,6 +11408,49 @@ mod tests {
                 }
             ),
             "agents without TheftDispositionProfile should not emit theft candidates"
+        );
+    }
+
+    #[test]
+    fn theft_candidate_uses_visible_sale_seller_without_explicit_owner_belief() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let item = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(item, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.effective_places.insert(item, place);
+        view.entities_at.insert(place, vec![agent, seller, item]);
+        view.entity_loads.insert(agent, LoadUnits(1));
+        view.carry_capacities.insert(agent, LoadUnits(5));
+        view.entity_loads.insert(item, LoadUnits(2));
+        view.theft_disposition_profiles.insert(
+            agent,
+            worldwake_core::TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(400),
+                witness_risk_penalty: pm(100),
+            },
+        );
+        view.lot_sellers.insert(item, seller);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(
+            contains_goal(&candidates, GoalKind::StealItem { target_item: item }),
+            "displayed sale lots with a visible seller should remain stealable without a separate explicit owner belief"
         );
     }
 
