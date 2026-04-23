@@ -1,0 +1,48 @@
+# Landing Implementation or Ticket Ownership (Steps 5-6)
+
+Try to make the landing pass. If genuine architectural blockers appear, create ticket ownership instead of faking green.
+
+## 5. Make the landing pass if the architecture allows it
+
+Treat this as an implementation workflow, not a design memo. If code changes are required to make the scenario and golden truthful, implement them.
+
+Common work includes:
+
+- production code changes to make the mechanic actually work under survival pressure
+- scenario authoring-surface changes when the live mechanic exists but cannot yet be authored truthfully through `worldwake-cli` scenario files (for example `crates/worldwake-cli/src/scenario/types.rs`, `crates/worldwake-cli/src/scenario/mod.rs`, `crates/worldwake-cli/src/bin/scenario_coverage.rs`, and the affected scenario/fixture tests)
+- scenario revisions when the authored substrate is insufficient
+- golden revisions when assertions are too weak or prove the wrong branch
+- CI workflow updates so the new scenario runs in the correct family workflow and stays out of regular lanes
+- helper extraction or trace usage needed to assert the correct boundary
+
+Run the narrowest truthful verification first, then expand.
+
+Always discover exact test selectors before writing final proof commands:
+
+```bash
+cargo test -p worldwake-ai -- --list
+```
+
+Then use the narrowest real commands that match the changed files and owned behavior.
+
+Keep Cargo commands sequential.
+For long-running roadmap scenarios, local execution is for targeted/manual proof only; the canonical automation path is the CI workflow in `.github/workflows/`.
+
+## 6. If a real architectural blocker appears, create ticket ownership instead of faking green
+
+If the truthful roadmap landing is blocked by a genuine missing substrate or architectural contradiction:
+
+1. Stop weakening the scenario or golden.
+2. Identify the exact contradiction and owning abstraction boundary.
+3. Create or update one or more tickets in `tickets/` from `tickets/_TEMPLATE.md`.
+4. Align those tickets with `docs/FOUNDATIONS.md`.
+5. Name the exact production symbols, live mismatch, proof surfaces, and commands.
+6. Keep the active roadmap row truthful: `Planned`, `Drafting`, or `In Progress`, not `Landed`.
+
+Ticket rules for this workflow:
+
+- the ticket should describe the production contradiction, not merely "golden fails"
+- classify the gap as missing substrate, broken information path, planner/execution failure, invalid setup math, or other real architectural cause
+- if the scenario/golden proved only a narrower honest slice, rewrite the row and ticket boundaries immediately rather than leaving the original broader claim in place
+
+Do not create filler tickets. The ticket must own a real architectural gap whose resolution would make the roadmap landing possible.

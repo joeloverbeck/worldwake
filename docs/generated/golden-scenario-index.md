@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 95
-- Contributing golden test files: 20
-- Associated tests: 117
+- Scenario blocks: 96
+- Contributing golden test files: 21
+- Associated tests: 119
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1049,6 +1049,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
+
+### Scenario 174: Survival Item Decay Lands Roadmap Row Ten
+
+- Source: `golden_survival_items_decay.rs:395`
+- Systems: AI, Needs, Trade, Transport, ItemDecay
+- GoalKinds: FreeCarryCapacity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
+- ActionDomains: Trade, Transport, Needs
+- Places: Market Square
+- Principles: 4, 6, 8, 10, 11, 14, 20, 21
+
+**Setup**: Run the authored survival items-decay scenario for 1440 ticks. `Merchant Sera` starts at `Market Square` with apples for sale, `Buyer Nila` starts hungry with coin but no food, and `Caretaker Oren` starts above his authored disposal threshold with one carried Waste lot plus an explicit scenario `commodity_decay` map. The local market branch and the maintenance branch therefore have to coexist in one survival run.
+
+**Proves**: the scenario satisfies the authored survival contract for the merchant and caretaker, the caretaker reaches a real `FreeCarryCapacity` selection and commits `drop_item`, the same tracked Waste lot becomes a ground item and is later archived by `ItemDecay`, and the buyer still completes a real apple trade followed by `eat` during the same run.
+
+**Cross-system chain**: carried Waste above disposal threshold -> selected `FreeCarryCapacity` goal -> committed `drop_item` -> tracked Waste lot on ground -> `ItemDecay` archives that exact lot -> local apple trade still commits under the same survival loop.
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 

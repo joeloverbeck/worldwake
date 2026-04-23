@@ -78,7 +78,7 @@ When the same technique or surface list appears at multiple workflow phases with
 
 ### Step 3: Topic Regrouping
 
-Identify instructions about the same topic that are scattered across multiple sections. A topic is fragmented when a reader must jump between multiple sections to get the full picture — typically 3+, but 2 sections suffice when one location is clearly the wrong home.
+Identify instructions about the same topic that are scattered across multiple sections. A topic is fragmented when a reader must jump between multiple sections to get the full picture — typically 3+, but 2 sections suffice when one location is clearly the wrong home. (Exclude purpose-split content: if the same topic appears at different workflow phases with distinct purposes — e.g., CI wiring discussed at authoring-time and refresh-time — treat that as intentional distribution, not fragmentation, and leave it alone.)
 
 For each fragmented topic:
 1. **Collect all instructions** related to that topic from all sections
@@ -138,9 +138,9 @@ For non-redundant instructions (those surviving Steps 2-5), tighten prose:
 
 ### Step 7: Idempotency Gate
 
-After Steps 2–6 have run their detection passes (but before the rewrite), sum the detected redundancy clusters (Step 2), restructuring patterns (Step 4), and decision-path scatter (Step 5).
+After Steps 2–6 have run their detection passes (but before the rewrite), sum the detected redundancy clusters (Step 2), regrouping moves (Step 3), restructuring patterns (Step 4), decision-path scatter (Step 5), and tightening candidates (Step 6).
 
-If all three are zero:
+If all five are zero:
 - Skip Steps 8–9 (do not rewrite the file).
 - Jump to a truncated Step 10 reporting "File appears already consolidated — no edits made" along with the baseline size from Step 1.
 - Exit.
@@ -154,6 +154,8 @@ Otherwise, proceed to Step 8.
 Before writing, briefly summarize planned changes in the conversation so the user sees what will change before the file is overwritten. The pre-write summary is an abbreviated version of the Step 10 categories (one line per category listing what will change), not the full diff summary.
 
 Write the consolidated SKILL.md in-place at `<skill-path>/SKILL.md`.
+
+Prefer the Edit tool for surgical consolidations (e.g., only sub-heading insertions, single-cluster redundancy removal). Use the Write tool only when the rewrite touches most of the file — e.g., 30%+ of lines changed — or when the edit count would exceed ~15 Edit calls. Both are equally valid outputs of this step.
 
 The rewritten file must:
 1. **Preserve frontmatter exactly** — do not modify name, description, arguments, or any YAML field
