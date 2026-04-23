@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [wash_priority]
+        scenario: [survival_drive_escalation]
 
     steps:
       - name: Checkout

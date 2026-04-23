@@ -12,19 +12,19 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 
 ## Feature x Scenario Matrix
 
-| Feature | cli-evaluation | drive-escalation-wash-priority | survival-baseline | survival-contested | survival-scattered |
+| Feature | cli-evaluation | survival-baseline | survival-contested | survival-drive-escalation | survival-scattered |
 |---|:-:|:-:|:-:|:-:|:-:|
 | Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Travel physiology | ⚠ | ✅ | ⚠ | ✅ | ✅ |
-| Drive escalation | — | — | — | — | — |
+| Travel physiology | ⚠ | ⚠ | ✅ | ✅ | ✅ |
+| Drive escalation | — | — | — | ✅ | — |
 | Need-driven exploration | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Activation-decay perception | ✅ | — | ✅ | ✅ | ✅ |
+| Activation-decay perception | ✅ | ✅ | ✅ | — | ✅ |
 | Place concealment | ✅ | — | — | — | — |
-| Tell / peer info transfer | ✅ | — | ⚠ | ⚠ | ⚠ |
+| Tell / peer info transfer | ✅ | ⚠ | ⚠ | — | ⚠ |
 | Ask-about-person | ✅ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Consult-record | ✅ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Obligation satiation | ✅ | — | — | — | — |
@@ -49,7 +49,7 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Combat | ✅ | — | — | — | — |
 | Escort | ✅ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Bandit camps | — | — | — | — | — |
-| Report / witness | ⚠ | — | ⚠ | ⚠ | ⚠ |
+| Report / witness | ⚠ | ⚠ | ⚠ | — | ⚠ |
 | Search | ✅ | — | — | — | — |
 | Stock / transport | ✅ | — | — | — | — |
 
@@ -114,64 +114,6 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - facilities: 9
 - resource sources: 2
 - known_recipes union: Bake Bread, Harvest Apples, Harvest Grain, Harvest Water
-
-### scenarios/drive-escalation-wash-priority.ron
-
-- Seed: 116006
-- Agents: 2 Ai
-- Places: 3
-- Survival contract: absent
-
-**Active features**
-- Basic needs (Eat)
-- Basic needs (Drink)
-- Basic needs (Sleep)
-- Basic needs (Relieve)
-- Basic needs (Wash)
-- Travel physiology
-- Need-driven exploration
-
-**Present-but-inactive features**
-- Ask-about-person
-- Consult-record
-- Production (multi-input recipes)
-- Bounty posting
-- Notice posting
-- Escort
-
-**Absent features**
-- Drive escalation
-- Activation-decay perception
-- Place concealment
-- Tell / peer info transfer
-- Obligation satiation
-- Diversification / curiosity
-- Experience preferences
-- Merchant selling
-- Trade negotiation
-- Commodity valuation
-- Substitute preferences
-- Item decay
-- Disposal
-- Facility-queue contention
-- Offices / succession / force-claim
-- Theft
-- Justice / accusation
-- Violation investigation
-- Patrol
-- Pursuit
-- Combat
-- Bandit camps
-- Report / witness
-- Search
-- Stock / transport
-
-**World features**
-- commodity_decay: disabled
-- visibility_profile places: none
-- facilities: 3
-- resource sources: 2
-- known_recipes union: Harvest Apples, Harvest Water
 
 ### scenarios/survival-baseline.ron
 
@@ -288,6 +230,64 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - facilities: 5
 - resource sources: 4
 - known_recipes union: Harvest Apples, Harvest Grain, Harvest Water
+
+### scenarios/survival-drive-escalation.ron
+
+- Seed: 116006
+- Agents: 2 Ai
+- Places: 3
+- Survival contract: max_critical 250, elevated_idle 60, families [Eat, Drink, Sleep, Relieve, Wash]
+
+**Active features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Travel physiology
+- Drive escalation
+- Need-driven exploration
+
+**Present-but-inactive features**
+- Ask-about-person
+- Consult-record
+- Production (multi-input recipes)
+- Bounty posting
+- Notice posting
+- Escort
+
+**Absent features**
+- Activation-decay perception
+- Place concealment
+- Tell / peer info transfer
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Offices / succession / force-claim
+- Theft
+- Justice / accusation
+- Violation investigation
+- Patrol
+- Pursuit
+- Combat
+- Bandit camps
+- Report / witness
+- Search
+- Stock / transport
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- facilities: 3
+- resource sources: 2
+- known_recipes union: Harvest Apples, Harvest Water
 
 ### scenarios/survival-scattered.ron
 

@@ -62,7 +62,18 @@ Examples:
 - `survival-tell` -> `scenarios/survival-tell.ron` and `golden_survival_tell.rs`
 
 Before assuming a new file is required, check whether an existing auxiliary or partial scenario/golden already owns part of the contract.
+If the row is currently owned only by an auxiliary scenario/golden pair, prefer promoting that owner into the roadmap naming shape instead of cloning it into parallel files.
 Also check whether the scenario belongs in an existing family matrix workflow or needs a new family workflow. Follow the existing repo convention shown by `golden-survival.yml` and `golden-drive-escalation.yml`: one matrix workflow per long-running scenario family.
+
+Auxiliary-promotion pattern:
+
+1. Resolve the existing auxiliary owner.
+2. Decide whether truthful promotion is possible in-place.
+3. Prefer rename/promote over duplicate-copy when the auxiliary file already owns the mechanic.
+4. Add the missing authored substrate that makes the row structurally and behaviorally truthful:
+   - `survival_health_contract` when the row is a survival-roadmap landing
+   - any non-default authored profile or world-state gate that `scenario_coverage` requires
+5. Refresh roadmap/generated docs and remove the old auxiliary caveat in the same pass.
 
 ## Workflow
 
@@ -136,11 +147,13 @@ Scenario design rules:
 
 - Copy the closest landed scenario only as a starting point; do not cargo-cult its envelope unchanged.
 - Prefer minimal authored setup that still forces the mechanic under test to matter.
+- Treat `survival_health_contract` as a truth surface, not a wish list. If focused proof shows the authored envelope is too strict or overclaims the live behavior, narrow the authored contract before forcing code or tests to fit it.
 - Explicitly isolate rival lawful branches only when they would obscure the owned contract.
 - If a competing branch is part of the architecture contract, keep it and prove the branching behavior instead.
 - For cumulative mechanics, name the concrete threshold/cadence/capacity math in the scenario-owning ticket or notes before trusting the setup.
 
 For social or belief-transport rows, verify the information path explicitly. A scenario is invalid if the intended behavior only works through omniscient setup assumptions.
+When a survival contract legitimately needs an uneven bound across need families, encode that as scenario-authored per-need overrides instead of inventing a stronger global cap and then forcing the codebase to satisfy it.
 
 ### 4. Write the golden around the mechanic, not the label
 
@@ -167,6 +180,7 @@ Assertion rules:
 - Use decision traces for candidate-generation, suppression, ranking, or omission claims.
 - Use event-log assertions only when record/public visibility is itself the contract.
 - Read survival-health bounds from the scenario file rather than restating local constants.
+- Do not silently strengthen a row-scoped invariant into a per-agent symmetry claim unless the roadmap row explicitly owns that stronger promise. One agent recurring through the mechanic may be sufficient when the row is about scenario-level coexistence rather than actor symmetry.
 
 For every scenario-backed golden, explicitly identify:
 
@@ -248,6 +262,7 @@ python3 scripts/golden_inventory.py --write --check-docs
 ```
 
 If these fail because of local annotation drift or generated-doc drift you just introduced, fix that and rerun. Do not leave stale generated artifacts behind.
+If these fail because of a pre-existing unrelated blocker elsewhere in the repo, isolate the blocker, apply the smallest truthful fix needed to complete the required refresh, and report that side-fix explicitly instead of stopping with stale generated docs.
 
 Then update `docs/scenario-roadmap.md` as needed. Common sections that need edits:
 
@@ -271,6 +286,14 @@ Also make the CI ownership truthful in the same pass:
 - create the new family workflow when no correct family exists yet
 - keep the regular `ci.yml` lanes relying on ignored-by-default behavior rather than inlining these long-running tests there
 
+Common rename/promotion fallout to expect during refresh:
+
+- `docs/generated/scenario-coverage.md`
+- `docs/generated/golden-scenario-index.md`
+- `docs/generated/golden-e2e-inventory.md`
+- `docs/generated/golden-coverage-matrix.md`
+- `docs/generated/golden-scenario-details/*`, including deletion of the old generated detail page when the scenario identifier changed
+
 ## Guardrails
 
 - Do not claim a roadmap landing based only on structural activation.
@@ -278,6 +301,7 @@ Also make the CI ownership truthful in the same pass:
 - Do not prove a mechanic with action-name presence when the real contract is a world consequence or belief change.
 - Do not leave a new roadmap scenario golden only as a regular test target without the matching `.github/workflows` family wiring.
 - Do not hide a blocker by broadening tolerances, weakening assertions, or inventing helper-only setup.
+- Do not keep an overclaimed `survival_health_contract` or roadmap row just because it was the first draft; narrow the authored contract first when focused proof falsifies it.
 - Do not update `docs/scenario-roadmap.md` as if the row landed when the golden still fails.
 - Do not leave generated docs stale after changing scenario or golden metadata.
 - Do not trust old scenario-roadmap prose over live generator rules and live code when they conflict; rewrite the roadmap first.
@@ -295,6 +319,7 @@ Before finishing, verify which of these are true:
 - deterministic replay coverage added or consciously justified
 - generated scenario coverage refreshed
 - golden inventory/docs refreshed
+- any unrelated generated-doc blocker encountered during required refresh was either minimally fixed or explicitly reported
 - roadmap sections updated to match the live outcome
 - blocker tickets created or updated when architecture prevented full landing
 - final report states whether the row is now `Landed`, still `Drafting`/`In Progress`, or blocked behind named ticket(s)

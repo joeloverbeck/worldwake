@@ -1439,7 +1439,7 @@ fn dead_seller_invalidates_listing() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 86: Demand Memory Raises Sell Ranking
+// Scenario 88: Demand Memory Raises Sell Ranking
 // Systems: Trade, AI
 // GoalKinds: SellCommodity
 // Principles: P1, P3, P20

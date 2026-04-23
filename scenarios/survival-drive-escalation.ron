@@ -1,12 +1,11 @@
-// Drive-escalation wash-priority scenario for Worldwake.
+// Survival drive-escalation scenario for Worldwake.
 //
-// Purpose: prove that drive escalation breaks the chronic "stay at the food
-// hub, relieve in the wilderness, and wash too rarely" loop without adding any
-// special-case production logic. Two agents share one orchard and one
-// wash-capable water source. The wash facility and the water source are
-// co-located at Spring Basin, where both agents start; the orchard is two hops
-// away through Central Crossing so washing always competes with staying near
-// food once they leave the basin.
+// Purpose: land the roadmap's drive-escalation row as a real 1440-tick
+// survival scenario. Two agents share one orchard and one wash-capable water
+// source. The wash facility and the water source are co-located at Spring
+// Basin, where both agents start; the orchard is two hops away through Central
+// Crossing so washing always competes with staying near food once they leave
+// the basin.
 //
 // Lawful competing affordances intentionally removed from setup:
 // - no combat, trade, or social branches
@@ -20,6 +19,15 @@
 // exposure raises Wash high enough to win.
 (
     seed: 116006,
+    survival_health_contract: (
+        max_authored_critical_run_ticks: 250,
+        max_idle_window_ticks_with_elevated_need: 60,
+        elevated_need_floor: 300,
+        required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
+        critical_run_limits: (
+            dirtiness: 1300,
+        ),
+    ),
     places: [
         (name: "Central Crossing", tags: [Crossroads, Road]),
         (name: "Spring Basin", tags: [Crossroads]),
@@ -37,7 +45,7 @@
             known_recipes: ["Harvest Apples", "Harvest Water"],
             needs: (
                 hunger: 560,
-                thirst: 60,
+                thirst: 220,
                 fatigue: 20,
                 bladder: 260,
                 dirtiness: 760,
@@ -68,9 +76,23 @@
                 pain: (low: 150, medium: 350, high: 600, critical: 850),
                 danger: (low: 100, medium: 300, high: 550, critical: 800),
             ),
+            drive_escalation_profile: (
+                per_need: {
+                    Dirtiness: (
+                        start_after_ticks: 20,
+                        growth_per_tick: 40,
+                        max_multiplier: 3000,
+                    ),
+                },
+                default_per_need: (
+                    start_after_ticks: 100,
+                    growth_per_tick: 10,
+                    max_multiplier: 3000,
+                ),
+            ),
             metabolism_profile: (
                 hunger_rate: 2,
-                thirst_rate: 1,
+                thirst_rate: 2,
                 fatigue_rate: 1,
                 bladder_rate: 5,
                 dirtiness_rate: 1,
@@ -103,7 +125,7 @@
             known_recipes: ["Harvest Apples", "Harvest Water"],
             needs: (
                 hunger: 560,
-                thirst: 60,
+                thirst: 220,
                 fatigue: 20,
                 bladder: 260,
                 dirtiness: 760,
@@ -134,9 +156,23 @@
                 pain: (low: 150, medium: 350, high: 600, critical: 850),
                 danger: (low: 100, medium: 300, high: 550, critical: 800),
             ),
+            drive_escalation_profile: (
+                per_need: {
+                    Dirtiness: (
+                        start_after_ticks: 20,
+                        growth_per_tick: 40,
+                        max_multiplier: 3000,
+                    ),
+                },
+                default_per_need: (
+                    start_after_ticks: 100,
+                    growth_per_tick: 10,
+                    max_multiplier: 3000,
+                ),
+            ),
             metabolism_profile: (
                 hunger_rate: 2,
-                thirst_rate: 1,
+                thirst_rate: 2,
                 fatigue_rate: 1,
                 bladder_rate: 5,
                 dirtiness_rate: 1,
