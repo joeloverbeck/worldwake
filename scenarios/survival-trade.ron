@@ -1,8 +1,10 @@
 // Survival trade scenario for Worldwake.
 //
-// Purpose: keep the 1440-tick survival envelope alive while making the market's
-// bread economy the dominant local food branch, even though a remote orchard
-// also exists in the authored world.
+// Purpose: keep the 1440-tick survival envelope alive while making substitute-
+// driven market trade the dominant local food branch. The market carries only
+// apples while a remote orchard still exists in the authored world, so the
+// proved food purchase path is an explicit substitute trade rather than a
+// direct bread-market branch.
 (
     seed: 609009,
     survival_health_contract: (
@@ -49,7 +51,7 @@
                 care_weight: 0,
             ),
             merchandise_profile: (
-                sale_kinds: [Bread],
+                sale_kinds: [Apple],
                 home_facility: "Market Stall",
             ),
             trade_disposition: (
@@ -150,14 +152,14 @@
                 indirect_value_decay_per_step: 250,
             ),
             substitute_preferences: (
-                preferences: { Food: [Bread, Apple, Grain] },
+                preferences: { Food: [Apple, Grain] },
             ),
         ),
         (
             name: "Buyer Nila",
             location: "Market Square",
             control: Ai,
-            known_recipes: ["Harvest Water", "Harvest Apples"],
+            known_recipes: ["Harvest Water"],
             needs: (
                 hunger: 720,
                 thirst: 280,
@@ -280,13 +282,13 @@
                 indirect_value_decay_per_step: 250,
             ),
             substitute_preferences: (
-                preferences: { Food: [Bread, Apple, Grain] },
+                preferences: { Food: [Apple, Grain] },
             ),
         ),
     ],
     items: [
-        (commodity: Bread, quantity: 60, location: "Merchant Sera"),
-        (commodity: Apple, quantity: 36, location: "Merchant Sera"),
+        (commodity: Bread, quantity: 40, location: "Merchant Sera"),
+        (commodity: Apple, quantity: 60, location: "Merchant Sera"),
         (commodity: Coin, quantity: 90, location: "Buyer Nila"),
     ],
     facilities: [

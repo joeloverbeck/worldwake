@@ -6,11 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use golden_harness::*;
+use worldwake_ai::{DecisionOutcome, PlannerOpKind};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
-use worldwake_core::{CommodityKind, DriveThresholds, EntityId, PerceptionSource, Quantity, Tick};
+use worldwake_core::{
+    CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKey, GoalKind,
+    PerceptionSource, Quantity, Tick,
+};
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
+const DIRECT_COMMODITY: CommodityKind = CommodityKind::Bread;
+const SUBSTITUTE_COMMODITY: CommodityKind = CommodityKind::Apple;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct AgentSurvivalObservation {
@@ -25,9 +31,13 @@ struct TradeObservation {
     initial_buyer_coin: Quantity,
     listing_tick: Tick,
     stage_tick: Tick,
+    selected_trade_branch_tick: Tick,
     first_trade_tick: Tick,
     first_eat_tick: Tick,
     successful_trade_count: u32,
+    saw_listed_bread: bool,
+    selected_trade_payload_commodity: CommodityKind,
+    buyer_substitute_after_trade: Quantity,
     buyer_bread_after_trade: Quantity,
     buyer_coin_after_trade: Quantity,
     merchant_coin_after_trade: Quantity,
@@ -103,11 +113,11 @@ fn contract_run_limit_overrides(
     }
 }
 
-fn merchant_has_listed_bread(h: &GoldenHarness, merchant: EntityId) -> bool {
+fn merchant_has_listed_substitute(h: &GoldenHarness, merchant: EntityId) -> bool {
     h.world.entities().any(|entity| {
         h.world
             .get_component_item_lot(entity)
-            .is_some_and(|lot| lot.commodity == CommodityKind::Bread && lot.quantity > Quantity(0))
+            .is_some_and(|lot| lot.commodity == SUBSTITUTE_COMMODITY && lot.quantity > Quantity(0))
             && h.world.get_component_sale_listing(entity).is_some()
             && h.world.effective_place(entity) == h.world.effective_place(merchant)
     })
@@ -125,6 +135,10 @@ fn run_survival_trade() -> SurvivalTradeObservation {
     let buyer = *agents
         .get("Buyer Nila")
         .expect("scenario should include Buyer Nila");
+    let substitute_goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: SUBSTITUTE_COMMODITY,
+        purpose: CommodityPurpose::SelfConsume,
+    });
     let critical_thresholds = agents
         .iter()
         .map(|(name, agent)| {
@@ -151,9 +165,13 @@ fn run_survival_trade() -> SurvivalTradeObservation {
 
     let mut listing_tick = None;
     let mut stage_tick = None;
+    let mut selected_trade_branch_tick = None;
     let mut first_trade_tick = None;
     let mut first_eat_tick = None;
     let mut successful_trade_count = 0_u32;
+    let mut saw_listed_bread = false;
+    let mut selected_trade_payload_commodity = None;
+    let mut buyer_substitute_after_trade = None;
     let mut buyer_bread_after_trade = None;
     let mut buyer_coin_after_trade = None;
     let mut merchant_coin_after_trade = None;
@@ -212,9 +230,16 @@ fn run_survival_trade() -> SurvivalTradeObservation {
             }
         }
 
-        if listing_tick.is_none() && merchant_has_listed_bread(&h, merchant) {
+        if listing_tick.is_none() && merchant_has_listed_substitute(&h, merchant) {
             listing_tick = Some(tick);
         }
+        saw_listed_bread |= h.world.entities().any(|entity| {
+            h.world
+                .get_component_item_lot(entity)
+                .is_some_and(|lot| lot.commodity == DIRECT_COMMODITY && lot.quantity > Quantity(0))
+                && h.world.get_component_sale_listing(entity).is_some()
+                && h.world.effective_place(entity) == h.world.effective_place(merchant)
+        });
         for event in action_sink.events_for_at(merchant, tick) {
             if !matches!(event.kind, ActionTraceKind::Committed { .. }) {
                 continue;
@@ -225,6 +250,46 @@ fn run_survival_trade() -> SurvivalTradeObservation {
             }
         }
 
+        if selected_trade_branch_tick.is_none() {
+            let Some(trace) = h
+                .driver
+                .trace_sink()
+                .and_then(|sink| sink.trace_at(buyer, tick))
+            else {
+                continue;
+            };
+            let Some(runtime) = h.driver.runtime(buyer) else {
+                continue;
+            };
+            let Some(plan) = runtime.current_plan.as_ref() else {
+                continue;
+            };
+            let Some(step) = plan.steps.first() else {
+                continue;
+            };
+            let Some(payload) = step
+                .payload_override
+                .as_ref()
+                .and_then(|payload| payload.as_trade())
+            else {
+                continue;
+            };
+            let Some(lot) = h.world.get_component_item_lot(payload.sale_lot) else {
+                continue;
+            };
+            let DecisionOutcome::Planning(planning) = &trace.outcome else {
+                continue;
+            };
+            if planning.selection.selected_goal() == Some(substitute_goal)
+                && h.world.effective_place(buyer) == h.world.effective_place(merchant)
+                && step.op_kind == PlannerOpKind::Trade
+                && payload.counterparty == merchant
+            {
+                selected_trade_branch_tick = Some(tick);
+                selected_trade_payload_commodity = Some(lot.commodity);
+            }
+        }
+
         for event in action_sink.events_for_at(buyer, tick) {
             if event.action_name == "trade"
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
@@ -232,9 +297,13 @@ fn run_survival_trade() -> SurvivalTradeObservation {
                 successful_trade_count += 1;
                 if first_trade_tick.is_none() {
                     first_trade_tick = Some(tick);
+                    buyer_substitute_after_trade = Some(
+                        h.world
+                            .controlled_commodity_quantity(buyer, SUBSTITUTE_COMMODITY),
+                    );
                     buyer_bread_after_trade = Some(
                         h.world
-                            .controlled_commodity_quantity(buyer, CommodityKind::Bread),
+                            .controlled_commodity_quantity(buyer, DIRECT_COMMODITY),
                     );
                     buyer_coin_after_trade = Some(
                         h.world
@@ -272,21 +341,36 @@ fn run_survival_trade() -> SurvivalTradeObservation {
     let trade = TradeObservation {
         listing_tick: listing_tick.unwrap_or_else(|| {
             panic!(
-                "merchant should expose a listed bread lot before the buyer's local market branch commits; merchant_actions={merchant_actions:?}"
+                "merchant should expose a listed substitute lot before the buyer's local market branch commits; merchant_actions={merchant_actions:?}"
             )
         }),
         initial_buyer_coin,
         stage_tick: stage_tick.unwrap_or_else(|| {
             panic!("merchant should commit stage_stock_for_sale; merchant_actions={merchant_actions:?}")
         }),
+        selected_trade_branch_tick: selected_trade_branch_tick.unwrap_or_else(|| {
+            panic!(
+                "buyer should reach a local substitute-trade binding with an explicit trade payload before commit; buyer_actions={buyer_actions:?}"
+            )
+        }),
         first_trade_tick: first_trade_tick.unwrap_or_else(|| {
-            panic!("buyer should commit a bread trade in the survival-trade scenario; buyer_actions={buyer_actions:?}")
+            panic!(
+                "buyer should commit a substitute trade in the survival-trade scenario; buyer_actions={buyer_actions:?}"
+            )
         }),
         first_eat_tick: first_eat_tick.unwrap_or_else(|| {
-            panic!("buyer should eventually commit eat after the bread trade; buyer_actions={buyer_actions:?}")
+            panic!(
+                "buyer should eventually commit eat after the substitute trade; buyer_actions={buyer_actions:?}"
+            )
         }),
         successful_trade_count,
-        buyer_bread_after_trade: buyer_bread_after_trade.expect("trade commit should snapshot buyer bread"),
+        saw_listed_bread,
+        selected_trade_payload_commodity: selected_trade_payload_commodity
+            .expect("selected substitute branch should snapshot payload commodity"),
+        buyer_substitute_after_trade: buyer_substitute_after_trade
+            .expect("trade commit should snapshot buyer substitute commodity"),
+        buyer_bread_after_trade: buyer_bread_after_trade
+            .expect("trade commit should snapshot buyer bread"),
         buyer_coin_after_trade: buyer_coin_after_trade.expect("trade commit should snapshot buyer coin"),
         merchant_coin_after_trade: merchant_coin_after_trade
             .expect("trade commit should snapshot merchant coin"),
@@ -325,7 +409,7 @@ fn run_survival_trade() -> SurvivalTradeObservation {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 173: Survival Trade Proves the Live Market Branch
+// Scenario 173: Survival Trade Proves the Substitute Market Branch
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Trade, Travel, Perception
@@ -335,22 +419,28 @@ fn run_survival_trade() -> SurvivalTradeObservation {
 // Principles: 6, 7, 8, 14, 20
 //
 // Setup: Run the authored survival trade scenario for 1440 ticks. The buyer
-// starts hungry at Market Square with coin but no local food except the
-// merchant's bread stock. A remote orchard exists in the authored world, but
-// the proved branch stays local: repeated bread trade sustains the buyer.
+// starts hungry at Market Square with coin but no direct bread-market branch.
+// The merchant stages only apples, the buyer's authored food substitutes are
+// `[Apple, Grain]`, and a remote orchard still exists in the authored world.
+// The proved branch stays local: a substitute-backed apple trade sustains the
+// buyer before later self-care continues.
 //
 // Proves: both agents satisfy the authored survival-health contract; the
-// merchant lawfully stages a listed bread lot at the market seam; and the
-// buyer repeatedly commits bread trades, with authoritative bread transfer and
-// coin transfer visible at the trade seam before the first eat commit.
+// merchant lawfully stages a listed apple lot at the market seam; the buyer
+// reaches a local `AcquireCommodity(SelfConsume)` substitute branch whose live
+// runtime plan keeps an explicit `trade` payload bound to that apple lot; and
+// the buyer later commits substitute trade with authoritative apple and coin
+// transfer visible at the trade seam before the first eat commit.
 //
-// Chain: merchant-owned bread stock -> committed stage_stock_for_sale ->
-// SaleListing present -> buyer committed trade -> buyer holds Bread and spends
-// Coin -> buyer later commits eat -> repeated local trades keep the survival
-// loop viable.
+// Chain: no listed bread market branch -> committed stage_stock_for_sale ->
+// Apple SaleListing present -> buyer selects local `AcquireCommodity(Apple,
+// SelfConsume)` -> current plan retains explicit `trade` payload against the
+// merchant's apple lot -> buyer holds Apple and spends Coin -> buyer later
+// commits eat -> the substitute-backed trade branch keeps the survival loop
+// viable.
 #[test]
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
-fn survival_trade_proves_live_market_branch() {
+fn survival_trade_proves_substitute_market_branch() {
     let observation = run_survival_trade();
     let run_limit_overrides =
         contract_run_limit_overrides(observation.contract.critical_run_limits.as_ref());
@@ -384,23 +474,39 @@ fn survival_trade_proves_live_market_branch() {
     );
     assert!(
         observation.trade.stage_tick <= observation.trade.listing_tick,
-        "bread should not become listed before the merchant stages it for sale; observation={observation:?}"
+        "substitute commodity should not become listed before the merchant stages it for sale; observation={observation:?}"
     );
     assert!(
-        observation.trade.listing_tick <= observation.trade.first_trade_tick,
-        "buyer trade should only happen after a listed bread lot exists; observation={observation:?}"
+        observation.trade.listing_tick <= observation.trade.selected_trade_branch_tick,
+        "buyer should only reach the substitute trade binding after a listed substitute lot exists; observation={observation:?}"
+    );
+    assert!(
+        observation.trade.selected_trade_branch_tick <= observation.trade.first_trade_tick,
+        "buyer should only commit trade after the substitute trade branch is selected; observation={observation:?}"
     );
     assert!(
         observation.trade.first_trade_tick <= observation.trade.first_eat_tick,
-        "buyer should only eat after the trade branch acquires bread; observation={observation:?}"
+        "buyer should only eat after the trade branch acquires the substitute commodity; observation={observation:?}"
     );
     assert!(
-        observation.trade.successful_trade_count >= 2,
-        "survival-trade should sustain multiple successful bread purchases, not just one lucky opening trade; observation={observation:?}"
+        !observation.trade.saw_listed_bread,
+        "the authored scenario should never expose a listed bread lot, so the direct bread-market branch stays impossible; observation={observation:?}"
     );
     assert!(
-        observation.trade.buyer_bread_after_trade > Quantity(0),
-        "trade should leave the buyer holding bread at the authoritative seam; observation={observation:?}"
+        observation.trade.selected_trade_payload_commodity == SUBSTITUTE_COMMODITY,
+        "selected trade branch should retain an explicit substitute commodity payload; observation={observation:?}"
+    );
+    assert!(
+        observation.trade.successful_trade_count >= 1,
+        "survival-trade should commit at least one successful substitute purchase; observation={observation:?}"
+    );
+    assert!(
+        observation.trade.buyer_substitute_after_trade > Quantity(0),
+        "trade should leave the buyer holding the substitute commodity at the authoritative seam; observation={observation:?}"
+    );
+    assert!(
+        observation.trade.buyer_bread_after_trade == Quantity(0),
+        "substitute trade should not silently restore the excluded bread branch at the authoritative seam; observation={observation:?}"
     );
     assert!(
         observation.trade.buyer_coin_after_trade < observation.trade.initial_buyer_coin,

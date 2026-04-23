@@ -205,7 +205,7 @@ Do not hand-edit it.
 
 ### `golden_survival_trade.rs`
 
-- `survival_trade_proves_live_market_branch`
+- `survival_trade_proves_substitute_market_branch`
 - `survival_trade_replays_deterministically`
 
 ### `golden_travel_physiology.rs`

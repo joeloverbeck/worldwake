@@ -1,6 +1,6 @@
 # SURVTRADE-003: Isolate the Substitute Trade Branch in the Row-9 Roadmap Scenario and Golden
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario/golden proof surface for substitute-driven trade
@@ -47,9 +47,13 @@ Only promote row 9 when the substitute branch is behaviorally proved by the auth
 
 ## Files to Touch
 
-- `scenarios/survival-trade.ron` (modify) or a truthful replacement scenario if reassessment proves the current file should stay bread-market owned
-- `crates/worldwake-ai/tests/golden_survival_trade.rs` (modify) or the truthful owning golden replacement
+- `scenarios/survival-trade.ron` (modify)
+- `crates/worldwake-ai/tests/golden_survival_trade.rs` (modify)
 - `docs/scenario-roadmap.md` (modify)
+- `docs/generated/golden-e2e-inventory.md` (regenerated)
+- `docs/generated/golden-scenario-index.md` (regenerated)
+- `docs/generated/golden-scenario-details/survival-trade.md` (regenerated)
+- `tickets/SURVTRADE-003-substitute-roadmap-golden-isolation.md` (closeout update)
 
 ## Out of Scope
 
@@ -79,6 +83,25 @@ Only promote row 9 when the substitute branch is behaviorally proved by the auth
 
 ### Commands
 
-1. `cargo test -p worldwake-ai --test golden_survival_trade -- --ignored --exact <truthful substitute scenario test>`
-2. `cargo test -p worldwake-ai <focused supporting selector if the scenario needs a new helper-level proof>`
+1. `cargo test -p worldwake-ai --test golden_survival_trade -- --ignored --exact survival_trade_proves_substitute_market_branch`
+2. `cargo test -p worldwake-ai --test golden_survival_trade -- --ignored`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-23.
+
+- Reauthored `scenarios/survival-trade.ron` so the row-9 market path is a truthful substitute branch: Merchant Sera now sells Apple rather than Bread, Buyer Nila's food substitutes are ordered `[Apple, Grain]`, and Buyer Nila no longer has a direct `Harvest Apples` fallback.
+- Reworked `crates/worldwake-ai/tests/golden_survival_trade.rs` from a bread-market proof into a substitute-market proof. The golden now asserts the local `AcquireCommodity(SelfConsume)` substitute branch, verifies the live runtime plan retains an explicit `trade` payload bound to the apple lot, and proves the first committed trade/eat chain through authoritative Apple/Coin transfer while preserving the 1440-tick survival-health contract.
+- Updated `docs/scenario-roadmap.md` and regenerated golden inventory/docs so row 9 is now truthfully marked `Landed` for merchant selling, trade negotiation, commodity valuation, substitute preferences, and stock / transport.
+
+## Deviations
+
+- The first authored rewrite that removed Bread entirely from Merchant Sera made the scenario false by starving the merchant. The landed scenario keeps private Bread stock for Merchant Sera's own survival while still excluding any listed Bread market branch; the golden now proves the honest boundary `no listed bread lot`, not `no bread anywhere`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_survival_trade -- --ignored --exact survival_trade_proves_substitute_market_branch`
+- Passed `cargo test -p worldwake-ai --test golden_survival_trade -- --ignored`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

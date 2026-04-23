@@ -1185,9 +1185,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: same-place orchard observation by scout -> return to camp under
 
-### Scenario 173: Survival Trade Proves the Live Market Branch
+### Scenario 173: Survival Trade Proves the Substitute Market Branch
 
-- Source: `golden_survival_trade.rs:328`
+- Source: `golden_survival_trade.rs:412`
 - Systems: AI, Needs, Trade, Travel, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Travel, Needs
@@ -1198,7 +1198,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Proves**: both agents satisfy the authored survival-health contract; the
 
-**Cross-system chain**: merchant-owned bread stock -> committed stage_stock_for_sale ->
+**Cross-system chain**: no listed bread market branch -> committed stage_stock_for_sale ->
 
 ### Scenario 58: Travel Need Escalation
 
