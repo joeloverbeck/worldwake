@@ -1920,13 +1920,15 @@ pub(super) fn apply_source_reliability_failure_observations(
         .cloned()
         .unwrap_or_default();
     for source_key in failed_sources {
-        let record = reliability.sources.entry(*source_key).or_insert(
-            worldwake_core::ReliabilityRecord {
-                successful_acquisitions: 0,
-                failed_attempts: 0,
-                last_attempt_tick: tick,
-            },
-        );
+        let record =
+            reliability
+                .sources
+                .entry(*source_key)
+                .or_insert(worldwake_core::ReliabilityRecord {
+                    successful_acquisitions: 0,
+                    failed_attempts: 0,
+                    last_attempt_tick: tick,
+                });
         record.failed_attempts = record.failed_attempts.saturating_add(1);
         record.last_attempt_tick = tick;
     }

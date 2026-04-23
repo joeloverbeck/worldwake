@@ -9,8 +9,8 @@ use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    CommodityPurpose, CommodityKind, DriveThresholds, EntityId, ExplorationMotivation,
-    GoalKind, OpportunityAnchor, PerceptionSource, SourceKey, Tick, WorkstationTag,
+    CommodityKind, CommodityPurpose, DriveThresholds, EntityId, ExplorationMotivation, GoalKind,
+    OpportunityAnchor, PerceptionSource, SourceKey, Tick, WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -267,14 +267,13 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
                                     }
                                     && ranked.opportunity.anchor
                                         == OpportunityAnchor::Place(familiar_orchard_place)
-                                    && ranked
-                                        .source_reliability_discount
-                                        .as_ref()
-                                        .is_some_and(|discount| {
+                                    && ranked.source_reliability_discount.as_ref().is_some_and(
+                                        |discount| {
                                             discount.source_entity == familiar_orchard
                                                 && discount.commodity == CommodityKind::Apple
                                                 && discount.failure_ratio_permille > 0
-                                        })
+                                        },
+                                    )
                             })
                     }
                     _ => false,

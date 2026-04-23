@@ -477,18 +477,15 @@ pub(crate) fn apply_pending_source_reliability_failures(
             continue;
         }
 
-        let pre_source_motive = entry
-            .source_reliability_discount
-            .as_ref()
-            .map_or_else(
-                || {
-                    entry
-                        .competition_discount
-                        .as_ref()
-                        .map_or(entry.motive_score, |discount| discount.pre_discount_motive)
-                },
-                |discount| discount.pre_discount_motive,
-            );
+        let pre_source_motive = entry.source_reliability_discount.as_ref().map_or_else(
+            || {
+                entry
+                    .competition_discount
+                    .as_ref()
+                    .map_or(entry.motive_score, |discount| discount.pre_discount_motive)
+            },
+            |discount| discount.pre_discount_motive,
+        );
         let source_reliability_discount = apply_source_reliability_discount_with_pending_failures(
             &entry.offer,
             &context,
@@ -5319,7 +5316,10 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].offer.anchor, OpportunityAnchor::Place(familiar_place));
+        assert_eq!(
+            ranked[0].offer.anchor,
+            OpportunityAnchor::Place(familiar_place)
+        );
         assert_eq!(ranked[0].source_reliability_discount, None);
 
         super::apply_pending_source_reliability_failures(
@@ -5337,7 +5337,10 @@ mod tests {
             }]),
         );
 
-        assert_eq!(ranked[0].offer.anchor, OpportunityAnchor::Place(novel_place));
+        assert_eq!(
+            ranked[0].offer.anchor,
+            OpportunityAnchor::Place(novel_place)
+        );
         assert_eq!(
             ranked[1].source_reliability_discount,
             Some(SourceReliabilityDiscount {

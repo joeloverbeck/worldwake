@@ -22,8 +22,8 @@ use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     DirtySet, ExhaustionEntry, ExhaustionRetryState, KillCondition, OpportunityKey, PlanValue,
     PlannedPlan, PlannedStep, PlannerOpSemantics, RevivalTrigger, authoritative_target,
-    build_planning_snapshot_with_blocked_facility_uses, ranking::OrderedRanked,
-    revalidate_next_step, select_best_plan,
+    build_planning_snapshot_with_blocked_facility_uses, planner_ops::committed_source_for_offer,
+    ranking::OrderedRanked, revalidate_next_step, select_best_plan,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -339,27 +339,26 @@ pub(super) fn determine_selected_plan_source(
 }
 
 fn same_goal_search_failed_source_keys(
-    ranked_candidates: &OrderedRanked<'_>,
-    current_opportunity: Option<OpportunityKey>,
+    current_plan: Option<&PlannedPlan>,
     selected_plan: &PlannedPlan,
     selection_plans: &[SelectionCandidatePlan],
     current_place: Option<EntityId>,
 ) -> BTreeSet<SourceKey> {
-    let Some(current_opportunity) = current_opportunity else {
+    let Some(current_plan) = current_plan else {
         return BTreeSet::new();
     };
     let Some(current_place) = current_place else {
         return BTreeSet::new();
     };
-    if selected_plan.goal != current_opportunity.goal_key
-        || selected_plan.opportunity == current_opportunity
-        || current_opportunity.anchor != OpportunityAnchor::Place(current_place)
+    if selected_plan.goal != current_plan.goal
+        || selected_plan.opportunity == current_plan.opportunity
+        || current_plan.opportunity.anchor != OpportunityAnchor::Place(current_place)
     {
         return BTreeSet::new();
     }
 
     let current_failed_search = selection_plans.iter().any(|plan| {
-        plan.searched_opportunity == current_opportunity && plan.found_plan.is_none()
+        plan.searched_opportunity == current_plan.opportunity && plan.found_plan.is_none()
     });
     if !current_failed_search {
         return BTreeSet::new();
@@ -372,32 +371,7 @@ fn same_goal_search_failed_source_keys(
         return BTreeSet::new();
     }
 
-    let Some(current_ranked) = ranked_candidates
-        .iter()
-        .find(|ranked| ranked.key == current_opportunity)
-    else {
-        return BTreeSet::new();
-    };
-
-    let mut sources = current_ranked.offer.evidence_entities.iter().copied();
-    let Some(source_entity) = sources.next() else {
-        return BTreeSet::new();
-    };
-    if sources.next().is_some() {
-        return BTreeSet::new();
-    }
-
-    let commodity = match current_ranked.offer.key.kind {
-        GoalKind::AcquireCommodity { commodity, .. } | GoalKind::RestockCommodity { commodity } => {
-            commodity
-        }
-        _ => return BTreeSet::new(),
-    };
-
-    BTreeSet::from([SourceKey {
-        entity: source_entity,
-        commodity,
-    }])
+    current_plan.committed_source.into_iter().collect()
 }
 
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
@@ -1413,7 +1387,7 @@ fn adopt_selected_plan(
     facility_intents: &mut worldwake_core::ContentionIntents,
     agent: EntityId,
     ranked_candidates: &OrderedRanked<'_>,
-    selected_plan: PlannedPlan,
+    mut selected_plan: PlannedPlan,
     recipe_registry: &RecipeRegistry,
     tick: Tick,
     cognitive: &CognitiveProfile,
@@ -1428,6 +1402,12 @@ fn adopt_selected_plan(
         .iter()
         .find(|candidate| candidate.key == selected_plan.opportunity)
         .map(|candidate| AgendaEntry::committed_from(candidate, tick));
+    if selected_plan.committed_source.is_none() {
+        selected_plan.committed_source = ranked_candidates
+            .iter()
+            .find(|candidate| candidate.key == selected_plan.opportunity)
+            .and_then(|candidate| committed_source_for_offer(&candidate.offer));
+    }
     *jc = prepared_frame;
     let _ = persist_expectation_store_update(world, event_log, agent, tick, |store| {
         let expired = expire_plan_step_expectations(store);
@@ -1617,8 +1597,7 @@ pub(super) fn plan_and_validate_next_step(
                 ) {
                     let current_place = SpatialBeliefView::effective_place(&view, agent);
                     let failed_sources = same_goal_search_failed_source_keys(
-                        ranked_candidates,
-                        runtime.current_plan.as_ref().map(|plan| plan.opportunity),
+                        runtime.current_plan.as_ref(),
                         &selected_plan,
                         &selection_plans,
                         current_place,
@@ -1975,8 +1954,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             ) {
                 let current_place = SpatialBeliefView::effective_place(&view, agent);
                 let failed_sources = same_goal_search_failed_source_keys(
-                    ranked_candidates,
-                    runtime.current_plan.as_ref().map(|plan| plan.opportunity),
+                    runtime.current_plan.as_ref(),
                     &selected_plan,
                     &selection_plans,
                     current_place,
@@ -2231,9 +2209,9 @@ mod tests {
         CommodityPurpose, ContentionIntents, ControlSource, DecisionEventPayload, EntityId,
         EventLog, EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
         GoalRejectionReason, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille,
-        Place, PlanAdoptedPayload, Quantity, RepairKind, Tick, Topology, TravelEdge, TravelEdgeId,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
-        build_prototype_world,
+        Place, PlanAdoptedPayload, Quantity, RepairKind, SourceKey, Tick, Topology, TravelEdge,
+        TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -2641,6 +2619,7 @@ mod tests {
     fn adopt_selected_plan_populates_expected_commodity_assumption_immediately() {
         let origin = entity(91);
         let orchard = entity(92);
+        let source = entity(93);
         let mut world = World::new(cargo_topology(origin, orchard)).unwrap();
         let agent = {
             let mut txn = new_txn(&mut world, 1);
@@ -2659,7 +2638,7 @@ mod tests {
         let ranked_candidates = vec![ranked_goal(acquire_goal(
             CommodityKind::Apple,
             OpportunityAnchor::Place(orchard),
-            BTreeSet::new(),
+            BTreeSet::from([source]),
             BTreeSet::from([orchard]),
         ))];
         let goal = ranked_candidates[0].offer.key;
@@ -2724,6 +2703,16 @@ mod tests {
                     commodity: CommodityKind::Apple,
                     place: orchard,
                 })
+        );
+        assert_eq!(
+            runtime
+                .current_plan
+                .as_ref()
+                .and_then(|plan| plan.committed_source),
+            Some(SourceKey {
+                entity: source,
+                commodity: CommodityKind::Apple,
+            })
         );
     }
 

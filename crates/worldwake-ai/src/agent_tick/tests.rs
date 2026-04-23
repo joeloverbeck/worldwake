@@ -49,11 +49,11 @@ use worldwake_core::{
     MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData, PatrolProfile,
     PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place,
     PortfolioSlotWeights, Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind,
-    RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed, StatePredicate,
-    SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology,
-    TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec,
-    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    WoundList, build_believed_entity_state, build_prototype_world,
+    RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed, SourceKey,
+    StatePredicate, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory,
+    Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory,
+    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+    WoundCause, WoundId, WoundList, build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -6173,6 +6173,91 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
         continued_step
             .expect("snapshot continuation should keep current step")
             .op_kind
+    );
+}
+
+#[test]
+fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detection() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let place = harness
+        .world
+        .effective_place(harness.actor)
+        .expect("harness actor should start at a place");
+    let utility = harness
+        .world
+        .get_component_utility_profile(harness.actor)
+        .cloned()
+        .unwrap_or_default();
+    let budget = ProfileFixture::default();
+
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_resource_source(
+            place,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(0),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let runtime = harness
+        .driver
+        .runtime_by_agent
+        .entry(harness.actor)
+        .or_default();
+    runtime.current_plan = Some(
+        PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(place),
+            },
+            goal,
+            vec![travel_step(1, place)],
+            PlanTerminalKind::ProgressBarrier,
+        )
+        .with_committed_source(Some(SourceKey {
+            entity: place,
+            commodity: CommodityKind::Apple,
+        })),
+    );
+
+    let read = refresh_runtime_for_read_phase(
+        &harness.world,
+        &harness.scheduler,
+        &harness.defs,
+        runtime,
+        Some(goal),
+        &mut ContentionIntents::default(),
+        &mut BlockerMemory::default(),
+        &mut ViolationMemory::default(),
+        harness.actor,
+        &[],
+        ReadPhaseContext {
+            recipe_registry: &harness.recipes,
+            utility: &utility,
+            tick: Tick(1),
+            travel_horizon: budget.snapshot_travel_horizon,
+            structural_block_ticks: budget.structural_block_ticks,
+        },
+        false,
+    );
+
+    assert_eq!(
+        read.pending_source_reliability_failures,
+        BTreeSet::from([SourceKey {
+            entity: place,
+            commodity: CommodityKind::Apple,
+        }])
     );
 }
 

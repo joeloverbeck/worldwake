@@ -1,6 +1,6 @@
 # SURVPREF-001: Surface stale familiar-source failure into preference memory in `survival-preferences`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI ranking / survival-scenario preference-memory path
@@ -95,3 +95,10 @@ Upgrade `golden_survival_preferences.rs` so it can prove the full row-7 chain: p
 1. `cargo test -p worldwake-ai --test golden_survival_preferences -- --ignored --test-threads=1`
 2. `cargo test -p worldwake-ai --test golden_experience_preferences`
 3. `cargo test -p worldwake-ai --test golden_exploration`
+
+## Outcome
+
+- Completion date: 2026-04-23
+- What actually changed: `survival-preferences.ron` and `golden_survival_preferences.rs` now prove the full row-7 chain inside the 1440-tick survival envelope: proactive discovery of `Novel Grove`, durable familiar-orchard failure memory in `SourceReliability.failed_attempts`, and later apple selection that keeps the familiar orchard as a discounted candidate while selecting the novel grove. The live landing also threaded the preference-memory repair through the AI retained-plan / observation / ranking path named in the follow-up `S124OPEXFAL-001` ticket.
+- Deviations from original plan: the truthful persisted-failure seam is broader than the original draft's harvest-start-only framing. The live implementation records the missing survival-time failure memory through the retained-plan / local-contradiction path documented by `S124OPEXFAL-001`, while preserving the same user-visible roadmap invariant.
+- Verification results: `cargo test -p worldwake-ai --test golden_survival_preferences -- --ignored --test-threads=1` passed on 2026-04-23 in the live repo (`2 passed`).
