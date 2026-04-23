@@ -106,6 +106,7 @@ For the requested row:
 2. Name the exact backing systems, goal/action families, and authored substrate that must be present.
 3. Check `crates/worldwake-cli/src/bin/scenario_coverage.rs` when needed to verify the live structural activation rule.
 4. Check existing scenarios and goldens to see what is already proven, what is only structurally active, and what is only auxiliary evidence.
+5. Check whether the row's required substrate will also make later roadmap rows structurally active under the generator. If it does, record that upfront and keep those rows separate from the requested landing unless the new golden actually proves them.
 
 Do not collapse these categories:
 
@@ -148,6 +149,7 @@ Scenario design rules:
 - Copy the closest landed scenario only as a starting point; do not cargo-cult its envelope unchanged.
 - Prefer minimal authored setup that still forces the mechanic under test to matter.
 - Treat `survival_health_contract` as a truth surface, not a wish list. If focused proof shows the authored envelope is too strict or overclaims the live behavior, narrow the authored contract before forcing code or tests to fit it.
+- Later roadmap rows may need already-landed feature rows to remain authored-active in the same scenario. Keep those cumulative rows live when they are part of the truthful survival envelope, and move any resulting per-need envelope changes into the authored `survival_health_contract` instead of hiding them in test-local constants.
 - Explicitly isolate rival lawful branches only when they would obscure the owned contract.
 - If a competing branch is part of the architecture contract, keep it and prove the branching behavior instead.
 - For cumulative mechanics, name the concrete threshold/cadence/capacity math in the scenario-owning ticket or notes before trusting the setup.
@@ -191,6 +193,7 @@ For every scenario-backed golden, explicitly identify:
 5. which remaining rival branches are accepted vs invalid
 
 Prefer adding a deterministic replay companion unless the scenario already has a truthful reason not to.
+Keep the repo's generated-doc parser contract in mind when authoring the golden comment block. New scenario-backed goldens should use the existing numbered `Scenario <N>:` header style expected by `scripts/golden_inventory.py`, or the generated scenario-detail docs may not materialize correctly.
 
 CI ownership rules for these scenario-backed goldens:
 
@@ -279,6 +282,7 @@ Update the roadmap to match the true result:
 - mark the row `Landed` only if scenario, golden, and generated companion all agree
 - if the outcome is narrower, rewrite the row rather than overclaiming
 - if an auxiliary scenario now became a true roadmap row, move or rewrite the auxiliary caveat accordingly
+- if the generated companion shows additional active features beyond the requested row, classify each one explicitly as either newly landed here or merely structurally active because of shared substrate; do not let those sibling rows inherit `Landed` status by implication
 
 Also make the CI ownership truthful in the same pass:
 
@@ -321,6 +325,7 @@ Before finishing, verify which of these are true:
 - golden inventory/docs refreshed
 - any unrelated generated-doc blocker encountered during required refresh was either minimally fixed or explicitly reported
 - roadmap sections updated to match the live outcome
+- any sibling future rows that became structurally active through shared substrate were recorded as structural-only unless they were also behaviorally proven and intentionally landed
 - blocker tickets created or updated when architecture prevented full landing
 - final report states whether the row is now `Landed`, still `Drafting`/`In Progress`, or blocked behind named ticket(s)
 

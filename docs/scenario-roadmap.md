@@ -41,9 +41,9 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Need-driven exploration | `exploration_profile` active | [`exploration.rs`](../crates/worldwake-core/src/exploration.rs), AI planner + perception | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Activation-decay perception | `perception_profile` active | [`perception.rs`](../crates/worldwake-systems/src/perception.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Place concealment | Any place `visibility_profile.base_concealment > 0` | [`observation_context.rs`](../crates/worldwake-core/src/observation_context.rs), [`perception.rs`](../crates/worldwake-systems/src/perception.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Tell / peer info transfer | Active `tell_profile` plus active `communication_profile` | [`tell_actions.rs`](../crates/worldwake-systems/src/tell_actions.rs), [`communication.rs`](../crates/worldwake-core/src/communication.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Ask-about-person | Non-zero `social_weight` plus `communication_profile` and `epistemic_disposition` | [`ask_about_person_actions.rs`](../crates/worldwake-systems/src/ask_about_person_actions.rs), epistemic surfaces | Planned; structural coverage only in `cli-evaluation.ron` |
-| Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Tell / peer info transfer | Active `tell_profile` plus active `communication_profile` | [`tell_actions.rs`](../crates/worldwake-systems/src/tell_actions.rs), [`communication.rs`](../crates/worldwake-core/src/communication.rs) | Landed in [§5.5](#55-landed-5-survival-tell) |
+| Ask-about-person | Non-zero `social_weight` plus `communication_profile` and `epistemic_disposition` | [`ask_about_person_actions.rs`](../crates/worldwake-systems/src/ask_about_person_actions.rs), epistemic surfaces | Planned; structurally active in `cli-evaluation.ron` and `survival-tell.ron`, but not yet golden-proven as a roadmap row |
+| Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Planned; structurally active in `cli-evaluation.ron` and `survival-tell.ron`, but not yet golden-proven as a roadmap row |
 | Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Planned |
 | Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
@@ -87,11 +87,12 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-scattered.ron` | Travel physiology |
 | Landed in `survival-contested.ron` | No new structural feature rows; the landing is a stronger survival-under-contention proof for the already-landed baseline + travel stack |
 | Landed in `survival-drive-escalation.ron` | Drive escalation |
-| CLI-only structural coverage | Place concealment, Tell / peer info transfer, Ask-about-person, Consult-record, Obligation satiation, Experience preferences, Production (multi-input recipes), Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Disposal, Facility-queue contention, Bounty posting, Notice posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search, Stock / transport |
+| Landed in `survival-tell.ron` | Tell / peer info transfer |
+| Structural coverage only, not yet landed | Place concealment, Ask-about-person, Consult-record, Obligation satiation, Experience preferences, Production (multi-input recipes), Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Disposal, Facility-queue contention, Bounty posting, Notice posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search, Stock / transport |
 | Authored but still gated inactive | Report / witness |
 | Planned with no current scenario activation | Diversification / curiosity, Item decay, Offices / succession / force-claim, Bandit camps |
 
-The key constraint is that "CLI-only structural coverage" is not a feature landing. `cli-evaluation.ron` exists to keep schemas and commands honest, not to prove survival-compatible gameplay.
+The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron` and now `survival-tell.ron` can expose future social feature substrate without proving that those rows are ready to mark `Landed`.
 
 ## 4. Priority Roadmap
 
@@ -147,7 +148,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 2 | `survival-scattered` | Travel physiology | Landed | First spatial/adversarial stress without new social systems |
 | 3 | `survival-contested` | Survival under contention and route invalidation | Landed | Multi-agent pressure on the already-landed stack |
 | 4 | `survival-drive-escalation` | Authored drive-escalation coverage inside a survival-health-contract scenario | Landed | Converts the old auxiliary wash-priority proof into a real survival-contract landing before later social features depend on it |
-| 5 | `survival-tell` | Tell / peer info transfer | Planned | First belief-mutation feature under survival pressure |
+| 5 | `survival-tell` | Tell / peer info transfer | Landed | First belief-mutation feature under survival pressure |
 | 6 | `survival-ask-consult` | Ask-about-person + consult-record | Planned | Explicit epistemic actions competing with self-care |
 | 7 | `survival-preferences` | Experience preferences + diversification / curiosity | Planned | Learned preference loops can destabilize exploration and self-care |
 | 8 | `survival-production` | Production (multi-input recipes) | Planned | Deeper prerequisite chains and facility dependence |
@@ -165,7 +166,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 
 #### 4.3 Remaining planned rows
 
-Rows 5-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
+Rows 6-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
 
 ## 5. Landed Scenarios
 
@@ -264,7 +265,33 @@ The golden now proves the drive-escalation branch inside a real 1440-tick surviv
 **Deliberately inactive**
 - All social, trade, justice, office, patrol, pursuit, theft, combat, artifact, and concealment features
 
-### 5.5 Auxiliary and Non-Roadmap Scenarios
+### 5.5 Landed #5: `survival-tell`
+
+**Status**: Landed  
+**Source scenario**: [`scenarios/survival-tell.ron`](../scenarios/survival-tell.ron)  
+**Backing goldens**: [`golden_survival_tell.rs`](../crates/worldwake-ai/tests/golden_survival_tell.rs)
+
+**Authored envelope**
+- Seed: `417005`
+- Agents: `2`
+- Places: `2`
+- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 40`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.dirtiness = 700`
+
+**New landed feature row**
+- Tell / peer info transfer
+
+**Why this golden is valid**
+
+The golden proves the tell row at the earliest honest causal surface that still matters to survival behavior. `Scout Una` begins with same-place orchard knowledge, returns to `Rill Camp` for the shared water-and-wash loop, commits an accepted `tell`, and only then does `Listener Bea` acquire the orchard food belief, reach `North Orchard`, and secure orchard food. The scenario remains a real 1440-tick survival contract rather than a social harness-only vignette, and the per-need dirtiness override stays authored in the scenario instead of being hidden in the test.
+
+`survival-tell.ron` also structurally activates `Ask-about-person` and `Consult-record` because the tell row needs live social weight and communication substrate. Those rows remain planned here because this landing does not author the record world state or prove either action family behaviorally.
+
+**Deliberately inactive**
+- Place concealment
+- Obligation satiation, diversification / curiosity, experience preferences, trade, decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit, escort, search, and stock / transport rows remain unlanded
+- Report / witness remains gated inactive in the authored scenario
+
+### 5.6 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 

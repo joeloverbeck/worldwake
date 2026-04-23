@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 90
-- Contributing golden test files: 15
-- Associated tests: 109
+- Scenario blocks: 91
+- Contributing golden test files: 16
+- Associated tests: 110
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1124,6 +1124,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the same seeded target-location belief reads as `Certain` at the
 
 **Cross-system chain**: seeded pre-run observation fixture -> later-tick envelope projection
+
+### Scenario 169: Survival Tell Lands Roadmap Row Five
+
+- Source: `golden_survival_tell.rs:386`
+- Systems: AI, Needs, Travel, Production, Tell
+- GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve, ShareBelief
+- ActionDomains: Needs, Travel, Production, Social
+- Places: Rill Camp, North Orchard
+- Principles: 6, 7, 14, 15, 20
+
+**Setup**: Run the authored survival tell scenario for 1440 ticks. The scout
+
+**Proves**: both agents satisfy the authored survival-health contract, and the
+
+**Cross-system chain**: same-place orchard observation by scout -> return to camp under
 
 ### Scenario 58: Travel Need Escalation
 
