@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 17
-- Files contributing `golden_*` tests: 17
-- Total `golden_*` tests: 113
+- Golden test files: 18
+- Files contributing `golden_*` tests: 18
+- Total `golden_*` tests: 114
 
 ## Per-File Inventory
 
@@ -29,6 +29,7 @@ Do not hand-edit it.
 | `golden_survival_contested.rs` | 7 |
 | `golden_survival_drive_escalation.rs` | 3 |
 | `golden_survival_scattered.rs` | 6 |
+| `golden_survival_tell.rs` | 1 |
 | `golden_travel_physiology.rs` | 12 |
 
 ### `golden_activation_decay.rs`
@@ -179,6 +180,10 @@ Do not hand-edit it.
 - `no_budget_exhaustion_on_survival_goals`
 - `no_stuck_idle_windows_with_elevated_needs`
 - `seeded_target_location_belief_decays_to_stale_without_refresh`
+
+### `golden_survival_tell.rs`
+
+- `survival_tell_lands_row_five`
 
 ### `golden_travel_physiology.rs`
 
