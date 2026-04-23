@@ -26,6 +26,7 @@ Examples:
 - Use event-log assertions only when record/public visibility is itself the contract.
 - Read survival-health bounds from the scenario file rather than restating local constants.
 - Do not silently strengthen a row-scoped invariant into a per-agent symmetry claim unless the roadmap row explicitly owns that stronger promise. One agent recurring through the mechanic may be sufficient when the row is about scenario-level coexistence rather than actor symmetry.
+- When a scenario uses supporting actors, state explicitly which agents own the survival-health envelope and which agents are supporting causal actors only. Do not let supporting witnesses silently inherit full survival-contract ownership unless the roadmap row truly promises that wider envelope.
 
 ## Per-golden proof-surface classification
 
