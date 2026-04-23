@@ -4026,6 +4026,7 @@ mod tests {
                             adjustment: Some(
                                 crate::RankedPriorityAdjustment::ClottedWoundRecoveryPromotion,
                             ),
+                            commodity_preference_rank: None,
                             motive_inputs: vec![crate::RankedDriveMotiveInput {
                                 drive: crate::RankedDriveKind::Hunger,
                                 pressure: worldwake_core::Permille::new(760).unwrap(),

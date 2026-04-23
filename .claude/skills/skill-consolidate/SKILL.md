@@ -31,7 +31,7 @@ If working inside a worktree (e.g., `.claude/worktrees/<name>/`), ALL file paths
 
 ## Process
 
-Follow these 9 steps in order. Do not skip any step.
+Follow these 10 steps in order. Do not skip any step.
 
 ---
 
@@ -49,9 +49,9 @@ Parse into logical blocks:
 - **Instruction lists**: Bullet points, numbered lists, inline directives
 - **Guardrails**: Typically the final section with constraint bullets
 
-Measure baseline with `wc -lc <target-file>` (or equivalent) and record the exact line and character counts. These numbers feed the Step 9 summary verbatim; do not estimate.
+Measure baseline with `wc -lc <target-file>` (or equivalent) and record the exact line and character counts. These numbers feed the Step 10 summary verbatim; do not estimate.
 
-The "before" baseline for Step 9 metrics is the file content as read in this step, regardless of git state.
+The "before" baseline for Step 10 metrics is the file content as read in this step, regardless of git state.
 
 ---
 
@@ -104,6 +104,8 @@ For each pattern:
 3. **Break dense paragraphs** into focused bullets or numbered steps
 4. **Record** the restructuring for the diff summary
 
+**Step 3 vs. Step 4 boundary**: If introducing a sub-heading also causes non-adjacent paragraphs to be repositioned to cluster under it, classify the change as Topic Regrouping (Step 3), not Readability Restructuring — the Step 10 "Topics Regrouped" bucket exists to surface moved content. Use Step 4 only when sub-headings are added above already-adjacent content.
+
 ---
 
 ### Step 5: Decision Path Clarification
@@ -117,7 +119,7 @@ For each scattered decision path:
 4. **Replace scattered mentions** with brief cross-references to the unified structure. Use descriptive section references (e.g., "see Section 3, Escalation decision tree") over bare section numbers, since numbers may shift in future consolidation passes.
 5. **Record** the clarification for the diff summary
 
-**Cross-reference hygiene**: Repairing broken or obsolete cross-references (e.g., a "see Section 1" pointer to a section that no longer exists in the current file, or references to content that has moved to another file) is in-scope consolidation hygiene, not scope expansion. Log each repair in the Step 9 summary under "Cross-reference Hygiene" so the change is visible in the diff surface.
+**Cross-reference hygiene**: Repairing broken or obsolete cross-references (e.g., a "see Section 1" pointer to a section that no longer exists in the current file, or references to content that has moved to another file) is in-scope consolidation hygiene, not scope expansion. Log each repair in the Step 10 summary under "Cross-reference Hygiene" so the change is visible in the diff surface.
 
 ---
 
@@ -134,9 +136,22 @@ For non-redundant instructions (those surviving Steps 2-5), tighten prose:
 
 ---
 
-### Step 7: Rewrite
+### Step 7: Idempotency Gate
 
-Before writing, briefly summarize planned changes in the conversation so the user sees what will change before the file is overwritten. The pre-write summary is an abbreviated version of the Step 9 categories (one line per category listing what will change), not the full diff summary.
+After Steps 2–6 have run their detection passes (but before the rewrite), sum the detected redundancy clusters (Step 2), restructuring patterns (Step 4), and decision-path scatter (Step 5).
+
+If all three are zero:
+- Skip Steps 8–9 (do not rewrite the file).
+- Jump to a truncated Step 10 reporting "File appears already consolidated — no edits made" along with the baseline size from Step 1.
+- Exit.
+
+Otherwise, proceed to Step 8.
+
+---
+
+### Step 8: Rewrite
+
+Before writing, briefly summarize planned changes in the conversation so the user sees what will change before the file is overwritten. The pre-write summary is an abbreviated version of the Step 10 categories (one line per category listing what will change), not the full diff summary.
 
 Write the consolidated SKILL.md in-place at `<skill-path>/SKILL.md`.
 
@@ -148,20 +163,20 @@ The rewritten file must:
 
 ---
 
-### Step 8: Spot-Check Preservation
+### Step 9: Spot-Check Preservation
 
-After writing, spot-check 3-5 unique instructions from the original (preferring instructions from different sections) to confirm each survives in the consolidated output. If any instruction was lost, restore it before presenting the diff summary.
+After writing, spot-check 3-5 unique instructions from the original (preferring instructions from different sections) to confirm each survives in the consolidated output. If any instruction was lost, restore it before presenting the diff summary. Record the 3-5 spot-checks in the Step 10 "Spot-Check Preservation" section so the preservation trail is visible.
 
 ---
 
-### Step 9: Diff Summary
+### Step 10: Diff Summary
 
 After writing, present a structured summary in the conversation:
 
 ```
 ## Consolidation Summary: <skill-name>
 
-**Size**: <before chars> → <after chars> (<change>%)
+**Size**: <before chars> → <after chars> (<change>% — may grow when sub-headings and structural headings are added)
 **Lines**: <before> → <after> (may increase when dense paragraphs are broken into structured lists)
 
 ### Redundancies Merged (<count>)
@@ -177,11 +192,14 @@ After writing, present a structured summary in the conversation:
 - "<topic>" — unified from <N> mentions into <structure type>
 
 ### Wording Tightened
-- <N> instructions shortened for conciseness (no semantic changes)
-- Examples: "<before>" → "<after>" (include 2-3 representative samples)
+- <N> instructions shortened for conciseness (no semantic changes). If N=0 because the target is a dense reference file where paraphrasing risks meaning loss, state that explicitly.
+- Examples (when N ≥ 2): "<before>" → "<after>" (include 2-3 representative samples)
 
 ### Cross-reference Hygiene (<count>)
 - "<before>" → "<after>" — reason (e.g., "Section 1 no longer exists in this file; target now lives in SKILL.md Step 1")
+
+### Spot-Check Preservation (<count>)
+- "<original snippet>" — preserved at <new location>
 
 ### Observations (if any)
 [Gaps noticed during consolidation that were not filled (per No Scope Expansion guardrail).]

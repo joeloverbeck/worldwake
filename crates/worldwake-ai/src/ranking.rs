@@ -47,8 +47,9 @@ use worldwake_core::{
     InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille,
     NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor,
     OpportunityKey, PerceptionSource, Permille, Quantity, ReliabilityRecord, RepairKey,
-    RepairMemory, RightKind, SourceKey, TellTopic, ThresholdBand, Tick, UtilityProfile,
-    ViolationKind, belief_confidence, escalation_multiplier, failure_ratio_permille,
+    RepairMemory, RightKind, SourceKey, SubstitutePreferences, TellTopic, ThresholdBand, Tick,
+    UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
+    failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -956,6 +957,7 @@ fn drive_provenance_from_inputs(
         final_priority_class,
         adjustment: (final_priority_class != base_priority_class)
             .then_some(RankedPriorityAdjustment::ClottedWoundRecoveryPromotion),
+        commodity_preference_rank: None,
         motive_inputs,
     }
 }
@@ -1619,8 +1621,28 @@ fn self_consume_provenance(
             )
         })
         .collect::<Vec<_>>();
-    (!motive_inputs.is_empty())
-        .then(|| drive_provenance_from_inputs(context, base_priority_class, motive_inputs))
+    (!motive_inputs.is_empty()).then(|| {
+        let mut provenance =
+            drive_provenance_from_inputs(context, base_priority_class, motive_inputs);
+        provenance.commodity_preference_rank = substitute_preference_rank(
+            context.view.substitute_preferences(context.agent),
+            commodity,
+        );
+        provenance
+    })
+}
+
+fn substitute_preference_rank(
+    preferences: Option<SubstitutePreferences>,
+    commodity: CommodityKind,
+) -> Option<u8> {
+    let category = commodity.spec().trade_category;
+    preferences?
+        .preferences
+        .get(&category)?
+        .iter()
+        .position(|preferred| *preferred == commodity)
+        .and_then(|rank| u8::try_from(rank).ok())
 }
 
 fn raid_target_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
@@ -1990,6 +2012,7 @@ fn corpse_loot_assessment(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RankedGoalComparisonDimension {
     PriorityClass,
+    SubstitutePreferenceOrder,
     Feasibility,
     MotiveScore,
     GoalSpecificity,
@@ -2015,6 +2038,14 @@ fn ranked_goal_ordering(
     let ordering = right.priority_class.cmp(&left.priority_class);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::PriorityClass));
+    }
+
+    let ordering = compare_substitute_preference_order(left, right);
+    if ordering != Ordering::Equal {
+        return (
+            ordering,
+            Some(RankedGoalComparisonDimension::SubstitutePreferenceOrder),
+        );
     }
 
     let ordering = right.motive_score.cmp(&left.motive_score);
@@ -2075,6 +2106,51 @@ fn ranked_goal_ordering(
     }
 
     (Ordering::Equal, None)
+}
+
+fn compare_substitute_preference_order(left: &AgendaEntry, right: &AgendaEntry) -> Ordering {
+    let (
+        GoalKind::AcquireCommodity {
+            commodity: left_commodity,
+            purpose: CommodityPurpose::SelfConsume,
+        },
+        GoalKind::AcquireCommodity {
+            commodity: right_commodity,
+            purpose: CommodityPurpose::SelfConsume,
+        },
+    ) = (&left.offer.key.kind, &right.offer.key.kind)
+    else {
+        return Ordering::Equal;
+    };
+
+    if left_commodity.spec().trade_category != right_commodity.spec().trade_category {
+        return Ordering::Equal;
+    }
+
+    let left_rank = left
+        .provenance
+        .as_ref()
+        .and_then(drive_provenance)
+        .and_then(|provenance| provenance.commodity_preference_rank);
+    let right_rank = right
+        .provenance
+        .as_ref()
+        .and_then(drive_provenance)
+        .and_then(|provenance| provenance.commodity_preference_rank);
+
+    match (left_rank, right_rank) {
+        (Some(left_rank), Some(right_rank)) => left_rank.cmp(&right_rank),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+}
+
+fn drive_provenance(provenance: &RankedGoalProvenance) -> Option<&RankedDriveGoalProvenance> {
+    match provenance {
+        RankedGoalProvenance::Drive(provenance) => Some(provenance),
+        RankedGoalProvenance::Danger(_) => None,
+    }
 }
 
 pub(crate) fn explain_ranked_goal_order(
@@ -2279,9 +2355,10 @@ mod tests {
         ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
         PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity,
         RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
-        RouteExperience, SourceKey, SourceReliability, TellTopic, TheftDispositionProfile,
-        TheftFacts, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationId, ViolationKind, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
+        RouteExperience, SourceKey, SourceReliability, SubstitutePreferences, TellTopic,
+        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
+        WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -2312,6 +2389,7 @@ mod tests {
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         commodity_valuation_profiles: BTreeMap<EntityId, CommodityValuationProfile>,
+        substitute_preferences: BTreeMap<EntityId, SubstitutePreferences>,
         route_experiences: BTreeMap<EntityId, RouteExperience>,
         source_reliabilities: BTreeMap<EntityId, SourceReliability>,
         preference_profiles: BTreeMap<EntityId, PreferenceProfile>,
@@ -2658,6 +2736,9 @@ mod tests {
     impl EconomicBeliefView for TestBeliefView {
         fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
             None
+        }
+        fn substitute_preferences(&self, agent: EntityId) -> Option<SubstitutePreferences> {
+            self.substitute_preferences.get(&agent).cloned()
         }
         fn commodity_valuation_profile(
             &self,
@@ -3041,6 +3122,12 @@ mod tests {
 
     fn current_tick() -> Tick {
         Tick(10)
+    }
+
+    fn food_substitutes(preferences: Vec<CommodityKind>) -> SubstitutePreferences {
+        SubstitutePreferences {
+            preferences: BTreeMap::from([(TradeCategory::Food, preferences)]),
+        }
     }
 
     fn obligation_profile(
@@ -5552,6 +5639,7 @@ mod tests {
                 base_priority_class: GoalPriorityClass::Medium,
                 final_priority_class: GoalPriorityClass::Medium,
                 adjustment: None,
+                commodity_preference_rank: None,
                 motive_inputs: vec![RankedDriveMotiveInput {
                     drive: RankedDriveKind::Hunger,
                     pressure: pm(500),
@@ -5584,6 +5672,7 @@ mod tests {
                 base_priority_class: GoalPriorityClass::Medium,
                 final_priority_class: GoalPriorityClass::Medium,
                 adjustment: None,
+                commodity_preference_rank: None,
                 motive_inputs: vec![RankedDriveMotiveInput {
                     drive: RankedDriveKind::Hunger,
                     pressure: pm(500),
@@ -5632,6 +5721,7 @@ mod tests {
                 base_priority_class: GoalPriorityClass::Medium,
                 final_priority_class: GoalPriorityClass::Medium,
                 adjustment: None,
+                commodity_preference_rank: None,
                 motive_inputs: vec![RankedDriveMotiveInput {
                     drive: RankedDriveKind::Hunger,
                     pressure: pm(500),
@@ -5664,6 +5754,7 @@ mod tests {
                 base_priority_class: GoalPriorityClass::Medium,
                 final_priority_class: GoalPriorityClass::Medium,
                 adjustment: None,
+                commodity_preference_rank: None,
                 motive_inputs: vec![RankedDriveMotiveInput {
                     drive: RankedDriveKind::Hunger,
                     pressure: pm(500),
@@ -6261,6 +6352,59 @@ mod tests {
             ranked[3].offer.key.kind,
             GoalKind::LootCorpse { corpse } if corpse == corpse_b
         ));
+    }
+
+    #[test]
+    fn substitute_preference_order_outranks_same_category_self_consume_rival() {
+        let agent = entity(1);
+        let market = entity(2);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(700), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.substitute_preferences.insert(
+            agent,
+            food_substitutes(vec![CommodityKind::Grain, CommodityKind::Apple]),
+        );
+
+        let ranked = rank(
+            &[
+                goal_at_place(
+                    GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Apple,
+                        purpose: CommodityPurpose::SelfConsume,
+                    },
+                    market,
+                ),
+                goal_at_place(
+                    GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Grain,
+                        purpose: CommodityPurpose::SelfConsume,
+                    },
+                    market,
+                ),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert!(matches!(
+            ranked[0].offer.key.kind,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Grain,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert_eq!(
+            super::explain_ranked_goal_order(&ranked[0], &ranked[1])
+                .expect("ranked goals should explain their ordering")
+                .decisive_dimension,
+            super::RankedGoalComparisonDimension::SubstitutePreferenceOrder
+        );
     }
 
     #[test]
