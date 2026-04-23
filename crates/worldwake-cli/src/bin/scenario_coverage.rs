@@ -253,7 +253,7 @@ const FEATURES: &[FeatureDef] = &[
     },
     FeatureDef {
         id: FeatureId::ProductionMultiInputRecipes,
-        name: "Production (multi-input recipes)",
+        name: "Production (facility-backed craft)",
         covered_agent_fields: &["known_recipes"],
         covered_place_fields: &[],
         covered_scenario_fields: &[],
