@@ -465,6 +465,10 @@ fn generated_output_path() -> PathBuf {
     repo_root().join("docs/generated/scenario-coverage.md")
 }
 
+fn relative_repo_path(path: &Path) -> &Path {
+    path.strip_prefix(repo_root()).unwrap_or(path)
+}
+
 fn load_all_scenarios(dir: &Path) -> Result<Vec<ScenarioCoverage>, Box<dyn std::error::Error>> {
     let mut paths = fs::read_dir(dir)?
         .collect::<Result<Vec<_>, _>>()?
@@ -562,7 +566,7 @@ fn render_markdown(scenarios: &[ScenarioCoverage]) -> String {
 }
 
 fn render_scenario_detail(out: &mut String, scenario: &ScenarioCoverage) {
-    writeln!(out, "### {}", scenario.path.display()).unwrap();
+    writeln!(out, "### {}", relative_repo_path(&scenario.path).display()).unwrap();
     writeln!(out).unwrap();
     writeln!(out, "- Seed: {}", scenario.def.seed).unwrap();
     writeln!(
@@ -1398,6 +1402,16 @@ mod tests {
     fn scenario_coverage_generation_is_deterministic() {
         let scenarios = load_test_scenarios();
         assert_eq!(render_markdown(&scenarios), render_markdown(&scenarios));
+    }
+
+    #[test]
+    fn scenario_coverage_renders_repo_relative_scenario_paths() {
+        let scenarios = load_test_scenarios();
+        let rendered = render_markdown(&scenarios);
+
+        assert!(rendered.contains("### scenarios/cli-evaluation.ron"));
+        assert!(!rendered.contains(&repo_root().display().to_string()));
+        assert!(!rendered.contains("/home/runner/work/worldwake/worldwake/scenarios/"));
     }
 
     #[test]

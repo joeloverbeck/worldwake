@@ -57,7 +57,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 
 ## Per-Scenario Detail
 
-### /home/joeloverbeck/projects/worldwake/scenarios/cli-evaluation.ron
+### scenarios/cli-evaluation.ron
 
 - Seed: 7777
 - Agents: 4 Ai
@@ -115,7 +115,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - resource sources: 2
 - known_recipes union: Bake Bread, Harvest Apples, Harvest Grain, Harvest Water
 
-### /home/joeloverbeck/projects/worldwake/scenarios/drive-escalation-wash-priority.ron
+### scenarios/drive-escalation-wash-priority.ron
 
 - Seed: 116006
 - Agents: 2 Ai
@@ -173,7 +173,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - resource sources: 2
 - known_recipes union: Harvest Apples, Harvest Water
 
-### /home/joeloverbeck/projects/worldwake/scenarios/survival-baseline.ron
+### scenarios/survival-baseline.ron
 
 - Seed: 104004
 - Agents: 3 Ai
@@ -231,7 +231,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - resource sources: 3
 - known_recipes union: Harvest Apples, Harvest Water
 
-### /home/joeloverbeck/projects/worldwake/scenarios/survival-contested.ron
+### scenarios/survival-contested.ron
 
 - Seed: 306006
 - Agents: 4 Ai
@@ -289,7 +289,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - resource sources: 4
 - known_recipes union: Harvest Apples, Harvest Grain, Harvest Water
 
-### /home/joeloverbeck/projects/worldwake/scenarios/survival-scattered.ron
+### scenarios/survival-scattered.ron
 
 - Seed: 205005
 - Agents: 3 Ai
