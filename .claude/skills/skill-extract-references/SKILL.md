@@ -38,7 +38,7 @@ For each block, determine one of three categories:
   - The top-level workflow/procedure steps (the numbered orchestration sequence).
   - Universal hard rules that are short and apply to every invocation.
 
-- **Always-loaded reference** — a self-contained block that applies to every invocation but is large enough (roughly 20+ lines) to warrant extraction. Examples: verification checklists, guardrails sections, outcome definitions.
+- **Always-loaded reference** — a self-contained block that applies to every invocation but is large enough to warrant extraction. (Under ~15 lines: keep inline. ~15–25 lines: judgment call — inline if the content is universal hard rules or invocation context, extract if it's a checklist or procedure detail. ~25+ lines: extract.) Examples: verification checklists, guardrails sections, outcome definitions.
 
 - **Conditional reference** — a block gated by a **section-level loading condition** in the original text. Look for headers or introductory sentences that gate an entire section's applicability:
   - "If the change touches X, ...", "Only when Y applies, ...", "For tickets that involve Z, ..."
@@ -81,6 +81,8 @@ For each block, determine one of three categories:
 ### 8. Verify Content Preservation
 
 After rewriting, verify that every H2/H3 section from the original SKILL.md appears either in the thin SKILL.md or in a reference doc. A quick scan of original section headers against the new files is sufficient.
+
+Then grep the thin SKILL.md for each `references/` load instruction and confirm every referenced file now exists under `<skill-dir>/references/`. Conversely, list `<skill-dir>/references/` and confirm every file there has a corresponding load instruction in the thin SKILL.md (orphan check).
 
 ### 9. Cross-Skill Reference Check
 
