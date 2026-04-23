@@ -584,18 +584,17 @@ fn emit_source_expectation_failure_events(
 ) {
     let mut seen = BTreeSet::new();
     for incident in incidents {
-        let should_apply = match (incident.phase, incident.cause) {
+        let should_apply = matches!(
+            (incident.phase, incident.cause),
             (
                 ExpectationFailurePhase::Observation | ExpectationFailurePhase::CandidateGeneration,
                 ExpectationFailureCause::SourceAbsentLocally
-                | ExpectationFailureCause::SourceDepletedLocally,
-            ) => true,
-            (
+                    | ExpectationFailureCause::SourceDepletedLocally,
+            ) | (
                 ExpectationFailurePhase::Search,
                 ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
-            ) => true,
-            _ => false,
-        };
+            )
+        );
         if !should_apply {
             continue;
         }
@@ -2059,18 +2058,17 @@ pub(super) fn apply_source_reliability_failure_observations(
     let mut unique_sources = BTreeMap::<worldwake_core::SourceKey, Tick>::new();
     let mut seen = BTreeSet::new();
     for incident in incidents {
-        let should_apply = match (incident.phase, incident.cause) {
+        let should_apply = matches!(
+            (incident.phase, incident.cause),
             (
                 ExpectationFailurePhase::Observation | ExpectationFailurePhase::CandidateGeneration,
                 ExpectationFailureCause::SourceAbsentLocally
-                | ExpectationFailureCause::SourceDepletedLocally,
-            ) => true,
-            (
+                    | ExpectationFailureCause::SourceDepletedLocally,
+            ) | (
                 ExpectationFailurePhase::Search,
                 ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
-            ) => true,
-            _ => false,
-        };
+            )
+        );
         if !should_apply {
             continue;
         }

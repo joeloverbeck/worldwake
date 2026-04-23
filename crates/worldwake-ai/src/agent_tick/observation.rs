@@ -367,7 +367,7 @@ fn pending_local_source_reliability_failures(
             phase: ExpectationFailurePhase::Observation,
             cause: ExpectationFailureCause::SourceAbsentLocally,
         }];
-    };
+    }
     if view.locally_observed_commodity_quantity(agent, source_key.entity, source_key.commodity)
         != Quantity(0)
     {
