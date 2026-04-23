@@ -237,6 +237,7 @@ mod tests {
                 visibility_profile: None,
             }],
             edges: vec![],
+            offices: vec![],
             agents: vec![AgentDef {
                 name: "Aster".into(),
                 location: "Village".into(),
@@ -356,6 +357,7 @@ mod tests {
                 substitute_preferences: None,
                 known_recipes: None,
             }],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

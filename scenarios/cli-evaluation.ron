@@ -399,7 +399,7 @@
             ),
             carry_capacity: 40,
             last_seen_memory: (
-                records: {},
+                records: [],
                 capacity: 30,
             ),
             justice_disposition: (

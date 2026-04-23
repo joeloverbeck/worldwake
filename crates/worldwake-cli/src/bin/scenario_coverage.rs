@@ -312,7 +312,7 @@ const FEATURES: &[FeatureDef] = &[
         name: "Offices / succession / force-claim",
         covered_agent_fields: &[],
         covered_place_fields: &[],
-        covered_scenario_fields: &[],
+        covered_scenario_fields: &["offices"],
     },
     FeatureDef {
         id: FeatureId::BountyPosting,
@@ -784,7 +784,14 @@ fn classify_feature(feature: FeatureId, def: &ScenarioDef) -> FeatureStatus {
         FeatureId::FacilityQueueContention => {
             optional_profile_presence_status(def, |agent| agent.contention_disposition.as_ref())
         }
-        FeatureId::OfficesSuccessionForceClaim | FeatureId::BanditCamps => FeatureStatus::Absent,
+        FeatureId::OfficesSuccessionForceClaim => {
+            if def.offices.is_empty() {
+                FeatureStatus::Absent
+            } else {
+                FeatureStatus::Active
+            }
+        }
+        FeatureId::BanditCamps => FeatureStatus::Absent,
         FeatureId::BountyPosting => posting_status(def, |profile| profile.bounty_posting_weight),
         FeatureId::NoticePosting => posting_status(def, |profile| profile.notice_posting_weight),
         FeatureId::Theft => {
@@ -1172,6 +1179,7 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
         places: _,
         edges: _,
         agents: _,
+        offices,
         items: _,
         facilities: _,
         resource_sources: _,
@@ -1184,6 +1192,9 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
     let mut fields = BTreeSet::new();
     if commodity_decay.is_some() {
         fields.insert("commodity_decay");
+    }
+    if !offices.is_empty() {
+        fields.insert("offices");
     }
     fields
 }

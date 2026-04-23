@@ -218,6 +218,7 @@ Treat this as an implementation workflow, not a design memo. If code changes are
 Common work includes:
 
 - production code changes to make the mechanic actually work under survival pressure
+- scenario authoring-surface changes when the live mechanic exists but cannot yet be authored truthfully through `worldwake-cli` scenario files (for example `crates/worldwake-cli/src/scenario/types.rs`, `crates/worldwake-cli/src/scenario/mod.rs`, `crates/worldwake-cli/src/bin/scenario_coverage.rs`, and the affected scenario/fixture tests)
 - scenario revisions when the authored substrate is insufficient
 - golden revisions when assertions are too weak or prove the wrong branch
 - CI workflow updates so the new scenario runs in the correct family workflow and stays out of regular lanes
@@ -266,6 +267,13 @@ python3 scripts/golden_inventory.py --write --check-docs
 
 If these fail because of local annotation drift or generated-doc drift you just introduced, fix that and rerun. Do not leave stale generated artifacts behind.
 If these fail because of a pre-existing unrelated blocker elsewhere in the repo, isolate the blocker, apply the smallest truthful fix needed to complete the required refresh, and report that side-fix explicitly instead of stopping with stale generated docs.
+
+If you changed the scenario authoring schema or spawn path while landing the row, do a bounded fallout sweep before treating the refresh as complete:
+
+- search for synthetic `ScenarioDef { ... }` initializers that now need the new field(s)
+- search `scenarios/*.ron`, especially broad fixtures like `scenarios/cli-evaluation.ron`, for old field shapes that no longer match the live authored schema
+- update `crates/worldwake-cli/src/bin/scenario_coverage.rs` when the new authored substrate needs structural detection support
+- rerun the generated-doc refresh only after those schema consumers parse and compile again
 
 Then update `docs/scenario-roadmap.md` as needed. Common sections that need edits:
 

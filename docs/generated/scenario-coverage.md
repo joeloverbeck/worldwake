@@ -9,49 +9,51 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 
 - cli-evaluation: agent field `intention_disposition` is not mapped by any FeatureDef
 - cli-evaluation: agent field `last_seen_memory` is not mapped by any FeatureDef
+- survival-ask-consult: agent field `expectation_store` is not mapped by any FeatureDef
+- survival-ask-consult: agent field `last_seen_memory` is not mapped by any FeatureDef
 
 ## Feature x Scenario Matrix
 
-| Feature | cli-evaluation | survival-baseline | survival-contested | survival-drive-escalation | survival-scattered | survival-tell |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Travel physiology | ⚠ | ⚠ | ✅ | ✅ | ✅ | ✅ |
-| Drive escalation | — | — | — | ✅ | — | ✅ |
-| Need-driven exploration | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Activation-decay perception | ✅ | ✅ | ✅ | — | ✅ | — |
-| Place concealment | ✅ | — | — | — | — | — |
-| Tell / peer info transfer | ✅ | ⚠ | ⚠ | — | ⚠ | ✅ |
-| Ask-about-person | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ |
-| Consult-record | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ |
-| Obligation satiation | ✅ | — | — | — | — | — |
-| Diversification / curiosity | — | — | — | — | — | — |
-| Experience preferences | ✅ | — | — | — | — | — |
-| Production (multi-input recipes) | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Merchant selling | ✅ | — | — | — | — | — |
-| Trade negotiation | ✅ | — | — | — | — | — |
-| Commodity valuation | ✅ | — | — | — | — | — |
-| Substitute preferences | ✅ | — | — | — | — | — |
-| Item decay | — | — | — | — | — | — |
-| Disposal | ✅ | — | — | — | — | — |
-| Facility-queue contention | ✅ | — | — | — | — | — |
-| Offices / succession / force-claim | — | — | — | — | — | — |
-| Bounty posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Notice posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Theft | ✅ | — | — | — | — | — |
-| Justice / accusation | ✅ | — | — | — | — | — |
-| Violation investigation | ✅ | — | — | — | — | — |
-| Patrol | ✅ | — | — | — | — | — |
-| Pursuit | ✅ | — | — | — | — | — |
-| Combat | ✅ | — | — | — | — | — |
-| Escort | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Bandit camps | — | — | — | — | — | — |
-| Report / witness | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ |
-| Search | ✅ | — | — | — | — | — |
-| Stock / transport | ✅ | — | — | — | — | — |
+| Feature | cli-evaluation | survival-ask-consult | survival-baseline | survival-contested | survival-drive-escalation | survival-scattered | survival-tell |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Basic needs (Eat) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Basic needs (Drink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Basic needs (Sleep) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Basic needs (Relieve) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Basic needs (Wash) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Travel physiology | ⚠ | ✅ | ⚠ | ✅ | ✅ | ✅ | ✅ |
+| Drive escalation | — | — | — | — | ✅ | — | ✅ |
+| Need-driven exploration | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Activation-decay perception | ✅ | ✅ | ✅ | ✅ | — | ✅ | — |
+| Place concealment | ✅ | — | — | — | — | — | — |
+| Tell / peer info transfer | ✅ | ⚠ | ⚠ | ⚠ | — | ⚠ | ✅ |
+| Ask-about-person | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ |
+| Consult-record | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ |
+| Obligation satiation | ✅ | — | — | — | — | — | — |
+| Diversification / curiosity | — | — | — | — | — | — | — |
+| Experience preferences | ✅ | — | — | — | — | — | — |
+| Production (multi-input recipes) | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Merchant selling | ✅ | — | — | — | — | — | — |
+| Trade negotiation | ✅ | — | — | — | — | — | — |
+| Commodity valuation | ✅ | — | — | — | — | — | — |
+| Substitute preferences | ✅ | — | — | — | — | — | — |
+| Item decay | — | — | — | — | — | — | — |
+| Disposal | ✅ | — | — | — | — | — | — |
+| Facility-queue contention | ✅ | — | — | — | — | — | — |
+| Offices / succession / force-claim | — | ✅ | — | — | — | — | — |
+| Bounty posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Notice posting | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Theft | ✅ | — | — | — | — | — | — |
+| Justice / accusation | ✅ | — | — | — | — | — | — |
+| Violation investigation | ✅ | ✅ | — | — | — | — | — |
+| Patrol | ✅ | — | — | — | — | — | — |
+| Pursuit | ✅ | — | — | — | — | — | — |
+| Combat | ✅ | — | — | — | — | — | — |
+| Escort | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Bandit camps | — | — | — | — | — | — | — |
+| Report / witness | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ |
+| Search | ✅ | ✅ | — | — | — | — | — |
+| Stock / transport | ✅ | — | — | — | — | — | — |
 
 Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absent.
 
@@ -114,6 +116,64 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - facilities: 9
 - resource sources: 2
 - known_recipes union: Bake Bread, Harvest Apples, Harvest Grain, Harvest Water
+
+### scenarios/survival-ask-consult.ron
+
+- Seed: 518006
+- Agents: 3 Ai, 1 None
+- Places: 2
+- Survival contract: max_critical 260, elevated_idle 45, families [Eat, Drink, Sleep, Relieve, Wash]
+
+**Active features**
+- Basic needs (Eat)
+- Basic needs (Drink)
+- Basic needs (Sleep)
+- Basic needs (Relieve)
+- Basic needs (Wash)
+- Travel physiology
+- Need-driven exploration
+- Activation-decay perception
+- Ask-about-person
+- Consult-record
+- Offices / succession / force-claim
+- Violation investigation
+- Escort
+- Search
+
+**Present-but-inactive features**
+- Tell / peer info transfer
+- Production (multi-input recipes)
+- Bounty posting
+- Notice posting
+- Report / witness
+
+**Absent features**
+- Drive escalation
+- Place concealment
+- Obligation satiation
+- Diversification / curiosity
+- Experience preferences
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Substitute preferences
+- Item decay
+- Disposal
+- Facility-queue contention
+- Theft
+- Justice / accusation
+- Patrol
+- Pursuit
+- Combat
+- Bandit camps
+- Stock / transport
+
+**World features**
+- commodity_decay: disabled
+- visibility_profile places: none
+- facilities: 3
+- resource sources: 2
+- known_recipes union: Harvest Apples, Harvest Water
 
 ### scenarios/survival-baseline.ron
 

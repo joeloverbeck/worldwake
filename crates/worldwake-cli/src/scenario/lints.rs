@@ -143,8 +143,7 @@ mod tests {
     use std::collections::BTreeMap;
     use worldwake_core::{
         CognitiveProfile, ControlSource, DiversificationProfile, EpistemicDispositionProfile,
-        IntentionDispositionProfile, LastSeenMemory, PerceptionProfile, Permille, PlaceTag,
-        UtilityProfile,
+        IntentionDispositionProfile, PerceptionProfile, Permille, PlaceTag, UtilityProfile,
     };
 
     fn minimal_agent(name: &str, control: ControlSource) -> AgentDef {
@@ -200,6 +199,7 @@ mod tests {
             }],
             edges: vec![],
             agents,
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -231,7 +231,7 @@ mod tests {
             diversification_profile: Some(DiversificationProfile::default()),
             epistemic_disposition: Some(EpistemicDispositionProfile::default()),
             intention_disposition: Some(IntentionDispositionProfile::default()),
-            last_seen_memory: Some(LastSeenMemory::default()),
+            last_seen_memory: Some(crate::scenario::types::LastSeenMemoryDef::default()),
             ..minimal_agent(name, ControlSource::Ai)
         }
     }
@@ -433,7 +433,7 @@ mod tests {
             diversification_profile: Some(DiversificationProfile::default()),
             epistemic_disposition: Some(EpistemicDispositionProfile::default()),
             intention_disposition: Some(IntentionDispositionProfile::default()),
-            last_seen_memory: Some(LastSeenMemory::default()),
+            last_seen_memory: Some(crate::scenario::types::LastSeenMemoryDef::default()),
             ..minimal_agent(name, ControlSource::Human)
         }
     }
@@ -449,7 +449,7 @@ mod tests {
             }),
             epistemic_disposition: Some(EpistemicDispositionProfile::default()),
             intention_disposition: Some(IntentionDispositionProfile::default()),
-            last_seen_memory: Some(LastSeenMemory::default()),
+            last_seen_memory: Some(crate::scenario::types::LastSeenMemoryDef::default()),
             ..minimal_agent(name, ControlSource::Ai)
         }
     }

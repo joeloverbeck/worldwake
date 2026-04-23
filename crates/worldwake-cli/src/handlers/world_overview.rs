@@ -215,6 +215,7 @@ mod tests {
                     bidirectional: true,
                 },
             ],
+            offices: vec![],
             agents: vec![
                 AgentDef {
                     name: "Kael".into(),
@@ -378,6 +379,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![],
+            offices: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

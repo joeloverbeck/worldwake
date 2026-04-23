@@ -664,6 +664,7 @@ mod tests {
                 travel_ticks: 5,
                 bidirectional: true,
             }],
+            offices: vec![],
             agents: vec![
                 AgentDef {
                     name: "Aster".into(),
