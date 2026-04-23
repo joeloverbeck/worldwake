@@ -13,10 +13,10 @@ use worldwake_core::{
     ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
     DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
     HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, MetabolismProfile,
-    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille,
-    PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-    SuccessionLaw, TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile,
+    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, SuccessionLaw, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -91,12 +91,22 @@ pub struct ExpectationRecordDef {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum ExpectationBasisDef {
-    DutyAssignment { office: String },
-    DeliveryCommitment { commodity: CommodityKind, quantity: Quantity },
+    DutyAssignment {
+        office: String,
+    },
+    DeliveryCommitment {
+        commodity: CommodityKind,
+        quantity: Quantity,
+    },
     RoutineReturn,
-    EscortObligation { charge: String },
+    EscortObligation {
+        charge: String,
+    },
     SocialPromise,
-    PlanStepCompletion { step_index: u16, kind_tag: worldwake_core::ExpectationKindTag },
+    PlanStepCompletion {
+        step_index: u16,
+        kind_tag: worldwake_core::ExpectationKindTag,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -142,7 +152,10 @@ pub struct LastSeenRecordDef {
 #[serde(deny_unknown_fields)]
 pub enum LastSeenProvenanceDef {
     DirectObservation,
-    Hearsay { original_observer: String, chain_depth: u8 },
+    Hearsay {
+        original_observer: String,
+        chain_depth: u8,
+    },
 }
 
 fn default_compaction_interval() -> u32 {

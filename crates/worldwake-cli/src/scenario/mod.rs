@@ -16,9 +16,9 @@ use worldwake_core::{
     ExpectationState, ExpectationStore, ExplorationProfile, KnownRecipes,
     LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
     MerchandiseProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolRoute, Place,
-    ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
-    WorkstationMarker, World, WorldTxn, default_commodity_decay_map, hash_world,
+    ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind, ResourceSource,
+    Seed, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker,
+    World, WorldTxn, default_commodity_decay_map, hash_world,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -580,7 +580,10 @@ fn spawn_office(
             vacancy_since: Some(Tick(0)),
         },
     )?;
-    if matches!(office_def.succession_law, worldwake_core::SuccessionLaw::Force) {
+    if matches!(
+        office_def.succession_law,
+        worldwake_core::SuccessionLaw::Force
+    ) {
         let hold_ticks = u32::try_from(office_def.succession_period_ticks)
             .ok()
             .and_then(std::num::NonZeroU32::new)
@@ -789,9 +792,7 @@ fn last_seen_provenance_from_def(
     names: &BTreeMap<String, EntityId>,
 ) -> Result<LastSeenProvenance, ScenarioError> {
     Ok(match def {
-        types::LastSeenProvenanceDef::DirectObservation => {
-            LastSeenProvenance::DirectObservation
-        }
+        types::LastSeenProvenanceDef::DirectObservation => LastSeenProvenance::DirectObservation,
         types::LastSeenProvenanceDef::Hearsay {
             original_observer,
             chain_depth,

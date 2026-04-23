@@ -299,8 +299,7 @@ fn run_survival_tell() -> SurvivalTellObservation {
                 }
                 let listener_subject_belief_tick = listener_store
                     .get_entity(subject)
-                    .map(|belief| belief.last_observed_tick())
-                    .flatten()
+                    .and_then(worldwake_core::BelievedEntityState::last_observed_tick)
                     .unwrap_or(tick);
                 assert_eq!(
                     event.tell_commit_result(),

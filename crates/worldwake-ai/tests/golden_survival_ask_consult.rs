@@ -114,14 +114,11 @@ fn contract_run_limit_overrides(
 }
 
 fn searcher_subject_record(store: &LastSeenMemory, subject: EntityId) -> Option<(Tick, EntityId)> {
-    let record = store
-        .records
-        .get(&subject)
-        .copied()?;
+    let record = store.records.get(&subject).copied()?;
     match record.provenance {
-        LastSeenProvenance::Hearsay { original_observer, .. } => {
-            Some((record.observed_tick, original_observer))
-        }
+        LastSeenProvenance::Hearsay {
+            original_observer, ..
+        } => Some((record.observed_tick, original_observer)),
         LastSeenProvenance::DirectObservation => None,
     }
 }
