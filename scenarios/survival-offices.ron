@@ -1,0 +1,151 @@
+// Survival offices scenario for Worldwake.
+//
+// Purpose: move roadmap row 11 forward with a truthful survival-backed office
+// proof seam. The authored runtime today can land force-law office uptake under
+// survival pressure through the consultable OfficeRegister path, but autonomous
+// notice posting still lacks a clean scenario-authored proof surface.
+//
+// Lawful competing affordances intentionally constrained:
+// - no social relay, trade, justice, theft, or combat branches
+// - only one authored office and one consultable local register
+// - food, water, wash, and latrine remain co-located so the row stays about
+//   office pressure competing with survival needs rather than route planning
+(
+    seed: 611011,
+    survival_health_contract: (
+        max_authored_critical_run_ticks: 220,
+        max_idle_window_ticks_with_elevated_need: 30,
+        elevated_need_floor: 300,
+        required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
+    ),
+    places: [
+        (name: "Council Green", tags: [Village, Field, Latrine]),
+    ],
+    offices: [
+        (
+            name: "Marsh Warden",
+            seat: "Council Green",
+            succession_law: Force,
+            succession_period_ticks: 8,
+        ),
+    ],
+    agents: [
+        (
+            name: "Claimant Rhea",
+            location: "Council Green",
+            control: Ai,
+            known_recipes: ["Harvest Apples", "Harvest Water"],
+            needs: (
+                hunger: 420,
+                thirst: 260,
+                fatigue: 180,
+                bladder: 220,
+                dirtiness: 180,
+            ),
+            utility_profile: (
+                hunger_weight: 760,
+                thirst_weight: 700,
+                fatigue_weight: 650,
+                bladder_weight: 640,
+                dirtiness_weight: 620,
+                pain_weight: 500,
+                danger_weight: 500,
+                enterprise_weight: 860,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 500,
+                care_weight: 0,
+            ),
+            perception_profile: (
+                entity_activation_threshold: 64,
+                claim_confidence_threshold: 50,
+                observation_buffer_capacity: 24,
+                observation_budget: 24,
+                need_salience_boost: 500,
+                need_salience_urgency_threshold: 500,
+                observation_fidelity: 900,
+                confidence_policy: (
+                    direct_observation_base: 900,
+                    report_base: 700,
+                    rumor_base: 400,
+                    inference_base: 500,
+                    report_chain_penalty: 100,
+                    rumor_chain_penalty: 150,
+                    staleness_penalty_per_tick: 2,
+                ),
+                institutional_memory_capacity: 20,
+                consultation_speed_factor: 500,
+                contradiction_tolerance: 300,
+            ),
+            cognitive_profile: (
+                max_candidates_to_plan: 4,
+                max_candidates_per_expansion: 240,
+                max_plan_depth: 10,
+                snapshot_travel_horizon: 3,
+                max_node_expansions: 640,
+                switch_margin: 100,
+                planning_switch_margin: 150,
+                transient_block_ticks: 20,
+                structural_block_ticks: 200,
+                initial_cooldown_ticks: 4,
+                max_cooldown_ticks: 64,
+                max_snapshot_entities_per_place: 50,
+                landmark_extraction_depth: 3,
+                use_ff_heuristic: true,
+            ),
+            execution_budget: (
+                max_prerequisite_locations: 2,
+                beam_width: 12,
+                preferred_operator_boost: 3,
+            ),
+            drive_thresholds: (
+                hunger: (low: 250, medium: 450, high: 650, critical: 840),
+                thirst: (low: 200, medium: 400, high: 650, critical: 820),
+                fatigue: (low: 300, medium: 550, high: 780, critical: 900),
+                bladder: (low: 300, medium: 550, high: 780, critical: 900),
+                dirtiness: (low: 320, medium: 580, high: 780, critical: 900),
+                pain: (low: 150, medium: 350, high: 600, critical: 850),
+                danger: (low: 100, medium: 300, high: 550, critical: 800),
+            ),
+            metabolism_profile: (
+                hunger_rate: 3,
+                thirst_rate: 3,
+                fatigue_rate: 2,
+                bladder_rate: 4,
+                dirtiness_rate: 1,
+                rest_efficiency: 20,
+                starvation_tolerance_ticks: 540,
+                dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120,
+                bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 8,
+                wash_ticks: 12,
+                travel_fatigue_multiplier: 0,
+                travel_thirst_multiplier: 0,
+                travel_bladder_multiplier: 0,
+                wilderness_relief_dirtiness_penalty: 0,
+            ),
+            exploration_profile: (
+                curiosity_weight: 50,
+                need_activation_threshold: 1000,
+                frontier_depth: 1,
+                acquisition_failure_threshold: 1,
+                exploration_arrival_boost: 0,
+                max_consecutive_explorations: 1,
+                visit_lookback_ticks: 120,
+            ),
+        ),
+    ],
+    facilities: [
+        (name: "Council Well", workstation: Well, location: "Council Green"),
+        (name: "Council Washbasin", workstation: WashBasin, location: "Council Green"),
+        (name: "Council Orchard", workstation: OrchardRow, location: "Council Green"),
+    ],
+    resource_sources: [
+        (commodity: Water, location: "Council Green", facility: "Council Well", regeneration_ticks_per_unit: 3, capacity: 16),
+        (commodity: Apple, location: "Council Green", facility: "Council Orchard", regeneration_ticks_per_unit: 3, capacity: 24),
+    ],
+)

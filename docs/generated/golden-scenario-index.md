@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 96
-- Contributing golden test files: 21
-- Associated tests: 119
+- Scenario blocks: 97
+- Contributing golden test files: 22
+- Associated tests: 121
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1064,6 +1064,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the scenario satisfies the authored survival contract for the merchant and caretaker, the caretaker reaches a real `FreeCarryCapacity` selection and commits `drop_item`, the same tracked Waste lot becomes a ground item and is later archived by `ItemDecay`, and the buyer still completes a real apple trade followed by `eat` during the same run.
 
 **Cross-system chain**: carried Waste above disposal threshold -> selected `FreeCarryCapacity` goal -> committed `drop_item` -> tracked Waste lot on ground -> `ItemDecay` archives that exact lot -> local apple trade still commits under the same survival loop.
+
+### Scenario 175: Survival Offices Proves Force-Law Uptake Under Survival
+
+- Source: `golden_survival_offices.rs:233`
+- Systems: AI, Needs, Offices
+- GoalKinds: ClaimOffice, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
+- ActionDomains: Social, Needs
+- Places: Council Green
+- Principles: 6, 7, 14, 20
+
+**Setup**: Run the authored survival offices scenario for 1440 ticks. `Claimant Rhea` starts at `Council Green` with one vacant force-law office and the co-located survival substrate needed to keep eating, drinking, relieving, washing, and sleeping in the same place. That makes the row about force-law office pressure competing with ongoing self-care rather than travel or consult-record gating.
+
+**Proves**: the tracked agent satisfies the authored survival-health contract, selects `ClaimOffice`, commits `press_force_claim`, becomes force controller, and only later installs as office holder after the force-law hold delay.
+
+**Cross-system chain**: vacant force-law office under survival pressure -> ClaimOffice selected -> press_force_claim commits -> office controller mutates -> delayed office holder installation.
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 
