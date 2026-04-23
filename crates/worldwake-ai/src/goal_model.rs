@@ -2302,6 +2302,7 @@ pub struct RankedDriveGoalProvenance {
     pub base_priority_class: GoalPriorityClass,
     pub final_priority_class: GoalPriorityClass,
     pub adjustment: Option<RankedPriorityAdjustment>,
+    pub commodity_preference_rank: Option<u8>,
     pub motive_inputs: Vec<RankedDriveMotiveInput>,
 }
 

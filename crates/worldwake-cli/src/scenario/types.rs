@@ -12,11 +12,11 @@ use worldwake_core::{
     CommodityDecayMap, CommodityValuationProfile, CommunicationProfile,
     ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
     DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, MetabolismProfile,
-    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille, PlaceVisibilityProfile,
-    PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences, SuccessionLaw, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
-    WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
+    MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile, Permille,
+    PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
+    SuccessionLaw, TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -370,6 +370,18 @@ pub struct FacilityDef {
     pub name: Option<String>,
     pub workstation: WorkstationTag,
     pub location: String,
+    #[serde(default)]
+    pub merchant_storage: Option<MerchantStorageDef>,
+}
+
+/// Optional merchant stock-storage substrate for a facility.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MerchantStorageDef {
+    pub owner: String,
+    pub stock_capacity: LoadUnits,
+    #[serde(default)]
+    pub display_capacity: Option<LoadUnits>,
 }
 
 /// A resource source at a place.
@@ -702,7 +714,16 @@ mod tests {
                 (commodity: Sword, quantity: 1, location: "Bob"),
             ],
             facilities: [
-                (workstation: Forge, location: "Town"),
+                (
+                    name: "Town Stall",
+                    workstation: Forge,
+                    location: "Town",
+                    merchant_storage: (
+                        owner: "Bob",
+                        stock_capacity: 200,
+                        display_capacity: 100,
+                    ),
+                ),
             ],
             resource_sources: [
                 (commodity: Apple, location: "Forest", regeneration_ticks_per_unit: Some(5), capacity: 20),
@@ -765,6 +786,16 @@ mod tests {
         assert_eq!(perception.observation_budget, 7);
         assert!(bob.drive_thresholds.is_some());
         assert_eq!(bob.drive_thresholds.unwrap().hunger.low().value(), 150);
+        assert_eq!(def.facilities.len(), 1);
+        let facility = &def.facilities[0];
+        assert_eq!(facility.name.as_deref(), Some("Town Stall"));
+        let merchant_storage = facility
+            .merchant_storage
+            .as_ref()
+            .expect("merchant storage should deserialize");
+        assert_eq!(merchant_storage.owner, "Bob");
+        assert_eq!(merchant_storage.stock_capacity, LoadUnits(200));
+        assert_eq!(merchant_storage.display_capacity, Some(LoadUnits(100)));
         assert_eq!(
             bob.drive_escalation_profile,
             Some(worldwake_core::DriveEscalationProfile {

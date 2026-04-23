@@ -48,10 +48,10 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Production (facility-backed craft) | Authored recipe set with at least one non-harvest production recipe | [`production_actions.rs`](../crates/worldwake-systems/src/production_actions.rs) | Landed in [§5.8](#58-landed-8-survival-production) |
-| Merchant selling | `merchandise_profile` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Trade negotiation | `trade_disposition` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Commodity valuation | `commodity_valuation` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Substitute preferences | `substitute_preferences` present | [`trade.rs`](../crates/worldwake-core/src/trade.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Merchant selling | `merchandise_profile` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
+| Trade negotiation | `trade_disposition` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
+| Commodity valuation | `commodity_valuation` present | [`trade_actions.rs`](../crates/worldwake-systems/src/trade_actions.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
+| Substitute preferences | `substitute_preferences` present | [`trade.rs`](../crates/worldwake-core/src/trade.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Item decay | `commodity_decay` authored on the scenario | [`item_decay.rs`](../crates/worldwake-systems/src/item_decay.rs) | Planned |
 | Disposal | `disposal_profile` present | [`disposal.rs`](../crates/worldwake-core/src/disposal.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Facility-queue contention | `contention_disposition` present | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
@@ -68,7 +68,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Bandit camps | Authored bandit-agent + camp world state | bandit systems and camp actions | Planned |
 | Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Planned; current survival scenarios keep this gated inactive |
 | Search | `violation_disposition` plus `epistemic_disposition` | search and investigation actions | Planned; structural coverage only in `cli-evaluation.ron` |
-| Stock / transport | `merchandise_profile` plus stock-supporting world state | stock and transport actions | Planned; structural coverage only in `cli-evaluation.ron` |
+| Stock / transport | `merchandise_profile` plus stock-supporting world state | stock and transport actions | Landed in [§5.9](#59-landed-9-survival-trade) |
 
 Coverage warnings from the generated companion are currently truthful and intentional for this roadmap:
 
@@ -91,11 +91,12 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-ask-consult.ron` | Ask-about-person, Consult-record |
 | Landed in `survival-preferences.ron` | Diversification / curiosity, Experience preferences |
 | Landed in `survival-production.ron` | Production (facility-backed craft) |
-| Structural coverage only, not yet landed | Place concealment, Obligation satiation, Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Disposal, Facility-queue contention, Bounty posting, Notice posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search, Stock / transport |
+| Landed in `survival-trade.ron` | Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Stock / transport |
+| Structural coverage only, not yet landed | Place concealment, Obligation satiation, Disposal, Facility-queue contention, Bounty posting, Notice posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search |
 | Authored but still gated inactive | Report / witness |
 | Planned with no current scenario activation | Item decay, Offices / succession / force-claim, Bandit camps |
 
-The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and now `survival-ask-consult.ron` can expose future social or institutional substrate without automatically promoting every structurally active row to `Landed`.
+The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
 
 ## 4. Priority Roadmap
 
@@ -155,7 +156,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 6 | `survival-ask-consult` | Ask-about-person + consult-record | Landed | Explicit epistemic actions competing with self-care |
 | 7 | `survival-preferences` | Experience preferences + diversification / curiosity | Landed | Proves proactive diversification under survival and a durable familiar-source failure memory that later discounts the stale orchard while selecting the discovered novel grove |
 | 8 | `survival-production` | Production (facility-backed craft) | Landed | First survival row where food depends on a workstation-backed craft branch rather than direct harvest |
-| 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | Planned | Multi-agent coordination and ownership-sensitive planning |
+| 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade |
 | 10 | `survival-items-decay` | Item decay + disposal | Planned | Ongoing world maintenance pressure added to survival/trade |
 | 11 | `survival-offices` | Offices / succession / force-claim + posting | Planned | Institution-level goals and artifacts competing with needs |
 | 12 | `survival-theft` | Theft + place concealment | Planned | Antagonistic local behavior and hidden-state pressure |
@@ -191,9 +192,29 @@ The golden proves the full causal chain at the live seam that matters: proactive
 
 The golden proves the branch at the earliest honest surfaces that matter: a planning trace selects `ProduceCommodity`; the action trace commits `craft:Bake Bread`; authoritative world state materializes Bread; and a later planning pass selects Bread consumption only after that production output exists. The same run also proves the authored survival-health contract for the full 1440 ticks.
 
-#### 4.5 Remaining planned rows
+### 4.5 Landed Row 9
 
-Rows 9-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
+### 9. `survival-trade`
+
+**Status**: Landed  
+**Source scenario**: [`scenarios/survival-trade.ron`](../scenarios/survival-trade.ron)  
+**Backing goldens**: [`golden_survival_trade.rs`](../crates/worldwake-ai/tests/golden_survival_trade.rs)  
+**Depends on**: landed rows 1-8
+
+`survival-trade.ron` now owns a truthful roadmap landing for the trade row. It keeps a full 1440-tick survival-health contract alive while authoring a merchant facility, staged apple stock, buyer purchasing power, `trade_disposition`, `commodity_valuation`, and `substitute_preferences` in one live scenario instead of relying on the old auxiliary merchant-only goldens.
+
+The golden now proves the full live seam this row needs: `Merchant Sera` commits `stage_stock_for_sale`, a listed apple lot appears at the market, `Buyer Nila` reaches a local `AcquireCommodity(SelfConsume)` substitute branch with an explicit `trade` payload still bound to that apple lot, authoritative apple and coin transfer occur at the trade seam, and both agents satisfy the authored survival contract.
+
+This is now a truthful substitute-isolation scenario rather than merely a bread-market progress row. The authored market exposes only apples for sale, the buyer's food substitutes are ordered `[Apple, Grain]`, and the buyer cannot short-circuit the row through a local listed bread purchase. Focused AI proof from the earlier trade tickets still owns the lower candidate-generation, ranking, and goal-model seams; the roadmap-owned golden now closes the remaining scenario/golden layer by proving that the landed row really is a substitute-driven trade branch for the authored reason.
+
+**Deliberately inactive**
+- Place concealment
+- Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
+- Report / witness remains gated inactive in the authored scenario
+
+#### 4.6 Remaining planned rows
+
+Rows 10-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
 
 ## 5. Landed Scenarios
 
@@ -396,7 +417,36 @@ The golden proves a real non-harvest production branch inside the survival loop 
 - Obligation satiation, trade, decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit, escort, search, and stock / transport rows remain unlanded
 - Report / witness remains gated inactive in the authored scenario
 
-### 5.9 Auxiliary and Non-Roadmap Scenarios
+### 5.9 Landed #9: `survival-trade`
+
+**Status**: Landed  
+**Source scenario**: [`scenarios/survival-trade.ron`](../scenarios/survival-trade.ron)  
+**Backing goldens**: [`golden_survival_trade.rs`](../crates/worldwake-ai/tests/golden_survival_trade.rs)
+
+**Authored envelope**
+- Seed: `609009`
+- Agents: `2`
+- Places: `2`
+- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 28`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
+
+**Scenario-owned progress**
+- Merchant selling
+- Trade negotiation
+- Commodity valuation
+- Stock / transport
+
+**Why this scenario is landed**
+
+The scenario now proves a real substitute-driven survival trade branch instead of a narrow auxiliary trade harness. `Merchant Sera` stages apples into a listed sale lot at `Market Square`; `Buyer Nila` starts hungry with coin but no direct bread-market branch; and the golden proves the concrete causal chain that now exists in the live runtime: listing becomes visible, planning selects the substitute `AcquireCommodity(Apple, SelfConsume)` branch, the current runtime plan keeps an explicit `trade` payload against the apple lot, the committed trade transfers Apple and Coin authoritatively, `eat` follows the first successful purchase, and both agents survive the full 1440-tick run.
+
+That proof now closes the row honestly. The focused AI tests still own the lower substitute candidate-generation, ranking, and goal-model surfaces, while this roadmap scenario/golden pair owns the authored market branch and full survival-contract integration seam. Together they make row 9 a truthful landing instead of merely partial progress.
+
+**Deliberately inactive**
+- Place concealment
+- Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
+- Report / witness remains gated inactive in the authored scenario
+
+### 5.10 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 

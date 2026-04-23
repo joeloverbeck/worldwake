@@ -287,22 +287,71 @@ fn spawn_entities(
             &facility_def.location,
             &format!("facility {:?} location", facility_def.workstation),
         )?;
-        let facility_id = txn.create_entity(EntityKind::Facility);
-        txn.set_component_workstation_marker(
-            facility_id,
-            WorkstationMarker(facility_def.workstation),
-        )?;
-        txn.set_ground_location(facility_id, place_id)?;
+        let facility_id = if let Some(storage) = &facility_def.merchant_storage {
+            let owner_id = resolve_name(
+                names,
+                &storage.owner,
+                &format!(
+                    "facility {:?} merchant_storage owner",
+                    facility_def.workstation
+                ),
+            )?;
+            let (facility_id, _, _) = txn.create_merchant_facility(
+                place_id,
+                owner_id,
+                storage.stock_capacity,
+                storage.display_capacity,
+            )?;
+            txn.set_component_workstation_marker(
+                facility_id,
+                WorkstationMarker(facility_def.workstation),
+            )?;
+            facility_id
+        } else {
+            let facility_id = txn.create_entity(EntityKind::Facility);
+            txn.set_component_workstation_marker(
+                facility_id,
+                WorkstationMarker(facility_def.workstation),
+            )?;
+            txn.set_ground_location(facility_id, place_id)?;
+            facility_id
+        };
         txn.set_component_production_output_ownership_policy(
             facility_id,
             ProductionOutputOwnershipPolicy {
                 output_owner: ProductionOutputOwner::Actor,
             },
         )?;
+        if let Some(name) = &facility_def.name {
+            txn.set_component_name(facility_id, worldwake_core::Name(name.clone()))?;
+        }
         facility_locations.insert(facility_id, place_id);
         if let Some(name) = &facility_def.name {
             names.insert(name.clone(), facility_id);
         }
+    }
+
+    for agent_def in &def.agents {
+        let Some(merch_def) = &agent_def.merchandise_profile else {
+            continue;
+        };
+        let Some(home_facility_name) = &merch_def.home_facility else {
+            continue;
+        };
+        let agent_id = resolve_name(names, &agent_def.name, "agent merchandise owner")?;
+        let home_facility = resolve_name(
+            names,
+            home_facility_name,
+            &format!("agent '{}' merchandise home_facility", agent_def.name),
+        )?;
+        let sale_kinds = merch_def.sale_kinds.iter().copied().collect();
+        txn.set_component_merchandise_profile(
+            agent_id,
+            MerchandiseProfile {
+                sale_kinds,
+                home_facility: Some(home_facility),
+            },
+        )?;
     }
 
     for source_def in &def.resource_sources {
@@ -461,21 +510,9 @@ fn spawn_agent(
         .unwrap_or_default();
     txn.set_component_artifact_posting_profile(agent_id, artifact_posting)?;
     if let Some(ref merch_def) = agent_def.merchandise_profile {
-        let home_facility = merch_def
-            .home_facility
-            .as_ref()
-            .map(|name| {
-                resolve_name(
-                    names,
-                    name,
-                    &format!("agent '{}' merchandise home_facility", agent_def.name),
-                )
-            })
-            .transpose()?;
-
         let profile = MerchandiseProfile {
             sale_kinds: merch_def.sale_kinds.iter().copied().collect(),
-            home_facility,
+            home_facility: None,
         };
         txn.set_component_merchandise_profile(agent_id, profile)?;
     }
@@ -1554,6 +1591,7 @@ mod tests {
                 name: Some("Forge Bench".into()),
                 workstation: WorkstationTag::Forge,
                 location: "Smithy".into(),
+                merchant_storage: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Apple,
@@ -1676,6 +1714,7 @@ mod tests {
                 name: Some("North Orchard".into()),
                 workstation: WorkstationTag::OrchardRow,
                 location: "Orchard".into(),
+                merchant_storage: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Apple,
@@ -1739,6 +1778,7 @@ mod tests {
                 name: Some("Village Well".into()),
                 workstation: WorkstationTag::Well,
                 location: "Village".into(),
+                merchant_storage: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Water,
@@ -1800,6 +1840,75 @@ mod tests {
                 .iter()
                 .any(|def| def.name == "harvest:Harvest Water"),
             "scenario action registries should include recipe-backed water harvest actions"
+        );
+    }
+
+    #[test]
+    fn test_spawn_merchant_storage_facility_creates_stock_policy_owned_by_agent() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Market".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![minimal_agent("Merchant", "Market", ControlSource::Ai)],
+            offices: vec![],
+            items: vec![],
+            facilities: vec![FacilityDef {
+                name: Some("Merchant Stall".into()),
+                workstation: WorkstationTag::Forge,
+                location: "Market".into(),
+                merchant_storage: Some(MerchantStorageDef {
+                    owner: "Merchant".into(),
+                    stock_capacity: LoadUnits(200),
+                    display_capacity: Some(LoadUnits(100)),
+                }),
+            }],
+            resource_sources: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let market = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        let merchant = world
+            .entities_with_name_and_agent_data()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|name| name.0 == "Merchant")
+            })
+            .expect("scenario should spawn merchant");
+        let stall = world
+            .entities_effectively_at(market)
+            .into_iter()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|name| name.0 == "Merchant Stall")
+            })
+            .expect("scenario should spawn named merchant stall");
+        let policy = world
+            .get_component_stock_storage_policy(stall)
+            .expect("merchant stall should have stock storage policy");
+
+        assert_eq!(world.owner_of(stall), Some(merchant));
+        assert_eq!(world.owner_of(policy.stock_container), Some(merchant));
+        let display = policy
+            .display_container
+            .expect("merchant stall should have display container");
+        assert_eq!(world.owner_of(display), Some(merchant));
+        assert_eq!(
+            world.get_component_workstation_marker(stall).unwrap().0,
+            WorkstationTag::Forge
         );
     }
 

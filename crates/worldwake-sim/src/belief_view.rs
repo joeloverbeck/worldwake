@@ -19,9 +19,10 @@ use worldwake_core::{
     ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
     Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
+    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
+    effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -532,8 +533,16 @@ pub trait GoalBeliefView {
         let _ = agent;
         Vec::new()
     }
+    fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+        let _ = agent;
+        None
+    }
     fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile>;
     fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        let _ = agent;
+        None
+    }
+    fn substitute_preferences(&self, agent: EntityId) -> Option<SubstitutePreferences> {
         let _ = agent;
         None
     }
@@ -916,6 +925,10 @@ pub trait CombatBeliefView {
 pub trait EconomicBeliefView {
     fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile>;
     fn commodity_valuation_profile(&self, agent: EntityId) -> Option<CommodityValuationProfile> {
+        let _ = agent;
+        None
+    }
+    fn substitute_preferences(&self, agent: EntityId) -> Option<SubstitutePreferences> {
         let _ = agent;
         None
     }
@@ -1799,6 +1812,13 @@ where
         PoliticalBeliefView::active_violation_records(self, agent)
     }
 
+    fn trade_disposition_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::TradeDispositionProfile> {
+        EconomicBeliefView::trade_disposition_profile(self, agent)
+    }
+
     fn merchandise_profile(
         &self,
         agent: worldwake_core::EntityId,
@@ -1811,6 +1831,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::CommodityValuationProfile> {
         EconomicBeliefView::commodity_valuation_profile(self, agent)
+    }
+
+    fn substitute_preferences(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::SubstitutePreferences> {
+        EconomicBeliefView::substitute_preferences(self, agent)
     }
 
     fn route_experience(
