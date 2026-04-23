@@ -289,13 +289,15 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     let mut ranked = outcome.ranked;
     crate::ranking::apply_pending_source_reliability_failures(
         &mut ranked,
-        &view,
-        agent,
-        phase.tick,
-        phase.utility,
-        dc,
-        repair_memory,
-        learned_opportunity_memory,
+        &crate::ranking::PendingSourceReliabilityInputs {
+            view: &view,
+            agent,
+            current_tick: phase.tick,
+            utility: phase.utility,
+            decision_context: dc,
+            repair_memory,
+            learned_opportunity_memory,
+        },
         &candidates.pending_source_reliability_failures,
     );
 

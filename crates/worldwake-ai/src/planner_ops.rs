@@ -1016,11 +1016,10 @@ impl PlannedPlan {
 
 #[must_use]
 pub(crate) fn committed_source_for_offer(offer: &GoalOffer) -> Option<SourceKey> {
-    let commodity = match offer.key.kind {
-        GoalKind::AcquireCommodity { commodity, .. } | GoalKind::RestockCommodity { commodity } => {
-            commodity
-        }
-        _ => return None,
+    let (GoalKind::AcquireCommodity { commodity, .. } | GoalKind::RestockCommodity { commodity }) =
+        offer.key.kind
+    else {
+        return None;
     };
     let mut sources = offer.evidence_entities.iter().copied();
     let entity = sources.next()?;

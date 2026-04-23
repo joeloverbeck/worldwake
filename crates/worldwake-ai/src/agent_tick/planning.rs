@@ -1595,14 +1595,15 @@ pub(super) fn plan_and_validate_next_step(
                         frame_switch_margin,
                     },
                 ) {
-                    let current_place = SpatialBeliefView::effective_place(&view, agent);
-                    let failed_sources = same_goal_search_failed_source_keys(
-                        runtime.current_plan.as_ref(),
-                        &selected_plan,
-                        &selection_plans,
-                        current_place,
-                    );
-                    drop(view);
+                    let failed_sources = {
+                        let current_place = SpatialBeliefView::effective_place(&view, agent);
+                        same_goal_search_failed_source_keys(
+                            runtime.current_plan.as_ref(),
+                            &selected_plan,
+                            &selection_plans,
+                            current_place,
+                        )
+                    };
                     if !failed_sources.is_empty() {
                         super::apply_source_reliability_failure_observations(
                             world,
@@ -1952,14 +1953,15 @@ pub(super) fn plan_and_validate_next_step_traced(
                     frame_switch_margin,
                 },
             ) {
-                let current_place = SpatialBeliefView::effective_place(&view, agent);
-                let failed_sources = same_goal_search_failed_source_keys(
-                    runtime.current_plan.as_ref(),
-                    &selected_plan,
-                    &selection_plans,
-                    current_place,
-                );
-                drop(view);
+                let failed_sources = {
+                    let current_place = SpatialBeliefView::effective_place(&view, agent);
+                    same_goal_search_failed_source_keys(
+                        runtime.current_plan.as_ref(),
+                        &selected_plan,
+                        &selection_plans,
+                        current_place,
+                    )
+                };
                 if !failed_sources.is_empty() {
                     super::apply_source_reliability_failure_observations(
                         world,

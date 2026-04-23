@@ -441,13 +441,7 @@ fn apply_source_reliability_discount(
 
 pub(crate) fn apply_pending_source_reliability_failures(
     ranked: &mut Vec<AgendaEntry>,
-    view: &dyn GoalBeliefView,
-    agent: EntityId,
-    current_tick: Tick,
-    utility: &UtilityProfile,
-    decision_context: DecisionContext,
-    repair_memory: &RepairMemory,
-    learned_opportunity_memory: &LearnedOpportunityMemory,
+    inputs: &PendingSourceReliabilityInputs<'_>,
     pending_failures: &BTreeSet<SourceKey>,
 ) {
     if pending_failures.is_empty() {
@@ -455,13 +449,13 @@ pub(crate) fn apply_pending_source_reliability_failures(
     }
 
     let context = RankingContext::with_memories(
-        view,
-        agent,
-        current_tick,
-        utility,
-        decision_context,
-        repair_memory,
-        learned_opportunity_memory,
+        inputs.view,
+        inputs.agent,
+        inputs.current_tick,
+        inputs.utility,
+        inputs.decision_context,
+        inputs.repair_memory,
+        inputs.learned_opportunity_memory,
     );
 
     for entry in ranked.iter_mut() {
@@ -507,6 +501,16 @@ pub(crate) fn apply_pending_source_reliability_failures(
     }
 
     let _ = sort_in_place(ranked);
+}
+
+pub(crate) struct PendingSourceReliabilityInputs<'a> {
+    pub(crate) view: &'a dyn GoalBeliefView,
+    pub(crate) agent: EntityId,
+    pub(crate) current_tick: Tick,
+    pub(crate) utility: &'a UtilityProfile,
+    pub(crate) decision_context: DecisionContext,
+    pub(crate) repair_memory: &'a RepairMemory,
+    pub(crate) learned_opportunity_memory: &'a LearnedOpportunityMemory,
 }
 
 fn apply_source_reliability_discount_with_pending_failures(
@@ -5324,13 +5328,15 @@ mod tests {
 
         super::apply_pending_source_reliability_failures(
             &mut ranked,
-            &view,
-            agent,
-            current_tick(),
-            &utility(),
-            build_decision_context(&view, agent),
-            super::empty_repair_memory(),
-            super::empty_learned_opportunity_memory(),
+            &super::PendingSourceReliabilityInputs {
+                view: &view,
+                agent,
+                current_tick: current_tick(),
+                utility: &utility(),
+                decision_context: build_decision_context(&view, agent),
+                repair_memory: super::empty_repair_memory(),
+                learned_opportunity_memory: super::empty_learned_opportunity_memory(),
+            },
             &BTreeSet::from([SourceKey {
                 entity: familiar_source,
                 commodity: CommodityKind::Bread,
