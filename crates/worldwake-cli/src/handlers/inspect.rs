@@ -665,6 +665,7 @@ mod tests {
                 bidirectional: true,
             }],
             offices: vec![],
+            notices: vec![],
             agents: vec![
                 AgentDef {
                     name: "Aster".into(),
@@ -693,6 +694,7 @@ mod tests {
                     preference_profile: None,
                     expectation_store: None,
                     last_seen_memory: None,
+                    social_observations: None,
                     obligation_satiation_profile: None,
                     drive_thresholds: None,
                     drive_escalation_profile: None,
@@ -739,6 +741,7 @@ mod tests {
                     preference_profile: None,
                     expectation_store: None,
                     last_seen_memory: None,
+                    social_observations: None,
                     obligation_satiation_profile: None,
                     drive_thresholds: None,
                     drive_escalation_profile: None,

@@ -24,9 +24,11 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 - Resolve the exact roadmap row first. Do not start coding from the user phrase alone.
 - Treat roadmap landing as a three-layer contract: structural activation, behavioral proof, and causal validity.
+- If earlier landed rows already own part of the requested mechanic family, subtract that overlap first and restate the residual row-owned seam before authoring scenario or golden code.
 - A 1440-tick survival pass is necessary but not sufficient.
 - When the outcome is partial progress, distinguish explicitly between `what was implemented` and `why the row is still not Landed`.
 - Scenario-backed proof must assert the mechanic's intended behavior, not just the presence of a goal or action name.
+- Treat externally requested actions, payload overrides, and other human-driven helper paths as auxiliary evidence unless the roadmap row explicitly owns that invocation model.
 - Scenario-backed roadmap goldens are CI-owned long-running suites. They must be wired through `.github/workflows/golden-<family>.yml`, marked `#[ignore]` for ordinary local/workspace lanes, and not treated as regular-lane coverage.
 - If the live architecture cannot yet support the truthful golden, create or update ticket(s) in `tickets/` instead of weakening the scenario, weakening the golden, or falsely marking the roadmap row landed.
 - Keep the roadmap and generated docs truthful in the same pass. Do not leave doc drift behind.
@@ -52,11 +54,11 @@ Depending on live feasibility, this workflow should end with one of these outcom
 
 ## Workflow
 
-1. **Reassess roadmap row, mechanic contract, and live branch.** Load `references/reassessment.md`. Resolve the exact row in `docs/scenario-roadmap.md`, map the mechanic contract against the Gameplay Feature Catalog, and inspect the live branch state before authoring anything. Covers original Steps 0–2.
-2. **Author the scenario.** Load `references/scenario-authoring.md`. Create or revise `scenarios/<roadmap-name>.ron` as a real 1440-tick survival-contract scenario that activates the intended mechanic through authored state.
-3. **Write the golden around the mechanic.** Load `references/golden-writing.md`. Prove both the survival-health contract and the scenario-specific mechanic contract at the earliest honest causal surface; wire the golden into the correct `.github/workflows/golden-<family>.yml` matrix.
+1. **Reassess roadmap row, mechanic contract, and live branch.** Load `references/reassessment.md`. Resolve the exact row in `docs/scenario-roadmap.md`, map the mechanic contract against the Gameplay Feature Catalog, inspect the live branch state, and explicitly subtract any overlapping seam already owned by earlier landed rows before authoring anything. Covers original Steps 0–2.
+2. **Author the scenario and run one preflight before deeper proof work.** Load `references/scenario-authoring.md`. Create or revise `scenarios/<roadmap-name>.ron` as a real 1440-tick survival-contract scenario that activates the intended mechanic through authored state, then run one scenario-lint/spawn preflight so authored-surface failures are caught before golden debugging.
+3. **Write the golden around the mechanic.** Load `references/golden-writing.md`. Prove both the survival-health contract and the scenario-specific mechanic contract at the earliest honest causal surface, reject auxiliary external-request paths as roadmap proof unless the row explicitly owns them, and wire the golden into the correct `.github/workflows/golden-<family>.yml` matrix.
 4. **Make the landing pass, or create ticket ownership for real blockers.** Load `references/implementation-or-tickets.md`. Implement required production / scenario / golden / CI changes; if a genuine architectural contradiction blocks the landing, own the gap via tickets in `tickets/` instead of weakening the contract. Covers original Steps 5–6.
-5. **Refresh generated docs and roadmap truth in the same pass.** Load `references/refresh-and-roadmap.md`. Regenerate companion docs, run schema fallout sweeps, classify the outcome, update CI ownership, and handle rename/promotion fallout.
+5. **Refresh generated docs and roadmap truth in the same pass.** Load `references/refresh-and-roadmap.md`. Allocate a unique `Scenario <N>:` header before running the generated-doc refresh, then regenerate companion docs, run schema fallout sweeps, classify the outcome, update CI ownership, and handle rename/promotion fallout.
 6. **Close out.** Load `references/closeout.md`. Run the closeout checklist and produce the report in the required format.
 
 ## Guardrails
@@ -64,9 +66,12 @@ Depending on live feasibility, this workflow should end with one of these outcom
 - Do not claim a roadmap landing based only on structural activation.
 - Do not claim a roadmap landing based only on a 1440-tick survival pass.
 - Do not prove a mechanic with action-name presence when the real contract is a world consequence or belief change.
+- Do not let a later roadmap row silently re-prove a seam already landed by an earlier row; narrow the owned seam first.
+- Do not count externally requested or payload-override proof paths as roadmap-row proof unless the row explicitly owns human-driven invocation.
 - Do not leave a new roadmap scenario golden only as a regular test target without the matching `.github/workflows` family wiring.
 - Do not hide a blocker by broadening tolerances, weakening assertions, or inventing helper-only setup.
 - Do not keep an overclaimed `survival_health_contract` or roadmap row just because it was the first draft; narrow the authored contract first when focused proof falsifies it.
 - Do not update `docs/scenario-roadmap.md` as if the row landed when the golden still fails.
 - Do not leave generated docs stale after changing scenario or golden metadata.
+- Do not reuse an existing `Scenario <N>:` id and discover the collision only during generated-doc refresh.
 - Do not trust old scenario-roadmap prose over live generator rules and live code when they conflict; rewrite the roadmap first.

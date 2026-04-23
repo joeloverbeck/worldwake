@@ -478,6 +478,7 @@ fn survival_contract_guard_rejects_missing_authored_contract() {
         edges: vec![],
         agents: vec![],
         offices: vec![],
+        notices: vec![],
         items: vec![],
         facilities: vec![],
         resource_sources: vec![],

@@ -12881,6 +12881,88 @@ fn fulfill_post_notice_search_finds_travel_then_post_notice_progress_barrier() {
 }
 
 #[test]
+fn fulfill_post_notice_search_finds_same_place_post_notice_progress_barrier() {
+    let actor = entity(1);
+    let posting_place = entity(11);
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, posting_place]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(posting_place, EntityKind::Place);
+    view.effective_places.insert(actor, posting_place);
+    view.entities_at.insert(posting_place, vec![actor]);
+
+    let (registry, handlers) = build_registry();
+    let goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::Place(posting_place),
+        key: GoalKey::from(GoalKind::PostNotice {
+            posting: ArtifactPostingContext {
+                posting_place,
+                issuing_authority: None,
+                expires_at: Some(Tick(7)),
+                jurisdiction: Some(posting_place),
+            },
+            topic: NoticeTopic::ThreatWarning {
+                place: posting_place,
+            },
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([posting_place]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+    };
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &goal.evidence_entities,
+        &goal.evidence_places,
+        1,
+    );
+    let mut expansions = Vec::new();
+
+    let result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        Some(&mut expansions),
+    );
+    let plan = match result {
+        PlanSearchResult::Found(plan) => plan,
+        other => panic!(
+            "search should find a same-place PostNotice plan, got {other:?} with expansions {expansions:?}"
+        ),
+    };
+
+    assert_eq!(plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(plan.steps[0].op_kind, PlannerOpKind::PostNotice);
+    assert_eq!(
+        plan.steps[0]
+            .payload_override
+            .as_ref()
+            .and_then(ActionPayload::as_post_notice),
+        Some(&worldwake_sim::PostNoticeActionPayload {
+            posting_place,
+            issuing_authority: None,
+            expires_at: Some(Tick(7)),
+            jurisdiction: Some(posting_place),
+            topic: NoticeTopic::ThreatWarning {
+                place: posting_place,
+            },
+        })
+    );
+}
+
+#[test]
 fn fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier() {
     let actor = entity(1);
     let origin = entity(10);

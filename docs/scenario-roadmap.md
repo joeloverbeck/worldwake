@@ -55,9 +55,9 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Item decay | `commodity_decay` authored on the scenario | [`item_decay.rs`](../crates/worldwake-systems/src/item_decay.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
 | Disposal | `disposal_profile` present | [`disposal.rs`](../crates/worldwake-core/src/disposal.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
 | Facility-queue contention | `contention_disposition` present | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Offices / succession / force-claim | Office entities plus force-claim world state | [`office_actions.rs`](../crates/worldwake-systems/src/office_actions.rs), [`offices.rs`](../crates/worldwake-core/src/offices.rs) | Planned |
+| Offices / succession / force-claim | Office entities plus force-claim world state | [`office_actions.rs`](../crates/worldwake-systems/src/office_actions.rs), [`offices.rs`](../crates/worldwake-core/src/offices.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Notice posting | Non-zero `notice_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Notice posting | Non-zero `notice_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Theft | `theft_disposition` present | [`theft.rs`](../crates/worldwake-ai/src/theft.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Justice / accusation | `justice_disposition` present | [`justice_actions.rs`](../crates/worldwake-systems/src/justice_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Violation investigation | `violation_disposition` present | [`investigate_actions.rs`](../crates/worldwake-systems/src/investigate_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
@@ -93,9 +93,10 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-production.ron` | Production (facility-backed craft) |
 | Landed in `survival-trade.ron` | Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Stock / transport |
 | Landed in `survival-items-decay.ron` | Item decay, Disposal |
-| Structural coverage only, not yet landed | Place concealment, Obligation satiation, Facility-queue contention, Bounty posting, Notice posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search |
+| Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting |
+| Structural coverage only, not yet landed | Place concealment, Obligation satiation, Facility-queue contention, Bounty posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search |
 | Authored but still gated inactive | Report / witness |
-| Planned with no current scenario activation | Offices / succession / force-claim, Bandit camps |
+| Planned with no current scenario activation | Bandit camps |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
 
@@ -159,7 +160,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 8 | `survival-production` | Production (facility-backed craft) | Landed | First survival row where food depends on a workstation-backed craft branch rather than direct harvest |
 | 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade |
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
-| 11 | `survival-offices` | Offices / succession / force-claim + posting | Planned | Institution-level goals and artifacts competing with needs |
+| 11 | `survival-offices` | Offices / succession / force-claim + notice posting | Landed | Institution-level goals and artifacts competing with needs |
 | 12 | `survival-theft` | Theft + place concealment | Planned | Antagonistic local behavior and hidden-state pressure |
 | 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Planned | Witness chains and evidence-driven social reaction |
 | 14 | `survival-patrol` | Patrol + pursuit | Planned | Scheduled duties and interrupt-driven remote pursuit |
@@ -226,9 +227,26 @@ This is now a truthful substitute-isolation scenario rather than merely a bread-
 
 The golden proves the row at the earliest honest surfaces that matter: `Caretaker Oren` reaches a real `FreeCarryCapacity` selection, commits `drop_item`, the same tracked Waste lot later receives an `ItemDecay` archive event, and the trade seam still remains live because `Buyer Nila` completes a real apple trade and later commits `eat`. The full survival-health contract is tracked on the merchant and caretaker who own the row's ongoing survival-maintenance pressure, while the buyer remains a supporting causal actor for the substitute-trade witness path.
 
-#### 4.7 Remaining planned rows
+### 4.7 Landed Row 11
 
-Rows 11-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
+### 11. `survival-offices`
+
+**Status**: Landed  
+**Source scenario**: [`scenarios/survival-offices.ron`](../scenarios/survival-offices.ron)  
+**Backing goldens**: [`golden_survival_offices.rs`](../crates/worldwake-ai/tests/golden_survival_offices.rs)  
+**Depends on**: landed rows 1-10
+
+`survival-offices.ron` now lands row 11 at the truthful live seam. The authored survival scenario keeps `Claimant Rhea` alive for 1440 ticks while force-claiming `Marsh Warden` and, from authored remembered local conflict memory plus explicit posting profile substrate, autonomously selecting and committing a threat-warning `PostNotice`.
+
+The golden proves both halves at the earliest honest surfaces that matter: `ClaimOffice` selection under survival pressure, committed `press_force_claim`, authoritative force control, delayed holder installation, `PostNotice` selection and commit, and a newly created threat-warning notice artifact during the same authored run. This is a real roadmap-owned coexistence proof rather than test-seeded belief injection or an auxiliary non-survival posting witness.
+
+**Landed scope**
+- Offices / succession / force-claim
+- Notice posting
+
+#### 4.8 Remaining planned rows
+
+Rows 12-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
 
 ## 5. Landed Scenarios
 

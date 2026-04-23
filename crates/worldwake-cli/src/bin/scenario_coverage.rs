@@ -1180,6 +1180,7 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
         edges: _,
         agents: _,
         offices,
+        notices,
         items: _,
         facilities: _,
         resource_sources: _,
@@ -1195,6 +1196,9 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
     }
     if !offices.is_empty() {
         fields.insert("offices");
+    }
+    if !notices.is_empty() {
+        fields.insert("notices");
     }
     fields
 }
@@ -1238,6 +1242,7 @@ fn authored_agent_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             preference_profile,
             expectation_store,
             last_seen_memory,
+            social_observations,
             obligation_satiation_profile,
             drive_thresholds,
             drive_escalation_profile,
@@ -1276,6 +1281,7 @@ fn authored_agent_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             (preference_profile.is_some(), "preference_profile"),
             (expectation_store.is_some(), "expectation_store"),
             (last_seen_memory.is_some(), "last_seen_memory"),
+            (social_observations.is_some(), "social_observations"),
             (
                 obligation_satiation_profile.is_some(),
                 "obligation_satiation_profile",
