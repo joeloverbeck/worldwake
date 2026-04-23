@@ -1,5 +1,7 @@
 # Design: `docs/scenario-roadmap.md` + `docs/generated/scenario-coverage.md`
 
+**Status**: COMPLETED
+
 ## Brainstorm Context
 
 **Original request.** Design a document in `docs/*` that captures (1) the prioritary order in which gameplay features should be added to new scenarios, and (2) which gameplay features are already supported by which scenarios. Identifying gameplay features from `scenarios/*.ron` is non-trivial: features are gated behind profile structs on agents, but some profiles (notably `TellProfile`) are *present but inactivated* by zero-valued fields, and those should not count as covered. Deliverable is the document itself.
@@ -338,6 +340,21 @@ field zero (present-but-inactive), — not present.
 
 ### scenarios/survival-scattered.ron
 ... (same shape) ...
+
+## Outcome
+
+Completed on 2026-04-23.
+
+- Landed the three deliverables this design proposed:
+  - `docs/scenario-roadmap.md`
+  - `docs/generated/scenario-coverage.md`
+  - `crates/worldwake-cli/src/bin/scenario_coverage.rs`
+- Closed the follow-on CI integration loop by wiring `cargo run -p worldwake-cli --bin scenario-coverage -- --check` into `scripts/verify.sh`.
+- The final roadmap boundary was narrower and more truthful than the draft: `drive-escalation-wash-priority.ron` remained auxiliary golden evidence rather than a landed survival-roadmap row, and `cli-evaluation.ron` remained CLI/schema coverage rather than gameplay-proof coverage.
+- Deviation from the draft's maintenance precedent: this design cited `scripts/profile_docs.py` and `scripts/golden_inventory.py` as precedent checks, but the landed `verify.sh` integration only added the new `scenario-coverage --check` step. Adding those older generated-doc checks remained out of scope for the SCEROAD ticket chain.
+- Verification results:
+  - `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
+  - `./scripts/verify.sh`
 ```
 
 Deterministic output. CI diffs the generated file against the committed copy and fails on drift.

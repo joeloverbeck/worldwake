@@ -3,6 +3,10 @@ name = "worldwake-cli"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "scenario-coverage"
+path = "src/bin/scenario_coverage.rs"
+
 [dependencies]
 worldwake-core = { path = "../worldwake-core" }
 worldwake-sim = { path = "../worldwake-sim" }
