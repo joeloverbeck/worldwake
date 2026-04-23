@@ -3,14 +3,13 @@ use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CommodityKind, DecisionEventPayload,
     DiscrepancyMemory, EntityId, EventTag, ExpectationKindTag, ExpectationMismatchPayload, GoalKey,
     LearnedOpportunityMemory, MismatchDetail, OpportunityAnchor, PlanInvalidationReason, Quantity,
-    RepairMemory, ReplanReason, SourceKey, Tick, UniqueItemKind,
+    RepairMemory, ReplanReason, Tick, UniqueItemKind,
 };
 use worldwake_sim::{
     ActionStartFailure, CommittedAction, RecipeRegistry, ReplanNeeded, RuntimeBeliefView,
     TickInputError,
 };
 
-use crate::candidate_generation::generate_candidates_with_memories_with_travel_horizon;
 use crate::failure_handling::ExecutionFailure;
 use crate::knowledge_path::KnowledgePath;
 use crate::plan_step_expectations::{
@@ -18,8 +17,9 @@ use crate::plan_step_expectations::{
 };
 use crate::ranking::rank_candidates_with_memories;
 use crate::{
-    AgendaEntry, AgentDecisionRuntime, DecisionContext, GoalKindPlannerExt, PlannedStep,
-    authoritative_target, clear_resolved_failures,
+    AgendaEntry, AgentDecisionRuntime, DecisionContext, ExpectationFailureCause,
+    ExpectationFailurePhase, GoalKindPlannerExt, OpportunityExpectationFailureIncident,
+    PlannedStep, authoritative_target, clear_resolved_failures,
 };
 use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 
@@ -91,9 +91,8 @@ pub(crate) struct ReadPhaseResult {
     pub(super) decision_context: DecisionContext,
     /// When a pursuit plan was invalidated, records the reason.
     pub(super) pursuit_invalidation: Option<crate::PursuitInvalidationReason>,
-    /// Need-specific tracker resets detected during candidate generation.
-    pub(super) pending_source_reliability_failures:
-        std::collections::BTreeSet<worldwake_core::SourceKey>,
+    /// Source-backed expectation contradictions detected during candidate generation/read phase.
+    pub(super) pending_source_reliability_failures: Vec<OpportunityExpectationFailureIncident>,
     /// Need-specific tracker resets detected during candidate generation.
     pub(super) pending_acquisition_exhaustion_resets:
         std::collections::BTreeSet<worldwake_core::HomeostaticNeedId>,
@@ -243,20 +242,27 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
     }
 
-    let mut candidates = generate_candidates_with_memories_with_travel_horizon(
-        &view,
-        agent,
-        blocked_memory,
-        discrepancy_memory,
-        violation_memory,
-        phase.recipe_registry,
-        phase.tick,
-        phase.travel_horizon,
-        tracing,
-    );
+    let mut candidates =
+        crate::candidate_generation::generate_candidates_with_current_plan_with_memories_with_travel_horizon(
+            &view,
+            agent,
+            blocked_memory,
+            discrepancy_memory,
+            violation_memory,
+            phase.recipe_registry,
+            phase.tick,
+            phase.travel_horizon,
+            tracing,
+            runtime.current_plan.as_ref(),
+        );
     reinstate_current_plan_candidate(&mut candidates, runtime, active_goal);
     candidates.pending_source_reliability_failures.extend(
-        pending_local_source_reliability_failures(&view, agent, runtime.current_plan.as_ref()),
+        pending_local_source_reliability_failures(
+            &view,
+            agent,
+            runtime.current_plan.as_ref(),
+            phase.tick,
+        ),
     );
 
     // Apply deferred violation records from candidate generation.
@@ -330,28 +336,51 @@ fn pending_local_source_reliability_failures(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     current_plan: Option<&crate::PlannedPlan>,
-) -> BTreeSet<SourceKey> {
+    tick: Tick,
+) -> Vec<OpportunityExpectationFailureIncident> {
     let Some(current_place) = view.effective_place(agent) else {
-        return BTreeSet::new();
+        return Vec::new();
     };
     if view.preference_profile(agent).is_none() {
-        return BTreeSet::new();
+        return Vec::new();
     }
     let Some(plan) = current_plan else {
-        return BTreeSet::new();
+        return Vec::new();
     };
     if plan.opportunity.anchor != OpportunityAnchor::Place(current_place) {
-        return BTreeSet::new();
+        return Vec::new();
     }
-    let Some(source_key) = plan.committed_source else {
-        return BTreeSet::new();
+    let (Some(source_key), Some(expectation_kind)) = (plan.committed_source, plan.expectation_kind)
+    else {
+        return Vec::new();
     };
+    if source_key.entity != current_place
+        && !view
+            .locally_observed_entities_at(agent, current_place)
+            .contains(&source_key.entity)
+    {
+        return vec![OpportunityExpectationFailureIncident {
+            opportunity: plan.opportunity,
+            source: source_key,
+            expectation_kind,
+            detected_at_tick: tick,
+            phase: ExpectationFailurePhase::Observation,
+            cause: ExpectationFailureCause::SourceAbsentLocally,
+        }];
+    }
     if view.locally_observed_commodity_quantity(agent, source_key.entity, source_key.commodity)
         != Quantity(0)
     {
-        return BTreeSet::new();
+        return Vec::new();
     }
-    BTreeSet::from([source_key])
+    vec![OpportunityExpectationFailureIncident {
+        opportunity: plan.opportunity,
+        source: source_key,
+        expectation_kind,
+        detected_at_tick: tick,
+        phase: ExpectationFailurePhase::Observation,
+        cause: ExpectationFailureCause::SourceDepletedLocally,
+    }]
 }
 
 fn reinstate_current_plan_candidate(
@@ -932,25 +961,47 @@ pub(super) fn unique_item_signature(
 #[cfg(test)]
 mod tests {
     use super::{
-        ExpectationMismatchContext, emit_expectation_mismatch, reinstate_current_plan_candidate,
+        ExpectationMismatchContext, emit_expectation_mismatch,
+        pending_local_source_reliability_failures, reinstate_current_plan_candidate,
     };
     use crate::{
-        AgentDecisionRuntime, CommodityPurpose, ExpectedMaterialization, GoalOffer,
-        HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-        PlanningEntityRef,
+        AgentDecisionRuntime, CommodityPurpose, ExpectationFailureCause, ExpectationFailurePhase,
+        ExpectedMaterialization, GoalOffer, HypotheticalEntityId,
+        OpportunityExpectationFailureIncident, OpportunityExpectationKind, PlanTerminalKind,
+        PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
         candidate_generation::{CandidateGenerationDiagnostics, CandidateGenerationResult},
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, CommodityKind, DecisionEventPayload, EntityId, EventLog, EventTag, EventView,
-        GoalKey, GoalKind, MaterializationTag, OpportunityAnchor,
+        ActionDefId, CauseRef, CommodityKind, ControlSource, DecisionEventPayload, EntityId,
+        EventLog, EventTag, EventView, GoalKey, GoalKind, MaterializationTag, OpportunityAnchor,
+        Quantity, ResourceSource, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world,
     };
+    use worldwake_sim::PerAgentBeliefView;
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
             slot,
             generation: 1,
         }
+    }
+
+    fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
+        WorldTxn::new(
+            world,
+            Tick(tick),
+            CauseRef::Bootstrap,
+            None,
+            None,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        )
+    }
+
+    fn commit_txn(txn: WorldTxn<'_>) {
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
     }
 
     #[test]
@@ -1000,7 +1051,7 @@ mod tests {
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
-            pending_source_reliability_failures: BTreeSet::new(),
+            pending_source_reliability_failures: Vec::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 
@@ -1045,7 +1096,7 @@ mod tests {
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
-            pending_source_reliability_failures: BTreeSet::new(),
+            pending_source_reliability_failures: Vec::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 
@@ -1089,7 +1140,7 @@ mod tests {
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
-            pending_source_reliability_failures: BTreeSet::new(),
+            pending_source_reliability_failures: Vec::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
 
@@ -1149,6 +1200,69 @@ mod tests {
                     mismatch_detail: None,
                 }
             )
+        );
+    }
+
+    #[test]
+    fn pending_local_source_reliability_failures_emits_observation_incident() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_resource_source(
+                place,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(0),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+        let current_plan = PlannedPlan::new(
+            worldwake_core::OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(place),
+            },
+            goal,
+            Vec::new(),
+            PlanTerminalKind::ProgressBarrier,
+        )
+        .with_committed_source(Some(worldwake_core::SourceKey {
+            entity: place,
+            commodity: CommodityKind::Apple,
+        }))
+        .with_expectation_kind(Some(
+            OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        ));
+
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let incidents =
+            pending_local_source_reliability_failures(&view, agent, Some(&current_plan), Tick(7));
+
+        assert_eq!(
+            incidents,
+            vec![OpportunityExpectationFailureIncident {
+                opportunity: current_plan.opportunity,
+                source: worldwake_core::SourceKey {
+                    entity: place,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                detected_at_tick: Tick(7),
+                phase: ExpectationFailurePhase::Observation,
+                cause: ExpectationFailureCause::SourceDepletedLocally,
+            }]
         );
     }
 }

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — AI committed-plan/runtime provenance contract
-**Deps**: `specs/S124-canonical-opportunity-expectation-failure.md`
+**Deps**: `archive/specs/S124-canonical-opportunity-expectation-failure.md`
 
 ## Problem
 

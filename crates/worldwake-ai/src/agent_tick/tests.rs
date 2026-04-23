@@ -10,10 +10,10 @@ use super::planning::{
 use super::{
     AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
     committed_action_for_step, effective_goal_switch_margin,
-    handle_recoverable_travel_step_blockage, persist_blocked_memory, persist_discrepancy_memory,
-    plan_and_validate_next_step_traced, record_learned_opportunities_from_read_phase,
-    record_repair_memory_from_completed_plan, update_exploration_counter_for_adopted_goal,
-    update_frame_for_adopted_plan,
+    handle_recoverable_travel_step_blockage, invalidate_committed_source_after_reliability_failure,
+    persist_blocked_memory, persist_discrepancy_memory, plan_and_validate_next_step_traced,
+    record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
+    update_exploration_counter_for_adopted_goal, update_frame_for_adopted_plan,
 };
 use crate::ProfileFixture;
 use crate::exhaustion::{StealTargetAccessState, StealTargetSnapshot};
@@ -21,10 +21,12 @@ use crate::plan_selection::SelectionCandidatePlan;
 use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     CommodityPurpose, DirtySet, ExhaustionBaseline, ExhaustionInvalidationCondition,
-    ExpectedMaterialization, FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass,
-    HypotheticalEntityId, Invalidator, OpportunityAnchor, OpportunityKey, PlanExpectation,
-    PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-    RankedGoalProvenance, SelectedPlanReplacementKind, build_semantics_table,
+    ExpectationFailureCause, ExpectationFailurePhase, ExpectedMaterialization,
+    FrameSwitchMarginSource, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
+    Invalidator, OpportunityAnchor, OpportunityExpectationFailureIncident,
+    OpportunityExpectationKind, OpportunityKey, PlanExpectation, PlanGuard, PlanTerminalKind,
+    PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef, RankedGoalProvenance,
+    SelectedPlanReplacementKind, build_semantics_table,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -39,21 +41,23 @@ use worldwake_core::{
     DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
     DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
     EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
-    ExpectationBasis, ExpectationId, ExpectationKindTag, ExpectationMismatchPayload,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationProfile, FrameAssumption,
-    FrameClearReason, FrameState, GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload,
-    GoalRejectionReason, GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    IntentionDispositionProfile, IntentionDomain, IntentionFrame, InvalidatorTag, KnownRecipes,
-    LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile, MerchandiseProfile,
-    MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData, PatrolProfile,
-    PatrolRoute, PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place,
-    PortfolioSlotWeights, Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind,
-    RepairAppliedPayload, RepairKind, RepairMemory, ResourceSource, Seed, SourceKey,
-    StatePredicate, SuccessionLaw, TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory,
-    Topology, TravelEdge, TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-    WoundCause, WoundId, WoundList, build_believed_entity_state, build_prototype_world,
+    ExpectationBasis, ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId,
+    ExpectationKindTag, ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, ExplorationProfile, FrameAssumption, FrameClearReason, FrameState,
+    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason,
+    GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain,
+    IntentionFrame, InvalidatorTag, KnownRecipes, LearnedOpportunityMemory, LoadUnits,
+    MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, MismatchDetail,
+    ObservationPredicate, OfficeData, OpportunityExpectationKindTag, PatrolProfile, PatrolRoute,
+    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, PortfolioSlotWeights,
+    Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload,
+    RepairKind, RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
+    SourceExpectationFailurePayload, SourceKey, SourceKeyPayload, StatePredicate, SuccessionLaw,
+    TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
+    TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
+    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+    build_believed_entity_state, build_prototype_world,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionPayload,
@@ -6228,7 +6232,10 @@ fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detect
         .with_committed_source(Some(SourceKey {
             entity: place,
             commodity: CommodityKind::Apple,
-        })),
+        }))
+        .with_expectation_kind(Some(
+            OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        )),
     );
 
     let read = refresh_runtime_for_read_phase(
@@ -6254,10 +6261,248 @@ fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detect
 
     assert_eq!(
         read.pending_source_reliability_failures,
-        BTreeSet::from([SourceKey {
-            entity: place,
+        vec![OpportunityExpectationFailureIncident {
+            opportunity: OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(place),
+            },
+            source: SourceKey {
+                entity: place,
+                commodity: CommodityKind::Apple,
+            },
+            expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+            detected_at_tick: Tick(1),
+            phase: ExpectationFailurePhase::Observation,
+            cause: ExpectationFailureCause::SourceDepletedLocally,
+        }]
+    );
+}
+
+#[test]
+fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforces_limits() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let old_source = entity(700);
+    let source_a = entity(701);
+    let source_b = entity(702);
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+
+    let mut preference = harness
+        .world
+        .get_component_preference_profile(harness.actor)
+        .copied()
+        .unwrap_or_default();
+    preference.memory_retention_ticks = 5;
+    preference.source_memory_capacity = 8;
+
+    let mut reliability = worldwake_core::SourceReliability::default();
+    reliability.sources.insert(
+        SourceKey {
+            entity: old_source,
             commodity: CommodityKind::Apple,
-        }])
+        },
+        worldwake_core::ReliabilityRecord {
+            successful_acquisitions: 0,
+            failed_attempts: 3,
+            last_attempt_tick: Tick(1),
+        },
+    );
+
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        txn.set_component_preference_profile(harness.actor, preference)
+            .unwrap();
+        txn.set_component_source_reliability(harness.actor, reliability)
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    let duplicate_incident = OpportunityExpectationFailureIncident {
+        opportunity: OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(entity(800)),
+        },
+        source: SourceKey {
+            entity: source_a,
+            commodity: CommodityKind::Apple,
+        },
+        expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        detected_at_tick: Tick(20),
+        phase: ExpectationFailurePhase::Observation,
+        cause: ExpectationFailureCause::SourceDepletedLocally,
+    };
+    let search_incident = OpportunityExpectationFailureIncident {
+        opportunity: OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Place(entity(801)),
+        },
+        source: SourceKey {
+            entity: source_b,
+            commodity: CommodityKind::Apple,
+        },
+        expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        detected_at_tick: Tick(20),
+        phase: ExpectationFailurePhase::Search,
+        cause: ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+    };
+
+    let applied = super::apply_source_reliability_failure_observations(
+        &mut harness.world,
+        &mut harness.event_log,
+        harness.actor,
+        Tick(20),
+        &[
+            duplicate_incident.clone(),
+            duplicate_incident,
+            search_incident.clone(),
+        ],
+    )
+    .expect("source reliability persistence should succeed");
+    super::emit_source_expectation_failure_events(
+        &mut harness.event_log,
+        harness.actor,
+        &[
+            OpportunityExpectationFailureIncident {
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(800)),
+                },
+                source: SourceKey {
+                    entity: source_a,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                detected_at_tick: Tick(20),
+                phase: ExpectationFailurePhase::Observation,
+                cause: ExpectationFailureCause::SourceDepletedLocally,
+            },
+            OpportunityExpectationFailureIncident {
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(800)),
+                },
+                source: SourceKey {
+                    entity: source_a,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                detected_at_tick: Tick(20),
+                phase: ExpectationFailurePhase::Observation,
+                cause: ExpectationFailureCause::SourceDepletedLocally,
+            },
+            search_incident.clone(),
+        ],
+        &applied,
+        Some(SourceKey {
+            entity: source_b,
+            commodity: CommodityKind::Apple,
+        }),
+    );
+
+    let updated = harness
+        .world
+        .get_component_source_reliability(harness.actor)
+        .expect("source reliability should exist after persistence");
+
+    assert!(
+        !updated.sources.contains_key(&SourceKey {
+            entity: old_source,
+            commodity: CommodityKind::Apple,
+        }),
+        "expired source should be pruned by enforce_limits"
+    );
+    assert_eq!(
+        updated.sources.get(&SourceKey {
+            entity: source_a,
+            commodity: CommodityKind::Apple,
+        }),
+        Some(&worldwake_core::ReliabilityRecord {
+            successful_acquisitions: 0,
+            failed_attempts: 1,
+            last_attempt_tick: Tick(20),
+        })
+    );
+    assert_eq!(
+        updated.sources.get(&SourceKey {
+            entity: source_b,
+            commodity: CommodityKind::Apple,
+        }),
+        Some(&worldwake_core::ReliabilityRecord {
+            successful_acquisitions: 0,
+            failed_attempts: 1,
+            last_attempt_tick: Tick(20),
+        })
+    );
+    let source_failure_events = harness
+        .event_log
+        .events_by_tag(EventTag::SourceExpectationFailure);
+    assert_eq!(source_failure_events.len(), 3);
+    let payloads: Vec<_> = source_failure_events
+        .iter()
+        .map(|event_id| {
+            harness
+                .event_log
+                .get(*event_id)
+                .and_then(|record| record.decision_payload())
+                .cloned()
+                .expect("source expectation failure payload should be present")
+        })
+        .collect();
+    assert_eq!(
+        payloads,
+        vec![
+            DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
+                agent: harness.actor,
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(800)),
+                },
+                source: SourceKeyPayload {
+                    entity: source_a,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+                phase: ExpectationFailurePhaseTag::Observation,
+                cause: ExpectationFailureCauseTag::SourceDepletedLocally,
+                detected_at_tick: Tick(20),
+                attribution_outcome: SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+            }),
+            DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
+                agent: harness.actor,
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(800)),
+                },
+                source: SourceKeyPayload {
+                    entity: source_a,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+                phase: ExpectationFailurePhaseTag::Observation,
+                cause: ExpectationFailureCauseTag::SourceDepletedLocally,
+                detected_at_tick: Tick(20),
+                attribution_outcome: SourceAttributionOutcomeTag::CoalescedDuplicate,
+            }),
+            DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
+                agent: harness.actor,
+                opportunity: OpportunityKey {
+                    goal_key: goal,
+                    anchor: OpportunityAnchor::Place(entity(801)),
+                },
+                source: SourceKeyPayload {
+                    entity: source_b,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+                phase: ExpectationFailurePhaseTag::Search,
+                cause: ExpectationFailureCauseTag::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+                detected_at_tick: Tick(20),
+                attribution_outcome:
+                    SourceAttributionOutcomeTag::SourceInvalidatedFrameReconsidered,
+            }),
+        ]
     );
 }
 
@@ -7382,6 +7627,81 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
         Tick(5 + u64::from(cognitive.structural_block_ticks))
     );
     assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
+}
+
+#[test]
+fn committed_source_invalidation_records_source_invalidated_and_forces_replan() {
+    let source = SourceKey {
+        entity: entity(41),
+        commodity: CommodityKind::Apple,
+    };
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Apple,
+        purpose: CommodityPurpose::SelfConsume,
+    });
+    let opportunity = OpportunityKey {
+        goal_key: goal,
+        anchor: OpportunityAnchor::Entity(source.entity),
+    };
+    let mut runtime = AgentDecisionRuntime {
+        current_plan: Some(
+            PlannedPlan::new(opportunity, goal, vec![], PlanTerminalKind::GoalSatisfied)
+                .with_committed_source(Some(source)),
+        ),
+        current_step_index: 2,
+        step_in_flight: true,
+        ..AgentDecisionRuntime::default()
+    };
+    let frame = IntentionFrame {
+        goal,
+        domain: IntentionDomain::Errand {
+            destination: entity(99),
+        },
+        assumptions: vec![FrameAssumption::CommodityAvailableAt {
+            commodity: CommodityKind::Apple,
+            place: entity(99),
+        }],
+        state: FrameState::Active,
+        established_at: Tick(1),
+        last_progress_tick: None,
+        stalled_ticks: 0,
+        patience_limit: 8,
+    };
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut facility_intents = ContentionIntents::default();
+    facility_intents.intents.insert(
+        entity(7),
+        QueuedContentionIntent {
+            goal_key: goal,
+            intended_action: ActionDefId(8),
+        },
+    );
+    let applied_failures = BTreeMap::from([(
+        source,
+        BTreeSet::from([ExpectationFailureCause::SourceDepletedLocally]),
+    )]);
+
+    let invalidated = invalidate_committed_source_after_reliability_failure(
+        &mut runtime,
+        Some(&frame),
+        &mut facility_intents,
+        &mut discrepancy_memory,
+        &applied_failures,
+        Tick(10),
+        25,
+    );
+
+    assert!(invalidated);
+    assert!(runtime.current_plan.is_none());
+    assert_eq!(runtime.current_step_index, 0);
+    assert!(!runtime.step_in_flight);
+    assert!(runtime.dirty.contains(DirtySet::REPLAN_SIGNAL));
+    assert!(facility_intents.intents.is_empty());
+    let entry = discrepancy_memory.entries.values().next().unwrap();
+    assert_eq!(entry.discrepancy, Discrepancy::SourceInvalidated);
+    assert_eq!(entry.blocker_key.goal_key, goal);
+    assert_eq!(entry.blocker_key.place, None);
+    assert_eq!(entry.blocker_key.target, None);
 }
 
 #[test]

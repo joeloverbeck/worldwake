@@ -1,5 +1,6 @@
 use crate::{
-    GoalOffer,
+    ExpectationFailureCause, ExpectationFailurePhase, GoalOffer,
+    OpportunityExpectationFailureIncident, PlannedPlan,
     decision_trace::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
         CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
@@ -35,7 +36,7 @@ use worldwake_core::{
     OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
     ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
     Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
-    SocialObservationDetail, SourceKey, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
     ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
     current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
@@ -157,6 +158,7 @@ struct GenerationContext<'a> {
     recipes: &'a RecipeRegistry,
     current_tick: Tick,
     tracing_enabled: bool,
+    current_plan: Option<&'a PlannedPlan>,
 }
 
 #[derive(Default)]
@@ -195,7 +197,7 @@ pub(crate) struct CandidateGenerationResult {
     pub pending_violations: Vec<PendingViolationRecord>,
     /// Locally observed familiar sources that proved depleted and should count
     /// as failed source attempts once the read phase persists memory updates.
-    pub pending_source_reliability_failures: BTreeSet<SourceKey>,
+    pub pending_source_reliability_failures: Vec<OpportunityExpectationFailureIncident>,
     /// Need-specific tracker resets detected during candidate generation.
     /// The caller applies them during the write phase.
     pub pending_acquisition_exhaustion_resets: BTreeSet<HomeostaticNeedId>,
@@ -276,6 +278,33 @@ pub(crate) fn generate_candidates_with_travel_horizon(
 }
 
 #[allow(clippy::too_many_arguments)]
+pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_horizon(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    blocked: &BlockerMemory,
+    discrepancies: &DiscrepancyMemory,
+    violation_memory: &ViolationMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+    travel_horizon: u8,
+    tracing_enabled: bool,
+    current_plan: Option<&PlannedPlan>,
+) -> CandidateGenerationResult {
+    generate_candidates_with_memories_with_travel_horizon_impl(
+        view,
+        agent,
+        blocked,
+        discrepancies,
+        violation_memory,
+        recipes,
+        current_tick,
+        travel_horizon,
+        tracing_enabled,
+        current_plan,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -287,12 +316,39 @@ pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
     travel_horizon: u8,
     tracing_enabled: bool,
 ) -> CandidateGenerationResult {
+    generate_candidates_with_memories_with_travel_horizon_impl(
+        view,
+        agent,
+        blocked,
+        discrepancies,
+        violation_memory,
+        recipes,
+        current_tick,
+        travel_horizon,
+        tracing_enabled,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn generate_candidates_with_memories_with_travel_horizon_impl(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    blocked: &BlockerMemory,
+    discrepancies: &DiscrepancyMemory,
+    violation_memory: &ViolationMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+    travel_horizon: u8,
+    tracing_enabled: bool,
+    current_plan: Option<&PlannedPlan>,
+) -> CandidateGenerationResult {
     if view.is_dead(agent) || !view.is_alive(agent) {
         return CandidateGenerationResult {
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
-            pending_source_reliability_failures: BTreeSet::new(),
+            pending_source_reliability_failures: Vec::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
     }
@@ -315,6 +371,7 @@ pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
         recipes,
         current_tick,
         tracing_enabled,
+        current_plan,
     };
 
     emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
@@ -4173,9 +4230,12 @@ fn emit_expectation_violation_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
-) -> (Vec<PendingViolationRecord>, BTreeSet<SourceKey>) {
+) -> (
+    Vec<PendingViolationRecord>,
+    Vec<OpportunityExpectationFailureIncident>,
+) {
     let mut pending = Vec::new();
-    let mut pending_source_reliability_failures = BTreeSet::new();
+    let mut pending_source_reliability_failures = Vec::new();
     let mut next_violation_id = ctx.violation_memory.next_violation_id();
 
     // Early return: agent must have a current place (not in transit).
@@ -4243,10 +4303,20 @@ fn emit_expectation_violation_candidates(
                 resource_source.commodity,
             ) == Quantity(0)
         {
-            if ctx.view.preference_profile(ctx.agent).is_some() {
-                pending_source_reliability_failures.insert(SourceKey {
-                    entity: *entity_id,
-                    commodity: resource_source.commodity,
+            if ctx.view.preference_profile(ctx.agent).is_some()
+                && let Some(plan) = ctx.current_plan
+                && let (Some(source), Some(expectation_kind)) =
+                    (plan.committed_source, plan.expectation_kind)
+                && source.entity == *entity_id
+                && source.commodity == resource_source.commodity
+            {
+                pending_source_reliability_failures.push(OpportunityExpectationFailureIncident {
+                    opportunity: plan.opportunity,
+                    source,
+                    expectation_kind,
+                    detected_at_tick: ctx.current_tick,
+                    phase: ExpectationFailurePhase::CandidateGeneration,
+                    cause: ExpectationFailureCause::SourceDepletedLocally,
                 });
             }
             violations.push((
@@ -5544,14 +5614,16 @@ mod tests {
     use super::{
         AcquisitionSearchOptions, BeliefGateOptions, CandidateGenerationDiagnostics,
         CandidateOfferDiagnostic, CandidateSuppressionDiagnostic, GenerationContext,
-        belief_gated_places, combined_evidence, deliverable_quantity, emit_produce_goals,
-        emit_restock_goals, filter_suppressed_candidates, generate_candidates,
-        generate_candidates_with_travel_horizon, proactive_curiosity_pressure,
-        proactive_familiarity, proactive_novelty,
+        belief_gated_places, combined_evidence, deliverable_quantity,
+        emit_expectation_violation_candidates, emit_produce_goals, emit_restock_goals,
+        filter_suppressed_candidates, generate_candidates, generate_candidates_with_travel_horizon,
+        proactive_curiosity_pressure, proactive_familiarity, proactive_novelty,
     };
     use crate::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
-        CandidateEvidenceTrace, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
+        CandidateEvidenceTrace, ExpectationFailureCause, ExpectationFailurePhase,
+        OpportunityExpectationFailureIncident, OpportunityExpectationKind, PlanTerminalKind,
+        PlannedPlan, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
         SocialCandidateOmission, ViolationDetectionOmissionReason,
         enterprise::{EnterpriseSignals, analyze_candidate_enterprise},
         knowledge_path::{
@@ -9994,6 +10066,7 @@ mod tests {
             recipes: &RecipeRegistry::new(),
             current_tick: Tick(5),
             tracing_enabled: false,
+            current_plan: None,
         };
         let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -10467,6 +10540,7 @@ mod tests {
             recipes: &recipes,
             current_tick: Tick(5),
             tracing_enabled: false,
+            current_plan: None,
         };
         let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -15710,11 +15784,170 @@ mod tests {
         );
         assert_eq!(
             result.pending_source_reliability_failures,
-            BTreeSet::from([worldwake_core::SourceKey {
-                entity: source_entity,
-                commodity: CommodityKind::Apple,
-            }])
+            Vec::<OpportunityExpectationFailureIncident>::new()
         );
+    }
+
+    #[test]
+    fn violation_supply_depleted_emits_matching_committed_plan_incident() {
+        let agent = entity(1);
+        let place = entity(10);
+        let source_entity = entity(3);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.preference_profiles
+            .insert(agent, PreferenceProfile::default());
+        view.beliefs.insert(
+            agent,
+            vec![(
+                source_entity,
+                belief_resource_at_place(place, CommodityKind::Apple, 5, Tick(1)),
+            )],
+        );
+        view.entities_at.insert(place, vec![agent, source_entity]);
+        view.effective_places.insert(source_entity, place);
+        view.commodity_quantities
+            .insert((source_entity, CommodityKind::Apple), Quantity(0));
+
+        let current_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(place),
+            },
+            goal,
+            Vec::new(),
+            PlanTerminalKind::ProgressBarrier,
+        )
+        .with_committed_source(Some(worldwake_core::SourceKey {
+            entity: source_entity,
+            commodity: CommodityKind::Apple,
+        }))
+        .with_expectation_kind(Some(
+            OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        ));
+
+        let blocked = BlockerMemory::default();
+        let discrepancies = DiscrepancyMemory::default();
+        let violation_memory = ViolationMemory::default();
+        let recipes = RecipeRegistry::new();
+        let ctx = GenerationContext {
+            view: &view,
+            agent,
+            place: Some(place),
+            travel_horizon: 6,
+            enterprise: analyze_candidate_enterprise(&view, agent, Some(place)),
+            blocked: &blocked,
+            discrepancies: &discrepancies,
+            violation_memory: &violation_memory,
+            recipes: &recipes,
+            current_tick: Tick(5),
+            tracing_enabled: false,
+            current_plan: Some(&current_plan),
+        };
+
+        let (_pending, incidents) = emit_expectation_violation_candidates(
+            &mut Vec::new(),
+            &mut CandidateGenerationDiagnostics::default(),
+            &ctx,
+        );
+
+        assert_eq!(
+            incidents,
+            vec![OpportunityExpectationFailureIncident {
+                opportunity: current_plan.opportunity,
+                source: worldwake_core::SourceKey {
+                    entity: source_entity,
+                    commodity: CommodityKind::Apple,
+                },
+                expectation_kind: OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+                detected_at_tick: Tick(5),
+                phase: ExpectationFailurePhase::CandidateGeneration,
+                cause: ExpectationFailureCause::SourceDepletedLocally,
+            }]
+        );
+    }
+
+    #[test]
+    fn violation_supply_depleted_skips_incident_when_source_does_not_match_committed_plan() {
+        let agent = entity(1);
+        let place = entity(10);
+        let source_entity = entity(3);
+        let other_source = entity(4);
+        let goal = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+        });
+
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.effective_places.insert(agent, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.preference_profiles
+            .insert(agent, PreferenceProfile::default());
+        view.beliefs.insert(
+            agent,
+            vec![(
+                source_entity,
+                belief_resource_at_place(place, CommodityKind::Apple, 5, Tick(1)),
+            )],
+        );
+        view.entities_at.insert(place, vec![agent, source_entity]);
+        view.effective_places.insert(source_entity, place);
+        view.commodity_quantities
+            .insert((source_entity, CommodityKind::Apple), Quantity(0));
+
+        let current_plan = PlannedPlan::new(
+            OpportunityKey {
+                goal_key: goal,
+                anchor: OpportunityAnchor::Place(place),
+            },
+            goal,
+            Vec::new(),
+            PlanTerminalKind::ProgressBarrier,
+        )
+        .with_committed_source(Some(worldwake_core::SourceKey {
+            entity: other_source,
+            commodity: CommodityKind::Apple,
+        }))
+        .with_expectation_kind(Some(
+            OpportunityExpectationKind::AcquireCommodityFromConcreteSource,
+        ));
+
+        let blocked = BlockerMemory::default();
+        let discrepancies = DiscrepancyMemory::default();
+        let violation_memory = ViolationMemory::default();
+        let recipes = RecipeRegistry::new();
+        let ctx = GenerationContext {
+            view: &view,
+            agent,
+            place: Some(place),
+            travel_horizon: 6,
+            enterprise: analyze_candidate_enterprise(&view, agent, Some(place)),
+            blocked: &blocked,
+            discrepancies: &discrepancies,
+            violation_memory: &violation_memory,
+            recipes: &recipes,
+            current_tick: Tick(5),
+            tracing_enabled: false,
+            current_plan: Some(&current_plan),
+        };
+
+        let (_pending, incidents) = emit_expectation_violation_candidates(
+            &mut Vec::new(),
+            &mut CandidateGenerationDiagnostics::default(),
+            &ctx,
+        );
+
+        assert!(incidents.is_empty());
     }
 
     #[test]
@@ -17344,6 +17577,7 @@ mod tests {
             recipes: &RecipeRegistry::new(),
             current_tick: Tick(500),
             tracing_enabled: false,
+            current_plan: None,
         };
 
         assert_eq!(

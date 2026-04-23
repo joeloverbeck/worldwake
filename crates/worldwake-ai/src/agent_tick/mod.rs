@@ -19,7 +19,7 @@ use execution::{
 use frame::{
     AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
     handle_recoverable_travel_step_blockage, populate_assumptions, record_assumption_failure,
-    update_frame_for_adopted_plan,
+    record_source_invalidation, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
@@ -40,8 +40,9 @@ use crate::decision_trace::{
     SelectionTrace,
 };
 use crate::{
-    AcceptedRepairProvenance, AgendaPhase, AgendaTickPolicy, AgentDecisionRuntime, KillCondition,
-    PlannerOpSemantics,
+    AcceptedRepairProvenance, AgendaPhase, AgendaTickPolicy, AgentDecisionRuntime,
+    ExpectationFailureCause, ExpectationFailurePhase, KillCondition,
+    OpportunityExpectationFailureIncident, PlannerOpSemantics,
     agenda_manager::goal_post_conditions_already_satisfied,
     authoritative_target, build_semantics_table,
     failure_handling::{classify_discrepancy, record_failure_classification},
@@ -55,13 +56,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
-    DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget, GoalAbandonReason,
+    DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
+    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, GoalAbandonReason,
     GoalAbandonedPayload, GoalOfferedPayload, GoalSuppressedPayload, GoalSuspendedPayload,
     GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick, LearnedOpportunityMemory,
-    OpportunityAnchor, OpportunityEntry, PendingEvent, PlanInvalidatedPayload,
-    PlanInvalidationReason, PursuitInvalidationReasonTag, RepairAppliedPayload, RepairEntry,
-    RepairKey, RepairKind, RepairMemory, ReplanReason, ReplanTriggeredPayload, Tick,
-    VisibilitySpec, WitnessData, WorldTxn,
+    OpportunityAnchor, OpportunityEntry, OpportunityExpectationKindTag, PendingEvent,
+    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
+    RepairAppliedPayload, RepairEntry, RepairKey, RepairKind, RepairMemory, ReplanReason,
+    ReplanTriggeredPayload, SourceAttributionOutcomeTag, SourceExpectationFailurePayload,
+    SourceKeyPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -513,6 +516,116 @@ fn emit_repair_applied(
         EventTag::RepairApplied,
         DecisionEventPayload::RepairApplied(payload),
     );
+}
+
+fn map_opportunity_expectation_kind_tag(
+    kind: crate::OpportunityExpectationKind,
+) -> OpportunityExpectationKindTag {
+    match kind {
+        crate::OpportunityExpectationKind::AcquireCommodityFromConcreteSource => {
+            OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource
+        }
+        crate::OpportunityExpectationKind::RestockCommodityFromConcreteSource => {
+            OpportunityExpectationKindTag::RestockCommodityFromConcreteSource
+        }
+    }
+}
+
+fn map_expectation_failure_phase_tag(phase: ExpectationFailurePhase) -> ExpectationFailurePhaseTag {
+    match phase {
+        ExpectationFailurePhase::Observation => ExpectationFailurePhaseTag::Observation,
+        ExpectationFailurePhase::CandidateGeneration => {
+            ExpectationFailurePhaseTag::CandidateGeneration
+        }
+        ExpectationFailurePhase::Search => ExpectationFailurePhaseTag::Search,
+    }
+}
+
+fn map_expectation_failure_cause_tag(cause: ExpectationFailureCause) -> ExpectationFailureCauseTag {
+    match cause {
+        ExpectationFailureCause::SourceAbsentLocally => {
+            ExpectationFailureCauseTag::SourceAbsentLocally
+        }
+        ExpectationFailureCause::SourceDepletedLocally => {
+            ExpectationFailureCauseTag::SourceDepletedLocally
+        }
+        ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded => {
+            ExpectationFailureCauseTag::SameGoalSearchInfeasibleWhileSiblingSucceeded
+        }
+    }
+}
+
+fn source_expectation_failure_payload(
+    agent: EntityId,
+    incident: &OpportunityExpectationFailureIncident,
+    attribution_outcome: SourceAttributionOutcomeTag,
+) -> SourceExpectationFailurePayload {
+    SourceExpectationFailurePayload {
+        agent,
+        opportunity: incident.opportunity,
+        source: SourceKeyPayload {
+            entity: incident.source.entity,
+            commodity: incident.source.commodity,
+        },
+        expectation_kind: map_opportunity_expectation_kind_tag(incident.expectation_kind),
+        phase: map_expectation_failure_phase_tag(incident.phase),
+        cause: map_expectation_failure_cause_tag(incident.cause),
+        detected_at_tick: incident.detected_at_tick,
+        attribution_outcome,
+    }
+}
+
+fn emit_source_expectation_failure_events(
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    incidents: &[OpportunityExpectationFailureIncident],
+    applied_failures: &BTreeMap<worldwake_core::SourceKey, BTreeSet<ExpectationFailureCause>>,
+    invalidated_committed_source: Option<worldwake_core::SourceKey>,
+) {
+    let mut seen = BTreeSet::new();
+    for incident in incidents {
+        let should_apply = matches!(
+            (incident.phase, incident.cause),
+            (
+                ExpectationFailurePhase::Observation | ExpectationFailurePhase::CandidateGeneration,
+                ExpectationFailureCause::SourceAbsentLocally
+                    | ExpectationFailureCause::SourceDepletedLocally,
+            ) | (
+                ExpectationFailurePhase::Search,
+                ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+            )
+        );
+        if !should_apply {
+            continue;
+        }
+
+        let identity = (
+            incident.opportunity,
+            incident.source,
+            incident.phase,
+            incident.detected_at_tick,
+        );
+        let attribution_outcome = if !seen.insert(identity) {
+            SourceAttributionOutcomeTag::CoalescedDuplicate
+        } else if invalidated_committed_source == Some(incident.source) {
+            SourceAttributionOutcomeTag::SourceInvalidatedFrameReconsidered
+        } else if applied_failures.contains_key(&incident.source) {
+            SourceAttributionOutcomeTag::SourceReliabilityDecremented
+        } else {
+            continue;
+        };
+        emit_decision_event(
+            event_log,
+            incident.detected_at_tick,
+            agent,
+            EventTag::SourceExpectationFailure,
+            DecisionEventPayload::SourceExpectationFailure(source_expectation_failure_payload(
+                agent,
+                incident,
+                attribution_outcome,
+            )),
+        );
+    }
 }
 
 fn map_pursuit_invalidation_reason(
@@ -1042,13 +1155,37 @@ fn process_agent(
         memory_capacity,
     );
     if !read_result.pending_source_reliability_failures.is_empty() {
-        apply_source_reliability_failure_observations(
+        let committed_source_before_invalidation = runtime
+            .current_plan
+            .as_ref()
+            .and_then(|plan| plan.committed_source);
+        let applied_failures = apply_source_reliability_failure_observations(
             ctx.world,
             ctx.event_log,
             agent,
             tick,
             &read_result.pending_source_reliability_failures,
         )?;
+        let invalidated = invalidate_committed_source_after_reliability_failure(
+            runtime,
+            current_frame.as_ref(),
+            &mut current_facility_intents,
+            &mut discrepancy_memory,
+            &applied_failures,
+            tick,
+            cognitive.structural_block_ticks,
+        );
+        emit_source_expectation_failure_events(
+            ctx.event_log,
+            agent,
+            &read_result.pending_source_reliability_failures,
+            &applied_failures,
+            if invalidated {
+                committed_source_before_invalidation
+            } else {
+                None
+            },
+        );
     }
     if !read_result.pending_acquisition_exhaustion_resets.is_empty() {
         apply_acquisition_exhaustion_tracker_resets(
@@ -1906,20 +2043,66 @@ pub(super) fn apply_source_reliability_failure_observations(
     event_log: &mut worldwake_core::EventLog,
     agent: EntityId,
     tick: Tick,
-    failed_sources: &BTreeSet<worldwake_core::SourceKey>,
-) -> Result<(), TickInputError> {
-    if failed_sources.is_empty() {
-        return Ok(());
+    incidents: &[OpportunityExpectationFailureIncident],
+) -> Result<BTreeMap<worldwake_core::SourceKey, BTreeSet<ExpectationFailureCause>>, TickInputError>
+{
+    if incidents.is_empty() {
+        return Ok(BTreeMap::new());
     }
     let Some(profile) = world.get_component_preference_profile(agent).copied() else {
-        return Ok(());
+        return Ok(BTreeMap::new());
     };
+
+    let mut applied =
+        BTreeMap::<worldwake_core::SourceKey, BTreeSet<ExpectationFailureCause>>::new();
+    let mut unique_sources = BTreeMap::<worldwake_core::SourceKey, Tick>::new();
+    let mut seen = BTreeSet::new();
+    for incident in incidents {
+        let should_apply = matches!(
+            (incident.phase, incident.cause),
+            (
+                ExpectationFailurePhase::Observation | ExpectationFailurePhase::CandidateGeneration,
+                ExpectationFailureCause::SourceAbsentLocally
+                    | ExpectationFailureCause::SourceDepletedLocally,
+            ) | (
+                ExpectationFailurePhase::Search,
+                ExpectationFailureCause::SameGoalSearchInfeasibleWhileSiblingSucceeded,
+            )
+        );
+        if !should_apply {
+            continue;
+        }
+
+        let identity = (
+            incident.opportunity,
+            incident.source,
+            incident.phase,
+            incident.detected_at_tick,
+        );
+        if !seen.insert(identity) {
+            continue;
+        }
+
+        unique_sources
+            .entry(incident.source)
+            .and_modify(|recorded_tick| {
+                *recorded_tick = (*recorded_tick).max(incident.detected_at_tick);
+            })
+            .or_insert(incident.detected_at_tick);
+        applied
+            .entry(incident.source)
+            .or_default()
+            .insert(incident.cause);
+    }
+    if unique_sources.is_empty() {
+        return Ok(applied);
+    }
 
     let mut reliability = world
         .get_component_source_reliability(agent)
         .cloned()
         .unwrap_or_default();
-    for source_key in failed_sources {
+    for (source_key, detected_at_tick) in &unique_sources {
         let record =
             reliability
                 .sources
@@ -1927,10 +2110,10 @@ pub(super) fn apply_source_reliability_failure_observations(
                 .or_insert(worldwake_core::ReliabilityRecord {
                     successful_acquisitions: 0,
                     failed_attempts: 0,
-                    last_attempt_tick: tick,
+                    last_attempt_tick: *detected_at_tick,
                 });
         record.failed_attempts = record.failed_attempts.saturating_add(1);
-        record.last_attempt_tick = tick;
+        record.last_attempt_tick = *detected_at_tick;
     }
     reliability.enforce_limits(tick, &profile);
 
@@ -1946,7 +2129,38 @@ pub(super) fn apply_source_reliability_failure_observations(
     txn.set_component_source_reliability(agent, reliability)
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
-    Ok(())
+    Ok(applied)
+}
+
+pub(super) fn invalidate_committed_source_after_reliability_failure(
+    runtime: &mut AgentDecisionRuntime,
+    frame: Option<&IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
+    discrepancy_memory: &mut worldwake_core::DiscrepancyMemory,
+    applied_failures: &BTreeMap<worldwake_core::SourceKey, BTreeSet<ExpectationFailureCause>>,
+    tick: Tick,
+    structural_block_ticks: u32,
+) -> bool {
+    let Some(plan) = runtime.current_plan.as_ref() else {
+        return false;
+    };
+    let Some(source) = plan.committed_source else {
+        return false;
+    };
+    if !applied_failures.contains_key(&source) {
+        return false;
+    }
+
+    if let Some(frame) = frame {
+        record_source_invalidation(frame, discrepancy_memory, tick, structural_block_ticks);
+    }
+    runtime.current_plan = None;
+    runtime.current_step_index = 0;
+    runtime.step_in_flight = false;
+    runtime.materialization_bindings.clear();
+    facility_intents.intents.clear();
+    runtime.dirty.insert(crate::DirtySet::REPLAN_SIGNAL);
+    true
 }
 
 fn apply_acquisition_exhaustion_tracker_increments(

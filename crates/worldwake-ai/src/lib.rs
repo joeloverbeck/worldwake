@@ -25,6 +25,7 @@ mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
 pub mod knowledge_path;
+pub mod opportunity_expectation_failure;
 pub mod perf_telemetry;
 pub mod plan_guard;
 pub mod plan_guard_build;
@@ -95,6 +96,9 @@ pub use goal_policy::{
 };
 pub use goal_switching::GoalSwitchKind;
 pub use interrupts::{InterruptDecision, InterruptTrigger, evaluate_interrupt};
+pub use opportunity_expectation_failure::{
+    ExpectationFailureCause, ExpectationFailurePhase, OpportunityExpectationFailureIncident,
+};
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
 pub use plan_guard_build::{build_plan_expectations, build_plan_guard};
 pub use plan_revalidation::{
@@ -103,10 +107,10 @@ pub use plan_revalidation::{
 pub use plan_selection::{SelectionPolicy, select_best_plan};
 pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{
-    ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-    PlannerOpSemantics, PlannerTransitionKind, apply_hypothetical_transition, authoritative_target,
-    authoritative_targets, build_semantics_table, resolve_planning_target_with,
-    resolve_planning_targets_with,
+    ExpectedMaterialization, OpportunityExpectationKind, PlanTerminalKind, PlannedPlan,
+    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
+    apply_hypothetical_transition, authoritative_target, authoritative_targets,
+    build_semantics_table, resolve_planning_target_with, resolve_planning_targets_with,
 };
 pub use planning_snapshot::{
     PlanningSnapshot, build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,

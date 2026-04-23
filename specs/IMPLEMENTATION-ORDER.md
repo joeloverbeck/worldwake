@@ -386,7 +386,7 @@ S108 ✅ archived               S111 ✅ archived
 - **S123**: ✅ COMPLETED — archived at [archive/specs/S123-preference-ordering-authority.md](/home/joeloverbeck/projects/worldwake/archive/specs/S123-preference-ordering-authority.md). Landed the final preference-ordering authority lock: `compare_ranked_goals` is now file-private, `RankingOutcome.ranked` is `pub(crate)`, `ranking.rs` carries compile-fail doctests for external visibility fences, and the new grep regression prevents any parallel `fn compare_ranked_goals` definition from reappearing under `worldwake-ai/src/`.
   - hard depends on S112 (post-S112 call-site surface is the migration target)
   - soft relationship with S74 (`explain_ranked_goal_order` stays the public "why X outranked Y" surface)
-- **S124**: Draft — [specs/S124-canonical-opportunity-expectation-failure.md](/home/joeloverbeck/projects/worldwake/specs/S124-canonical-opportunity-expectation-failure.md). Follow-up architectural unification after `SURVPREF-001`: preserve committed source-backed provenance, normalize observation/search/execution contradictions into one expectation-failure incident, and centralize source-reliability attribution so the current lawful seams collapse into one canonical substrate aligned with FND-17, FND-21, and FND-22A.
+- **S124**: ✅ COMPLETED — archived at [archive/specs/S124-canonical-opportunity-expectation-failure.md](/home/joeloverbeck/projects/worldwake/archive/specs/S124-canonical-opportunity-expectation-failure.md). Landed the committed-source provenance follow-up wave across the archived `S124OPEXFAL-001` and `S124CANOPPEXP-001` through `S124CANOPPEXP-004` ticket chain: retained-plan concrete source preservation, normalized AI-layer expectation-failure incidents plus coalesced attribution, `SourceInvalidated` reconsideration routing, and decision-history `SourceExpectationFailure` surfacing through the canonical event payload family and observer rendering.
   - hard depends on S22 and S109
   - soft relationship with S110 and S112
 
@@ -405,7 +405,7 @@ S108 ✅ archived               S111 ✅ archived
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [x] `cargo test --workspace` passing
 
-- Note: Wave 1, Wave 2, Wave 3, the S122 adjunct, and the S123 adjunct are complete. S124 is a later architectural follow-up draft rather than part of the original Phase 8 closeout.
+- Note: Wave 1, Wave 2, Wave 3, and the S122-S124 adjunct follow-up chain are complete.
 
 ---
 

@@ -40,6 +40,7 @@ pub enum EventTag {
     PlanAdopted,
     PlanInvalidated,
     ExpectationMismatch,
+    SourceExpectationFailure,
     RepairApplied,
     ReplanTriggered,
     BlockerRecorded,
@@ -55,7 +56,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 38] = [
+    const ALL_EVENT_TAGS: [EventTag; 39] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -91,6 +92,7 @@ mod tests {
         EventTag::PlanAdopted,
         EventTag::PlanInvalidated,
         EventTag::ExpectationMismatch,
+        EventTag::SourceExpectationFailure,
         EventTag::RepairApplied,
         EventTag::ReplanTriggered,
         EventTag::BlockerRecorded,
@@ -103,7 +105,7 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 38);
+        assert_eq!(ALL_EVENT_TAGS.len(), 39);
     }
 
     #[test]
