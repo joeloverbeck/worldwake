@@ -30,7 +30,7 @@ use std::time::Instant;
 use worldwake_core::{
     ActionDefId, BlockerMemory, CognitiveProfile, DecisionEventPayload, DiscrepancyMemory,
     EntityId, EventLog, EventTag, ExecutionBudget, GoalKind, IntentionFrame, OpportunityAnchor,
-    Permille, PlanAdoptedPayload, RepairKind, Tick,
+    Permille, PlanAdoptedPayload, RepairKind, SourceKey, Tick,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, ActionPayload, GoalBeliefView, RecipeRegistry, RuntimeBeliefView,
@@ -336,6 +336,68 @@ pub(super) fn determine_selected_plan_source(
         );
         SelectedPlanSource::RetainedCurrentPlan
     }
+}
+
+fn same_goal_search_failed_source_keys(
+    ranked_candidates: &OrderedRanked<'_>,
+    current_opportunity: Option<OpportunityKey>,
+    selected_plan: &PlannedPlan,
+    selection_plans: &[SelectionCandidatePlan],
+    current_place: Option<EntityId>,
+) -> BTreeSet<SourceKey> {
+    let Some(current_opportunity) = current_opportunity else {
+        return BTreeSet::new();
+    };
+    let Some(current_place) = current_place else {
+        return BTreeSet::new();
+    };
+    if selected_plan.goal != current_opportunity.goal_key
+        || selected_plan.opportunity == current_opportunity
+        || current_opportunity.anchor != OpportunityAnchor::Place(current_place)
+    {
+        return BTreeSet::new();
+    }
+
+    let current_failed_search = selection_plans.iter().any(|plan| {
+        plan.searched_opportunity == current_opportunity && plan.found_plan.is_none()
+    });
+    if !current_failed_search {
+        return BTreeSet::new();
+    }
+
+    let selected_sibling_found = selection_plans.iter().any(|plan| {
+        plan.searched_opportunity == selected_plan.opportunity && plan.found_plan.is_some()
+    });
+    if !selected_sibling_found {
+        return BTreeSet::new();
+    }
+
+    let Some(current_ranked) = ranked_candidates
+        .iter()
+        .find(|ranked| ranked.key == current_opportunity)
+    else {
+        return BTreeSet::new();
+    };
+
+    let mut sources = current_ranked.offer.evidence_entities.iter().copied();
+    let Some(source_entity) = sources.next() else {
+        return BTreeSet::new();
+    };
+    if sources.next().is_some() {
+        return BTreeSet::new();
+    }
+
+    let commodity = match current_ranked.offer.key.kind {
+        GoalKind::AcquireCommodity { commodity, .. } | GoalKind::RestockCommodity { commodity } => {
+            commodity
+        }
+        _ => return BTreeSet::new(),
+    };
+
+    BTreeSet::from([SourceKey {
+        entity: source_entity,
+        commodity,
+    }])
 }
 
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
@@ -1553,6 +1615,27 @@ pub(super) fn plan_and_validate_next_step(
                         frame_switch_margin,
                     },
                 ) {
+                    let current_place = SpatialBeliefView::effective_place(&view, agent);
+                    let failed_sources = same_goal_search_failed_source_keys(
+                        ranked_candidates,
+                        runtime.current_plan.as_ref().map(|plan| plan.opportunity),
+                        &selected_plan,
+                        &selection_plans,
+                        current_place,
+                    );
+                    drop(view);
+                    if !failed_sources.is_empty() {
+                        super::apply_source_reliability_failure_observations(
+                            world,
+                            event_log,
+                            agent,
+                            tick,
+                            &failed_sources,
+                        )
+                        .expect("planning-stage source reliability persistence should succeed");
+                    }
+                    let refreshed_view =
+                        runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
                     emit_plan_selection_events(
                         event_log,
                         tick,
@@ -1566,9 +1649,9 @@ pub(super) fn plan_and_validate_next_step(
                     let mut prepared_frame =
                         update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
                     if let Some(frame) = prepared_frame.as_mut() {
-                        frame.assumptions = populate_assumptions(frame, agent, &view);
+                        frame.assumptions = populate_assumptions(frame, agent, &refreshed_view);
                     }
-                    let current_place = SpatialBeliefView::effective_place(&view, agent)
+                    let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                         .expect("plan adoption expects actor to have an effective place");
                     adopt_selected_plan(
                         world,
@@ -1890,6 +1973,27 @@ pub(super) fn plan_and_validate_next_step_traced(
                     frame_switch_margin,
                 },
             ) {
+                let current_place = SpatialBeliefView::effective_place(&view, agent);
+                let failed_sources = same_goal_search_failed_source_keys(
+                    ranked_candidates,
+                    runtime.current_plan.as_ref().map(|plan| plan.opportunity),
+                    &selected_plan,
+                    &selection_plans,
+                    current_place,
+                );
+                drop(view);
+                if !failed_sources.is_empty() {
+                    super::apply_source_reliability_failure_observations(
+                        world,
+                        event_log,
+                        agent,
+                        tick,
+                        &failed_sources,
+                    )
+                    .expect("planning-stage source reliability persistence should succeed");
+                }
+                let refreshed_view =
+                    runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
                 emit_plan_selection_events(
                     event_log,
                     tick,
@@ -1954,9 +2058,9 @@ pub(super) fn plan_and_validate_next_step_traced(
                 let mut prepared_frame =
                     update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
                 if let Some(frame) = prepared_frame.as_mut() {
-                    frame.assumptions = populate_assumptions(frame, agent, &view);
+                    frame.assumptions = populate_assumptions(frame, agent, &refreshed_view);
                 }
-                let current_place = SpatialBeliefView::effective_place(&view, agent)
+                let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                     .expect("plan adoption expects actor to have an effective place");
                 adopt_selected_plan(
                     world,

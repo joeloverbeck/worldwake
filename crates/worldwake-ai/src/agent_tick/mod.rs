@@ -1041,6 +1041,15 @@ fn process_agent(
         cognitive.learned_opportunity_memory_ticks,
         memory_capacity,
     );
+    if !read_result.pending_source_reliability_failures.is_empty() {
+        apply_source_reliability_failure_observations(
+            ctx.world,
+            ctx.event_log,
+            agent,
+            tick,
+            &read_result.pending_source_reliability_failures,
+        )?;
+    }
     if !read_result.pending_acquisition_exhaustion_resets.is_empty() {
         apply_acquisition_exhaustion_tracker_resets(
             ctx.world,
@@ -1887,6 +1896,52 @@ fn apply_acquisition_exhaustion_tracker_resets(
         WitnessData::default(),
     );
     txn.set_component_acquisition_exhaustion_tracker(agent, tracker)
+        .map_err(|error| TickInputError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
+pub(super) fn apply_source_reliability_failure_observations(
+    world: &mut worldwake_core::World,
+    event_log: &mut worldwake_core::EventLog,
+    agent: EntityId,
+    tick: Tick,
+    failed_sources: &BTreeSet<worldwake_core::SourceKey>,
+) -> Result<(), TickInputError> {
+    if failed_sources.is_empty() {
+        return Ok(());
+    }
+    let Some(profile) = world.get_component_preference_profile(agent).copied() else {
+        return Ok(());
+    };
+
+    let mut reliability = world
+        .get_component_source_reliability(agent)
+        .cloned()
+        .unwrap_or_default();
+    for source_key in failed_sources {
+        let record = reliability.sources.entry(*source_key).or_insert(
+            worldwake_core::ReliabilityRecord {
+                successful_acquisitions: 0,
+                failed_attempts: 0,
+                last_attempt_tick: tick,
+            },
+        );
+        record.failed_attempts = record.failed_attempts.saturating_add(1);
+        record.last_attempt_tick = tick;
+    }
+    reliability.enforce_limits(tick, &profile);
+
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.set_component_source_reliability(agent, reliability)
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     Ok(())

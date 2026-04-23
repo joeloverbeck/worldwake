@@ -9,8 +9,8 @@ use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    CommodityKind, DriveThresholds, EntityId, ExplorationMotivation, PerceptionSource, SourceKey,
-    Tick, WorkstationTag,
+    CommodityPurpose, CommodityKind, DriveThresholds, EntityId, ExplorationMotivation,
+    GoalKind, OpportunityAnchor, PerceptionSource, SourceKey, Tick, WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -32,6 +32,9 @@ struct SurvivalPreferencesObservation {
     proactive_tick: Tick,
     proactive_arrival_tick: Tick,
     novel_success_tick: Tick,
+    familiar_memory_tick: Tick,
+    familiar_failed_attempts: u16,
+    discounted_familiar_retry_tick: Tick,
 }
 
 fn scenario_path() -> PathBuf {
@@ -116,6 +119,7 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
         .expect("scenario should include Scout Ilen");
     let familiar_orchard_place = scenario_place_id(&def, "Familiar Orchard");
     let novel_grove_place = scenario_place_id(&def, "Novel Grove");
+    let familiar_orchard = orchard_at_place(&h, familiar_orchard_place);
     let novel_orchard = orchard_at_place(&h, novel_grove_place);
     let thresholds = h
         .world
@@ -129,6 +133,8 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
     let mut proactive_tick = None;
     let mut proactive_arrival_tick = None;
     let mut novel_success_tick = None;
+    let mut familiar_memory_tick = None;
+    let mut discounted_familiar_retry_tick = None;
 
     for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
@@ -214,6 +220,68 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
         {
             novel_success_tick = Some(tick);
         }
+
+        if familiar_memory_tick.is_none()
+            && h.world
+                .get_component_source_reliability(agent)
+                .and_then(|reliability| {
+                    reliability.sources.get(&SourceKey {
+                        entity: familiar_orchard,
+                        commodity: CommodityKind::Apple,
+                    })
+                })
+                .is_some_and(|record| record.failed_attempts > 0)
+        {
+            familiar_memory_tick = Some(tick);
+        }
+
+        if familiar_memory_tick.is_some()
+            && discounted_familiar_retry_tick.is_none()
+            && h.driver
+                .trace_sink()
+                .expect("decision tracing should be enabled")
+                .trace_at(agent, tick)
+                .is_some_and(|trace| match &trace.outcome {
+                    DecisionOutcome::Planning(planning) => {
+                        planning.selection.selected_goal().is_some_and(|goal| {
+                            goal.kind
+                                == GoalKind::AcquireCommodity {
+                                    commodity: CommodityKind::Apple,
+                                    purpose: CommodityPurpose::SelfConsume,
+                                }
+                        }) && planning.selection.selected_opportunity
+                            == Some(worldwake_core::OpportunityKey {
+                                goal_key: worldwake_core::GoalKey::from(
+                                    GoalKind::AcquireCommodity {
+                                        commodity: CommodityKind::Apple,
+                                        purpose: CommodityPurpose::SelfConsume,
+                                    },
+                                ),
+                                anchor: OpportunityAnchor::Place(novel_grove_place),
+                            })
+                            && planning.candidates.ranked.iter().any(|ranked| {
+                                ranked.opportunity.goal_key.kind
+                                    == GoalKind::AcquireCommodity {
+                                        commodity: CommodityKind::Apple,
+                                        purpose: CommodityPurpose::SelfConsume,
+                                    }
+                                    && ranked.opportunity.anchor
+                                        == OpportunityAnchor::Place(familiar_orchard_place)
+                                    && ranked
+                                        .source_reliability_discount
+                                        .as_ref()
+                                        .is_some_and(|discount| {
+                                            discount.source_entity == familiar_orchard
+                                                && discount.commodity == CommodityKind::Apple
+                                                && discount.failure_ratio_permille > 0
+                                        })
+                            })
+                    }
+                    _ => false,
+                })
+        {
+            discounted_familiar_retry_tick = Some(tick);
+        }
     }
 
     let committed_actions = h
@@ -257,6 +325,26 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
         novel_success_tick: novel_success_tick.unwrap_or_else(|| {
             panic!(
                 "scenario should later use the proactively discovered Novel Grove for successful apple acquisition; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
+            )
+        }),
+        familiar_memory_tick: familiar_memory_tick.unwrap_or_else(|| {
+            panic!(
+                "scenario should turn a locally observed familiar-source depletion into durable failure memory; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
+            )
+        }),
+        familiar_failed_attempts: h
+            .world
+            .get_component_source_reliability(agent)
+            .and_then(|reliability| {
+                reliability.sources.get(&SourceKey {
+                    entity: familiar_orchard,
+                    commodity: CommodityKind::Apple,
+                })
+            })
+            .map_or(0, |record| record.failed_attempts),
+        discounted_familiar_retry_tick: discounted_familiar_retry_tick.unwrap_or_else(|| {
+            panic!(
+                "scenario should later rank the familiar orchard with a stored failure discount while selecting Novel Grove for apples; traces={trace_summaries:?}"
             )
         }),
     }
@@ -323,6 +411,14 @@ fn survival_preferences_keeps_proactive_diversification_alive_under_survival() {
     assert!(
         observation.proactive_arrival_tick < observation.novel_success_tick,
         "the discovered grove should later become a real apple source after the proactive arrival, not just a visited place; observation={observation:?}"
+    );
+    assert!(
+        observation.familiar_memory_tick <= observation.discounted_familiar_retry_tick,
+        "the later apple-choice divergence should happen only after familiar-source depletion becomes durable memory; observation={observation:?}"
+    );
+    assert!(
+        observation.familiar_failed_attempts > 0,
+        "the familiar orchard should persist a failed-attempt memory after the authoritative harvest start failure; observation={observation:?}"
     );
 }
 
