@@ -19,9 +19,9 @@ use worldwake_core::{
     ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, Permille, PlaceTag,
     PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
     ResourceSource, RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
-    TellMemoryKey, TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound,
-    danger_ratio_permille, is_incapacitated, load_of_entity,
+    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
+    World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -1633,6 +1633,16 @@ impl EconomicBeliefView for PerAgentBeliefView<'_> {
                 self.world
                     .get_component_commodity_valuation_profile(agent)
                     .copied()
+            })
+            .flatten()
+    }
+
+    fn substitute_preferences(&self, agent: EntityId) -> Option<SubstitutePreferences> {
+        (agent == self.agent)
+            .then(|| {
+                self.world
+                    .get_component_substitute_preferences(agent)
+                    .cloned()
             })
             .flatten()
     }

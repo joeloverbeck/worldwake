@@ -1096,6 +1096,135 @@ pub fn select_substitute_trade_candidate(
     None
 }
 
+fn select_trade_candidate_for_view(
+    view: &dyn GoalBeliefView,
+    buyer: EntityId,
+    desired_commodity: CommodityKind,
+    desired_quantity: Quantity,
+    offered_commodity: CommodityKind,
+    offered_quantity: Quantity,
+    place: EntityId,
+) -> Option<SubstituteTradeCandidate> {
+    let mut sellers = view.entities_at(place);
+    sellers.sort();
+    sellers.dedup();
+
+    for seller in sellers {
+        if seller == buyer || view.entity_kind(seller) != Some(EntityKind::Agent) {
+            continue;
+        }
+        if view.commodity_quantity(seller, desired_commodity) < desired_quantity {
+            continue;
+        }
+        if view.trade_disposition_profile(buyer).is_none() {
+            continue;
+        }
+        let acceptance = evaluate_trade_bundle(
+            buyer,
+            view,
+            view.homeostatic_needs(buyer).as_ref(),
+            goal_view_wounds(view, buyer).as_ref(),
+            view.commodity_quantity(buyer, CommodityKind::Coin),
+            &[(offered_commodity, offered_quantity)],
+            &[(desired_commodity, desired_quantity)],
+            &goal_view_local_trade_alternatives(view, buyer, seller, place),
+            None,
+        );
+        if acceptance == TradeAcceptance::Accept {
+            return Some(SubstituteTradeCandidate {
+                seller,
+                commodity: desired_commodity,
+                quantity: desired_quantity,
+            });
+        }
+    }
+
+    None
+}
+
+fn goal_view_wounds(view: &dyn GoalBeliefView, actor: EntityId) -> Option<WoundList> {
+    let wounds = view.wounds(actor);
+    (!wounds.is_empty()).then_some(WoundList { wounds })
+}
+
+fn goal_view_local_trade_alternatives(
+    view: &dyn GoalBeliefView,
+    actor: EntityId,
+    excluded_counterparty: EntityId,
+    place: EntityId,
+) -> Vec<(EntityId, CommodityKind, Quantity)> {
+    let mut alternatives = view
+        .entities_at(place)
+        .into_iter()
+        .filter(|entity| {
+            *entity != actor
+                && *entity != excluded_counterparty
+                && view.entity_kind(*entity) == Some(EntityKind::Agent)
+        })
+        .flat_map(|seller| {
+            view.merchandise_profile(seller)
+                .into_iter()
+                .flat_map(move |profile| {
+                    profile.sale_kinds.into_iter().filter_map(move |commodity| {
+                        let quantity = view.commodity_quantity(seller, commodity);
+                        (quantity > Quantity(0)).then_some((seller, commodity, quantity))
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    alternatives.sort();
+    alternatives
+}
+
+/// Selects the first locally available, valuation-approved substitute trade in stored preference
+/// order for the caller's current belief surface.
+pub fn select_substitute_trade_candidate_for_view(
+    view: &dyn GoalBeliefView,
+    buyer: EntityId,
+    desired_commodity: CommodityKind,
+    desired_quantity: Quantity,
+    offered_commodity: CommodityKind,
+    offered_quantity: Quantity,
+    place: EntityId,
+) -> Option<SubstituteTradeCandidate> {
+    if select_trade_candidate_for_view(
+        view,
+        buyer,
+        desired_commodity,
+        desired_quantity,
+        offered_commodity,
+        offered_quantity,
+        place,
+    )
+    .is_some()
+    {
+        return None;
+    }
+
+    let preferences = view.substitute_preferences(buyer)?;
+    let desired_category = desired_commodity.spec().trade_category;
+    let substitutes = preferences.preferences.get(&desired_category)?;
+
+    for substitute in substitutes.iter().copied() {
+        if substitute == desired_commodity {
+            continue;
+        }
+        if let Some(candidate) = select_trade_candidate_for_view(
+            view,
+            buyer,
+            substitute,
+            desired_quantity,
+            offered_commodity,
+            offered_quantity,
+            place,
+        ) {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
 fn holdings_from_view(view: &dyn GoalBeliefView, actor: EntityId) -> BTreeMap<CommodityKind, u32> {
     CommodityKind::ALL
         .into_iter()

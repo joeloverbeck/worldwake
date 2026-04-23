@@ -36,8 +36,8 @@ use worldwake_core::{
     OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
     ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
     Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationId,
-    ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, TradeCategory, UtilityProfile,
+    ViolationId, ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
     current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
@@ -45,6 +45,7 @@ use worldwake_sim::{
     GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
     belief_view::BeliefStatus, listener_aware_tell_topic_selection,
 };
+use worldwake_systems::trade_actions::select_substitute_trade_candidate_for_view;
 
 #[derive(Clone, Default)]
 struct Evidence {
@@ -2789,6 +2790,8 @@ fn emit_need_driven_candidates(
         return;
     }
 
+    let mut preferred_local_trade_substitutes = BTreeMap::<TradeCategory, CommodityKind>::new();
+
     // Whether the agent already has local consumable stock that satisfies
     // the need.  When true we skip AcquireCommodity emission to avoid
     // redundant acquisition goals.
@@ -2849,6 +2852,22 @@ fn emit_need_driven_candidates(
         diagnostics.places_after_belief_filter = diagnostics
             .places_after_belief_filter
             .saturating_add(search.places_after_belief_filter);
+        let has_current_place_opportunity = ctx.place.is_some_and(|current_place| {
+            search
+                .opportunities
+                .iter()
+                .any(|(candidate_place, _, _)| *candidate_place == current_place)
+        });
+
+        let trade_category = commodity.spec().trade_category;
+        if let Some(chosen_substitute) = preferred_local_trade_substitutes.get(&trade_category) {
+            if *chosen_substitute == commodity {
+                continue;
+            }
+            if local_trade_only_opportunities(ctx, &search.opportunities) {
+                continue;
+            }
+        }
 
         for (candidate_place, evidence, mut evidence_trace) in search.opportunities {
             if ctx.tracing_enabled {
@@ -2884,7 +2903,88 @@ fn emit_need_driven_candidates(
                 evidence_trace,
             );
         }
+
+        let Some(current_place) = ctx.place else {
+            continue;
+        };
+        if has_current_place_opportunity {
+            continue;
+        }
+        let Some(candidate) = select_substitute_trade_candidate_for_view(
+            ctx.view,
+            ctx.agent,
+            commodity,
+            Quantity(1),
+            CommodityKind::Coin,
+            Quantity(1),
+            current_place,
+        ) else {
+            continue;
+        };
+
+        preferred_local_trade_substitutes.insert(trade_category, candidate.commodity);
+
+        let mut evidence = Evidence::with_place(current_place);
+        evidence.entities.insert(candidate.seller);
+        let mut trace = EvidenceTrace::default();
+        trace.contributor(
+            CandidateEvidenceKind::Seller,
+            current_place,
+            candidate.seller,
+        );
+        if ctx.tracing_enabled {
+            trace
+                .knowledge_path
+                .self_knowledge
+                .push(SelfKnowledgeProvenance::NeedLevel {
+                    need: need_id,
+                    permille: current_need,
+                });
+            trace
+                .knowledge_path
+                .entity_beliefs
+                .extend(belief_provenance_for_contributors(
+                    ctx.view,
+                    ctx.agent,
+                    &trace.contributors,
+                    candidate.commodity,
+                ));
+        }
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            EmitterTag::HomeostaticNeeds,
+            combined_evidence(
+                EvidenceKindTag::HomeostaticPressure,
+                EvidenceKindTag::PerceptionObservation,
+            ),
+            GoalKind::AcquireCommodity {
+                commodity: candidate.commodity,
+                purpose: CommodityPurpose::SelfConsume,
+            },
+            OpportunityAnchor::Place(current_place),
+            evidence,
+            trace,
+        );
     }
+}
+
+fn local_trade_only_opportunities(
+    ctx: &GenerationContext<'_>,
+    opportunities: &[(EntityId, Evidence, EvidenceTrace)],
+) -> bool {
+    let Some(current_place) = ctx.place else {
+        return false;
+    };
+    !opportunities.is_empty()
+        && opportunities.iter().all(|(candidate_place, evidence, _)| {
+            *candidate_place == current_place
+                && !evidence.entities.is_empty()
+                && evidence
+                    .entities
+                    .iter()
+                    .all(|entity| ctx.view.entity_kind(*entity) == Some(EntityKind::Agent))
+        })
 }
 
 fn emit_sleep_goal(
@@ -5650,9 +5750,10 @@ mod tests {
         PlaceVisitRecord, PreferenceProfile, ProofRequirement, PunishmentFineSelectionTrace,
         PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
         RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
-        SocialObservation, SocialObservationDetail, TellMemoryKey, TellProfile, TellTopic,
-        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationKind, ViolationMemory, WorkstationTag, Wound, WoundCause, WoundId,
+        SocialObservation, SocialObservationDetail, SubstitutePreferences, TellMemoryKey,
+        TellProfile, TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationKind, ViolationMemory,
+        WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
@@ -5696,8 +5797,10 @@ mod tests {
         known_recipes: BTreeMap<EntityId, Vec<RecipeId>>,
         workstations: BTreeMap<(EntityId, WorkstationTag), Vec<EntityId>>,
         sources_at: BTreeMap<(EntityId, CommodityKind), Vec<EntityId>>,
+        trade_disposition_profiles: BTreeMap<EntityId, TradeDispositionProfile>,
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
+        substitute_preferences: BTreeMap<EntityId, SubstitutePreferences>,
         preference_profiles: BTreeMap<EntityId, PreferenceProfile>,
         utility_profiles: BTreeMap<EntityId, UtilityProfile>,
         artifact_posting_profiles: BTreeMap<EntityId, ArtifactPostingProfile>,
@@ -5784,8 +5887,10 @@ mod tests {
                 known_recipes: BTreeMap::new(),
                 workstations: BTreeMap::new(),
                 sources_at: BTreeMap::new(),
+                trade_disposition_profiles: BTreeMap::new(),
                 demand_memory: BTreeMap::new(),
                 merchandise_profiles: BTreeMap::new(),
+                substitute_preferences: BTreeMap::new(),
                 preference_profiles: BTreeMap::new(),
                 utility_profiles: BTreeMap::new(),
                 artifact_posting_profiles: BTreeMap::new(),
@@ -6422,8 +6527,8 @@ mod tests {
     }
 
     impl worldwake_sim::EconomicBeliefView for TestBeliefView {
-        fn trade_disposition_profile(&self, _agent: EntityId) -> Option<TradeDispositionProfile> {
-            None
+        fn trade_disposition_profile(&self, agent: EntityId) -> Option<TradeDispositionProfile> {
+            self.trade_disposition_profiles.get(&agent).cloned()
         }
 
         fn controlled_commodity_quantity_at_place(
@@ -6487,6 +6592,10 @@ mod tests {
 
         fn merchandise_profile(&self, agent: EntityId) -> Option<MerchandiseProfile> {
             self.merchandise_profiles.get(&agent).cloned()
+        }
+
+        fn substitute_preferences(&self, agent: EntityId) -> Option<SubstitutePreferences> {
+            self.substitute_preferences.get(&agent).cloned()
         }
     }
 
@@ -6726,6 +6835,26 @@ mod tests {
             required_workstation_tag: Some(tag),
             required_tool_kinds: vec![UniqueItemKind::SimpleTool],
             body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
+        }
+    }
+
+    fn sample_trade_disposition_profile() -> TradeDispositionProfile {
+        TradeDispositionProfile {
+            negotiation_round_ticks: NonZeroU32::new(2).unwrap(),
+            initial_offer_bias: Permille::new(250).unwrap(),
+            concession_rate: Permille::new(200).unwrap(),
+            rejection_escalation_rate: Permille::new(150).unwrap(),
+            demand_memory_retention_ticks: 12,
+            market_presence_ticks: NonZeroU32::new(8).unwrap(),
+        }
+    }
+
+    fn food_substitutes(preferences: Vec<CommodityKind>) -> SubstitutePreferences {
+        SubstitutePreferences {
+            preferences: BTreeMap::from([(
+                CommodityKind::Bread.spec().trade_category,
+                preferences,
+            )]),
         }
     }
 
@@ -7843,6 +7972,91 @@ mod tests {
             !acquire_goal.evidence_entities.contains(&listed_lot),
             "listed sale lots must stay seller-backed evidence, not loose-cargo evidence"
         );
+    }
+
+    #[test]
+    fn unavailable_local_food_emits_preferred_substitute_trade_goal() {
+        let agent = entity(1);
+        let grain_seller = entity(2);
+        let apple_seller = entity(3);
+        let place = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, grain_seller, apple_seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(grain_seller, EntityKind::Agent);
+        view.entity_kinds.insert(apple_seller, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(grain_seller, place);
+        view.effective_places.insert(apple_seller, place);
+        view.entities_at
+            .insert(place, vec![agent, grain_seller, apple_seller]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.trade_disposition_profiles
+            .insert(agent, sample_trade_disposition_profile());
+        view.substitute_preferences.insert(
+            agent,
+            food_substitutes(vec![CommodityKind::Grain, CommodityKind::Apple]),
+        );
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Coin), Quantity(3));
+        view.commodity_quantities
+            .insert((grain_seller, CommodityKind::Grain), Quantity(1));
+        view.commodity_quantities
+            .insert((apple_seller, CommodityKind::Apple), Quantity(1));
+        view.merchandise_profiles.insert(
+            grain_seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Grain]),
+                home_facility: Some(place),
+            },
+        );
+        view.merchandise_profiles.insert(
+            apple_seller,
+            MerchandiseProfile {
+                sale_kinds: BTreeSet::from([CommodityKind::Apple]),
+                home_facility: Some(place),
+            },
+        );
+        view.register_seller(place, CommodityKind::Grain, grain_seller);
+        view.register_seller(place, CommodityKind::Apple, apple_seller);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Grain,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+            }
+        ));
+        let grain_goal = candidates
+            .iter()
+            .find(|candidate| {
+                candidate.key.kind
+                    == GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Grain,
+                        purpose: CommodityPurpose::SelfConsume,
+                    }
+            })
+            .expect("preferred substitute grain goal should be emitted");
+        assert_eq!(grain_goal.anchor, OpportunityAnchor::Place(place));
+        assert_eq!(grain_goal.evidence_places, BTreeSet::from([place]));
+        assert_eq!(grain_goal.evidence_entities, BTreeSet::from([grain_seller]));
     }
 
     #[test]
