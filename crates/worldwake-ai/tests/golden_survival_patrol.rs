@@ -31,6 +31,7 @@ struct SurvivalPatrolObservation {
     first_remote_pursuit_candidate_tick: Tick,
     remote_pursuit_route_cost: u32,
     remote_pursuit_selected: bool,
+    remote_pursuit_plan_travel_then_attack: bool,
     attack_committed: bool,
 }
 
@@ -147,6 +148,7 @@ fn run_survival_patrol() -> SurvivalPatrolObservation {
     let mut first_remote_pursuit_candidate_tick = None;
     let mut remote_pursuit_route_cost = None;
     let mut remote_pursuit_selected = false;
+    let mut remote_pursuit_plan_travel_then_attack = false;
     let mut attack_committed = false;
 
     for tick_num in 0..SURVIVAL_TICKS {
@@ -199,6 +201,25 @@ fn run_survival_patrol() -> SurvivalPatrolObservation {
                     }
                     if planning.selection.selected_goal_is(goal) {
                         remote_pursuit_selected = true;
+                        if planning
+                            .selection
+                            .selected_plan
+                            .as_ref()
+                            .is_some_and(|plan| {
+                                let travel_index = plan.steps.iter().position(|step| {
+                                    step.op_kind == worldwake_ai::PlannerOpKind::Travel
+                                });
+                                let attack_index = plan.steps.iter().position(|step| {
+                                    step.op_kind == worldwake_ai::PlannerOpKind::Attack
+                                        && step.targets.contains(&fugitive)
+                                });
+                                travel_index
+                                    .zip(attack_index)
+                                    .is_some_and(|(travel, attack)| travel < attack)
+                            })
+                        {
+                            remote_pursuit_plan_travel_then_attack = true;
+                        }
                     }
                 }
             }
@@ -242,19 +263,19 @@ fn run_survival_patrol() -> SurvivalPatrolObservation {
         remote_pursuit_route_cost: remote_pursuit_route_cost
             .expect("route cost should be recorded"),
         remote_pursuit_selected,
+        remote_pursuit_plan_travel_then_attack,
         attack_committed,
     }
 }
 
 // Scenario 346: survival-patrol
-// This is a retained partial seam, not a full roadmap landing. It proves the
-// 1440-tick survival contract, scheduled patrol commits at both authored
-// waypoints, and remote-pursuit candidate generation from authored hostility
-// plus last-seen memory. The current live blocker is that the remote pursuit
-// branch is generated but not selected/executed under this survival envelope.
+// This is the row-14 survival-patrol landing seam. It proves the 1440-tick
+// survival contract, scheduled patrol commits at both authored waypoints, and
+// remote pursuit is selected and executed from authored hostility plus
+// last-seen memory.
 #[test]
 #[ignore = "scenario-backed survival golden runs in the golden-survival workflow"]
-fn survival_patrol_proves_patrol_and_remote_pursuit_candidate_generation() {
+fn survival_patrol_proves_patrol_and_remote_pursuit_execution() {
     let observation = run_survival_patrol();
 
     assert!(observation.guard.alive, "Guard Mira should survive");
@@ -291,8 +312,16 @@ fn survival_patrol_proves_patrol_and_remote_pursuit_candidate_generation() {
         "the in-range remote pursuit candidate should appear after the starting patrol waypoint"
     );
     assert!(
-        !observation.remote_pursuit_selected && !observation.attack_committed,
-        "current partial seam should not pretend the blocked remote pursuit branch landed"
+        observation.remote_pursuit_selected,
+        "the remote pursuit candidate should be selected under the survival envelope"
+    );
+    assert!(
+        observation.remote_pursuit_plan_travel_then_attack,
+        "the selected remote pursuit plan should travel toward the last-seen target place before attacking"
+    );
+    assert!(
+        observation.attack_committed,
+        "the selected remote pursuit branch should commit its terminal attack"
     );
 }
 

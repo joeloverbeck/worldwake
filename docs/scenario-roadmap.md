@@ -61,8 +61,8 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Theft | `theft_disposition` present | [`theft.rs`](../crates/worldwake-ai/src/theft.rs) | Landed in [§5.11](#511-landed-12-survival-theft) |
 | Justice / accusation | `justice_disposition` present | [`justice_actions.rs`](../crates/worldwake-systems/src/justice_actions.rs) | Landed in [§5.12](#512-landed-row-13-survival-justice) |
 | Violation investigation | `violation_disposition` present | [`investigate_actions.rs`](../crates/worldwake-systems/src/investigate_actions.rs) | Landed in [§5.12](#512-landed-row-13-survival-justice) |
-| Patrol | `patrol_profile` plus `patrol_route` | [`patrol_actions.rs`](../crates/worldwake-systems/src/patrol_actions.rs) | In Progress in [§5.13](#513-in-progress-row-14-survival-patrol) |
-| Pursuit | `pursuit_profile` present | [`pursuit.rs`](../crates/worldwake-ai/src/pursuit.rs) | In Progress in [§5.13](#513-in-progress-row-14-survival-patrol); candidate-generation proof only |
+| Patrol | `patrol_profile` plus `patrol_route` | [`patrol_actions.rs`](../crates/worldwake-systems/src/patrol_actions.rs) | Landed in [§5.13](#513-landed-row-14-survival-patrol) |
+| Pursuit | `pursuit_profile` present | [`pursuit.rs`](../crates/worldwake-ai/src/pursuit.rs) | Landed in [§5.13](#513-landed-row-14-survival-patrol) |
 | Combat | `combat_profile` present | [`combat.rs`](../crates/worldwake-systems/src/combat.rs) | Planned; structural support only in `cli-evaluation.ron` and `survival-patrol.ron` |
 | Escort | Non-zero `care_weight` | [`escort_actions.rs`](../crates/worldwake-systems/src/escort_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Bandit camps | Authored bandit-agent + camp world state | bandit systems and camp actions | Planned |
@@ -98,7 +98,7 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting |
 | Landed in `survival-theft.ron` | Place concealment, Theft |
 | Landed in `survival-justice.ron` | Justice / accusation, Violation investigation, Search, Report / witness found-person reporting branch |
-| In progress in `survival-patrol.ron` | Patrol, Pursuit candidate generation from authored hostility plus last-seen memory |
+| Landed in `survival-patrol.ron` | Patrol, Pursuit selection/execution from authored hostility plus last-seen memory |
 | Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Combat, Escort |
 | Structurally partial outside the landed branch | Broader Report / witness |
 | Planned with no current scenario activation | Bandit camps |
@@ -168,7 +168,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting | Landed | Institution-level goals and artifacts competing with needs |
 | 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place |
 | 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Landed | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope |
-| 14 | `survival-patrol` | Patrol + pursuit | In Progress | Scheduled duties now have a survival-backed patrol proof; interrupt-driven remote pursuit is blocked at selection/execution |
+| 14 | `survival-patrol` | Patrol + pursuit | Landed | Scheduled duties coexist with survival self-care while remembered hostility selects and executes remote pursuit through travel into attack |
 | 15 | `survival-combat` | Combat + bandit camps | Planned | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Planned | Coordinated travel after the rest of the hostile world is live |
 | 17 | `final-integration` | Full coexistence stack | Planned | Last because it only makes sense once every prior row has an honest scenario contract |
@@ -190,7 +190,7 @@ The golden proves the full causal chain at the live seam that matters: proactive
 
 ### 8. `survival-production`
 
-**Status**: Landed  
+**Status**: Landed
 **Source scenario**: [`scenarios/survival-production.ron`](../scenarios/survival-production.ron)  
 **Backing goldens**: [`golden_survival_production.rs`](../crates/worldwake-ai/tests/golden_survival_production.rs)  
 **Depends on**: landed row 1
@@ -203,7 +203,7 @@ The golden proves the branch at the earliest honest surfaces that matter: a plan
 
 ### 9. `survival-trade`
 
-**Status**: Landed  
+**Status**: Landed
 **Source scenario**: [`scenarios/survival-trade.ron`](../scenarios/survival-trade.ron)  
 **Backing goldens**: [`golden_survival_trade.rs`](../crates/worldwake-ai/tests/golden_survival_trade.rs)  
 **Depends on**: landed rows 1-8
@@ -554,25 +554,21 @@ The row also lands place concealment honestly rather than by decorative authored
 
 The scenario is now a full row landing because it owns the lawful authority substrate and proves accusation, fine punishment, direct local search, and found-status reporting under the survival loop without helper-only setup.
 
-### 5.13 In Progress Row 14: `survival-patrol`
+### 5.13 Landed Row 14: `survival-patrol`
 
-**Status**: In Progress  
+**Status**: Landed
 **Source scenario**: [`scenarios/survival-patrol.ron`](../scenarios/survival-patrol.ron)  
 **Backing goldens**: [`golden_survival_patrol.rs`](../crates/worldwake-ai/tests/golden_survival_patrol.rs)
 
 **Scenario-owned progress**
 - `Guard Mira` owns the 1440-tick survival-health envelope while `Fugitive Vale` is a supporting hostile target.
 - The authored scenario now activates `Patrol` through `patrol_profile` plus `patrol_route`, and the retained golden proves patrol commits at both authored waypoints.
-- The scenario now activates `Pursuit` through `pursuit_profile`, directed authored hostility, and last-seen memory. The retained golden proves an in-range remote `EngageHostile` candidate with pursuit diagnostic route cost `3`.
+- The scenario now activates `Pursuit` through `pursuit_profile`, directed authored hostility, and last-seen memory. The retained golden proves an in-range remote `EngageHostile` candidate with pursuit diagnostic route cost `3`, selected `Travel -> Attack` planning, and terminal `attack` commit.
 
 **Structurally active only**
 - `Combat` is active because the current pursuit terminal action is `attack`. This is supporting substrate only; it does not land `survival-combat` or bandit camps.
 
-**Blocked**
-- Interrupt-driven remote pursuit is not landed. The retained golden proves the remote pursuit candidate is generated but also asserts that it is not selected and no `attack` commits.
-- Owning blocker ticket: [`tickets/S14SURPAT-001.md`](../tickets/S14SURPAT-001.md)
-
-The row remains `In Progress` until the AI selects and executes the remote pursuit branch through normal planning under the survival envelope. The CI workflow still owns the retained partial golden so the authored patrol/pursuit substrate does not regress while the blocker is pending.
+The row is landed because the AI selects and executes the remote pursuit branch through normal planning under the survival envelope. The CI workflow owns the golden so the authored patrol/pursuit path, survival-health contract, and supporting combat substrate stay in lockstep.
 
 ### 5.14 Auxiliary and Non-Roadmap Scenarios
 

@@ -2457,6 +2457,7 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         courage: BTreeMap<EntityId, Permille>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
+        hostile_targets: BTreeMap<EntityId, Vec<EntityId>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         merchandise_profiles: BTreeMap<EntityId, MerchandiseProfile>,
         commodity_valuation_profiles: BTreeMap<EntityId, CommodityValuationProfile>,
@@ -2790,6 +2791,12 @@ mod tests {
         }
         fn visible_hostiles_for(&self, agent: EntityId) -> Vec<EntityId> {
             self.hostiles.get(&agent).cloned().unwrap_or_default()
+        }
+        fn hostile_targets_of(&self, agent: EntityId) -> Vec<EntityId> {
+            self.hostile_targets
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
         }
         fn current_attackers_of(&self, agent: EntityId) -> Vec<EntityId> {
             self.attackers.get(&agent).cloned().unwrap_or_default()
@@ -7466,6 +7473,44 @@ mod tests {
         );
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(ranked[0].provenance, None);
+    }
+
+    #[test]
+    fn engage_hostile_remote_target_has_low_danger_motive() {
+        let agent = entity(1);
+        let target = entity(7);
+        let mut view = base_view(agent);
+        view.hostile_targets.insert(agent, vec![target]);
+
+        let ranked = rank(
+            &[goal(GoalKind::EngageHostile { target })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+        assert_eq!(
+            ranked[0].motive_score,
+            u32::from(utility().danger_weight.value())
+                * u32::from(DriveThresholds::default().danger.low().value())
+        );
+        match ranked[0]
+            .provenance
+            .as_ref()
+            .expect("engage hostile should carry danger provenance")
+        {
+            RankedGoalProvenance::Danger(assessment) => {
+                assert_eq!(assessment.visible_hostiles, Vec::<EntityId>::new());
+                assert_eq!(assessment.hostile_targets, vec![target]);
+            }
+            RankedGoalProvenance::Drive(_) => {
+                panic!("engage hostile should not use drive provenance")
+            }
+        }
     }
 
     #[test]

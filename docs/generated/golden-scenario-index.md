@@ -1112,7 +1112,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 346: survival-patrol
 
-- Source: `golden_survival_patrol.rs:249`
+- Source: `golden_survival_patrol.rs:271`
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 

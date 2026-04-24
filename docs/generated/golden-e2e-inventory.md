@@ -204,7 +204,7 @@ Do not hand-edit it.
 
 ### `golden_survival_patrol.rs`
 
-- `survival_patrol_proves_patrol_and_remote_pursuit_candidate_generation`
+- `survival_patrol_proves_patrol_and_remote_pursuit_execution`
 - `survival_patrol_replay_is_deterministic`
 
 ### `golden_survival_preferences.rs`
