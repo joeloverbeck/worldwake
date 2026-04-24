@@ -288,6 +288,8 @@ fn spawn_entities(
         spawn_notice(&mut txn, notice_def, names)?;
     }
 
+    apply_agent_expectation_stores(&mut txn, def, names)?;
+
     for item_def in &def.items {
         spawn_item(&mut txn, item_def, names, place_names, &agent_locations)?;
     }
@@ -604,9 +606,7 @@ fn spawn_agent(
     txn.set_component_communication_profile(agent_id, communication)?;
     let preference = agent_def.preference_profile.unwrap_or_default();
     txn.set_component_preference_profile(agent_id, preference)?;
-    let expectation_store =
-        expectation_store_from_def(agent_id, agent_def.expectation_store.as_ref(), names)?;
-    txn.set_component_expectation_store(agent_id, expectation_store)?;
+    txn.set_component_expectation_store(agent_id, ExpectationStore::default())?;
     let last_seen_memory = last_seen_memory_from_def(agent_def.last_seen_memory.as_ref(), names)?;
     txn.set_component_last_seen_memory(agent_id, last_seen_memory)?;
     if let Some(observations_def) = agent_def.social_observations.as_ref() {
@@ -702,6 +702,21 @@ fn spawn_agent(
 
     txn.set_ground_location(agent_id, place_id)?;
     agent_locations.insert(agent_id, place_id);
+    Ok(())
+}
+
+fn apply_agent_expectation_stores(
+    txn: &mut WorldTxn<'_>,
+    def: &ScenarioDef,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<(), ScenarioError> {
+    for agent_def in &def.agents {
+        let agent_id = resolve_name(names, &agent_def.name, "agent expectation owner")?;
+        let expectation_store =
+            expectation_store_from_def(agent_id, agent_def.expectation_store.as_ref(), names)?;
+        txn.set_component_expectation_store(agent_id, expectation_store)?;
+    }
+
     Ok(())
 }
 
@@ -2769,6 +2784,75 @@ mod tests {
                 capacity: 50,
             })
         );
+    }
+
+    #[test]
+    fn spawn_scenario_resolves_agent_duty_assignments_after_offices_spawn() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Hall".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![
+                AgentDef {
+                    expectation_store: Some(types::ExpectationStoreDef {
+                        records: vec![types::ExpectationRecordDef {
+                            subject: "Subject".into(),
+                            expected_place: "Hall".into(),
+                            deadline_tick: 0,
+                            grace_ticks: 0,
+                            basis: types::ExpectationBasisDef::DutyAssignment {
+                                office: "Warden".into(),
+                            },
+                            state: types::ExpectationStateDef::Overdue,
+                            created_tick: 0,
+                        }],
+                    }),
+                    ..minimal_agent("Holder", "Hall", ControlSource::Ai)
+                },
+                minimal_agent("Subject", "Hall", ControlSource::None),
+            ],
+            bandit_camps: Vec::new(),
+            offices: vec![OfficeDef {
+                name: "Warden".into(),
+                seat: "Hall".into(),
+                succession_law: SuccessionLaw::Force,
+                succession_period_ticks: 3,
+                initial_holder: None,
+                eligibility_rules: Vec::new(),
+            }],
+            notices: vec![],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            hostilities: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let holder = world
+            .query_name_and_agent_data()
+            .find_map(|(entity, name, _)| (name.0 == "Holder").then_some(entity))
+            .unwrap();
+        let warden = world
+            .query_name()
+            .find_map(|(entity, name)| (name.0 == "Warden").then_some(entity))
+            .unwrap();
+        let store = world.get_component_expectation_store(holder).unwrap();
+
+        assert!(store.records.values().any(|record| {
+            matches!(
+                record.basis,
+                ExpectationBasis::DutyAssignment { office } if office == warden
+            )
+        }));
     }
 
     #[test]

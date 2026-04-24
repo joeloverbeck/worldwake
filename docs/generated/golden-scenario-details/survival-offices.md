@@ -7,9 +7,9 @@ Scenarios: 1
 
 ### Scenario 175: Survival Offices Proves Force-Law Uptake Under Survival
 
-- Source: `golden_survival_offices.rs:316`
-- Systems: AI, Needs, Offices
-- GoalKinds: ClaimOffice, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
+- Source: `golden_survival_offices.rs:432`
+- Systems: AI, Needs, Offices, Search, Social artifact actions
+- GoalKinds: ClaimOffice, PostNotice, SearchForMissing, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Social, Needs
 - Places: Council Green
 - Principles: 6, 7, 14, 20
@@ -17,8 +17,8 @@ Scenarios: 1
 - Replay tests: `survival_offices_replays_deterministically`
 - All tests: `survival_offices_proves_force_law_uptake`, `survival_offices_replays_deterministically`
 
-**Setup**: Run the authored survival offices scenario for 1440 ticks. `Claimant Rhea` starts at `Council Green` with one vacant force-law office, authored remembered local conflict memory, and the co-located survival substrate needed to keep eating, drinking, relieving, washing, and sleeping in the same place. That makes the row about force-law office pressure and autonomous notice posting competing with ongoing self-care rather than travel or consult-record gating.
+**Setup**: Run the authored survival offices scenario for 1440 ticks. `Claimant Rhea` starts at `Council Green` with one vacant force-law office, authored remembered local conflict memory, an explicit obligation satiation profile, an overdue Marsh Warden duty assignment for `Rival Rowan`, and the co-located survival substrate needed to keep eating, drinking, relieving, washing, and sleeping in the same place. That makes the row about force-law office pressure, autonomous notice posting, and office-linked duty resolution competing with ongoing self-care rather than travel or consult-record gating.
 
-**Proves**: the tracked agent satisfies the authored survival-health contract, selects `ClaimOffice`, selects and commits `PostNotice` from the authored warning substrate, commits `press_force_claim`, becomes force controller, and only later installs as office holder after the force-law hold delay.
+**Proves**: the tracked agent satisfies the authored survival-health contract, selects `ClaimOffice`, selects and commits `PostNotice` from the authored warning substrate, commits `press_force_claim`, becomes force controller, only later installs as office holder after the force-law hold delay, crosses the authored obligation-satiation threshold, returns to self-care, and resolves the authored Marsh Warden duty assignment through `search_place`.
 
-**Cross-system chain**: authored remembered local conflict -> PostNotice selected and committed -> new threat-warning notice artifact exists; in the same authored survival run a vacant force-law office under survival pressure -> ClaimOffice selected -> press_force_claim commits -> office controller mutates -> delayed office holder installation.
+**Cross-system chain**: authored remembered local conflict -> PostNotice selected and committed repeatedly -> obligation tracker crosses the satiation threshold -> self-care remains competitive; in the same authored survival run a vacant force-law office under survival pressure -> ClaimOffice selected -> press_force_claim commits -> office controller mutates -> delayed office holder installation; Marsh Warden duty expectation -> SearchForMissing selected -> search_place commits -> duty expectation resolves.

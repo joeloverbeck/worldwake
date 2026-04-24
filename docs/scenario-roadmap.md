@@ -44,7 +44,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Tell / peer info transfer | Active `tell_profile` plus active `communication_profile` | [`tell_actions.rs`](../crates/worldwake-systems/src/tell_actions.rs), [`communication.rs`](../crates/worldwake-core/src/communication.rs) | Landed in [§5.5](#55-landed-5-survival-tell) |
 | Ask-about-person | Non-zero `social_weight` plus `communication_profile` and `epistemic_disposition` | [`ask_about_person_actions.rs`](../crates/worldwake-systems/src/ask_about_person_actions.rs), epistemic surfaces | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
 | Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
-| Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); standalone behavior planned as extension to [§4.7 `survival-offices` (Row 11)](#47-landed-row-11) |
+| Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Production (facility-backed craft) | Authored recipe set with at least one non-harvest production recipe | [`production_actions.rs`](../crates/worldwake-systems/src/production_actions.rs) | Landed in [§5.8](#58-landed-8-survival-production) |
@@ -95,14 +95,14 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-production.ron` | Production (facility-backed craft) |
 | Landed in `survival-trade.ron` | Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Facility-queue contention, Stock / transport |
 | Landed in `survival-items-decay.ron` | Item decay, Disposal |
-| Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting |
+| Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting, Obligation satiation |
 | Landed in `survival-theft.ron` | Place concealment, Theft |
 | Landed in `survival-justice.ron` | Justice / accusation, Violation investigation, Search, Report / witness found-person reporting branch |
 | Landed in `survival-patrol.ron` | Patrol, Pursuit selection/execution from authored hostility plus last-seen memory |
 | Landed in `survival-combat.ron` | Combat, Bandit camps |
 | Landed in `survival-escort.ron` | Escort/care coordinated travel under hostile pressure |
 | Landed in `final-integration.ron` | Full gameplay catalog structural coexistence under survival-health, with hostile wound pressure |
-| Structural-only within final integration, not standalone behavior landings | Obligation satiation, Bounty posting |
+| Structural-only within final integration, not standalone behavior landings | Bounty posting |
 | Structurally partial outside the landed branch | Broader Report / witness |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
@@ -167,7 +167,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 8 | `survival-production` | Production (facility-backed craft) | Landed | First survival row where food depends on a workstation-backed craft branch rather than direct harvest |
 | 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, facility-queue contention, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade, plus authored queue/grant contention at the Market Square well |
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
-| 11 | `survival-offices` | Offices / succession / force-claim + notice posting | In Progress | Institution-level goals and artifacts competing with needs; extension adds obligation satiation behavior proof on an authored office duty |
+| 11 | `survival-offices` | Offices / succession / force-claim + notice posting + obligation satiation | Landed | Institution-level goals, artifacts, and an authored office duty competing with needs |
 | 12 | `survival-theft` | Theft + place concealment | In Progress | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place; extension adds broader witness→report chain proof beyond found-person |
 | 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | In Progress | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope; extension adds bounty posting behavior proof after accusation |
 | 14 | `survival-patrol` | Patrol + pursuit | Landed | Scheduled duties coexist with survival self-care while remembered hostility selects and executes remote pursuit through travel into attack |
@@ -243,24 +243,21 @@ The golden proves the row at the earliest honest surfaces that matter: `Caretake
 **Backing goldens**: [`golden_survival_offices.rs`](../crates/worldwake-ai/tests/golden_survival_offices.rs)  
 **Depends on**: landed rows 1-10
 
-`survival-offices.ron` now lands row 11 at the truthful live seam. The authored survival scenario keeps `Claimant Rhea` alive for 1440 ticks while force-claiming `Marsh Warden` and, from authored remembered local conflict memory plus explicit posting profile substrate, autonomously selecting and committing a threat-warning `PostNotice`.
+`survival-offices.ron` now lands row 11 at the truthful live seam. The authored survival scenario keeps `Claimant Rhea` alive for 1440 ticks while force-claiming `Marsh Warden`; autonomously selecting and committing threat-warning `PostNotice` from authored remembered local conflict memory plus explicit posting profile substrate; and carrying an overdue Marsh Warden duty assignment for `Rival Rowan` under an explicit `obligation_satiation_profile`.
 
-The golden proves both halves at the earliest honest surfaces that matter: `ClaimOffice` selection under survival pressure, committed `press_force_claim`, authoritative force control, delayed holder installation, `PostNotice` selection and commit, and a newly created threat-warning notice artifact during the same authored run. This is a real roadmap-owned coexistence proof rather than test-seeded belief injection or an auxiliary non-survival posting witness.
+The golden proves the row at the earliest honest surfaces that matter: `ClaimOffice` selection under survival pressure, committed `press_force_claim`, authoritative force control, delayed holder installation, `PostNotice` selection and commit, a newly created threat-warning notice artifact, enough committed obligation actions to cross the authored satiation threshold, later self-care after satiation applies, and `SearchForMissing` / `search_place` resolving the office-linked duty expectation during the same authored run. This is a real roadmap-owned coexistence proof rather than test-seeded belief injection or an auxiliary non-survival posting witness.
 
 **Landed scope**
 - Offices / succession / force-claim
 - Notice posting
+- Obligation satiation
 
-**Planned extension**
-
-Row is `In Progress` pending obligation satiation behavior proof. The extension must:
-- Author an active `obligation_satiation_profile` plus a concrete office-linked obligation on `Claimant Rhea` (or an appointed holder) so the agent carries a real authored duty alongside survival pressure.
-- Prove in the backing golden a committed satiation action that discharges that obligation at the authored causal seam — not merely structural profile presence.
-- Keep the landed force-claim and notice-posting chain intact: `ClaimOffice` selection, `press_force_claim` commit, authoritative force control, delayed holder installation, and the `PostNotice` threat-warning branch must all still hold under the same 1440-tick survival-health envelope.
+**Structurally active only**
+- Violation investigation, Search, and Escort/care are structurally active because the office duty branch needs `violation_disposition`, `last_seen_memory`, `expectation_store`, and non-zero `care_weight` to select and resolve `SearchForMissing`. This row proves the duty-resolution branch only; row 13 remains the behavior owner for broader violation/search/report behavior, and row 16 remains the behavior owner for escort/care coordinated travel.
 
 #### 4.8 Remaining planned rows
 
-All ordered rows are landed or have a planned extension routed against them (see Rows 9, 11, 12, 13). Future roadmap entries should use the template above and name whether they are adding a new standalone behavior row, extending an existing row to cover a catalog item currently proven only structurally in [§5.16](#516-landed-row-17-final-integration), or only strengthening the already-landed full-stack coexistence scenario.
+All ordered rows are landed or have a planned extension routed against them (see Rows 12 and 13). Future roadmap entries should use the template above and name whether they are adding a new standalone behavior row, extending an existing row to cover a catalog item currently proven only structurally in [§5.16](#516-landed-row-17-final-integration), or only strengthening the already-landed full-stack coexistence scenario.
 
 ## 5. Landed Scenarios
 
@@ -640,7 +637,7 @@ The row is landed because the scenario-backed golden proves survival self-care a
 - The same run proves concrete hostile pressure still occurs in the integrated world by observing a wound on `Ward Mira`.
 
 **Structural-only within this row**
-- Obligation satiation and bounty posting are active as part of full-stack coexistence substrate. This row does not claim standalone behavior landings for those mechanics; a future row or ticket should add behavior-specific proof before treating them as individually landed mechanics.
+- Bounty posting is active as part of full-stack coexistence substrate. This row does not claim a standalone behavior landing for that mechanic; a future row or ticket should add behavior-specific proof before treating it as an individually landed mechanic.
 - Earlier rows remain the behavior owners for their individual branches. This row deliberately avoids re-proving every prior behavior in one oversized golden and instead owns the full-catalog coexistence contract.
 
 The row is landed because the scenario-backed golden proves the authored full-catalog structural contract, the survival-health contract, deterministic replay, and a concrete hostile-pressure branch under the golden-survival CI workflow.

@@ -1,15 +1,18 @@
 // Survival offices scenario for Worldwake.
 //
 // Purpose: land roadmap row 11 with a truthful survival-backed office and
-// notice-posting proof seam. `Claimant Rhea` starts with authored remembered
-// local conflict memory, so the same survival scenario can now exercise both
-// `ClaimOffice` and autonomous `PostNotice` without test-only belief seeding.
+// notice-posting proof seam plus the obligation-satiation extension. `Claimant
+// Rhea` starts with authored remembered local conflict memory and a Marsh
+// Warden duty expectation, so the same survival scenario can exercise
+// `ClaimOffice`, autonomous `PostNotice`, and office-linked duty resolution
+// without test-only belief seeding.
 //
 // Lawful competing affordances intentionally constrained:
 // - no social relay, trade, justice, theft, or combat branches
 // - only one authored office and one consultable local register
-// - food, water, wash, and latrine remain co-located so the row stays about
-//   office pressure competing with survival needs rather than route planning
+// - food, water, wash, latrine, and the duty subject remain co-located so the
+//   row stays about office pressure competing with survival needs rather than
+//   route planning
 (
     seed: 611011,
     survival_health_contract: (
@@ -70,12 +73,18 @@
                 bounty_posting_weight: 0,
                 notice_posting_weight: 900,
                 courage: 500,
-                care_weight: 0,
+                care_weight: 700,
             ),
             artifact_posting_profile: (
                 threat_warning_ttl: 48,
                 office_vacancy_ttl: 48,
                 bounty_ttl: 48,
+            ),
+            obligation_satiation_profile: (
+                satiation_threshold: 1,
+                window_ticks: 120,
+                decay_per_execution: 350,
+                satiation_floor: 150,
             ),
             perception_profile: (
                 entity_activation_threshold: 64,
@@ -154,6 +163,37 @@
                 exploration_arrival_boost: 0,
                 max_consecutive_explorations: 1,
                 visit_lookback_ticks: 120,
+            ),
+            expectation_store: (
+                records: [
+                    (
+                        subject: "Rival Rowan",
+                        expected_place: "Council Green",
+                        deadline_tick: 0,
+                        grace_ticks: 0,
+                        basis: DutyAssignment(office: "Marsh Warden"),
+                        state: Overdue,
+                        created_tick: 0,
+                    ),
+                ],
+            ),
+            last_seen_memory: (
+                records: [
+                    (
+                        subject: "Rival Rowan",
+                        place: "Council Green",
+                        observed_tick: 0,
+                        source: "Claimant Rhea",
+                        provenance: DirectObservation,
+                    ),
+                ],
+                capacity: 20,
+            ),
+            violation_disposition: (
+                investigation_duration_ticks: 3,
+                violation_memory_retention_ticks: 120,
+                investigation_motive_weight: 600,
+                ownership_motive_bonus: 0,
             ),
         ),
     ],
