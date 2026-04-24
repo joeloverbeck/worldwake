@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 use serde::Deserialize;
 use worldwake_core::{
     AgendaProfile, ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile,
-    CommodityDecayMap, CommodityValuationProfile, CommunicationProfile,
+    CommodityDecayMap, CommodityValuationProfile, CommunicationProfile, Container,
     ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
     DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
     HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
@@ -29,6 +29,8 @@ pub struct ScenarioDef {
     pub edges: Vec<EdgeDef>,
     #[serde(default)]
     pub agents: Vec<AgentDef>,
+    #[serde(default)]
+    pub bandit_camps: Vec<BanditCampDef>,
     #[serde(default)]
     pub offices: Vec<OfficeDef>,
     #[serde(default)]
@@ -61,6 +63,39 @@ pub struct ScenarioDef {
 pub struct HostilityDef {
     pub subject: String,
     pub target: String,
+}
+
+/// An authored active bandit camp and its owning faction policy.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BanditCampDef {
+    pub faction: String,
+    pub place: String,
+    pub members: Vec<String>,
+    pub policy: BanditFactionPolicyDef,
+    #[serde(default)]
+    pub supplies: Option<BanditCampSuppliesDef>,
+}
+
+/// Scenario-specific bandit faction policy using string place references.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BanditFactionPolicyDef {
+    pub min_regroup_count: u8,
+    pub establishment_duration_ticks: NonZeroU32,
+    pub abandonment_grace_ticks: NonZeroU32,
+    pub flee_wound_threshold: Permille,
+    #[serde(default)]
+    pub rally_place: Option<String>,
+}
+
+/// Optional initial camp supplies.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BanditCampSuppliesDef {
+    pub commodity: CommodityKind,
+    pub quantity: Quantity,
+    pub container: Container,
 }
 
 /// An authored office entity plus its automatically maintained local records.

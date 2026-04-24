@@ -382,7 +382,7 @@ const FEATURES: &[FeatureDef] = &[
         name: "Bandit camps",
         covered_agent_fields: &[],
         covered_place_fields: &[],
-        covered_scenario_fields: &[],
+        covered_scenario_fields: &["bandit_camps"],
     },
     FeatureDef {
         id: FeatureId::ReportWitness,
@@ -791,7 +791,13 @@ fn classify_feature(feature: FeatureId, def: &ScenarioDef) -> FeatureStatus {
                 FeatureStatus::Active
             }
         }
-        FeatureId::BanditCamps => FeatureStatus::Absent,
+        FeatureId::BanditCamps => {
+            if def.bandit_camps.is_empty() {
+                FeatureStatus::Absent
+            } else {
+                FeatureStatus::Active
+            }
+        }
         FeatureId::BountyPosting => posting_status(def, |profile| profile.bounty_posting_weight),
         FeatureId::NoticePosting => posting_status(def, |profile| profile.notice_posting_weight),
         FeatureId::Theft => {
@@ -1179,6 +1185,7 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
         places: _,
         edges: _,
         agents: _,
+        bandit_camps,
         offices,
         notices,
         items: _,
@@ -1200,6 +1207,9 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
     }
     if !notices.is_empty() {
         fields.insert("notices");
+    }
+    if !bandit_camps.is_empty() {
+        fields.insert("bandit_camps");
     }
     fields
 }

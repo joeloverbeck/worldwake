@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 346: survival-patrol
 
-- Source: `golden_survival_patrol.rs:271`
+- Source: `golden_survival_patrol.rs:270`
 - Primary tests: `survival_patrol_proves_patrol_and_remote_pursuit_execution`, `survival_patrol_replay_is_deterministic`
 - Replay tests: None
 - All tests: `survival_patrol_proves_patrol_and_remote_pursuit_execution`, `survival_patrol_replay_is_deterministic`

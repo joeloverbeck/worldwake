@@ -215,6 +215,7 @@ mod tests {
                     bidirectional: true,
                 },
             ],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             agents: vec![
@@ -385,6 +386,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],

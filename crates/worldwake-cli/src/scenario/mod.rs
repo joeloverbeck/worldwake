@@ -11,16 +11,17 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    ArtifactHeader, ArtifactKind, ArtifactState, BelievedInstitutionalClaim, CarryCapacity,
-    CauseRef, ControlSource, DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog,
-    ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore,
-    ExplorationProfile, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-    KnownRecipes, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-    LoadUnits, MerchandiseProfile, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
+    ArtifactHeader, ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy,
+    BelievedInstitutionalClaim, CarryCapacity, CauseRef, ControlSource, DeprivationExposure,
+    EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis, ExpectationOutcome,
+    ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
+    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
+    MerchandiseProfile, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
     OfficeForceState, PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
     RecordData, RecordKind, ResourceSource, Seed, SocialObservation, SocialObservationDetail, Tick,
     Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
-    WorldTxn, default_commodity_decay_map, hash_world,
+    WorldTxn, default_commodity_decay_map, hash_world, load_per_unit,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -275,6 +276,10 @@ fn spawn_entities(
         spawn_agent(&mut txn, recipes, agent_def, names, &mut agent_locations)?;
     }
 
+    for camp_def in &def.bandit_camps {
+        spawn_bandit_camp(&mut txn, camp_def, names)?;
+    }
+
     for office_def in &def.offices {
         spawn_office(&mut txn, office_def, names, &mut facility_locations)?;
     }
@@ -420,6 +425,102 @@ fn spawn_entities(
     }
 
     txn.commit(event_log);
+    Ok(())
+}
+
+fn spawn_bandit_camp(
+    txn: &mut WorldTxn<'_>,
+    camp_def: &types::BanditCampDef,
+    names: &mut BTreeMap<String, EntityId>,
+) -> Result<(), ScenarioError> {
+    let place = resolve_name(
+        names,
+        &camp_def.place,
+        &format!("bandit camp '{}' place", camp_def.faction),
+    )?;
+    let faction = txn.create_faction(&camp_def.faction)?;
+    names.insert(camp_def.faction.clone(), faction);
+
+    for member_name in &camp_def.members {
+        let member = resolve_name(
+            names,
+            member_name,
+            &format!("bandit camp '{}' member", camp_def.faction),
+        )?;
+        txn.add_member(member, faction)?;
+    }
+
+    let rally_place = camp_def
+        .policy
+        .rally_place
+        .as_ref()
+        .map(|name| {
+            resolve_name(
+                names,
+                name,
+                &format!("bandit camp '{}' rally_place", camp_def.faction),
+            )
+        })
+        .transpose()?;
+    txn.set_component_bandit_faction_policy(
+        faction,
+        BanditFactionPolicy {
+            min_regroup_count: camp_def.policy.min_regroup_count,
+            establishment_duration_ticks: camp_def.policy.establishment_duration_ticks,
+            abandonment_grace_ticks: camp_def.policy.abandonment_grace_ticks,
+            flee_wound_threshold: camp_def.policy.flee_wound_threshold,
+            rally_place,
+        },
+    )?;
+
+    let supplies = if let Some(supplies_def) = &camp_def.supplies {
+        let container = txn.create_container(supplies_def.container.clone())?;
+        txn.set_ground_location(container, place)?;
+        txn.set_owner(container, faction)?;
+        let lot = txn.create_item_lot(supplies_def.commodity, supplies_def.quantity)?;
+        txn.set_ground_location(lot, place)?;
+        txn.set_owner(lot, faction)?;
+        txn.put_into_container(lot, container)?;
+        container
+    } else {
+        let container = txn.create_container(worldwake_core::Container {
+            capacity: LoadUnits(1),
+            allowed_commodities: None,
+            allows_unique_items: false,
+            allows_nested_containers: false,
+        })?;
+        txn.set_ground_location(container, place)?;
+        txn.set_owner(container, faction)?;
+        container
+    };
+
+    if let Some(supplies_def) = &camp_def.supplies {
+        let required = load_per_unit(supplies_def.commodity)
+            .0
+            .checked_mul(supplies_def.quantity.0)
+            .map(LoadUnits)
+            .ok_or_else(|| {
+                ScenarioError::Validation(format!(
+                    "bandit camp '{}' supplies load overflowed",
+                    camp_def.faction
+                ))
+            })?;
+        if supplies_def.container.capacity.0 < required.0 {
+            return Err(ScenarioError::Validation(format!(
+                "bandit camp '{}' supplies container capacity {} is below required load {}",
+                camp_def.faction, supplies_def.container.capacity.0, required.0
+            )));
+        }
+    }
+
+    txn.set_component_bandit_camp(
+        place,
+        BanditCamp {
+            faction,
+            supplies,
+            empty_since_tick: None,
+        },
+    )?;
     Ok(())
 }
 
@@ -1159,6 +1260,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Village", ControlSource::Human)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1170,6 +1272,61 @@ mod tests {
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn spawn_scenario_authors_bandit_camp_policy_membership_and_supplies() {
+        let mut def = minimal_def();
+        def.places[0].tags.push(PlaceTag::Camp);
+        def.agents = vec![minimal_agent("Rook", "Village", ControlSource::Human)];
+        def.bandit_camps = vec![BanditCampDef {
+            faction: "Road Wolves".into(),
+            place: "Village".into(),
+            members: vec!["Rook".into()],
+            policy: BanditFactionPolicyDef {
+                min_regroup_count: 1,
+                establishment_duration_ticks: NonZeroU32::new(2).unwrap(),
+                abandonment_grace_ticks: NonZeroU32::new(3).unwrap(),
+                flee_wound_threshold: Permille::new(650).unwrap(),
+                rally_place: Some("Village".into()),
+            },
+            supplies: Some(BanditCampSuppliesDef {
+                commodity: CommodityKind::Apple,
+                quantity: Quantity(4),
+                container: worldwake_core::Container {
+                    capacity: LoadUnits(4),
+                    allowed_commodities: None,
+                    allows_unique_items: false,
+                    allows_nested_containers: false,
+                },
+            }),
+        }];
+
+        let spawned = spawn_scenario(&def).expect("scenario should spawn");
+        let world = spawned.state.world();
+        let village = spawned
+            .state
+            .world()
+            .topology()
+            .place_ids()
+            .next()
+            .expect("minimal topology should have a place");
+        let camp = world
+            .get_component_bandit_camp(village)
+            .cloned()
+            .expect("Village should have authored bandit camp");
+        let faction = camp.faction;
+
+        assert_eq!(world.members_of(faction).len(), 1);
+        assert_eq!(
+            world
+                .get_component_bandit_faction_policy(faction)
+                .expect("faction should have bandit policy")
+                .rally_place,
+            Some(village)
+        );
+        assert_eq!(world.owner_of(camp.supplies), Some(faction));
+        assert_eq!(world.direct_contents_of(camp.supplies).len(), 1);
     }
 
     #[test]
@@ -1231,6 +1388,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Herald", "Square", ControlSource::Human)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![NoticeDef {
                 issuer: "Herald".into(),
@@ -1317,6 +1475,7 @@ mod tests {
                     ..minimal_agent("Claimant", "Square", ControlSource::Ai)
                 },
             ],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1443,6 +1602,7 @@ mod tests {
                 minimal_agent("Alice", "Town", ControlSource::Human),
                 minimal_agent("Bob", "Forest", ControlSource::Ai),
             ],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1490,6 +1650,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1526,6 +1687,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1567,6 +1729,7 @@ mod tests {
                 }),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1607,6 +1770,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Scout", "Forest", ControlSource::Ai)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1657,6 +1821,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Trader", "Market", ControlSource::Ai)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![ItemDef {
@@ -1710,6 +1875,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Warrior", "Camp", ControlSource::Human)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![ItemDef {
@@ -1768,6 +1934,7 @@ mod tests {
                 bidirectional: false,
             }],
             agents: vec![],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1826,6 +1993,7 @@ mod tests {
                 bidirectional: true,
             }],
             agents: vec![],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1886,6 +2054,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Lost", "Nowhere", ControlSource::Ai)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -1931,6 +2100,7 @@ mod tests {
             ],
             edges: vec![],
             agents: vec![],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2006,6 +2176,7 @@ mod tests {
                 known_recipes: Some(vec!["Harvest Apples".into(), "Unknown Recipe".into()]),
                 ..minimal_agent("Forager", "Orchard", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2058,6 +2229,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2124,6 +2296,7 @@ mod tests {
                 known_recipes: Some(vec!["Harvest Water".into()]),
                 ..minimal_agent("Water Bearer", "Village", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2208,6 +2381,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Merchant", "Market", ControlSource::Ai)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2294,6 +2468,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Bot", "Void", ControlSource::Ai)],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2336,6 +2511,7 @@ mod tests {
                 needs: Some(custom_needs),
                 ..minimal_agent("Hungry", "Home", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2454,6 +2630,7 @@ mod tests {
                 diversification_profile: Some(profile),
                 ..minimal_agent("Scout", "Town", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2503,6 +2680,7 @@ mod tests {
                 last_seen_memory: Some(custom_memory.clone()),
                 ..minimal_agent("Searcher", "Home", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2554,6 +2732,7 @@ mod tests {
                 artifact_posting_profile: Some(custom_profile.clone()),
                 ..minimal_agent("Herald", "Home", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2669,6 +2848,7 @@ mod tests {
                 exploration_profile: Some(custom_exploration),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2732,6 +2912,7 @@ mod tests {
                 obligation_satiation_profile: Some(custom_profile.clone()),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2786,6 +2967,7 @@ mod tests {
                 drive_escalation_profile: Some(custom_profile.clone()),
                 ..minimal_agent("Alice", "Town", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2883,6 +3065,7 @@ mod tests {
                 substitute_preferences: Some(substitute_preferences.clone()),
                 ..minimal_agent("Guard", "Gate", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -2995,6 +3178,7 @@ mod tests {
                 }),
                 ..minimal_agent("Guard", "Gate", ControlSource::Ai)
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
@@ -3027,6 +3211,7 @@ mod tests {
             }],
             edges: vec![],
             agents: vec![minimal_agent("Holder", "Square", ControlSource::Ai)],
+            bandit_camps: Vec::new(),
             offices: vec![OfficeDef {
                 name: "Marshal".into(),
                 seat: "Square".into(),

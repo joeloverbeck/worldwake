@@ -63,9 +63,9 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Violation investigation | `violation_disposition` present | [`investigate_actions.rs`](../crates/worldwake-systems/src/investigate_actions.rs) | Landed in [§5.12](#512-landed-row-13-survival-justice) |
 | Patrol | `patrol_profile` plus `patrol_route` | [`patrol_actions.rs`](../crates/worldwake-systems/src/patrol_actions.rs) | Landed in [§5.13](#513-landed-row-14-survival-patrol) |
 | Pursuit | `pursuit_profile` present | [`pursuit.rs`](../crates/worldwake-ai/src/pursuit.rs) | Landed in [§5.13](#513-landed-row-14-survival-patrol) |
-| Combat | `combat_profile` present | [`combat.rs`](../crates/worldwake-systems/src/combat.rs) | Planned; structural support only in `cli-evaluation.ron` and `survival-patrol.ron` |
+| Combat | `combat_profile` present | [`combat.rs`](../crates/worldwake-systems/src/combat.rs) | Landed in [§5.14](#514-landed-row-15-survival-combat) |
 | Escort | Non-zero `care_weight` | [`escort_actions.rs`](../crates/worldwake-systems/src/escort_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Bandit camps | Authored bandit-agent + camp world state | bandit systems and camp actions | Planned |
+| Bandit camps | Authored `bandit_camps` world state | [`bandit_camp.rs`](../crates/worldwake-systems/src/bandit_camp.rs), [`bandit_camp_actions.rs`](../crates/worldwake-systems/src/bandit_camp_actions.rs) | Landed in [§5.14](#514-landed-row-15-survival-combat) |
 | Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Found-person reporting branch landed in [§5.12](#512-landed-row-13-survival-justice); broader witness/report coverage remains partial in the generated companion |
 | Search | `violation_disposition` plus `epistemic_disposition` | search and investigation actions | Landed in [§5.12](#512-landed-row-13-survival-justice) |
 | Stock / transport | `merchandise_profile` plus stock-supporting world state | stock and transport actions | Landed in [§5.9](#59-landed-9-survival-trade) |
@@ -99,9 +99,9 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-theft.ron` | Place concealment, Theft |
 | Landed in `survival-justice.ron` | Justice / accusation, Violation investigation, Search, Report / witness found-person reporting branch |
 | Landed in `survival-patrol.ron` | Patrol, Pursuit selection/execution from authored hostility plus last-seen memory |
-| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Combat, Escort |
+| Landed in `survival-combat.ron` | Combat, Bandit camps |
+| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Escort |
 | Structurally partial outside the landed branch | Broader Report / witness |
-| Planned with no current scenario activation | Bandit camps |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
 
@@ -169,7 +169,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place |
 | 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Landed | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope |
 | 14 | `survival-patrol` | Patrol + pursuit | Landed | Scheduled duties coexist with survival self-care while remembered hostility selects and executes remote pursuit through travel into attack |
-| 15 | `survival-combat` | Combat + bandit camps | Planned | Highest direct survival risk and adversarial planning pressure |
+| 15 | `survival-combat` | Combat + bandit camps | Landed | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Planned | Coordinated travel after the rest of the hostile world is live |
 | 17 | `final-integration` | Full coexistence stack | Planned | Last because it only makes sense once every prior row has an honest scenario contract |
 
@@ -570,7 +570,21 @@ The scenario is now a full row landing because it owns the lawful authority subs
 
 The row is landed because the AI selects and executes the remote pursuit branch through normal planning under the survival envelope. The CI workflow owns the golden so the authored patrol/pursuit path, survival-health contract, and supporting combat substrate stay in lockstep.
 
-### 5.14 Auxiliary and Non-Roadmap Scenarios
+### 5.14 Landed Row 15: `survival-combat`
+
+**Status**: Landed
+**Source scenario**: [`scenarios/survival-combat.ron`](../scenarios/survival-combat.ron)  
+**Backing goldens**: [`golden_survival_combat.rs`](../crates/worldwake-ai/tests/golden_survival_combat.rs)
+
+**Scenario-owned proof**
+- `Sentinel Rowan` owns the 1440-tick survival-health envelope while `Raider Voss` is the supporting hostile camp member.
+- The authored scenario activates `Combat` through colocated `combat_profile` actors and directed hostility. The retained golden proves `EngageHostile` selection, terminal `attack` commit, and downstream `DeadAt` on the hostile target.
+- The authored scenario activates `Bandit camps` through the `bandit_camps` scenario field, which creates the faction, membership, policy, supplies container, and active `BanditCamp` component at `Raider Camp`.
+- The retained golden proves the camp behavior, not just its presence: combat removes the only living camp member, the camp records `empty_since_tick`, and the camp system clears the `BanditCamp` component after the faction policy grace period.
+
+The row is landed because the same scenario-backed golden proves survival self-care, hostile combat execution, and the authored camp's post-combat abandonment consequence under the golden-survival CI workflow.
+
+### 5.15 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 
@@ -661,7 +675,7 @@ This appendix describes structural activation only. It does not prove that a gol
 | Production / stock / transport | World must expose facilities or resource sources in addition to the agent-side authored substrate |
 | Patrol | Requires both `patrol_profile` and an authored `patrol_route` |
 | Offices / succession / force-claim | Requires authored office world state, not only agent profiles |
-| Bandit camps | Requires authored bandit/camp world state, not only ordinary combat agents |
+| Bandit camps | Requires authored `bandit_camps` world state, not only ordinary combat agents |
 
 ### 7.3 Important Consequences
 

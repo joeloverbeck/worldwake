@@ -200,6 +200,7 @@ mod tests {
             }],
             edges: vec![],
             agents,
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
