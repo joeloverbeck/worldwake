@@ -10,6 +10,7 @@ Scenarios without annotations are not reflected here.
 
 | GoalKind | Scenarios |
 |----------|-----------|
+| Accuse | 177 |
 | AcquireCommodity | 126, 127, 130, 132, 142, 76, 77, 80, 84, 85, 86, 87 |
 | AcquireCommodity(SelfConsume) | 1, 134, 136, 144, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 169, 170, 171, 173, 174, 175, 1b, 337, 338, 340, 5, 58, 60, 61, 91, 92, 93 |
 | ClaimOffice | 109, 11, 12, 13, 14, 15, 16, 17, 170, 175, 18, 71, 72 |

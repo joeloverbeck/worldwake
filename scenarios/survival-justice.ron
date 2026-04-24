@@ -47,7 +47,6 @@
             name: "Merchant Sera",
             location: "Market Square",
             control: Ai,
-            known_recipes: ["Harvest Water"],
             social_observations: [
                 (
                     place: "Market Square",
@@ -57,11 +56,11 @@
                 ),
             ],
             needs: (
-                hunger: 90,
-                thirst: 120,
-                fatigue: 100,
-                bladder: 110,
-                dirtiness: 90,
+                hunger: 0,
+                thirst: 0,
+                fatigue: 0,
+                bladder: 0,
+                dirtiness: 0,
             ),
             utility_profile: (
                 hunger_weight: 760,
@@ -93,15 +92,15 @@
                 market_presence_ticks: 10,
             ),
             perception_profile: (
-                entity_activation_threshold: 64,
+                entity_activation_threshold: 100,
                 claim_confidence_threshold: 50,
-                observation_buffer_capacity: 24,
-                observation_budget: 24,
+                observation_buffer_capacity: 12,
+                observation_budget: 12,
                 need_salience_boost: 500,
-                need_salience_urgency_threshold: 500,
-                observation_fidelity: 1000,
+                need_salience_urgency_threshold: 425,
+                observation_fidelity: 500,
                 confidence_policy: (
-                    direct_observation_base: 1000,
+                    direct_observation_base: 700,
                     report_base: 700,
                     rumor_base: 400,
                     inference_base: 500,
@@ -192,9 +191,8 @@
             name: "Thief Rana",
             location: "Market Square",
             control: Ai,
-            known_recipes: ["Harvest Water"],
             needs: (
-                hunger: 520,
+                hunger: 820,
                 thirst: 260,
                 fatigue: 80,
                 bladder: 90,
@@ -319,7 +317,6 @@
             name: "Searcher Ivo",
             location: "Market Square",
             control: Ai,
-            known_recipes: ["Harvest Water"],
             expectation_store: (
                 records: [
                     (
@@ -464,9 +461,11 @@
     ],
     items: [
         (commodity: Bread, quantity: 40, location: "Merchant Sera"),
-        (commodity: Apple, quantity: 60, location: "Merchant Sera"),
+        (commodity: Apple, quantity: 3, location: "Merchant Sera"),
+        (commodity: Water, quantity: 20, location: "Merchant Sera"),
         (commodity: Bread, quantity: 20, location: "Searcher Ivo"),
-        (commodity: Bread, quantity: 1, location: "Thief Rana"),
+        (commodity: Water, quantity: 20, location: "Searcher Ivo"),
+        (commodity: Water, quantity: 10, location: "Thief Rana"),
     ],
     facilities: [
         (

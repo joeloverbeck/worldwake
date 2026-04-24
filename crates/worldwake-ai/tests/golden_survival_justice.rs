@@ -7,7 +7,10 @@ use std::path::PathBuf;
 
 use golden_harness::*;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
-use worldwake_core::{DriveThresholds, EntityId, Tick};
+use worldwake_core::{
+    CommodityKind, DriveThresholds, EntityId, InstitutionalClaim, PunishmentKind, RecordKind,
+    SocialObservationDetail, Tick, ViolationKind,
+};
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
@@ -29,6 +32,20 @@ struct JusticeObservation {
     theft_tick: Tick,
     office_holder_tick: Tick,
     investigate_tick: Tick,
+    accuse_tick: Option<Tick>,
+    fine_tick: Option<Tick>,
+    accusation_recorded: bool,
+    fine_verdict_recorded: bool,
+    first_ranked_accuse_tick: Option<Tick>,
+    first_selected_accuse_tick: Option<Tick>,
+    merchant_id: EntityId,
+    thief_id: EntityId,
+    final_violation_suspicions: Vec<String>,
+    final_social_suspicions: Vec<String>,
+    first_violation_suspected_theft_tick: Option<Tick>,
+    first_social_suspected_theft_tick: Option<Tick>,
+    final_thief_apple_quantity: worldwake_core::Quantity,
+    final_thief_place: Option<EntityId>,
 }
 
 fn scenario_path() -> PathBuf {
@@ -154,6 +171,10 @@ fn run_survival_justice() -> JusticeObservation {
     let mut theft_tick = None;
     let mut office_holder_tick = None;
     let mut investigate_tick = None;
+    let mut accuse_tick = None;
+    let mut fine_tick = None;
+    let mut first_violation_suspected_theft_tick = None;
+    let mut first_social_suspected_theft_tick = None;
 
     for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
@@ -167,6 +188,28 @@ fn run_survival_justice() -> JusticeObservation {
             .get_component_homeostatic_needs(merchant)
             .copied()
             .expect("merchant should always have needs");
+        if first_violation_suspected_theft_tick.is_none()
+            && h.world
+                .get_component_violation_memory(merchant)
+                .is_some_and(|memory| {
+                    memory.violations.iter().any(|record| {
+                        matches!(record.kind, ViolationKind::SuspectedTheft { .. })
+                    })
+                })
+        {
+            first_violation_suspected_theft_tick = Some(tick);
+        }
+        if first_social_suspected_theft_tick.is_none()
+            && h.world
+                .get_component_agent_belief_store(merchant)
+                .is_some_and(|store| {
+                    store.iter_social_observations().any(|observation| {
+                        matches!(observation.detail, SocialObservationDetail::SuspectedTheft { .. })
+                    })
+                })
+        {
+            first_social_suspected_theft_tick = Some(tick);
+        }
         merchant_need_runs.observe(&merchant_needs, &merchant_thresholds);
         let merchant_had_action = action_sink
             .events_for_at(merchant, tick)
@@ -199,6 +242,18 @@ fn run_survival_justice() -> JusticeObservation {
             {
                 investigate_tick = Some(tick);
             }
+            if accuse_tick.is_none()
+                && event.action_name == "accuse"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            {
+                accuse_tick = Some(tick);
+            }
+            if fine_tick.is_none()
+                && event.action_name == "fine"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            {
+                fine_tick = Some(tick);
+            }
         }
 
         if theft_tick.is_none()
@@ -220,12 +275,87 @@ fn run_survival_justice() -> JusticeObservation {
         .filter(|event| matches!(event.kind, ActionTraceKind::Committed { .. }))
         .map(|event| event.action_name.clone())
         .collect::<BTreeSet<_>>();
+    let decision_trace_sink = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled");
+    let first_ranked_accuse_tick = decision_trace_sink.traces_for(merchant).into_iter().find_map(
+        |trace| match &trace.outcome {
+            worldwake_ai::DecisionOutcome::Planning(planning) => planning
+                .candidates
+                .ranked
+                .iter()
+                .any(|summary| matches!(summary.opportunity.goal_key.kind, worldwake_core::GoalKind::Accuse { .. }))
+                .then_some(trace.tick),
+            _ => None,
+        },
+    );
+    let first_selected_accuse_tick = decision_trace_sink.traces_for(merchant).into_iter().find_map(
+        |trace| match &trace.outcome {
+            worldwake_ai::DecisionOutcome::Planning(planning) => matches!(
+                planning.selection.selected_goal().map(|goal| goal.kind),
+                Some(worldwake_core::GoalKind::Accuse { .. })
+            )
+            .then_some(trace.tick),
+            _ => None,
+        },
+    );
     let merchant_violation_memory = h.world.get_component_violation_memory(merchant).cloned();
     let merchant_social_observations = h
         .world
         .get_component_agent_belief_store(merchant)
         .map(|store| store.iter_social_observations().collect::<Vec<_>>())
         .unwrap_or_default();
+    let final_violation_suspicions = merchant_violation_memory
+        .as_ref()
+        .map(|memory| {
+            memory
+                .violations
+                .iter()
+                .filter_map(|record| match record.kind {
+                    ViolationKind::SuspectedTheft { theft, suspect } => {
+                        Some(format!("{:?}->{suspect:?}", theft.commodity))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let final_social_suspicions = merchant_social_observations
+        .iter()
+        .filter_map(|observation| match observation.detail {
+            SocialObservationDetail::SuspectedTheft { theft, suspect } => {
+                Some(format!("{:?}->{suspect:?}", theft.commodity))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let final_thief_apple_quantity = h
+        .world
+        .controlled_commodity_quantity(thief, CommodityKind::Apple);
+    let final_thief_place = h.world.effective_place(thief);
+    let crime_register = h
+        .world
+        .query_record_data()
+        .find_map(|(_, data)| (data.record_kind == RecordKind::CrimeRegister).then_some(data))
+        .unwrap_or_else(|| panic!("survival justice should spawn a crime register"));
+    let accusation_recorded = crime_register.entries.iter().any(|entry| {
+        matches!(
+            entry.claim,
+            InstitutionalClaim::Accusation { accuser, .. } if accuser == merchant
+        )
+    });
+    let fine_verdict_recorded = crime_register.entries.iter().any(|entry| {
+        matches!(
+            entry.claim,
+            InstitutionalClaim::Verdict {
+                accused: _,
+                violation_id: _,
+                punishment: PunishmentKind::Fine { .. },
+                effective_tick: _,
+            }
+        )
+    });
 
     JusticeObservation {
         contract,
@@ -250,39 +380,53 @@ fn run_survival_justice() -> JusticeObservation {
                 "merchant should commit investigate in survival justice; committed_actions={merchant_actions:?}; violation_memory={merchant_violation_memory:?}; social_observations={merchant_social_observations:?}"
             )
         }),
+        accuse_tick,
+        fine_tick,
+        accusation_recorded,
+        fine_verdict_recorded,
+        first_ranked_accuse_tick,
+        first_selected_accuse_tick,
+        merchant_id: merchant,
+        thief_id: thief,
+        final_violation_suspicions,
+        final_social_suspicions,
+        first_violation_suspected_theft_tick,
+        first_social_suspected_theft_tick,
+        final_thief_apple_quantity,
+        final_thief_place,
     }
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 177: Survival Justice Proves Theft Investigation Substrate
+// Scenario 177: Survival Justice Proves Accusation Substrate
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Trade, Perception, Offices, Investigation
-// GoalKinds: StealItem, InvestigateViolation
+// GoalKinds: StealItem, InvestigateViolation, Accuse
 // ActionDomains: Social, Trade, Needs
 // Places: Market Square
 // Principles: 4, 6, 7, 8, 12, 20, 21
 //
 // Setup: Run the authored survival justice scenario for 1440 ticks. `Merchant
 //   Sera` begins as lawful `Market Warden` holder at `Market Square`, stages
-//   owned apples for sale, and then responds to local stock disappearance with
-//   the live investigation action under survival pressure.
+//   owned apples for sale, responds to local stock disappearance with the live
+//   investigation action, then retains the theft case long enough to commit
+//   `accuse` under survival pressure.
 //
 // Proves: the tracked merchant satisfies the authored survival-health
 //   contract; the merchant starts from a lawful office-holder substrate, stages
-//   sale stock, and the live investigation action remains active in the same
+//   sale stock, and the live accusation chain remains active in the same
 //   authored survival run where theft also occurs.
-//   The scenario intentionally stops short of claiming that accusation,
-//   punishment, or search/report_found are already truthful retained seams
-//   here.
+//   The scenario intentionally stops short of claiming that punishment or
+//   search/report_found are already truthful retained seams here.
 //
 // Chain: lawful office-holder substrate -> staged apples become stealable ->
-//   the scenario reaches a real `steal` commit and a real `investigate`
-//   commit under the same survival envelope, while the exact theft-to-case
-//   binding remains a downstream blocked seam.
+//   the scenario reaches real `steal`, `investigate`, and `accuse` commits
+//   under the same survival envelope, and the crime register records the
+//   accusation for the same justice run.
 #[test]
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
-fn survival_justice_proves_theft_investigation_substrate() {
+fn survival_justice_proves_accusation_substrate() {
     let observation = run_survival_justice();
     let run_limit_overrides =
         contract_run_limit_overrides(observation.contract.critical_run_limits.as_ref());
@@ -322,8 +466,20 @@ fn survival_justice_proves_theft_investigation_substrate() {
         "merchant should stage sale stock before the theft commit; observation={observation:?}"
     );
     assert!(
-        observation.stage_tick <= observation.theft_tick,
-        "theft should still happen against staged sale stock; observation={observation:?}"
+        observation.theft_tick <= observation.investigate_tick,
+        "merchant should investigate after the theft commit; observation={observation:?}"
+    );
+    assert!(
+        observation.accuse_tick.is_some(),
+        "merchant should commit accuse in survival justice; observation={observation:?}"
+    );
+    assert!(
+        observation.investigate_tick <= observation.accuse_tick.expect("checked above"),
+        "merchant should accuse after the theft investigation commit; observation={observation:?}"
+    );
+    assert!(
+        observation.accusation_recorded,
+        "crime register should record the accusation case; observation={observation:?}"
     );
 }
 

@@ -191,7 +191,7 @@ Do not hand-edit it.
 
 ### `golden_survival_justice.rs`
 
-- `survival_justice_proves_theft_investigation_substrate`
+- `survival_justice_proves_accusation_substrate`
 - `survival_justice_replays_deterministically`
 
 ### `golden_survival_offices.rs`

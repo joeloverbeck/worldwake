@@ -1243,7 +1243,12 @@ impl PoliticalBeliefView for PerAgentBeliefView<'_> {
         &self,
         office: EntityId,
     ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        self.belief_store.believed_office_holder(office)
+        match self.belief_store.believed_office_holder(office) {
+            InstitutionalBeliefRead::Unknown if self.has_authoritative_local_visibility(office) => {
+                InstitutionalBeliefRead::Certain(self.world.office_holder(office))
+            }
+            other => other,
+        }
     }
 
     fn believed_force_controller(
@@ -4106,6 +4111,61 @@ mod tests {
         assert_eq!(
             crate::PoliticalBeliefView::believed_office_holder(&view, office),
             InstitutionalBeliefRead::Certain(Some(holder))
+        );
+    }
+
+    #[test]
+    fn believed_office_holder_falls_back_to_local_authoritative_office_relation() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (agent, holder, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(holder, place).unwrap();
+            txn.set_ground_location(office, place).unwrap();
+            txn.assign_office(office, holder).unwrap();
+            commit_txn(txn);
+            (agent, holder, office)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            crate::PoliticalBeliefView::believed_office_holder(&view, office),
+            InstitutionalBeliefRead::Certain(Some(holder))
+        );
+    }
+
+    #[test]
+    fn believed_office_holder_keeps_remote_office_unknown_without_belief() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (agent_place, office_place) = {
+            let mut places = world.topology().place_ids();
+            (places.next().unwrap(), places.next().unwrap())
+        };
+        let (agent, _holder, office) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            let office = txn.create_office("Ledger Hall").unwrap();
+            txn.set_ground_location(agent, agent_place).unwrap();
+            txn.set_ground_location(holder, office_place).unwrap();
+            txn.set_ground_location(office, office_place).unwrap();
+            txn.assign_office(office, holder).unwrap();
+            commit_txn(txn);
+            (agent, holder, office)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            crate::PoliticalBeliefView::believed_office_holder(&view, office),
+            InstitutionalBeliefRead::Unknown
         );
     }
 

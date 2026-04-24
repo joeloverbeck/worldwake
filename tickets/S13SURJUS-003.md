@@ -19,7 +19,7 @@ The search/report half of `survival-justice` never reaches `search_place` or `re
 5. The relevant live goal families are `GoalKind::SearchForMissing`, `GoalKind::ReportFound`, and the competing `ask_about_person` branch. Reassessment should name the exact operator/prerequisite surface the stale branch is preserving.
 6. Because the repeated failures are start-time `ExactIdentityRequired` rejections, this ticket must verify the authoritative start boundary, then confirm `tick_step`/plan-failure recovery actually releases that dead branch instead of reproducing it indefinitely.
 7. If a purely authored fix can truthfully remove the stale `ask_about_person` competitor without weakening row 13, prefer that scenario isolation. If stale-request recovery is the real blocker, prove and fix it at the runtime/AI boundary instead.
-8. Adjacent contradiction: the accusation/fine retained-case seam remains separate and is explicitly owned by `tickets/S13SURJUS-002.md`.
+8. Adjacent contradiction: the accusation/fine retained-case seam remains separate and is explicitly owned by `archive/tickets/S13SURJUS-002.md`.
 
 ## Architecture Check
 

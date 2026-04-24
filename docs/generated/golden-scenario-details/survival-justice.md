@@ -5,20 +5,20 @@ Do not hand-edit it.
 
 Scenarios: 1
 
-### Scenario 177: Survival Justice Proves Theft Investigation Substrate
+### Scenario 177: Survival Justice Proves Accusation Substrate
 
-- Source: `golden_survival_justice.rs:258`
+- Source: `golden_survival_justice.rs:401`
 - Systems: AI, Needs, Trade, Perception, Offices, Investigation
-- GoalKinds: StealItem, InvestigateViolation
+- GoalKinds: StealItem, InvestigateViolation, Accuse
 - ActionDomains: Social, Trade, Needs
 - Places: Market Square
 - Principles: 4, 6, 7, 8, 12, 20, 21
-- Primary tests: `survival_justice_proves_theft_investigation_substrate`
+- Primary tests: `survival_justice_proves_accusation_substrate`
 - Replay tests: `survival_justice_replays_deterministically`
-- All tests: `survival_justice_proves_theft_investigation_substrate`, `survival_justice_replays_deterministically`
+- All tests: `survival_justice_proves_accusation_substrate`, `survival_justice_replays_deterministically`
 
-**Setup**: Run the authored survival justice scenario for 1440 ticks. `Merchant Sera` begins as lawful `Market Warden` holder at `Market Square`, stages owned apples for sale, and then responds to local stock disappearance with the live investigation action under survival pressure.
+**Setup**: Run the authored survival justice scenario for 1440 ticks. `Merchant Sera` begins as lawful `Market Warden` holder at `Market Square`, stages owned apples for sale, responds to local stock disappearance with the live investigation action, then retains the theft case long enough to commit `accuse` under survival pressure.
 
-**Proves**: the tracked merchant satisfies the authored survival-health contract; the merchant starts from a lawful office-holder substrate, stages sale stock, and the live investigation action remains active in the same authored survival run where theft also occurs. The scenario intentionally stops short of claiming that accusation, punishment, or search/report_found are already truthful retained seams here.
+**Proves**: the tracked merchant satisfies the authored survival-health contract; the merchant starts from a lawful office-holder substrate, stages sale stock, and the live accusation chain remains active in the same authored survival run where theft also occurs. The scenario intentionally stops short of claiming that punishment or search/report_found are already truthful retained seams here.
 
-**Cross-system chain**: lawful office-holder substrate -> staged apples become stealable -> the scenario reaches a real `steal` commit and a real `investigate` commit under the same survival envelope, while the exact theft-to-case binding remains a downstream blocked seam.
+**Cross-system chain**: lawful office-holder substrate -> staged apples become stealable -> the scenario reaches real `steal`, `investigate`, and `accuse` commits under the same survival envelope, and the crime register records the accusation for the same justice run.
