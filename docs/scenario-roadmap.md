@@ -44,7 +44,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Tell / peer info transfer | Active `tell_profile` plus active `communication_profile` | [`tell_actions.rs`](../crates/worldwake-systems/src/tell_actions.rs), [`communication.rs`](../crates/worldwake-core/src/communication.rs) | Landed in [§5.5](#55-landed-5-survival-tell) |
 | Ask-about-person | Non-zero `social_weight` plus `communication_profile` and `epistemic_disposition` | [`ask_about_person_actions.rs`](../crates/worldwake-systems/src/ask_about_person_actions.rs), epistemic surfaces | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
 | Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
-| Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); no standalone behavior row |
+| Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); standalone behavior planned as extension to [§4.7 `survival-offices` (Row 11)](#47-landed-row-11) |
 | Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Production (facility-backed craft) | Authored recipe set with at least one non-harvest production recipe | [`production_actions.rs`](../crates/worldwake-systems/src/production_actions.rs) | Landed in [§5.8](#58-landed-8-survival-production) |
@@ -54,9 +54,9 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Substitute preferences | `substitute_preferences` present | [`trade.rs`](../crates/worldwake-core/src/trade.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Item decay | `commodity_decay` authored on the scenario | [`item_decay.rs`](../crates/worldwake-systems/src/item_decay.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
 | Disposal | `disposal_profile` present | [`disposal.rs`](../crates/worldwake-core/src/disposal.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
-| Facility-queue contention | `contention_disposition` present | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); no standalone behavior row |
+| Facility-queue contention | `contention_disposition` present | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); standalone behavior planned as extension to [§4.5 `survival-trade` (Row 9)](#45-landed-row-9) |
 | Offices / succession / force-claim | Office entities plus force-claim world state | [`office_actions.rs`](../crates/worldwake-systems/src/office_actions.rs), [`offices.rs`](../crates/worldwake-core/src/offices.rs) | Landed in [§4.7](#47-landed-row-11) |
-| Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); no standalone behavior row |
+| Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); standalone behavior planned as extension to [§5.12 `survival-justice` (Row 13)](#512-landed-row-13-survival-justice) |
 | Notice posting | Non-zero `notice_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Theft | `theft_disposition` present | [`theft.rs`](../crates/worldwake-ai/src/theft.rs) | Landed in [§5.11](#511-landed-12-survival-theft) |
 | Justice / accusation | `justice_disposition` present | [`justice_actions.rs`](../crates/worldwake-systems/src/justice_actions.rs) | Landed in [§5.12](#512-landed-row-13-survival-justice) |
@@ -66,7 +66,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Combat | `combat_profile` present | [`combat.rs`](../crates/worldwake-systems/src/combat.rs) | Landed in [§5.14](#514-landed-row-15-survival-combat) |
 | Escort | Non-zero `care_weight` | [`escort_actions.rs`](../crates/worldwake-systems/src/escort_actions.rs) | Landed in [§5.15](#515-landed-row-16-survival-escort) |
 | Bandit camps | Authored `bandit_camps` world state | [`bandit_camp.rs`](../crates/worldwake-systems/src/bandit_camp.rs), [`bandit_camp_actions.rs`](../crates/worldwake-systems/src/bandit_camp_actions.rs) | Landed in [§5.14](#514-landed-row-15-survival-combat) |
-| Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Found-person reporting branch landed in [§5.12](#512-landed-row-13-survival-justice); broader witness/report coverage remains partial in the generated companion |
+| Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Found-person reporting branch landed in [§5.12](#512-landed-row-13-survival-justice); broader witness→report chain planned as extension to [§5.11 `survival-theft` (Row 12)](#511-landed-12-survival-theft) |
 | Search | `violation_disposition` plus `epistemic_disposition` | search and investigation actions | Landed in [§5.12](#512-landed-row-13-survival-justice) |
 | Stock / transport | `merchandise_profile` plus stock-supporting world state | stock and transport actions | Landed in [§5.9](#59-landed-9-survival-trade) |
 
@@ -165,11 +165,11 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 6 | `survival-ask-consult` | Ask-about-person + consult-record | Landed | Explicit epistemic actions competing with self-care |
 | 7 | `survival-preferences` | Experience preferences + diversification / curiosity | Landed | Proves proactive diversification under survival and a durable familiar-source failure memory that later discounts the stale orchard while selecting the discovered novel grove |
 | 8 | `survival-production` | Production (facility-backed craft) | Landed | First survival row where food depends on a workstation-backed craft branch rather than direct harvest |
-| 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade |
+| 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | In Progress | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade; extension adds facility-queue contention behavior proof at the market |
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
-| 11 | `survival-offices` | Offices / succession / force-claim + notice posting | Landed | Institution-level goals and artifacts competing with needs |
-| 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place |
-| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Landed | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope |
+| 11 | `survival-offices` | Offices / succession / force-claim + notice posting | In Progress | Institution-level goals and artifacts competing with needs; extension adds obligation satiation behavior proof on an authored office duty |
+| 12 | `survival-theft` | Theft + place concealment | In Progress | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place; extension adds broader witness→report chain proof beyond found-person |
+| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | In Progress | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope; extension adds bounty posting behavior proof after accusation |
 | 14 | `survival-patrol` | Patrol + pursuit | Landed | Scheduled duties coexist with survival self-care while remembered hostility selects and executes remote pursuit through travel into attack |
 | 15 | `survival-combat` | Combat + bandit camps | Landed | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Landed | Coordinated travel after the rest of the hostile world is live |
@@ -221,6 +221,13 @@ This is now a truthful substitute-isolation scenario rather than merely a bread-
 - Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
 - Report / witness is outside this row's authored proof
 
+**Planned extension**
+
+Row is `In Progress` pending facility-queue contention behavior proof. The extension must:
+- Author `contention_disposition`-driven queueing substrate at the existing `Market Square` facility so multiple buyers realistically target the staged apple lot on the same tick.
+- Prove in the backing golden that a real contention-resolution branch commits at the earliest honest causal surface — not merely that `contention_disposition` is structurally present.
+- Keep the landed substitute-trade branch intact: `stage_stock_for_sale`, the substitute `AcquireCommodity(Apple, SelfConsume)` selection, authoritative apple/coin transfer, and the 1440-tick survival-health contract must all still hold for the existing principals.
+
 ### 4.6 Landed Row 10
 
 ### 10. `survival-items-decay`
@@ -251,9 +258,16 @@ The golden proves both halves at the earliest honest surfaces that matter: `Clai
 - Offices / succession / force-claim
 - Notice posting
 
+**Planned extension**
+
+Row is `In Progress` pending obligation satiation behavior proof. The extension must:
+- Author an active `obligation_satiation_profile` plus a concrete office-linked obligation on `Claimant Rhea` (or an appointed holder) so the agent carries a real authored duty alongside survival pressure.
+- Prove in the backing golden a committed satiation action that discharges that obligation at the authored causal seam — not merely structural profile presence.
+- Keep the landed force-claim and notice-posting chain intact: `ClaimOffice` selection, `press_force_claim` commit, authoritative force control, delayed holder installation, and the `PostNotice` threat-warning branch must all still hold under the same 1440-tick survival-health envelope.
+
 #### 4.8 Remaining planned rows
 
-All ordered rows are now landed. Future roadmap entries should use the template above and name whether they are adding a new standalone behavior row or only strengthening the already-landed full-stack coexistence scenario.
+All ordered rows are landed or have a planned extension routed against them (see Rows 9, 11, 12, 13). Future roadmap entries should use the template above and name whether they are adding a new standalone behavior row, extending an existing row to cover a catalog item currently proven only structurally in [§5.16](#516-landed-row-17-final-integration), or only strengthening the already-landed full-stack coexistence scenario.
 
 ## 5. Landed Scenarios
 
@@ -538,6 +552,13 @@ The row also lands place concealment honestly rather than by decorative authored
 - Obligation satiation, facility contention, offices, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
 - Report / witness is outside this row's authored proof
 
+**Planned extension**
+
+Row is `In Progress` pending broader witness→report chain proof. The extension must:
+- Add a non-colocated witness substrate so the theft fact propagates beyond the same-place perception suppression already proven for `Shaded Market` — a second agent learns of the theft through a `tell` or `report` rather than direct observation.
+- Prove in the backing golden the full causal chain: immediate witness suppression at the concealed market, durable physical aftermath at the scene, a committed belief-transfer to the remote agent, and a resulting belief or action change that depends on that transferred knowledge.
+- Keep the landed theft branch intact: `stage_stock_for_sale`, `StealItem` selection, `steal` commit, post-theft `eat`, and the 1440-tick survival-health contract must all still hold without regressing to a non-concealed variant.
+
 ### 5.12 Landed Row 13: `survival-justice`
 
 **Status**: Landed
@@ -555,6 +576,13 @@ The row also lands place concealment honestly rather than by decorative authored
 - Completed search/report follow-up: [`archive/tickets/S13SURJUS-003.md`](../archive/tickets/S13SURJUS-003.md)
 
 The scenario is now a full row landing because it owns the lawful authority substrate and proves accusation, fine punishment, direct local search, and found-status reporting under the survival loop without helper-only setup.
+
+**Planned extension**
+
+Row is `In Progress` pending bounty posting behavior proof. The extension must:
+- Author a non-zero `bounty_posting_weight` and `artifact_posting_profile` on the lawful office holder (or an appointed deputy) so a `PostBounty` candidate can generate after the accusation/fine branch commits.
+- Prove in the backing golden a selected and committed `PostBounty` plus authoritative bounty-artifact materialization at the authored posting surface — distinct from the existing notice-posting branch proven in Row 11.
+- Keep the landed justice branch intact: `steal`, `investigate`, `accuse`, `fine`, the crime register writes, and the search/`report_found` chain must all still hold under the same 1440-tick survival envelope.
 
 ### 5.13 Landed Row 14: `survival-patrol`
 
