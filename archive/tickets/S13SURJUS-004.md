@@ -52,7 +52,7 @@ Add `candidate_generation` coverage proving that a local active accusation recor
 ## Out of Scope
 
 - Landing the full row-13 scenario punishment seam
-- Search/report work from `tickets/S13SURJUS-003.md`
+- Search/report work from `archive/tickets/S13SURJUS-003.md`
 - Scenario tuning that tries to preserve punishable theft stock without first fixing the local-record admission contradiction
 
 ## Acceptance Criteria

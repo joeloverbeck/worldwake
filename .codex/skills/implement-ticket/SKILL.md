@@ -68,37 +68,16 @@ Do not use this branch when broader verification fails only because an existing 
 
 Load `references/ticket-classification.md`.
 
-#### privacy-hardening / access-fence
-
-If the ticket primarily tightens an existing visibility boundary, adds `compile_fail` fences, or otherwise hardens an existing API/ordering/access contract without changing runtime semantics, classify it as `privacy-hardening / access-fence` during intake. For that ticket shape, verify the live import/read surface first: sweep current readers across the workspace, classify them as same-module, same-crate, same-package test, or sibling-crate consumers, confirm the exact external symbol path the negative proof is asserting against, then add the narrowest structural regression (for example a uniqueness grep test) only when the ticket's invariant is about a singleton definition rather than ordinary privacy alone.
-
-#### validation-suite / proof-gap
-
-If the ticket is primarily a validation-suite / tests-only reassessment ticket for a feature family that already landed, classify it as `validation-suite / proof-gap`. For that ticket shape, sweep the drafted `New/Modified Tests`, `Files to Touch`, and `Acceptance Criteria` against the live branch before reading the proof plan literally: mark which drafted proofs are already landed, identify the strongest remaining honest proof seam, and prefer tightening that existing seam over creating duplicate coverage. When the truthful replay/save-load seam lives in a different file than the draft claimed, rewrite the ticket to the real owner before coding.
-
-#### schema-only / staged substrate
-
-If the ticket primarily introduces a shared schema, payload, enum, save-format bump, or other substrate that sibling tickets will populate or render later, classify it as `schema-only / staged substrate` during intake. For that ticket shape, reassess the carrier contract, derive/trait surface, constructor fallout, save/replay/version boundaries, and focused round-trip coverage first. Expect existing emitters/builders to keep populating the new surface with `None`/empty/default values until the later sibling ticket wires runtime use, and record that staged state explicitly in closeout instead of implying the new schema is already live.
-
-#### shared enum/payload variant migration
-
-If the ticket primarily adds a new variant to an existing shared enum or payload family, classify it as `shared enum/payload variant migration` during intake. For that ticket shape, reassess the owner enum/payload, any paired event-tag/manifest surface, crate-root re-exports, exhaustive `match` consumers, render/report observers, and focused serialization or round-trip proof before coding. Expect downstream CLI/report/observer fallout even when the drafted file list only names the defining crate, and prefer an early repo-wide sweep for `Type::NewVariant` plus exhaustive `match payload { ... }` consumers before relying on broadened verification to discover them.
-
-If that changed type is embedded inside persisted runtime state or another enclosing saveable carrier, treat the ticket as a save-shape change even when the defining file lives outside the obvious save/load module boundary. Verify the enclosing persisted seam and version policy up front instead of assuming the change is crate-local just because the first edit lands elsewhere.
-
-When that staged ticket also claims a real action, authored template, or other downstream runtime exercise path, do one additional reachability check before closeout: identify at least one truthful production consumer that carries the new substrate into live runtime state, and prove that seam with focused verification. If the new substrate is intentionally still test-only or helper-only, say so explicitly in the ticket closeout instead of marking the runtime path as landed.
-
-When that staged runtime path depends on place, entity, claim, or other bound semantics carried through an existing runtime step/report record, inspect whether the current carrier stores that fact explicitly or is only inferring it from another field. If the inferred path would make the live binding dishonest (for example an entity standing in for a place), treat the carrier-field fix and its constructor fallout as current-ticket scope before closeout.
-
-When that staged ticket adds a new shared enum variant, record kind, or other tagged substrate, inspect not only exhaustive `match` sites but also live consumers that interpret the carrier semantically (for example sorting, filtering, goal emission, report routing, or discrepancy classification). If a consumer would still misclassify the new substrate after a compile-fix arm is added, treat that semantic exclusion or routing update as current-ticket scope rather than deferring it silently.
-
-For shared enum/payload variant tickets, perform one explicit early consumer sweep before implementation scope is final: search the workspace for `Type::Variant`, owner-type names in exhaustive `match` blocks, and known observer/report formatter entrypoints. Classify each hit as owner, compile-only fallout, semantic renderer/observer fallout, or no-change cited file, and use that sweep to seed the real `Files to Touch` / closeout boundary before the first broadened verification run.
-
-If that staged ticket lands a new read-only wrapper or view type, check the repo's trait/lint expectations for the full surface early (for example iterator helpers that also need `IntoIterator for &Type`, or similar pedantic companion impls) instead of waiting for final CI-shaped clippy fallout to reveal the missing piece.
-
-When a ticket broadly flips consumer signatures from a raw collection to a new read-only wrapper/view type, sweep nearby and same-crate `#[cfg(test)]` modules for raw fixtures up front (`vec![...]`, arrays, `&[]`, `std::slice::from_ref`, and similar helpers). Normalize those fixtures through the lawful constructor path early (for example `sort_in_place` or a tiny local `from_sorted_for_test` helper) instead of discovering dozens of test-only type mismatches late from compile fallout.
-
-If that staged ticket introduces a mirrored enum or record in one crate to represent a type owned by another crate, explicitly identify the nearest lawful proof seam that can see both sides and prove parity there (for example variant set, ordinal/serialization bytes, or other wire-format equivalence). Do not assume same-named mirrors stay aligned without an explicit check.
+Pick the closest ticket shape before Step 1, then follow the matching quick path or full workflow. At minimum classify whether the ticket is:
+- small/local
+- validation-suite / proof-gap
+- privacy-hardening / access-fence
+- schema-only / staged substrate
+- shared field/type migration
+- shared enum/payload variant migration
+- planner-boundary / golden E2E
+- canonical writer / allocator integrity
+- all other full-workflow work
 
 ### 1. Load the ticket context
 

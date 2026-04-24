@@ -20,7 +20,7 @@
 6. Live reassessment disproved the original "scenario-only" premise. Once the theft case was isolated truthfully, `GoalKind::Accuse` still stayed absent because `PerAgentBeliefView::believed_office_holder()` exposed only remembered institutional beliefs, so a co-located authored office holder still looked `Unknown` to `emit_accusation_candidates()`.
 7. The truthful current slice is therefore mixed: scenario isolation plus a narrow production fix at the local political-belief boundary. With that fix, `GoalKind::Accuse` becomes the retained row-13 accusation seam and records an accusation case in the crime register.
 8. `GoalKind::PunishAccused` remains false after the accusation lands. In the live authored run, the thief has already consumed the stolen apple quantity by the time punishment selection would need a lawful fine target, and the scenario schema does not currently expose a clean exile fallback path. That belongs to a follow-up ticket.
-9. Adjacent contradiction: row 13 search/report is still blocked by a separate stale `ask_about_person` seam and remains explicitly owned by `tickets/S13SURJUS-003.md`, not this ticket.
+9. Adjacent contradiction: row 13 search/report is still blocked by a separate stale `ask_about_person` seam and remains explicitly owned by `archive/tickets/S13SURJUS-003.md`, not this ticket.
 10. Mismatch + correction: the original ticket overclaimed a full accusation-plus-punishment landing. The live complete slice for this pass is the retained accusation seam; punishment now has its own follow-up owner in `archive/tickets/S13SURJUS-004.md`.
 
 ## Architecture Check
@@ -58,7 +58,7 @@ Expand `crates/worldwake-ai/tests/golden_survival_justice.rs` from the earlier i
 ## Out of Scope
 
 - Row-13 punishment follow-through after accusation (`archive/tickets/S13SURJUS-004.md`)
-- Search/report retained-seam work from row 13 (`tickets/S13SURJUS-003.md`)
+- Search/report retained-seam work from row 13 (`archive/tickets/S13SURJUS-003.md`)
 - Golden-only helper seeding that bypasses authored scenario state
 
 ## Acceptance Criteria
@@ -102,7 +102,7 @@ Completed on 2026-04-24.
 ## Deviations
 
 - Reassessment disproved the original punishment portion of this ticket after the accusation seam landed. The live authored run still does not emit a lawful punishment candidate once the accusation is recorded, so that broader seam moved to `archive/tickets/S13SURJUS-004.md`.
-- Search/report remains separately owned by `tickets/S13SURJUS-003.md`.
+- Search/report remains separately owned by `archive/tickets/S13SURJUS-003.md`.
 
 ## Verification Result
 

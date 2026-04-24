@@ -95,7 +95,7 @@ Completed on 2026-04-24.
 - Reassessment narrowed this ticket from a full row-13 scenario landing to the lower-layer production transport fix that the scenario actually depended on.
 - Follow-up owners now carry the still-false scenario seams:
   - `archive/tickets/S13SURJUS-002.md` for accusation/fine retained-case isolation
-  - `tickets/S13SURJUS-003.md` for search/report stale `ask_about_person` blocking
+  - `archive/tickets/S13SURJUS-003.md` for search/report stale `ask_about_person` blocking
 
 ## Verification Result
 

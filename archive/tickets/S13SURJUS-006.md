@@ -66,7 +66,7 @@ If the final landed seam remains specifically `fine`, keep the row wording tied 
 - adding a new exile/faction-governance substrate for row 13
 - reopening the landed accusation seam from `archive/tickets/S13SURJUS-002.md`
 - reopening the local-record punishment admission fix from `archive/tickets/S13SURJUS-004.md`
-- search/report work from `tickets/S13SURJUS-003.md`
+- search/report work from `archive/tickets/S13SURJUS-003.md`
 
 ## Acceptance Criteria
 

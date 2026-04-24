@@ -9,9 +9,9 @@ use golden_harness::*;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
     CommodityKind, DriveThresholds, EntityId, InstitutionalClaim, PunishmentKind, RecordKind,
-    SocialObservationDetail, Tick, ViolationKind,
+    SocialObservationDetail, Tick, ViolationKind, institutional::MissingPersonReportStatus,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{ActionTraceKind, RequestResolutionOutcome, RequestResolutionRejectionReason};
 
 const SURVIVAL_TICKS: u32 = 1440;
 
@@ -36,6 +36,13 @@ struct JusticeObservation {
     fine_tick: Option<Tick>,
     accusation_recorded: bool,
     fine_verdict_recorded: bool,
+    search_place_tick: Option<Tick>,
+    report_found_tick: Option<Tick>,
+    searcher_committed_actions: BTreeSet<String>,
+    searcher_start_failed_actions: BTreeSet<String>,
+    found_status_recorded: bool,
+    searcher_expectation_found_safe: bool,
+    searcher_exact_identity_rejections: u32,
     first_ranked_accuse_tick: Option<Tick>,
     first_selected_accuse_tick: Option<Tick>,
     merchant_id: EntityId,
@@ -85,6 +92,7 @@ fn load_survival_justice_harness() -> (GoldenHarness, ScenarioDef) {
     harness.driver.enable_tracing();
     harness.enable_action_tracing();
     harness.enable_perception_tracing();
+    harness.enable_request_resolution_tracing();
     (harness, def)
 }
 
@@ -156,8 +164,9 @@ fn run_survival_justice() -> JusticeObservation {
             .clone();
     let merchant = find_named_agent(&h, "Merchant Sera");
     let thief = find_named_agent(&h, "Thief Rana");
+    let searcher = find_named_agent(&h, "Searcher Ivo");
+    let missing = find_named_agent(&h, "Missing Pru");
     let office = find_named_entity(&h, "Market Warden");
-    let _searcher = find_named_agent(&h, "Searcher Ivo");
     let merchant_thresholds = h
         .world
         .get_component_drive_thresholds(merchant)
@@ -173,6 +182,8 @@ fn run_survival_justice() -> JusticeObservation {
     let mut investigate_tick = None;
     let mut accuse_tick = None;
     let mut fine_tick = None;
+    let mut search_place_tick = None;
+    let mut report_found_tick = None;
     let mut first_violation_suspected_theft_tick = None;
     let mut first_social_suspected_theft_tick = None;
 
@@ -268,6 +279,20 @@ fn run_survival_justice() -> JusticeObservation {
         {
             theft_tick = Some(tick);
         }
+        for event in action_sink.events_for_at(searcher, tick) {
+            if search_place_tick.is_none()
+                && event.action_name == "search_place"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            {
+                search_place_tick = Some(tick);
+            }
+            if report_found_tick.is_none()
+                && event.action_name == "report_found"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            {
+                report_found_tick = Some(tick);
+            }
+        }
     }
 
     let action_sink = h
@@ -277,6 +302,18 @@ fn run_survival_justice() -> JusticeObservation {
         .events_for(merchant)
         .iter()
         .filter(|event| matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .map(|event| event.action_name.clone())
+        .collect::<BTreeSet<_>>();
+    let searcher_committed_actions = action_sink
+        .events_for(searcher)
+        .iter()
+        .filter(|event| matches!(event.kind, ActionTraceKind::Committed { .. }))
+        .map(|event| event.action_name.clone())
+        .collect::<BTreeSet<_>>();
+    let searcher_start_failed_actions = action_sink
+        .events_for(searcher)
+        .iter()
+        .filter(|event| matches!(event.kind, ActionTraceKind::StartFailed { .. }))
         .map(|event| event.action_name.clone())
         .collect::<BTreeSet<_>>();
     let decision_trace_sink = h
@@ -367,6 +404,55 @@ fn run_survival_justice() -> JusticeObservation {
             }
         )
     });
+    let searcher_expectation_found_safe = h
+        .world
+        .get_component_expectation_store(searcher)
+        .is_some_and(|store| {
+            store.records.values().any(|record| {
+                record.subject == missing
+                    && matches!(
+                        record.state,
+                        worldwake_core::ExpectationState::Resolved {
+                            outcome: worldwake_core::ExpectationOutcome::FoundSafe { .. }
+                        }
+                    )
+            })
+        });
+    let found_status_recorded = h
+        .world
+        .query_record_data()
+        .filter(|(_, data)| data.record_kind == RecordKind::OfficeRegister)
+        .any(|(_, data)| {
+            data.entries.iter().any(|entry| {
+                matches!(
+                    entry.claim,
+                    InstitutionalClaim::MissingPersonStatus {
+                        subject,
+                        reporter,
+                        status: MissingPersonReportStatus::FoundSafe { .. },
+                        ..
+                    } if subject == missing && reporter == searcher
+                )
+            })
+        });
+    let searcher_exact_identity_rejections = h
+        .request_resolution_trace_sink()
+        .map(|sink| {
+            sink.events_for(searcher)
+                .into_iter()
+                .filter(|event| {
+                    matches!(
+                        event.outcome,
+                        RequestResolutionOutcome::RejectedBeforeStart {
+                            reason: RequestResolutionRejectionReason::ExactIdentityRequired
+                        }
+                    )
+                })
+                .count()
+                .try_into()
+                .expect("exact identity rejection count exceeds u32")
+        })
+        .unwrap_or_default();
 
     JusticeObservation {
         contract,
@@ -395,6 +481,13 @@ fn run_survival_justice() -> JusticeObservation {
         fine_tick,
         accusation_recorded,
         fine_verdict_recorded,
+        search_place_tick,
+        report_found_tick,
+        searcher_committed_actions,
+        searcher_start_failed_actions,
+        found_status_recorded,
+        searcher_expectation_found_safe,
+        searcher_exact_identity_rejections,
         first_ranked_accuse_tick,
         first_selected_accuse_tick,
         merchant_id: merchant,
@@ -427,14 +520,15 @@ fn run_survival_justice() -> JusticeObservation {
 // Proves: the tracked merchant satisfies the authored survival-health
 //   contract; the merchant starts from a lawful office-holder substrate, stages
 //   sale stock, and the live accusation chain remains active in the same
-//   authored survival run where theft also occurs.
-//   The scenario intentionally stops short of claiming that punishment or
-//   search/report_found are already truthful retained seams here.
+//   authored survival run where theft also occurs. The same accusation case
+//   then reaches truthful fine punishment and records the verdict.
+//   The scenario intentionally stops short of claiming that search/report_found
+//   is part of this accusation-substrate seam.
 //
 // Chain: lawful office-holder substrate -> staged apples become stealable ->
-//   the scenario reaches real `steal`, `investigate`, and `accuse` commits
-//   under the same survival envelope, and the crime register records the
-//   accusation for the same justice run.
+//   the scenario reaches real `steal`, `investigate`, `accuse`, and `fine`
+//   commits under the same survival envelope, and the crime register records
+//   the accusation and fine verdict for the same justice run.
 #[test]
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn survival_justice_proves_accusation_substrate() {
@@ -514,6 +608,62 @@ fn survival_justice_proves_fine_punishment_for_same_theft_case() {
     assert!(
         observation.fine_verdict_recorded,
         "crime register should record a fine verdict for the accusation case; observation={observation:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 178: Survival Justice Proves Search And Report Found
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Search, Reports, Perception, Offices
+// GoalKinds: SearchForMissing, ReportFound
+// ActionDomains: Social, Needs
+// Places: Market Square
+// Principles: 6, 7, 8, 14, 17, 18, 20
+//
+// Setup: Run the authored survival justice scenario for 1440 ticks. `Searcher
+//   Ivo` begins with an overdue expectation for colocated `Missing Pru` at
+//   `Market Square` and a matching local last-seen record.
+//
+// Proves: the searcher commits `search_place` for the overdue missing-person
+//   expectation, resolves it as found safe, then commits `report_found` and
+//   writes the found-person status to the local office register. The same run
+//   also asserts that stale exact-bound `ask_about_person` requests no longer
+//   recur for this local-search branch.
+//
+// Chain: overdue local expectation -> planner selects direct `search_place`
+//   instead of stale `ask_about_person` -> expectation resolves found safe ->
+//   `report_found` writes the missing-person status claim.
+#[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
+fn survival_justice_proves_search_and_report_found() {
+    let observation = run_survival_justice();
+    let Some(search_place_tick) = observation.search_place_tick else {
+        panic!(
+            "searcher should commit search_place for the overdue missing-person expectation; observation={observation:?}"
+        );
+    };
+    let Some(report_found_tick) = observation.report_found_tick else {
+        panic!(
+            "searcher should report the found missing person after search_place; observation={observation:?}"
+        );
+    };
+
+    assert!(
+        search_place_tick <= report_found_tick,
+        "report_found should follow search_place in survival justice; observation={observation:?}"
+    );
+    assert!(
+        observation.searcher_expectation_found_safe,
+        "search_place should resolve Searcher Ivo's expectation as found safe; observation={observation:?}"
+    );
+    assert!(
+        observation.found_status_recorded,
+        "office register should record Searcher Ivo's found-person status report; observation={observation:?}"
+    );
+    assert_eq!(
+        observation.searcher_exact_identity_rejections, 0,
+        "stale ask_about_person exact-identity rejections should not recur in survival justice; observation={observation:?}"
     );
 }
 
