@@ -438,3 +438,38 @@ No active Phase 9 specs remain.
 - [ ] Deterministic replay of scenarios produces identical agenda state transitions
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
+
+---
+
+## Developer Tooling
+
+Non-phase-gated specs that add or extend developer-facing tooling. Tooling
+specs are pure observer boundaries (FND-29 Debuggability): they read
+authoritative simulation state but never mutate world meaning, and they
+introduce no simulation components, actions, systems, or feedback loops. The
+`docs/spec-drafting-rules.md` analyses that assume a simulation system
+(FND-01 Section H, Permille-for-world-values, profile-driven parameters,
+SystemFn integration, component registration) are explicitly opted out of in
+each tooling spec, with reasoning.
+
+### Adjunct Wave: Interactive Debugger
+
+Derived from `/brainstorm` session (2026-04-24) that triaged desktop-app
+technology options for Rust, validated that egui/eframe is the only mature
+immediate-mode stack that matches the "no big opinionated framework"
+constraint, and confirmed that a hand-rolled Fruchterman-Reingold layout
+is cheaper than any available crate dep at current scenario scale (≤30
+places). Lands a separate workspace crate so GUI transitive deps (winit,
+wgpu, accesskit, swash) stay isolated from engine CI runs.
+
+```text
+T01 (independent; no spec deps)
+```
+
+- **T01**: Debug Visualizer — new `worldwake-visualizer` crate; live
+  stepper with play/pause/step/space/speed controls, force-directed place
+  layout, agent rendering with transit-progress lerp, hover tooltips with
+  zone-colored need bars, click-to-open tabbed modal (Overview / Needs /
+  Beliefs / Inventory / Plan / Traces). Observer-only boundary; reuses
+  `worldwake-cli`'s scenario loader; adds no engine-side coupling. Spec:
+  [`specs/T01-debug-visualizer.md`](./T01-debug-visualizer.md).

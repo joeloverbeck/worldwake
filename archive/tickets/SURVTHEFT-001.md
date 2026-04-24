@@ -19,7 +19,7 @@ The live AI contract treated `GoalKind::StealItem` as a low-priority social fall
 5. This was a mixed-layer AI ticket, but the strongest honest proof seam is focused `worldwake-ai` coverage at the suppression and ranking layer. A truthful scenario/golden seam still requires additional authored world substrate and is not owned by this completed ticket.
 6. The live heuristic removed here was theft-family suppression as applied to `StealItem` plus the stale ranking treatment that ignored the target commodity's drive pressure. No new alias path was added; the canonical theft goal now carries the correct drive-owned policy.
 7. Focused verification passed after the repair: `cargo test -p worldwake-ai` and `cargo clippy --workspace --all-targets -- -D warnings`.
-8. Mismatch + correction: the original draft incorrectly bundled roadmap-row landing into this ticket. That scenario/golden ownership now belongs to follow-up [SURVTHEFT-002](/home/joeloverbeck/projects/worldwake/tickets/SURVTHEFT-002.md).
+8. Mismatch + correction: the original draft incorrectly bundled roadmap-row landing into this ticket. That scenario/golden ownership now belongs to follow-up [SURVTHEFT-002](/home/joeloverbeck/projects/worldwake/archive/tickets/SURVTHEFT-002.md).
 
 ## Architecture Check
 
@@ -31,7 +31,7 @@ The live AI contract treated `GoalKind::StealItem` as a low-priority social fall
 1. `StealItem` is no longer suppressed under self-care stress -> focused `goal_policy` tests in [goal_policy.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/goal_policy.rs)
 2. Survival-relevant theft inherits target-commodity drive priority, motive, and provenance -> focused `ranking` tests in [ranking.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/ranking.rs)
 3. The repaired AI contract compiles cleanly across the workspace's test targets -> `cargo clippy --workspace --all-targets -- -D warnings`
-4. Scenario-level staged-lot theft, post-theft eating, and concealment witness proof are not claimed here; they are deferred to [SURVTHEFT-002](/home/joeloverbeck/projects/worldwake/tickets/SURVTHEFT-002.md).
+4. Scenario-level staged-lot theft, post-theft eating, and concealment witness proof are not claimed here; they are deferred to [SURVTHEFT-002](/home/joeloverbeck/projects/worldwake/archive/tickets/SURVTHEFT-002.md).
 
 ## What to Change
 
@@ -85,6 +85,6 @@ Use the target commodity's survival pressure to compute `StealItem` priority, mo
 
 - 2026-04-24: `GoalKind::StealItem` now uses a drive-owned dispatch policy and is no longer suppressed as a generic opportunistic branch under self-care stress.
 - 2026-04-24: Survival-relevant theft now inherits target-commodity drive priority, motive, and provenance in `ranking.rs`.
-- 2026-04-24: The broader roadmap-row landing was split out truthfully into [SURVTHEFT-002](/home/joeloverbeck/projects/worldwake/tickets/SURVTHEFT-002.md); row 12 remains `Drafting` until that authored substrate exists.
+- 2026-04-24: The broader roadmap-row landing was split out truthfully into [SURVTHEFT-002](/home/joeloverbeck/projects/worldwake/archive/tickets/SURVTHEFT-002.md); row 12 remains `Drafting` until that authored substrate exists.
 - 2026-04-24: Verification results: `cargo test -p worldwake-ai` and `cargo clippy --workspace --all-targets -- -D warnings` both passed after the AI-side repair.
 - 2026-04-24: Deviation from the original draft: `cargo test --release -p worldwake-ai --test golden_survival_theft survival_theft_proves_concealed_staged_lot_branch -- --ignored --test-threads=1 --nocapture` did not become a truthful closeout seam. The attempted roadmap scenario still lacked a stable staged-lot theft -> post-theft-eat branch, so that work was removed from this ticket and reassigned to `SURVTHEFT-002`.

@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 97
-- Contributing golden test files: 22
-- Associated tests: 121
+- Scenario blocks: 98
+- Contributing golden test files: 23
+- Associated tests: 122
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1214,6 +1214,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: both agents satisfy the authored survival-health contract, and the
 
 **Cross-system chain**: same-place orchard observation by scout -> return to camp under
+
+### Scenario 176: Survival Theft Lands the Concealed Staged-Lot Branch
+
+- Source: `golden_survival_theft.rs:332`
+- Systems: AI, Needs, Trade, Perception, Transport
+- GoalKinds: StealItem, ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
+- ActionDomains: Trade, Needs, Transport
+- Places: Shaded Market
+- Principles: 4, 7, 8, 17, 20, 21
+
+**Setup**: Run the authored survival theft scenario for 1440 ticks. The merchant
+
+**Proves**: the thief stays within the authored survival-health envelope; the
+
+**Cross-system chain**: merchant stages displayed apples -> listed owned lot becomes visible
 
 ### Scenario 173: Survival Trade Proves the Substitute Market Branch
 

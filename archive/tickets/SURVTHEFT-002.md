@@ -1,6 +1,6 @@
 # SURVTHEFT-002: Author a truthful `survival-theft` scenario and golden substrate
 
-**Status**: PENDING
+**Status**: ✅ COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes - authored scenario substrate, scenario-backed golden proof, and any required world-model support exposed by reassessment
@@ -91,3 +91,20 @@ Once the world contract is truthful, add `scenarios/survival-theft.ron`, `crates
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `python3 scripts/golden_inventory.py --write --check-docs` once the golden lands and docs/generated files need sync
+
+## Outcome
+
+- 2026-04-24
+- Added the authored [survival-theft scenario](/home/joeloverbeck/projects/worldwake/scenarios/survival-theft.ron) and new roadmap golden [golden_survival_theft.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/tests/golden_survival_theft.rs) so row 12 now lands as a real `stage_stock_for_sale -> StealItem -> steal -> eat` survival branch under authored concealment.
+- Reassessment exposed two production gaps that had to be fixed for the scenario seam to be truthful: planner synthetic steal transitions were incorrectly rejecting contained displayed lots in [planner_ops.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/planner_ops.rs), and scenario-spawned items authored on agents needed lawful ownership as well as possession in [scenario/mod.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-cli/src/scenario/mod.rs). Focused regression coverage was added in [search/tests.rs](/home/joeloverbeck/projects/worldwake/crates/worldwake-ai/src/search/tests.rs) and the existing CLI spawn test was extended at the same seam.
+- The roadmap/workflow handoff was completed by updating [golden-survival.yml](/home/joeloverbeck/projects/worldwake/.github/workflows/golden-survival.yml), [docs/scenario-roadmap.md](/home/joeloverbeck/projects/worldwake/docs/scenario-roadmap.md), and regenerated generated companions under [docs/generated](/home/joeloverbeck/projects/worldwake/docs/generated).
+- Deviation from the draft: the landed scenario needed substantially larger staged apple stock plus higher thief thirst pressure so the 1440-tick survival contract remained truthful while still forcing the theft-owned local food branch; no justice or patrol follow-on behavior was pulled into this ticket.
+- Verification results:
+  - `cargo test -p worldwake-ai --test golden_survival_theft survival_theft_proves_concealed_staged_lot_branch -- --ignored --exact --test-threads=1`
+  - `cargo test -p worldwake-ai --lib search::tests::steal_goal_plans_for_contained_displayed_sale_lot_without_owner_belief -- --exact`
+  - `cargo test -p worldwake-ai --lib search::tests::steal_goal_surfaces_search_candidates_after_action_lands -- --exact`
+  - `cargo test -p worldwake-cli scenario::tests::test_spawn_items_on_agent -- --exact`
+  - `python3 scripts/golden_inventory.py --write --check-docs`
+  - `cargo run -p worldwake-cli --bin scenario-coverage -- --write`
+  - `cargo test -p worldwake-ai`
+  - `cargo clippy --workspace --all-targets -- -D warnings`

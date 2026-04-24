@@ -40,7 +40,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Drive escalation | Authored `drive_escalation_profile` present and non-default | [`drive_escalation_profile.rs`](../crates/worldwake-core/src/drive_escalation_profile.rs), [`needs.rs`](../crates/worldwake-systems/src/needs.rs) | Landed in [§5.4](#54-landed-4-survival-drive-escalation) |
 | Need-driven exploration | `exploration_profile` active | [`exploration.rs`](../crates/worldwake-core/src/exploration.rs), AI planner + perception | Landed in [§5.1](#51-landed-1-survival-baseline) |
 | Activation-decay perception | `perception_profile` active | [`perception.rs`](../crates/worldwake-systems/src/perception.rs) | Landed in [§5.1](#51-landed-1-survival-baseline) |
-| Place concealment | Any place `visibility_profile.base_concealment > 0` | [`observation_context.rs`](../crates/worldwake-core/src/observation_context.rs), [`perception.rs`](../crates/worldwake-systems/src/perception.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Place concealment | Any place `visibility_profile.base_concealment > 0` | [`observation_context.rs`](../crates/worldwake-core/src/observation_context.rs), [`perception.rs`](../crates/worldwake-systems/src/perception.rs) | Landed in [§5.11](#511-landed-12-survival-theft) |
 | Tell / peer info transfer | Active `tell_profile` plus active `communication_profile` | [`tell_actions.rs`](../crates/worldwake-systems/src/tell_actions.rs), [`communication.rs`](../crates/worldwake-core/src/communication.rs) | Landed in [§5.5](#55-landed-5-survival-tell) |
 | Ask-about-person | Non-zero `social_weight` plus `communication_profile` and `epistemic_disposition` | [`ask_about_person_actions.rs`](../crates/worldwake-systems/src/ask_about_person_actions.rs), epistemic surfaces | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
 | Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
@@ -58,7 +58,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Offices / succession / force-claim | Office entities plus force-claim world state | [`office_actions.rs`](../crates/worldwake-systems/src/office_actions.rs), [`offices.rs`](../crates/worldwake-core/src/offices.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Notice posting | Non-zero `notice_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Landed in [§4.7](#47-landed-row-11) |
-| Theft | `theft_disposition` present | [`theft.rs`](../crates/worldwake-ai/src/theft.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Theft | `theft_disposition` present | [`theft.rs`](../crates/worldwake-ai/src/theft.rs) | Landed in [§5.11](#511-landed-12-survival-theft) |
 | Justice / accusation | `justice_disposition` present | [`justice_actions.rs`](../crates/worldwake-systems/src/justice_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Violation investigation | `violation_disposition` present | [`investigate_actions.rs`](../crates/worldwake-systems/src/investigate_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Patrol | `patrol_profile` plus `patrol_route` | [`patrol_actions.rs`](../crates/worldwake-systems/src/patrol_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
@@ -94,7 +94,8 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-trade.ron` | Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Stock / transport |
 | Landed in `survival-items-decay.ron` | Item decay, Disposal |
 | Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting |
-| Structural coverage only, not yet landed | Place concealment, Obligation satiation, Facility-queue contention, Bounty posting, Theft, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search |
+| Landed in `survival-theft.ron` | Place concealment, Theft |
+| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search |
 | Authored but still gated inactive | Report / witness |
 | Planned with no current scenario activation | Bandit camps |
 
@@ -161,7 +162,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade |
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting | Landed | Institution-level goals and artifacts competing with needs |
-| 12 | `survival-theft` | Theft + place concealment | Drafting | `SURVTHEFT-001` landed the AI-side `StealItem` suppression/ranking repair; [SURVTHEFT-002](../tickets/SURVTHEFT-002.md) now owns the truthful staged-lot + post-theft-eat survival golden substrate needed to land the row |
+| 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place |
 | 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Planned | Witness chains and evidence-driven social reaction |
 | 14 | `survival-patrol` | Patrol + pursuit | Planned | Scheduled duties and interrupt-driven remote pursuit |
 | 15 | `survival-combat` | Combat + bandit camps | Planned | Highest direct survival risk and adversarial planning pressure |
@@ -505,7 +506,33 @@ The same scenario still keeps the earlier trade substrate alive instead of becom
 - Obligation satiation, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
 - Report / witness remains gated inactive in the authored scenario
 
-### 5.11 Auxiliary and Non-Roadmap Scenarios
+### 5.11 Landed #12: `survival-theft`
+
+**Status**: Landed  
+**Source scenario**: [`scenarios/survival-theft.ron`](../scenarios/survival-theft.ron)  
+**Backing goldens**: [`golden_survival_theft.rs`](../crates/worldwake-ai/tests/golden_survival_theft.rs)
+
+**Authored envelope**
+- Seed: `612012`
+- Agents: `2`
+- Places: `1`
+- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 28`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
+
+**New landed feature rows**
+- Theft
+- Place concealment
+
+**Why this golden is valid**
+
+The scenario lands row 12 at the authored seam the runtime actually exposes today. `Merchant Sera` stages a visible, owned apple lot at `Shaded Market`; `Thief Rana` starts hungry with theft disposition, no coin, no harvestable food branch, and only the merchant's displayed stock as the truthful local food path. The golden then proves the causal chain directly: the merchant commits `stage_stock_for_sale`, the thief selects `StealItem` against the displayed lot, `steal` commits authoritatively, and `eat` follows from the stolen stock inside the same 1440-tick survival contract.
+
+The row also lands place concealment honestly rather than by decorative authored tags. `Shaded Market` carries authored concealment, and the golden proves the immediate witness path stays quiet on the merchant at theft time while the world still records durable physical aftermath through forced-entry and container-tampering evidence at the scene. That is enough to land theft plus concealment without overstating later justice, patrol, or witness-chain behavior that still belongs to downstream rows.
+
+**Deliberately inactive**
+- Obligation satiation, facility contention, offices, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
+- Report / witness remains gated inactive in the authored scenario
+
+### 5.12 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 

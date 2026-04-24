@@ -430,9 +430,7 @@ fn apply_pick_up_transition<'snapshot>(
     if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
         return None;
     }
-    if state.direct_possessor_ref(lot_ref).is_some()
-        || state.direct_container_ref(lot_ref).is_some()
-    {
+    if state.direct_possessor_ref(lot_ref).is_some() {
         return None;
     }
     if state.effective_place_ref(lot_ref)? != state.effective_place_ref(actor_ref)? {
@@ -537,9 +535,7 @@ fn apply_steal_transition<'snapshot>(
     if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
         return None;
     }
-    if state.direct_possessor_ref(lot_ref).is_some()
-        || state.direct_container_ref(lot_ref).is_some()
-    {
+    if state.direct_possessor_ref(lot_ref).is_some() {
         return None;
     }
     if state.effective_place_ref(lot_ref)? != state.effective_place_ref(actor_ref)? {

@@ -967,6 +967,7 @@ fn spawn_item(
             ))
         })?;
         txn.set_ground_location(item_id, *agent_place)?;
+        txn.set_owner(item_id, location_id)?;
         txn.set_possessor(item_id, location_id)?;
     }
 
@@ -1656,6 +1657,7 @@ mod tests {
         let lot = world.get_component_item_lot(sword_id).unwrap();
         assert_eq!(lot.commodity, CommodityKind::Sword);
         assert_eq!(lot.quantity, Quantity(1));
+        assert_eq!(world.owner_of(sword_id), Some(warrior));
     }
 
     #[test]
