@@ -11,9 +11,10 @@ Common work includes:
 - production code changes to make the mechanic actually work under survival pressure
 - scenario authoring-surface changes when the live mechanic exists but cannot yet be authored truthfully through `worldwake-cli` scenario files (for example `crates/worldwake-cli/src/scenario/types.rs`, `crates/worldwake-cli/src/scenario/mod.rs`, `crates/worldwake-cli/src/bin/scenario_coverage.rs`, and the affected scenario/fixture tests)
 - a narrow scenario-spawn or schema-focused unit test when new authoring substrate is added, so authored-surface regressions do not depend only on rerunning the full 1440-tick roadmap golden
+- scenario loader/name-resolution ordering fixes when a truthful authored field must refer to an entity spawned later in the canonical scenario pipeline; keep the authored mechanic and repair the loader boundary rather than replacing the field with a weaker setup
 - scenario revisions when the authored substrate is insufficient
 - golden revisions when assertions are too weak or prove the wrong branch
-- CI workflow updates so the new scenario runs in the correct family workflow and stays out of regular lanes
+- CI workflow updates or verification so the new scenario runs in the correct family workflow and stays out of regular lanes
 - helper extraction or trace usage needed to assert the correct boundary
 
 When a scenario landing exposes a production contradiction in candidate generation, ranking, action commit, handoff state, or another lower layer, add the narrowest focused test at that layer before relying on the 1440-tick roadmap golden as proof. The long golden should prove row integration, not be the only regression surface for a localized production contract.

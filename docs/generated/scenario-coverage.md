@@ -14,6 +14,8 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 - survival-justice: agent field `expectation_store` is not mapped by any FeatureDef
 - survival-justice: agent field `last_seen_memory` is not mapped by any FeatureDef
 - survival-justice: agent field `social_observations` is not mapped by any FeatureDef
+- survival-offices: agent field `expectation_store` is not mapped by any FeatureDef
+- survival-offices: agent field `last_seen_memory` is not mapped by any FeatureDef
 - survival-offices: agent field `social_observations` is not mapped by any FeatureDef
 - survival-patrol: agent field `last_seen_memory` is not mapped by any FeatureDef
 
@@ -34,7 +36,7 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Tell / peer info transfer | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ |
 | Ask-about-person | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ |
 | Consult-record | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ |
-| Obligation satiation | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Obligation satiation | ✅ | ✅ | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — |
 | Diversification / curiosity | — | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — |
 | Experience preferences | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — |
 | Production (facility-backed craft) | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ |
@@ -50,14 +52,14 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Notice posting | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Theft | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | ✅ | — |
 | Justice / accusation | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — |
-| Violation investigation | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — |
+| Violation investigation | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — |
 | Patrol | ✅ | ✅ | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — |
 | Pursuit | ✅ | ✅ | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — |
 | Combat | ✅ | ✅ | — | — | ✅ | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — |
-| Escort | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
+| Escort | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Bandit camps | — | ✅ | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | Report / witness | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Search | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — |
+| Search | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — |
 | Stock / transport | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ |
 
 Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absent.
@@ -660,8 +662,12 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Basic needs (Wash)
 - Need-driven exploration
 - Activation-decay perception
+- Obligation satiation
 - Offices / succession / force-claim
 - Notice posting
+- Violation investigation
+- Escort
+- Search
 
 **Present-but-inactive features**
 - Travel physiology
@@ -669,14 +675,12 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Consult-record
 - Production (facility-backed craft)
 - Bounty posting
-- Escort
 - Report / witness
 
 **Absent features**
 - Drive escalation
 - Place concealment
 - Tell / peer info transfer
-- Obligation satiation
 - Diversification / curiosity
 - Experience preferences
 - Merchant selling
@@ -688,12 +692,10 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Facility-queue contention
 - Theft
 - Justice / accusation
-- Violation investigation
 - Patrol
 - Pursuit
 - Combat
 - Bandit camps
-- Search
 - Stock / transport
 
 **World features**

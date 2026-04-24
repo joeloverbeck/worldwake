@@ -23,10 +23,13 @@ When the row is not already satisfied, create or revise the scenario in `scenari
 - For capstone or full-coexistence rows, it is acceptable to use a non-autonomous support actor or support place to carry structural-only activation substrate. The roadmap and golden must state which actor owns the survival/behavior envelope and which profiles or world fields are structural-only support.
 - Keep structural-only activators away from the critical proof path when their mechanics could interfere with the retained branch. For example, place concealment, hostile state, queues, offices, or broad social profiles can be authored on support places/actors when the row only needs structural activation from them.
 - After adding a cluster of structural-only activators, rerun the narrow scenario spawn or owning golden preflight before layering on more substrate. If a support activator changes the selected branch, either move it off the critical path, narrow the proof contract truthfully, or split the blocker into a ticket.
+- If truthful authored substrate references another authored entity class, verify that the scenario loader can resolve that reference through the canonical spawn path. When the live mechanic requires the reference, fix the scenario authoring boundary with a focused spawn/schema regression instead of weakening the authored setup to avoid the reference.
 
 ## Special cases
 
 For social or belief-transport rows, verify the information path explicitly. A scenario is invalid if the intended behavior only works through omniscient setup assumptions.
+
+When roadmap prose blends a profile/dampener with an action branch it influences, split the contract before authoring. Name the feature mechanic, the supporting duty/action substrate, and the exact causal seam each one proves so the golden does not claim that one mechanic directly "discharges" another unless the live code really does that.
 
 When a survival contract legitimately needs an uneven bound across need families, encode that as scenario-authored per-need overrides instead of inventing a stronger global cap and then forcing the codebase to satisfy it.
 

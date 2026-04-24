@@ -19,12 +19,12 @@ Scenarios without annotations are not reflected here.
 | ExploreLocation | 133, 134, 135, 136, 150, 151, 155, 156, 161, 162, 171, 337, 338, 339, 340, 343, 344, 345 |
 | FreeCarryCapacity | 143, 174 |
 | InvestigateViolation | 177 |
-| PostNotice | 144 |
+| PostNotice | 144, 175 |
 | ProduceCommodity | 167, 172 |
 | Relieve | 127, 130, 131, 148, 149, 151, 152, 153, 154, 156, 157, 158, 159, 162, 163, 169, 170, 171, 172, 174, 175, 176, 342, 350, 59, 61, 62, 63, 64, 65, 66, 67 |
 | ReportFound | 178 |
 | ReportMissing | 167 |
-| SearchForMissing | 170, 178 |
+| SearchForMissing | 170, 175, 178 |
 | SellCommodity | 176, 350, 75, 76, 88, 96 |
 | ShareBelief | 169, 72 |
 | Sleep | 127, 130, 131, 148, 149, 151, 152, 153, 154, 156, 157, 158, 159, 162, 163, 167, 169, 170, 171, 172, 174, 175, 176, 2, 350 |
@@ -77,10 +77,10 @@ Scenarios without annotations are not reflected here.
 | Political actions | 109, 11, 12, 15, 16, 17, 18 |
 | Production | 1, 126, 127, 130, 132, 134, 136, 142, 143, 148, 149, 150, 151, 152, 153, 154, 156, 157, 158, 159, 160, 162, 163, 167, 169, 171, 172, 1b, 337, 338, 339, 340, 350, 5, 58, 60, 61 |
 | Reports | 178 |
-| Search | 151, 156, 162, 170, 178 |
+| Search | 151, 156, 162, 170, 175, 178 |
 | Social | 167 |
 | Social Information | 147 |
-| Social artifact actions | 109, 144 |
+| Social artifact actions | 109, 144, 175 |
 | Succession | 109, 11, 12, 13, 14, 15, 16, 17, 18 |
 | Tell | 169, 72 |
 | Threaten | 14 |

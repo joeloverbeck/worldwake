@@ -45,7 +45,7 @@ Depending on live feasibility, this workflow should end with one of these outcom
 1. **Full landing**
    - `scenarios/<scenario>.ron`
    - `crates/worldwake-ai/tests/golden_<scenario_snake>.rs`
-   - `.github/workflows/golden-<family>.yml` updated or created so the suite runs in CI
+   - `.github/workflows/golden-<family>.yml` updated, created, or verified already correct so the suite runs in CI
    - any required production code changes
    - generated doc refreshes
    - `docs/scenario-roadmap.md` updated to `Landed`

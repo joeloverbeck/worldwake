@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
-use worldwake_core::{DriveThresholds, GoalKind, NoticeTopic, Tick};
+use worldwake_core::{
+    DriveThresholds, ExpectationState, GoalKind, NoticeTopic, ObligationSatiationProfile, Tick,
+};
 use worldwake_sim::ActionTraceKind;
 
 const SURVIVAL_TICKS: u32 = 1440;
@@ -30,8 +32,15 @@ struct OfficesObservation {
     first_post_notice_selection_tick: Tick,
     first_post_notice_commit_tick: Tick,
     first_press_force_claim_tick: Tick,
+    first_search_selection_tick: Tick,
+    first_search_commit_tick: Tick,
+    first_satiated_obligation_tick: Tick,
+    first_self_care_after_satiation_tick: Tick,
     first_control_tick: Tick,
     first_holder_tick: Tick,
+    obligation_satiation_profile: ObligationSatiationProfile,
+    obligation_completion_ticks: Vec<Tick>,
+    duty_expectation_resolved: bool,
     posted_threat_warning_exists: bool,
 }
 
@@ -80,11 +89,21 @@ fn run_survival_offices() -> OfficesObservation {
         .query_name()
         .find_map(|(entity, name)| (name.0 == "Marsh Warden").then_some(entity))
         .expect("scenario should include Marsh Warden");
+    let duty_subject = h
+        .world
+        .query_name_and_agent_data()
+        .find_map(|(entity, name, _)| (name.0 == "Rival Rowan").then_some(entity))
+        .expect("scenario should include Rival Rowan");
     let thresholds = h
         .world
         .get_component_drive_thresholds(agent)
         .copied()
         .expect("survival offices agent should have drive thresholds");
+    let obligation_satiation_profile = h
+        .world
+        .get_component_obligation_satiation_profile(agent)
+        .cloned()
+        .expect("survival offices agent should have an authored obligation satiation profile");
     let mut critical_need_runs = SurvivalNeedRunTracker::default();
     let mut stuck_idle_windows = Vec::new();
     let mut idle_state: (Option<u32>, u16, u32) = (None, 0, 0);
@@ -93,6 +112,10 @@ fn run_survival_offices() -> OfficesObservation {
     let mut first_post_notice_selection_tick = None;
     let mut first_post_notice_commit_tick = None;
     let mut first_press_force_claim_tick = None;
+    let mut first_search_selection_tick = None;
+    let mut first_search_commit_tick = None;
+    let mut first_satiated_obligation_tick = None;
+    let mut first_self_care_after_satiation_tick = None;
     let mut first_control_tick = None;
     let mut first_holder_tick = None;
 
@@ -188,6 +211,40 @@ fn run_survival_offices() -> OfficesObservation {
             first_post_notice_commit_tick = Some(tick);
         }
 
+        if first_search_selection_tick.is_none() {
+            let maybe_tick = h
+                .driver
+                .trace_sink()
+                .expect("decision tracing should be enabled")
+                .trace_at(agent, tick)
+                .and_then(|trace| match &trace.outcome {
+                    DecisionOutcome::Planning(planning)
+                        if planning.selection.selected_goal().is_some_and(|goal| {
+                            matches!(
+                                goal.kind,
+                                GoalKind::SearchForMissing {
+                                    subject,
+                                    last_seen: Some(_),
+                                } if subject == duty_subject
+                            )
+                        }) =>
+                    {
+                        Some(trace.tick)
+                    }
+                    _ => None,
+                });
+            first_search_selection_tick = first_search_selection_tick.or(maybe_tick);
+        }
+
+        if first_search_commit_tick.is_none()
+            && action_sink.events_for_at(agent, tick).iter().any(|event| {
+                event.action_name == "search_place"
+                    && matches!(event.kind, ActionTraceKind::Committed { .. })
+            })
+        {
+            first_search_commit_tick = Some(tick);
+        }
+
         if first_press_force_claim_tick.is_none()
             && action_sink.events_for_at(agent, tick).iter().any(|event| {
                 event.action_name == "press_force_claim"
@@ -195,6 +252,28 @@ fn run_survival_offices() -> OfficesObservation {
             })
         {
             first_press_force_claim_tick = Some(tick);
+        }
+
+        let obligation_completion_count = h
+            .world
+            .get_component_obligation_execution_tracker(agent)
+            .map_or(0, |tracker| tracker.completion_ticks.len() as u32);
+        if first_satiated_obligation_tick.is_none()
+            && obligation_completion_count > obligation_satiation_profile.satiation_threshold
+        {
+            first_satiated_obligation_tick = Some(tick);
+        }
+        if first_satiated_obligation_tick.is_some()
+            && first_self_care_after_satiation_tick.is_none()
+            && action_sink.events_for_at(agent, tick).iter().any(|event| {
+                matches!(event.kind, ActionTraceKind::Committed { .. })
+                    && matches!(
+                        event.action_name.as_str(),
+                        "eat" | "drink" | "sleep" | "relieve" | "wash"
+                    )
+            })
+        {
+            first_self_care_after_satiation_tick = Some(tick);
         }
 
         if first_control_tick.is_none() && h.world.office_controller(office) == Some(agent) {
@@ -268,6 +347,19 @@ fn run_survival_offices() -> OfficesObservation {
                 .get_component_notice_content(artifact)
                 .is_some_and(|content| matches!(content.topic, NoticeTopic::ThreatWarning { .. }))
     });
+    let obligation_completion_ticks = h
+        .world
+        .get_component_obligation_execution_tracker(agent)
+        .map_or_else(Vec::new, |tracker| tracker.completion_ticks.clone());
+    let duty_expectation_resolved =
+        h.world
+            .get_component_expectation_store(agent)
+            .is_some_and(|store| {
+                store.records.values().any(|record| {
+                    record.subject == duty_subject
+                        && matches!(record.state, ExpectationState::Resolved { .. })
+                })
+            });
 
     OfficesObservation {
         contract,
@@ -298,6 +390,27 @@ fn run_survival_offices() -> OfficesObservation {
                 "scenario should commit press_force_claim after consulting the register; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
             )
         }),
+        first_search_selection_tick: first_search_selection_tick.unwrap_or_else(|| {
+            panic!(
+                "scenario should select SearchForMissing for the authored Marsh Warden duty assignment; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
+            )
+        }),
+        first_search_commit_tick: first_search_commit_tick.unwrap_or_else(|| {
+            panic!(
+                "scenario should commit search_place to discharge the authored Marsh Warden duty assignment; committed_actions={committed_actions:?}; traces={trace_summaries:?}"
+            )
+        }),
+        first_satiated_obligation_tick: first_satiated_obligation_tick.unwrap_or_else(|| {
+            panic!(
+                "scenario should commit enough obligation actions to cross the authored satiation threshold; completion_ticks={obligation_completion_ticks:?}; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
+            )
+        }),
+        first_self_care_after_satiation_tick: first_self_care_after_satiation_tick
+            .unwrap_or_else(|| {
+                panic!(
+                    "scenario should return to self-care after obligation satiation applies; completion_ticks={obligation_completion_ticks:?}; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
+                )
+            }),
         first_control_tick: first_control_tick.unwrap_or_else(|| {
             panic!(
                 "scenario should establish office control after press_force_claim; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
@@ -308,6 +421,9 @@ fn run_survival_offices() -> OfficesObservation {
                 "scenario should install the holder after force-control delay; committed_actions={committed_actions:?}; traces={trace_summaries:?}; post_notice_attempts={post_notice_attempt_summaries:?}"
             )
         }),
+        obligation_satiation_profile,
+        obligation_completion_ticks,
+        duty_expectation_resolved,
         posted_threat_warning_exists,
     }
 }
@@ -316,31 +432,38 @@ fn run_survival_offices() -> OfficesObservation {
 // Scenario 175: Survival Offices Proves Force-Law Uptake Under Survival
 // ---------------------------------------------------------------------------
 //
-// Systems: AI, Needs, Offices
-// GoalKinds: ClaimOffice, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity,
-//   Drink, Wash, Sleep, Relieve
+// Systems: AI, Needs, Offices, Search, Social artifact actions
+// GoalKinds: ClaimOffice, PostNotice, SearchForMissing,
+//   AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep,
+//   Relieve
 // ActionDomains: Social, Needs
 // Places: Council Green
 // Principles: 6, 7, 14, 20
 //
 // Setup: Run the authored survival offices scenario for 1440 ticks. `Claimant
 //   Rhea` starts at `Council Green` with one vacant force-law office, authored
-//   remembered local conflict memory, and the co-located survival substrate
-//   needed to keep eating, drinking, relieving, washing, and sleeping in the
-//   same place. That makes the row about force-law office pressure and
-//   autonomous notice posting competing with ongoing self-care rather than
-//   travel or consult-record gating.
+//   remembered local conflict memory, an explicit obligation satiation profile,
+//   an overdue Marsh Warden duty assignment for `Rival Rowan`, and the
+//   co-located survival substrate needed to keep eating, drinking, relieving,
+//   washing, and sleeping in the same place. That makes the row about
+//   force-law office pressure, autonomous notice posting, and office-linked
+//   duty resolution competing with ongoing self-care rather than travel or
+//   consult-record gating.
 //
 // Proves: the tracked agent satisfies the authored survival-health contract,
 //   selects `ClaimOffice`, selects and commits `PostNotice` from the authored
 //   warning substrate, commits `press_force_claim`, becomes force controller,
-//   and only later installs as office holder after the force-law hold delay.
+//   only later installs as office holder after the force-law hold delay, crosses
+//   the authored obligation-satiation threshold, returns to self-care, and
+//   resolves the authored Marsh Warden duty assignment through `search_place`.
 //
 // Chain: authored remembered local conflict -> PostNotice selected and
-//   committed -> new threat-warning notice artifact exists; in the same
-//   authored survival run a vacant force-law office under survival pressure -> ClaimOffice
-//   selected -> press_force_claim commits -> office controller mutates ->
-//   delayed office holder installation.
+//   committed repeatedly -> obligation tracker crosses the satiation threshold
+//   -> self-care remains competitive; in the same authored survival run a
+//   vacant force-law office under survival pressure -> ClaimOffice selected ->
+//   press_force_claim commits -> office controller mutates -> delayed office
+//   holder installation; Marsh Warden duty expectation -> SearchForMissing
+//   selected -> search_place commits -> duty expectation resolves.
 #[test]
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn survival_offices_proves_force_law_uptake() {
@@ -380,6 +503,28 @@ fn survival_offices_proves_force_law_uptake() {
     assert!(
         observation.first_post_notice_selection_tick <= observation.first_post_notice_commit_tick,
         "post_notice must follow PostNotice selection; observation={observation:?}"
+    );
+    assert!(
+        observation.first_satiated_obligation_tick >= observation.first_post_notice_commit_tick,
+        "obligation satiation should be caused by committed obligation actions; observation={observation:?}"
+    );
+    assert!(
+        observation.obligation_completion_ticks.len() as u32
+            > observation.obligation_satiation_profile.satiation_threshold,
+        "obligation tracker should cross the authored satiation threshold; observation={observation:?}"
+    );
+    assert!(
+        observation.first_self_care_after_satiation_tick
+            >= observation.first_satiated_obligation_tick,
+        "self-care should remain competitive after obligation satiation applies; observation={observation:?}"
+    );
+    assert!(
+        observation.first_search_selection_tick <= observation.first_search_commit_tick,
+        "search_place must follow SearchForMissing selection for the office-linked duty; observation={observation:?}"
+    );
+    assert!(
+        observation.duty_expectation_resolved,
+        "search_place should resolve the authored Marsh Warden duty expectation; observation={observation:?}"
     );
     assert!(
         observation.first_press_force_claim_tick <= observation.first_control_tick,
