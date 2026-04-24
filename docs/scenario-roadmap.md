@@ -54,7 +54,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Substitute preferences | `substitute_preferences` present | [`trade.rs`](../crates/worldwake-core/src/trade.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Item decay | `commodity_decay` authored on the scenario | [`item_decay.rs`](../crates/worldwake-systems/src/item_decay.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
 | Disposal | `disposal_profile` present | [`disposal.rs`](../crates/worldwake-core/src/disposal.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
-| Facility-queue contention | `contention_disposition` present | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); standalone behavior planned as extension to [§4.5 `survival-trade` (Row 9)](#45-landed-row-9) |
+| Facility-queue contention | `contention_disposition` plus an authored facility `contention_policy` | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs), [`facility_queue.rs`](../crates/worldwake-systems/src/facility_queue.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Offices / succession / force-claim | Office entities plus force-claim world state | [`office_actions.rs`](../crates/worldwake-systems/src/office_actions.rs), [`offices.rs`](../crates/worldwake-core/src/offices.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); standalone behavior planned as extension to [§5.12 `survival-justice` (Row 13)](#512-landed-row-13-survival-justice) |
 | Notice posting | Non-zero `notice_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Landed in [§4.7](#47-landed-row-11) |
@@ -93,7 +93,7 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-ask-consult.ron` | Ask-about-person, Consult-record |
 | Landed in `survival-preferences.ron` | Diversification / curiosity, Experience preferences |
 | Landed in `survival-production.ron` | Production (facility-backed craft) |
-| Landed in `survival-trade.ron` | Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Stock / transport |
+| Landed in `survival-trade.ron` | Merchant selling, Trade negotiation, Commodity valuation, Substitute preferences, Facility-queue contention, Stock / transport |
 | Landed in `survival-items-decay.ron` | Item decay, Disposal |
 | Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting |
 | Landed in `survival-theft.ron` | Place concealment, Theft |
@@ -102,7 +102,7 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-combat.ron` | Combat, Bandit camps |
 | Landed in `survival-escort.ron` | Escort/care coordinated travel under hostile pressure |
 | Landed in `final-integration.ron` | Full gameplay catalog structural coexistence under survival-health, with hostile wound pressure |
-| Structural-only within final integration, not standalone behavior landings | Obligation satiation, Facility-queue contention, Bounty posting |
+| Structural-only within final integration, not standalone behavior landings | Obligation satiation, Bounty posting |
 | Structurally partial outside the landed branch | Broader Report / witness |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
@@ -165,7 +165,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 6 | `survival-ask-consult` | Ask-about-person + consult-record | Landed | Explicit epistemic actions competing with self-care |
 | 7 | `survival-preferences` | Experience preferences + diversification / curiosity | Landed | Proves proactive diversification under survival and a durable familiar-source failure memory that later discounts the stale orchard while selecting the discovered novel grove |
 | 8 | `survival-production` | Production (facility-backed craft) | Landed | First survival row where food depends on a workstation-backed craft branch rather than direct harvest |
-| 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | In Progress | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade; extension adds facility-queue contention behavior proof at the market |
+| 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, facility-queue contention, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade, plus authored queue/grant contention at the Market Square well |
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting | In Progress | Institution-level goals and artifacts competing with needs; extension adds obligation satiation behavior proof on an authored office duty |
 | 12 | `survival-theft` | Theft + place concealment | In Progress | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place; extension adds broader witness→report chain proof beyond found-person |
@@ -210,23 +210,16 @@ The golden proves the branch at the earliest honest surfaces that matter: a plan
 **Backing goldens**: [`golden_survival_trade.rs`](../crates/worldwake-ai/tests/golden_survival_trade.rs)  
 **Depends on**: landed rows 1-8
 
-`survival-trade.ron` now owns a truthful roadmap landing for the trade row. It keeps a full 1440-tick survival-health contract alive while authoring a merchant facility, staged apple stock, buyer purchasing power, `trade_disposition`, `commodity_valuation`, and `substitute_preferences` in one live scenario instead of relying on the old auxiliary merchant-only goldens.
+`survival-trade.ron` now owns a truthful roadmap landing for the trade row. It keeps a full 1440-tick survival-health contract alive while authoring a merchant facility, staged apple stock, buyer purchasing power, `trade_disposition`, `commodity_valuation`, `substitute_preferences`, agent `contention_disposition`, and a queue-managed Market Square well in one live scenario instead of relying on the old auxiliary merchant-only goldens.
 
-The golden now proves the full live seam this row needs: `Merchant Sera` commits `stage_stock_for_sale`, a listed apple lot appears at the market, `Buyer Nila` reaches a local `AcquireCommodity(SelfConsume)` substitute branch with an explicit `trade` payload still bound to that apple lot, authoritative apple and coin transfer occur at the trade seam, and both agents satisfy the authored survival contract.
+The golden now proves the full live seam this row needs: `Merchant Sera` commits `stage_stock_for_sale`, a listed apple lot appears at the market, `Buyer Nila` reaches a local `AcquireCommodity(SelfConsume)` substitute branch with an explicit `trade` payload still bound to that apple lot, authoritative apple and coin transfer occur at the trade seam, both principals commit `queue_for_facility_use` against the Market Square well, the contention system promotes real grants, water harvest follows the grant path, and both agents satisfy the authored survival contract.
 
 This is now a truthful substitute-isolation scenario rather than merely a bread-market progress row. The authored market exposes only apples for sale, the buyer's food substitutes are ordered `[Apple, Grain]`, and the buyer cannot short-circuit the row through a local listed bread purchase. Focused AI proof from the earlier trade tickets still owns the lower candidate-generation, ranking, and goal-model seams; the roadmap-owned golden now closes the remaining scenario/golden layer by proving that the landed row really is a substitute-driven trade branch for the authored reason.
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
+- Obligation satiation, item decay, disposal, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
 - Report / witness is outside this row's authored proof
-
-**Planned extension**
-
-Row is `In Progress` pending facility-queue contention behavior proof. The extension must:
-- Author `contention_disposition`-driven queueing substrate at the existing `Market Square` facility so multiple buyers realistically target the staged apple lot on the same tick.
-- Prove in the backing golden that a real contention-resolution branch commits at the earliest honest causal surface — not merely that `contention_disposition` is structurally present.
-- Keep the landed substitute-trade branch intact: `stage_stock_for_sale`, the substitute `AcquireCommodity(Apple, SelfConsume)` selection, authoritative apple/coin transfer, and the 1440-tick survival-health contract must all still hold for the existing principals.
 
 ### 4.6 Landed Row 10
 
@@ -486,17 +479,21 @@ The golden proves a real non-harvest production branch inside the survival loop 
 - Merchant selling
 - Trade negotiation
 - Commodity valuation
+- Substitute preferences
+- Facility-queue contention
 - Stock / transport
 
 **Why this scenario is landed**
 
 The scenario now proves a real substitute-driven survival trade branch instead of a narrow auxiliary trade harness. `Merchant Sera` stages apples into a listed sale lot at `Market Square`; `Buyer Nila` starts hungry with coin but no direct bread-market branch; and the golden proves the concrete causal chain that now exists in the live runtime: listing becomes visible, planning selects the substitute `AcquireCommodity(Apple, SelfConsume)` branch, the current runtime plan keeps an explicit `trade` payload against the apple lot, the committed trade transfers Apple and Coin authoritatively, `eat` follows the first successful purchase, and both agents survive the full 1440-tick run.
 
-That proof now closes the row honestly. The focused AI tests still own the lower substitute candidate-generation, ranking, and goal-model surfaces, while this roadmap scenario/golden pair owns the authored market branch and full survival-contract integration seam. Together they make row 9 a truthful landing instead of merely partial progress.
+The row also now owns the standalone facility-queue contention behavior proof. The scenario authors queue patience on the trade principals and a `ContentionPolicy` on `Village Well`; the golden proves both principals commit `queue_for_facility_use`, the contention system emits grant promotion against the well, and a later `harvest:Harvest Water` commit follows the grant path.
+
+That proof now closes the row honestly. The focused AI tests still own the lower substitute candidate-generation, ranking, and goal-model surfaces, while this roadmap scenario/golden pair owns the authored market branch, queue/grant integration, and full survival-contract seam. Together they make row 9 a truthful landing instead of merely partial progress.
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
+- Obligation satiation, item decay, disposal, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
 - Report / witness is outside this row's authored proof
 
 ### 5.10 Landed #10: `survival-items-decay`
@@ -643,7 +640,7 @@ The row is landed because the scenario-backed golden proves survival self-care a
 - The same run proves concrete hostile pressure still occurs in the integrated world by observing a wound on `Ward Mira`.
 
 **Structural-only within this row**
-- Obligation satiation, facility-queue contention, and bounty posting are active as part of full-stack coexistence substrate. This row does not claim standalone behavior landings for those mechanics; a future row or ticket should add behavior-specific proof before treating them as individually landed mechanics.
+- Obligation satiation and bounty posting are active as part of full-stack coexistence substrate. This row does not claim standalone behavior landings for those mechanics; a future row or ticket should add behavior-specific proof before treating them as individually landed mechanics.
 - Earlier rows remain the behavior owners for their individual branches. This row deliberately avoids re-proving every prior behavior in one oversized golden and instead owns the full-catalog coexistence contract.
 
 The row is landed because the scenario-backed golden proves the authored full-catalog structural contract, the survival-health contract, deterministic replay, and a concrete hostile-pressure branch under the golden-survival CI workflow.

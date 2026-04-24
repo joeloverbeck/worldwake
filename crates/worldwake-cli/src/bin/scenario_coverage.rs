@@ -305,7 +305,7 @@ const FEATURES: &[FeatureDef] = &[
         name: "Facility-queue contention",
         covered_agent_fields: &["contention_disposition"],
         covered_place_fields: &[],
-        covered_scenario_fields: &[],
+        covered_scenario_fields: &["facilities[].contention_policy"],
     },
     FeatureDef {
         id: FeatureId::OfficesSuccessionForceClaim,
@@ -782,7 +782,19 @@ fn classify_feature(feature: FeatureId, def: &ScenarioDef) -> FeatureStatus {
             optional_profile_presence_status(def, |agent| agent.disposal_profile.as_ref())
         }
         FeatureId::FacilityQueueContention => {
-            optional_profile_presence_status(def, |agent| agent.contention_disposition.as_ref())
+            let has_disposition = def
+                .agents
+                .iter()
+                .any(|agent| agent.contention_disposition.is_some());
+            let has_policy = def
+                .facilities
+                .iter()
+                .any(|facility| facility.contention_policy.is_some());
+            match (has_disposition, has_policy) {
+                (true, true) => FeatureStatus::Active,
+                (true, false) | (false, true) => FeatureStatus::PresentInactive,
+                (false, false) => FeatureStatus::Absent,
+            }
         }
         FeatureId::OfficesSuccessionForceClaim => {
             if def.offices.is_empty() {

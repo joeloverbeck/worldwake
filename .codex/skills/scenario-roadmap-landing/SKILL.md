@@ -26,6 +26,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 - Treat roadmap landing as a three-layer contract: structural activation, behavioral proof, and causal validity.
 - If earlier landed rows already own part of the requested mechanic family, subtract that overlap first and restate the residual row-owned seam before authoring scenario or golden code.
 - If the requested row depends on prerequisite substrate that was already landed earlier, prefer authoring that substrate directly in the new scenario instead of re-proving the earlier row, unless the current row truthfully owns re-exercising it.
+- If a planned extension names a concrete behavior or invocation surface that live mechanics cannot lawfully support, use the repo's 1-3-1 rule before reinterpreting the proof target: state the single contradiction, three viable paths, and one recommendation, then wait for confirmation.
 - For capstone or coexistence rows such as `final-integration`, do not re-prove every earlier row's behavior in one oversized golden. Subtract earlier behavior owners, define the residual contract as full structural activation plus a representative causal pressure branch, and classify any structurally active mechanics that still lack standalone behavior proof.
 - A 1440-tick survival pass is necessary but not sufficient.
 - When the outcome is partial progress, distinguish explicitly between `what was implemented` and `why the row is still not Landed`.
@@ -92,5 +93,5 @@ When the requested row is blocked rather than landed:
 - Do not update `docs/scenario-roadmap.md` as if the row landed when the golden still fails.
 - Do not keep draft scenario/golden files in-repo when the attempted proof does not remain a truthful retained seam.
 - Do not leave generated docs stale after changing scenario or golden metadata.
-- Do not reuse an existing `Scenario <N>:` id and discover the collision only during generated-doc refresh.
+- Do not reuse an existing `Scenario <N>:` id. Check the current id inventory before editing a golden header, not only after `golden_inventory.py` fails.
 - Do not trust old scenario-roadmap prose over live generator rules and live code when they conflict; rewrite the roadmap first.

@@ -10,10 +10,10 @@ use serde::Deserialize;
 use worldwake_core::{
     AgendaProfile, ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile,
     CommodityDecayMap, CommodityValuationProfile, CommunicationProfile, Container,
-    ContentionDispositionProfile, ControlSource, DisposalProfile, DiversificationProfile,
-    DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile, ExecutionBudget,
-    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LoadUnits,
-    MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
+    ContentionDispositionProfile, ContentionPolicy, ControlSource, DisposalProfile,
+    DiversificationProfile, DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile,
+    ExecutionBudget, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
+    LoadUnits, MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
     PerceptionSource, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
     Quantity, SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
     TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
@@ -469,6 +469,8 @@ pub struct FacilityDef {
     pub location: String,
     #[serde(default)]
     pub merchant_storage: Option<MerchantStorageDef>,
+    #[serde(default)]
+    pub contention_policy: Option<ContentionPolicy>,
 }
 
 /// Optional merchant stock-storage substrate for a facility.

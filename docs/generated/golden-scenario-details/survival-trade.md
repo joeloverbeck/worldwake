@@ -5,14 +5,14 @@ Do not hand-edit it.
 
 Scenarios: 1
 
-### Scenario 173: Survival Trade Proves the Substitute Market Branch
+### Scenario 350: Survival Trade Proves the Substitute Market Branch
 
-- Source: `golden_survival_trade.rs:412`
-- Systems: AI, Needs, Trade, Travel, Perception
+- Source: `golden_survival_trade.rs:466`
+- Systems: AI, Needs, Trade, Travel, Perception, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
-- ActionDomains: Trade, Travel, Needs
+- ActionDomains: Trade, Travel, Needs, Production
 - Places: Market Square, South Orchard
-- Principles: 6, 7, 8, 14, 20
+- Principles: 6, 7, 8, 9, 14, 20
 - Primary tests: `survival_trade_proves_substitute_market_branch`
 - Replay tests: `survival_trade_replays_deterministically`
 - All tests: `survival_trade_proves_substitute_market_branch`, `survival_trade_replays_deterministically`
