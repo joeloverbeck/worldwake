@@ -22,7 +22,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [ask_consult, baseline, combat, contested, escort, items_decay, justice, offices, patrol, preferences, production, scattered, tell, theft, trade]
+        include:
+          - scenario: ask_consult
+            test_target: golden_survival_ask_consult
+          - scenario: baseline
+            test_target: golden_survival_baseline
+          - scenario: combat
+            test_target: golden_survival_combat
+          - scenario: contested
+            test_target: golden_survival_contested
+          - scenario: escort
+            test_target: golden_survival_escort
+          - scenario: final_integration
+            test_target: golden_final_integration
+          - scenario: items_decay
+            test_target: golden_survival_items_decay
+          - scenario: justice
+            test_target: golden_survival_justice
+          - scenario: offices
+            test_target: golden_survival_offices
+          - scenario: patrol
+            test_target: golden_survival_patrol
+          - scenario: preferences
+            test_target: golden_survival_preferences
+          - scenario: production
+            test_target: golden_survival_production
+          - scenario: scattered
+            test_target: golden_survival_scattered
+          - scenario: tell
+            test_target: golden_survival_tell
+          - scenario: theft
+            test_target: golden_survival_theft
+          - scenario: trade
+            test_target: golden_survival_trade
 
     steps:
       - name: Checkout
@@ -38,5 +70,5 @@ jobs:
         with:
           key: golden-survival-${{ matrix.scenario }}
 
-      - name: Run golden_survival_${{ matrix.scenario }}
-        run: cargo test --release -p worldwake-ai --test golden_survival_${{ matrix.scenario }} -- --ignored --test-threads=1
+      - name: Run ${{ matrix.test_target }}
+        run: cargo test --release -p worldwake-ai --test ${{ matrix.test_target }} -- --ignored --test-threads=1

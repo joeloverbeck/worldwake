@@ -44,6 +44,7 @@ Update the roadmap to match the true result:
 - if the outcome is narrower, rewrite the row rather than overclaiming
 - if an auxiliary scenario now became a true roadmap row, move or rewrite the auxiliary caveat accordingly
 - if the generated companion shows additional active features beyond the requested row, classify each one explicitly as either newly landed here or merely structurally active because of shared substrate; do not let those sibling rows inherit `Landed` status by implication
+- for capstone/coexistence rows, separate `full structural coexistence`, `representative causal branch`, and `structural-only support mechanics`; do not rewrite the feature catalog as if every structurally active feature now has a new standalone behavior landing
 
 When the row ends `In Progress`, prefer a concrete partial-progress writeup over vague prose. A good pattern is:
 
@@ -59,6 +60,7 @@ Also make the CI ownership truthful in the same pass:
 
 - update an existing family workflow matrix entry when the new scenario belongs to that family
 - create the new family workflow when no correct family exists yet
+- use explicit workflow matrix `test_target` values when the scenario name and Rust test binary do not share the family-derived name
 - keep the regular `ci.yml` lanes relying on ignored-by-default behavior rather than inlining these long-running tests there
 
 ## Rename/promotion fallout

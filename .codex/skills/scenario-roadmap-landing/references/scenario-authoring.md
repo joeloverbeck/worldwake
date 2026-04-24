@@ -20,6 +20,9 @@ When the row is not already satisfied, create or revise the scenario in `scenari
 - If a competing branch is part of the architecture contract, keep it and prove the branching behavior instead.
 - For cumulative mechanics, name the concrete threshold/cadence/capacity math in the scenario-owning ticket or notes before trusting the setup.
 - Validate authored load and capacity math early whenever the row authors starting inventory, camp supplies, containers, merchant stock, or other carried/contained resources. This includes trade rows, but is not limited to them: check merchant stock volume, buyer purchasing power, self-care supply, camp supply containers, and actor carry-capacity/load limits before spending repeated long reruns on golden debugging.
+- For capstone or full-coexistence rows, it is acceptable to use a non-autonomous support actor or support place to carry structural-only activation substrate. The roadmap and golden must state which actor owns the survival/behavior envelope and which profiles or world fields are structural-only support.
+- Keep structural-only activators away from the critical proof path when their mechanics could interfere with the retained branch. For example, place concealment, hostile state, queues, offices, or broad social profiles can be authored on support places/actors when the row only needs structural activation from them.
+- After adding a cluster of structural-only activators, rerun the narrow scenario spawn or owning golden preflight before layering on more substrate. If a support activator changes the selected branch, either move it off the critical path, narrow the proof contract truthfully, or split the blocker into a ticket.
 
 ## Special cases
 

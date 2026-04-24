@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 103
-- Contributing golden test files: 27
-- Associated tests: 132
+- Scenario blocks: 104
+- Contributing golden test files: 28
+- Associated tests: 134
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -342,6 +342,10 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the run produces repeated proactive exploration selections, and the selection ticks stay spaced by at least the configured cooldown.
 
 **Cross-system chain**: calm needs + diversification profile -> proactive selection -> authoritative cooldown stamp -> later proactive selection after cooldown.
+
+### Scenario 349: Final Integration Authors The Full Coexistence Stack
+
+- Source: `golden_final_integration.rs:329`
 
 ### Scenario 342: Waste Decay Reaches A Bounded Steady State
 
