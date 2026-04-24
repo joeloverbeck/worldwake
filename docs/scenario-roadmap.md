@@ -64,7 +64,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Patrol | `patrol_profile` plus `patrol_route` | [`patrol_actions.rs`](../crates/worldwake-systems/src/patrol_actions.rs) | Landed in [§5.13](#513-landed-row-14-survival-patrol) |
 | Pursuit | `pursuit_profile` present | [`pursuit.rs`](../crates/worldwake-ai/src/pursuit.rs) | Landed in [§5.13](#513-landed-row-14-survival-patrol) |
 | Combat | `combat_profile` present | [`combat.rs`](../crates/worldwake-systems/src/combat.rs) | Landed in [§5.14](#514-landed-row-15-survival-combat) |
-| Escort | Non-zero `care_weight` | [`escort_actions.rs`](../crates/worldwake-systems/src/escort_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Escort | Non-zero `care_weight` | [`escort_actions.rs`](../crates/worldwake-systems/src/escort_actions.rs) | Landed in [§5.15](#515-landed-row-16-survival-escort) |
 | Bandit camps | Authored `bandit_camps` world state | [`bandit_camp.rs`](../crates/worldwake-systems/src/bandit_camp.rs), [`bandit_camp_actions.rs`](../crates/worldwake-systems/src/bandit_camp_actions.rs) | Landed in [§5.14](#514-landed-row-15-survival-combat) |
 | Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Found-person reporting branch landed in [§5.12](#512-landed-row-13-survival-justice); broader witness/report coverage remains partial in the generated companion |
 | Search | `violation_disposition` plus `epistemic_disposition` | search and investigation actions | Landed in [§5.12](#512-landed-row-13-survival-justice) |
@@ -100,7 +100,8 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-justice.ron` | Justice / accusation, Violation investigation, Search, Report / witness found-person reporting branch |
 | Landed in `survival-patrol.ron` | Patrol, Pursuit selection/execution from authored hostility plus last-seen memory |
 | Landed in `survival-combat.ron` | Combat, Bandit camps |
-| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Escort |
+| Landed in `survival-escort.ron` | Escort/care coordinated travel under hostile pressure |
+| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting |
 | Structurally partial outside the landed branch | Broader Report / witness |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
@@ -170,7 +171,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Landed | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope |
 | 14 | `survival-patrol` | Patrol + pursuit | Landed | Scheduled duties coexist with survival self-care while remembered hostility selects and executes remote pursuit through travel into attack |
 | 15 | `survival-combat` | Combat + bandit camps | Landed | Highest direct survival risk and adversarial planning pressure |
-| 16 | `survival-escort` | Escort/care | Planned | Coordinated travel after the rest of the hostile world is live |
+| 16 | `survival-escort` | Escort/care | Landed | Coordinated travel after the rest of the hostile world is live |
 | 17 | `final-integration` | Full coexistence stack | Planned | Last because it only makes sense once every prior row has an honest scenario contract |
 
 ### 4.3 Landed Row 7
@@ -251,7 +252,7 @@ The golden proves both halves at the earliest honest surfaces that matter: `Clai
 
 #### 4.8 Remaining planned rows
 
-Rows 12-17 follow the ordering table above. Each future author should expand the chosen row into the full entry template, inheriting the cumulative deliberately inactive list from the prior landed row and making the validity contract explicit before the scenario is authored.
+Row 17 follows the ordering table above. Its future author should expand the chosen row into the full entry template, inherit the prior landed row's deliberately inactive list, and make the validity contract explicit before the scenario is authored.
 
 ## 5. Landed Scenarios
 
@@ -584,7 +585,23 @@ The row is landed because the AI selects and executes the remote pursuit branch 
 
 The row is landed because the same scenario-backed golden proves survival self-care, hostile combat execution, and the authored camp's post-combat abandonment consequence under the golden-survival CI workflow.
 
-### 5.15 Auxiliary and Non-Roadmap Scenarios
+### 5.15 Landed Row 16: `survival-escort`
+
+**Status**: Landed
+**Source scenario**: [`scenarios/survival-escort.ron`](../scenarios/survival-escort.ron)
+**Backing goldens**: [`golden_survival_escort.rs`](../crates/worldwake-ai/tests/golden_survival_escort.rs)
+
+**Scenario-owned proof**
+- `Caretaker Ilen` owns the 1440-tick survival-health envelope while `Ward Mira` and `Raider Voss` are supporting causal actors.
+- The authored scenario activates `Escort` through non-zero `care_weight`, a wounded co-located ward, and an adjacent clinic destination. The retained golden proves `EscortToSafety` selection, `escort_to_safety` start and commit, and both caretaker and ward at `Village Clinic` at the committed handoff tick.
+- The committed escort installs the ward's care contention queue as the downstream handoff to later treatment. The golden asserts that handoff state directly instead of relying on action-name presence.
+
+**Structurally active only**
+- `Combat` is active because the ward's wound is created by hostile same-place combat. This is supporting substrate only; row 15 already owns the combat and bandit-camp landing.
+
+The row is landed because the scenario-backed golden proves survival self-care and the coordinated care-travel branch for the authored causal reason under the golden-survival CI workflow.
+
+### 5.16 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 

@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 28
-- Files contributing `golden_*` tests: 28
-- Total `golden_*` tests: 134
+- Golden test files: 29
+- Files contributing `golden_*` tests: 29
+- Total `golden_*` tests: 136
 
 ## Per-File Inventory
 
@@ -30,6 +30,7 @@ Do not hand-edit it.
 | `golden_survival_combat.rs` | 2 |
 | `golden_survival_contested.rs` | 7 |
 | `golden_survival_drive_escalation.rs` | 3 |
+| `golden_survival_escort.rs` | 2 |
 | `golden_survival_items_decay.rs` | 2 |
 | `golden_survival_justice.rs` | 4 |
 | `golden_survival_offices.rs` | 2 |
@@ -190,6 +191,11 @@ Do not hand-edit it.
 - `survival_drive_escalation_lands_row_four`
 - `escalation_respects_belief_only_planning`
 - `escalation_fades_after_relief`
+
+### `golden_survival_escort.rs`
+
+- `survival_escort_proves_coordinated_care_travel`
+- `survival_escort_replay_is_deterministic`
 
 ### `golden_survival_items_decay.rs`
 
