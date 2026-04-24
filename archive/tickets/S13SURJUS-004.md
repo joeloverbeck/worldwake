@@ -17,7 +17,7 @@ After `survival-justice` records the accusation case, punishment candidate gener
 3. The shared boundary under audit is the punishment candidate admission surface in `emit_punishment_candidates()`: `GoalKind::PunishAccused`, local crime-register state (`RecordData`), and the office-holder/jurisdiction checks already enforced there.
 4. Focused live diagnostics on 2026-04-24 showed a mixed outcome. The broader row-13 golden remained false, but the narrower production bug was real: after the accusation commit, the scenario still had no punishment candidate source from the freshly written local crime register unless a separate consult step had already populated institutional belief memory.
 5. The truthful narrow fix is local only. Remote punishment knowledge must remain belief-backed; only co-located active accusations in a known local authority crime register should bypass the redundant consult requirement.
-6. The broader row-13 punishment golden is still false after this narrow fix. In the focused scenario repro, the thief had already consumed the stolen apples by the accusation tick, so no lawful fine survived; the scenario also still lacks an authored exile path. That remaining scenario-level owner moves to `tickets/S13SURJUS-005.md`.
+6. The broader row-13 punishment golden is still false after this narrow fix. In the focused scenario repro, the thief had already consumed the stolen apples by the accusation tick, so no lawful fine survived; the scenario also still lacks an authored exile path. That remaining scenario-level owner moved first to `archive/tickets/S13SURJUS-005.md`, which then rejected the generic punishment claim and split the surviving fine-path blocker to `archive/tickets/S13SURJUS-006.md`.
 7. Mismatch + correction: the original ticket overclaimed a full scenario punishment landing. The live complete slice for this pass is the local-record punishment admission fix plus focused proof at candidate generation.
 
 ## Architecture Check
@@ -46,7 +46,7 @@ Add `candidate_generation` coverage proving that a local active accusation recor
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify)
 - `tickets/S13SURJUS-004.md` (modify)
-- `tickets/S13SURJUS-005.md` (new)
+- `archive/tickets/S13SURJUS-005.md` (new, later superseded by `archive/tickets/S13SURJUS-006.md` for the fine-path remainder)
 - `docs/scenario-roadmap.md` (modify)
 
 ## Out of Scope
@@ -88,7 +88,7 @@ Completed on 2026-04-24.
 
 - `emit_punishment_candidates()` now admits punishment from an active accusation entry in a co-located local crime register without requiring a redundant consult step first.
 - Added focused unit coverage for the new local-record path.
-- Reassessed the broader row-13 punishment golden honestly and moved the still-false scenario seam to `tickets/S13SURJUS-005.md`.
+- Reassessed the broader row-13 punishment golden honestly and moved the still-false scenario seam first to `archive/tickets/S13SURJUS-005.md`, which later rejected the generic punishment claim and split the surviving fine-path remainder to `archive/tickets/S13SURJUS-006.md`.
 
 ## Deviations
 

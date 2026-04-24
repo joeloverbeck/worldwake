@@ -192,9 +192,10 @@ fn run_survival_justice() -> JusticeObservation {
             && h.world
                 .get_component_violation_memory(merchant)
                 .is_some_and(|memory| {
-                    memory.violations.iter().any(|record| {
-                        matches!(record.kind, ViolationKind::SuspectedTheft { .. })
-                    })
+                    memory
+                        .violations
+                        .iter()
+                        .any(|record| matches!(record.kind, ViolationKind::SuspectedTheft { .. }))
                 })
         {
             first_violation_suspected_theft_tick = Some(tick);
@@ -204,7 +205,10 @@ fn run_survival_justice() -> JusticeObservation {
                 .get_component_agent_belief_store(merchant)
                 .is_some_and(|store| {
                     store.iter_social_observations().any(|observation| {
-                        matches!(observation.detail, SocialObservationDetail::SuspectedTheft { .. })
+                        matches!(
+                            observation.detail,
+                            SocialObservationDetail::SuspectedTheft { .. }
+                        )
                     })
                 })
         {
@@ -279,27 +283,34 @@ fn run_survival_justice() -> JusticeObservation {
         .driver
         .trace_sink()
         .expect("decision tracing should be enabled");
-    let first_ranked_accuse_tick = decision_trace_sink.traces_for(merchant).into_iter().find_map(
-        |trace| match &trace.outcome {
+    let first_ranked_accuse_tick = decision_trace_sink
+        .traces_for(merchant)
+        .into_iter()
+        .find_map(|trace| match &trace.outcome {
             worldwake_ai::DecisionOutcome::Planning(planning) => planning
                 .candidates
                 .ranked
                 .iter()
-                .any(|summary| matches!(summary.opportunity.goal_key.kind, worldwake_core::GoalKind::Accuse { .. }))
+                .any(|summary| {
+                    matches!(
+                        summary.opportunity.goal_key.kind,
+                        worldwake_core::GoalKind::Accuse { .. }
+                    )
+                })
                 .then_some(trace.tick),
             _ => None,
-        },
-    );
-    let first_selected_accuse_tick = decision_trace_sink.traces_for(merchant).into_iter().find_map(
-        |trace| match &trace.outcome {
+        });
+    let first_selected_accuse_tick = decision_trace_sink
+        .traces_for(merchant)
+        .into_iter()
+        .find_map(|trace| match &trace.outcome {
             worldwake_ai::DecisionOutcome::Planning(planning) => matches!(
                 planning.selection.selected_goal().map(|goal| goal.kind),
                 Some(worldwake_core::GoalKind::Accuse { .. })
             )
             .then_some(trace.tick),
             _ => None,
-        },
-    );
+        });
     let merchant_violation_memory = h.world.get_component_violation_memory(merchant).cloned();
     let merchant_social_observations = h
         .world
@@ -480,6 +491,29 @@ fn survival_justice_proves_accusation_substrate() {
     assert!(
         observation.accusation_recorded,
         "crime register should record the accusation case; observation={observation:?}"
+    );
+}
+
+#[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
+fn survival_justice_proves_fine_punishment_for_same_theft_case() {
+    let observation = run_survival_justice();
+    let accuse_tick = observation
+        .accuse_tick
+        .expect("merchant should still commit accuse before punishment");
+    let Some(fine_tick) = observation.fine_tick else {
+        panic!(
+            "merchant should commit fine for the same accusation case; observation={observation:?}"
+        );
+    };
+
+    assert!(
+        accuse_tick <= fine_tick,
+        "fine should commit after accuse in survival justice; observation={observation:?}"
+    );
+    assert!(
+        observation.fine_verdict_recorded,
+        "crime register should record a fine verdict for the accusation case; observation={observation:?}"
     );
 }
 

@@ -58,6 +58,8 @@ Use this branch whenever focused live proof confirms a real narrow production fi
    When the narrower seam survives in the same golden/test file, rename or narrow the remaining test names, assertions, metadata comments, and nearby roadmap prose so they describe only the landed seam rather than the disproved broader ending.
 8. If the user later approves the split rather than asking for more implementation on the disproved broader seam, immediately formalize it in the repo: update the active ticket's status/scope/outcome to the landed narrow boundary, create the follow-up from `tickets/_TEMPLATE.md`, and update any live roadmap or blocker docs that still point at the old combined ownership. Do not rerun unchanged code verification in that follow-up docs/ticket pass unless implementation changed again.
 
+If the active ticket is already the follow-up / remainder owner and focused reassessment shows no truthful implementation slice remains inside its current claim, stop further implementation attempts immediately. Remove temporary probes, keep the strongest focused evidence, and treat the ticket as a rejection-and-split boundary rather than continuing local churn. Use 1-3-1 when more than one plausible causal continuation remains (for example two different punishment paths or two different scenario owners); otherwise rewrite the active ticket to `REJECTED`, create the narrower successor ticket, and update live roadmap/blocker docs in the same pass.
+
 Do not use this branch when broader verification fails only because an existing golden assertion still encodes a stronger subclaim than the current ticket now truthfully owns. If the same scenario still proves the ticket's real integration seam, narrow that assertion in-scope, rerun the golden, and close out without manufacturing a follow-up ticket.
 
 ## Workflow
@@ -123,8 +125,11 @@ When a golden or planner ticket claims one specific operator family, selected pl
 
 When a golden/observer fixture mismatch could reflect either renderer drift or lawful upstream event/report drift, prove the upstream contract first at the strongest existing lower-layer owning seam already in the repo before editing the fixture. If that lower-layer seam is green and the rendered mismatch matches the live output, narrow the ticket to fixture refresh plus truthful closeout rather than reopening production ownership.
 
+Before changing authored scenario inputs after a failed golden, run one compact diagnostic pass first: capture the earliest relevant action ticks, the key quantity/state at the asserted boundary, and whether candidate emission / ranked selection / final commit moved. Use that pass to decide whether the owner is still scenario authoring or an earlier production seam before starting scenario churn.
+
 When a roadmap or scenario-owned golden is supposed to isolate one authored causal branch from rival lawful branches, inspect the authored inputs that can keep the rival branch alive before coding: staged stock, substitute order, local inventories, resource sources, and other scenario-seeded availability. If those authored inputs still make the rival branch lawful, rewrite the ticket immediately to either the narrower live proof seam or the real scenario/golden isolation follow-up instead of treating the gap as planner logic by default.
 When that isolation pass removes or demotes one authored branch, also verify that the edit does not accidentally falsify the scenario's wider survival or self-care contract for other actors. If a rival branch must stay available privately or non-market-facing (for example private stock needed for another actor's survival), preserve that narrower lawful path and rewrite the ticket/golden to the honest boundary such as `no listed branch` or `no local branch`, rather than over-strengthening the authored isolation into `no commodity anywhere`.
+If two or more bounded scenario/profile/setup tweaks still leave the same candidate owner absent, the same causal blocker unchanged, or the same live branch selected, stop local scenario tuning and escalate immediately to ticket rewrite / follow-up split / 1-3-1 instead of continuing to churn scenario authoring. Record the repeated unchanged owner explicitly so the repo reflects why the implementation attempt stopped.
 
 When a ticket's primary deliverable is a generated report, inventory, or other read-only companion derived from authored schema/input files, verify representability before coding: for each drafted detection rule or output row, confirm that the claimed fact is actually visible from the stated input boundary. If the draft depends on runtime-only entities, inferred later-stage state, or another carrier the tool does not read, rewrite the ticket immediately to the strongest honest schema-owned seam instead of encoding guessed output.
 
@@ -200,6 +205,8 @@ When a first-pass ticket/spec rewrite itself later proves too strong under focus
 #### Bind abstract domain language to live carriers
 
 When a ticket or spec uses generic domain language such as “affordance presence”, “local support”, or “relevant local state”, bind that phrase to the exact live carrier before coding. If the branch uses concrete place tags, workstation markers, item lots, resource sources, or another existing convention rather than a dedicated helper/type named in the prose, record that narrowing and implement against the live carrier instead of inventing a new abstraction by default.
+
+When a theft, custody, or facility-stock ticket is motivated by “missing” or “unavailable” local goods, classify the contradiction before coding as one of: absent from place, absent from lawful control path, or absent from authoritative stock path. If the lot is still co-located and locally observable but no longer lawfully controllable by the owner, do not force the ticket back into a pure place-absence story; reassess the owner boundary across violation detection, investigation, accusation, and scenario authoring first.
 
 When a ticket or spec includes a function sketch that reads through `GoalBeliefView` or another actor-facing belief trait, verify whether any required methods are actor-scoped before accepting an actor-free signature. If the live trait requires an explicit actor or another carrier the sketch omitted, correct the ticket/spec and helper signature before implementation instead of smuggling the missing context in later.
 
@@ -312,6 +319,8 @@ Load `references/verification.md`.
 #### Cargo execution discipline
 
 When using exact Cargo test selectors for focused proof, confirm the real test path first with `cargo test ... -- --list` before relying on `--exact`. Bare function names often miss ordinary unit-test module paths and `src/bin/*.rs` unit tests, which can leave a command compiling the target while executing zero intended tests.
+
+For crate unit tests in particular, prefer `cargo test -p <crate> --lib -- --list` first, then run the fully qualified module path with `--exact` (for example `candidate_generation::tests::case_name`). This avoids the common false-positive lane where a bare test name compiles the crate but executes zero intended tests.
 
 If repo guidance or the active verification contract requires `cargo fmt --all`, run it, then immediately inspect `git status --short` and classify any formatter spillover in already-dirty files as unrelated or adjacent fallout unless the current ticket truly owns those paths. Record that spillover explicitly in closeout rather than silently attributing the formatted files to the ticket.
 

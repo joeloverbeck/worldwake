@@ -461,7 +461,7 @@
     ],
     items: [
         (commodity: Bread, quantity: 40, location: "Merchant Sera"),
-        (commodity: Apple, quantity: 3, location: "Merchant Sera"),
+        (commodity: Apple, quantity: 5, location: "Merchant Sera"),
         (commodity: Water, quantity: 20, location: "Merchant Sera"),
         (commodity: Bread, quantity: 20, location: "Searcher Ivo"),
         (commodity: Water, quantity: 20, location: "Searcher Ivo"),

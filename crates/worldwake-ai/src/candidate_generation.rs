@@ -4408,6 +4408,7 @@ fn emit_expectation_violation_candidates(
     };
 
     let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
+    let known_social_observations = ctx.view.known_social_observations(ctx.agent);
     let observed_at_place: BTreeSet<EntityId> = ctx
         .view
         .locally_observed_entities_at(ctx.agent, current_place)
@@ -4429,6 +4430,35 @@ fn emit_expectation_violation_candidates(
         if believed_state.last_known_place == Some(current_place)
             && !observed_at_place.contains(entity_id)
             && ctx.view.effective_place(*entity_id).is_some()
+        {
+            violations.push((
+                ViolationKind::EntityMissing {
+                    entity: *entity_id,
+                    expected_place: current_place,
+                },
+                true, // emits goal
+            ));
+        }
+
+        // Reuse the generic investigate lane when the owner still locally sees
+        // the stolen lot at the same place, but no longer controls it and has
+        // concrete local theft evidence for that exact lot.
+        if believed_state.last_known_place == Some(current_place)
+            && observed_at_place.contains(entity_id)
+            && ctx.view.entity_kind(*entity_id) == Some(EntityKind::ItemLot)
+            && ctx.view.believed_owner_of(*entity_id) == Some(ctx.agent)
+            && ctx
+                .view
+                .direct_possessor(*entity_id)
+                .is_some_and(|possessor| possessor != ctx.agent)
+            && known_social_observations.iter().any(|observation| {
+                matches!(
+                    observation.detail,
+                    SocialObservationDetail::SuspectedTheft { theft, suspect: _ }
+                        if theft.missing_entity == *entity_id
+                            && theft.expected_place == current_place
+                )
+            })
         {
             violations.push((
                 ViolationKind::EntityMissing {
@@ -16178,6 +16208,83 @@ mod tests {
         assert!(
             result.candidates.iter().any(|c| c.key == goal_key),
             "missing facility stock should still reuse the generic investigate path"
+        );
+    }
+
+    #[test]
+    fn same_place_stolen_display_stock_emits_investigate_candidate() {
+        let agent = entity(1);
+        let thief = entity(3);
+        let place = entity(10);
+        let stolen_entity = entity(2);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, thief]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(thief, EntityKind::Agent);
+        view.entity_kinds.insert(stolen_entity, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(thief, place);
+        view.effective_places.insert(stolen_entity, place);
+        view.violation_disposition_profiles
+            .insert(agent, default_violation_profile());
+        view.beliefs.insert(
+            agent,
+            vec![(stolen_entity, belief_at_place(place, Tick(1)))],
+        );
+        view.believed_owners.insert(stolen_entity, agent);
+        view.direct_possessors.insert(stolen_entity, thief);
+        view.entities_at
+            .insert(place, vec![agent, thief, stolen_entity]);
+        view.social_observations.insert(
+            agent,
+            vec![SocialObservation {
+                detail: SocialObservationDetail::SuspectedTheft {
+                    theft: TheftFacts {
+                        missing_entity: stolen_entity,
+                        expected_place: place,
+                        commodity: CommodityKind::Apple,
+                        quantity: Quantity(3),
+                    },
+                    suspect: Some(thief),
+                },
+                place,
+                observed_tick: Tick(2),
+                source: PerceptionSource::DirectObservation,
+            }],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let violation_id = result.pending_violations[0].id;
+        let goal_key = GoalKey::from(GoalKind::InvestigateViolation {
+            violation_id,
+            place,
+        });
+        assert!(
+            result.candidates.iter().any(|c| c.key == goal_key),
+            "same-place stolen display stock should remain investigable before full consumption"
+        );
+        assert!(
+            result.pending_violations.iter().any(|record| {
+                matches!(
+                    record.kind,
+                    ViolationKind::EntityMissing {
+                        entity,
+                        expected_place,
+                    } if entity == stolen_entity && expected_place == place
+                )
+            }),
+            "same-place stolen display stock should reuse the local EntityMissing investigate seam"
         );
     }
 
