@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 30
 - Files contributing `golden_*` tests: 30
-- Total `golden_*` tests: 138
+- Total `golden_*` tests: 139
 
 ## Per-File Inventory
 
@@ -40,7 +40,7 @@ Do not hand-edit it.
 | `golden_survival_production.rs` | 2 |
 | `golden_survival_scattered.rs` | 6 |
 | `golden_survival_tell.rs` | 1 |
-| `golden_survival_theft.rs` | 1 |
+| `golden_survival_theft.rs` | 2 |
 | `golden_survival_trade.rs` | 2 |
 | `golden_travel_physiology.rs` | 12 |
 
@@ -251,6 +251,7 @@ Do not hand-edit it.
 ### `golden_survival_theft.rs`
 
 - `survival_theft_proves_concealed_staged_lot_branch`
+- `survival_theft_replays_deterministically`
 
 ### `golden_survival_trade.rs`
 

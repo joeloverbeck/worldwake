@@ -11,7 +11,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 - Scenario blocks: 104
 - Contributing golden test files: 28
-- Associated tests: 134
+- Associated tests: 135
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1263,7 +1263,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 176: Survival Theft Lands the Concealed Staged-Lot Branch
 
-- Source: `golden_survival_theft.rs:337`
+- Source: `golden_survival_theft.rs:400`
 - Systems: AI, Needs, Trade, Perception, Transport
 - GoalKinds: StealItem, ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Needs, Transport

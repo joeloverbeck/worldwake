@@ -10,9 +10,9 @@ use worldwake_ai::{DecisionOutcome, GoalKey, GoalKind};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
     CommodityKind, DisturbanceKind, DriveThresholds, EntityId, EvidenceKind, PerceptionSource,
-    Quantity, SocialObservationKind, Tick,
+    Quantity, SocialObservationDetail, SocialObservationKind, TellTopic, Tick,
 };
-use worldwake_sim::ActionTraceKind;
+use worldwake_sim::{ActionTraceDetail, ActionTraceKind, TellBeliefDeltaKind, TellCommitResult};
 
 const SURVIVAL_TICKS: u32 = 1440;
 const STOLEN_COMMODITY: CommodityKind = CommodityKind::Apple;
@@ -34,6 +34,9 @@ struct TheftObservation {
     first_started_steal_tick: Tick,
     first_steal_tick: Tick,
     first_eat_tick: Tick,
+    investigate_tick: Tick,
+    social_transfer_tick: Tick,
+    clerk_suspicion_tick: Tick,
     staged_lot: EntityId,
     merchant_saw_immediate_theft: bool,
     thief_commodity_after_steal: Quantity,
@@ -128,6 +131,7 @@ fn run_survival_theft() -> SurvivalTheftObservation {
             .clone();
     let thief = find_named_agent(&h, "Thief Rana");
     let merchant = find_named_agent(&h, "Merchant Sera");
+    let clerk = find_named_agent(&h, "Clerk Nia");
     let thief_thresholds = h
         .world
         .get_component_drive_thresholds(thief)
@@ -144,6 +148,9 @@ fn run_survival_theft() -> SurvivalTheftObservation {
     let mut first_started_steal_tick = None;
     let mut first_steal_tick = None;
     let mut first_eat_tick = None;
+    let mut investigate_tick = None;
+    let mut social_transfer_tick = None;
+    let mut clerk_suspicion_tick = None;
     let mut merchant_saw_immediate_theft = false;
     let mut thief_commodity_after_steal = None;
     let mut scene_evidence = Vec::new();
@@ -200,6 +207,38 @@ fn run_survival_theft() -> SurvivalTheftObservation {
                 && stage_tick.is_none()
             {
                 stage_tick = Some(tick);
+            }
+            if event.action_name == "investigate"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && investigate_tick.is_none()
+            {
+                investigate_tick = Some(tick);
+            }
+            if event.action_name == "tell"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && social_transfer_tick.is_none()
+            {
+                let Some(ActionTraceDetail::Tell { listener, topic }) = &event.detail else {
+                    continue;
+                };
+                if *listener != clerk {
+                    continue;
+                }
+                let TellTopic::SocialObservation { observation } = topic else {
+                    continue;
+                };
+                if !matches!(
+                    observation.detail,
+                    SocialObservationDetail::SuspectedTheft { .. }
+                ) {
+                    continue;
+                }
+                if event.tell_commit_result() != Some(TellCommitResult::Accepted)
+                    || event.tell_belief_delta() != Some(TellBeliefDeltaKind::SocialObservation)
+                {
+                    continue;
+                }
+                social_transfer_tick = Some(tick);
             }
         }
 
@@ -261,6 +300,21 @@ fn run_survival_theft() -> SurvivalTheftObservation {
             {
                 first_eat_tick = Some(tick);
             }
+        }
+
+        if clerk_suspicion_tick.is_none()
+            && h.world
+                .get_component_agent_belief_store(clerk)
+                .is_some_and(|store| {
+                    store.iter_social_observations().any(|observation| {
+                        matches!(
+                            observation.detail,
+                            SocialObservationDetail::SuspectedTheft { .. }
+                        )
+                    })
+                })
+        {
+            clerk_suspicion_tick = Some(tick);
         }
     }
 
@@ -324,6 +378,15 @@ fn run_survival_theft() -> SurvivalTheftObservation {
             first_eat_tick: first_eat_tick.unwrap_or_else(|| {
                 panic!("thief should later commit eat after stealing food; thief_actions={thief_actions:?}")
             }),
+            investigate_tick: investigate_tick.unwrap_or_else(|| {
+                panic!("merchant should investigate the missing displayed lot after theft; merchant_actions={merchant_actions:?}")
+            }),
+            social_transfer_tick: social_transfer_tick.unwrap_or_else(|| {
+                panic!("merchant should tell Clerk Nia a SuspectedTheft social observation; merchant_actions={merchant_actions:?}")
+            }),
+            clerk_suspicion_tick: clerk_suspicion_tick.unwrap_or_else(|| {
+                panic!("Clerk Nia should learn the SuspectedTheft observation from testimony")
+            }),
             staged_lot,
             merchant_saw_immediate_theft,
             thief_commodity_after_steal: thief_commodity_after_steal
@@ -354,14 +417,19 @@ fn run_survival_theft() -> SurvivalTheftObservation {
 // `StealItem` branch against the staged apple lot and commits `steal`; the
 // thief later commits `eat`; immediate direct witness pickup on the merchant is
 // suppressed under the authored concealment/profile math; and the stolen
-// display still leaves lawful physical scene evidence at the place.
+// display still leaves lawful physical scene evidence at the place. The same
+// branch then matures into a local `investigate` commit, and Merchant Sera
+// relays the resulting `SuspectedTheft` social observation to Clerk Nia, whose
+// zero-fidelity perception profile prevents direct event pickup and makes the
+// accepted testimony the proof surface for learning the theft suspicion.
 //
 // Chain: merchant stages displayed apples -> listed owned lot becomes visible
 // local stock -> hungry thief selects `StealItem` against that lot -> committed
 // `steal` clears the listing and moves the apple lot into the thief's
 // possession -> thief later commits `eat` -> concealed same-place witness path
-// stays quiet immediately, but the market keeps container/damage evidence for
-// later justice/search rows.
+// stays quiet immediately, but the market keeps container/damage evidence ->
+// merchant investigation records a theft suspicion -> accepted testimony
+// transfers that social observation to the support listener.
 #[test]
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn survival_theft_proves_concealed_staged_lot_branch() {
@@ -421,6 +489,21 @@ fn survival_theft_proves_concealed_staged_lot_branch() {
         "the thief should eat only after the staged-lot theft lands; theft={:?}",
         observation.theft
     );
+    assert!(
+        observation.theft.first_steal_tick <= observation.theft.investigate_tick,
+        "the merchant should investigate only after the theft commit; theft={:?}",
+        observation.theft
+    );
+    assert!(
+        observation.theft.investigate_tick <= observation.theft.social_transfer_tick,
+        "the theft suspicion should be relayed after investigation; theft={:?}",
+        observation.theft
+    );
+    assert!(
+        observation.theft.social_transfer_tick <= observation.theft.clerk_suspicion_tick,
+        "Clerk Nia's theft suspicion should follow the accepted testimony; theft={:?}",
+        observation.theft
+    );
     assert_eq!(
         observation.theft.thief_commodity_after_steal, STAGED_APPLE_QUANTITY,
         "the thief should hold the full staged apple lot immediately after steal commit; theft={:?}",
@@ -451,4 +534,10 @@ fn survival_theft_proves_concealed_staged_lot_branch() {
         "stealing a displayed lot should leave container-tampering evidence; theft={:?}",
         observation.theft
     );
+}
+
+#[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
+fn survival_theft_replays_deterministically() {
+    assert_eq!(run_survival_theft(), run_survival_theft());
 }

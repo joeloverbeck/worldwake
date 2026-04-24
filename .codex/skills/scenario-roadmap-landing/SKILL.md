@@ -27,6 +27,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 - If earlier landed rows already own part of the requested mechanic family, subtract that overlap first and restate the residual row-owned seam before authoring scenario or golden code.
 - If the requested row depends on prerequisite substrate that was already landed earlier, prefer authoring that substrate directly in the new scenario instead of re-proving the earlier row, unless the current row truthfully owns re-exercising it.
 - If a planned extension names a concrete behavior or invocation surface that live mechanics cannot lawfully support, use the repo's 1-3-1 rule before reinterpreting the proof target: state the single contradiction, three viable paths, and one recommendation, then wait for confirmation.
+- If a proof attempt for a named information path or invocation surface collapses, stop before substituting a nearby lawful branch. Do not reinterpret a remote, non-colocated, external-request, or otherwise specific roadmap claim into a different proof shape without the same 1-3-1 confirmation.
 - For capstone or coexistence rows such as `final-integration`, do not re-prove every earlier row's behavior in one oversized golden. Subtract earlier behavior owners, define the residual contract as full structural activation plus a representative causal pressure branch, and classify any structurally active mechanics that still lack standalone behavior proof.
 - A 1440-tick survival pass is necessary but not sufficient.
 - When the outcome is partial progress, distinguish explicitly between `what was implemented` and `why the row is still not Landed`.
@@ -49,6 +50,7 @@ Depending on live feasibility, this workflow should end with one of these outcom
    - any required production code changes
    - generated doc refreshes
    - `docs/scenario-roadmap.md` updated to `Landed`
+   - if the roadmap-named scenario, golden, or workflow entry already exists, it is extended or retargeted in place rather than duplicated under a parallel name
 2. **Truthful partial progress with blockers**
    - authored scenario and/or partial proof changes only if they match a truthful narrower seam
    - if the row owns multiple feature rows, classify each owned feature explicitly as `landed here`, `structurally active only`, or `blocked`; do not let one proven feature silently land the whole row

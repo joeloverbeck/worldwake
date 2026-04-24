@@ -4420,7 +4420,6 @@ fn emit_expectation_violation_candidates(
     };
 
     let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
-    let known_social_observations = ctx.view.known_social_observations(ctx.agent);
     let observed_at_place: BTreeSet<EntityId> = ctx
         .view
         .locally_observed_entities_at(ctx.agent, current_place)
@@ -4453,8 +4452,10 @@ fn emit_expectation_violation_candidates(
         }
 
         // Reuse the generic investigate lane when the owner still locally sees
-        // the stolen lot at the same place, but no longer controls it and has
-        // concrete local theft evidence for that exact lot.
+        // the lot at the same place but no longer controls it. The observation
+        // of non-owner possession is the local substrate that lets concealed
+        // theft mature into investigation without requiring a prior theft
+        // witness observation.
         if believed_state.last_known_place == Some(current_place)
             && observed_at_place.contains(entity_id)
             && ctx.view.entity_kind(*entity_id) == Some(EntityKind::ItemLot)
@@ -4463,14 +4464,6 @@ fn emit_expectation_violation_candidates(
                 .view
                 .direct_possessor(*entity_id)
                 .is_some_and(|possessor| possessor != ctx.agent)
-            && known_social_observations.iter().any(|observation| {
-                matches!(
-                    observation.detail,
-                    SocialObservationDetail::SuspectedTheft { theft, suspect: _ }
-                        if theft.missing_entity == *entity_id
-                            && theft.expected_place == current_place
-                )
-            })
         {
             violations.push((
                 ViolationKind::EntityMissing {
@@ -16336,7 +16329,7 @@ mod tests {
     }
 
     #[test]
-    fn same_place_stolen_display_stock_emits_investigate_candidate() {
+    fn same_place_non_owner_possessed_display_stock_emits_investigate_candidate() {
         let agent = entity(1);
         let thief = entity(3);
         let place = entity(10);
@@ -16360,23 +16353,6 @@ mod tests {
         view.direct_possessors.insert(stolen_entity, thief);
         view.entities_at
             .insert(place, vec![agent, thief, stolen_entity]);
-        view.social_observations.insert(
-            agent,
-            vec![SocialObservation {
-                detail: SocialObservationDetail::SuspectedTheft {
-                    theft: TheftFacts {
-                        missing_entity: stolen_entity,
-                        expected_place: place,
-                        commodity: CommodityKind::Apple,
-                        quantity: Quantity(3),
-                    },
-                    suspect: Some(thief),
-                },
-                place,
-                observed_tick: Tick(2),
-                source: PerceptionSource::DirectObservation,
-            }],
-        );
 
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -16396,7 +16372,7 @@ mod tests {
         });
         assert!(
             result.candidates.iter().any(|c| c.key == goal_key),
-            "same-place stolen display stock should remain investigable before full consumption"
+            "same-place non-owner possessed display stock should be investigable before full consumption"
         );
         assert!(
             result.pending_violations.iter().any(|record| {
@@ -16408,7 +16384,7 @@ mod tests {
                     } if entity == stolen_entity && expected_place == place
                 )
             }),
-            "same-place stolen display stock should reuse the local EntityMissing investigate seam"
+            "same-place non-owner possessed display stock should reuse the local EntityMissing investigate seam"
         );
     }
 

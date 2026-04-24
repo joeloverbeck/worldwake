@@ -34,8 +34,8 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Activation-decay perception | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | Place concealment | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ | — |
 | Tell / peer info transfer | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ |
-| Ask-about-person | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ |
-| Consult-record | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ |
+| Ask-about-person | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ |
+| Consult-record | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ✅ | ⚠ |
 | Obligation satiation | ✅ | ✅ | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — |
 | Diversification / curiosity | — | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — |
 | Experience preferences | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — |
@@ -52,14 +52,14 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Notice posting | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Theft | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | ✅ | — |
 | Justice / accusation | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — |
-| Violation investigation | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — |
+| Violation investigation | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | — |
 | Patrol | ✅ | ✅ | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — |
 | Pursuit | ✅ | ✅ | — | — | — | — | — | — | — | — | — | ✅ | — | — | — | — | — | — |
 | Combat | ✅ | ✅ | — | — | ✅ | — | — | ✅ | — | — | — | ✅ | — | — | — | — | — | — |
 | Escort | ✅ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Bandit camps | — | ✅ | — | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | Report / witness | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | — | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
-| Search | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — |
+| Search | ✅ | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | — |
 | Stock / transport | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ |
 
 Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absent.
@@ -998,7 +998,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 ### scenarios/survival-theft.ron
 
 - Seed: 612012
-- Agents: 2 Ai
+- Agents: 3 Ai
 - Places: 1
 - Survival contract: max_critical 220, elevated_idle 28, families [Eat, Drink, Sleep, Relieve, Wash]
 
@@ -1011,17 +1011,19 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Need-driven exploration
 - Activation-decay perception
 - Place concealment
+- Ask-about-person
+- Consult-record
 - Merchant selling
 - Trade negotiation
 - Substitute preferences
 - Theft
+- Violation investigation
+- Search
 - Stock / transport
 
 **Present-but-inactive features**
 - Travel physiology
 - Tell / peer info transfer
-- Ask-about-person
-- Consult-record
 - Production (facility-backed craft)
 - Bounty posting
 - Notice posting
@@ -1039,12 +1041,10 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Facility-queue contention
 - Offices / succession / force-claim
 - Justice / accusation
-- Violation investigation
 - Patrol
 - Pursuit
 - Combat
 - Bandit camps
-- Search
 
 **World features**
 - commodity_decay: disabled

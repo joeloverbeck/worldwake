@@ -19,6 +19,8 @@ Common work includes:
 
 When a scenario landing exposes a production contradiction in candidate generation, ranking, action commit, handoff state, or another lower layer, add the narrowest focused test at that layer before relying on the 1440-tick roadmap golden as proof. The long golden should prove row integration, not be the only regression surface for a localized production contract.
 
+When a proof attempt falsifies the planned information path or invocation surface, pause before changing the meaning of the retained proof. State the single contradiction, three viable options, and one recommendation under the repo's 1-3-1 rule, then wait for confirmation. Examples include remote testimony that only works as same-place testimony, a non-colocated witness branch that only works when colocated, or an externally requested action that only proves an auxiliary helper path.
+
 Run the narrowest truthful verification first, then expand.
 
 Discover exact test selectors before writing final proof commands when you are
