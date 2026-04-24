@@ -2804,12 +2804,9 @@ fn emit_need_driven_candidates(
         .into_iter()
         .filter(|commodity| matches_need(*commodity))
     {
-        // Emit ConsumeOwnedCommodity for any possessed consumable —
-        // including merchant sale stock.  The ranking system handles the
-        // survival-vs-enterprise tradeoff through GoalPriorityClass:
-        // ConsumeOwnedCommodity escalates with hunger pressure while
-        // SellCommodity stays at Medium, so the merchant only eats sale
-        // stock when survival urgency exceeds enterprise value.
+        // Emit ConsumeOwnedCommodity only for directly possessed consumables.
+        // Owned-but-unpossessed stock still requires an explicit retrieval
+        // path before it can satisfy self-care.
         if let Some(evidence) =
             local_owned_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
         {
@@ -5635,9 +5632,7 @@ fn local_owned_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
             continue;
         }
-        let directly_possessed = view.direct_possessor(entity) == Some(agent);
-        let locally_owned = view.believed_owner_of(entity) == Some(agent);
-        if !directly_possessed && !locally_owned {
+        if view.direct_possessor(entity) != Some(agent) {
             continue;
         }
         evidence.entities.insert(entity);
@@ -7859,7 +7854,7 @@ mod tests {
     }
 
     #[test]
-    fn merchant_emits_consume_owned_for_sale_commodity() {
+    fn merchant_emits_consume_owned_for_directly_possessed_sale_commodity() {
         let agent = entity(1);
         let place = entity(10);
         let apple = entity(20);
@@ -7900,15 +7895,68 @@ mod tests {
             Tick(5),
         );
 
-        // Sale stock IS eligible for ConsumeOwnedCommodity — the ranking
-        // system handles the survival-vs-enterprise tradeoff via priority
-        // class, not candidate suppression.
         assert!(contains_goal(
             &candidates,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Apple,
             }
         ));
+    }
+
+    #[test]
+    fn displayed_owned_stock_does_not_emit_consume_owned_candidate() {
+        let agent = entity(1);
+        let place = entity(10);
+        let apple = entity(20);
+        let display = entity(21);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(apple, EntityKind::ItemLot);
+        view.entity_kinds.insert(display, EntityKind::Container);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(apple, place);
+        view.effective_places.insert(display, place);
+        view.entities_at.insert(place, vec![agent, apple, display]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(apple, CommodityKind::Apple);
+        view.consumable_profiles.insert(
+            apple,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, apple));
+        view.controlled_entities.insert(agent);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Apple), Quantity(1));
+        view.believed_owners.insert(apple, agent);
+        view.direct_containers.insert(apple, display);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: std::iter::once(CommodityKind::Apple).collect(),
+                home_facility: Some(place),
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(
+            !contains_goal(
+                &candidates,
+                GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Apple,
+                }
+            ),
+            "owned stock that is staged in a container should not count as immediately consumable"
+        );
     }
 
     #[test]
