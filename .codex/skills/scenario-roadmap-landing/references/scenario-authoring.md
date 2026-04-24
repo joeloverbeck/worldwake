@@ -19,7 +19,7 @@ When the row is not already satisfied, create or revise the scenario in `scenari
 - Explicitly isolate rival lawful branches only when they would obscure the owned contract.
 - If a competing branch is part of the architecture contract, keep it and prove the branching behavior instead.
 - For cumulative mechanics, name the concrete threshold/cadence/capacity math in the scenario-owning ticket or notes before trusting the setup.
-- For trade rows, validate the authored economy math early: merchant stock volume, buyer purchasing power, self-care supply, and carry-capacity/load limits. Do this before spending repeated long reruns on golden debugging.
+- Validate authored load and capacity math early whenever the row authors starting inventory, camp supplies, containers, merchant stock, or other carried/contained resources. This includes trade rows, but is not limited to them: check merchant stock volume, buyer purchasing power, self-care supply, camp supply containers, and actor carry-capacity/load limits before spending repeated long reruns on golden debugging.
 
 ## Special cases
 
@@ -27,4 +27,6 @@ For social or belief-transport rows, verify the information path explicitly. A s
 
 When a survival contract legitimately needs an uneven bound across need families, encode that as scenario-authored per-need overrides instead of inventing a stronger global cap and then forcing the codebase to satisfy it.
 
-Before deeper proof/debugging, do a scenario-lint preflight on the authored file or its owning golden once. The expected boundary is the canonical scenario loader/spawn path (`load_scenario_file` + `spawn_scenario`) without `--ignore-lints`; a narrow golden run that reaches scenario spawn is an acceptable preflight once the owning test exists. Treat scenario-spawn lint failures as part of the authoring loop, not as late proof surprises.
+Before deeper proof/debugging, do a scenario-lint preflight on the authored file or its owning golden once. The expected boundary is the canonical scenario loader/spawn path (`load_scenario_file` + `spawn_scenario`) without `--ignore-lints`; a narrow golden run that reaches scenario spawn is an acceptable preflight once the owning test exists. When adding new authoring substrate, prefer a focused spawn/schema unit test that exercises the new field directly. `scenario-coverage` currently scans all `scenarios/*.ron` and does not provide a single-file `--scenario` preflight, so do not rely on that flag unless the live binary adds it.
+
+Treat scenario-spawn lint failures as part of the authoring loop, not as late proof surprises. If a lint reports unreachable authored drive/profile behavior, either author a minimal reachable profile value that remains truthful to the row or remove the profile if it is not part of the scenario contract.

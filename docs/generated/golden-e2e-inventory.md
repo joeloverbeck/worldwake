@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 27
-- Files contributing `golden_*` tests: 27
-- Total `golden_*` tests: 132
+- Golden test files: 28
+- Files contributing `golden_*` tests: 28
+- Total `golden_*` tests: 134
 
 ## Per-File Inventory
 
@@ -27,6 +27,7 @@ Do not hand-edit it.
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_survival_ask_consult.rs` | 1 |
 | `golden_survival_baseline.rs` | 7 |
+| `golden_survival_combat.rs` | 2 |
 | `golden_survival_contested.rs` | 7 |
 | `golden_survival_drive_escalation.rs` | 3 |
 | `golden_survival_items_decay.rs` | 2 |
@@ -168,6 +169,11 @@ Do not hand-edit it.
 - `no_stuck_idle_windows_with_elevated_needs`
 - `survival_contract_guard_rejects_missing_authored_contract`
 - `survival_need_run_tracker_uses_authored_drive_thresholds`
+
+### `golden_survival_combat.rs`
+
+- `survival_combat_proves_combat_and_bandit_camp_abandonment`
+- `survival_combat_replay_is_deterministic`
 
 ### `golden_survival_contested.rs`
 

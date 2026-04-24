@@ -664,6 +664,7 @@ mod tests {
                 travel_ticks: 5,
                 bidirectional: true,
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             agents: vec![

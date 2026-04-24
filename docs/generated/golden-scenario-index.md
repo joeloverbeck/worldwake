@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 101
-- Contributing golden test files: 25
-- Associated tests: 128
+- Scenario blocks: 102
+- Contributing golden test files: 26
+- Associated tests: 130
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -960,6 +960,10 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
 
+### Scenario 347: survival-combat
+
+- Source: `golden_survival_combat.rs:237`
+
 ### Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 
 - Source: `golden_survival_contested.rs:382`
@@ -1067,7 +1071,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 177: Survival Justice Proves Accusation Substrate
 
-- Source: `golden_survival_justice.rs:505`
+- Source: `golden_survival_justice.rs:506`
 - Systems: AI, Needs, Trade, Perception, Offices, Investigation
 - GoalKinds: StealItem, InvestigateViolation, Accuse
 - ActionDomains: Social, Trade, Needs
@@ -1082,7 +1086,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 178: Survival Justice Proves Search And Report Found
 
-- Source: `golden_survival_justice.rs:615`
+- Source: `golden_survival_justice.rs:616`
 - Systems: AI, Needs, Search, Reports, Perception, Offices
 - GoalKinds: SearchForMissing, ReportFound
 - ActionDomains: Social, Needs
@@ -1112,7 +1116,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 346: survival-patrol
 
-- Source: `golden_survival_patrol.rs:271`
+- Source: `golden_survival_patrol.rs:270`
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 

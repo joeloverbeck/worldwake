@@ -237,6 +237,7 @@ mod tests {
                 visibility_profile: None,
             }],
             edges: vec![],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             agents: vec![AgentDef {
@@ -362,6 +363,7 @@ mod tests {
                 substitute_preferences: None,
                 known_recipes: None,
             }],
+            bandit_camps: Vec::new(),
             offices: vec![],
             notices: vec![],
             items: vec![],
