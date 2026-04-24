@@ -164,7 +164,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting | Landed | Institution-level goals and artifacts competing with needs |
 | 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place |
-| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | In Progress | Lawful office-holder substrate and survival-backed theft investigation are now authored; accusation and search/report remain blocked behind clean retained-case ownership |
+| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | In Progress | Lawful office-holder substrate plus a retained accusation seam are now authored; punishment and search/report remain blocked behind truthful retained-case ownership |
 | 14 | `survival-patrol` | Patrol + pursuit | Planned | Scheduled duties and interrupt-driven remote pursuit |
 | 15 | `survival-combat` | Combat + bandit camps | Planned | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Planned | Coordinated travel after the rest of the hostile world is live |
@@ -549,11 +549,11 @@ The row also lands place concealment honestly rather than by decorative authored
 - Search
 
 **Blocked**
-- A truthful punishment seam is still blocked because the accusation case now lands before any lawful punishment branch survives in the authored run
+- A truthful punishment seam is still blocked because, even after local crime-register accusations can emit punishment candidates without a redundant consult step, the authored run still reaches accusation after the thief has already consumed the stolen apples and still has no authored exile path
 - A truthful `search_place` -> `report_found` seam is still blocked because that branch does not yet become the retained scenario owner under the live ranking/setup math
 - Completed substrate ticket: [`archive/tickets/S13SURJUS-001.md`](../archive/tickets/S13SURJUS-001.md)
 - Active follow-ups:
-  - [`tickets/S13SURJUS-004.md`](../tickets/S13SURJUS-004.md) for punishment follow-through after the landed accusation seam
+  - [`tickets/S13SURJUS-005.md`](../tickets/S13SURJUS-005.md) for scenario punishment follow-through after the landed local-record admission fix
   - [`tickets/S13SURJUS-003.md`](../tickets/S13SURJUS-003.md) for search/report stale `ask_about_person` recovery
 
 The scenario is worth retaining because it now owns the row's lawful authority substrate and proves that accusation survives under the survival loop without helper-only setup. That is honest forward progress, but it is not row 13 landing yet. The roadmap therefore stays `In Progress` until punishment and search/report are each proven at their intended causal surfaces.

@@ -35,7 +35,7 @@ use worldwake_core::{
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
     OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
     ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
-    Quantity, RecordData, RecordKind, RewardSource, RightKind, SocialObservation,
+    Quantity, RecordData, RecordEntryId, RecordKind, RewardSource, RightKind, SocialObservation,
     SocialObservationDetail, TellTopic, TheftFacts, Tick, TradeCategory, UtilityProfile,
     ViolationId, ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
     current_institutional_belief_topics, load_per_unit,
@@ -1174,6 +1174,8 @@ fn emit_punishment_candidates(
     current_crime_case_claims: &[BelievedInstitutionalClaim],
     fine_severity_permille: u16,
 ) {
+    let mut emitted_cases = BTreeSet::new();
+
     for belief in current_crime_case_claims {
         let (
             InstitutionalClaim::Accusation {
@@ -1188,58 +1190,114 @@ fn emit_punishment_candidates(
             continue;
         };
 
-        if !ctx.view.is_alive(accused) {
+        if !emitted_cases.insert((record, entry_id)) {
             continue;
         }
 
-        let Some(record_data) = ctx.view.record_data(record) else {
-            continue;
-        };
-        if record_data.record_kind != RecordKind::CrimeRegister {
-            continue;
-        }
-        let office = record_data.issuer;
-        let Some(office_data) = ctx.view.office_data(office) else {
-            continue;
-        };
-        if !matches!(
-            ctx.view.believed_office_holder(office),
-            InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
-        ) {
-            continue;
-        }
-        if !ctx
-            .view
-            .believed_rights(ctx.agent, accused)
-            .iter()
-            .any(|right| {
-                right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office)
-            })
-        {
-            continue;
-        }
-
-        let Some((punishment, legality_trace)) = candidate_punishment_for_case(
-            ctx.view,
-            ctx.agent,
-            &PunishmentCaseContext {
-                accused,
-                office,
-                office_data: &office_data,
-                accusation_entry: entry_id,
-                theft,
-            },
+        emit_punishment_candidate_for_case(
+            candidates,
+            diagnostics,
+            ctx,
+            record,
+            entry_id,
+            accused,
+            theft,
             fine_severity_permille,
-        ) else {
-            continue;
-        };
+            Some(belief),
+        );
+    }
 
-        let mut evidence = Evidence::with_entity(accused);
-        evidence.entities.insert(office);
-        evidence.entities.insert(record);
-        evidence.places.insert(office_data.seat);
-        let mut trace = EvidenceTrace::default();
-        if ctx.tracing_enabled {
+    let Some(agent_place) = ctx.view.effective_place(ctx.agent) else {
+        return;
+    };
+    for (record, record_data) in known_authority_crime_registers(ctx) {
+        if record_data.home_place != agent_place {
+            continue;
+        }
+        for entry in record_data.active_entries() {
+            let InstitutionalClaim::Accusation { accused, theft, .. } = entry.claim else {
+                continue;
+            };
+            if !emitted_cases.insert((record, entry.entry_id)) {
+                continue;
+            }
+            emit_punishment_candidate_for_case(
+                candidates,
+                diagnostics,
+                ctx,
+                record,
+                entry.entry_id,
+                accused,
+                theft,
+                fine_severity_permille,
+                None,
+            );
+        }
+    }
+}
+
+fn emit_punishment_candidate_for_case(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+    record: EntityId,
+    accusation_entry: RecordEntryId,
+    accused: EntityId,
+    theft: TheftFacts,
+    fine_severity_permille: u16,
+    institutional_belief: Option<&BelievedInstitutionalClaim>,
+) {
+    if !ctx.view.is_alive(accused) {
+        return;
+    }
+
+    let Some(record_data) = ctx.view.record_data(record) else {
+        return;
+    };
+    if record_data.record_kind != RecordKind::CrimeRegister {
+        return;
+    }
+    let office = record_data.issuer;
+    let Some(office_data) = ctx.view.office_data(office) else {
+        return;
+    };
+    if !matches!(
+        ctx.view.believed_office_holder(office),
+        InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+    ) {
+        return;
+    }
+    if !ctx
+        .view
+        .believed_rights(ctx.agent, accused)
+        .iter()
+        .any(|right| right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office))
+    {
+        return;
+    }
+
+    let Some((punishment, legality_trace)) = candidate_punishment_for_case(
+        ctx.view,
+        ctx.agent,
+        &PunishmentCaseContext {
+            accused,
+            office,
+            office_data: &office_data,
+            accusation_entry,
+            theft,
+        },
+        fine_severity_permille,
+    ) else {
+        return;
+    };
+
+    let mut evidence = Evidence::with_entity(accused);
+    evidence.entities.insert(office);
+    evidence.entities.insert(record);
+    evidence.places.insert(office_data.seat);
+    let mut trace = EvidenceTrace::default();
+    if ctx.tracing_enabled {
+        if let Some(belief) = institutional_belief {
             trace
                 .knowledge_path
                 .institutional_beliefs
@@ -1249,29 +1307,29 @@ fn emit_punishment_candidates(
                     learned_tick: belief.learned_tick,
                     learned_at: belief.learned_at,
                 });
-            if let Some(legality_trace) = legality_trace {
-                trace.legality = Some(CandidateLegalityTrace::PunishmentFineSelection(
-                    legality_trace,
-                ));
-            }
         }
-
-        emit_candidate_with_trace(
-            candidates,
-            diagnostics,
-            EmitterTag::Crime,
-            single_evidence(EvidenceKindTag::InstitutionalRecord),
-            GoalKind::PunishAccused {
-                office,
-                accused,
-                accusation_entry: entry_id,
-                punishment,
-            },
-            OpportunityAnchor::Entity(accused),
-            evidence,
-            trace,
-        );
+        if let Some(legality_trace) = legality_trace {
+            trace.legality = Some(CandidateLegalityTrace::PunishmentFineSelection(
+                legality_trace,
+            ));
+        }
     }
+
+    emit_candidate_with_trace(
+        candidates,
+        diagnostics,
+        EmitterTag::Crime,
+        single_evidence(EvidenceKindTag::InstitutionalRecord),
+        GoalKind::PunishAccused {
+            office,
+            accused,
+            accusation_entry,
+            punishment,
+        },
+        OpportunityAnchor::Entity(accused),
+        evidence,
+        trace,
+    );
 }
 
 struct PunishmentCaseContext<'a> {
@@ -11982,6 +12040,85 @@ mod tests {
                 learned_tick: Tick(4),
                 learned_at: Some(place),
             }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
+        view.locally_observed_commodity_quantities
+            .insert((agent, accused, CommodityKind::Coin), Quantity(10));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(contains_goal(
+            &result.candidates,
+            GoalKind::PunishAccused {
+                office,
+                accused,
+                accusation_entry,
+                punishment: worldwake_core::PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(4),
+                },
+            }
+        ));
+    }
+
+    #[test]
+    fn justice_candidates_emit_fine_punishment_from_local_active_accusation_record() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let place = entity(10);
+        let faction = entity(11);
+        let accusation_entry = RecordEntryId(27);
+        let violation_id = worldwake_core::ViolationId(15);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: place,
+            commodity: CommodityKind::Coin,
+            quantity: Quantity(8),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: agent,
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(accused, place);
+        view.justice_disposition_profiles
+            .insert(agent, default_justice_profile());
+        view.office_data
+            .insert(office, vacant_office("Magistrate", place, faction));
+        view.entity_kinds.insert(office, EntityKind::Office);
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, place, accusation_entry, claim),
+        );
+        view.entity_kinds.insert(record, EntityKind::Record);
+        view.beliefs.insert(
+            agent,
+            vec![known_entity(record, place), known_entity(office, place)],
         );
         view.believed_rights.insert(
             (agent, accused),
