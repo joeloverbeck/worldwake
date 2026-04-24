@@ -1278,12 +1278,7 @@ impl PoliticalBeliefView for PerAgentBeliefView<'_> {
         &self,
         office: EntityId,
     ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        match self.belief_store.believed_office_holder(office) {
-            InstitutionalBeliefRead::Unknown if self.has_authoritative_local_visibility(office) => {
-                InstitutionalBeliefRead::Certain(self.world.office_holder(office))
-            }
-            other => other,
-        }
+        self.belief_store.believed_office_holder(office)
     }
 
     fn believed_force_controller(
@@ -4185,10 +4180,10 @@ mod tests {
     }
 
     #[test]
-    fn believed_office_holder_falls_back_to_local_authoritative_office_relation() {
+    fn believed_office_holder_keeps_local_office_unknown_without_belief() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let place = world.topology().place_ids().next().unwrap();
-        let (agent, holder, office) = {
+        let (agent, _holder, office) = {
             let mut txn = new_txn(&mut world, 1);
             let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
             let holder = txn.create_agent("Bram", ControlSource::Ai).unwrap();
@@ -4206,7 +4201,7 @@ mod tests {
 
         assert_eq!(
             crate::PoliticalBeliefView::believed_office_holder(&view, office),
-            InstitutionalBeliefRead::Certain(Some(holder))
+            InstitutionalBeliefRead::Unknown
         );
     }
 

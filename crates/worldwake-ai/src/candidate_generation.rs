@@ -1198,12 +1198,14 @@ fn emit_punishment_candidates(
             candidates,
             diagnostics,
             ctx,
-            record,
-            entry_id,
-            accused,
-            theft,
-            fine_severity_permille,
-            Some(belief),
+            &PunishmentCandidateCase {
+                record,
+                accusation_entry: entry_id,
+                accused,
+                theft,
+                fine_severity_permille,
+                institutional_belief: Some(belief),
+            },
         );
     }
 
@@ -1225,33 +1227,39 @@ fn emit_punishment_candidates(
                 candidates,
                 diagnostics,
                 ctx,
-                record,
-                entry.entry_id,
-                accused,
-                theft,
-                fine_severity_permille,
-                None,
+                &PunishmentCandidateCase {
+                    record,
+                    accusation_entry: entry.entry_id,
+                    accused,
+                    theft,
+                    fine_severity_permille,
+                    institutional_belief: None,
+                },
             );
         }
     }
+}
+
+struct PunishmentCandidateCase<'a> {
+    record: EntityId,
+    accusation_entry: RecordEntryId,
+    accused: EntityId,
+    theft: TheftFacts,
+    fine_severity_permille: u16,
+    institutional_belief: Option<&'a BelievedInstitutionalClaim>,
 }
 
 fn emit_punishment_candidate_for_case(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
     ctx: &GenerationContext<'_>,
-    record: EntityId,
-    accusation_entry: RecordEntryId,
-    accused: EntityId,
-    theft: TheftFacts,
-    fine_severity_permille: u16,
-    institutional_belief: Option<&BelievedInstitutionalClaim>,
+    case: &PunishmentCandidateCase<'_>,
 ) {
-    if !ctx.view.is_alive(accused) {
+    if !ctx.view.is_alive(case.accused) {
         return;
     }
 
-    let Some(record_data) = ctx.view.record_data(record) else {
+    let Some(record_data) = ctx.view.record_data(case.record) else {
         return;
     };
     if record_data.record_kind != RecordKind::CrimeRegister {
@@ -1269,7 +1277,7 @@ fn emit_punishment_candidate_for_case(
     }
     if !ctx
         .view
-        .believed_rights(ctx.agent, accused)
+        .believed_rights(ctx.agent, case.accused)
         .iter()
         .any(|right| right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office))
     {
@@ -1280,24 +1288,24 @@ fn emit_punishment_candidate_for_case(
         ctx.view,
         ctx.agent,
         &PunishmentCaseContext {
-            accused,
+            accused: case.accused,
             office,
             office_data: &office_data,
-            accusation_entry,
-            theft,
+            accusation_entry: case.accusation_entry,
+            theft: case.theft,
         },
-        fine_severity_permille,
+        case.fine_severity_permille,
     ) else {
         return;
     };
 
-    let mut evidence = Evidence::with_entity(accused);
+    let mut evidence = Evidence::with_entity(case.accused);
     evidence.entities.insert(office);
-    evidence.entities.insert(record);
+    evidence.entities.insert(case.record);
     evidence.places.insert(office_data.seat);
     let mut trace = EvidenceTrace::default();
     if ctx.tracing_enabled {
-        if let Some(belief) = institutional_belief {
+        if let Some(belief) = case.institutional_belief {
             trace
                 .knowledge_path
                 .institutional_beliefs
@@ -1322,11 +1330,11 @@ fn emit_punishment_candidate_for_case(
         single_evidence(EvidenceKindTag::InstitutionalRecord),
         GoalKind::PunishAccused {
             office,
-            accused,
-            accusation_entry,
+            accused: case.accused,
+            accusation_entry: case.accusation_entry,
             punishment,
         },
-        OpportunityAnchor::Entity(accused),
+        OpportunityAnchor::Entity(case.accused),
         evidence,
         trace,
     );

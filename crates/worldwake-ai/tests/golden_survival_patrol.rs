@@ -192,11 +192,10 @@ fn run_survival_patrol() -> SurvivalPatrolObservation {
                         };
                         if pursuit.omission.is_none()
                             && pursuit.believed_place == Some(old_mill)
-                            && pursuit.route_cost.is_some()
+                            && let Some(route_cost) = pursuit.route_cost
                         {
                             first_remote_pursuit_candidate_tick.get_or_insert(tick);
-                            remote_pursuit_route_cost
-                                .get_or_insert(pursuit.route_cost.expect("checked route cost"));
+                            remote_pursuit_route_cost.get_or_insert(route_cost);
                         }
                     }
                     if planning.selection.selected_goal_is(goal) {
