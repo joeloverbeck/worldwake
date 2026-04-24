@@ -7882,6 +7882,109 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
         }),
         "StealItem should surface a steal candidate for the exact bound target"
     );
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &budget,
+        &recipes,
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    );
+    assert!(
+        matches!(plan, PlanSearchResult::Found(_)),
+        "StealItem should produce a concrete plan once search candidates exist, got {plan:?}"
+    );
+}
+
+#[test]
+fn steal_goal_plans_for_contained_displayed_sale_lot_without_owner_belief() {
+    let actor = entity(1);
+    let seller = entity(2);
+    let target_item = entity(3);
+    let display_container = entity(4);
+    let town = entity(10);
+
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, seller, town]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(seller, EntityKind::Agent);
+    view.kinds.insert(target_item, EntityKind::ItemLot);
+    view.kinds.insert(display_container, EntityKind::Container);
+    view.kinds.insert(town, EntityKind::Place);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(seller, town);
+    view.effective_places.insert(target_item, town);
+    view.effective_places.insert(display_container, town);
+    view.entities_at
+        .insert(town, vec![actor, seller, target_item, display_container]);
+    view.direct_containers
+        .insert(target_item, display_container);
+    view.lot_sellers.insert(target_item, seller);
+    view.listed_lots
+        .insert((town, CommodityKind::Bread), vec![target_item]);
+    view.controllable.insert((actor, actor));
+    view.lot_commodities
+        .insert(target_item, CommodityKind::Bread);
+    view.commodity_quantities
+        .insert((target_item, CommodityKind::Bread), Quantity(1));
+    view.carry_capacities.insert(actor, LoadUnits(10));
+    view.entity_loads.insert(actor, LoadUnits(0));
+    view.entity_loads.insert(target_item, LoadUnits(1));
+    view.theft_profiles.insert(
+        actor,
+        TheftDispositionProfile {
+            steal_duration_ticks: NonZeroU32::new(2).unwrap(),
+            theft_motive_weight: pm(500),
+            witness_risk_penalty: pm(100),
+        },
+    );
+
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::from([target_item]),
+        &BTreeSet::from([town]),
+        1,
+    );
+    let (registry, handlers) = build_registry();
+    let semantics = build_semantics_table(&registry);
+    let recipes = RecipeRegistry::new();
+    let budget = ProfileFixture::default();
+    let goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::None,
+        key: GoalKey::from(GoalKind::StealItem { target_item }),
+        evidence_entities: BTreeSet::from([target_item]),
+        evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+    };
+
+    let plan = search_plan(
+        &snapshot,
+        &goal,
+        &semantics,
+        &registry,
+        &handlers,
+        &budget,
+        &recipes,
+        &BlockerMemory::default(),
+        Tick(0),
+        None,
+        None,
+    );
+    assert!(
+        matches!(plan, PlanSearchResult::Found(_)),
+        "seller-backed displayed lots should remain steal-plannable even when the lot is container-backed, got {plan:?}"
+    );
 }
 
 #[test]

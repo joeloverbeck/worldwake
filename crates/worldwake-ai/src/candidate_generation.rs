@@ -2804,12 +2804,9 @@ fn emit_need_driven_candidates(
         .into_iter()
         .filter(|commodity| matches_need(*commodity))
     {
-        // Emit ConsumeOwnedCommodity for any possessed consumable —
-        // including merchant sale stock.  The ranking system handles the
-        // survival-vs-enterprise tradeoff through GoalPriorityClass:
-        // ConsumeOwnedCommodity escalates with hunger pressure while
-        // SellCommodity stays at Medium, so the merchant only eats sale
-        // stock when survival urgency exceeds enterprise value.
+        // Emit ConsumeOwnedCommodity only for directly possessed consumables.
+        // Owned-but-unpossessed stock still requires an explicit retrieval
+        // path before it can satisfy self-care.
         if let Some(evidence) =
             local_owned_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity)
         {
@@ -3898,7 +3895,11 @@ fn emit_theft_candidates(
         if ctx.view.entity_kind(item) != Some(EntityKind::ItemLot) {
             continue;
         }
-        let Some(owner) = ctx.view.believed_owner_of(item) else {
+        let Some(owner) = ctx
+            .view
+            .believed_owner_of(item)
+            .or_else(|| ctx.view.seller_for_sale_lot(item))
+        else {
             continue;
         };
         if owner == ctx.agent || ctx.view.can_control(ctx.agent, item) {
@@ -5632,8 +5633,9 @@ fn local_owned_commodity_evidence(
             continue;
         }
         let directly_possessed = view.direct_possessor(entity) == Some(agent);
-        let locally_owned = view.believed_owner_of(entity) == Some(agent);
-        if !directly_possessed && !locally_owned {
+        let loose_local_owned = view.direct_container(entity).is_none()
+            && view.believed_owner_of(entity) == Some(agent);
+        if !directly_possessed && !loose_local_owned {
             continue;
         }
         evidence.entities.insert(entity);
@@ -7855,7 +7857,7 @@ mod tests {
     }
 
     #[test]
-    fn merchant_emits_consume_owned_for_sale_commodity() {
+    fn merchant_emits_consume_owned_for_directly_possessed_sale_commodity() {
         let agent = entity(1);
         let place = entity(10);
         let apple = entity(20);
@@ -7896,15 +7898,68 @@ mod tests {
             Tick(5),
         );
 
-        // Sale stock IS eligible for ConsumeOwnedCommodity — the ranking
-        // system handles the survival-vs-enterprise tradeoff via priority
-        // class, not candidate suppression.
         assert!(contains_goal(
             &candidates,
             GoalKind::ConsumeOwnedCommodity {
                 commodity: CommodityKind::Apple,
             }
         ));
+    }
+
+    #[test]
+    fn displayed_owned_stock_does_not_emit_consume_owned_candidate() {
+        let agent = entity(1);
+        let place = entity(10);
+        let apple = entity(20);
+        let display = entity(21);
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(apple, EntityKind::ItemLot);
+        view.entity_kinds.insert(display, EntityKind::Container);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(apple, place);
+        view.effective_places.insert(display, place);
+        view.entities_at.insert(place, vec![agent, apple, display]);
+        view.homeostatic_needs.insert(agent, hunger(250));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.lot_commodities.insert(apple, CommodityKind::Apple);
+        view.consumable_profiles.insert(
+            apple,
+            CommodityKind::Apple.spec().consumable_profile.unwrap(),
+        );
+        view.controllable.insert((agent, apple));
+        view.controlled_entities.insert(agent);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Apple), Quantity(1));
+        view.believed_owners.insert(apple, agent);
+        view.direct_containers.insert(apple, display);
+        view.merchandise_profiles.insert(
+            agent,
+            MerchandiseProfile {
+                sale_kinds: std::iter::once(CommodityKind::Apple).collect(),
+                home_facility: Some(place),
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(
+            !contains_goal(
+                &candidates,
+                GoalKind::ConsumeOwnedCommodity {
+                    commodity: CommodityKind::Apple,
+                }
+            ),
+            "owned stock that is staged in a container should not count as immediately consumable"
+        );
     }
 
     #[test]
@@ -11404,6 +11459,49 @@ mod tests {
                 }
             ),
             "agents without TheftDispositionProfile should not emit theft candidates"
+        );
+    }
+
+    #[test]
+    fn theft_candidate_uses_visible_sale_seller_without_explicit_owner_belief() {
+        let agent = entity(1);
+        let seller = entity(2);
+        let place = entity(10);
+        let item = entity(20);
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(seller, EntityKind::Agent);
+        view.entity_kinds.insert(item, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(seller, place);
+        view.effective_places.insert(item, place);
+        view.entities_at.insert(place, vec![agent, seller, item]);
+        view.entity_loads.insert(agent, LoadUnits(1));
+        view.carry_capacities.insert(agent, LoadUnits(5));
+        view.entity_loads.insert(item, LoadUnits(2));
+        view.theft_disposition_profiles.insert(
+            agent,
+            worldwake_core::TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(400),
+                witness_risk_penalty: pm(100),
+            },
+        );
+        view.lot_sellers.insert(item, seller);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(
+            contains_goal(&candidates, GoalKind::StealItem { target_item: item }),
+            "displayed sale lots with a visible seller should remain stealable without a separate explicit owner belief"
         );
     }
 

@@ -30,6 +30,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 - Scenario-backed proof must assert the mechanic's intended behavior, not just the presence of a goal or action name.
 - Treat externally requested actions, payload overrides, and other human-driven helper paths as auxiliary evidence unless the roadmap row explicitly owns that invocation model.
 - Scenario-backed roadmap goldens are CI-owned long-running suites. They must be wired through `.github/workflows/golden-<family>.yml`, marked `#[ignore]` for ordinary local/workspace lanes, and not treated as regular-lane coverage.
+- Do not update `.github/workflows/golden-<family>.yml` until the roadmap-owned golden has a truthful retained seam: either the row is actually landing, or a narrower in-repo partial seam is intentionally being kept as the canonical owner.
 - If the live architecture cannot yet support the truthful golden, create or update ticket(s) in `tickets/` instead of weakening the scenario, weakening the golden, or falsely marking the roadmap row landed.
 - Keep the roadmap and generated docs truthful in the same pass. Do not leave doc drift behind.
 
@@ -49,6 +50,7 @@ Depending on live feasibility, this workflow should end with one of these outcom
    - if the row owns multiple feature rows, classify each owned feature explicitly as `landed here`, `structurally active only`, or `blocked`; do not let one proven feature silently land the whole row
    - one or more new or updated tickets in `tickets/` for the architectural gap
    - `docs/scenario-roadmap.md` updated to reflect `Drafting` / `In Progress` / auxiliary status rather than a false landing
+   - if the attempted scenario/golden does not remain a truthful retained seam, remove the draft artifacts and leave only roadmap/ticket state
 3. **Reassessment only**
    - if the requested row is already landed or the row name is wrong, answer with the exact live status and correct path/name before changing code
 
@@ -56,10 +58,20 @@ Depending on live feasibility, this workflow should end with one of these outcom
 
 1. **Reassess roadmap row, mechanic contract, and live branch.** Load `references/reassessment.md`. Resolve the exact row in `docs/scenario-roadmap.md`, map the mechanic contract against the Gameplay Feature Catalog, inspect the live branch state, and explicitly subtract any overlapping seam already owned by earlier landed rows before authoring anything. Covers original Steps 0–2.
 2. **Author the scenario and run one preflight before deeper proof work.** Load `references/scenario-authoring.md`. Create or revise `scenarios/<roadmap-name>.ron` as a real 1440-tick survival-contract scenario that activates the intended mechanic through authored state, then run one scenario-lint/spawn preflight so authored-surface failures are caught before golden debugging.
-3. **Write the golden around the mechanic.** Load `references/golden-writing.md`. Prove both the survival-health contract and the scenario-specific mechanic contract at the earliest honest causal surface, reject auxiliary external-request paths as roadmap proof unless the row explicitly owns them, and wire the golden into the correct `.github/workflows/golden-<family>.yml` matrix.
-4. **Make the landing pass, or create ticket ownership for real blockers.** Load `references/implementation-or-tickets.md`. Implement required production / scenario / golden / CI changes; if a genuine architectural contradiction blocks the landing, own the gap via tickets in `tickets/` instead of weakening the contract. Covers original Steps 5–6.
+3. **Write the golden around the mechanic.** Load `references/golden-writing.md`. Prove both the survival-health contract and the scenario-specific mechanic contract at the earliest honest causal surface, reject auxiliary external-request paths as roadmap proof unless the row explicitly owns them, and treat workflow wiring as deferred until that proof seam is truthful enough to retain.
+4. **Make the landing pass, or create ticket ownership for real blockers.** Load `references/implementation-or-tickets.md`. Implement required production / scenario / golden changes; if a genuine architectural contradiction blocks the landing, own the gap via tickets in `tickets/` instead of weakening the contract. Name the exact live decision-pipeline boundary when the blocker is mixed AI behavior such as `GoalKind` admission, suppression, ranking, or selection. Only update `.github/workflows/golden-<family>.yml` once the retained roadmap-owned seam is truthful. Covers original Steps 5–6.
 5. **Refresh generated docs and roadmap truth in the same pass.** Load `references/refresh-and-roadmap.md`. Allocate a unique `Scenario <N>:` header before running the generated-doc refresh, then regenerate companion docs, run schema fallout sweeps, classify the outcome, update CI ownership, and handle rename/promotion fallout.
 6. **Close out.** Load `references/closeout.md`. Run the closeout checklist and produce the report in the required format.
+
+### Blocked-Row Closeout Checklist
+
+When the requested row is blocked rather than landed:
+
+1. remove any drafted scenario/golden artifacts that do not remain a truthful retained seam
+2. revert premature `.github/workflows/golden-<family>.yml` wiring
+3. create or update blocker ticket(s) in `tickets/` with the exact live contradiction
+4. downgrade `docs/scenario-roadmap.md` to the truthful non-landed status
+5. leave generated docs untouched unless a retained truthful seam still owns them
 
 ## Guardrails
 
@@ -69,9 +81,11 @@ Depending on live feasibility, this workflow should end with one of these outcom
 - Do not let a later roadmap row silently re-prove a seam already landed by an earlier row; narrow the owned seam first.
 - Do not count externally requested or payload-override proof paths as roadmap-row proof unless the row explicitly owns human-driven invocation.
 - Do not leave a new roadmap scenario golden only as a regular test target without the matching `.github/workflows` family wiring.
+- Do not add `.github/workflows` wiring for a drafted row that may still be deleted if the live proof collapses.
 - Do not hide a blocker by broadening tolerances, weakening assertions, or inventing helper-only setup.
 - Do not keep an overclaimed `survival_health_contract` or roadmap row just because it was the first draft; narrow the authored contract first when focused proof falsifies it.
 - Do not update `docs/scenario-roadmap.md` as if the row landed when the golden still fails.
+- Do not keep draft scenario/golden files in-repo when the attempted proof does not remain a truthful retained seam.
 - Do not leave generated docs stale after changing scenario or golden metadata.
 - Do not reuse an existing `Scenario <N>:` id and discover the collision only during generated-doc refresh.
 - Do not trust old scenario-roadmap prose over live generator rules and live code when they conflict; rewrite the roadmap first.

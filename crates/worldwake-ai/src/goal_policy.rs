@@ -233,9 +233,6 @@ mod tests {
             GoalKind::Patrol {
                 place: dummy_entity(),
             },
-            GoalKind::StealItem {
-                target_item: dummy_entity(),
-            },
             GoalKind::Accuse {
                 crime_register: dummy_entity(),
                 accused: dummy_entity(),
@@ -261,6 +258,19 @@ mod tests {
                 "Goal {kind:?} should be suppressed when stressed at or above High"
             );
         }
+    }
+
+    #[test]
+    fn suppression_never_for_steal_item() {
+        assert_eq!(
+            crate::GoalDispatchKey::from_goal_kind(&GoalKind::StealItem {
+                target_item: dummy_entity(),
+            })
+            .declaration()
+            .family_policy
+            .suppression,
+            SuppressionRule::Never,
+        );
     }
 
     #[test]

@@ -633,6 +633,9 @@ fn drive_goal_ranking_provenance(
         GoalKind::LootCorpse { corpse } => corpse_loot_assessment(*corpse, context)
             .and_then(|assessment| assessment.provenance)
             .map(RankedGoalProvenance::Drive),
+        GoalKind::StealItem { target_item } => steal_item_assessment(*target_item, context)
+            .and_then(|assessment| assessment.provenance)
+            .map(RankedGoalProvenance::Drive),
         GoalKind::Sleep => drive_goal_provenance(
             context,
             RankedDriveKind::Fatigue,
@@ -843,6 +846,10 @@ fn priority_class(candidate: &GoalOffer, context: &RankingContext<'_>) -> GoalPr
             .map_or(GoalPriorityClass::Low, |assessment| {
                 assessment.priority_class
             }),
+        GoalKind::StealItem { target_item } => steal_item_assessment(target_item, context)
+            .map_or(GoalPriorityClass::Low, |assessment| {
+                assessment.priority_class
+            }),
         GoalKind::ExploreLocation {
             motivating_need: ExplorationMotivation::NeedDriven(need_id),
             ..
@@ -865,7 +872,6 @@ fn priority_class(candidate: &GoalOffer, context: &RankingContext<'_>) -> GoalPr
             motivating_need: ExplorationMotivation::Proactive,
             ..
         }
-        | GoalKind::StealItem { .. }
         | GoalKind::Accuse { .. }
         | GoalKind::PunishAccused { .. } => GoalPriorityClass::Low,
     }
@@ -1088,7 +1094,11 @@ fn motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
         GoalKind::ExploreLocation {
             motivating_need, ..
         } => exploration_motive(context, motivating_need),
-        GoalKind::StealItem { .. } => theft_motive(context),
+        GoalKind::StealItem { target_item } => steal_item_assessment(target_item, context)
+            .map_or_else(
+                || theft_motive(context),
+                |assessment| assessment.motive_score.max(1),
+            ),
         GoalKind::Accuse { .. } | GoalKind::PunishAccused { .. } => justice_motive(context),
         GoalKind::InvestigateViolation { .. } => investigation_motive(candidate, context),
         GoalKind::SupportCandidateForOffice { candidate, .. } => context
@@ -1929,6 +1939,13 @@ struct CorpseLootAssessment {
     provenance: Option<RankedDriveGoalProvenance>,
 }
 
+#[derive(Clone, Debug)]
+struct StealItemAssessment {
+    priority_class: GoalPriorityClass,
+    motive_score: u32,
+    provenance: Option<RankedDriveGoalProvenance>,
+}
+
 fn best_recipe_output_assessment(
     recipe_id: worldwake_core::RecipeId,
     context: &RankingContext<'_>,
@@ -2007,6 +2024,60 @@ fn corpse_loot_assessment(
                 .cmp(&right.priority_class)
                 .then_with(|| left.motive_score.cmp(&right.motive_score))
         })
+}
+
+fn theft_motive_scale(context: &RankingContext<'_>) -> Permille {
+    assess_theft_deterrence(context.view, context.agent).map_or(Permille::ZERO, |assessment| {
+        Permille::new(assessment.effective_motive.min(1000) as u16)
+            .unwrap_or(Permille::new_unchecked(1000))
+    })
+}
+
+fn scale_drive_provenance_motive(
+    mut provenance: RankedDriveGoalProvenance,
+    scale: Permille,
+) -> RankedDriveGoalProvenance {
+    for input in &mut provenance.motive_inputs {
+        input.score = scale_motive_by_confidence(input.score, scale);
+    }
+    provenance
+}
+
+fn steal_item_assessment(
+    target_item: EntityId,
+    context: &RankingContext<'_>,
+) -> Option<StealItemAssessment> {
+    let commodity = context.view.item_lot_commodity(target_item)?;
+    let quantity = context.view.commodity_quantity(target_item, commodity);
+    if quantity == Quantity(0) {
+        return None;
+    }
+
+    let mut simulated_holdings = context.holdings.clone();
+    *simulated_holdings.entry(commodity).or_insert(0) += quantity.0;
+    let breakdown = commodity_opportunity_score(
+        context.agent,
+        commodity,
+        context.view,
+        &simulated_holdings,
+        &context.local_alternatives,
+    );
+    let direct_survival = breakdown.direct_survival_score > 0;
+    let treatment = breakdown.treatment_score > 0;
+    if !(direct_survival || treatment) {
+        return None;
+    }
+    let motive_scale = theft_motive_scale(context);
+
+    Some(StealItemAssessment {
+        priority_class: commodity_shared_priority(commodity, breakdown, context),
+        motive_score: scale_motive_by_confidence(
+            commodity_shared_motive_score(commodity, breakdown, context),
+            motive_scale,
+        ),
+        provenance: commodity_shared_provenance(commodity, breakdown, context)
+            .map(|provenance| scale_drive_provenance_motive(provenance, motive_scale)),
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3493,6 +3564,65 @@ mod tests {
     }
 
     #[test]
+    fn survival_relevant_theft_uses_target_commodity_drive_priority_and_motive() {
+        let agent = entity(1);
+        let item = entity(2);
+        let place = entity(99);
+        let mut view = base_view(agent);
+        view.theft_profiles.insert(
+            agent,
+            TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(700),
+                witness_risk_penalty: pm(150),
+            },
+        );
+        view.entity_kinds.insert(item, EntityKind::ItemLot);
+        view.item_lot_commodities.insert(item, CommodityKind::Apple);
+        view.commodity_quantities
+            .insert((item, CommodityKind::Apple), Quantity(2));
+        view.place_entities.insert(place, vec![agent, item]);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
+        );
+
+        let ranked = rank(
+            &[goal(GoalKind::StealItem { target_item: item })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        assert_eq!(ranked[0].motive_score, 567_000);
+        match ranked[0]
+            .provenance
+            .as_ref()
+            .expect("steal should carry drive provenance when the target relieves hunger")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(provenance.base_priority_class, GoalPriorityClass::Critical);
+                assert_eq!(provenance.final_priority_class, GoalPriorityClass::Critical);
+                assert!(!provenance.motive_inputs.is_empty());
+                assert!(
+                    provenance
+                        .motive_inputs
+                        .iter()
+                        .any(|input| input.drive == RankedDriveKind::Hunger
+                            && input.score == 567_000)
+                );
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("steal should not use danger provenance")
+            }
+        }
+    }
+
+    #[test]
     fn post_bounty_goal_has_non_zero_motive_for_live_accusation_case() {
         let agent = entity(1);
         let accused = entity(2);
@@ -4411,6 +4541,45 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn survival_relevant_theft_is_not_suppressed_by_self_care_stress() {
+        let agent = entity(1);
+        let place = entity(10);
+        let item = entity(20);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(900), pm(100), pm(100), pm(100), pm(100)),
+        );
+        view.theft_profiles.insert(
+            agent,
+            TheftDispositionProfile {
+                steal_duration_ticks: NonZeroU32::new(3).unwrap(),
+                theft_motive_weight: pm(700),
+                witness_risk_penalty: pm(0),
+            },
+        );
+        view.entity_kinds.insert(item, EntityKind::ItemLot);
+        view.item_lot_commodities.insert(item, CommodityKind::Apple);
+        view.commodity_quantities
+            .insert((item, CommodityKind::Apple), Quantity(2));
+        view.place_entities.insert(place, vec![agent, item]);
+
+        let outcome = rank(
+            &[goal(GoalKind::StealItem { target_item: item })],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+
+        assert!(outcome.suppressed.is_empty());
+        let ranked = outcome.into_ranked();
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Critical);
+        assert!(ranked[0].motive_score > 0);
     }
 
     #[test]
