@@ -95,7 +95,8 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-items-decay.ron` | Item decay, Disposal |
 | Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting |
 | Landed in `survival-theft.ron` | Place concealment, Theft |
-| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search |
+| In progress in `survival-justice.ron` | Violation investigation |
+| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Justice / accusation, Patrol, Pursuit, Combat, Escort, Search |
 | Authored but still gated inactive | Report / witness |
 | Planned with no current scenario activation | Bandit camps |
 
@@ -163,7 +164,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting | Landed | Institution-level goals and artifacts competing with needs |
 | 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place |
-| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Planned | Witness chains and evidence-driven social reaction |
+| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | In Progress | Lawful office-holder substrate and survival-backed theft investigation are now authored; accusation and search/report remain blocked behind clean retained-case ownership |
 | 14 | `survival-patrol` | Patrol + pursuit | Planned | Scheduled duties and interrupt-driven remote pursuit |
 | 15 | `survival-combat` | Combat + bandit camps | Planned | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Planned | Coordinated travel after the rest of the hostile world is live |
@@ -532,7 +533,29 @@ The row also lands place concealment honestly rather than by decorative authored
 - Obligation satiation, facility contention, offices, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
 - Report / witness remains gated inactive in the authored scenario
 
-### 5.12 Auxiliary and Non-Roadmap Scenarios
+### 5.12 In Progress #13: `survival-justice`
+
+**Status**: In Progress  
+**Source scenario**: [`scenarios/survival-justice.ron`](../scenarios/survival-justice.ron)  
+**Backing goldens**: [`golden_survival_justice.rs`](../crates/worldwake-ai/tests/golden_survival_justice.rs)
+
+**Scenario-owned progress**
+- Lawful office-holder substrate for the justice row now authors directly in the scenario through an initial office holder plus a colocated crime register
+- The retained golden proves a real `steal` commit and a real `investigate` commit inside the same 1440-tick survival envelope
+
+**Structurally active only**
+- Justice / accusation
+- Report / witness
+- Search
+
+**Blocked**
+- A truthful accusation/punishment seam is still blocked because the merchant's live survival run accumulates broad local `EntityMissing` churn instead of one retained accusation-ready theft case
+- A truthful `search_place` -> `report_found` seam is still blocked because that branch does not yet become the retained scenario owner under the live ranking/setup math
+- Owning ticket: [`tickets/S13SURJUS-001.md`](../tickets/S13SURJUS-001.md)
+
+The scenario is worth retaining because it now owns the row's lawful authority substrate and proves that investigation survives under the survival loop without helper-only setup. That is honest forward progress, but it is not row 13 landing yet. The roadmap therefore stays `In Progress` until accusation/punishment and search/report are each proven at their intended causal surfaces.
+
+### 5.13 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 

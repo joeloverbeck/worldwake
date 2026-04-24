@@ -617,6 +617,17 @@ fn spawn_office(
             .map(EligibilityRule::FactionMember),
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let initial_holder = office_def
+        .initial_holder
+        .as_ref()
+        .map(|name| {
+            resolve_name(
+                names,
+                name,
+                &format!("office '{}' initial holder", office_def.name),
+            )
+        })
+        .transpose()?;
 
     let office = txn.create_office(&office_def.name)?;
     txn.set_ground_location(office, seat)?;
@@ -629,7 +640,7 @@ fn spawn_office(
             succession_law: office_def.succession_law.clone(),
             eligibility_rules,
             succession_period_ticks: office_def.succession_period_ticks,
-            vacancy_since: Some(Tick(0)),
+            vacancy_since: initial_holder.is_none().then_some(Tick(0)),
         },
     )?;
     if matches!(
@@ -681,6 +692,23 @@ fn spawn_office(
             facility_locations.insert(record, seat);
         }
     }
+    let crime_register_exists = txn.query_record_data().any(|(_, record)| {
+        record.record_kind == RecordKind::CrimeRegister
+            && record.home_place == seat
+            && record.issuer == office
+    });
+    if !crime_register_exists {
+        let crime_register = txn.create_record(RecordData {
+            record_kind: RecordKind::CrimeRegister,
+            home_place: seat,
+            issuer: office,
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })?;
+        facility_locations.insert(crime_register, seat);
+    }
 
     let office_register = txn
         .query_record_data()
@@ -702,6 +730,9 @@ fn spawn_office(
             effective_tick: Tick(0),
         },
     )?;
+    if let Some(initial_holder) = initial_holder {
+        txn.assign_office(office, initial_holder)?;
+    }
 
     facility_locations.insert(office, seat);
     names.insert(office_def.name.clone(), office);
@@ -1039,6 +1070,7 @@ mod tests {
     use crate::scenario::types::*;
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
+    use worldwake_core::SuccessionLaw;
     use worldwake_core::topology::PlaceTag;
     use worldwake_core::{
         AgendaProfile, ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity,
@@ -2911,5 +2943,60 @@ mod tests {
             error.to_string(),
             "validation error: agent 'Guard' patrol route references nonexistent entity 'Nowhere'"
         );
+    }
+
+    #[test]
+    fn test_spawn_office_creates_local_crime_register_for_office_issuer() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Square".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![minimal_agent("Holder", "Square", ControlSource::Ai)],
+            offices: vec![OfficeDef {
+                name: "Marshal".into(),
+                seat: "Square".into(),
+                succession_law: SuccessionLaw::Force,
+                succession_period_ticks: 2,
+                initial_holder: Some("Holder".into()),
+                eligibility_rules: vec![],
+            }],
+            notices: vec![],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+        };
+
+        let spawned = spawn_scenario(&def).expect("office scenario should spawn");
+        let world = spawned.state.world();
+        let office = world
+            .query_name()
+            .find_map(|(entity, name)| (name.0 == "Marshal").then_some(entity))
+            .expect("spawned office should exist");
+        let seat = world
+            .get_component_office_data(office)
+            .expect("spawned office should have OfficeData")
+            .seat;
+        let holder = world
+            .query_name()
+            .find_map(|(entity, name)| (name.0 == "Holder").then_some(entity))
+            .expect("spawned holder should exist");
+        let crime_register = world
+            .query_record_data()
+            .find_map(|(entity, data)| {
+                (data.record_kind == RecordKind::CrimeRegister).then_some((entity, data))
+            })
+            .expect("office should spawn a colocated crime register");
+
+        assert_eq!(crime_register.1.home_place, seat);
+        assert_eq!(crime_register.1.issuer, office);
+        assert_eq!(world.office_holder(office), Some(holder));
     }
 }
