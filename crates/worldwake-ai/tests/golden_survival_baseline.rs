@@ -482,6 +482,8 @@ fn survival_contract_guard_rejects_missing_authored_contract() {
         items: vec![],
         facilities: vec![],
         resource_sources: vec![],
+        hostilities: vec![],
+
         commodity_decay: None,
         survival_health_contract: None,
         compaction_interval: 0,

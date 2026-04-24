@@ -15,13 +15,14 @@ use worldwake_core::{
     DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
     ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastProactiveExplorationTick, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, Permille, PlaceTag,
-    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
-    ResourceSource, RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
-    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
-    World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
+    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
+    OfficeData, PerceptionSource, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
+    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille,
+    is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -296,6 +297,10 @@ impl<'w> PerAgentBeliefView<'w> {
                 .any(|belief| {
                     worldwake_core::institutional_claim_subject_entity(belief.claim) == entity
                 })
+            || self
+                .world
+                .get_component_last_seen_memory(self.agent)
+                .is_some_and(|memory| memory.records.contains_key(&entity))
     }
 
     fn shares_local_context(&self, agent: EntityId, other: EntityId) -> bool {
@@ -880,11 +885,41 @@ impl SocialBeliefView for PerAgentBeliefView<'_> {
             return Vec::new();
         }
 
-        self.belief_store
+        let mut beliefs = self
+            .belief_store
             .known_entities
             .iter()
             .map(|(entity, state)| (*entity, state.clone()))
-            .collect()
+            .collect::<Vec<_>>();
+
+        if let Some(memory) = self.world.get_component_last_seen_memory(agent) {
+            for (entity, record) in &memory.records {
+                if beliefs.iter().any(|(known, _)| known == entity) {
+                    continue;
+                }
+                let source = match record.provenance {
+                    LastSeenProvenance::DirectObservation => PerceptionSource::DirectObservation,
+                    LastSeenProvenance::Hearsay { chain_depth, .. } => PerceptionSource::Report {
+                        from: record.source,
+                        chain_len: chain_depth,
+                    },
+                };
+                beliefs.push((
+                    *entity,
+                    BelievedEntityState {
+                        believed_kind: self.world.entity_kind(*entity),
+                        last_known_place: Some(record.place),
+                        alive: true,
+                        ..BelievedEntityState::single_observation_defaults(
+                            record.observed_tick,
+                            source,
+                        )
+                    },
+                ));
+            }
+        }
+
+        beliefs
     }
 
     fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
@@ -1547,10 +1582,13 @@ impl CombatBeliefView for PerAgentBeliefView<'_> {
             .hostile_targets_of(agent)
             .into_iter()
             .filter(|entity| self.entity_kind(*entity) == Some(EntityKind::Agent))
-            .filter(|entity| self.shares_local_context(agent, *entity))
             .filter(|entity| {
                 self.believed_entity(*entity)
                     .is_some_and(|belief| belief.alive)
+                    || self
+                        .world
+                        .get_component_last_seen_memory(agent)
+                        .is_some_and(|memory| memory.records.contains_key(entity))
             })
             .collect()
     }
@@ -3847,6 +3885,38 @@ mod tests {
         assert!(
             CombatBeliefView::hostile_targets_of(&view, agent).is_empty(),
             "dead believed hostiles should not remain actionable hostile targets"
+        );
+    }
+
+    #[test]
+    fn remote_believed_hostiles_are_actionable_but_not_locally_visible() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let place = places[0];
+        let remote = places[1];
+        let (agent, attacker) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let attacker = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_ground_location(attacker, remote).unwrap();
+            txn.add_hostility(agent, attacker).unwrap();
+            commit_txn(txn);
+            (agent, attacker)
+        };
+
+        let mut beliefs = AgentBeliefStore::new();
+        beliefs.update_entity(attacker, entity_belief(remote, true, 0, 1));
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            CombatBeliefView::hostile_targets_of(&view, agent),
+            vec![attacker],
+            "remote pursuit needs known hostile targets to remain actionable"
+        );
+        assert!(
+            CombatBeliefView::visible_hostiles_for(&view, agent).is_empty(),
+            "remote hostile targets should not project same-place visible danger"
         );
     }
 

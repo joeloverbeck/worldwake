@@ -770,6 +770,8 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
+
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,

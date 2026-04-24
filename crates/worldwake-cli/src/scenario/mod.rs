@@ -412,6 +412,12 @@ fn spawn_entities(
         )?;
     }
 
+    for hostility_def in &def.hostilities {
+        let subject = resolve_name(names, &hostility_def.subject, "hostility subject")?;
+        let target = resolve_name(names, &hostility_def.target, "hostility target")?;
+        txn.add_hostility(subject, target)?;
+    }
+
     txn.commit(event_log);
     Ok(())
 }
@@ -1146,6 +1152,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1177,6 +1184,31 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_scenario_applies_authored_hostility() {
+        let mut def = minimal_def();
+        def.agents
+            .push(minimal_agent("Intruder", "Village", ControlSource::Ai));
+        def.hostilities.push(HostilityDef {
+            subject: "Alice".into(),
+            target: "Intruder".into(),
+        });
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let alice = world
+            .query_name_and_agent_data()
+            .find_map(|(entity, name, _)| (name.0 == "Alice").then_some(entity))
+            .expect("Alice should spawn");
+        let intruder = world
+            .query_name_and_agent_data()
+            .find_map(|(entity, name, _)| (name.0 == "Intruder").then_some(entity))
+            .expect("Intruder should spawn");
+
+        assert_eq!(world.hostile_targets_of(alice), vec![intruder]);
+        assert_eq!(world.hostile_towards(intruder), vec![alice]);
+    }
+
+    #[test]
     fn test_spawn_notice_artifact_from_scenario() {
         let def = ScenarioDef {
             seed: 1,
@@ -1201,6 +1233,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1277,6 +1310,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1402,6 +1436,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1448,6 +1483,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1483,6 +1519,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1523,6 +1560,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1562,6 +1600,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1616,6 +1655,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1668,6 +1708,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1720,6 +1761,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1777,6 +1819,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1836,6 +1879,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1891,6 +1935,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(5),
                 capacity: Quantity(20),
             }],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1954,6 +1999,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2016,6 +2062,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(2),
                 capacity: Quantity(20),
             }],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2081,6 +2128,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(3),
                 capacity: Quantity(15),
             }],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2162,6 +2210,7 @@ mod tests {
                 }),
             }],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2238,6 +2287,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2279,6 +2329,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2396,6 +2447,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2444,6 +2496,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2494,6 +2547,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2608,6 +2662,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2670,6 +2725,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2723,6 +2779,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2819,6 +2876,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2930,6 +2988,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2968,6 +3027,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
