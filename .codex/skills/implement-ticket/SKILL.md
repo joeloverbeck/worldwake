@@ -44,11 +44,13 @@ Use this branch whenever focused live proof confirms a real narrow production fi
 
 1. Land the narrow production fix at the strongest honest owning seam.
 2. Stop before adding more exploratory end-to-end proof edits for the drafted broader ending.
+   Short-lived diagnostic probes are allowed only when needed to isolate the remaining owner or failure seam after the narrow fix lands. Do not keep those probes as part of the final proof surface unless they become the truthful owned seam.
 3. Rewrite the active ticket/spec immediately to the newly proved boundary.
 4. Record the exact still-false higher-level premise and the focused evidence that disproved it.
 5. Create or update the follow-up ticket that owns the deferred broader seam before broader verification and closeout.
    If the disproved remainder is still in the same scenario/domain but now clearly belongs to a later authoritative boundary, create a new follow-up ticket for that later boundary instead of stretching the current ticket back upward.
    If focused proof lands candidate/goal emission or another earlier planner seam, but same-family ranking, selected-branch, or scenario-row proof still stays false, close the current ticket to the earlier landed seam and open the follow-up specifically on the later selection/proof boundary rather than treating the emitted candidate itself as unproven.
+   If diagnosis reveals multiple non-overlapping remaining contradictions, create one follow-up ticket per causal owner / proof seam rather than one umbrella successor ticket.
 6. During closeout, record the split explicitly: landed narrow boundary, focused and broadened commands, concrete reason the broader premise stayed false, and the follow-up owner.
 7. If you added a temporary exploratory golden/test only to prove or disprove the stronger end state, remove or rewrite it before final verification when that stronger contract remains false.
 8. If the user later approves the split rather than asking for more implementation on the disproved broader seam, immediately formalize it in the repo: update the active ticket's status/scope/outcome to the landed narrow boundary, create the follow-up from `tickets/_TEMPLATE.md`, and update any live roadmap or blocker docs that still point at the old combined ownership. Do not rerun unchanged code verification in that follow-up docs/ticket pass unless implementation changed again.

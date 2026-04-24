@@ -551,7 +551,10 @@ The row also lands place concealment honestly rather than by decorative authored
 **Blocked**
 - A truthful accusation/punishment seam is still blocked because the merchant's live survival run accumulates broad local `EntityMissing` churn instead of one retained accusation-ready theft case
 - A truthful `search_place` -> `report_found` seam is still blocked because that branch does not yet become the retained scenario owner under the live ranking/setup math
-- Owning ticket: [`tickets/S13SURJUS-001.md`](../tickets/S13SURJUS-001.md)
+- Completed substrate ticket: [`archive/tickets/S13SURJUS-001.md`](../archive/tickets/S13SURJUS-001.md)
+- Active follow-ups:
+  - [`tickets/S13SURJUS-002.md`](../tickets/S13SURJUS-002.md) for accusation/punishment retained-case isolation
+  - [`tickets/S13SURJUS-003.md`](../tickets/S13SURJUS-003.md) for search/report stale `ask_about_person` recovery
 
 The scenario is worth retaining because it now owns the row's lawful authority substrate and proves that investigation survives under the survival loop without helper-only setup. That is honest forward progress, but it is not row 13 landing yet. The roadmap therefore stays `In Progress` until accusation/punishment and search/report are each proven at their intended causal surfaces.
 

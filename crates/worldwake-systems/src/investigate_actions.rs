@@ -9,7 +9,7 @@ use worldwake_sim::{
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CommitOutcome, Constraint, ControlBeliefView, DeterministicRng,
     DurationExpr, Interruptibility, InvestigateActionPayload, PerAgentBeliefView, Precondition,
-    RuntimeBeliefView, TargetSpec,
+    RuntimeBeliefView, SocialBeliefView, TargetSpec,
 };
 
 pub fn register_investigate_action(
@@ -126,10 +126,47 @@ fn commit_investigate(
     let (violation_id, subject, place, commodity) = investigate_state(instance)?;
     let belief = PerAgentBeliefView::from_world(instance.actor, txn);
     let owner_is_investigating_actor = belief.believed_owner_of(subject) == Some(instance.actor);
-    let theft = if owner_is_investigating_actor {
-        Some(theft_facts_for_subject(txn, subject, place)?)
+    let subjective_theft = belief
+        .known_social_observations(instance.actor)
+        .into_iter()
+        .filter_map(|observation| match observation.detail {
+            SocialObservationDetail::SuspectedTheft { theft, suspect }
+                if theft.missing_entity == subject && theft.expected_place == place =>
+            {
+                Some((observation.observed_tick, theft, suspect))
+            }
+            SocialObservationDetail::SuspectedTheft { .. }
+            | SocialObservationDetail::WitnessedConflict {
+                actor: _,
+                target: _,
+            }
+            | SocialObservationDetail::WitnessedCooperation {
+                actor: _,
+                counterpart: _,
+            }
+            | SocialObservationDetail::WitnessedObligation {
+                actor: _,
+                target: _,
+            }
+            | SocialObservationDetail::WitnessedTelling {
+                speaker: _,
+                listener: _,
+            }
+            | SocialObservationDetail::CoPresence { other: _ }
+            | SocialObservationDetail::WitnessedAbsence {
+                missing_entity: _,
+                expected_place: _,
+            } => None,
+        })
+        .max_by_key(|(observed_tick, _, _)| *observed_tick)
+        .map(|(_, theft, suspect)| (theft, suspect));
+    let suspected_theft = if owner_is_investigating_actor {
+        Some((
+            theft_facts_for_subject(txn, subject, place)?,
+            subjective_theft.and_then(|(_, suspect)| suspect),
+        ))
     } else {
-        None
+        subjective_theft
     };
 
     let mut store = txn
@@ -159,12 +196,9 @@ fn commit_investigate(
         observed_tick: txn.tick(),
         source: PerceptionSource::DirectObservation,
     });
-    if owner_is_investigating_actor {
+    if let Some((theft, suspect)) = suspected_theft {
         store.record_social_observation(SocialObservation {
-            detail: SocialObservationDetail::SuspectedTheft {
-                theft: theft.expect("owner investigation should derive theft facts"),
-                suspect: None,
-            },
+            detail: SocialObservationDetail::SuspectedTheft { theft, suspect },
             place,
             observed_tick: txn.tick(),
             source: PerceptionSource::DirectObservation,
@@ -222,12 +256,9 @@ fn commit_investigate(
     if !resolved {
         return Err(abort_violation());
     }
-    if owner_is_investigating_actor {
+    if let Some((theft, suspect)) = suspected_theft {
         memory.record(
-            ViolationKind::SuspectedTheft {
-                theft: theft.expect("owner investigation should derive theft facts"),
-                suspect: None,
-            },
+            ViolationKind::SuspectedTheft { theft, suspect },
             txn.tick(),
             profile.violation_memory_retention_ticks,
         );
@@ -1676,6 +1707,137 @@ mod tests {
                 .iter()
                 .any(|record| { matches!(record.kind, ViolationKind::SuspectedTheft { .. }) })
         );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn investigate_promotes_missing_case_to_suspected_theft_when_subjective_theft_evidence_exists_after_owner_change()
+     {
+        let mut world = new_world();
+        let (place, other_place) = first_two_places(&world);
+        let actor = spawn_actor(&mut world, place);
+        let suspect = spawn_actor(&mut world, place);
+        set_violation_profile(&mut world, actor, 2, 50);
+        let missing = create_item_lot_at_place(&mut world, place, Some(actor));
+        let theft = TheftFacts {
+            missing_entity: missing,
+            expected_place: place,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(1),
+        };
+
+        {
+            let mut txn = new_txn(&mut world, 1);
+            txn.set_owner(missing, suspect).unwrap();
+            txn.set_ground_location(missing, other_place).unwrap();
+            let mut store = txn
+                .get_component_agent_belief_store(actor)
+                .cloned()
+                .expect("actor should have a belief store");
+            store.record_social_observation(SocialObservation {
+                detail: SocialObservationDetail::SuspectedTheft {
+                    theft,
+                    suspect: Some(suspect),
+                },
+                place,
+                observed_tick: Tick(1),
+                source: PerceptionSource::DirectObservation,
+            });
+            txn.set_component_agent_belief_store(actor, store).unwrap();
+            commit_txn(txn);
+        }
+
+        let violation_id = record_violation(
+            &mut world,
+            actor,
+            ViolationKind::EntityMissing {
+                entity: missing,
+                expected_place: place,
+            },
+            1,
+            5,
+        );
+
+        let (defs, handlers, _) = setup_registries();
+        let affordance =
+            investigate_affordance_for_id(&world, actor, &defs, &handlers, violation_id);
+
+        let mut event_log = EventLog::new();
+        let mut active_actions = BTreeMap::new();
+        let mut rng = DeterministicRng::new(Seed([36; 32]));
+        let mut next_instance_id = ActionInstanceId(1);
+        let instance_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            &mut next_instance_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(2)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    active_actions: &mut active_actions,
+                    rng: &mut rng,
+                },
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(3)
+                ),
+            )
+            .unwrap(),
+            TickOutcome::Continuing
+        );
+
+        match tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                world: &mut world,
+                event_log: &mut event_log,
+                active_actions: &mut active_actions,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(4)),
+        )
+        .unwrap()
+        {
+            TickOutcome::Committed { .. } => {}
+            other => panic!("expected committed investigate action, got {other:?}"),
+        }
+
+        let memory = world.get_component_violation_memory(actor).unwrap();
+        assert!(memory.violations.iter().any(|record| {
+            record.id == violation_id
+                && record.kind
+                    == ViolationKind::EntityMissing {
+                        entity: missing,
+                        expected_place: place,
+                    }
+                && record.resolved_tick == Some(Tick(4))
+        }));
+        assert!(memory.violations.iter().any(|record| {
+            record.id != violation_id
+                && record.kind
+                    == ViolationKind::SuspectedTheft {
+                        theft,
+                        suspect: Some(suspect),
+                    }
+                && record.observed_tick == Tick(4)
+        }));
     }
 
     #[test]
