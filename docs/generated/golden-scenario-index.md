@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 100
-- Contributing golden test files: 24
-- Associated tests: 126
+- Scenario blocks: 101
+- Contributing golden test files: 25
+- Associated tests: 128
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1109,6 +1109,10 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the tracked agent satisfies the authored survival-health contract, selects `ClaimOffice`, selects and commits `PostNotice` from the authored warning substrate, commits `press_force_claim`, becomes force controller, and only later installs as office holder after the force-law hold delay.
 
 **Cross-system chain**: authored remembered local conflict -> PostNotice selected and committed -> new threat-warning notice artifact exists; in the same authored survival run a vacant force-law office under survival pressure -> ClaimOffice selected -> press_force_claim commits -> office controller mutates -> delayed office holder installation.
+
+### Scenario 346: survival-patrol
+
+- Source: `golden_survival_patrol.rs:271`
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 

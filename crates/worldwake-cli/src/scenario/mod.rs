@@ -11,9 +11,10 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    ArtifactHeader, ArtifactKind, ArtifactState, CarryCapacity, CauseRef, ControlSource,
-    DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+    ArtifactHeader, ArtifactKind, ArtifactState, BelievedInstitutionalClaim, CarryCapacity,
+    CauseRef, ControlSource, DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog,
+    ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore,
+    ExplorationProfile, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
     KnownRecipes, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
     LoadUnits, MerchandiseProfile, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
     OfficeForceState, PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
@@ -412,6 +413,12 @@ fn spawn_entities(
         )?;
     }
 
+    for hostility_def in &def.hostilities {
+        let subject = resolve_name(names, &hostility_def.subject, "hostility subject")?;
+        let target = resolve_name(names, &hostility_def.target, "hostility target")?;
+        txn.add_hostility(subject, target)?;
+    }
+
     txn.commit(event_log);
     Ok(())
 }
@@ -722,16 +729,27 @@ fn spawn_office(
                 office_def.name
             ))
         })?;
-    txn.append_record_entry(
-        office_register,
-        worldwake_core::InstitutionalClaim::OfficeHolder {
-            office,
-            holder: None,
-            effective_tick: Tick(0),
-        },
-    )?;
+    let office_holder_claim = InstitutionalClaim::OfficeHolder {
+        office,
+        holder: initial_holder,
+        effective_tick: Tick(0),
+    };
+    let office_holder_entry_id = txn.append_record_entry(office_register, office_holder_claim)?;
     if let Some(initial_holder) = initial_holder {
         txn.assign_office(office, initial_holder)?;
+        txn.project_institutional_belief(
+            initial_holder,
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            BelievedInstitutionalClaim {
+                claim: office_holder_claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record: office_register,
+                    entry_id: office_holder_entry_id,
+                },
+                learned_tick: Tick(0),
+                learned_at: Some(seat),
+            },
+        )?;
     }
 
     facility_locations.insert(office, seat);
@@ -1146,6 +1164,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1177,6 +1196,31 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_scenario_applies_authored_hostility() {
+        let mut def = minimal_def();
+        def.agents
+            .push(minimal_agent("Intruder", "Village", ControlSource::Ai));
+        def.hostilities.push(HostilityDef {
+            subject: "Alice".into(),
+            target: "Intruder".into(),
+        });
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let alice = world
+            .query_name_and_agent_data()
+            .find_map(|(entity, name, _)| (name.0 == "Alice").then_some(entity))
+            .expect("Alice should spawn");
+        let intruder = world
+            .query_name_and_agent_data()
+            .find_map(|(entity, name, _)| (name.0 == "Intruder").then_some(entity))
+            .expect("Intruder should spawn");
+
+        assert_eq!(world.hostile_targets_of(alice), vec![intruder]);
+        assert_eq!(world.hostile_towards(intruder), vec![alice]);
+    }
+
+    #[test]
     fn test_spawn_notice_artifact_from_scenario() {
         let def = ScenarioDef {
             seed: 1,
@@ -1201,6 +1245,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1277,6 +1322,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1402,6 +1448,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1448,6 +1495,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1483,6 +1531,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1523,6 +1572,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1562,6 +1612,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1616,6 +1667,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1668,6 +1720,7 @@ mod tests {
             }],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1720,6 +1773,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1777,6 +1831,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1836,6 +1891,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1891,6 +1947,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(5),
                 capacity: Quantity(20),
             }],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -1954,6 +2011,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2016,6 +2074,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(2),
                 capacity: Quantity(20),
             }],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2081,6 +2140,7 @@ mod tests {
                 regeneration_ticks_per_unit: NonZeroU32::new(3),
                 capacity: Quantity(15),
             }],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2162,6 +2222,7 @@ mod tests {
                 }),
             }],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2238,6 +2299,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2279,6 +2341,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2396,6 +2459,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2444,6 +2508,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2494,6 +2559,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2608,6 +2674,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2670,6 +2737,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2723,6 +2791,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2819,6 +2888,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2930,6 +3000,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2968,6 +3039,7 @@ mod tests {
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
+            hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
@@ -2994,9 +3066,33 @@ mod tests {
                 (data.record_kind == RecordKind::CrimeRegister).then_some((entity, data))
             })
             .expect("office should spawn a colocated crime register");
+        let office_register = world
+            .query_record_data()
+            .find_map(|(entity, data)| {
+                (data.record_kind == RecordKind::OfficeRegister && data.home_place == seat)
+                    .then_some((entity, data))
+            })
+            .expect("office should spawn with a colocated office register");
+        let holder_beliefs = world
+            .get_component_agent_belief_store(holder)
+            .expect("initial holder should have a belief store");
 
         assert_eq!(crime_register.1.home_place, seat);
         assert_eq!(crime_register.1.issuer, office);
         assert_eq!(world.office_holder(office), Some(holder));
+        assert!(office_register.1.entries.iter().any(|entry| {
+            matches!(
+                entry.claim,
+                InstitutionalClaim::OfficeHolder {
+                    office: claim_office,
+                    holder: Some(claim_holder),
+                    effective_tick: Tick(0),
+                } if claim_office == office && claim_holder == holder
+            )
+        }));
+        assert_eq!(
+            holder_beliefs.believed_office_holder(office),
+            worldwake_core::InstitutionalBeliefRead::Certain(Some(holder))
+        );
     }
 }

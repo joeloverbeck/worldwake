@@ -40,6 +40,8 @@ pub struct ScenarioDef {
     #[serde(default)]
     pub resource_sources: Vec<ResourceSourceDef>,
     #[serde(default)]
+    pub hostilities: Vec<HostilityDef>,
+    #[serde(default)]
     pub commodity_decay: Option<CommodityDecayMap>,
     #[serde(default)]
     pub survival_health_contract: Option<SurvivalHealthContractDef>,
@@ -51,6 +53,14 @@ pub struct ScenarioDef {
     /// Values must be non-empty justification strings.
     #[serde(default)]
     pub scenario_lint_overrides: BTreeMap<crate::scenario::lints::LintRule, String>,
+}
+
+/// Authored directed hostility relation between two named entities.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostilityDef {
+    pub subject: String,
+    pub target: String,
 }
 
 /// An authored office entity plus its automatically maintained local records.

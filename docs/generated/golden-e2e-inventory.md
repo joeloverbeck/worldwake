@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 26
-- Files contributing `golden_*` tests: 26
-- Total `golden_*` tests: 130
+- Golden test files: 27
+- Files contributing `golden_*` tests: 27
+- Total `golden_*` tests: 132
 
 ## Per-File Inventory
 
@@ -32,6 +32,7 @@ Do not hand-edit it.
 | `golden_survival_items_decay.rs` | 2 |
 | `golden_survival_justice.rs` | 4 |
 | `golden_survival_offices.rs` | 2 |
+| `golden_survival_patrol.rs` | 2 |
 | `golden_survival_preferences.rs` | 2 |
 | `golden_survival_production.rs` | 2 |
 | `golden_survival_scattered.rs` | 6 |
@@ -200,6 +201,11 @@ Do not hand-edit it.
 
 - `survival_offices_proves_force_law_uptake`
 - `survival_offices_replays_deterministically`
+
+### `golden_survival_patrol.rs`
+
+- `survival_patrol_proves_patrol_and_remote_pursuit_execution`
+- `survival_patrol_replay_is_deterministic`
 
 ### `golden_survival_preferences.rs`
 

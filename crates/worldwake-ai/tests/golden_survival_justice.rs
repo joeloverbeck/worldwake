@@ -24,6 +24,7 @@ struct AgentSurvivalObservation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
 struct JusticeObservation {
     contract: worldwake_cli::scenario::types::SurvivalHealthContractDef,
     merchant: AgentSurvivalObservation,

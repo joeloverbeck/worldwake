@@ -18,13 +18,16 @@ Common work includes:
 
 Run the narrowest truthful verification first, then expand.
 
-Always discover exact test selectors before writing final proof commands:
+Discover exact test selectors before writing final proof commands when you are
+using existing tests, ambiguous filters, or module-qualified names:
 
 ```bash
 cargo test -p worldwake-ai -- --list
 ```
 
-Then use the narrowest real commands that match the changed files and owned behavior.
+For newly authored tests with obvious exact names, it is fine to run the new
+test directly. In all cases, use the narrowest real commands that match the
+changed files and owned behavior.
 
 Keep Cargo commands sequential.
 For long-running roadmap scenarios, local execution is for targeted/manual proof only; the canonical automation path is the CI workflow in `.github/workflows/`.

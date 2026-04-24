@@ -4,7 +4,7 @@
 //! where the target is?" — used by candidate generation, goal-model place
 //! derivation, and invalidation.
 
-use worldwake_core::{EntityId, PerceptionSource, Tick};
+use worldwake_core::{EntityId, LastSeenProvenance, PerceptionSource, Tick};
 use worldwake_sim::GoalBeliefView;
 
 /// Snapshot of an agent's belief about a pursuit target's remote location.
@@ -35,7 +35,27 @@ pub fn pursuit_target_belief(
     target: EntityId,
 ) -> Option<PursuitTargetBelief> {
     let beliefs = view.known_entity_beliefs(actor);
-    let (_, state) = beliefs.iter().find(|(id, _)| *id == target)?;
+    let Some((_, state)) = beliefs.iter().find(|(id, _)| *id == target) else {
+        let memory = view.last_seen_memory(actor)?;
+        let record = memory.records.get(&target)?;
+        let actor_place = view.effective_place(actor)?;
+        if record.place == actor_place {
+            return None;
+        }
+        let source = match record.provenance {
+            LastSeenProvenance::DirectObservation => PerceptionSource::DirectObservation,
+            LastSeenProvenance::Hearsay { chain_depth, .. } => PerceptionSource::Report {
+                from: record.source,
+                chain_len: chain_depth,
+            },
+        };
+        return Some(PursuitTargetBelief {
+            target,
+            believed_place: record.place,
+            source,
+            observed_tick: record.observed_tick,
+        });
+    };
 
     if !state.alive {
         return None;

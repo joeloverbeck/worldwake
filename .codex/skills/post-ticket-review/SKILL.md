@@ -23,8 +23,13 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 4. Otherwise, search active tickets for the most recently touched candidate.
 5. Confirm the implementation state is present locally (committed or not).
 6. Record whether the completed ticket is tracked or untracked in the current worktree so the report can describe archival state accurately.
-7. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
-8. If the target ticket cannot be identified confidently, stop and ask.
+7. Snapshot `git status --short` and classify dirty paths before review as:
+   - ticket-owned implementation or handoff files
+   - adjacent generated/doc fallout caused by the ticket
+   - unrelated pre-existing or same-session work outside the ticket
+   Exclude unrelated paths from architecture findings and archival-readiness decisions except for a short implementation-state note in the report.
+8. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
+9. If the target ticket cannot be identified confidently, stop and ask.
 
 ### 2. Check archival readiness
 
@@ -39,6 +44,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
    - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
    - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up.
+   - For golden tickets, compare executable assertions against the exact ticket, source-golden, and roadmap wording. Distinguish `contains both steps` from an ordered sequence, `eventually commits` from a claimed lifecycle boundary, candidate emission from selected goal, and selected goal from selected executable plan. If the prose claims ordering, provenance, timing, or lifecycle specificity that the assertions do not prove, block archival as an incomplete proof surface.
    - When a previously completed ticket was left unarchived until a later reconciliation/disposition ticket clarified its live contract, re-read the older ticket's `Outcome`, `Verification Result`, and any remaining blocker wording against that newer archived disposition before archiving the older ticket.
 5. If already archived, validate the archived handoff content rather than reopening.
 6. Do not revise the ticket's problem statement, scope, or acceptance criteria except for factual completion notes required by archival mechanics.

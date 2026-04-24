@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [ask_consult, baseline, contested, items_decay, justice, offices, preferences, production, scattered, tell, theft, trade]
+        scenario: [ask_consult, baseline, contested, items_decay, justice, offices, patrol, preferences, production, scattered, tell, theft, trade]
 
     steps:
       - name: Checkout

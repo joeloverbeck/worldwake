@@ -25,7 +25,10 @@ impl DangerAssessment {
         let pressure = thresholds.map_or_else(
             || Permille::new_unchecked(0),
             |thresholds| {
-                if current_attackers.is_empty() && visible_hostiles.is_empty() {
+                if current_attackers.is_empty()
+                    && visible_hostiles.is_empty()
+                    && hostile_targets.is_empty()
+                {
                     Permille::new_unchecked(0)
                 } else if current_attackers.len() >= 2
                     || (!current_attackers.is_empty() && (has_wounds || is_incapacitated))
@@ -35,6 +38,8 @@ impl DangerAssessment {
                     || (!visible_hostiles.is_empty() && (has_wounds || is_incapacitated))
                 {
                     thresholds.danger.high()
+                } else if visible_hostiles.is_empty() && !hostile_targets.is_empty() {
+                    thresholds.danger.low()
                 } else {
                     thresholds.danger.medium()
                 }
@@ -459,6 +464,13 @@ mod tests {
         let mut view = TestBeliefView::default();
         view.thresholds.insert(agent, thresholds);
 
+        view.hostile_targets.insert(agent, vec![attacker_a]);
+        assert_eq!(
+            derive_danger_pressure(&view, agent),
+            thresholds.danger.low()
+        );
+
+        view.hostile_targets.clear();
         view.hostiles.insert(agent, vec![attacker_a]);
         assert_eq!(
             derive_danger_pressure(&view, agent),

@@ -895,7 +895,7 @@ fn build_snapshot_entity(
         .and_then(|belief| belief.believed_kind)
         .or_else(|| view.entity_kind(entity));
     let alive = belief_backed.map_or_else(|| view.is_alive(entity), |belief| belief.alive);
-    let dead = !alive;
+    let dead = belief_backed.map_or_else(|| view.is_dead(entity), |belief| !belief.alive);
     let incapacitated = belief_backed.map_or_else(
         || view.is_incapacitated(entity),
         |belief| !belief.alive && !belief.wounds.is_empty(),
@@ -1319,6 +1319,7 @@ mod tests {
     struct StubBeliefView {
         current_tick: Tick,
         alive: BTreeMap<EntityId, bool>,
+        dead: BTreeSet<EntityId>,
         kinds: BTreeMap<EntityId, EntityKind>,
         effective_places: BTreeMap<EntityId, EntityId>,
         entities_at: BTreeMap<EntityId, Vec<EntityId>>,
@@ -1350,6 +1351,7 @@ mod tests {
             Self {
                 current_tick: Tick(0),
                 alive: BTreeMap::new(),
+                dead: BTreeSet::new(),
                 kinds: BTreeMap::new(),
                 effective_places: BTreeMap::new(),
                 entities_at: BTreeMap::new(),
@@ -1402,7 +1404,7 @@ mod tests {
         }
 
         fn is_dead(&self, entity: EntityId) -> bool {
-            !self.is_alive(entity)
+            self.dead.contains(&entity) || self.alive.get(&entity) == Some(&false)
         }
 
         fn is_incapacitated(&self, _entity: EntityId) -> bool {
@@ -2125,6 +2127,33 @@ mod tests {
         );
 
         assert!(snapshot.entities.contains_key(&evidence_item));
+    }
+
+    #[test]
+    fn evidence_entity_with_unknown_liveness_is_not_treated_as_dead() {
+        let actor = entity(1);
+        let place = entity(10);
+        let remote = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(remote, EntityKind::Agent);
+        view.effective_places.insert(actor, place);
+        view.entities_at.insert(place, vec![actor]);
+
+        let snapshot =
+            build_planning_snapshot(&view, actor, &BTreeSet::from([remote]), &BTreeSet::new(), 0);
+        let snapshot_entity = snapshot
+            .entities
+            .get(&remote)
+            .expect("evidence entity should be admitted");
+
+        assert!(!snapshot_entity.entity.alive);
+        assert!(
+            !snapshot_entity.entity.dead,
+            "unknown liveness must not satisfy combat goals as known-dead"
+        );
     }
 
     #[test]

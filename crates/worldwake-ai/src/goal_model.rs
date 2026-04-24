@@ -1865,9 +1865,9 @@ impl GoalKindPlannerExt for GoalKind {
                 };
                 state.effective_place(state.snapshot().actor()) == Some(record.home_place)
             }
-            (GoalKind::SearchForMissing { last_seen, .. }, PlannerOpKind::AskAboutPerson) => !state
+            (GoalKind::SearchForMissing { last_seen, .. }, PlannerOpKind::AskAboutPerson) => state
                 .effective_place(state.snapshot().actor())
-                .is_some_and(|actor_place| Some(actor_place) == *last_seen),
+                .is_none_or(|actor_place| Some(actor_place) != *last_seen),
             _ => true,
         }
     }
