@@ -14,6 +14,8 @@ python3 scripts/golden_inventory.py --write --check-docs
 If these fail because of local annotation drift or generated-doc drift you just introduced, fix that and rerun. Do not leave stale generated artifacts behind.
 If these fail because of a pre-existing unrelated blocker elsewhere in the repo, isolate the blocker, apply the smallest truthful fix needed to complete the required refresh, and report that side-fix explicitly instead of stopping with stale generated docs.
 
+Before the final refresh, review the scenario diff for support substrate introduced during proof debugging. Remove any support place, edge, actor, stock, profile, or office that no longer carries the retained seam; otherwise the generated companions may truthfully report structural activation that the roadmap row does not own.
+
 ## Allocate a unique golden scenario id
 
 Before editing a golden comment header, choose a `Scenario <N>:` id that is not already used. Do this before the generated-doc refresh so collisions are caught cheaply:
@@ -55,6 +57,7 @@ Update the roadmap to match the true result:
 - if the outcome is narrower, rewrite the row rather than overclaiming
 - if an auxiliary scenario now became a true roadmap row, move or rewrite the auxiliary caveat accordingly
 - if the generated companion shows additional active features beyond the requested row, classify each one explicitly as either newly landed here or merely structurally active because of shared substrate; do not let those sibling rows inherit `Landed` status by implication
+- if a support AI actor was required for the retained proof, review generated coverage for unrelated active features and classify them as support-only unless the golden behaviorally proves them as row-owned work
 - for capstone/coexistence rows, separate `full structural coexistence`, `representative causal branch`, and `structural-only support mechanics`; do not rewrite the feature catalog as if every structurally active feature now has a new standalone behavior landing
 
 When the row ends `In Progress`, prefer a concrete partial-progress writeup over vague prose. A good pattern is:

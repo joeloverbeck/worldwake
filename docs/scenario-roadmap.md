@@ -66,7 +66,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Combat | `combat_profile` present | [`combat.rs`](../crates/worldwake-systems/src/combat.rs) | Landed in [§5.14](#514-landed-row-15-survival-combat) |
 | Escort | Non-zero `care_weight` | [`escort_actions.rs`](../crates/worldwake-systems/src/escort_actions.rs) | Landed in [§5.15](#515-landed-row-16-survival-escort) |
 | Bandit camps | Authored `bandit_camps` world state | [`bandit_camp.rs`](../crates/worldwake-systems/src/bandit_camp.rs), [`bandit_camp_actions.rs`](../crates/worldwake-systems/src/bandit_camp_actions.rs) | Landed in [§5.14](#514-landed-row-15-survival-combat) |
-| Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Found-person reporting branch landed in [§5.12](#512-landed-row-13-survival-justice); broader witness→report chain planned as extension to [§5.11 `survival-theft` (Row 12)](#511-landed-12-survival-theft) |
+| Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Found-person reporting branch landed in [§5.12](#512-landed-row-13-survival-justice); accepted theft-suspicion testimony is proven as support behavior in [§5.11 `survival-theft` (Row 12)](#511-landed-12-survival-theft) |
 | Search | `violation_disposition` plus `epistemic_disposition` | search and investigation actions | Landed in [§5.12](#512-landed-row-13-survival-justice) |
 | Stock / transport | `merchandise_profile` plus stock-supporting world state | stock and transport actions | Landed in [§5.9](#59-landed-9-survival-trade) |
 
@@ -168,7 +168,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, facility-queue contention, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade, plus authored queue/grant contention at the Market Square well |
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting + obligation satiation | Landed | Institution-level goals, artifacts, and an authored office duty competing with needs |
-| 12 | `survival-theft` | Theft + place concealment | In Progress | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place; extension adds broader witness→report chain proof beyond found-person |
+| 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the full truthful theft branch: stage visible owned food, select `StealItem`, commit `steal`, self-consume, keep immediate witness pickup suppressed, preserve physical aftermath at the place, mature non-owner possession into investigation, and relay the resulting theft suspicion through accepted testimony |
 | 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | In Progress | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope; extension adds bounty posting behavior proof after accusation |
 | 14 | `survival-patrol` | Patrol + pursuit | Landed | Scheduled duties coexist with survival self-care while remembered hostility selects and executes remote pursuit through travel into attack |
 | 15 | `survival-combat` | Combat + bandit camps | Landed | Highest direct survival risk and adversarial planning pressure |
@@ -342,7 +342,7 @@ The golden proves a specific contention-era causal branch: both north-side and s
 
 **Authored envelope**
 - Seed: `116006`
-- Agents: `2`
+- Agents: `3`
 - Places: `3`
 - Survival health contract: `max_authored_critical_run_ticks = 250`, `max_idle_window_ticks_with_elevated_need = 60`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.dirtiness = 1300`
 
@@ -364,7 +364,7 @@ The golden now proves the drive-escalation branch inside a real 1440-tick surviv
 
 **Authored envelope**
 - Seed: `417005`
-- Agents: `2`
+- Agents: `3`
 - Places: `2`
 - Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 40`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.dirtiness = 700`
 
@@ -540,18 +540,15 @@ The same scenario still keeps the earlier trade substrate alive instead of becom
 
 The scenario lands row 12 at the authored seam the runtime actually exposes today. `Merchant Sera` stages a visible, owned apple lot at `Shaded Market`; `Thief Rana` starts hungry with theft disposition, no coin, no harvestable food branch, and only the merchant's displayed stock as the truthful local food path. The golden then proves the causal chain directly: the merchant commits `stage_stock_for_sale`, the thief selects `StealItem` against the displayed lot, `steal` commits authoritatively, and `eat` follows from the stolen stock inside the same 1440-tick survival contract.
 
-The row also lands place concealment honestly rather than by decorative authored tags. `Shaded Market` carries authored concealment, and the golden proves the immediate witness path stays quiet on the merchant at theft time while the world still records durable physical aftermath through forced-entry and container-tampering evidence at the scene. That is enough to land theft plus concealment without overstating later justice, patrol, or witness-chain behavior that still belongs to downstream rows.
+The row also lands place concealment honestly rather than by decorative authored tags. `Shaded Market` carries authored concealment, and the golden proves the immediate witness path stays quiet on the merchant at theft time while the world still records durable physical aftermath through forced-entry and container-tampering evidence at the scene. The extension now proves that this hidden theft still matures through local information flow: observed non-owner possession admits investigation, `investigate` records a `SuspectedTheft` social observation, and Merchant Sera relays that suspicion to Clerk Nia through accepted testimony rather than direct event pickup.
+
+**Support-only structural activation**
+- Violation investigation is behaviorally exercised here only as the theft row's information bridge from hidden theft aftermath to testimony; it does not re-land the broader justice row
+- Ask-about-person, consult-record, and search are structurally active in the generated coverage because the support listener is an AI agent, but their behavior remains owned by their earlier roadmap rows
 
 **Deliberately inactive**
-- Obligation satiation, facility contention, offices, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
-- Report / witness is outside this row's authored proof
-
-**Planned extension**
-
-Row is `In Progress` pending broader witness→report chain proof. The extension must:
-- Add a non-colocated witness substrate so the theft fact propagates beyond the same-place perception suppression already proven for `Shaded Market` — a second agent learns of the theft through a `tell` or `report` rather than direct observation.
-- Prove in the backing golden the full causal chain: immediate witness suppression at the concealed market, durable physical aftermath at the scene, a committed belief-transfer to the remote agent, and a resulting belief or action change that depends on that transferred knowledge.
-- Keep the landed theft branch intact: `stage_stock_for_sale`, `StealItem` selection, `steal` commit, post-theft `eat`, and the 1440-tick survival-health contract must all still hold without regressing to a non-concealed variant.
+- Obligation satiation, facility contention, offices, justice, patrol, pursuit, combat, bandit camps, and escort are outside this row's proof
+- Report / witness remains structurally inactive in the generator; this row proves a narrower accepted `tell` testimony branch rather than a full report system branch
 
 ### 5.12 Landed Row 13: `survival-justice`
 

@@ -7,15 +7,15 @@ Scenarios: 1
 
 ### Scenario 176: Survival Theft Lands the Concealed Staged-Lot Branch
 
-- Source: `golden_survival_theft.rs:337`
+- Source: `golden_survival_theft.rs:400`
 - Systems: AI, Needs, Trade, Perception, Transport
 - GoalKinds: StealItem, ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Needs, Transport
 - Places: Shaded Market
 - Principles: 4, 7, 8, 17, 20, 21
 - Primary tests: `survival_theft_proves_concealed_staged_lot_branch`
-- Replay tests: None
-- All tests: `survival_theft_proves_concealed_staged_lot_branch`
+- Replay tests: `survival_theft_replays_deterministically`
+- All tests: `survival_theft_proves_concealed_staged_lot_branch`, `survival_theft_replays_deterministically`
 
 **Setup**: Run the authored survival theft scenario for 1440 ticks. The merchant
 
