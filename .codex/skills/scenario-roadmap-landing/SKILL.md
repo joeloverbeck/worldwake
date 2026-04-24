@@ -31,6 +31,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 - Scenario-backed proof must assert the mechanic's intended behavior, not just the presence of a goal or action name.
 - Treat externally requested actions, payload overrides, and other human-driven helper paths as auxiliary evidence unless the roadmap row explicitly owns that invocation model.
 - Scenario-backed roadmap goldens are CI-owned long-running suites. They must be wired through `.github/workflows/golden-<family>.yml`, marked `#[ignore]` for ordinary local/workspace lanes, and not treated as regular-lane coverage.
+- Keep Cargo commands sequential during this workflow. Targeted tests and long-running goldens contend on Cargo package and artifact locks, so do not run Cargo build/test/check commands in parallel.
 - Do not update `.github/workflows/golden-<family>.yml` until the roadmap-owned golden has a truthful retained seam: either the row is actually landing, or a narrower in-repo partial seam is intentionally being kept as the canonical owner.
 - If the live architecture cannot yet support the truthful golden, create or update ticket(s) in `tickets/` instead of weakening the scenario, weakening the golden, or falsely marking the roadmap row landed.
 - Keep the roadmap and generated docs truthful in the same pass. Do not leave doc drift behind.

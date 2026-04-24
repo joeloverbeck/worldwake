@@ -16,6 +16,8 @@ Common work includes:
 - CI workflow updates so the new scenario runs in the correct family workflow and stays out of regular lanes
 - helper extraction or trace usage needed to assert the correct boundary
 
+When a scenario landing exposes a production contradiction in candidate generation, ranking, action commit, handoff state, or another lower layer, add the narrowest focused test at that layer before relying on the 1440-tick roadmap golden as proof. The long golden should prove row integration, not be the only regression surface for a localized production contract.
+
 Run the narrowest truthful verification first, then expand.
 
 Discover exact test selectors before writing final proof commands when you are

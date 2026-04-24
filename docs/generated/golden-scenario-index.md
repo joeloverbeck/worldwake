@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 102
-- Contributing golden test files: 26
-- Associated tests: 130
+- Scenario blocks: 103
+- Contributing golden test files: 27
+- Associated tests: 132
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1053,6 +1053,10 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: no agent is idle beyond the scenario-authored bound while any need
 
 **Cross-system chain**: agents plan from beliefs under need pressure -> self-care actions
+
+### Scenario 348: Survival Escort Lands Coordinated Care Travel
+
+- Source: `golden_survival_escort.rs:265`
 
 ### Scenario 174: Survival Item Decay Lands Roadmap Row Ten
 

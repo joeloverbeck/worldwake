@@ -480,7 +480,12 @@ fn commit_escort_to_safety(
     let hostile = had_combat_during_travel(event_log, instance.actor, departure_tick, txn.tick());
     record_route_experience(txn, instance.actor, edge_id, txn.tick(), hostile)?;
     ensure_care_contention_state(txn, subject).map_err(ActionError::InternalError)?;
-    enqueue_for_contention(txn, instance.actor, subject, payload.intended_heal_action)?;
+    let already_queued_for_care = txn
+        .get_component_contention_queue(subject)
+        .is_some_and(|queue| queue.has_actor(instance.actor));
+    if !already_queued_for_care {
+        enqueue_for_contention(txn, instance.actor, subject, payload.intended_heal_action)?;
+    }
     Ok(CommitOutcome::empty())
 }
 

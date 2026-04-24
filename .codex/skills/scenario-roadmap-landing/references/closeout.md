@@ -18,6 +18,7 @@ Before finishing, verify which of these are true:
 - any sibling future rows that became structurally active through shared substrate were recorded as structural-only unless they were also behaviorally proven and intentionally landed
 - blocker tickets created or updated when architecture prevented full landing
 - for non-landed rows that keep CI workflow wiring, the final report explains why the retained seam is canonical and why the workflow entry is not premature
+- markdown and generated-doc edits pass `git diff --check`
 - final report states whether the row is now `Landed`, still `Drafting`/`In Progress`, or blocked behind named ticket(s)
 
 ## Report Format

@@ -4325,15 +4325,19 @@ fn emit_escort_candidates(
             continue;
         }
 
-        // Suppress when a TreatWounds candidate already covers this patient.
-        // TreatWounds provides in-place care; escorting is only valuable when
-        // no direct-observation TreatWounds path exists for this entity.
+        // Suppress when an immediately actionable TreatWounds candidate already
+        // covers this patient. Without local medicine, escort remains valuable:
+        // the actor can move the wounded subject toward safer care instead of
+        // spending the planning slot on unavailable in-place treatment.
         let already_covered_by_care = candidates.iter().any(|c| {
             matches!(
                 c.key.kind,
                 GoalKind::TreatWounds { patient } if patient == subject
             )
-        });
+        }) && ctx
+            .view
+            .commodity_quantity(ctx.agent, CommodityKind::Medicine)
+            > Quantity(0);
         if already_covered_by_care {
             continue;
         }
@@ -10071,6 +10075,118 @@ mod tests {
         assert!(contains_goal(
             &candidates,
             GoalKind::TreatWounds { patient }
+        ));
+    }
+
+    #[test]
+    fn directly_observed_wounded_other_without_medicine_also_emits_escort() {
+        let agent = entity(1);
+        let patient = entity(2);
+        let place = entity(10);
+        let refuge = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, patient, refuge]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(patient, EntityKind::Agent);
+        view.entity_kinds.insert(refuge, EntityKind::Place);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(patient, place);
+        view.entities_at.insert(place, vec![agent, patient]);
+        view.adjacent_places.insert(place, vec![refuge]);
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                care_weight: Permille::new(800).unwrap(),
+                ..UtilityProfile::default()
+            },
+        );
+        view.wounds.insert(patient, vec![wound(100)]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                patient,
+                BelievedEntityState {
+                    wounds: vec![wound(100)],
+                    ..believed_state(5, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::TreatWounds { patient }
+        ));
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::EscortToSafety {
+                subject: patient,
+                destination: refuge,
+            }
+        ));
+    }
+
+    #[test]
+    fn directly_observed_wounded_other_with_medicine_suppresses_escort() {
+        let agent = entity(1);
+        let patient = entity(2);
+        let place = entity(10);
+        let refuge = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, patient, refuge]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(patient, EntityKind::Agent);
+        view.entity_kinds.insert(refuge, EntityKind::Place);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(patient, place);
+        view.entities_at.insert(place, vec![agent, patient]);
+        view.adjacent_places.insert(place, vec![refuge]);
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                care_weight: Permille::new(800).unwrap(),
+                ..UtilityProfile::default()
+            },
+        );
+        view.wounds.insert(patient, vec![wound(100)]);
+        view.commodity_quantities
+            .insert((agent, CommodityKind::Medicine), Quantity(1));
+        view.beliefs.insert(
+            agent,
+            vec![(
+                patient,
+                BelievedEntityState {
+                    wounds: vec![wound(100)],
+                    ..believed_state(5, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::TreatWounds { patient }
+        ));
+        assert!(!contains_goal(
+            &candidates,
+            GoalKind::EscortToSafety {
+                subject: patient,
+                destination: refuge,
+            }
         ));
     }
 
