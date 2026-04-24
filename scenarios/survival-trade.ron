@@ -62,6 +62,9 @@
                 demand_memory_retention_ticks: 96,
                 market_presence_ticks: 10,
             ),
+            contention_disposition: (
+                queue_patience_ticks: Some(20),
+            ),
             perception_profile: (
                 entity_activation_threshold: 100,
                 claim_confidence_threshold: 50,
@@ -192,6 +195,9 @@
                 demand_memory_retention_ticks: 96,
                 market_presence_ticks: 10,
             ),
+            contention_disposition: (
+                queue_patience_ticks: Some(20),
+            ),
             perception_profile: (
                 entity_activation_threshold: 100,
                 claim_confidence_threshold: 50,
@@ -302,7 +308,16 @@
                 display_capacity: 120,
             ),
         ),
-        (name: "Village Well", workstation: Well, location: "Market Square"),
+        (
+            name: "Village Well",
+            workstation: Well,
+            location: "Market Square",
+            contention_policy: (
+                grant_hold_ticks: 3,
+                auto_promote: true,
+                max_waiters: None,
+            ),
+        ),
         (name: "Village Washbasin", workstation: WashBasin, location: "Market Square"),
         (name: "South Orchard Row", workstation: OrchardRow, location: "South Orchard"),
     ],

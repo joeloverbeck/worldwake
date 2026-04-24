@@ -44,7 +44,7 @@ Snapshot of every `scenarios/*.ron` at HEAD. This file reports structural activa
 | Substitute preferences | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ |
 | Item decay | — | ✅ | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — |
 | Disposal | ✅ | ✅ | — | — | — | — | — | — | ✅ | — | — | — | — | — | — | — | — | — |
-| Facility-queue contention | ✅ | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| Facility-queue contention | ⚠ | ⚠ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | ✅ |
 | Offices / succession / force-claim | — | ✅ | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — |
 | Bounty posting | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
 | Notice posting | ✅ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ | ⚠ |
@@ -91,7 +91,6 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Commodity valuation
 - Substitute preferences
 - Disposal
-- Facility-queue contention
 - Bounty posting
 - Notice posting
 - Theft
@@ -106,6 +105,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 
 **Present-but-inactive features**
 - Travel physiology
+- Facility-queue contention
 - Report / witness
 
 **Absent features**
@@ -153,7 +153,6 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Substitute preferences
 - Item decay
 - Disposal
-- Facility-queue contention
 - Offices / succession / force-claim
 - Bounty posting
 - Notice posting
@@ -170,7 +169,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Stock / transport
 
 **Present-but-inactive features**
-- none
+- Facility-queue contention
 
 **Absent features**
 - none
@@ -1071,6 +1070,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Trade negotiation
 - Commodity valuation
 - Substitute preferences
+- Facility-queue contention
 - Stock / transport
 
 **Present-but-inactive features**
@@ -1092,7 +1092,6 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Experience preferences
 - Item decay
 - Disposal
-- Facility-queue contention
 - Offices / succession / force-claim
 - Theft
 - Justice / accusation

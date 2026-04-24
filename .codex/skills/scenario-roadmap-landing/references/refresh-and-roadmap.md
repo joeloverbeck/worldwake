@@ -14,6 +14,16 @@ python3 scripts/golden_inventory.py --write --check-docs
 If these fail because of local annotation drift or generated-doc drift you just introduced, fix that and rerun. Do not leave stale generated artifacts behind.
 If these fail because of a pre-existing unrelated blocker elsewhere in the repo, isolate the blocker, apply the smallest truthful fix needed to complete the required refresh, and report that side-fix explicitly instead of stopping with stale generated docs.
 
+## Allocate a unique golden scenario id
+
+Before editing a golden comment header, choose a `Scenario <N>:` id that is not already used. Do this before the generated-doc refresh so collisions are caught cheaply:
+
+```bash
+rg -o "Scenario [0-9]+" crates/worldwake-ai/tests docs/generated/golden-scenario-index.md | sed 's/.*Scenario //' | sort -n | tail -n 20
+```
+
+If the largest ids are not enough to prove uniqueness, widen the scan or inspect the generated index directly. Do not rely on `golden_inventory.py` to be the first collision detector.
+
 ## Schema fallout sweep
 
 If you changed the scenario authoring schema or spawn path while landing the row, do a bounded fallout sweep before treating the refresh as complete:
@@ -21,6 +31,7 @@ If you changed the scenario authoring schema or spawn path while landing the row
 - search for synthetic `ScenarioDef { ... }` initializers that now need the new field(s)
 - search `scenarios/*.ron`, especially broad fixtures like `scenarios/cli-evaluation.ron`, for old field shapes that no longer match the live authored schema
 - update `crates/worldwake-cli/src/bin/scenario_coverage.rs` when the new authored substrate needs structural detection support
+- when the feature requires paired substrate, update the generator rule so one-sided authoring remains `PresentInactive` or equivalent instead of `Active`
 - rerun the generated-doc refresh only after those schema consumers parse and compile again
 
 ## Roadmap sections to edit

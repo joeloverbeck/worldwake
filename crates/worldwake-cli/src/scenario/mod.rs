@@ -12,9 +12,9 @@ use std::path::Path;
 use types::ScenarioDef;
 use worldwake_core::{
     ArtifactHeader, ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy,
-    BelievedInstitutionalClaim, CarryCapacity, CauseRef, ControlSource, DeprivationExposure,
-    EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis, ExpectationOutcome,
-    ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+    BelievedInstitutionalClaim, CarryCapacity, CauseRef, ContentionQueue, ControlSource,
+    DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
     LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
     MerchandiseProfile, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
@@ -333,6 +333,10 @@ fn spawn_entities(
                 output_owner: ProductionOutputOwner::Actor,
             },
         )?;
+        if let Some(policy) = &facility_def.contention_policy {
+            txn.set_component_contention_policy(facility_id, policy.clone())?;
+            txn.set_component_contention_queue(facility_id, ContentionQueue::default())?;
+        }
         if let Some(name) = &facility_def.name {
             txn.set_component_name(facility_id, worldwake_core::Name(name.clone()))?;
         }
@@ -1194,15 +1198,15 @@ mod tests {
     use worldwake_core::{
         AgendaProfile, ArtifactPostingProfile, BeliefConfidencePolicy, CarryCapacity,
         CognitiveProfile, CommodityDecayMap, CommodityKind, CommodityValuationProfile,
-        CommunicationProfile, ContentionDispositionProfile, ControlSource, DisposalProfile,
-        DiversificationProfile, DriveEscalationParams, DriveEscalationProfile, DriveThresholds,
-        EpistemicDispositionProfile, ExecutionBudget, ExpectationStore, HomeostaticNeedId,
-        HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-        LastProactiveExplorationTick, LastSeenMemory, LoadUnits, MultiplierPermille,
-        ObligationSatiationProfile, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
-        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, SubstitutePreferences,
-        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WorkstationTag, default_commodity_decay_map,
+        CommunicationProfile, ContentionDispositionProfile, ContentionPolicy, ControlSource,
+        DisposalProfile, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
+        DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
+        HomeostaticNeedId, HomeostaticNeeds, IntentionDispositionProfile,
+        JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LoadUnits,
+        MultiplierPermille, ObligationSatiationProfile, PatrolProfile, PatrolRoute,
+        PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
+        Quantity, SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand,
+        TradeCategory, ViolationDispositionProfile, WorkstationTag, default_commodity_decay_map,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -2109,6 +2113,7 @@ mod tests {
                 workstation: WorkstationTag::Forge,
                 location: "Smithy".into(),
                 merchant_storage: None,
+                contention_policy: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Apple,
@@ -2238,6 +2243,7 @@ mod tests {
                 workstation: WorkstationTag::OrchardRow,
                 location: "Orchard".into(),
                 merchant_storage: None,
+                contention_policy: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Apple,
@@ -2305,6 +2311,7 @@ mod tests {
                 workstation: WorkstationTag::Well,
                 location: "Village".into(),
                 merchant_storage: None,
+                contention_policy: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Water,
@@ -2394,6 +2401,7 @@ mod tests {
                     stock_capacity: LoadUnits(200),
                     display_capacity: Some(LoadUnits(100)),
                 }),
+                contention_policy: None,
             }],
             resource_sources: vec![],
             hostilities: vec![],
@@ -2439,6 +2447,56 @@ mod tests {
         assert_eq!(
             world.get_component_workstation_marker(stall).unwrap().0,
             WorkstationTag::Forge
+        );
+    }
+
+    #[test]
+    fn test_spawn_facility_contention_policy_seeds_queue_state() {
+        let policy = ContentionPolicy {
+            grant_hold_ticks: NonZeroU32::new(3).unwrap(),
+            auto_promote: true,
+            max_waiters: Some(2),
+        };
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Village".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![],
+            bandit_camps: Vec::new(),
+            offices: vec![],
+            notices: vec![],
+            items: vec![],
+            facilities: vec![FacilityDef {
+                name: Some("Village Well".into()),
+                workstation: WorkstationTag::Well,
+                location: "Village".into(),
+                merchant_storage: None,
+                contention_policy: Some(policy.clone()),
+            }],
+            resource_sources: vec![],
+            hostilities: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let well = world
+            .query_name()
+            .find_map(|(entity, name)| (name.0 == "Village Well").then_some(entity))
+            .expect("scenario should spawn named well");
+
+        assert_eq!(world.get_component_contention_policy(well), Some(&policy));
+        assert!(
+            world
+                .get_component_contention_queue(well)
+                .is_some_and(|queue| queue.waiting.is_empty() && queue.granted.is_none())
         );
     }
 

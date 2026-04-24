@@ -9,8 +9,8 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PlannerOpKind};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKey, GoalKind,
-    PerceptionSource, Quantity, Tick,
+    CommodityKind, CommodityPurpose, DriveThresholds, EntityId, EventTag, EventView, GoalKey,
+    GoalKind, PerceptionSource, Quantity, Tick,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -44,11 +44,20 @@ struct TradeObservation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct FacilityContentionObservation {
+    facility: EntityId,
+    queue_commit_ticks: BTreeMap<String, Tick>,
+    grant_promoted_ticks: Vec<Tick>,
+    first_harvest_after_queue_tick: Option<Tick>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct SurvivalTradeObservation {
     contract: worldwake_cli::scenario::types::SurvivalHealthContractDef,
     agents: BTreeMap<String, AgentSurvivalObservation>,
     stuck_idle_windows: Vec<StuckIdleWindow>,
     trade: TradeObservation,
+    facility_contention: FacilityContentionObservation,
 }
 
 fn scenario_path() -> PathBuf {
@@ -97,6 +106,13 @@ fn named_agents(h: &GoldenHarness) -> BTreeMap<String, EntityId> {
         .collect()
 }
 
+fn named_entity(h: &GoldenHarness, target_name: &str) -> EntityId {
+    h.world
+        .query_name()
+        .find_map(|(entity, name)| (name.0 == target_name).then_some(entity))
+        .unwrap_or_else(|| panic!("scenario should include named entity '{target_name}'"))
+}
+
 fn contract_run_limit_overrides(
     limits: Option<&worldwake_cli::scenario::types::SurvivalCriticalRunLimitsDef>,
 ) -> SurvivalCriticalRunLimitOverrides {
@@ -135,6 +151,7 @@ fn run_survival_trade() -> SurvivalTradeObservation {
     let buyer = *agents
         .get("Buyer Nila")
         .expect("scenario should include Buyer Nila");
+    let village_well = named_entity(&h, "Village Well");
     let substitute_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: SUBSTITUTE_COMMODITY,
         purpose: CommodityPurpose::SelfConsume,
@@ -175,6 +192,8 @@ fn run_survival_trade() -> SurvivalTradeObservation {
     let mut buyer_bread_after_trade = None;
     let mut buyer_coin_after_trade = None;
     let mut merchant_coin_after_trade = None;
+    let mut queue_commit_ticks = BTreeMap::new();
+    let mut first_harvest_after_queue_tick = None;
     let initial_buyer_coin = h
         .world
         .controlled_commodity_quantity(buyer, CommodityKind::Coin);
@@ -246,6 +265,14 @@ fn run_survival_trade() -> SurvivalTradeObservation {
             }
             match event.action_name.as_str() {
                 "stage_stock_for_sale" if stage_tick.is_none() => stage_tick = Some(tick),
+                "queue_for_facility_use" => {
+                    queue_commit_ticks
+                        .entry("Merchant Sera".to_string())
+                        .or_insert(tick);
+                }
+                "harvest:Harvest Water" if first_harvest_after_queue_tick.is_none() => {
+                    first_harvest_after_queue_tick = Some(tick);
+                }
                 _ => {}
             }
         }
@@ -321,6 +348,19 @@ fn run_survival_trade() -> SurvivalTradeObservation {
             {
                 first_eat_tick = Some(tick);
             }
+            if event.action_name == "queue_for_facility_use"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            {
+                queue_commit_ticks
+                    .entry("Buyer Nila".to_string())
+                    .or_insert(tick);
+            }
+            if event.action_name == "harvest:Harvest Water"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+                && first_harvest_after_queue_tick.is_none()
+            {
+                first_harvest_after_queue_tick = Some(tick);
+            }
         }
     }
 
@@ -375,6 +415,14 @@ fn run_survival_trade() -> SurvivalTradeObservation {
         merchant_coin_after_trade: merchant_coin_after_trade
             .expect("trade commit should snapshot merchant coin"),
     };
+    let grant_promoted_ticks = h
+        .event_log
+        .events_by_tag(EventTag::QueueGrantPromoted)
+        .iter()
+        .filter_map(|event_id| h.event_log.get(*event_id))
+        .filter(|event| event.target_ids().contains(&village_well))
+        .map(EventView::tick)
+        .collect::<Vec<_>>();
 
     let agents = agents
         .into_iter()
@@ -405,39 +453,52 @@ fn run_survival_trade() -> SurvivalTradeObservation {
         agents,
         stuck_idle_windows,
         trade,
+        facility_contention: FacilityContentionObservation {
+            facility: village_well,
+            queue_commit_ticks,
+            grant_promoted_ticks,
+            first_harvest_after_queue_tick,
+        },
     }
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 173: Survival Trade Proves the Substitute Market Branch
+// Scenario 350: Survival Trade Proves the Substitute Market Branch
 // ---------------------------------------------------------------------------
 //
-// Systems: AI, Needs, Trade, Travel, Perception
+// Systems: AI, Needs, Trade, Travel, Perception, Production
 // GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
-// ActionDomains: Trade, Travel, Needs
+// ActionDomains: Trade, Travel, Needs, Production
 // Places: Market Square, South Orchard
-// Principles: 6, 7, 8, 14, 20
+// Principles: 6, 7, 8, 9, 14, 20
 //
 // Setup: Run the authored survival trade scenario for 1440 ticks. The buyer
 // starts hungry at Market Square with coin but no direct bread-market branch.
 // The merchant stages only apples, the buyer's authored food substitutes are
-// `[Apple, Grain]`, and a remote orchard still exists in the authored world.
-// The proved branch stays local: a substitute-backed apple trade sustains the
-// buyer before later self-care continues.
+// `[Apple, Grain]`, and the Market Square well is contention-managed with
+// queue patience on both principals. The proved food branch stays local: a
+// substitute-backed apple trade sustains the buyer before later self-care
+// continues.
 //
 // Proves: both agents satisfy the authored survival-health contract; the
 // merchant lawfully stages a listed apple lot at the market seam; the buyer
 // reaches a local `AcquireCommodity(SelfConsume)` substitute branch whose live
 // runtime plan keeps an explicit `trade` payload bound to that apple lot; and
 // the buyer later commits substitute trade with authoritative apple and coin
-// transfer visible at the trade seam before the first eat commit.
+// transfer visible at the trade seam before the first eat commit. The same run
+// also proves the remaining facility-contention extension: the authored Market
+// Square well uses the real `queue_for_facility_use` action, the contention
+// system promotes a grant, and a water harvest commits only after the queue
+// branch has made exclusive use lawful.
 //
 // Chain: no listed bread market branch -> committed stage_stock_for_sale ->
 // Apple SaleListing present -> buyer selects local `AcquireCommodity(Apple,
 // SelfConsume)` -> current plan retains explicit `trade` payload against the
 // merchant's apple lot -> buyer holds Apple and spends Coin -> buyer later
-// commits eat -> the substitute-backed trade branch keeps the survival loop
-// viable.
+// commits eat; Market Square well carries `ContentionPolicy` -> agent commits
+// `queue_for_facility_use` -> QueueGrantPromoted event targets the well ->
+// harvest-water commit follows the grant path -> the combined trade and queue
+// branches keep the survival loop viable.
 #[test]
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn survival_trade_proves_substitute_market_branch() {
@@ -515,6 +576,37 @@ fn survival_trade_proves_substitute_market_branch() {
     assert!(
         observation.trade.merchant_coin_after_trade > Quantity(0),
         "trade should increase merchant coin at the authoritative seam; observation={observation:?}"
+    );
+    assert!(
+        observation.facility_contention.queue_commit_ticks.len() >= 2,
+        "both survival-trade principals should commit queue_for_facility_use against the Market Square well; observation={observation:?}"
+    );
+    let first_queue_tick = observation
+        .facility_contention
+        .queue_commit_ticks
+        .values()
+        .min()
+        .copied()
+        .expect("queue branch should have at least one commit tick");
+    let first_grant_tick = observation
+        .facility_contention
+        .grant_promoted_ticks
+        .iter()
+        .filter(|tick| **tick >= first_queue_tick)
+        .min()
+        .copied()
+        .expect("contention system should promote a grant for the Market Square well after an observed queue commit");
+    assert!(
+        first_queue_tick <= first_grant_tick,
+        "facility grant should not be promoted before an agent queues; observation={observation:?}"
+    );
+    let first_harvest_after_queue = observation
+        .facility_contention
+        .first_harvest_after_queue_tick
+        .expect("a water harvest should commit after the queue/grant branch");
+    assert!(
+        first_grant_tick <= first_harvest_after_queue,
+        "exclusive water harvest should commit only after the queue branch promotes a grant; observation={observation:?}"
     );
 }
 
