@@ -11,9 +11,10 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    ArtifactHeader, ArtifactKind, ArtifactState, CarryCapacity, CauseRef, ControlSource,
-    DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+    ArtifactHeader, ArtifactKind, ArtifactState, BelievedInstitutionalClaim, CarryCapacity,
+    CauseRef, ControlSource, DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog,
+    ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore,
+    ExplorationProfile, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
     KnownRecipes, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
     LoadUnits, MerchandiseProfile, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
     OfficeForceState, PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
@@ -728,16 +729,27 @@ fn spawn_office(
                 office_def.name
             ))
         })?;
-    txn.append_record_entry(
-        office_register,
-        worldwake_core::InstitutionalClaim::OfficeHolder {
-            office,
-            holder: None,
-            effective_tick: Tick(0),
-        },
-    )?;
+    let office_holder_claim = InstitutionalClaim::OfficeHolder {
+        office,
+        holder: initial_holder,
+        effective_tick: Tick(0),
+    };
+    let office_holder_entry_id = txn.append_record_entry(office_register, office_holder_claim)?;
     if let Some(initial_holder) = initial_holder {
         txn.assign_office(office, initial_holder)?;
+        txn.project_institutional_belief(
+            initial_holder,
+            InstitutionalBeliefKey::OfficeHolderOf { office },
+            BelievedInstitutionalClaim {
+                claim: office_holder_claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record: office_register,
+                    entry_id: office_holder_entry_id,
+                },
+                learned_tick: Tick(0),
+                learned_at: Some(seat),
+            },
+        )?;
     }
 
     facility_locations.insert(office, seat);
@@ -3054,9 +3066,33 @@ mod tests {
                 (data.record_kind == RecordKind::CrimeRegister).then_some((entity, data))
             })
             .expect("office should spawn a colocated crime register");
+        let office_register = world
+            .query_record_data()
+            .find_map(|(entity, data)| {
+                (data.record_kind == RecordKind::OfficeRegister && data.home_place == seat)
+                    .then_some((entity, data))
+            })
+            .expect("office should spawn with a colocated office register");
+        let holder_beliefs = world
+            .get_component_agent_belief_store(holder)
+            .expect("initial holder should have a belief store");
 
         assert_eq!(crime_register.1.home_place, seat);
         assert_eq!(crime_register.1.issuer, office);
         assert_eq!(world.office_holder(office), Some(holder));
+        assert!(office_register.1.entries.iter().any(|entry| {
+            matches!(
+                entry.claim,
+                InstitutionalClaim::OfficeHolder {
+                    office: claim_office,
+                    holder: Some(claim_holder),
+                    effective_tick: Tick(0),
+                } if claim_office == office && claim_holder == holder
+            )
+        }));
+        assert_eq!(
+            holder_beliefs.believed_office_holder(office),
+            worldwake_core::InstitutionalBeliefRead::Certain(Some(holder))
+        );
     }
 }
