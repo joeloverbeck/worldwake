@@ -25,6 +25,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 - Resolve the exact roadmap row first. Do not start coding from the user phrase alone.
 - Treat roadmap landing as a three-layer contract: structural activation, behavioral proof, and causal validity.
 - If earlier landed rows already own part of the requested mechanic family, subtract that overlap first and restate the residual row-owned seam before authoring scenario or golden code.
+- If the requested row depends on prerequisite substrate that was already landed earlier, prefer authoring that substrate directly in the new scenario instead of re-proving the earlier row, unless the current row truthfully owns re-exercising it.
 - A 1440-tick survival pass is necessary but not sufficient.
 - When the outcome is partial progress, distinguish explicitly between `what was implemented` and `why the row is still not Landed`.
 - Scenario-backed proof must assert the mechanic's intended behavior, not just the presence of a goal or action name.

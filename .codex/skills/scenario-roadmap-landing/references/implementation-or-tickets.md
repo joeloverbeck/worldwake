@@ -10,6 +10,7 @@ Common work includes:
 
 - production code changes to make the mechanic actually work under survival pressure
 - scenario authoring-surface changes when the live mechanic exists but cannot yet be authored truthfully through `worldwake-cli` scenario files (for example `crates/worldwake-cli/src/scenario/types.rs`, `crates/worldwake-cli/src/scenario/mod.rs`, `crates/worldwake-cli/src/bin/scenario_coverage.rs`, and the affected scenario/fixture tests)
+- a narrow scenario-spawn or schema-focused unit test when new authoring substrate is added, so authored-surface regressions do not depend only on rerunning the full 1440-tick roadmap golden
 - scenario revisions when the authored substrate is insufficient
 - golden revisions when assertions are too weak or prove the wrong branch
 - CI workflow updates so the new scenario runs in the correct family workflow and stays out of regular lanes

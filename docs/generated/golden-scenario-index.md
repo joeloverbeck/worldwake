@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 98
-- Contributing golden test files: 23
-- Associated tests: 122
+- Scenario blocks: 100
+- Contributing golden test files: 24
+- Associated tests: 126
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1065,6 +1065,36 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: carried Waste above disposal threshold -> selected `FreeCarryCapacity` goal -> committed `drop_item` -> tracked Waste lot on ground -> `ItemDecay` archives that exact lot -> local apple trade still commits under the same survival loop.
 
+### Scenario 177: Survival Justice Proves Accusation Substrate
+
+- Source: `golden_survival_justice.rs:505`
+- Systems: AI, Needs, Trade, Perception, Offices, Investigation
+- GoalKinds: StealItem, InvestigateViolation, Accuse
+- ActionDomains: Social, Trade, Needs
+- Places: Market Square
+- Principles: 4, 6, 7, 8, 12, 20, 21
+
+**Setup**: Run the authored survival justice scenario for 1440 ticks. `Merchant Sera` begins as lawful `Market Warden` holder at `Market Square`, stages owned apples for sale, responds to local stock disappearance with the live investigation action, then retains the theft case long enough to commit `accuse` under survival pressure.
+
+**Proves**: the tracked merchant satisfies the authored survival-health contract; the merchant starts from a lawful office-holder substrate, stages sale stock, and the live accusation chain remains active in the same authored survival run where theft also occurs. The same accusation case then reaches truthful fine punishment and records the verdict. The scenario intentionally stops short of claiming that search/report_found is part of this accusation-substrate seam.
+
+**Cross-system chain**: lawful office-holder substrate -> staged apples become stealable -> the scenario reaches real `steal`, `investigate`, `accuse`, and `fine` commits under the same survival envelope, and the crime register records the accusation and fine verdict for the same justice run.
+
+### Scenario 178: Survival Justice Proves Search And Report Found
+
+- Source: `golden_survival_justice.rs:615`
+- Systems: AI, Needs, Search, Reports, Perception, Offices
+- GoalKinds: SearchForMissing, ReportFound
+- ActionDomains: Social, Needs
+- Places: Market Square
+- Principles: 6, 7, 8, 14, 17, 18, 20
+
+**Setup**: Run the authored survival justice scenario for 1440 ticks. `Searcher Ivo` begins with an overdue expectation for colocated `Missing Pru` at `Market Square` and a matching local last-seen record.
+
+**Proves**: the searcher commits `search_place` for the overdue missing-person expectation, resolves it as found safe, then commits `report_found` and writes the found-person status to the local office register. The same run also asserts that stale exact-bound `ask_about_person` requests no longer recur for this local-search branch.
+
+**Cross-system chain**: overdue local expectation -> planner selects direct `search_place` instead of stale `ask_about_person` -> expectation resolves found safe -> `report_found` writes the missing-person status claim.
+
 ### Scenario 175: Survival Offices Proves Force-Law Uptake Under Survival
 
 - Source: `golden_survival_offices.rs:316`
@@ -1217,7 +1247,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 176: Survival Theft Lands the Concealed Staged-Lot Branch
 
-- Source: `golden_survival_theft.rs:332`
+- Source: `golden_survival_theft.rs:337`
 - Systems: AI, Needs, Trade, Perception, Transport
 - GoalKinds: StealItem, ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Needs, Transport

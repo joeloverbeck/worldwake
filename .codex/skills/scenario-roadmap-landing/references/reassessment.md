@@ -33,6 +33,7 @@ For the requested row:
 4. Check `crates/worldwake-cli/src/bin/scenario_coverage.rs` when needed to verify the live structural activation rule.
 5. Check existing scenarios and goldens to see what is already proven, what is only structurally active, and what is only auxiliary evidence.
 6. Check whether the row's required substrate will also make later roadmap rows structurally active under the generator. If it does, record that upfront and keep those rows separate from the requested landing unless the new golden actually proves them.
+7. If an earlier landed row already owns prerequisite substrate for this row, prefer treating that substrate as authored setup for the current scenario rather than trying to earn it again here, unless the current row explicitly owns re-proving that prerequisite.
 
 Do not collapse these categories:
 

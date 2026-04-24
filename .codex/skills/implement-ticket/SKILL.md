@@ -44,14 +44,21 @@ Use this branch whenever focused live proof confirms a real narrow production fi
 
 1. Land the narrow production fix at the strongest honest owning seam.
 2. Stop before adding more exploratory end-to-end proof edits for the drafted broader ending.
+   Short-lived diagnostic probes are allowed only when needed to isolate the remaining owner or failure seam after the narrow fix lands. Do not keep those probes as part of the final proof surface unless they become the truthful owned seam.
 3. Rewrite the active ticket/spec immediately to the newly proved boundary.
 4. Record the exact still-false higher-level premise and the focused evidence that disproved it.
 5. Create or update the follow-up ticket that owns the deferred broader seam before broader verification and closeout.
    If the disproved remainder is still in the same scenario/domain but now clearly belongs to a later authoritative boundary, create a new follow-up ticket for that later boundary instead of stretching the current ticket back upward.
    If focused proof lands candidate/goal emission or another earlier planner seam, but same-family ranking, selected-branch, or scenario-row proof still stays false, close the current ticket to the earlier landed seam and open the follow-up specifically on the later selection/proof boundary rather than treating the emitted candidate itself as unproven.
+   If diagnosis reveals multiple non-overlapping remaining contradictions, create one follow-up ticket per causal owner / proof seam rather than one umbrella successor ticket.
+   If the first broadened repro after a narrow fix still fails and reveals another earlier causal owner, stop scenario/golden tuning immediately, split or land that earlier owner first, and only then return to the broader scenario proof.
 6. During closeout, record the split explicitly: landed narrow boundary, focused and broadened commands, concrete reason the broader premise stayed false, and the follow-up owner.
 7. If you added a temporary exploratory golden/test only to prove or disprove the stronger end state, remove or rewrite it before final verification when that stronger contract remains false.
+   Apply the same cleanup rule to temporary exploratory scenario, fixture, or config edits used only for diagnosis.
+   When the narrower seam survives in the same golden/test file, rename or narrow the remaining test names, assertions, metadata comments, and nearby roadmap prose so they describe only the landed seam rather than the disproved broader ending.
 8. If the user later approves the split rather than asking for more implementation on the disproved broader seam, immediately formalize it in the repo: update the active ticket's status/scope/outcome to the landed narrow boundary, create the follow-up from `tickets/_TEMPLATE.md`, and update any live roadmap or blocker docs that still point at the old combined ownership. Do not rerun unchanged code verification in that follow-up docs/ticket pass unless implementation changed again.
+
+If the active ticket is already the follow-up / remainder owner and focused reassessment shows no truthful implementation slice remains inside its current claim, stop further implementation attempts immediately. Remove temporary probes, keep the strongest focused evidence, and treat the ticket as a rejection-and-split boundary rather than continuing local churn. Use 1-3-1 when more than one plausible causal continuation remains (for example two different punishment paths or two different scenario owners); otherwise rewrite the active ticket to `REJECTED`, create the narrower successor ticket, and update live roadmap/blocker docs in the same pass.
 
 Do not use this branch when broader verification fails only because an existing golden assertion still encodes a stronger subclaim than the current ticket now truthfully owns. If the same scenario still proves the ticket's real integration seam, narrow that assertion in-scope, rerun the golden, and close out without manufacturing a follow-up ticket.
 
@@ -61,37 +68,16 @@ Do not use this branch when broader verification fails only because an existing 
 
 Load `references/ticket-classification.md`.
 
-#### privacy-hardening / access-fence
-
-If the ticket primarily tightens an existing visibility boundary, adds `compile_fail` fences, or otherwise hardens an existing API/ordering/access contract without changing runtime semantics, classify it as `privacy-hardening / access-fence` during intake. For that ticket shape, verify the live import/read surface first: sweep current readers across the workspace, classify them as same-module, same-crate, same-package test, or sibling-crate consumers, confirm the exact external symbol path the negative proof is asserting against, then add the narrowest structural regression (for example a uniqueness grep test) only when the ticket's invariant is about a singleton definition rather than ordinary privacy alone.
-
-#### validation-suite / proof-gap
-
-If the ticket is primarily a validation-suite / tests-only reassessment ticket for a feature family that already landed, classify it as `validation-suite / proof-gap`. For that ticket shape, sweep the drafted `New/Modified Tests`, `Files to Touch`, and `Acceptance Criteria` against the live branch before reading the proof plan literally: mark which drafted proofs are already landed, identify the strongest remaining honest proof seam, and prefer tightening that existing seam over creating duplicate coverage. When the truthful replay/save-load seam lives in a different file than the draft claimed, rewrite the ticket to the real owner before coding.
-
-#### schema-only / staged substrate
-
-If the ticket primarily introduces a shared schema, payload, enum, save-format bump, or other substrate that sibling tickets will populate or render later, classify it as `schema-only / staged substrate` during intake. For that ticket shape, reassess the carrier contract, derive/trait surface, constructor fallout, save/replay/version boundaries, and focused round-trip coverage first. Expect existing emitters/builders to keep populating the new surface with `None`/empty/default values until the later sibling ticket wires runtime use, and record that staged state explicitly in closeout instead of implying the new schema is already live.
-
-#### shared enum/payload variant migration
-
-If the ticket primarily adds a new variant to an existing shared enum or payload family, classify it as `shared enum/payload variant migration` during intake. For that ticket shape, reassess the owner enum/payload, any paired event-tag/manifest surface, crate-root re-exports, exhaustive `match` consumers, render/report observers, and focused serialization or round-trip proof before coding. Expect downstream CLI/report/observer fallout even when the drafted file list only names the defining crate, and prefer an early repo-wide sweep for `Type::NewVariant` plus exhaustive `match payload { ... }` consumers before relying on broadened verification to discover them.
-
-If that changed type is embedded inside persisted runtime state or another enclosing saveable carrier, treat the ticket as a save-shape change even when the defining file lives outside the obvious save/load module boundary. Verify the enclosing persisted seam and version policy up front instead of assuming the change is crate-local just because the first edit lands elsewhere.
-
-When that staged ticket also claims a real action, authored template, or other downstream runtime exercise path, do one additional reachability check before closeout: identify at least one truthful production consumer that carries the new substrate into live runtime state, and prove that seam with focused verification. If the new substrate is intentionally still test-only or helper-only, say so explicitly in the ticket closeout instead of marking the runtime path as landed.
-
-When that staged runtime path depends on place, entity, claim, or other bound semantics carried through an existing runtime step/report record, inspect whether the current carrier stores that fact explicitly or is only inferring it from another field. If the inferred path would make the live binding dishonest (for example an entity standing in for a place), treat the carrier-field fix and its constructor fallout as current-ticket scope before closeout.
-
-When that staged ticket adds a new shared enum variant, record kind, or other tagged substrate, inspect not only exhaustive `match` sites but also live consumers that interpret the carrier semantically (for example sorting, filtering, goal emission, report routing, or discrepancy classification). If a consumer would still misclassify the new substrate after a compile-fix arm is added, treat that semantic exclusion or routing update as current-ticket scope rather than deferring it silently.
-
-For shared enum/payload variant tickets, perform one explicit early consumer sweep before implementation scope is final: search the workspace for `Type::Variant`, owner-type names in exhaustive `match` blocks, and known observer/report formatter entrypoints. Classify each hit as owner, compile-only fallout, semantic renderer/observer fallout, or no-change cited file, and use that sweep to seed the real `Files to Touch` / closeout boundary before the first broadened verification run.
-
-If that staged ticket lands a new read-only wrapper or view type, check the repo's trait/lint expectations for the full surface early (for example iterator helpers that also need `IntoIterator for &Type`, or similar pedantic companion impls) instead of waiting for final CI-shaped clippy fallout to reveal the missing piece.
-
-When a ticket broadly flips consumer signatures from a raw collection to a new read-only wrapper/view type, sweep nearby and same-crate `#[cfg(test)]` modules for raw fixtures up front (`vec![...]`, arrays, `&[]`, `std::slice::from_ref`, and similar helpers). Normalize those fixtures through the lawful constructor path early (for example `sort_in_place` or a tiny local `from_sorted_for_test` helper) instead of discovering dozens of test-only type mismatches late from compile fallout.
-
-If that staged ticket introduces a mirrored enum or record in one crate to represent a type owned by another crate, explicitly identify the nearest lawful proof seam that can see both sides and prove parity there (for example variant set, ordinal/serialization bytes, or other wire-format equivalence). Do not assume same-named mirrors stay aligned without an explicit check.
+Pick the closest ticket shape before Step 1, then follow the matching quick path or full workflow. At minimum classify whether the ticket is:
+- small/local
+- validation-suite / proof-gap
+- privacy-hardening / access-fence
+- schema-only / staged substrate
+- shared field/type migration
+- shared enum/payload variant migration
+- planner-boundary / golden E2E
+- canonical writer / allocator integrity
+- all other full-workflow work
 
 ### 1. Load the ticket context
 
@@ -118,8 +104,11 @@ When a golden or planner ticket claims one specific operator family, selected pl
 
 When a golden/observer fixture mismatch could reflect either renderer drift or lawful upstream event/report drift, prove the upstream contract first at the strongest existing lower-layer owning seam already in the repo before editing the fixture. If that lower-layer seam is green and the rendered mismatch matches the live output, narrow the ticket to fixture refresh plus truthful closeout rather than reopening production ownership.
 
+Before changing authored scenario inputs after a failed golden, run one compact diagnostic pass first: capture the earliest relevant action ticks, the key quantity/state at the asserted boundary, and whether candidate emission / ranked selection / final commit moved. Use that pass to decide whether the owner is still scenario authoring or an earlier production seam before starting scenario churn.
+
 When a roadmap or scenario-owned golden is supposed to isolate one authored causal branch from rival lawful branches, inspect the authored inputs that can keep the rival branch alive before coding: staged stock, substitute order, local inventories, resource sources, and other scenario-seeded availability. If those authored inputs still make the rival branch lawful, rewrite the ticket immediately to either the narrower live proof seam or the real scenario/golden isolation follow-up instead of treating the gap as planner logic by default.
 When that isolation pass removes or demotes one authored branch, also verify that the edit does not accidentally falsify the scenario's wider survival or self-care contract for other actors. If a rival branch must stay available privately or non-market-facing (for example private stock needed for another actor's survival), preserve that narrower lawful path and rewrite the ticket/golden to the honest boundary such as `no listed branch` or `no local branch`, rather than over-strengthening the authored isolation into `no commodity anywhere`.
+If two or more bounded scenario/profile/setup tweaks still leave the same candidate owner absent, the same causal blocker unchanged, or the same live branch selected, stop local scenario tuning and escalate immediately to ticket rewrite / follow-up split / 1-3-1 instead of continuing to churn scenario authoring. Record the repeated unchanged owner explicitly so the repo reflects why the implementation attempt stopped.
 
 When a ticket's primary deliverable is a generated report, inventory, or other read-only companion derived from authored schema/input files, verify representability before coding: for each drafted detection rule or output row, confirm that the claimed fact is actually visible from the stated input boundary. If the draft depends on runtime-only entities, inferred later-stage state, or another carrier the tool does not read, rewrite the ticket immediately to the strongest honest schema-owned seam instead of encoding guessed output.
 
@@ -195,6 +184,8 @@ When a first-pass ticket/spec rewrite itself later proves too strong under focus
 #### Bind abstract domain language to live carriers
 
 When a ticket or spec uses generic domain language such as “affordance presence”, “local support”, or “relevant local state”, bind that phrase to the exact live carrier before coding. If the branch uses concrete place tags, workstation markers, item lots, resource sources, or another existing convention rather than a dedicated helper/type named in the prose, record that narrowing and implement against the live carrier instead of inventing a new abstraction by default.
+
+When a theft, custody, or facility-stock ticket is motivated by “missing” or “unavailable” local goods, classify the contradiction before coding as one of: absent from place, absent from lawful control path, or absent from authoritative stock path. If the lot is still co-located and locally observable but no longer lawfully controllable by the owner, do not force the ticket back into a pure place-absence story; reassess the owner boundary across violation detection, investigation, accusation, and scenario authoring first.
 
 When a ticket or spec includes a function sketch that reads through `GoalBeliefView` or another actor-facing belief trait, verify whether any required methods are actor-scoped before accepting an actor-free signature. If the live trait requires an explicit actor or another carrier the sketch omitted, correct the ticket/spec and helper signature before implementation instead of smuggling the missing context in later.
 
@@ -308,6 +299,8 @@ Load `references/verification.md`.
 
 When using exact Cargo test selectors for focused proof, confirm the real test path first with `cargo test ... -- --list` before relying on `--exact`. Bare function names often miss ordinary unit-test module paths and `src/bin/*.rs` unit tests, which can leave a command compiling the target while executing zero intended tests.
 
+For crate unit tests in particular, prefer `cargo test -p <crate> --lib -- --list` first, then run the fully qualified module path with `--exact` (for example `candidate_generation::tests::case_name`). This avoids the common false-positive lane where a bare test name compiles the crate but executes zero intended tests.
+
 If repo guidance or the active verification contract requires `cargo fmt --all`, run it, then immediately inspect `git status --short` and classify any formatter spillover in already-dirty files as unrelated or adjacent fallout unless the current ticket truly owns those paths. Record that spillover explicitly in closeout rather than silently attributing the formatted files to the ticket.
 
 When a tooling or CI-script ticket needs a deliberate negative probe and the owned contract is that a whole script fails at a new late-added gate, let the full script run and record the exact failing step/message instead of short-circuiting through a narrower surrogate. Pair that probe with cleanup-safe restoration so the worktree returns to its pre-probe state before closeout.
@@ -351,6 +344,7 @@ When the selected plan includes a progress barrier such as `Travel -> local guar
 When the earliest honest golden boundary proves the scenario-authored branch selection or local binding, but the owned mismatch event, discrepancy memory, or execution-side aftermath belongs to a different lower execution seam, adopt a paired proof surface explicitly instead of continuing to search for one synthetic test that proves both. Rewrite the ticket/spec so the golden owns the earlier causal boundary, cite the existing focused runtime/helper proof for the later contract, and update acceptance criteria / test plan / closeout to name both proof surfaces together.
 
 When a focused golden repro almost reaches the authored scenario but the planner selects the wrong operator family or no candidate at all, record that exact selected path or candidate absence before changing code. Compare it directly to the ticket's intended branch; if the mismatch exposes a missing belief carrier, custody distinction, or candidate-generation prerequisite upstream, treat that upstream gap as the real ticket outcome instead of forcing the drafted golden through helper churn.
+When a scenario or golden contradiction survives scenario isolation and points at what the actor should already lawfully know locally, inspect belief-view, perception, and other read-model carriers as first-class owners before assuming the fix must live in candidate generation, ranking, or search. For local institutional, office, claim, or place facts, verify whether the live read-model is supposed to fall back to authoritative local state while remote knowledge still remains belief-backed.
 When the intended goal or operator still appears in ranking output or selection summaries but never reaches `planning.attempts`, do not jump straight to `search_plan` or action execution. Inspect the pre-search boundary first: feasibility probe rejection, portfolio/admission gating, root-candidate synthesis, and exhaustion/blocker suppression can all prevent a ranked branch from ever becoming a plan attempt.
 
 When a revived/current plan looks correct but runtime still aborts, use a compact diagnostic pass before widening scope further: inspect the revived/current plan payload, then request/action trace or action trace, then the authoritative abort reason, and only then decide whether the remaining contradiction still belongs to the current ticket or needs a later-boundary follow-up.

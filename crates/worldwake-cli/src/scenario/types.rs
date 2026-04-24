@@ -62,6 +62,8 @@ pub struct OfficeDef {
     pub succession_law: SuccessionLaw,
     pub succession_period_ticks: u64,
     #[serde(default)]
+    pub initial_holder: Option<String>,
+    #[serde(default)]
     pub eligibility_rules: Vec<EligibilityRuleDef>,
 }
 

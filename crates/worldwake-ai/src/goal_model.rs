@@ -835,7 +835,14 @@ impl GoalKindPlannerExt for GoalKind {
                 _ => Err(GoalPayloadOverrideError::UnsupportedGoal),
             },
             PlannerOpKind::AskAboutPerson => match self {
-                GoalKind::SearchForMissing { subject, .. } => {
+                GoalKind::SearchForMissing { subject, last_seen } => {
+                    let actor = state.snapshot().actor();
+                    if state
+                        .effective_place(actor)
+                        .is_some_and(|actor_place| Some(actor_place) == *last_seen)
+                    {
+                        return Err(GoalPayloadOverrideError::UnsupportedGoal);
+                    }
                     let Some(&target) = targets.first() else {
                         return Err(GoalPayloadOverrideError::UnsupportedGoal);
                     };
@@ -1858,6 +1865,9 @@ impl GoalKindPlannerExt for GoalKind {
                 };
                 state.effective_place(state.snapshot().actor()) == Some(record.home_place)
             }
+            (GoalKind::SearchForMissing { last_seen, .. }, PlannerOpKind::AskAboutPerson) => !state
+                .effective_place(state.snapshot().actor())
+                .is_some_and(|actor_place| Some(actor_place) == *last_seen),
             _ => true,
         }
     }
@@ -2577,13 +2587,13 @@ mod tests {
     use worldwake_sim::PressForceClaimActionPayload;
     use worldwake_sim::{
         AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
-        ActionPayload, AskWitnessPayload, BribeActionPayload, ConsultRecordActionPayload,
-        ControlBeliefView, DurationExpr, EntityBeliefView, HarvestActionPayload, Interruptibility,
-        InventoryBeliefView, InvestigateActionPayload, ProfileBeliefView, PunishActionPayload,
-        QueueForFacilityUsePayload, RecipeRegistry, ReportMissingActionPayload, RuntimeBeliefView,
-        SearchPlaceActionPayload, SpatialBeliefView, TellActionPayload, TemporalBeliefView,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-        estimate_duration_from_beliefs,
+        ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload, BribeActionPayload,
+        ConsultRecordActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
+        HarvestActionPayload, Interruptibility, InventoryBeliefView, InvestigateActionPayload,
+        ProfileBeliefView, PunishActionPayload, QueueForFacilityUsePayload, RecipeRegistry,
+        ReportMissingActionPayload, RuntimeBeliefView, SearchPlaceActionPayload, SpatialBeliefView,
+        TellActionPayload, TemporalBeliefView, ThreatenActionPayload, TradeActionPayload,
+        TransportActionPayload, estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -4678,6 +4688,177 @@ mod tests {
         assert_eq!(
             payload,
             Some(ActionPayload::SearchPlace(SearchPlaceActionPayload {
+                subject,
+            }))
+        );
+    }
+
+    #[test]
+    fn search_for_missing_rejects_ask_about_person_payload_when_last_seen_is_local() {
+        let actor = entity(1);
+        let place = entity(10);
+        let witness = entity(11);
+        let subject = entity(12);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, witness, subject]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(witness, EntityKind::Agent);
+        view.kinds.insert(subject, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(witness, place);
+        view.effective_places.insert(subject, place);
+        view.entities_at
+            .insert(place, vec![actor, witness, subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([witness, subject]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SearchForMissing {
+            subject,
+            last_seen: Some(place),
+        };
+        let def = ActionDef {
+            id: ActionDefId(27),
+            name: "ask_about_person".to_string(),
+            domain: ActionDomain::Epistemic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::AskAboutPerson,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        let result = goal.build_payload_override(None, &state, &[witness], &def, &semantics);
+
+        assert_eq!(result, Err(GoalPayloadOverrideError::UnsupportedGoal));
+    }
+
+    #[test]
+    fn search_for_missing_marks_ask_about_person_unavailable_when_last_seen_is_local() {
+        let actor = entity(1);
+        let place = entity(10);
+        let subject = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, subject]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(subject, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(subject, place);
+        view.entities_at.insert(place, vec![actor, subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([subject]),
+            &BTreeSet::from([place]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SearchForMissing {
+            subject,
+            last_seen: Some(place),
+        };
+
+        assert!(!goal.candidate_is_available(&state, PlannerOpKind::AskAboutPerson));
+        assert!(goal.candidate_is_available(&state, PlannerOpKind::SearchPlace));
+    }
+
+    #[test]
+    fn search_for_missing_keeps_ask_about_person_payload_when_last_seen_is_remote() {
+        let actor = entity(1);
+        let place = entity(10);
+        let remote = entity(11);
+        let witness = entity(12);
+        let subject = entity(13);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, place, remote, witness, subject]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(witness, EntityKind::Agent);
+        view.kinds.insert(subject, EntityKind::Agent);
+        view.kinds.insert(place, EntityKind::Place);
+        view.kinds.insert(remote, EntityKind::Place);
+        view.effective_places.insert(actor, place);
+        view.effective_places.insert(witness, place);
+        view.effective_places.insert(subject, remote);
+        view.entities_at.insert(place, vec![actor, witness]);
+        view.entities_at.insert(remote, vec![subject]);
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([witness, subject]),
+            &BTreeSet::from([place, remote]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalKind::SearchForMissing {
+            subject,
+            last_seen: Some(remote),
+        };
+        let def = ActionDef {
+            id: ActionDefId(28),
+            name: "ask_about_person".to_string(),
+            domain: ActionDomain::Epistemic,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::AskAboutPerson,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        let payload = goal
+            .build_payload_override(None, &state, &[witness], &def, &semantics)
+            .unwrap();
+
+        assert_eq!(
+            payload,
+            Some(ActionPayload::AskAboutPerson(AskAboutPersonActionPayload {
+                target: witness,
                 subject,
             }))
         );

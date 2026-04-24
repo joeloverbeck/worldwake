@@ -59,21 +59,23 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Notice posting | Non-zero `notice_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Theft | `theft_disposition` present | [`theft.rs`](../crates/worldwake-ai/src/theft.rs) | Landed in [§5.11](#511-landed-12-survival-theft) |
-| Justice / accusation | `justice_disposition` present | [`justice_actions.rs`](../crates/worldwake-systems/src/justice_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
-| Violation investigation | `violation_disposition` present | [`investigate_actions.rs`](../crates/worldwake-systems/src/investigate_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Justice / accusation | `justice_disposition` present | [`justice_actions.rs`](../crates/worldwake-systems/src/justice_actions.rs) | Landed in [§5.12](#512-landed-row-13-survival-justice) |
+| Violation investigation | `violation_disposition` present | [`investigate_actions.rs`](../crates/worldwake-systems/src/investigate_actions.rs) | Landed in [§5.12](#512-landed-row-13-survival-justice) |
 | Patrol | `patrol_profile` plus `patrol_route` | [`patrol_actions.rs`](../crates/worldwake-systems/src/patrol_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Pursuit | `pursuit_profile` present | [`pursuit.rs`](../crates/worldwake-ai/src/pursuit.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Combat | `combat_profile` present | [`combat.rs`](../crates/worldwake-systems/src/combat.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Escort | Non-zero `care_weight` | [`escort_actions.rs`](../crates/worldwake-systems/src/escort_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
 | Bandit camps | Authored bandit-agent + camp world state | bandit systems and camp actions | Planned |
-| Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Planned; current survival scenarios keep this gated inactive |
-| Search | `violation_disposition` plus `epistemic_disposition` | search and investigation actions | Planned; structural coverage only in `cli-evaluation.ron` |
+| Report / witness | Active `perception_profile` + active `tell_profile` + active `communication_profile` | report/tell pipeline | Found-person reporting branch landed in [§5.12](#512-landed-row-13-survival-justice); broader witness/report coverage remains partial in the generated companion |
+| Search | `violation_disposition` plus `epistemic_disposition` | search and investigation actions | Landed in [§5.12](#512-landed-row-13-survival-justice) |
 | Stock / transport | `merchandise_profile` plus stock-supporting world state | stock and transport actions | Landed in [§5.9](#59-landed-9-survival-trade) |
 
 Coverage warnings from the generated companion are currently truthful and intentional for this roadmap:
 
 - `intention_disposition` is an authored scenario field but not yet classified as its own gameplay feature row.
+- `expectation_store` is an authored scenario setup field, not a standalone gameplay feature row.
 - `last_seen_memory` is an authored scenario field but not yet classified as its own gameplay feature row.
+- `social_observations` is an authored scenario setup field, not a standalone gameplay feature row.
 
 Those warnings should remain visible until the project either promotes them into the gameplay-feature catalog or decides they are permanently editorial/supporting fields rather than roadmap features.
 
@@ -95,8 +97,9 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-items-decay.ron` | Item decay, Disposal |
 | Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting |
 | Landed in `survival-theft.ron` | Place concealment, Theft |
-| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Justice / accusation, Violation investigation, Patrol, Pursuit, Combat, Escort, Search |
-| Authored but still gated inactive | Report / witness |
+| Landed in `survival-justice.ron` | Justice / accusation, Violation investigation, Search, Report / witness found-person reporting branch |
+| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting, Patrol, Pursuit, Combat, Escort |
+| Structurally partial outside the landed branch | Broader Report / witness |
 | Planned with no current scenario activation | Bandit camps |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
@@ -163,7 +166,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting | Landed | Institution-level goals and artifacts competing with needs |
 | 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the truthful local theft branch: stage visible owned food, select `StealItem`, commit `steal`, then self-consume while immediate witness pickup stays suppressed and physical aftermath remains at the place |
-| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Planned | Witness chains and evidence-driven social reaction |
+| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Landed | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope |
 | 14 | `survival-patrol` | Patrol + pursuit | Planned | Scheduled duties and interrupt-driven remote pursuit |
 | 15 | `survival-combat` | Combat + bandit camps | Planned | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Planned | Coordinated travel after the rest of the hostile world is live |
@@ -173,7 +176,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 
 ### 7. `survival-preferences`
 
-**Status**: Landed  
+**Status**: Landed
 **Source scenario**: [`scenarios/survival-preferences.ron`](../scenarios/survival-preferences.ron)  
 **Backing goldens**: [`golden_survival_preferences.rs`](../crates/worldwake-ai/tests/golden_survival_preferences.rs)  
 **Depends on**: landed rows 1-6
@@ -212,8 +215,8 @@ This is now a truthful substitute-isolation scenario rather than merely a bread-
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
-- Report / witness remains gated inactive in the authored scenario
+- Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
+- Report / witness is outside this row's authored proof
 
 ### 4.6 Landed Row 10
 
@@ -369,8 +372,8 @@ The golden proves the tell row at the earliest honest causal surface that still 
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, diversification / curiosity, experience preferences, trade, decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit, escort, search, and stock / transport rows remain unlanded
-- Report / witness remains gated inactive in the authored scenario
+- Obligation satiation, diversification / curiosity, experience preferences, trade, decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit, escort, search, and stock / transport rows are outside this row's proof
+- Report / witness is outside this row's authored proof
 
 ### 5.6 Landed #6: `survival-ask-consult`
 
@@ -398,8 +401,8 @@ The same scenario authors a vacant support-law office with a local `OfficeRegist
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, diversification / curiosity, experience preferences, trade, decay, disposal, facility contention, theft, justice, patrol, pursuit, combat, bandit, and stock / transport rows remain unlanded
-- Report / witness remains gated inactive in the authored scenario
+- Obligation satiation, diversification / curiosity, experience preferences, trade, decay, disposal, facility contention, theft, justice, patrol, pursuit, combat, bandit, and stock / transport rows are outside this row's proof
+- Report / witness is outside this row's authored proof
 
 ### 5.7 Landed #7: `survival-preferences`
 
@@ -423,8 +426,8 @@ The golden proves the proactive-preference row at the actual branch that matters
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, production, trade, decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit, escort, search, and stock / transport rows remain unlanded
-- Report / witness remains gated inactive in the authored scenario
+- Obligation satiation, production, trade, decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit, escort, search, and stock / transport rows are outside this row's proof
+- Report / witness is outside this row's authored proof
 
 ### 5.8 Landed #8: `survival-production`
 
@@ -447,8 +450,8 @@ The golden proves a real non-harvest production branch inside the survival loop 
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, trade, decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit, escort, search, and stock / transport rows remain unlanded
-- Report / witness remains gated inactive in the authored scenario
+- Obligation satiation, trade, decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit, escort, search, and stock / transport rows are outside this row's proof
+- Report / witness is outside this row's authored proof
 
 ### 5.9 Landed #9: `survival-trade`
 
@@ -476,8 +479,8 @@ That proof now closes the row honestly. The focused AI tests still own the lower
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
-- Report / witness remains gated inactive in the authored scenario
+- Obligation satiation, item decay, disposal, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
+- Report / witness is outside this row's authored proof
 
 ### 5.10 Landed #10: `survival-items-decay`
 
@@ -503,8 +506,8 @@ The same scenario still keeps the earlier trade substrate alive instead of becom
 
 **Deliberately inactive**
 - Place concealment
-- Obligation satiation, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
-- Report / witness remains gated inactive in the authored scenario
+- Obligation satiation, facility contention, offices, theft, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
+- Report / witness is outside this row's authored proof
 
 ### 5.11 Landed #12: `survival-theft`
 
@@ -529,10 +532,28 @@ The scenario lands row 12 at the authored seam the runtime actually exposes toda
 The row also lands place concealment honestly rather than by decorative authored tags. `Shaded Market` carries authored concealment, and the golden proves the immediate witness path stays quiet on the merchant at theft time while the world still records durable physical aftermath through forced-entry and container-tampering evidence at the scene. That is enough to land theft plus concealment without overstating later justice, patrol, or witness-chain behavior that still belongs to downstream rows.
 
 **Deliberately inactive**
-- Obligation satiation, facility contention, offices, justice, patrol, pursuit, combat, bandit camps, escort, and search remain unlanded
-- Report / witness remains gated inactive in the authored scenario
+- Obligation satiation, facility contention, offices, justice, patrol, pursuit, combat, bandit camps, escort, and search are outside this row's proof
+- Report / witness is outside this row's authored proof
 
-### 5.12 Auxiliary and Non-Roadmap Scenarios
+### 5.12 Landed Row 13: `survival-justice`
+
+**Status**: Landed
+**Source scenario**: [`scenarios/survival-justice.ron`](../scenarios/survival-justice.ron)
+**Backing goldens**: [`golden_survival_justice.rs`](../crates/worldwake-ai/tests/golden_survival_justice.rs)
+
+**Scenario-owned proof**
+- Lawful office-holder substrate for the justice row now authors directly in the scenario through an initial office holder plus a colocated crime register
+- The retained golden proves a real `steal`, `investigate`, and `accuse` commit inside the same 1440-tick survival envelope, with the accusation recorded in the crime register
+- The same scenario now also proves the truthful fine continuation of that exact theft case: local theft evidence matures into accusation early enough for `fine` to commit, and the crime register records the resulting verdict
+- The search/report branch now proves `Searcher Ivo` commits direct `search_place` for a local overdue missing-person expectation, resolves the expectation as found safe, then commits `report_found` and writes the found-person status to the local office register
+- The same search/report golden asserts that stale exact-bound `ask_about_person` requests no longer recur for the local-search branch
+- Completed substrate ticket: [`archive/tickets/S13SURJUS-001.md`](../archive/tickets/S13SURJUS-001.md)
+- Completed punishment follow-up: [`archive/tickets/S13SURJUS-006.md`](../archive/tickets/S13SURJUS-006.md)
+- Completed search/report follow-up: [`archive/tickets/S13SURJUS-003.md`](../archive/tickets/S13SURJUS-003.md)
+
+The scenario is now a full row landing because it owns the lawful authority substrate and proves accusation, fine punishment, direct local search, and found-status reporting under the survival loop without helper-only setup.
+
+### 5.13 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 
