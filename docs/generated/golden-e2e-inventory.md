@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 29
-- Files contributing `golden_*` tests: 29
-- Total `golden_*` tests: 136
+- Golden test files: 30
+- Files contributing `golden_*` tests: 30
+- Total `golden_*` tests: 138
 
 ## Per-File Inventory
 
@@ -18,6 +18,7 @@ Do not hand-edit it.
 | `golden_decision_history_events.rs` | 1 |
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 11 |
+| `golden_final_integration.rs` | 2 |
 | `golden_item_decay.rs` | 1 |
 | `golden_merchant_selling.rs` | 13 |
 | `golden_offices.rs` | 12 |
@@ -93,6 +94,11 @@ Do not hand-edit it.
 - `golden_s107_proactive_diversification_discovers_novel_place`
 - `golden_s107_need_slack_veto_suppresses_proactive_exploration`
 - `golden_s107_cooldown_spaces_proactive_exploration_attempts`
+
+### `golden_final_integration.rs`
+
+- `final_integration_proves_full_stack_coexistence`
+- `final_integration_replay_is_deterministic`
 
 ### `golden_item_decay.rs`
 

@@ -34,6 +34,7 @@ For the requested row:
 5. Check existing scenarios and goldens to see what is already proven, what is only structurally active, and what is only auxiliary evidence.
 6. Check whether the row's required substrate will also make later roadmap rows structurally active under the generator. If it does, record that upfront and keep those rows separate from the requested landing unless the new golden actually proves them.
 7. If an earlier landed row already owns prerequisite substrate for this row, prefer treating that substrate as authored setup for the current scenario rather than trying to earn it again here, unless the current row explicitly owns re-proving that prerequisite.
+8. If the requested row is a capstone/coexistence row, subtract every earlier landed behavior owner before defining the contract. The residual seam should name the full structural catalog under test, the representative causal branch that proves the world still runs under pressure, and any structurally active mechanics that remain support-only rather than standalone behavior landings.
 
 Do not collapse these categories:
 
@@ -59,3 +60,4 @@ Answer these questions before writing code:
 5. Are there already architectural blockers that make a truthful pass impossible today?
 
 If the requested row depends on prior landed survival substrate, verify that substrate remains truthful under live code rather than assuming the roadmap prose is still sufficient.
+If a capstone row reuses earlier substrate, verify enough of that substrate to keep the coexistence branch truthful, but do not turn the capstone into a brittle re-proof of every earlier row unless the roadmap explicitly says so.

@@ -44,7 +44,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Tell / peer info transfer | Active `tell_profile` plus active `communication_profile` | [`tell_actions.rs`](../crates/worldwake-systems/src/tell_actions.rs), [`communication.rs`](../crates/worldwake-core/src/communication.rs) | Landed in [§5.5](#55-landed-5-survival-tell) |
 | Ask-about-person | Non-zero `social_weight` plus `communication_profile` and `epistemic_disposition` | [`ask_about_person_actions.rs`](../crates/worldwake-systems/src/ask_about_person_actions.rs), epistemic surfaces | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
 | Consult-record | Non-zero `social_weight` plus `perception_profile` and record-bearing world state | [`consult_record_actions.rs`](../crates/worldwake-systems/src/consult_record_actions.rs) | Landed in [§5.6](#56-landed-6-survival-ask-consult) |
-| Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Obligation satiation | `obligation_satiation_profile` present | [`obligation.rs`](../crates/worldwake-core/src/obligation.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); no standalone behavior row |
 | Diversification / curiosity | `diversification_profile` present | [`diversification.rs`](../crates/worldwake-core/src/diversification.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Experience preferences | `preference_profile` present | [`experience.rs`](../crates/worldwake-core/src/experience.rs), [`experience_recording.rs`](../crates/worldwake-systems/src/experience_recording.rs) | Landed in [§4.3](#43-landed-row-7) |
 | Production (facility-backed craft) | Authored recipe set with at least one non-harvest production recipe | [`production_actions.rs`](../crates/worldwake-systems/src/production_actions.rs) | Landed in [§5.8](#58-landed-8-survival-production) |
@@ -54,9 +54,9 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Substitute preferences | `substitute_preferences` present | [`trade.rs`](../crates/worldwake-core/src/trade.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Item decay | `commodity_decay` authored on the scenario | [`item_decay.rs`](../crates/worldwake-systems/src/item_decay.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
 | Disposal | `disposal_profile` present | [`disposal.rs`](../crates/worldwake-core/src/disposal.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
-| Facility-queue contention | `contention_disposition` present | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Facility-queue contention | `contention_disposition` present | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); no standalone behavior row |
 | Offices / succession / force-claim | Office entities plus force-claim world state | [`office_actions.rs`](../crates/worldwake-systems/src/office_actions.rs), [`offices.rs`](../crates/worldwake-core/src/offices.rs) | Landed in [§4.7](#47-landed-row-11) |
-| Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Planned; structural coverage only in `cli-evaluation.ron` |
+| Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); no standalone behavior row |
 | Notice posting | Non-zero `notice_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Theft | `theft_disposition` present | [`theft.rs`](../crates/worldwake-ai/src/theft.rs) | Landed in [§5.11](#511-landed-12-survival-theft) |
 | Justice / accusation | `justice_disposition` present | [`justice_actions.rs`](../crates/worldwake-systems/src/justice_actions.rs) | Landed in [§5.12](#512-landed-row-13-survival-justice) |
@@ -101,7 +101,8 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-patrol.ron` | Patrol, Pursuit selection/execution from authored hostility plus last-seen memory |
 | Landed in `survival-combat.ron` | Combat, Bandit camps |
 | Landed in `survival-escort.ron` | Escort/care coordinated travel under hostile pressure |
-| Structural coverage only, not yet landed | Obligation satiation, Facility-queue contention, Bounty posting |
+| Landed in `final-integration.ron` | Full gameplay catalog structural coexistence under survival-health, with hostile wound pressure |
+| Structural-only within final integration, not standalone behavior landings | Obligation satiation, Facility-queue contention, Bounty posting |
 | Structurally partial outside the landed branch | Broader Report / witness |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
@@ -172,7 +173,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 14 | `survival-patrol` | Patrol + pursuit | Landed | Scheduled duties coexist with survival self-care while remembered hostility selects and executes remote pursuit through travel into attack |
 | 15 | `survival-combat` | Combat + bandit camps | Landed | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Landed | Coordinated travel after the rest of the hostile world is live |
-| 17 | `final-integration` | Full coexistence stack | Planned | Last because it only makes sense once every prior row has an honest scenario contract |
+| 17 | `final-integration` | Full coexistence stack | Landed | Full catalog structural coexistence now runs under a survival-health contract after every prior row has an honest scenario contract |
 
 ### 4.3 Landed Row 7
 
@@ -252,7 +253,7 @@ The golden proves both halves at the earliest honest surfaces that matter: `Clai
 
 #### 4.8 Remaining planned rows
 
-Row 17 follows the ordering table above. Its future author should expand the chosen row into the full entry template, inherit the prior landed row's deliberately inactive list, and make the validity contract explicit before the scenario is authored.
+All ordered rows are now landed. Future roadmap entries should use the template above and name whether they are adding a new standalone behavior row or only strengthening the already-landed full-stack coexistence scenario.
 
 ## 5. Landed Scenarios
 
@@ -601,7 +602,25 @@ The row is landed because the same scenario-backed golden proves survival self-c
 
 The row is landed because the scenario-backed golden proves survival self-care and the coordinated care-travel branch for the authored causal reason under the golden-survival CI workflow.
 
-### 5.16 Auxiliary and Non-Roadmap Scenarios
+### 5.16 Landed Row 17: `final-integration`
+
+**Status**: Landed
+**Source scenario**: [`scenarios/final-integration.ron`](../scenarios/final-integration.ron)
+**Backing goldens**: [`golden_final_integration.rs`](../crates/worldwake-ai/tests/golden_final_integration.rs)
+
+**Scenario-owned proof**
+- `final-integration.ron` authors every gameplay feature row as active under the live `scenario_coverage` structural rules: no feature is absent or present-only in the generated companion.
+- `Caretaker Ilen` owns the 1440-tick survival-health envelope while `Ward Mira`, `Raider Voss`, and `Integration Witness` are supporting causal actors.
+- The retained golden checks the full authored catalog directly at scenario-load time, then proves that the full-stack world still runs for 1440 ticks, keeps the caretaker alive, satisfies the authored critical-run and idle-window bounds, and exercises the required self-care families.
+- The same run proves concrete hostile pressure still occurs in the integrated world by observing a wound on `Ward Mira`.
+
+**Structural-only within this row**
+- Obligation satiation, facility-queue contention, and bounty posting are active as part of full-stack coexistence substrate. This row does not claim standalone behavior landings for those mechanics; a future row or ticket should add behavior-specific proof before treating them as individually landed mechanics.
+- Earlier rows remain the behavior owners for their individual branches. This row deliberately avoids re-proving every prior behavior in one oversized golden and instead owns the full-catalog coexistence contract.
+
+The row is landed because the scenario-backed golden proves the authored full-catalog structural contract, the survival-health contract, deterministic replay, and a concrete hostile-pressure branch under the golden-survival CI workflow.
+
+### 5.17 Auxiliary and Non-Roadmap Scenarios
 
 #### `cli-evaluation.ron`
 

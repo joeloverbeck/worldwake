@@ -26,6 +26,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 - Treat roadmap landing as a three-layer contract: structural activation, behavioral proof, and causal validity.
 - If earlier landed rows already own part of the requested mechanic family, subtract that overlap first and restate the residual row-owned seam before authoring scenario or golden code.
 - If the requested row depends on prerequisite substrate that was already landed earlier, prefer authoring that substrate directly in the new scenario instead of re-proving the earlier row, unless the current row truthfully owns re-exercising it.
+- For capstone or coexistence rows such as `final-integration`, do not re-prove every earlier row's behavior in one oversized golden. Subtract earlier behavior owners, define the residual contract as full structural activation plus a representative causal pressure branch, and classify any structurally active mechanics that still lack standalone behavior proof.
 - A 1440-tick survival pass is necessary but not sufficient.
 - When the outcome is partial progress, distinguish explicitly between `what was implemented` and `why the row is still not Landed`.
 - Scenario-backed proof must assert the mechanic's intended behavior, not just the presence of a goal or action name.
@@ -50,6 +51,7 @@ Depending on live feasibility, this workflow should end with one of these outcom
 2. **Truthful partial progress with blockers**
    - authored scenario and/or partial proof changes only if they match a truthful narrower seam
    - if the row owns multiple feature rows, classify each owned feature explicitly as `landed here`, `structurally active only`, or `blocked`; do not let one proven feature silently land the whole row
+   - if the row is a capstone/coexistence row, classify the proof as `full structural coexistence`, `representative causal branch`, and `structural-only support mechanics` instead of claiming standalone behavior landings for every active feature
    - one or more new or updated tickets in `tickets/` for the architectural gap
    - `docs/scenario-roadmap.md` updated to reflect `Drafting` / `In Progress` / auxiliary status rather than a false landing
    - if the attempted scenario/golden does not remain a truthful retained seam, remove the draft artifacts and leave only roadmap/ticket state
@@ -78,6 +80,7 @@ When the requested row is blocked rather than landed:
 ## Guardrails
 
 - Do not claim a roadmap landing based only on structural activation.
+- Do not claim a capstone/coexistence row re-landed every earlier feature behavior merely because every feature is structurally active. Earlier rows remain the behavior owners unless the new golden intentionally proves those branches again.
 - Do not claim a roadmap landing based only on a 1440-tick survival pass.
 - Do not prove a mechanic with action-name presence when the real contract is a world consequence or belief change.
 - Do not let a later roadmap row silently re-prove a seam already landed by an earlier row; narrow the owned seam first.

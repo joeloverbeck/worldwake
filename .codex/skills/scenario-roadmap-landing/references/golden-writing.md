@@ -28,6 +28,8 @@ Examples:
 - When later lawful behavior can undo, supersede, or move past the consequence under test, capture and assert the state at the relevant action commit or trace tick instead of asserting only the final 1440-tick state.
 - Do not silently strengthen a row-scoped invariant into a per-agent symmetry claim unless the roadmap row explicitly owns that stronger promise. One agent recurring through the mechanic may be sufficient when the row is about scenario-level coexistence rather than actor symmetry.
 - When a scenario uses supporting actors, state explicitly which agents own the survival-health envelope and which agents are supporting causal actors only. Do not let supporting witnesses silently inherit full survival-contract ownership unless the roadmap row truly promises that wider envelope.
+- For capstone/coexistence rows, prove the capstone contract rather than every earlier behavior contract. A truthful capstone golden can combine full authored structural activation, survival-health proof, deterministic replay, and one representative causal pressure branch, while leaving earlier scenario goldens as the behavior owners for their individual mechanics.
+- If structural-only support actors or support places carry activation substrate, assert that substrate at scenario-load or generated-doc boundaries, then keep the behavioral assertions scoped to the row-owned representative branch.
 
 ## Per-golden proof-surface classification
 
@@ -62,5 +64,7 @@ The owning workflow should run the ignored test explicitly in CI, typically in t
 ```bash
 cargo test --release -p worldwake-ai --test golden_<family>_<scenario> -- --ignored --test-threads=1
 ```
+
+Before finalizing workflow edits, verify the exact test target name that CI will run. If the workflow family and Rust test binary name diverge, use an explicit matrix field such as `test_target` instead of deriving `golden_<family>_${{ matrix.scenario }}` by string concatenation, and run or inspect the exact release-mode command for the new entry.
 
 Do not treat local non-ignored execution as the canonical lane for these roadmap scenarios.
