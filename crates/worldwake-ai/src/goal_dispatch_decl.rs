@@ -208,6 +208,12 @@ const SOCIAL_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
     free_interrupt: FreeInterruptRole::Normal,
 };
 
+const THEFT_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::Never,
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Normal,
+};
+
 // ShareBelief sub-variant policies
 const SHARE_BELIEF_ALARM_POLICY: GoalFamilyPolicy = ENTERPRISE_POLICY;
 
@@ -574,11 +580,11 @@ static DECL_EXPLORE_LOCATION: GoalDispatchDeclaration = GoalDispatchDeclaration 
 };
 static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "StealItem",
-    provenance_family: None,
+    provenance_family: Some(RankedGoalProvenanceFamily::Drive),
     relevant_ops: MOVE_CARGO_OPS,
     invalidation_strategy: InvalidationStrategy::StealTargetState,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
-    family_policy: SOCIAL_POLICY,
+    family_policy: THEFT_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
 static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {

@@ -161,7 +161,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 9 | `survival-trade` | Merchant selling, trade negotiation, commodity valuation, substitute preferences, stock / transport | Landed | Multi-agent coordination and ownership-sensitive planning through substitute-backed local trade |
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting | Landed | Institution-level goals and artifacts competing with needs |
-| 12 | `survival-theft` | Theft + place concealment | Drafting | Blocked on `SURVTHEFT-001`: hunger-driven `AcquireCommodity(SelfConsume)` remains top-ranked while the live decision pipeline does not convert the staged-lot seam into a selected theft branch |
+| 12 | `survival-theft` | Theft + place concealment | Drafting | `SURVTHEFT-001` landed the AI-side `StealItem` suppression/ranking repair; [SURVTHEFT-002](../tickets/SURVTHEFT-002.md) now owns the truthful staged-lot + post-theft-eat survival golden substrate needed to land the row |
 | 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | Planned | Witness chains and evidence-driven social reaction |
 | 14 | `survival-patrol` | Patrol + pursuit | Planned | Scheduled duties and interrupt-driven remote pursuit |
 | 15 | `survival-combat` | Combat + bandit camps | Planned | Highest direct survival risk and adversarial planning pressure |
