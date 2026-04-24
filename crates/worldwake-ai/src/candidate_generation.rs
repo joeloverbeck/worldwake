@@ -5632,7 +5632,10 @@ fn local_owned_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
             continue;
         }
-        if view.direct_possessor(entity) != Some(agent) {
+        let directly_possessed = view.direct_possessor(entity) == Some(agent);
+        let loose_local_owned = view.direct_container(entity).is_none()
+            && view.believed_owner_of(entity) == Some(agent);
+        if !directly_possessed && !loose_local_owned {
             continue;
         }
         evidence.entities.insert(entity);
