@@ -1,10 +1,10 @@
 # S125INSTREBOU-002: OfficeDef treasury authoring + scenario lints
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario authoring + spawn path + new lint rules
-**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md)
+**Deps**: [S125INSTREBOU-001](S125INSTREBOU-001.md)
 
 ## Problem
 
@@ -105,3 +105,28 @@ Honor the existing `scenario_lint_overrides` suppression mechanism.
 1. `cargo test -p worldwake-cli`
 2. `cargo clippy -p worldwake-cli --all-targets -- -D warnings`
 3. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added `TreasuryDef` and `OfficeDef.treasury` to the scenario authoring schema.
+- Extended `spawn_office` to materialize an office-owned treasury container at the office seat, name it with either the authored `container_name` or `"<office_name> Treasury"`, put the authored lot inside it, and set `OwnedBy` on both the container and lot to the office.
+- Added treasury lint rules for missing office-seat place references and zero treasury quantities, with the existing `scenario_lint_overrides` suppression path covering the new rules.
+- Updated the two live manual `OfficeDef` literals to include `treasury: None`.
+
+## Deviations
+
+- The treasury container receives a `Name` component for lookup/display, but it is not inserted into the scenario name-resolution map. This keeps `ItemDef.location` and other scenario reference fields from gaining a new office/container placement alias, preserving the ticket's out-of-scope boundary.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --lib -- --list`.
+- Passed `cargo test -p worldwake-cli --lib scenario::tests::spawn_office_with_treasury_creates_owned_container_and_lots -- --exact`.
+- Passed `cargo test -p worldwake-cli --lib scenario::lints::tests::lint_rejects_treasury_with_zero_quantity -- --exact`.
+- Passed `cargo test -p worldwake-cli --lib scenario::lints::tests::lint_rejects_treasury_when_office_seat_missing -- --exact`.
+- Passed `cargo test -p worldwake-cli --lib scenario::lints::tests::treasury_lint_override_suppresses_failure -- --exact`.
+- Passed `cargo test -p worldwake-cli`.
+- Passed `cargo clippy -p worldwake-cli --all-targets -- -D warnings`.
+- Passed `git diff --check`.
+- Passed `./scripts/verify.sh` (live script gates included `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`).

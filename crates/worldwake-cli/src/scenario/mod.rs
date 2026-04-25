@@ -12,12 +12,12 @@ use std::path::Path;
 use types::ScenarioDef;
 use worldwake_core::{
     ArtifactHeader, ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy,
-    BelievedInstitutionalClaim, CarryCapacity, CauseRef, ContentionQueue, ControlSource,
+    BelievedInstitutionalClaim, CarryCapacity, CauseRef, Container, ContentionQueue, ControlSource,
     DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis,
     ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
     LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
-    MerchandiseProfile, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
+    MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
     OfficeForceState, PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
     RecordData, RecordKind, ResourceSource, Seed, SocialObservation, SocialObservationDetail, Tick,
     Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
@@ -870,6 +870,36 @@ fn spawn_office(
                 learned_at: Some(seat),
             },
         )?;
+    }
+
+    if let Some(treasury) = &office_def.treasury {
+        let container_name = treasury
+            .container_name
+            .clone()
+            .unwrap_or_else(|| format!("{} Treasury", office_def.name));
+        let capacity = load_per_unit(treasury.commodity)
+            .0
+            .checked_mul(treasury.quantity.0)
+            .map(LoadUnits)
+            .ok_or_else(|| {
+                ScenarioError::Validation(format!(
+                    "office '{}' treasury capacity overflowed for {:?} quantity {}",
+                    office_def.name, treasury.commodity, treasury.quantity.0
+                ))
+            })?;
+        let treasury_container = txn.create_container(Container {
+            capacity,
+            allowed_commodities: Some(BTreeSet::from([treasury.commodity])),
+            allows_unique_items: false,
+            allows_nested_containers: false,
+        })?;
+        txn.set_component_name(treasury_container, Name(container_name))?;
+        txn.set_ground_location(treasury_container, seat)?;
+        txn.set_owner(treasury_container, office)?;
+
+        let lot = txn.create_item_lot(treasury.commodity, treasury.quantity)?;
+        txn.put_into_container(lot, treasury_container)?;
+        txn.set_owner(lot, office)?;
     }
 
     facility_locations.insert(office, seat);
@@ -2823,6 +2853,7 @@ mod tests {
                 succession_period_ticks: 3,
                 initial_holder: None,
                 eligibility_rules: Vec::new(),
+                treasury: None,
             }],
             notices: vec![],
             items: vec![],
@@ -3361,6 +3392,7 @@ mod tests {
                 succession_period_ticks: 2,
                 initial_holder: Some("Holder".into()),
                 eligibility_rules: vec![],
+                treasury: None,
             }],
             notices: vec![],
             items: vec![],
@@ -3420,6 +3452,82 @@ mod tests {
         assert_eq!(
             holder_beliefs.believed_office_holder(office),
             worldwake_core::InstitutionalBeliefRead::Certain(Some(holder))
+        );
+    }
+
+    #[test]
+    fn spawn_office_with_treasury_creates_owned_container_and_lots() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Square".into(),
+                tags: vec![],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![],
+            bandit_camps: Vec::new(),
+            offices: vec![OfficeDef {
+                name: "Marshal".into(),
+                seat: "Square".into(),
+                succession_law: SuccessionLaw::Force,
+                succession_period_ticks: 2,
+                initial_holder: None,
+                eligibility_rules: vec![],
+                treasury: Some(TreasuryDef {
+                    commodity: CommodityKind::Coin,
+                    quantity: Quantity(12),
+                    container_name: None,
+                }),
+            }],
+            notices: vec![],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            hostilities: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+        };
+
+        let spawned = spawn_scenario(&def).expect("office treasury scenario should spawn");
+        let world = spawned.state.world();
+        let office = world
+            .query_name()
+            .find_map(|(entity, name)| (name.0 == "Marshal").then_some(entity))
+            .expect("spawned office should exist");
+        let seat = world
+            .get_component_office_data(office)
+            .expect("spawned office should have OfficeData")
+            .seat;
+        let treasury_container = world
+            .query_name()
+            .find_map(|(entity, name)| (name.0 == "Marshal Treasury").then_some(entity))
+            .expect("default-named treasury container should exist");
+
+        assert!(world.get_component_container(treasury_container).is_some());
+        assert_eq!(world.owner_of(treasury_container), Some(office));
+        assert_eq!(world.effective_place(treasury_container), Some(seat));
+
+        let (lot, treasury_lot) = world
+            .query_item_lot()
+            .find(|(entity, lot)| {
+                lot.commodity == CommodityKind::Coin
+                    && lot.quantity == Quantity(12)
+                    && world.direct_container(*entity) == Some(treasury_container)
+            })
+            .expect("treasury coin lot should be inside the treasury container");
+
+        assert_eq!(world.owner_of(lot), Some(office));
+        assert_eq!(treasury_lot.quantity, Quantity(12));
+        assert_eq!(
+            world.controlled_commodity_quantity(office, CommodityKind::Coin),
+            Quantity(12)
+        );
+        assert!(
+            !world.ground_entities_at(seat).contains(&lot),
+            "treasury lot should not be a loose place-floor item"
         );
     }
 }

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::scenario::types::{AgentDef, ScenarioDef};
 use serde::Deserialize;
-use worldwake_core::{ControlSource, Permille};
+use worldwake_core::{ControlSource, Permille, Quantity};
 
 #[derive(Clone, Debug, Default)]
 pub struct LintReport {
@@ -28,12 +28,15 @@ pub enum LintRule {
     ProfileHomogeneity,
     UnreachableExplorationDrive,
     AuthoritativeHelperOnSnapshot,
+    TreasuryAuthoredWithMissingSeat,
+    TreasuryAuthoredWithZeroQuantity,
 }
 
 pub fn run_lints(scenario: &ScenarioDef) -> LintReport {
     let mut report = LintReport::default();
     check_profile_homogeneity(scenario, &mut report);
     check_unreachable_exploration_drive(scenario, &mut report);
+    check_office_treasuries(scenario, &mut report);
     report
 }
 
@@ -135,15 +138,58 @@ fn check_unreachable_exploration_drive(scenario: &ScenarioDef, report: &mut Lint
     }
 }
 
+fn check_office_treasuries(scenario: &ScenarioDef, report: &mut LintReport) {
+    let place_names: BTreeSet<&str> = scenario
+        .places
+        .iter()
+        .map(|place| place.name.as_str())
+        .collect();
+
+    for office in scenario
+        .offices
+        .iter()
+        .filter(|office| office.treasury.is_some())
+    {
+        if !place_names.contains(office.seat.as_str()) {
+            report.failures.push(LintFailure {
+                rule: LintRule::TreasuryAuthoredWithMissingSeat,
+                affected_agents: Vec::new(),
+                detail: format!(
+                    "office '{}' authors a treasury but seat '{}' does not resolve to a place",
+                    office.name, office.seat
+                ),
+            });
+        }
+
+        let treasury = office
+            .treasury
+            .as_ref()
+            .expect("filtered to treasury-bearing offices");
+        if treasury.quantity == Quantity(0) {
+            report.failures.push(LintFailure {
+                rule: LintRule::TreasuryAuthoredWithZeroQuantity,
+                affected_agents: Vec::new(),
+                detail: format!(
+                    "office '{}' authors a treasury with zero quantity for {:?}",
+                    office.name, treasury.commodity
+                ),
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{LintRule, filter_overrides, run_lints};
-    use crate::scenario::types::{AgentDef, ExplorationProfileDef, PlaceDef, ScenarioDef};
+    use crate::scenario::types::{
+        AgentDef, ExplorationProfileDef, OfficeDef, PlaceDef, ScenarioDef, TreasuryDef,
+    };
     use crate::scenario::{ScenarioError, spawn_scenario};
     use std::collections::BTreeMap;
     use worldwake_core::{
-        CognitiveProfile, ControlSource, DiversificationProfile, EpistemicDispositionProfile,
-        IntentionDispositionProfile, PerceptionProfile, Permille, PlaceTag, UtilityProfile,
+        CognitiveProfile, CommodityKind, ControlSource, DiversificationProfile,
+        EpistemicDispositionProfile, IntentionDispositionProfile, PerceptionProfile, Permille,
+        PlaceTag, Quantity, SuccessionLaw, UtilityProfile,
     };
 
     fn minimal_agent(name: &str, control: ControlSource) -> AgentDef {
@@ -211,6 +257,46 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+        }
+    }
+
+    fn scenario_with_office(office: OfficeDef) -> ScenarioDef {
+        ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Town".into(),
+                tags: vec![PlaceTag::Village],
+                visibility_profile: None,
+            }],
+            edges: vec![],
+            agents: vec![],
+            bandit_camps: Vec::new(),
+            offices: vec![office],
+            notices: vec![],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            hostilities: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+        }
+    }
+
+    fn office_with_treasury(seat: &str, quantity: Quantity) -> OfficeDef {
+        OfficeDef {
+            name: "Market Warden".into(),
+            seat: seat.into(),
+            succession_law: SuccessionLaw::Force,
+            succession_period_ticks: 2,
+            initial_holder: None,
+            eligibility_rules: Vec::new(),
+            treasury: Some(TreasuryDef {
+                commodity: CommodityKind::Coin,
+                quantity,
+                container_name: None,
+            }),
         }
     }
 
@@ -299,6 +385,49 @@ mod tests {
             failure.rule == LintRule::UnreachableExplorationDrive
                 && failure.affected_agents == vec!["Scout".to_string()]
         }));
+    }
+
+    #[test]
+    fn lint_rejects_treasury_with_zero_quantity() {
+        let scenario = scenario_with_office(office_with_treasury("Town", Quantity(0)));
+
+        let report = run_lints(&scenario);
+
+        assert!(report.failures.iter().any(|failure| {
+            failure.rule == LintRule::TreasuryAuthoredWithZeroQuantity
+                && failure.detail.contains("Market Warden")
+        }));
+    }
+
+    #[test]
+    fn lint_rejects_treasury_when_office_seat_missing() {
+        let scenario = scenario_with_office(office_with_treasury("Missing", Quantity(5)));
+
+        let report = run_lints(&scenario);
+
+        assert!(report.failures.iter().any(|failure| {
+            failure.rule == LintRule::TreasuryAuthoredWithMissingSeat
+                && failure.detail.contains("Missing")
+        }));
+    }
+
+    #[test]
+    fn treasury_lint_override_suppresses_failure() {
+        let mut scenario = scenario_with_office(office_with_treasury("Town", Quantity(0)));
+        scenario.scenario_lint_overrides.insert(
+            LintRule::TreasuryAuthoredWithZeroQuantity,
+            "negative test keeps invalid treasury quantity".into(),
+        );
+
+        let report =
+            filter_overrides(run_lints(&scenario), &scenario.scenario_lint_overrides).unwrap();
+
+        assert!(
+            !report
+                .failures
+                .iter()
+                .any(|failure| failure.rule == LintRule::TreasuryAuthoredWithZeroQuantity)
+        );
     }
 
     #[test]

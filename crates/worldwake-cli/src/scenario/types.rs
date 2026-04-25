@@ -98,6 +98,16 @@ pub struct BanditCampSuppliesDef {
     pub container: Container,
 }
 
+/// Authored initial funds held by an office-owned treasury container.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TreasuryDef {
+    pub commodity: CommodityKind,
+    pub quantity: Quantity,
+    #[serde(default)]
+    pub container_name: Option<String>,
+}
+
 /// An authored office entity plus its automatically maintained local records.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -110,6 +120,8 @@ pub struct OfficeDef {
     pub initial_holder: Option<String>,
     #[serde(default)]
     pub eligibility_rules: Vec<EligibilityRuleDef>,
+    #[serde(default)]
+    pub treasury: Option<TreasuryDef>,
 }
 
 /// Scenario-specific eligibility rule using string references instead of `EntityId`.

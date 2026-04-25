@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario authoring change + new golden test
-**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), S125INSTREBOU-002, S125INSTREBOU-003, S125INSTREBOU-005, S125INSTREBOU-004, S125INSTREBOU-006
+**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), [S125INSTREBOU-002](../archive/tickets/S125INSTREBOU-002.md), S125INSTREBOU-003, S125INSTREBOU-005, S125INSTREBOU-004, S125INSTREBOU-006
 
 ## Problem
 
@@ -19,7 +19,7 @@ S125 Deliverable D8 requires `survival-justice` to retain its three existing bra
 3. Shared abstraction boundary: `golden_survival_justice.rs` test fixtures + `survival-justice.ron` scenario authoring + the `golden-survival` ignored lane (per `docs/golden-e2e-testing.md`).
 4. Live `GoalKind` under test: `PostBounty` (existing). Operator/affordance surface: no change. The scenario depends on the new `TreasuryDef` from ticket 002 and the candidate-emitter wiring from ticket 006.
 5. Scenario isolation: existing branches require theft-scene perception to remain unperturbed. Treasury container at the Market Warden's seat (Market Square) must scope coin lots inside the container so place-floor perception is unchanged. Intended branch under test: institutional bounty posting via the existing accusation/fine substrate. Lawful competing branch intentionally excluded: a personal-funds bounty fallback (S125 explicitly forbids using `PersonalFunds` to satisfy the institutional row proof).
-6. Adjacent contradictions: if running ticket 002 reveals the engine does not yet scope container-internal lots out of place-floor perception (i.e., the existing three goldens regress when the treasury authoring lands), file as a new ticket dependency for a perception-scoping fix and apply the 1-3-1 rule rather than silently working around it. Do not relax the existing goldens to accommodate a perception leak.
+6. Adjacent contradictions: archived ticket 002 landed focused spawn coverage that keeps treasury lots inside the treasury container and off the place floor. This ticket still owns the ignored survival-justice regression proof; if running the existing three goldens with the authored treasury reveals that container-internal lots still perturb theft-scene perception, file a new ticket dependency for a perception-scoping fix and apply the 1-3-1 rule rather than silently working around it. Do not relax the existing goldens to accommodate a perception leak.
 7. Cumulative arithmetic: the authored treasury quantity must be sufficient to fund a bounty whose terms match the candidate emitter's defaults (`bounty_posting_weight` → `BountyTerms.reward_quantity`). Verify the live arithmetic during implementation by reading `post_bounty_motive` and the candidate emitter; do not trust the spec's narrative numbers.
 
 ## Architecture Check
