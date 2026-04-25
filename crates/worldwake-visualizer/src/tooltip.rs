@@ -1,5 +1,5 @@
 use egui::{RichText, Ui};
-use worldwake_core::{ControlSource, EntityId};
+use worldwake_core::{ControlSource, EntityId, Permille, ThresholdBand};
 
 use crate::need_bar::need_bar;
 use crate::snapshot::{AgentPosition, AgentView, FrameSnapshot};
@@ -25,9 +25,23 @@ pub fn show_tooltip(ui: &mut Ui, snapshot: &FrameSnapshot, agent: &AgentView) {
 }
 
 fn need_rows(ui: &mut Ui, agent: &AgentView) {
+    for row in need_row_specs(agent) {
+        need_bar(ui, row.label, row.value, &row.thresholds, TOOLTIP_BAR_WIDTH);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NeedRowSpec {
+    label: &'static str,
+    value: Permille,
+    thresholds: ThresholdBand,
+}
+
+fn need_row_specs(agent: &AgentView) -> Vec<NeedRowSpec> {
     let needs = agent.needs;
     let thresholds = agent.drive_thresholds;
-    let rows = [
+    let derived = agent.derived_pressures;
+    let mut rows = vec![
         ("Hunger", needs.hunger, thresholds.hunger),
         ("Thirst", needs.thirst, thresholds.thirst),
         ("Fatigue", needs.fatigue, thresholds.fatigue),
@@ -35,9 +49,20 @@ fn need_rows(ui: &mut Ui, agent: &AgentView) {
         ("Dirtiness", needs.dirtiness, thresholds.dirtiness),
     ];
 
-    for (label, value, band) in rows {
-        need_bar(ui, label, value, &band, TOOLTIP_BAR_WIDTH);
+    if derived.pain != Permille::ZERO {
+        rows.push(("Pain", derived.pain, thresholds.pain));
     }
+    if derived.danger != Permille::ZERO {
+        rows.push(("Danger", derived.danger, thresholds.danger));
+    }
+
+    rows.into_iter()
+        .map(|(label, value, thresholds)| NeedRowSpec {
+            label,
+            value,
+            thresholds,
+        })
+        .collect()
 }
 
 fn control_badge(control: ControlSource) -> &'static str {
@@ -108,6 +133,59 @@ mod tests {
     }
 
     #[test]
+    fn need_row_specs_omit_zero_derived_pressures() {
+        let snapshot = baseline_snapshot();
+        let agent = snapshot
+            .agents
+            .values()
+            .next()
+            .expect("baseline has an agent");
+
+        let labels = need_row_specs(agent)
+            .into_iter()
+            .map(|row| row.label)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec!["Hunger", "Thirst", "Fatigue", "Bladder", "Dirtiness"]
+        );
+    }
+
+    #[test]
+    fn need_row_specs_include_non_zero_derived_pressures() {
+        let snapshot = baseline_snapshot();
+        let mut agent = snapshot
+            .agents
+            .values()
+            .next()
+            .expect("baseline has an agent")
+            .clone();
+        agent.derived_pressures.pain = Permille::new(300).unwrap();
+        agent.derived_pressures.danger = Permille::new(600).unwrap();
+
+        let rows = need_row_specs(&agent);
+        let labels = rows.iter().map(|row| row.label).collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec![
+                "Hunger",
+                "Thirst",
+                "Fatigue",
+                "Bladder",
+                "Dirtiness",
+                "Pain",
+                "Danger"
+            ]
+        );
+        assert_eq!(rows[5].value, Permille::new(300).unwrap());
+        assert_eq!(rows[5].thresholds, agent.drive_thresholds.pain);
+        assert_eq!(rows[6].value, Permille::new(600).unwrap());
+        assert_eq!(rows[6].thresholds, agent.drive_thresholds.danger);
+    }
+
+    #[test]
     fn active_goal_text_shows_no_goal_when_absent() {
         let mut snapshot = baseline_snapshot();
         let agent = snapshot
@@ -149,6 +227,13 @@ mod tests {
         }
         let layout = PlaceLayout::compute(&places, &edges, 0);
         let driver = AgentTickDriver::new();
-        build_snapshot(world, spawned.state.scheduler(), &driver, &layout, Tick(0))
+        build_snapshot(
+            world,
+            spawned.state.scheduler(),
+            None,
+            &driver,
+            &layout,
+            Tick(0),
+        )
     }
 }

@@ -15,7 +15,7 @@ Hovering an agent on the canvas should reveal a compact ~240px tooltip with name
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `DriveThresholds` at `crates/worldwake-core/src/drives.rs:58` exposes per-need `ThresholdBand` with `low()`, `medium()`, `high()`, `critical()` accessors validated at construction (low < medium < high < critical). Reassessment 2026-04-25 confirmed the zone order matches spec §D6.
-2. `HomeostaticNeeds` at `crates/worldwake-core/src/needs.rs:9` carries `hunger / thirst / fatigue / bladder / dirtiness` as `Permille`. `Pain` and `Danger` threshold bands exist on `DriveThresholds`, but `FrameSnapshot::AgentView` does not yet carry derived pain/danger pressure values. This ticket therefore renders the five embodied needs; derived pressure rows are deferred to [T01DEBVIS-011](../../tickets/T01DEBVIS-011.md).
+2. `HomeostaticNeeds` at `crates/worldwake-core/src/needs.rs:9` carries `hunger / thirst / fatigue / bladder / dirtiness` as `Permille`. `Pain` and `Danger` threshold bands exist on `DriveThresholds`, but `FrameSnapshot::AgentView` does not yet carry derived pain/danger pressure values. This ticket therefore renders the five embodied needs; derived pressure rows are deferred to [T01DEBVIS-011](T01DEBVIS-011.md).
 3. `FrameSnapshot.agents[id]` already carries `needs: HomeostaticNeeds` and `drive_thresholds: DriveThresholds` per T01DEBVIS-003 — the tooltip reads from the snapshot, not directly from `World`. The tooltip helper also receives the `FrameSnapshot` so it can resolve place names from `AgentPosition` IDs without widening `AgentView`.
 4. Tooling-only ticket — UI widget; no engine state, no shared abstraction boundary.
 
@@ -76,7 +76,7 @@ Add `pub mod need_bar;` and `pub mod tooltip;` to `crates/worldwake-visualizer/s
 - Detail modal Needs tab (T01DEBVIS-007 — reuses the `need_bar` widget at full width).
 - Other modal tabs (T01DEBVIS-007, -008, -009).
 - Search/filter on tooltip content.
-- Derived Pain/Danger pressure rows; this ticket lands only the values currently carried by `HomeostaticNeeds`. Follow-up: [T01DEBVIS-011](../../tickets/T01DEBVIS-011.md).
+- Derived Pain/Danger pressure rows; this ticket lands only the values currently carried by `HomeostaticNeeds`. Follow-up: [T01DEBVIS-011](T01DEBVIS-011.md).
 
 ## Acceptance Criteria
 
@@ -115,7 +115,7 @@ Completed on 2026-04-25.
 ## Deviations
 
 - The live `AgentView` carries `ActionDefId`, not an action-definition display name, so non-travel active actions render by ID.
-- The live `AgentView` carries `HomeostaticNeeds` but not derived pain/danger pressure values, so this ticket renders the five embodied needs only and leaves Pain/Danger rows to [T01DEBVIS-011](../../tickets/T01DEBVIS-011.md).
+- The live `AgentView` carries `HomeostaticNeeds` but not derived pain/danger pressure values, so this ticket renders the five embodied needs only and leaves Pain/Danger rows to [T01DEBVIS-011](T01DEBVIS-011.md).
 - The manual GUI hover smoke was not run in this headless session; automated tooltip/widget smoke tests and full verify passed.
 
 ## Verification Result

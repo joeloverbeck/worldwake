@@ -255,6 +255,9 @@ impl VisualizerApp {
         Some(build_snapshot(
             sim.world(),
             sim.scheduler(),
+            self.action_registries
+                .as_ref()
+                .map(|registries| &registries.defs),
             &self.driver,
             layout,
             sim.scheduler().current_tick(),

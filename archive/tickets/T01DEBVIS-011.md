@@ -1,10 +1,10 @@
 # T01DEBVIS-011: Derived Pain/Danger tooltip rows
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-006](../archive/tickets/T01DEBVIS-006.md)
+**Deps**: [T01DEBVIS-006](T01DEBVIS-006.md)
 
 ## Problem
 
@@ -56,8 +56,11 @@ Both rows must call the existing `need_bar` helper and use the same tooltip widt
 
 - `crates/worldwake-visualizer/src/snapshot.rs` (modify)
 - `crates/worldwake-visualizer/src/tooltip.rs` (modify)
+- `crates/worldwake-visualizer/src/app.rs` (modify — pass action definitions into snapshot pressure derivation)
+- `crates/worldwake-visualizer/src/canvas.rs` (test call-site update only)
 - `crates/worldwake-visualizer/src/lib.rs` (modify only if a new helper module is added)
-- `tickets/T01DEBVIS-010.md` (modify only if manual QA wording needs final sync)
+- `specs/T01-debug-visualizer.md` (modify — sync live snapshot read model)
+- `tickets/T01DEBVIS-010.md` (no change needed; manual QA wording already names Pain/Danger when non-zero)
 
 ## Out of Scope
 
@@ -92,3 +95,30 @@ Both rows must call the existing `need_bar` helper and use the same tooltip widt
 1. `cargo test -p worldwake-visualizer --lib -- --list`
 2. `cargo test -p worldwake-visualizer`
 3. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added `DerivedDrivePressures { pain, danger }` to `FrameSnapshot::AgentView` as a read-only UI snapshot surface.
+- Populated derived pressures through the existing AI pressure helpers (`derive_pain_pressure` / `derive_danger_pressure`) over `PerAgentBeliefView`, with the visualizer app passing its live `ActionDefRegistry` into snapshot construction so active attack actions can contribute to danger pressure.
+- Updated the tooltip need-row path so non-zero `Pain` and `Danger` rows are appended to the same `need_bar` rendering stack as the five embodied needs; zero derived pressures are omitted.
+- Added focused snapshot proof for non-zero pain/danger carriage and focused tooltip row-selection proof for omitted vs rendered derived rows.
+- Updated spec T01's snapshot read-model section to include `DerivedDrivePressures` and the AI pressure helper read surface.
+
+## Deviations
+
+- `build_snapshot` now accepts `Option<&ActionDefRegistry>` so production visualizer snapshots can include active-action danger while unit tests that do not exercise current attackers can keep using `None`.
+- The focused danger fixture proves the live pressure semantics exactly: an active attacker against an already wounded agent reaches the `critical` danger band, not merely `high`.
+- `crates/worldwake-visualizer/src/lib.rs` was unchanged because no new module was needed.
+- `tickets/T01DEBVIS-010.md` was unchanged because its manual QA checklist already says to verify Pain/Danger rows when non-zero.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-visualizer --lib -- --list`.
+- Passed `cargo test -p worldwake-visualizer --lib snapshot::tests::snapshot_carries_derived_pain_and_danger_pressures -- --exact`.
+- Passed `cargo test -p worldwake-visualizer --lib tooltip::tests::need_row_specs_include_non_zero_derived_pressures -- --exact`.
+- Passed `cargo test -p worldwake-visualizer`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh` before final ticket/spec closeout documentation sync; no Rust source changed afterward.
+- Passed `git diff --check` after final ticket/spec closeout documentation sync.

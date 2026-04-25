@@ -318,7 +318,13 @@ struct AgentView {
     active_action: Option<ActiveActionView>,
     active_goal: Option<CommittedGoalView>,
     needs: HomeostaticNeeds,
+    derived_pressures: DerivedDrivePressures,
     drive_thresholds: DriveThresholds,
+}
+
+struct DerivedDrivePressures {
+    pain: Permille,
+    danger: Permille,
 }
 
 enum AgentPosition {
@@ -362,6 +368,9 @@ Two distinct data sources are used: ECS state (via `World`) and runtime state
 - Needs via `world.get_component_homeostatic_needs(agent)` returning
   `&HomeostaticNeeds` (`needs.rs:9`; macro-generated accessor at
   `component_schema.rs:1242`).
+- Derived pain/danger pressures via `worldwake_ai::derive_pain_pressure` and
+  `derive_danger_pressure` over the agent-scoped `PerAgentBeliefView`; these
+  are cached in the visualizer snapshot only and are not authoritative state.
 - Drive thresholds via `world.get_component_drive_thresholds(agent)`
   (`crates/worldwake-core/src/drives.rs:58`; accessor at
   `component_schema.rs:1217`).

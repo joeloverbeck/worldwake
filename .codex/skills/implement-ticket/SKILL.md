@@ -218,6 +218,8 @@ When a small/local helper-extraction ticket asks to move existing inline logic i
 
 When a small/local UI, visualizer, or read-model test asserts rows or state derived from a scenario, verify whether the asserted state exists immediately after load or only after deterministic simulation advancement. If the fixture must advance first, encode that advancement in the focused test and record the temporal proof boundary in ticket closeout instead of treating a tick-0 absence as a missing implementation.
 
+When a visualizer or read-only UI snapshot derives values through AI/belief helpers, enumerate the required lawful read context before coding: agent belief store, current tick, scheduler active actions, action definitions, recipe registry when the helper needs recipes, and any runtime trace or profile carrier that affects the derived value. If the live UI cannot supply a required context, either thread that read-only context into the snapshot path or rebind the ticket/proof to the strongest honest value; do not silently compute a plausible-looking substitute from unrelated fields.
+
 #### Second-pass correction
 
 If implementation or focused test setup later disproves a remaining ticket/spec subclaim that survived the initial reassessment, stop and do a second-pass correction before final verification. Update the active ticket/spec to the strongest honest live seam immediately instead of leaving that mismatch implicit until closeout.

@@ -484,7 +484,14 @@ mod tests {
         }
         let layout = PlaceLayout::compute(&places, &edges, 0);
         let driver = AgentTickDriver::new();
-        build_snapshot(world, spawned.state.scheduler(), &driver, &layout, Tick(0))
+        build_snapshot(
+            world,
+            spawned.state.scheduler(),
+            None,
+            &driver,
+            &layout,
+            Tick(0),
+        )
     }
 
     fn entity(slot: u32) -> EntityId {

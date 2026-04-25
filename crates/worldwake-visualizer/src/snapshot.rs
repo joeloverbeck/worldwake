@@ -1,13 +1,18 @@
 use std::collections::BTreeMap;
 
 use egui::Pos2;
-use worldwake_ai::{AgentTickDriver, RankedGoalProvenance};
+use worldwake_ai::{
+    derive_danger_pressure, derive_pain_pressure, AgentTickDriver, RankedGoalProvenance,
+};
 use worldwake_cli::display::entity_display_name;
 use worldwake_core::{
     ActionDefId, ControlSource, DriveThresholds, EntityId, GoalKind, HomeostaticNeeds, Permille,
     PlaceTag, Tick, World,
 };
-use worldwake_sim::{ActionInstance, ActionState, Scheduler};
+use worldwake_sim::{
+    ActionDefRegistry, ActionInstance, ActionState, PerAgentBeliefRuntime, PerAgentBeliefView,
+    Scheduler,
+};
 
 use crate::layout::PlaceLayout;
 
@@ -42,7 +47,23 @@ pub struct AgentView {
     pub active_action: Option<ActiveActionView>,
     pub active_goal: Option<CommittedGoalView>,
     pub needs: HomeostaticNeeds,
+    pub derived_pressures: DerivedDrivePressures,
     pub drive_thresholds: DriveThresholds,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DerivedDrivePressures {
+    pub pain: Permille,
+    pub danger: Permille,
+}
+
+impl Default for DerivedDrivePressures {
+    fn default() -> Self {
+        Self {
+            pain: Permille::ZERO,
+            danger: Permille::ZERO,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,6 +95,7 @@ pub struct CommittedGoalView {
 pub fn build_snapshot(
     world: &World,
     scheduler: &Scheduler,
+    action_defs: Option<&ActionDefRegistry>,
     driver: &AgentTickDriver,
     layout: &PlaceLayout,
     current_tick: Tick,
@@ -82,7 +104,7 @@ pub fn build_snapshot(
         tick: current_tick,
         places: build_places(world, layout),
         edges: build_edges(world),
-        agents: build_agents(world, scheduler, driver, current_tick),
+        agents: build_agents(world, scheduler, action_defs, driver, current_tick),
     }
 }
 
@@ -132,6 +154,7 @@ fn build_edges(world: &World) -> Vec<EdgeView> {
 fn build_agents(
     world: &World,
     scheduler: &Scheduler,
+    action_defs: Option<&ActionDefRegistry>,
     driver: &AgentTickDriver,
     current_tick: Tick,
 ) -> BTreeMap<EntityId, AgentView> {
@@ -156,6 +179,13 @@ fn build_agents(
                         .get_component_homeostatic_needs(id)
                         .copied()
                         .unwrap_or_default(),
+                    derived_pressures: derived_drive_pressures(
+                        world,
+                        scheduler,
+                        action_defs,
+                        id,
+                        current_tick,
+                    ),
                     drive_thresholds: world
                         .get_component_drive_thresholds(id)
                         .copied()
@@ -164,6 +194,39 @@ fn build_agents(
             )
         })
         .collect()
+}
+
+fn derived_drive_pressures(
+    world: &World,
+    scheduler: &Scheduler,
+    action_defs: Option<&ActionDefRegistry>,
+    agent: EntityId,
+    current_tick: Tick,
+) -> DerivedDrivePressures {
+    let Some(belief_store) = world.get_component_agent_belief_store(agent) else {
+        return DerivedDrivePressures::default();
+    };
+
+    if let Some(action_defs) = action_defs {
+        let runtime = PerAgentBeliefRuntime::new(scheduler.active_actions(), action_defs);
+        let view = PerAgentBeliefView::with_runtime_at_tick(
+            agent,
+            current_tick,
+            world,
+            belief_store,
+            runtime,
+        );
+        return DerivedDrivePressures {
+            pain: derive_pain_pressure(&view, agent),
+            danger: derive_danger_pressure(&view, agent),
+        };
+    }
+
+    let view = PerAgentBeliefView::new_at_tick(agent, current_tick, world, belief_store);
+    DerivedDrivePressures {
+        pain: derive_pain_pressure(&view, agent),
+        danger: derive_danger_pressure(&view, agent),
+    }
 }
 
 fn agent_position(
@@ -255,6 +318,14 @@ fn u64_to_u32_saturating(value: u64) -> u32 {
 mod tests {
     use super::*;
     use worldwake_cli::scenario::{load_scenario_file, spawn_scenario_ignoring_lints};
+    use worldwake_core::{
+        BodyPart, CauseRef, CombatWeaponRef, ReservationId, VisibilitySpec, WitnessData, WorldTxn,
+        Wound, WoundCause, WoundId, WoundList,
+    };
+    use worldwake_sim::{
+        ActionDuration, ActionHandlerRegistry, ActionInstanceId, ActionPayload, ActionStatus,
+    };
+    use worldwake_systems::register_attack_action;
 
     #[test]
     fn transit_progress_three_of_seven() {
@@ -289,7 +360,14 @@ mod tests {
         let layout = PlaceLayout::compute(&places, &edges, 0);
         let driver = AgentTickDriver::new();
 
-        let snapshot = build_snapshot(world, scheduler, &driver, &layout, scheduler.current_tick());
+        let snapshot = build_snapshot(
+            world,
+            scheduler,
+            None,
+            &driver,
+            &layout,
+            scheduler.current_tick(),
+        );
 
         assert!(!snapshot.places.is_empty());
         for place in snapshot.places.keys() {
@@ -301,5 +379,98 @@ mod tests {
                 AgentPosition::AtPlace(_) | AgentPosition::InTransit { .. }
             ));
         }
+    }
+
+    #[test]
+    fn snapshot_carries_derived_pain_and_danger_pressures() {
+        let scenario_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("scenarios/survival-combat.ron");
+        let def = load_scenario_file(&scenario_path).expect("combat scenario loads");
+        let mut spawned = spawn_scenario_ignoring_lints(&def).expect("combat scenario spawns");
+        let agent = named_agent(spawned.state.world(), "Sentinel Rowan");
+        let attacker = named_agent(spawned.state.world(), "Raider Voss");
+        let mut action_defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let attack_id = register_attack_action(&mut action_defs, &mut handlers);
+
+        {
+            let (world, event_log) = spawned.state.world_and_event_log_mut();
+            let mut txn = WorldTxn::new(
+                world,
+                Tick(0),
+                CauseRef::Bootstrap,
+                Some(attacker),
+                None,
+                VisibilitySpec::SamePlace,
+                WitnessData::default(),
+            );
+            txn.set_component_wound_list(
+                agent,
+                WoundList {
+                    wounds: vec![Wound {
+                        id: WoundId(1),
+                        body_part: BodyPart::Torso,
+                        cause: WoundCause::Combat {
+                            attacker,
+                            weapon: CombatWeaponRef::Unarmed,
+                        },
+                        severity: Permille::new(250).unwrap(),
+                        inflicted_at: Tick(0),
+                        bleed_rate_per_tick: Permille::ZERO,
+                    }],
+                },
+            )
+            .unwrap();
+            txn.commit(event_log);
+        }
+        spawned.state.scheduler_mut().insert_action(ActionInstance {
+            instance_id: ActionInstanceId(99),
+            def_id: attack_id,
+            payload: ActionPayload::None,
+            actor: attacker,
+            targets: vec![agent],
+            start_tick: Tick(0),
+            remaining_duration: ActionDuration::new(3),
+            status: ActionStatus::Active,
+            reservation_ids: vec![ReservationId(1)],
+            local_state: Some(ActionState::Empty),
+            body_cost_override: None,
+        });
+
+        let world = spawned.state.world();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let edges = build_edges(world)
+            .into_iter()
+            .map(|edge| (edge.from, edge.to, edge.travel_ticks))
+            .collect::<Vec<_>>();
+        let layout = PlaceLayout::compute(&places, &edges, 0);
+        let driver = AgentTickDriver::new();
+        let snapshot = build_snapshot(
+            world,
+            spawned.state.scheduler(),
+            Some(&action_defs),
+            &driver,
+            &layout,
+            Tick(0),
+        );
+        let agent_view = snapshot.agents.get(&agent).expect("agent is snapshotted");
+
+        assert_eq!(
+            agent_view.derived_pressures.pain,
+            Permille::new(250).unwrap()
+        );
+        assert_eq!(
+            agent_view.derived_pressures.danger,
+            agent_view.drive_thresholds.danger.critical()
+        );
+    }
+
+    fn named_agent(world: &World, name: &str) -> EntityId {
+        world
+            .query_name_and_agent_data()
+            .map(|(id, _, _)| id)
+            .find(|id| entity_display_name(world, *id) == name)
+            .expect("named scenario agent exists")
     }
 }
