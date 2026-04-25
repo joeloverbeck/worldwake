@@ -14,7 +14,7 @@ Phase 7 adjunct: Consequence Carriers / Institutions
 
 ## Status
 
-Draft
+COMPLETED
 
 ## Crates
 
@@ -237,19 +237,19 @@ The spec extends `validate_reward_source`, `emit_bounty_posting_candidates`, and
 4. `BestEffort` action start — `start_post_bounty` re-runs `validate_reward_source` (which now also checks against active encumbrances).
 5. `handle_plan_failure` — replan must back out cleanly when revalidation rejects (e.g., a sibling bounty's encumbrance shrank the available balance between selection and start).
 6. Payload revalidation — `with_payload_override_validator(validate_post_bounty_payload_override)` is already wired at `crates/worldwake-systems/src/artifact_actions.rs:39`. Implementation extends the existing validator to enforce the new reservation contract; no new wiring is needed.
-7. Golden tests — all four `survival-justice` goldens pass under the ignored `golden-survival` lane.
+7. Golden tests — the four scenario-branch `survival-justice` goldens plus deterministic replay pass under the ignored `golden-survival` lane.
 
 ## Deliverables
 
-1. Treasury container ownership wiring in core: relation conventions for `OwnedBy(container, office)` + lots `OwnedBy(office)` so `controlled_item_lots_for(office)` continues to surface them; component-schema, `delta.rs`, `world.rs`, and `component_tables.rs` registration for the new `RewardEncumbrance` component; conservation reuse confirmed (lots remain conserved; no extension of `verify_*_conservation`).
-2. Scenario authoring: extend `OfficeDef` with `treasury: Option<TreasuryDef>`; `spawn_office` materializes the container and seeds initial lots owned by the office; lint rules cover unreachable/zero-quantity/missing-seat cases.
-3. Funding authorization helper in `worldwake-systems` (office-holder may spend office-owned lots within jurisdiction/policy), reused by `validate_reward_source` and any future fiscal work. The office-holder extraction landed in `S125INSTREBOU-003`; the remaining jurisdiction/policy enforcement branch landed in `S125INSTREBOU-008`.
+1. [DONE] Treasury container ownership wiring in core: relation conventions for `OwnedBy(container, office)` + lots `OwnedBy(office)` so `controlled_item_lots_for(office)` continues to surface them; component-schema, `delta.rs`, `world.rs`, and `component_tables.rs` registration for the new `RewardEncumbrance` component; conservation reuse confirmed (lots remain conserved; no extension of `verify_*_conservation`).
+2. [DONE] Scenario authoring: extend `OfficeDef` with `treasury: Option<TreasuryDef>`; `spawn_office` materializes the container and seeds initial lots owned by the office; lint rules cover unreachable/zero-quantity/missing-seat cases.
+3. [DONE] Funding authorization helper in `worldwake-systems` (office-holder may spend office-owned lots within jurisdiction/policy), reused by `validate_reward_source` and any future fiscal work. The office-holder extraction landed in `S125INSTREBOU-003`; the remaining jurisdiction/policy enforcement branch landed in `S125INSTREBOU-008`.
 4. [DONE] `PostBounty` candidate generation: `S125INSTREBOU-006` made `emit_bounty_posting_candidates` consume the `GoalBeliefView::actor_lawful_reward_source_for_case` accessor; removed the hard-coded `treasury_entity: office`; skips emission when the accessor returns `None`; records the skip as a `PostBounty` / `NoLawfulRewardSource` omission in the candidate trace.
 5. [DONE] `post_bounty` authoritative validation and commit integration: `S125INSTREBOU-005` extended `validate_reward_source` to consider active encumbrances; `commit_post_bounty` records per-office `RewardReservation` entries; `claim_bounty` / `withdraw_bounty` / TTL-expiry paths release/consume the encumbrance; existing `validate_post_bounty_payload_override` covers the payload contract.
 6. [DONE] `GoalBeliefView` accessor (`actor_lawful_reward_source_for_case`) in `crates/worldwake-sim/src/belief_view.rs`: `S125INSTREBOU-004` landed the accessor on the live `BelievedInstitutionalClaim` case carrier with blanket trait forwarding and role-gated reward-encumbrance visibility.
-7. Focused tests in `worldwake-systems` for authorization, insufficient funds, reservation creation/release/claim, expiry release, and overlap rejection; focused tests in `worldwake-cli` for scenario spawn (lint and materialization).
-8. `survival-justice` golden extension: new test `survival_justice_proves_institutional_bounty_posted` proving the institutional bounty branch under the existing survival envelope; the three existing goldens continue to pass unchanged.
-9. Generated golden docs and `survival-justice` scenario roadmap update once the row is actually landed.
+7. [DONE] Focused tests in `worldwake-systems` for authorization, insufficient funds, reservation creation/release/claim, expiry release, and overlap rejection; focused tests in `worldwake-cli` for scenario spawn (lint and materialization).
+8. [DONE] `survival-justice` golden extension: new test `survival_justice_proves_institutional_bounty_posted` proving the institutional bounty branch under the existing survival envelope; the three existing goldens continue to pass unchanged.
+9. [DONE] Generated golden docs and `survival-justice` scenario roadmap update once the row is actually landed.
 
 ## Acceptance Criteria
 
@@ -266,3 +266,24 @@ The spec extends `validate_reward_source`, `emit_bounty_posting_candidates`, and
 1. Does office-held fine revenue feed this treasury in the same spec, or should fine revenue remain existing office-owned property until a follow-up explicitly connects the two? *(Tentative: defer; fine routing is its own information path.)*
 2. Should the funding authorization helper from D3 be promoted immediately to a generic `worldwake-systems` API used by future rationing/taxation specs, or kept private to `artifact_actions` until a second consumer appears? *(Tentative: keep private; widen when the second consumer arrives, per FND-26.)*
 3. Should non-co-located stale-balance memory for office holders be modeled now (so a holder away from the seat can still post a bounty against a remembered balance) or deferred to a follow-up spec? *(Tentative: defer; the survival-justice proof posts at the seat.)*
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- S125 landed as an office-scoped institutional treasury and reward-reservation stack: `RewardEncumbrance`, office treasury authoring, authorization-policy validation, active encumbrance accounting, funding-aware `PostBounty` candidate generation, and the `GoalBeliefView::actor_lawful_reward_source_for_case` accessor all landed through tickets `S125INSTREBOU-001` through `S125INSTREBOU-008`.
+- `survival-justice` now authors a `Market Warden` coin treasury and nonzero `bounty_posting_weight`, while the treasury contents stay inside the office-owned container instead of becoming place-floor theft-scene items.
+- Added `survival_justice_proves_institutional_bounty_posted`, which proves `PostBounty` ranks and selects after the accusation case, commits with `RewardSource::InstitutionalTreasury { treasury_entity: Market Warden }`, creates a bounty artifact, and records a matching office `RewardEncumbrance` at the commit boundary.
+- Regenerated the golden inventory, scenario index, scenario detail, and coverage matrix docs. `specs/IMPLEMENTATION-ORDER.md` now marks S125 complete and points to the archived spec.
+
+Deviations from draft:
+
+- The live 1440-tick run posts the institutional bounty before the later fine commit, then still commits the fine. The landed invariant is branch retention plus institutional bounty posting, not strict fine-before-bounty ordering.
+- The live theft quantity in the scenario is 3, so the golden asserts nonzero reward quantity and exact reservation/terms equality instead of pinning a stale narrative quantity.
+
+Verification:
+
+- Passed `cargo test -p worldwake-ai --test golden_survival_justice survival_justice_proves_institutional_bounty_posted -- --ignored --exact`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_justice -- --ignored`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `./scripts/verify.sh`.

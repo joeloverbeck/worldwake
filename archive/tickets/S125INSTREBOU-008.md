@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems::artifact_actions` authorization context and focused validation tests
-**Deps**: [S125INSTREBOU-003](S125INSTREBOU-003.md), [S125 spec](../../specs/S125-institutional-treasuries-and-bounty-funding.md)
+**Deps**: [S125INSTREBOU-003](S125INSTREBOU-003.md), [S125 spec](../specs/S125-institutional-treasuries-and-bounty-funding.md)
 
 ## Problem
 

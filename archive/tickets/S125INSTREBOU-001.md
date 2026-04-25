@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new ECS component on `EntityKind::Office`; component schema + delta + world + component_tables registration; current save-format version bump for the persisted component-table shape
-**Deps**: [S125 spec](../../specs/S125-institutional-treasuries-and-bounty-funding.md)
+**Deps**: [S125 spec](../specs/S125-institutional-treasuries-and-bounty-funding.md)
 
 ## Problem
 

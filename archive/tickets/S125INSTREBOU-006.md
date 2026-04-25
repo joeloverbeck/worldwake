@@ -50,7 +50,7 @@ When the accessor returns `Some(reward_source)`, use that value when constructin
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify)
 - `crates/worldwake-ai/src/decision_trace.rs` (add trace reason for funded bounty omission)
 - `crates/worldwake-ai/src/planner_ops.rs` (test inventory fallout: include already-live `WithdrawBounty` in the count)
-- `specs/S125-institutional-treasuries-and-bounty-funding.md` (mark D4 done)
+- `archive/specs/S125-institutional-treasuries-and-bounty-funding.md` (mark D4 done)
 
 ## Out of Scope
 

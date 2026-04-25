@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 104
+- Scenario blocks: 105
 - Contributing golden test files: 28
-- Associated tests: 135
+- Associated tests: 136
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1079,7 +1079,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 177: Survival Justice Proves Accusation Substrate
 
-- Source: `golden_survival_justice.rs:506`
+- Source: `golden_survival_justice.rs:632`
 - Systems: AI, Needs, Trade, Perception, Offices, Investigation
 - GoalKinds: StealItem, InvestigateViolation, Accuse
 - ActionDomains: Social, Trade, Needs
@@ -1094,7 +1094,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 178: Survival Justice Proves Search And Report Found
 
-- Source: `golden_survival_justice.rs:616`
+- Source: `golden_survival_justice.rs:715`
 - Systems: AI, Needs, Search, Reports, Perception, Offices
 - GoalKinds: SearchForMissing, ReportFound
 - ActionDomains: Social, Needs
@@ -1106,6 +1106,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: the searcher commits `search_place` for the overdue missing-person expectation, resolves it as found safe, then commits `report_found` and writes the found-person status to the local office register. The same run also asserts that stale exact-bound `ask_about_person` requests no longer recur for this local-search branch.
 
 **Cross-system chain**: overdue local expectation -> planner selects direct `search_place` instead of stale `ask_about_person` -> expectation resolves found safe -> `report_found` writes the missing-person status claim.
+
+### Scenario 179: Survival Justice Proves Institutional Bounty Posted
+
+- Source: `golden_survival_justice.rs:771`
+- Systems: AI, Needs, Offices, Investigation, Social Artifacts, Treasury
+- GoalKinds: Accuse, PunishAccused, PostBounty
+- ActionDomains: Social, Needs
+- Places: Market Square
+- Principles: 3, 4, 6, 7, 8, 14, 18, 23, 24, 26
+
+**Setup**: Run the authored survival justice scenario for 1440 ticks. `Market Warden` owns an office-scoped coin treasury container at `Market Square`; `Merchant Sera` holds the office, investigates the staged theft, and records an accusation case through the local crime register.
+
+**Proves**: the same survival run keeps Merchant Sera inside the authored survival-health envelope, ranks and selects a funded institutional `PostBounty` branch after the accusation exists, commits `post_bounty` with `RewardSource::InstitutionalTreasury { treasury_entity: Market Warden }`, materializes the bounty artifact, and records a matching office `RewardEncumbrance` at the commit boundary.
+
+**Cross-system chain**: office-authored treasury -> theft accusation in crime register -> funded `PostBounty` candidate -> `post_bounty` commit -> bounty artifact plus office reward reservation.
 
 ### Scenario 175: Survival Offices Proves Force-Law Uptake Under Survival
 

@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 30
 - Files contributing `golden_*` tests: 30
-- Total `golden_*` tests: 139
+- Total `golden_*` tests: 140
 
 ## Per-File Inventory
 
@@ -33,7 +33,7 @@ Do not hand-edit it.
 | `golden_survival_drive_escalation.rs` | 3 |
 | `golden_survival_escort.rs` | 2 |
 | `golden_survival_items_decay.rs` | 2 |
-| `golden_survival_justice.rs` | 4 |
+| `golden_survival_justice.rs` | 5 |
 | `golden_survival_offices.rs` | 2 |
 | `golden_survival_patrol.rs` | 2 |
 | `golden_survival_preferences.rs` | 2 |
@@ -213,6 +213,7 @@ Do not hand-edit it.
 - `survival_justice_proves_accusation_substrate`
 - `survival_justice_proves_fine_punishment_for_same_theft_case`
 - `survival_justice_proves_search_and_report_found`
+- `survival_justice_proves_institutional_bounty_posted`
 - `survival_justice_replays_deterministically`
 
 ### `golden_survival_offices.rs`

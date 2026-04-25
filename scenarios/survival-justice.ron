@@ -35,6 +35,10 @@
             succession_law: Force,
             succession_period_ticks: 2,
             initial_holder: "Merchant Sera",
+            treasury: (
+                commodity: Coin,
+                quantity: 12,
+            ),
         ),
     ],
     agents: [
@@ -74,7 +78,7 @@
                 social_weight: 250,
                 activity_awareness_weight: 0,
                 side_benefit_weight: 100,
-                bounty_posting_weight: 0,
+                bounty_posting_weight: 1000,
                 notice_posting_weight: 0,
                 courage: 500,
                 care_weight: 0,

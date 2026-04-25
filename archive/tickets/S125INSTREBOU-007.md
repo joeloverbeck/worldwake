@@ -1,10 +1,10 @@
 # S125INSTREBOU-007: survival-justice institutional bounty golden + roadmap
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario authoring change + new golden test
-**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), [S125INSTREBOU-002](../archive/tickets/S125INSTREBOU-002.md), [S125INSTREBOU-003](../archive/tickets/S125INSTREBOU-003.md), [S125INSTREBOU-005](../archive/tickets/S125INSTREBOU-005.md), [S125INSTREBOU-004](../archive/tickets/S125INSTREBOU-004.md), [S125INSTREBOU-006](../archive/tickets/S125INSTREBOU-006.md), [S125INSTREBOU-008](../archive/tickets/S125INSTREBOU-008.md)
+**Deps**: [S125INSTREBOU-001](S125INSTREBOU-001.md), [S125INSTREBOU-002](S125INSTREBOU-002.md), [S125INSTREBOU-003](S125INSTREBOU-003.md), [S125INSTREBOU-005](S125INSTREBOU-005.md), [S125INSTREBOU-004](S125INSTREBOU-004.md), [S125INSTREBOU-006](S125INSTREBOU-006.md), [S125INSTREBOU-008](S125INSTREBOU-008.md)
 
 ## Problem
 
@@ -99,6 +99,27 @@ Update `specs/IMPLEMENTATION-ORDER.md` S125 entry to mark `✅ COMPLETED — arc
 
 ### Commands
 
-1. `cargo test -p worldwake-ai golden_survival_justice -- --ignored` (targeted ignored-lane run for survival-justice goldens).
+1. `cargo test -p worldwake-ai --test golden_survival_justice -- --ignored` (targeted ignored-lane run for survival-justice goldens).
 2. `python3 scripts/golden_inventory.py --write --check-docs` (regenerate golden docs).
 3. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added a `Market Warden` office treasury to `scenarios/survival-justice.ron` and enabled `Merchant Sera`'s `bounty_posting_weight` so the scenario can fund an institutional bounty without place-floor loose coin.
+- Added `survival_justice_proves_institutional_bounty_posted` to `crates/worldwake-ai/tests/golden_survival_justice.rs`. The new golden captures the first committed `post_bounty` branch, asserts the bounty uses `RewardSource::InstitutionalTreasury { treasury_entity: Market Warden }`, and checks the matching office `RewardEncumbrance` reservation at the commit boundary.
+- Regenerated golden inventory docs, updated `docs/scenario-roadmap.md` to mark Row 13's institutional bounty branch landed, updated `specs/IMPLEMENTATION-ORDER.md`, marked S125 complete, and archived the spec at `archive/specs/S125-institutional-treasuries-and-bounty-funding.md`.
+
+## Deviations
+
+- The live scenario posts the institutional bounty at tick 10 and later commits the fine at tick 17. The landed proof keeps the existing fine branch green but does not require fine-before-bounty ordering, because the ticket-owned invariant is branch retention plus institutional bounty posting.
+- The live stolen quantity is 3, so the new golden asserts nonzero reward quantity and exact equality between bounty terms and reservation rather than pinning the draft's narrative quantity.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_survival_justice -- --list`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_justice survival_justice_proves_institutional_bounty_posted -- --ignored --exact`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_justice -- --ignored`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `./scripts/verify.sh`.

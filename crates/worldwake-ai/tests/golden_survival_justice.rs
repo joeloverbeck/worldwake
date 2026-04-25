@@ -8,8 +8,10 @@ use std::path::PathBuf;
 use golden_harness::*;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    CommodityKind, DriveThresholds, EntityId, InstitutionalClaim, PunishmentKind, RecordKind,
-    SocialObservationDetail, Tick, ViolationKind, institutional::MissingPersonReportStatus,
+    ArtifactKind, ArtifactState, BountyTarget, BountyTerms, CommodityKind, DriveThresholds,
+    EntityId, InstitutionalClaim, PunishmentKind, Quantity, RecordKind, RewardReservation,
+    RewardSource, SocialObservationDetail, Tick, ViolationKind,
+    institutional::MissingPersonReportStatus,
 };
 use worldwake_sim::{ActionTraceKind, RequestResolutionOutcome, RequestResolutionRejectionReason};
 
@@ -21,6 +23,14 @@ struct AgentSurvivalObservation {
     critical_thresholds: DriveThresholds,
     critical_need_runs: SurvivalNeedRunTracker,
     committed_actions: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BountyPostingObservation {
+    tick: Tick,
+    artifact: EntityId,
+    terms: BountyTerms,
+    reservation: RewardReservation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,8 +56,12 @@ struct JusticeObservation {
     searcher_exact_identity_rejections: u32,
     first_ranked_accuse_tick: Option<Tick>,
     first_selected_accuse_tick: Option<Tick>,
+    first_ranked_post_bounty_tick: Option<Tick>,
+    first_selected_post_bounty_tick: Option<Tick>,
+    bounty_posting: Option<BountyPostingObservation>,
     merchant_id: EntityId,
     thief_id: EntityId,
+    market_warden_office: EntityId,
     final_violation_suspicions: Vec<String>,
     final_social_suspicions: Vec<String>,
     first_violation_suspected_theft_tick: Option<Tick>,
@@ -109,6 +123,37 @@ fn find_named_entity(h: &GoldenHarness, expected_name: &str) -> EntityId {
         .query_name()
         .find_map(|(entity, name)| (name.0 == expected_name).then_some(entity))
         .unwrap_or_else(|| panic!("scenario should include {expected_name}"))
+}
+
+fn assert_merchant_survival_health(observation: &JusticeObservation) {
+    let run_limit_overrides =
+        contract_run_limit_overrides(observation.contract.critical_run_limits.as_ref());
+
+    assert!(
+        observation.merchant.alive,
+        "Merchant Sera should remain alive for the full {SURVIVAL_TICKS}-tick scenario; observation={observation:?}"
+    );
+    assert_authored_critical_runs_with_overrides(
+        observation.contract.max_authored_critical_run_ticks,
+        run_limit_overrides,
+        "Merchant Sera",
+        &observation.merchant.critical_thresholds,
+        &observation.merchant.critical_need_runs,
+    );
+    assert_required_self_care_families(
+        &observation.contract.required_self_care_families,
+        "Merchant Sera",
+        &observation.merchant.committed_actions,
+        "survival-justice",
+    );
+    assert_no_stuck_idle_windows(
+        observation
+            .contract
+            .max_idle_window_ticks_with_elevated_need,
+        observation.contract.elevated_need_floor.value(),
+        "survival-justice",
+        &observation.stuck_idle_windows,
+    );
 }
 
 fn contract_run_limit_overrides(
@@ -187,6 +232,7 @@ fn run_survival_justice() -> JusticeObservation {
     let mut report_found_tick = None;
     let mut first_violation_suspected_theft_tick = None;
     let mut first_social_suspected_theft_tick = None;
+    let mut bounty_posting = None;
 
     for tick_num in 0..SURVIVAL_TICKS {
         h.step_once();
@@ -270,6 +316,56 @@ fn run_survival_justice() -> JusticeObservation {
             {
                 fine_tick = Some(tick);
             }
+            if bounty_posting.is_none()
+                && event.action_name == "post_bounty"
+                && matches!(event.kind, ActionTraceKind::Committed { .. })
+            {
+                let (artifact, terms) = h
+                    .world
+                    .query_bounty_terms()
+                    .find(|(artifact, terms)| {
+                        h.world
+                            .get_component_artifact_header(*artifact)
+                            .is_some_and(|header| {
+                                header.kind == ArtifactKind::Bounty
+                                    && header.state == ArtifactState::Active
+                                    && header.issuer == merchant
+                            })
+                            && matches!(
+                                terms.target,
+                                BountyTarget::EliminateEntity { target } if target == thief
+                            )
+                    })
+                    .map_or_else(
+                        || {
+                            panic!(
+                                "post_bounty commit should create an active bounty artifact; tick={tick:?}"
+                            )
+                        },
+                        |(artifact, terms)| (artifact, *terms),
+                    );
+                let reservation = h
+                    .world
+                    .get_component_reward_encumbrance(office)
+                    .and_then(|encumbrance| {
+                        encumbrance
+                            .reservations
+                            .iter()
+                            .find(|reservation| reservation.bounty_artifact == artifact)
+                            .cloned()
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "post_bounty commit should reserve bounty reward on Market Warden; artifact={artifact:?}; tick={tick:?}"
+                        )
+                    });
+                bounty_posting = Some(BountyPostingObservation {
+                    tick,
+                    artifact,
+                    terms,
+                    reservation,
+                });
+            }
         }
 
         if theft_tick.is_none()
@@ -345,6 +441,34 @@ fn run_survival_justice() -> JusticeObservation {
             worldwake_ai::DecisionOutcome::Planning(planning) => matches!(
                 planning.selection.selected_goal().map(|goal| goal.kind),
                 Some(worldwake_core::GoalKind::Accuse { .. })
+            )
+            .then_some(trace.tick),
+            _ => None,
+        });
+    let first_ranked_post_bounty_tick = decision_trace_sink
+        .traces_for(merchant)
+        .into_iter()
+        .find_map(|trace| match &trace.outcome {
+            worldwake_ai::DecisionOutcome::Planning(planning) => planning
+                .candidates
+                .ranked
+                .iter()
+                .any(|summary| {
+                    matches!(
+                        summary.opportunity.goal_key.kind,
+                        worldwake_core::GoalKind::PostBounty { .. }
+                    )
+                })
+                .then_some(trace.tick),
+            _ => None,
+        });
+    let first_selected_post_bounty_tick = decision_trace_sink
+        .traces_for(merchant)
+        .into_iter()
+        .find_map(|trace| match &trace.outcome {
+            worldwake_ai::DecisionOutcome::Planning(planning) => matches!(
+                planning.selection.selected_goal().map(|goal| goal.kind),
+                Some(worldwake_core::GoalKind::PostBounty { .. })
             )
             .then_some(trace.tick),
             _ => None,
@@ -491,8 +615,12 @@ fn run_survival_justice() -> JusticeObservation {
         searcher_exact_identity_rejections,
         first_ranked_accuse_tick,
         first_selected_accuse_tick,
+        first_ranked_post_bounty_tick,
+        first_selected_post_bounty_tick,
+        bounty_posting,
         merchant_id: merchant,
         thief_id: thief,
+        market_warden_office: office,
         final_violation_suspicions,
         final_social_suspicions,
         first_violation_suspected_theft_tick,
@@ -534,34 +662,7 @@ fn run_survival_justice() -> JusticeObservation {
 #[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
 fn survival_justice_proves_accusation_substrate() {
     let observation = run_survival_justice();
-    let run_limit_overrides =
-        contract_run_limit_overrides(observation.contract.critical_run_limits.as_ref());
-
-    assert!(
-        observation.merchant.alive,
-        "Merchant Sera should remain alive for the full {SURVIVAL_TICKS}-tick scenario; observation={observation:?}"
-    );
-    assert_authored_critical_runs_with_overrides(
-        observation.contract.max_authored_critical_run_ticks,
-        run_limit_overrides,
-        "Merchant Sera",
-        &observation.merchant.critical_thresholds,
-        &observation.merchant.critical_need_runs,
-    );
-    assert_required_self_care_families(
-        &observation.contract.required_self_care_families,
-        "Merchant Sera",
-        &observation.merchant.committed_actions,
-        "survival-justice",
-    );
-    assert_no_stuck_idle_windows(
-        observation
-            .contract
-            .max_idle_window_ticks_with_elevated_need,
-        observation.contract.elevated_need_floor.value(),
-        "survival-justice",
-        &observation.stuck_idle_windows,
-    );
+    assert_merchant_survival_health(&observation);
 
     assert!(
         observation.office_holder_tick <= observation.stage_tick,
@@ -665,6 +766,100 @@ fn survival_justice_proves_search_and_report_found() {
     assert_eq!(
         observation.searcher_exact_identity_rejections, 0,
         "stale ask_about_person exact-identity rejections should not recur in survival justice; observation={observation:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 179: Survival Justice Proves Institutional Bounty Posted
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Needs, Offices, Investigation, Social Artifacts, Treasury
+// GoalKinds: Accuse, PunishAccused, PostBounty
+// ActionDomains: Social, Needs
+// Places: Market Square
+// Principles: 3, 4, 6, 7, 8, 14, 18, 23, 24, 26
+//
+// Setup: Run the authored survival justice scenario for 1440 ticks. `Market
+//   Warden` owns an office-scoped coin treasury container at `Market Square`;
+//   `Merchant Sera` holds the office, investigates the staged theft, and records
+//   an accusation case through the local crime register.
+//
+// Proves: the same survival run keeps Merchant Sera inside the authored
+//   survival-health envelope, ranks and selects a funded institutional
+//   `PostBounty` branch after the accusation exists, commits `post_bounty` with
+//   `RewardSource::InstitutionalTreasury { treasury_entity: Market Warden }`,
+//   materializes the bounty artifact, and records a matching office
+//   `RewardEncumbrance` at the commit boundary.
+//
+// Chain: office-authored treasury -> theft accusation in crime register ->
+//   funded `PostBounty` candidate -> `post_bounty` commit -> bounty artifact
+//   plus office reward reservation.
+#[test]
+#[ignore = "CI-only: long-running 1440-tick scenario; run via golden-survival workflow"]
+fn survival_justice_proves_institutional_bounty_posted() {
+    let observation = run_survival_justice();
+    assert_merchant_survival_health(&observation);
+
+    let accusation_tick = observation
+        .accuse_tick
+        .expect("merchant should commit accuse before posting a bounty");
+    let fine_tick = observation
+        .fine_tick
+        .expect("merchant should retain the fine branch with the bounty extension");
+    let ranked_tick = observation
+        .first_ranked_post_bounty_tick
+        .expect("funded accusation case should rank a PostBounty candidate");
+    let selected_tick = observation
+        .first_selected_post_bounty_tick
+        .expect("funded accusation case should select a PostBounty candidate");
+    let bounty = observation
+        .bounty_posting
+        .as_ref()
+        .expect("merchant should commit post_bounty in survival justice");
+
+    assert!(
+        accusation_tick <= ranked_tick,
+        "PostBounty should rank only after the accusation case exists; observation={observation:?}"
+    );
+    assert!(
+        ranked_tick <= selected_tick,
+        "PostBounty should be selected after it ranks; observation={observation:?}"
+    );
+    assert!(
+        selected_tick <= bounty.tick,
+        "post_bounty should commit after the funded branch is selected; observation={observation:?}"
+    );
+    assert!(
+        fine_tick >= accusation_tick,
+        "the bounty extension should retain the existing fine branch after accusation; observation={observation:?}"
+    );
+    assert_eq!(
+        bounty.terms.reward_source,
+        RewardSource::InstitutionalTreasury {
+            treasury_entity: observation.market_warden_office,
+        },
+        "bounty should be funded by the Market Warden office treasury; observation={observation:?}"
+    );
+    assert_eq!(
+        bounty.terms.reward_commodity,
+        CommodityKind::Coin,
+        "survival justice bounty should reserve coin reward; observation={observation:?}"
+    );
+    assert!(
+        bounty.terms.reward_quantity > Quantity(0),
+        "bounty reward should be grounded in a nonzero theft quantity; observation={observation:?}"
+    );
+    assert_eq!(
+        bounty.reservation.bounty_artifact, bounty.artifact,
+        "reservation should point at the materialized bounty artifact; observation={observation:?}"
+    );
+    assert_eq!(
+        bounty.reservation.commodity, bounty.terms.reward_commodity,
+        "reservation commodity should match bounty terms; observation={observation:?}"
+    );
+    assert_eq!(
+        bounty.reservation.quantity, bounty.terms.reward_quantity,
+        "reservation quantity should match bounty terms; observation={observation:?}"
     );
 }
 
