@@ -8,14 +8,14 @@ For each agent with any need >750 permille for 100+ consecutive ticks, classify 
 
 | Category | Signature | How to Detect |
 |----------|-----------|---------------|
-| **Geographic Desert** | Agent at location with no local affordance for the need; AcquireCommodity budget-exhausts | Section 6: no relevant facility. Section 7: budget-exhausted. Affordances lack eat/drink/wash/harvest. |
-| **Planner Budget Wall** | Resource exists at reachable location but plan search exceeds expansion budget | Section 7: budget-exhausted with 500+ candidates, depth 5+. Section 6: resource exists elsewhere connected by travel edges. |
-| **Belief Blindness** | Agent lacks beliefs about resource-rich locations | Section 5: agent doesn't know about resource locations. Also covers facility-specific blindness: recipe exists but facility location unknown. |
-| **Priority Override** | Agent has affordances for need relief but another goal consistently outranks it, so relief fires rarely or never | Section 7: non-needs goal dominates during critical-need period. Affordances DO include the relief action but it fires at a frequency insufficient to keep the need below threshold (or never fires). Distinguish "never fires" from "fires too infrequently" — both are Priority Override. For "fires too infrequently," compare relief-action count vs. need-accumulation rate: if `relief_rate < need_accumulation_rate` across a rolling 200+ tick window, classify as Priority Override regardless of whether the action ever committed. |
+| **Geographic Desert** | Agent at location with no local affordance for the need; AcquireCommodity budget-exhausts | Section 7: no relevant facility. Section 8: budget-exhausted. Affordances lack eat/drink/wash/harvest. |
+| **Planner Budget Wall** | Resource exists at reachable location but plan search exceeds expansion budget | Section 8: budget-exhausted with 500+ candidates, depth 5+. Section 7: resource exists elsewhere connected by travel edges. |
+| **Belief Blindness** | Agent lacks beliefs about resource-rich locations | Section 6: agent doesn't know about resource locations. Also covers facility-specific blindness: recipe exists but facility location unknown. |
+| **Priority Override** | Agent has affordances for need relief but another goal consistently outranks it, so relief fires rarely or never | Section 8: non-needs goal dominates during critical-need period. Affordances DO include the relief action but it fires at a frequency insufficient to keep the need below threshold (or never fires). Distinguish "never fires" from "fires too infrequently" — both are Priority Override. For "fires too infrequently," compare relief-action count vs. need-accumulation rate: if `relief_rate < need_accumulation_rate` across a rolling 200+ tick window, classify as Priority Override regardless of whether the action ever committed. |
 | **Structural Impossibility** | No location in the entire scenario has the needed resource/facility | Scenario inspection: no wash-capable facility exists anywhere, etc. |
-| **Exploration Failure** | Agent has exploration_profile but ExploreLocation never fires or fails | Section 7: ExploreLocation in failed plans/blocked desires, or never appears in goals-selected despite having the profile. |
-| **Belief Memory Pollution** | Agent previously knew resource locations but beliefs displaced by irrelevant entities | Section 5: memory at capacity dominated by SocialArtifacts/Waste. Section 2: agent visited resource locations earlier. Distinct from Belief Blindness (never learned vs. crowded out). |
-| **Knowledge Gap** | Agent believes location exists but lacks recipe to exploit it | Section 5: knows facility location. Scenario: agent's known_recipes missing required recipe. |
+| **Exploration Failure** | Agent has exploration_profile but ExploreLocation never fires or fails | Section 8: ExploreLocation in failed plans/blocked desires, or never appears in goals-selected despite having the profile. |
+| **Belief Memory Pollution** | Agent previously knew resource locations but beliefs displaced by irrelevant entities | Section 6: memory at capacity dominated by SocialArtifacts/Waste. Section 2: agent visited resource locations earlier. Distinct from Belief Blindness (never learned vs. crowded out). |
+| **Knowledge Gap** | Agent believes location exists but lacks recipe to exploit it | Section 6: knows facility location. Scenario: agent's known_recipes missing required recipe. |
 | **Profile Gap** | Agent missing profile component enabling survival behavior | Compare scenario agent definition against registered profiles. Common: no PerceptionProfile (blind), no CognitiveProfile (default budget), no ExplorationProfile (no exploration drive). |
 
 An agent may have multiple categories. For agents that died, trace the causal chain backward from death.
@@ -30,10 +30,10 @@ An agent may have multiple categories. For agents that died, trace the causal ch
 
 For each classified failure, extract a "damning moment" — the exact agent state at the point where the failure becomes irrecoverable or clearly pathological.
 
-**Identifying the damning tick**: The most reliable source is Section 3 anomaly flag tick ranges (e.g., "hunger above 750 permille for 274 consecutive ticks (ticks 269–542)" → tick 269). Refine by category:
+**Identifying the damning tick**: The most reliable source is Section 4 anomaly flag tick ranges (e.g., "hunger above 750 permille for 274 consecutive ticks (ticks 269–542)" → tick 269). Refine by category:
 
-- **Geographic Desert**: Section 3 start tick + Section 2 location history
-- **Planner Budget Wall**: First budget-exhausted attempt from Section 7 or Section 8
+- **Geographic Desert**: Section 4 start tick + Section 2 location history
+- **Planner Budget Wall**: First budget-exhausted attempt from Section 8 or Section 9
 - **Belief Blindness**: Tick when needs crossed high threshold with no resource beliefs
 - **Belief Memory Pollution**: Tick when belief memory became dominated by non-resource entities
 - **Priority Override**: Tick when the overriding goal first outranked needs at critical levels
@@ -75,7 +75,7 @@ For each classified failure, extract a "damning moment" — the exact agent stat
 3. [Action 2, e.g., "harvest Water at Village Well"]
 4. [Action 3, e.g., "drink Water"]
 
-**Actual behavior**: [what the agent did instead. Source from Section 7 decision timeline bins and Section 2 action counts.]
+**Actual behavior**: [what the agent did instead. Source from Section 8 decision timeline bins and Section 2 action counts.]
 
 **Breakpoint**: [specific point where expected chain broke]
 - System: [which system failed — e.g., "GOAP planner budget exhaustion", "goal ranking", "affordance generation"]

@@ -6,7 +6,7 @@ Layer 3 evaluates the anomaly detection system itself by cross-referencing raw t
 
 ## Step 6.1: False Positive Assessment
 
-Review every anomaly flagged in Section 3 (mechanical) and every smell identified in Layer 1 (LLM-only). For each, assess whether it is a **true positive** or a **false positive**.
+Review every anomaly flagged in Section 4 (mechanical) and every smell identified in Layer 1 (LLM-only). For each, assess whether it is a **true positive** or a **false positive**.
 
 A flagged anomaly is a **false positive** if:
 
@@ -26,12 +26,12 @@ For each false positive, document:
 Scan the trace data for problematic behaviors that are NOT caught by any of the 6 mechanical anomaly kinds or 4 LLM-only smells.
 
 **Systematic scan**: For each agent, cross-reference:
-- Section 7 decision timeline vs. Section 2 needs trajectories — periods where needs rise but action pattern doesn't change?
-- Section 7 goal selection vs. Section 7 affordances — affordances available that are never selected?
-- Section 7 plan outcomes vs. Section 2 action counts — plans found but actions never committed?
-- Section 5 beliefs vs. Section 6 reality — belief-reality mismatches beyond what smell 8 covers?
-- Section 2 location history vs. Section 7 goals — is travel purposeful or aimless?
-- Section 2 perception counts vs. Section 5 beliefs — observations made but beliefs not forming?
+- Section 8 decision timeline vs. Section 2 needs trajectories — periods where needs rise but action pattern doesn't change?
+- Section 8 goal selection vs. Section 8 affordances — affordances available that are never selected?
+- Section 8 plan outcomes vs. Section 2 action counts — plans found but actions never committed?
+- Section 6 beliefs vs. Section 7 reality — belief-reality mismatches beyond what smell 8 covers?
+- Section 2 location history vs. Section 8 goals — is travel purposeful or aimless?
+- Section 2 perception counts vs. Section 6 beliefs — observations made but beliefs not forming?
 
 **Common gap patterns**:
 

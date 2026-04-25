@@ -200,7 +200,7 @@ For each agent: where they spent time, how they obtained food/water, wash freque
 
 [Which needs closest to 750 threshold. What scenario changes could push agents over. Structural observations about resource distribution.]
 
-Note total waste items per location from Section 6. If any location has >30 Waste items, flag as "waste accumulation risk — belief stores may be polluted in longer runs" and note the count. Cross-reference with agent belief stores (Section 5) to check whether Waste entities dominate known-item counts.
+Note total waste items per location from Section 7. If any location has >30 Waste items, flag as "waste accumulation risk — belief stores may be polluted in longer runs" and note the count. Cross-reference with agent belief stores (Section 6) to check whether Waste entities dominate known-item counts.
 
 ---
 
