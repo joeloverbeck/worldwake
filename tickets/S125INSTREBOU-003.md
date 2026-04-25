@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new helper in `worldwake-systems::artifact_actions`
-**Deps**: S125INSTREBOU-001
+**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md)
 
 ## Problem
 

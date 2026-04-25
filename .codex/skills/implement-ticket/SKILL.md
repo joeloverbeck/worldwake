@@ -37,6 +37,7 @@ Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in
 
 Cargo commands are an explicit exception to the repo's general parallel-read/tool-call habit: run Cargo sequentially throughout this workflow, including `cargo test ... -- --list`, focused tests, compile-only passes, broad crate/workspace tests, and clippy runs. In Codex, do not use `multi_tool_use.parallel` for any Cargo command, including `-- --list` probes. Do not launch multiple Cargo commands in parallel unless the user explicitly asks for that tradeoff.
 When the ticket's proof plan names a specific script, bin target, workflow entry, or test file, verify the exact live entrypoint name before treating the drafted command as authoritative. If the ticket spells the target differently from the live repo, correct the proof lane to the honest current entrypoint before closeout instead of preserving the stale command.
+When the proof lane depends on a repo script such as `./scripts/verify.sh`, treat the script's live contents and observed output as authoritative over surrounding prose summaries. Inspect or summarize the actual gate set before closeout, especially when the script has gained extra checks beyond the documented high-level command list.
 
 ## Mixed outcome: narrow fix landed, broader golden still false
 
@@ -129,6 +130,8 @@ When a live system already prunes or clears an authoritative derived surface whe
 #### Shared struct / field additions
 
 For additive shared struct/component field tickets, treat the explicit-literal sweep as mandatory before the first focused proof: run a repo-wide search for `Type {` on the changed type, classify the explicit literals by same-crate vs sibling-crate ownership, and expect those explicit constructors to be the first-wave fallout set rather than waiting for the first focused test run to discover them piecemeal.
+
+When a ticket adds a new authoritative component through `ComponentTables` or the component schema macro, treat it as persisted shape unless live code proves otherwise. Check the save/load carrier and `SAVE_FORMAT_VERSION`, add non-default round-trip proof at the persisted boundary when the component is saved, and keep generated `ComponentKind` / inventory expectations in the same order as the live schema registration site.
 
 If that explicit-literal sweep is empty, or the remaining matches are clearly non-owning helpers/fixtures, inspect the canonical constructor/helper/builder path next before broadening the fallout claim. When the live branch centralizes creation through `Type::new(...)`, builder methods, or another narrow constructor seam, rewrite the ticket to that truthful constructor-owned boundary instead of preserving a drafted repo-wide literal-migration story.
 
@@ -302,6 +305,7 @@ Load `references/verification.md`.
 When using exact Cargo test selectors for focused proof, confirm the real test path first with `cargo test ... -- --list` before relying on `--exact`. Bare function names often miss ordinary unit-test module paths and `src/bin/*.rs` unit tests, which can leave a command compiling the target while executing zero intended tests.
 
 For crate unit tests in particular, prefer `cargo test -p <crate> --lib -- --list` first, then run the fully qualified module path with `--exact` (for example `candidate_generation::tests::case_name`). This avoids the common false-positive lane where a bare test name compiles the crate but executes zero intended tests.
+If the full list output is too large to use cleanly, run a targeted follow-up discovery pass over the list output, such as piping it through `rg <test_stem>`, before recording or running the exact selector. Keep Cargo itself sequential; the filter is only to make the already-required selector discovery readable.
 
 If repo guidance or the active verification contract requires `cargo fmt --all`, run it, then immediately inspect `git status --short` and classify any formatter spillover in already-dirty files as unrelated or adjacent fallout unless the current ticket truly owns those paths. Record that spillover explicitly in closeout rather than silently attributing the formatted files to the ticket.
 
@@ -397,6 +401,7 @@ For documentation-only roadmap/report tickets, use this compact closeout checkli
 
 Before closing out, re-read any ticket claims about optional rendering, disabled flags, or suppressed sections and confirm the landed behavior matches those claims exactly. If the ticket distinguishes between “render empty-state” and “omit entirely when disabled,” make sure at least one focused assertion proves that exact disabled-path contract before marking the ticket complete.
 After the final green verification run, re-open the active ticket and compare its `Problem`, `What to Change`, `Acceptance Criteria`, `Invariants`, and `Test Plan` against the landed diff. If late implementation fallout changed the truthful seam, compatibility shape, downstream consumer, or proof boundary, correct the ticket before reporting completion rather than leaving the earlier rewritten wording to overclaim the result.
+Also compare final `git status --short` against the initial worktree snapshot. Classify any newly appearing unrelated paths as concurrent or unowned before final reporting, and do not attribute them to the ticket unless the landed diff or verification fallout actually touched that ownership boundary.
 When a focused repro disproves the drafted golden premise, include a compact factual record in the ticket closeout: the exact focused command, the observed selected path or candidate absence, the corrected conclusion about why the premise failed on the live branch, and the follow-up owner if a successor ticket now owns the real gap.
 If reassessment or verification narrowed the owned seam, introduced a private helper, or required narrow same-ticket lint cleanup to support staged infrastructure, say so explicitly in the ticket's `Deviations`/`Outcome` notes rather than leaving the drafted implementation sketch as the only recorded shape.
 When a trade or bundle ticket lands after a broadened golden changed from false to true, confirm that the closeout names the truthful transfer contract precisely: whether the commit is immediate or eventual, and whether the trade completes as a unit purchase, partial-lot purchase, or full-lot transfer.

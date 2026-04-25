@@ -84,6 +84,7 @@ pub mod production;
 pub mod pursuit;
 pub mod relations;
 pub mod repair_memory;
+pub mod reward_encumbrance;
 pub mod rights;
 pub mod social_artifact;
 pub mod test_utils;
@@ -237,6 +238,7 @@ pub use production::{
 pub use pursuit::PursuitProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use repair_memory::{RepairEntry, RepairKey, RepairMemory};
+pub use reward_encumbrance::RewardEncumbrance;
 pub use rights::{EffectiveRight, RightKind};
 pub use social_artifact::{
     ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile, ArtifactState,

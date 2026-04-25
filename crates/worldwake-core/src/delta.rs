@@ -17,10 +17,11 @@ use crate::{
     OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, Permille,
     PlaceVisibilityProfile, PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy,
     PursuitProfile, Quantity, RecordData, RepairMemory, ReservationRecord, ResourceSource,
-    RouteExperience, SaleListing, SceneEvidence, SourceReliability, StockAssignment,
-    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UniqueItem, UtilityProfile, ViolationDispositionProfile,
-    ViolationMemory, WorkstationMarker, WoundList, component_schema::with_component_schema_entries,
+    RewardEncumbrance, RouteExperience, SaleListing, SceneEvidence, SourceReliability,
+    StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
+    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 
@@ -291,11 +292,11 @@ mod tests {
         Permille, PlaceVisibilityProfile, PlaceVisitRecord, PortfolioSlotWeights, ProductionJob,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, ProvenanceEntry,
         PursuitProfile, Quantity, QueuedContentionIntent, RecordData, RecordEntryId, RecordKind,
-        ReservationId, ReservationRecord, ResourceSource, RewardSource, SaleListing, SceneEvidence,
-        StockAssignment, StockAssignmentKind, StockStoragePolicy, TellProfile,
-        TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
-        ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
-        WoundCause, WoundList,
+        ReservationId, ReservationRecord, ResourceSource, RewardEncumbrance, RewardSource,
+        SaleListing, SceneEvidence, StockAssignment, StockAssignmentKind, StockStoragePolicy,
+        TellProfile, TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem,
+        UniqueItemKind, ViolationDispositionProfile, ViolationMemory, WorkstationMarker,
+        WorkstationTag, Wound, WoundCause, WoundList,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile,
             sample_contention_disposition_profile, sample_demand_memory, sample_discrepancy_memory,
@@ -797,6 +798,12 @@ mod tests {
             ComponentValue::SaleListing(SaleListing {
                 listed_at: Tick(10),
             }),
+            ComponentValue::RewardEncumbrance(RewardEncumbrance {
+                bounty_artifact: entity(103),
+                commodity: CommodityKind::Coin,
+                quantity: Quantity(19),
+                office: entity(104),
+            }),
             ComponentValue::StockStoragePolicy(StockStoragePolicy {
                 stock_container: crate::test_utils::entity_id(100, 1),
                 display_container: Some(crate::test_utils::entity_id(101, 1)),
@@ -905,6 +912,7 @@ mod tests {
                 ComponentKind::OfficeData,
                 ComponentKind::OfficeForceProfile,
                 ComponentKind::OfficeForceState,
+                ComponentKind::RewardEncumbrance,
                 ComponentKind::FactionData,
                 ComponentKind::RecordData,
                 ComponentKind::ArtifactHeader,
@@ -1051,9 +1059,12 @@ mod tests {
         };
         let removed = ComponentDelta::Removed {
             entity: entity(4),
-            component_kind: ComponentKind::SaleListing,
-            before: ComponentValue::SaleListing(SaleListing {
-                listed_at: Tick(10),
+            component_kind: ComponentKind::RewardEncumbrance,
+            before: ComponentValue::RewardEncumbrance(RewardEncumbrance {
+                bounty_artifact: entity(5),
+                commodity: CommodityKind::Coin,
+                quantity: Quantity(7),
+                office: entity(6),
             }),
         };
 
@@ -1070,8 +1081,8 @@ mod tests {
             removed,
             ComponentDelta::Removed {
                 entity: removed_entity,
-                component_kind: ComponentKind::SaleListing,
-                before: ComponentValue::SaleListing(_)
+                component_kind: ComponentKind::RewardEncumbrance,
+                before: ComponentValue::RewardEncumbrance(_)
             } if removed_entity == entity(4)
         ));
     }

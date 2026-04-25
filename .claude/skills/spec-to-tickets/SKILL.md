@@ -53,6 +53,8 @@ Before decomposing, validate the spec's assumptions against the actual codebase:
   - **(g) Rename/removal blast radius**: for tickets that rename or remove a type, function, field, or schema-generated accessor, grep workspace-wide (`crates/`, `tests/`, and any other Rust source roots) for every symbol being renamed or removed — including macro-generated accessor variants (e.g., `get_component_X`, `insert_component_X`, `iter_Xs`, `entities_with_X`, `query_X`, `count_with_X`, plus struct/enum name and any value-wrapping helper like `sample_X`). Count sites per crate. If any crate has >0 sites but is not in the ticket's Files to Touch, either (i) add the crate's files to Files to Touch, or (ii) split those sites into a dedicated follow-up ticket with an explicit dependency. Common miss targets: `worldwake-sim`, `worldwake-systems`, `worldwake-cli/src/bin/observer.rs`, `worldwake-cli/src/handlers/*`, and every `tests/` directory across the workspace. The per-crate count is what distinguishes a renamed-type ticket from a net-new-type ticket — the former always has a blast radius, the latter typically doesn't.
 
   After the spot-checks, render the exercised sub-checks as a compact inline list before moving to Step 3 (e.g., `Spot-checks: (a) ✓, (b) ✓, (c) skipped — no new sibling specs, (d) 164 sites flagged, (e) N/A, (f) ✓, (g) N/A — no renames`). This proves each applicable sub-check ran and surfaces N/A cases explicitly.
+
+  **Auto-mode checkpoint**: If auto mode is active and all spot-checks passed (no Issue findings, no stale references, no missing files, no renamed symbols, no deferred reassessment findings), proceed directly to Step 4's auto-approval branch and write tickets in the same turn — do not present the Step 4 summary as a wait-gate. The auto-mode interaction rule at the end of Step 4 is binding here; making the decision at this point (when the no-Issues condition is freshest) avoids a redundant round-trip in Step 4.
 - If `/reassess-spec` was run but some findings were deferred by the user, treat deferred items as out-of-scope for ticket decomposition. Note them in the Step 6 final summary as "deferred reassessment findings that may warrant separate tickets." Do not silently incorporate deferred findings into ticket scope.
 
 ### Step 3: Decompose the Spec
@@ -105,7 +107,7 @@ Every ticket MUST include:
 
 - **Status**: PENDING
 - **Priority**: HIGH / MEDIUM / LOW (based on dependency order and criticality)
-- **Effort**: Small / Medium / Large
+- **Effort**: Small / Medium / Large. Rough rubric: **Small** = 1-2 files modified, ≤3 new focused tests, no existing-test rewrites. **Medium** = 2-3 files, 3-6 new tests, ≤2 existing tests extended. **Large** = 4+ files, 6+ new tests OR ≥3 existing tests requiring extension, OR cross-module action-handler coordination. Boundaries are soft — calibrate against semantic complexity, not raw counts. Construction-site-driven elevation (per Step 2 sub-check (d)) overrides this rubric when triggered.
 - **Engine Changes**: None or list of affected areas
 - **Deps**: Other tickets or specs this depends on
 - **Problem**: What user-facing or architecture problem this solves
@@ -118,7 +120,7 @@ Every ticket MUST include:
 - **Architecture Check**: Why this approach is clean, how it preserves agnostic boundaries
 - **Verification Layers**: Map each invariant to its proof surface (for mixed-layer or cross-system tickets: decision trace, action trace, event-log delta, authoritative world state)
 - **What to Change**: Numbered sections with specific implementation details
-- **Files to Touch**: Exact paths validated against the codebase (new or modify). When a ticket adds fields to an existing struct, grep for struct literal construction sites across the workspace during ticket writing and include all affected files. See `tickets/README.md` check #13 for known macro expansion sites (`delta.rs`, `world.rs`, `component_tables.rs`)
+- **Files to Touch**: Exact paths validated against the codebase (new or modify). When a ticket adds fields to an existing struct, grep for struct literal construction sites across the workspace during ticket writing and include all affected files. See `tickets/README.md` check #13 for known macro expansion sites (`delta.rs`, `world.rs`, `component_tables.rs`). For paths that genuinely require runtime discovery (e.g., a TTL purge hook whose owning module is not named in the spec), prefix with `Likely:` or `To be confirmed:` and include a one-line discovery instruction in the same bullet (e.g., `grep <symbol> consumers`). This signals to `/implement-ticket` that the assumption-reassessment phase must pin the path before editing — preserving the "validated paths" rule while accommodating legitimately ambiguous targets.
 - **Out of Scope**: Explicit non-goals — what this ticket must NOT change
 - **Acceptance Criteria**:
   - **Tests That Must Pass**: Specific behavior tests

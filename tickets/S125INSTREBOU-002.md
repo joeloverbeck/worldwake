@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario authoring + spawn path + new lint rules
-**Deps**: S125INSTREBOU-001
+**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md)
 
 ## Problem
 

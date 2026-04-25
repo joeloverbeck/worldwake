@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new trait method on `GoalBeliefView` + `RuntimeBeliefView` impl + macro forwarding
-**Deps**: S125INSTREBOU-001
+**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), S125INSTREBOU-005
 
 ## Problem
 
@@ -20,6 +20,7 @@ S125 Deliverable D6 mandates a `GoalBeliefView` accessor that returns whether th
 4. Adjacent contradictions: none. Accessor is additive; existing belief-view methods remain unchanged.
 5. Live `GoalKind` under test: `PostBounty` (already exists; no GoalKind variant addition). This ticket lands the accessor only — ticket 006 consumes it from `emit_bounty_posting_candidates`.
 6. Implementation note on contract shape: for v1, the accessor returns `Some(RewardSource::InstitutionalTreasury { treasury_entity: office })` based on a positive unencumbered office balance, leaving reward sizing to the candidate emitter and authoritative validation. If implementation discovers the accessor must also pre-compute reward quantity (so the emitter can pick a feasible amount), surface as a finding before completing — ticket 006 would then need to adopt the richer return shape.
+7. Post-ticket-review update after [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md): the landed substrate is a singleton office component, while this accessor needs to read the final authoritative active-encumbrance shape. Implement this ticket after S125INSTREBOU-005 reconciles cardinality and lifecycle so the belief-view accessor does not encode a temporary single-record interpretation.
 
 ## Architecture Check
 
@@ -68,7 +69,7 @@ Forward through `impl_goal_belief_view!` blanket impl so any composing wrapper i
 ## Out of Scope
 
 - Consumer in `crates/worldwake-ai/src/candidate_generation.rs` — ticket 006.
-- Authoritative validation re-check at start/commit — ticket 005.
+- Authoritative validation re-check at start/commit and `RewardEncumbrance` cardinality reconciliation — ticket 005.
 - Stale-balance memory for non-co-located holders — S125 OQ3, deferred.
 - Pre-computed reward quantity in the accessor return — only adopt if implementation discovers ticket 006 needs it; otherwise leave reward sizing to the consumer.
 
