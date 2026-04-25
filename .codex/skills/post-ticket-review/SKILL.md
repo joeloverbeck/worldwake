@@ -9,9 +9,14 @@ Post-implementation review and follow-up planning. Archives the completed ticket
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), [tickets/README.md](../../../tickets/README.md), and [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) before making changes.
 
-**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), apply mechanical path/link rewrites caused solely by moving the completed ticket into `archive/` including archived siblings that still reference the just-moved active path, archive it, create new tickets in `tickets/`, update existing active tickets, factually update active specs under `specs/` when the completed ticket's landed contract makes the drift unambiguous.
+**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), add a factual post-ticket-review blocker note or status correction when archival is blocked by an in-scope deliverable, apply mechanical path/link rewrites caused solely by moving the completed ticket into `archive/` including archived siblings that still reference the just-moved active path, archive it, create new tickets in `tickets/`, update existing active tickets, factually update active specs under `specs/` when the completed ticket's landed contract makes the drift unambiguous.
 
 **Forbidden**: modifying production code or tests.
+
+## Top Rules
+
+- If the concern is still an unmet deliverable of the reviewed ticket, block archival and return ownership to that ticket; do not create a follow-up.
+- If archival is blocked after the ticket already says `COMPLETED`, leave the active ticket truthful by adding a `Post-ticket review blocker` note or applying a factual status correction that matches the repo's active-ticket convention.
 
 ## Workflow
 
@@ -45,6 +50,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
    - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
    - Name the exact active ticket that remains unarchived, the concrete implementation seam to resume, and the proof or handoff section that must be corrected. Do not create a follow-up ticket when the concern is still owned by that active ticket; resume under the implementation workflow instead.
+   - If the ticket status or closeout now overstates completion, make the active ticket truthful before reporting: add a concise `Post-ticket review blocker` note naming the blocker and required resume seam, or apply a factual status correction when the repository's active-ticket convention makes the correct status unambiguous.
    - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up.
    - For golden tickets, compare executable assertions against the exact ticket, source-golden, and roadmap wording. Distinguish `contains both steps` from an ordered sequence, `eventually commits` from a claimed lifecycle boundary, candidate emission from selected goal, and selected goal from selected executable plan. If the prose claims ordering, provenance, timing, or lifecycle specificity that the assertions do not prove, block archival as an incomplete proof surface.
    - When a previously completed ticket was left unarchived until a later reconciliation/disposition ticket clarified its live contract, re-read the older ticket's `Outcome`, `Verification Result`, and any remaining blocker wording against that newer archived disposition before archiving the older ticket.

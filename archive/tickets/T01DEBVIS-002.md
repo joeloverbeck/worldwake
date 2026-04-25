@@ -1,10 +1,10 @@
 # T01DEBVIS-002: Force-directed place layout module
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: T01DEBVIS-001
+**Deps**: [archive/tickets/T01DEBVIS-001.md](T01DEBVIS-001.md)
 
 ## Problem
 
@@ -66,7 +66,8 @@ Add `pub mod layout;` to `crates/worldwake-visualizer/src/lib.rs`.
 
 1. `fr_layout_is_deterministic` — same `(places, edges, seed)` produces a bit-identical positions map across two `compute` calls (within-platform).
 2. `topology_fingerprint_stability` — fingerprint is unchanged when input vectors are passed in different orders (the same set yields the same fingerprint).
-3. Existing suite: `cargo test -p worldwake-visualizer` passes.
+3. `topology_fingerprint_distinguishes_directed_edges` — reversing a directed edge changes the fingerprint.
+4. Existing suite: `cargo test -p worldwake-visualizer` passes.
 
 ### Invariants
 
@@ -84,3 +85,27 @@ Add `pub mod layout;` to `crates/worldwake-visualizer/src/lib.rs`.
 1. `cargo test -p worldwake-visualizer layout::`
 2. `cargo test -p worldwake-visualizer`
 3. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added `crates/worldwake-visualizer/src/layout.rs` with deterministic Fruchterman-Reingold place layout, layout-local `ChaCha8Rng` seeding, fixed BTreeMap iteration order, weighted travel-tick edge lengths, final centering, and a dependency-light deterministic topology fingerprint over directed edge tuples.
+- Exported the module from `crates/worldwake-visualizer/src/lib.rs`.
+- Kept layout positions and topology fingerprint as derived UI/cache state only; no simulation state, event log, trace, or authoritative RNG path was touched.
+
+## Deviations
+
+- `PlaceLayout::positions` and `PlaceLayout::topology_fingerprint` landed as public fields so sibling modules in the later T01 visualizer tickets can consume the layout and fingerprint directly, matching the spec's downstream usage.
+- The fingerprint uses a local `wrapping_*` FNV-style mix over sorted place IDs and directed edge tuples instead of adding an external hash dependency.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-visualizer --lib -- --list` to resolve exact focused selectors.
+- Passed `cargo test -p worldwake-visualizer --lib layout::tests::fr_layout_is_deterministic -- --exact`.
+- Passed `cargo test -p worldwake-visualizer --lib layout::tests::topology_fingerprint_stability -- --exact`.
+- Passed `cargo test -p worldwake-visualizer --lib layout::tests::topology_fingerprint_distinguishes_directed_edges -- --exact`.
+- Passed `cargo test -p worldwake-visualizer layout::`.
+- Passed `cargo test -p worldwake-visualizer`.
+- Passed `cargo clippy -p worldwake-visualizer --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh`, whose live gates are `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.

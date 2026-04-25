@@ -84,7 +84,7 @@ When the ticket migrates a shared field, enum payload, or other cross-crate type
 Applies to single-file additive CLI/tooling/reporting/action-registry change, narrow helper extraction, formatting update, or other owned-module additive change with no shared type/planner/golden/persistence/cross-crate fallout expected. Typical examples include a single-file transport/action registration, local handler addition, narrow helper extraction, or bin-local coverage for factored logic:
 
 1. Resolve the exact live ticket/spec path, including typos or shorthand.
-2. Confirm the dependency path and the exact owned symbol/file boundary.
+2. Confirm the dependency path and the exact owned symbol/file boundary. If a dependency is already archived, rewrite `Deps` to the archived path before coding or closeout instead of leaving a stale active-ticket reference.
 3. Run a narrow constructor/usage sweep for the changed shape: confirm the named symbols and accessors exist, search local callers/render sites, check obvious constructor or test-helper fallout, and identify the narrowest real proof entry point. When the ticket is about an absent-profile, missing-field, or other "gracefully skip when unset" contract, explicitly verify that nearby test doubles do not synthesize defaults that would mask the missing-state path.
    If the ticket changes local storage semantics from append-only to deduplication, replacement, compaction, or another in-place retention rule, also sweep same-carrier diff/apply/serialization helpers before editing, even when the ticket otherwise stays single-file and local.
 4. Implement the owned change with focused proof first.
