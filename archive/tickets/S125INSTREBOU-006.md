@@ -1,10 +1,10 @@
 # S125INSTREBOU-006: emit_bounty_posting_candidates funding-aware emission
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — AI candidate emitter consumes belief-view accessor
-**Deps**: [S125INSTREBOU-004](../archive/tickets/S125INSTREBOU-004.md)
+**Deps**: [S125INSTREBOU-004](S125INSTREBOU-004.md)
 
 ## Problem
 
@@ -48,6 +48,9 @@ When the accessor returns `Some(reward_source)`, use that value when constructin
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify)
+- `crates/worldwake-ai/src/decision_trace.rs` (add trace reason for funded bounty omission)
+- `crates/worldwake-ai/src/planner_ops.rs` (test inventory fallout: include already-live `WithdrawBounty` in the count)
+- `specs/S125-institutional-treasuries-and-bounty-funding.md` (mark D4 done)
 
 ## Out of Scope
 
@@ -81,3 +84,30 @@ When the accessor returns `Some(reward_source)`, use that value when constructin
 1. `cargo test -p worldwake-ai`
 2. `cargo clippy -p worldwake-ai --all-targets -- -D warnings`
 3. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- `emit_bounty_posting_candidates` now calls `ctx.view.actor_lawful_reward_source_for_case(ctx.agent, &belief)` before emitting `GoalKind::PostBounty`.
+- When the accessor returns `None`, the emitter skips the candidate and records an omitted `PostBounty` trace as `PoliticalGoalFamily::PostBounty` / `PoliticalCandidateOmissionReason::NoLawfulRewardSource`.
+- When the accessor returns `Some(reward_source)`, the emitted `BountyTerms.reward_source` uses that returned value instead of constructing a hard-coded institutional treasury source in the emitter.
+- Existing positive candidate-generation fixture setup now seeds local controlled coin so it proves the funded accessor path instead of relying on the old hard-coded source.
+- S125 Deliverable D4 is marked done in the active spec.
+
+## Deviations
+
+- The drafted `Files to Touch` only named `candidate_generation.rs`; implementation also touched `decision_trace.rs` so the accessor-`None` outcome reaches the public candidate trace, and `planner_ops.rs` because `cargo test -p worldwake-ai` exposed a stale exact planner-op inventory count after the already-live `WithdrawBounty` operator.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::emit_bounty_posting_candidates_skips_when_accessor_returns_none -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::emit_bounty_posting_candidates_uses_accessor_returned_reward_source -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::post_bounty_goal_has_non_zero_motive_for_live_accusation_case -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::post_bounty_goal_applies_obligation_satiation_decay -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::post_bounty_goal_is_zero_motive_when_bounty_weight_is_zero -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib search::tests::fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib planner_ops::tests::planner_op_kind_covers_exactly_current_phase_two_families -- --exact`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh` (live script gates: `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo run -p worldwake-cli --bin scenario-coverage -- --check`).

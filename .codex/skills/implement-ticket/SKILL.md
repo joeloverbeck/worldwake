@@ -99,6 +99,8 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 
 Load `references/reassessment-checks.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md`.
 
+For AI candidate-generation tickets whose acceptance criteria mention diagnostics, name the full visibility chain before coding: the local diagnostic carrier, any exported decision-trace carrier, the omission/reason taxonomy, and the focused test that proves the externally visible trace path. Do not treat a local diagnostic record as sufficient evidence when the ticket's proof surface is a public trace, report, or debugging view.
+
 #### Golden, observer, and report tickets
 
 When a golden or planner ticket claims one specific operator family, selected plan branch, or stale-request window, compare that authored branch to the live branch before implementation. If focused repro later shows the live planner consistently selects a different lawful branch or emits no candidate at all, treat that as premise failure rather than ordinary test fallout: stop chasing the drafted implementation, back out exploratory proof edits, rewrite the ticket to the truthful rejection/follow-up boundary, and create a successor ticket when a real upstream gap remains.

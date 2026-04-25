@@ -1822,7 +1822,7 @@ mod tests {
             PlannerOpKind::ReportFound,
         ];
 
-        assert_eq!(all.len(), 31);
+        assert_eq!(all.len(), 32);
     }
 
     #[test]

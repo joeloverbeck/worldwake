@@ -418,6 +418,7 @@ pub struct BlockerMatchDetail {
 pub enum PoliticalGoalFamily {
     ClaimOffice,
     SupportCandidateForOffice,
+    PostBounty,
 }
 
 /// Hard pre-emission reason for a political goal omission.
@@ -431,6 +432,7 @@ pub enum PoliticalCandidateOmissionReason {
     CandidateNotEligible,
     AlreadyDeclaredSupport,
     SupportDeclarationBeliefConflicted,
+    NoLawfulRewardSource,
 }
 
 /// Diagnostic record for a political goal omitted before generation.
@@ -1497,6 +1499,17 @@ fn omitted_political_reason_for_goal(
             if omission.family == PoliticalGoalFamily::SupportCandidateForOffice
                 && omission.office == *office
                 && omission.candidate == Some(*candidate) =>
+        {
+            Some(omission.reason)
+        }
+        crate::GoalKind::PostBounty { posting, terms }
+            if omission.family == PoliticalGoalFamily::PostBounty
+                && posting.issuing_authority == Some(omission.office)
+                && matches!(
+                    terms.target,
+                    worldwake_core::BountyTarget::EliminateEntity { target }
+                        if omission.candidate == Some(target)
+                ) =>
         {
             Some(omission.reason)
         }
