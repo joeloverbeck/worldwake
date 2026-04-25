@@ -115,7 +115,7 @@ Every ticket MUST include:
   - **Renumber surviving items sequentially starting from 4**: items 1–3 are always required; items 4–15 are a menu, not a fill-in form. After selecting which menu items apply, renumber them sequentially — do not preserve the template's gaps. Example: if template items 1, 2, 3, and 14 apply to the ticket, the produced ticket lists them as `1, 2, 3, 4` (the former item-14 body becomes item 4). Lists like `1, 2, 3, 14` or `1, 2, 3, 5, 15` are malformed output and will need rework.
   - For tickets that modify behavior tested by existing focused/unit tests, grep the target module's `#[cfg(test)]` block for test names exercising the changed function or type. Name existing tests in the Assumption Reassessment and adjust the Test Plan accordingly (see `docs/precision-rules.md` Rule 3).
   - For pure structural refactoring tickets (no behavioral changes, no new actions/components), items 1-3 may be satisfied concisely by confirming: (a) the symbols being moved exist at stated locations, (b) the impl block count matches the spec's claim, (c) the shared boundary is the trait/struct under edit. Items 4-15 are typically all inapplicable for structural refactors.
-  - For observer-only, CLI-only, or tooling-only specs (no engine changes, no simulation state mutations), items 1-3 are typically sufficient — items 4-15 apply only when the ticket touches simulation runtime, planning, or action systems.
+  - For observer-only, CLI-only, or tooling-only specs (no engine changes, no simulation state mutations), items 1-3 are typically sufficient — items 4-15 apply only when the ticket touches simulation runtime, planning, or action systems. When sibling tickets in the same spec share genuinely-identical architectural context (e.g., a sequence of new-module tickets within the same fresh crate), items 1-3 may use boilerplate phrasing across the sibling set — variation should reflect actual differences, not pretend-novelty. For Verification Layers, prefer naming tooling-specific proof surfaces directly (headless render tests, command-built smoke tests on CLI surfaces, focused unit tests on pure modules) rather than invoking template item 6 as a fall-through. Each invariant still maps to a single proof surface — the layer set is just different from the action-trace / event-log surfaces used for engine work.
   - When a spec proposes refactoring an existing function to delegate to a new superset method, verify that the delegation doesn't widen the original function's semantic contract. If the new method returns values for inputs the original explicitly handled as `None` or didn't cover, the refactoring must preserve the original's narrower scope — delegate only for the overlapping subset and document which goals/variants are intentionally excluded from delegation.
 - **Architecture Check**: Why this approach is clean, how it preserves agnostic boundaries
 - **Verification Layers**: Map each invariant to its proof surface (for mixed-layer or cross-system tickets: decision trace, action trace, event-log delta, authoritative world state)
@@ -149,6 +149,24 @@ After writing all files:
    - All ticket files created
    - The dependency graph (which tickets block which)
    - Suggested implementation order
+
+Present Step 6 in this layout to keep downstream `/implement-ticket` inputs predictable:
+
+```markdown
+### Files Created
+<bullet list of every ticket path written>
+
+### Cross-Ticket Dependency Consistency
+| Ticket | Depends on | Consumes from dep | Dep produces it? |
+|---|---|---|---|
+| <id> | <id-list or —> | <one-line surface name> | ✓ / flagged |
+
+### Deliverable Coverage Mapping
+- **<deliverable id>** → <ticket-id-list> (annotate `(distributed)` per the existing distributed-deliverable convention when the deliverable spans multiple tickets without a dedicated owner)
+
+### Suggested Implementation Order
+<numbered list with one-line rationale per ticket — name what the ticket unblocks or why it sits at this position>
+```
 
 Do NOT commit. Leave files for user review.
 

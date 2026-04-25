@@ -37,6 +37,7 @@ Use this compact checklist before editing:
 - identify any same-crate type fallout needed to keep the requested API honest
 - if the ticket asks you to prove a derived trace/report field is copied or transformed from authoritative input, target the focused proof at the actual constructor/builder boundary even when the type is declared in a different module
 - when canonical names, classifications, or display rows depend on an existing registry/catalog, verify whether the live render/helper signature must accept that input explicitly instead of assuming the change is purely local `writeln!` fallout
+- for UI/visualizer snapshot fields derived through AI or belief helpers, list the runtime context the helper actually reads (belief store, current tick, scheduler active actions, action definitions, recipe registry if relevant) and make that context part of the owned scope when the final rendered value would otherwise be misleading
 
 ## Doc-only or compile-time regression tickets
 
