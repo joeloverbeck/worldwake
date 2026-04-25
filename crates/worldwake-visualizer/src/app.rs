@@ -6,7 +6,7 @@ use worldwake_ai::{AgentTickDriver, DecisionTraceSink};
 use worldwake_cli::scenario::{
     load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints, ScenarioError,
 };
-use worldwake_core::{EntityId, Tick};
+use worldwake_core::{EntityId, Tick, World};
 use worldwake_sim::{
     step_tick, ActionTraceSink, AutonomousControllerRuntime, InstitutionalKnowledgeTraceSink,
     PerceptionTraceSink, PoliticalTraceSink, RequestResolutionTraceSink, SimulationState,
@@ -17,6 +17,7 @@ use worldwake_systems::ActionRegistries;
 use crate::controls::{self, TopBarAction, TopBarState};
 use crate::layout::PlaceLayout;
 use crate::snapshot::{build_snapshot, FrameSnapshot};
+use crate::tabs::DetailTab;
 
 pub const MAX_TICKS_PER_FRAME: usize = 100;
 
@@ -52,9 +53,23 @@ pub struct VisualizerApp {
     tick_carry: f32,
     selected_agent: Option<EntityId>,
     hovered_agent: Option<EntityId>,
+    ui_settings: UiSettings,
     canvas_scene_rect: egui::Rect,
     reset_confirmation_open: bool,
     toast: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UiSettings {
+    pub active_detail_tab: DetailTab,
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        Self {
+            active_detail_tab: DetailTab::Overview,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,6 +139,7 @@ impl VisualizerApp {
             tick_carry: 0.0,
             selected_agent: None,
             hovered_agent: None,
+            ui_settings: UiSettings::default(),
             canvas_scene_rect: egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::Vec2::splat(1_100.0),
@@ -233,7 +249,7 @@ impl VisualizerApp {
         self.sim.as_ref().map(|sim| sim.scheduler().current_tick())
     }
 
-    fn current_snapshot(&self) -> Option<FrameSnapshot> {
+    pub(crate) fn current_snapshot(&self) -> Option<FrameSnapshot> {
         let sim = self.sim.as_ref()?;
         let layout = self.layout.as_ref()?;
         Some(build_snapshot(
@@ -243,6 +259,31 @@ impl VisualizerApp {
             layout,
             sim.scheduler().current_tick(),
         ))
+    }
+
+    pub(crate) fn world(&self) -> Option<&World> {
+        self.sim.as_ref().map(SimulationState::world)
+    }
+
+    pub(crate) const fn driver(&self) -> &AgentTickDriver {
+        &self.driver
+    }
+
+    pub(crate) const fn active_detail_tab(&self) -> DetailTab {
+        self.ui_settings.active_detail_tab
+    }
+
+    pub(crate) fn set_active_detail_tab(&mut self, tab: DetailTab) {
+        self.ui_settings.active_detail_tab = tab;
+    }
+
+    pub(crate) fn clear_selected_agent(&mut self) {
+        self.selected_agent = None;
+    }
+
+    pub(crate) fn selected_modal_agent(&self) -> Option<EntityId> {
+        self.sim.as_ref()?;
+        self.selected_agent
     }
 
     fn handle_key_input(&mut self, ui: &egui::Ui) {
@@ -362,6 +403,9 @@ impl VisualizerApp {
             &mut self.selected_agent,
             &mut self.hovered_agent,
         );
+        if let Some(agent_id) = self.selected_modal_agent() {
+            crate::modal::show_modal(ui.ctx(), self, agent_id);
+        }
     }
 }
 
@@ -464,6 +508,25 @@ mod tests {
         assert!(app.toast.as_deref().is_some_and(|msg| {
             msg.contains("Failed to load scenario") && msg.contains("I/O error")
         }));
+    }
+
+    #[test]
+    fn modal_opens_on_agent_select() {
+        let mut app = baseline_app();
+        let agent = app
+            .world()
+            .expect("scenario is loaded")
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("baseline has an agent");
+
+        app.selected_agent = Some(agent);
+
+        assert_eq!(app.selected_modal_agent(), Some(agent));
+
+        app.clear_selected_agent();
+
+        assert_eq!(app.selected_modal_agent(), None);
     }
 
     fn baseline_app() -> VisualizerApp {

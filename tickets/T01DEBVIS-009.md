@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-004](../archive/tickets/T01DEBVIS-004.md), T01DEBVIS-007
+**Deps**: [T01DEBVIS-004](../archive/tickets/T01DEBVIS-004.md), [T01DEBVIS-007](../archive/tickets/T01DEBVIS-007.md)
 
 ## Problem
 
@@ -119,7 +119,8 @@ Add `pub mod trace_buffers;` to `crates/worldwake-visualizer/src/lib.rs`. Replac
 
 ### Commands
 
-1. `cargo test -p worldwake-visualizer trace_buffers:: tabs::traces::`
-2. `cargo test -p worldwake-visualizer`
-3. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual click + Traces tab smoke)
-4. `./scripts/verify.sh`
+1. `cargo test -p worldwake-visualizer trace_buffers::`
+2. `cargo test -p worldwake-visualizer tabs::traces::`
+3. `cargo test -p worldwake-visualizer`
+4. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual click + Traces tab smoke)
+5. `./scripts/verify.sh`

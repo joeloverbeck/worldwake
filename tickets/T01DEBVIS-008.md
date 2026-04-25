@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: T01DEBVIS-007
+**Deps**: [T01DEBVIS-007](../archive/tickets/T01DEBVIS-007.md)
 
 ## Problem
 
@@ -97,7 +97,8 @@ Modify `crates/worldwake-visualizer/src/tabs/mod.rs` from T01DEBVIS-007 — repl
 
 ### Commands
 
-1. `cargo test -p worldwake-visualizer tabs::beliefs:: tabs::plan::`
-2. `cargo test -p worldwake-visualizer`
-3. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual click + tab smoke)
-4. `./scripts/verify.sh`
+1. `cargo test -p worldwake-visualizer tabs::beliefs::`
+2. `cargo test -p worldwake-visualizer tabs::plan::`
+3. `cargo test -p worldwake-visualizer`
+4. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual click + tab smoke)
+5. `./scripts/verify.sh`

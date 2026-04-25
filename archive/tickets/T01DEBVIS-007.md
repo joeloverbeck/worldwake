@@ -1,10 +1,10 @@
 # T01DEBVIS-007: Detail modal + Overview/Needs/Inventory tabs
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-005](../archive/tickets/T01DEBVIS-005.md), [T01DEBVIS-006](../archive/tickets/T01DEBVIS-006.md)
+**Deps**: [T01DEBVIS-005](T01DEBVIS-005.md), [T01DEBVIS-006](T01DEBVIS-006.md)
 
 ## Problem
 
@@ -118,7 +118,34 @@ Add `pub mod modal;` and `pub mod tabs;` to `crates/worldwake-visualizer/src/lib
 
 ### Commands
 
-1. `cargo test -p worldwake-visualizer modal:: tabs::`
-2. `cargo test -p worldwake-visualizer`
-3. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual click smoke)
-4. `./scripts/verify.sh`
+1. `cargo test -p worldwake-visualizer modal::`
+2. `cargo test -p worldwake-visualizer tabs::`
+3. `cargo test -p worldwake-visualizer`
+4. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual click smoke)
+5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added the `egui::Modal`-based agent detail shell in `crates/worldwake-visualizer/src/modal.rs`, wired it from `VisualizerApp::draw_body`, and added `UiSettings.active_detail_tab` so the selected detail tab survives close/reopen.
+- Added six-tab routing in `crates/worldwake-visualizer/src/tabs/mod.rs`; Overview, Needs, and Inventory render live data, while Beliefs/Plan/Traces remain inert placeholder branches for their owning follow-up tickets.
+- Added Overview rendering for expanded snapshot state plus committed/pending/suspended agenda entries and top pending candidates.
+- Added Needs rendering using the shared `need_bar` widget at detail width, with `MetabolismProfile` and `DriveEscalationProfile` sections.
+- Added Inventory rendering from `World::possessions_of(agent)` and `ItemLot` components, using lot `EntityId` identity, optional `GroundSince`, and per-commodity totals.
+
+## Deviations
+
+- The ticket's drafted `cargo test -p worldwake-visualizer modal:: tabs::` command is not valid Cargo syntax because Cargo accepts one test filter. The focused proof is split into `cargo test -p worldwake-visualizer modal::` and `cargo test -p worldwake-visualizer tabs::`.
+- Inventory rows read commodity and quantity from `world.get_component_item_lot(lot_entity)`, not separate commodity/quantity component accessors; this is the live item-lot data contract.
+- The Inventory test advances `survival-baseline.ron` until an agent has possessions before asserting row count, matching the ticket's "advance until at least one agent has a possession" acceptance wording.
+- The manual GUI click smoke was not run in this headless session; automated modal/tab tests and full visualizer tests passed.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-visualizer --lib -- --list`.
+- Passed `cargo test -p worldwake-visualizer modal::`.
+- Passed `cargo test -p worldwake-visualizer tabs::`.
+- Passed `cargo test -p worldwake-visualizer`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh`; the script's live gates are `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.

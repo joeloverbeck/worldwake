@@ -27,6 +27,7 @@ Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in
 - For roadmap-owned scenario landing tickets, treat the full landing contract as one owned closeout seam: authored scenario, backing golden, generated companions, workflow ownership, and roadmap/editorial status must agree before the row is marked landed. Do not stop at the scenario/golden diff if the live row or CI matrix still understates the landed seam.
 - For ordinary implementation tickets that land or extend behavior for an existing `docs/scenario-roadmap.md` row, borrow the `scenario-roadmap-landing` truth-sync standard for docs/generated/roadmap consistency without switching to the full roadmap-landing workflow. Scenario, golden, generated companions, and roadmap prose must not tell conflicting stories about the landed behavior.
 - For tooling/report/generator tickets, first confirm the canonical read-only input boundary and whether every claimed output row or classification is actually derivable from that boundary. If the draft asks the tool to infer runtime-only or later-stage facts from a narrower authored schema, rewrite the ticket to the honest schema-owned seam before coding.
+- For UI, visualizer, or interactive tooling tickets, treat crate-local README/manual-QA text as part of the live handoff surface even on the small/local fast path. If the ticket makes a visible shell, control, modal, tab, or staged surface live, sweep nearby user-facing docs before closeout and remove or update stale placeholder/future-tense/manual-QA wording.
 - For golden/observer proof tickets, first decide whether the mismatch is renderer/fixture drift or a real upstream event/report contract regression. Prove the upstream contract at the strongest existing lower-layer owning seam before editing any fixture, and if that contract is still honest, narrow the ticket to fixture truthing plus closeout.
 - For validation-suite / tests-only tickets, diff the drafted `Files to Touch`, `New/Modified Tests`, and `Acceptance Criteria` against the live branch immediately; record `already landed`, `still live`, and `no-change cited files` before planning new tests.
 
@@ -215,6 +216,8 @@ When a ticket mostly adds a new file plus a small declaration/edit in a large ex
 
 When a small/local helper-extraction ticket asks to move existing inline logic into a helper, enumerate the exact live branches currently inlined before editing. If the ticket names an extra semantic branch that is not present in the inline code, rewrite the ticket before coding and mark that branch as future-owned instead of adding new behavior during a preservation refactor.
 
+When a small/local UI, visualizer, or read-model test asserts rows or state derived from a scenario, verify whether the asserted state exists immediately after load or only after deterministic simulation advancement. If the fixture must advance first, encode that advancement in the focused test and record the temporal proof boundary in ticket closeout instead of treating a tick-0 absence as a missing implementation.
+
 #### Second-pass correction
 
 If implementation or focused test setup later disproves a remaining ticket/spec subclaim that survived the initial reassessment, stop and do a second-pass correction before final verification. Update the active ticket/spec to the strongest honest live seam immediately instead of leaving that mismatch implicit until closeout.
@@ -278,6 +281,8 @@ When using exact Cargo test selectors for focused proof, confirm the real test p
 
 For crate unit tests in particular, prefer `cargo test -p <crate> --lib -- --list` first, then run the fully qualified module path with `--exact` (for example `candidate_generation::tests::case_name`). This avoids the common false-positive lane where a bare test name compiles the crate but executes zero intended tests.
 If the full list output is too large to use cleanly, run a targeted follow-up discovery pass over the list output, such as piping it through `rg <test_stem>`, before recording or running the exact selector. Keep Cargo itself sequential; the filter is only to make the already-required selector discovery readable.
+
+If a drafted Cargo command names multiple positional test filters before `--` (for example `cargo test -p crate foo:: bar::`), treat the command as invalid draft syntax. Rebind it to valid focused proof by splitting it into separate Cargo invocations or replacing it with one exact/module-qualified selector, then update the ticket's command list and closeout instead of preserving the impossible command.
 
 If repo guidance or the active verification contract requires `cargo fmt --all`, run it, then immediately inspect `git status --short` and classify any formatter spillover in already-dirty files as unrelated or adjacent fallout unless the current ticket truly owns those paths. Record that spillover explicitly in closeout rather than silently attributing the formatted files to the ticket.
 
