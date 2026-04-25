@@ -1251,10 +1251,11 @@ mod tests {
         tables.insert_reward_encumbrance(
             id,
             RewardEncumbrance {
-                bounty_artifact: entity(13),
-                commodity: CommodityKind::Coin,
-                quantity: Quantity(23),
-                office: entity(14),
+                reservations: vec![crate::RewardReservation {
+                    bounty_artifact: entity(13),
+                    commodity: CommodityKind::Coin,
+                    quantity: Quantity(23),
+                }],
             },
         );
         tables.insert_in_transit_on_edge(

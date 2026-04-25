@@ -233,7 +233,7 @@ The spec extends `validate_reward_source`, `emit_bounty_posting_candidates`, and
 
 1. `get_affordances` — N/A; `PostBounty` is goal-emitted from accusation records.
 2. `generate_candidates` — emitter consumes the new belief-view accessor and skips emission when no funded source exists (D4 + D6).
-3. `search_plan` — N/A; no new `PlannerOpKind`.
+3. `search_plan` — `PostBounty` uses the existing op. `S125INSTREBOU-005` added `PlannerOpKind::WithdrawBounty` only to classify the newly registered canonical withdrawal action exhaustively; no AI goal currently emits withdrawal.
 4. `BestEffort` action start — `start_post_bounty` re-runs `validate_reward_source` (which now also checks against active encumbrances).
 5. `handle_plan_failure` — replan must back out cleanly when revalidation rejects (e.g., a sibling bounty's encumbrance shrank the available balance between selection and start).
 6. Payload revalidation — `with_payload_override_validator(validate_post_bounty_payload_override)` is already wired at `crates/worldwake-systems/src/artifact_actions.rs:39`. Implementation extends the existing validator to enforce the new reservation contract; no new wiring is needed.
@@ -245,8 +245,8 @@ The spec extends `validate_reward_source`, `emit_bounty_posting_candidates`, and
 2. Scenario authoring: extend `OfficeDef` with `treasury: Option<TreasuryDef>`; `spawn_office` materializes the container and seeds initial lots owned by the office; lint rules cover unreachable/zero-quantity/missing-seat cases.
 3. Funding authorization helper in `worldwake-systems` (office-holder may spend office-owned lots within jurisdiction/policy), reused by `validate_reward_source` and any future fiscal work. The office-holder extraction landed in `S125INSTREBOU-003`; the remaining jurisdiction/policy enforcement branch landed in `S125INSTREBOU-008`.
 4. `PostBounty` candidate generation: `emit_bounty_posting_candidates` consumes the new belief-view accessor (D6); removes the hard-coded `treasury_entity: office`; skips emission when the accessor returns `None`.
-5. `post_bounty` authoritative validation and commit integration: extend `validate_reward_source` to consider active encumbrances; `commit_post_bounty` records `RewardEncumbrance`; `claim_bounty` / `withdraw_bounty` / TTL-expiry paths release/consume the encumbrance; existing `validate_post_bounty_payload_override` covers the payload contract.
-6. `GoalBeliefView` accessor (`actor_lawful_reward_source_for_case` or equivalent) in `crates/worldwake-sim/src/belief_view.rs`, with a `RuntimeBeliefView` impl and `impl_goal_belief_view!` macro forwarding so the AI crate reads it through the existing trait surface.
+5. [DONE] `post_bounty` authoritative validation and commit integration: `S125INSTREBOU-005` extended `validate_reward_source` to consider active encumbrances; `commit_post_bounty` records per-office `RewardReservation` entries; `claim_bounty` / `withdraw_bounty` / TTL-expiry paths release/consume the encumbrance; existing `validate_post_bounty_payload_override` covers the payload contract.
+6. [DONE] `GoalBeliefView` accessor (`actor_lawful_reward_source_for_case`) in `crates/worldwake-sim/src/belief_view.rs`: `S125INSTREBOU-004` landed the accessor on the live `BelievedInstitutionalClaim` case carrier with blanket trait forwarding and role-gated reward-encumbrance visibility.
 7. Focused tests in `worldwake-systems` for authorization, insufficient funds, reservation creation/release/claim, expiry release, and overlap rejection; focused tests in `worldwake-cli` for scenario spawn (lint and materialization).
 8. `survival-justice` golden extension: new test `survival_justice_proves_institutional_bounty_posted` proving the institutional bounty branch under the existing survival envelope; the three existing goldens continue to pass unchanged.
 9. Generated golden docs and `survival-justice` scenario roadmap update once the row is actually landed.

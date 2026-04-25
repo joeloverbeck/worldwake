@@ -2,6 +2,9 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use crate::commodity_support::{ensure_accessible_quantity, resolve_controlled_lots};
+use crate::reward_encumbrance_support::{
+    release_bounty_reward, reserve_bounty_reward, unencumbered_reward_quantity,
+};
 use worldwake_core::{
     ArtifactHeader, ArtifactKind, ArtifactState, BodyCostPerTick, BountyTarget, BountyTerms,
     ContentionPolicy, ContentionQueue, EntityId, EntityKind, EventLog, EventTag, NoticeContent,
@@ -17,11 +20,17 @@ use worldwake_sim::{
 pub fn register_artifact_actions(
     defs: &mut ActionDefRegistry,
     handlers: &mut ActionHandlerRegistry,
-) -> [worldwake_core::ActionDefId; 3] {
+) -> [worldwake_core::ActionDefId; 4] {
     let post_bounty_id = register_post_bounty_action(defs, handlers);
     let post_notice_id = register_post_notice_action(defs, handlers);
     let claim_bounty_id = register_claim_bounty_action(defs, handlers);
-    [post_bounty_id, post_notice_id, claim_bounty_id]
+    let withdraw_bounty_id = register_withdraw_bounty_action(defs, handlers);
+    [
+        post_bounty_id,
+        post_notice_id,
+        claim_bounty_id,
+        withdraw_bounty_id,
+    ]
 }
 
 pub fn register_post_bounty_action(
@@ -77,6 +86,20 @@ pub fn register_claim_bounty_action(
     );
     let id = worldwake_core::ActionDefId(defs.len() as u32);
     defs.register(claim_bounty_action_def(id, handler))
+}
+
+pub fn register_withdraw_bounty_action(
+    defs: &mut ActionDefRegistry,
+    handlers: &mut ActionHandlerRegistry,
+) -> worldwake_core::ActionDefId {
+    let handler = handlers.register(ActionHandler::new(
+        start_withdraw_bounty,
+        tick_withdraw_bounty,
+        commit_withdraw_bounty,
+        abort_withdraw_bounty,
+    ));
+    let id = worldwake_core::ActionDefId(defs.len() as u32);
+    defs.register(withdraw_bounty_action_def(id, handler))
 }
 
 fn post_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandlerId) -> ActionDef {
@@ -204,6 +227,54 @@ fn claim_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandl
             EventTag::Transfer,
             EventTag::WorldMutation,
         ]),
+        payload: ActionPayload::None,
+        handler,
+        binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+        guard_template: None,
+        expectation_template: vec![],
+    }
+}
+
+fn withdraw_bounty_action_def(
+    id: worldwake_core::ActionDefId,
+    handler: ActionHandlerId,
+) -> ActionDef {
+    ActionDef {
+        id,
+        name: "withdraw_bounty".to_string(),
+        domain: worldwake_core::ActionDomain::Social,
+        actor_constraints: vec![
+            Constraint::ActorAlive,
+            Constraint::ActorHasControl,
+            Constraint::ActorNotInTransit,
+        ],
+        targets: vec![TargetSpec::SpecificEntity(EntityId {
+            slot: 0,
+            generation: 0,
+        })],
+        preconditions: vec![
+            Precondition::ActorAlive,
+            Precondition::TargetExists(0),
+            Precondition::TargetKind {
+                target_index: 0,
+                kind: EntityKind::SocialArtifact,
+            },
+        ],
+        reservation_requirements: Vec::new(),
+        duration: DurationExpr::Fixed(NonZeroU32::MIN),
+        body_cost_per_tick: BodyCostPerTick::zero(),
+        attention_cost: worldwake_core::Permille::ZERO,
+        interruptibility: Interruptibility::FreelyInterruptible,
+        commit_conditions: vec![
+            Precondition::ActorAlive,
+            Precondition::TargetExists(0),
+            Precondition::TargetKind {
+                target_index: 0,
+                kind: EntityKind::SocialArtifact,
+            },
+        ],
+        visibility: VisibilitySpec::SamePlace,
+        causal_event_tags: BTreeSet::from([EventTag::Social, EventTag::WorldMutation]),
         payload: ActionPayload::None,
         handler,
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
@@ -407,11 +478,15 @@ fn validate_reward_source(
     match payload.reward_source {
         RewardSource::InstitutionalTreasury { treasury_entity } => {
             authorize_office_expenditure(world, actor, treasury_entity, context)?;
-            if world.controlled_commodity_quantity(treasury_entity, payload.reward_commodity)
-                < payload.reward_quantity
-            {
+            let available_quantity =
+                if world.entity_kind(treasury_entity) == Some(EntityKind::Office) {
+                    unencumbered_reward_quantity(world, treasury_entity, payload.reward_commodity)
+                } else {
+                    world.controlled_commodity_quantity(treasury_entity, payload.reward_commodity)
+                };
+            if available_quantity < payload.reward_quantity {
                 return Err(ActionError::PreconditionFailed(format!(
-                    "institutional treasury {treasury_entity} lacks {:?} x{}",
+                    "institutional treasury {treasury_entity} lacks unencumbered {:?} x{}",
                     payload.reward_commodity, payload.reward_quantity.0
                 )));
             }
@@ -719,6 +794,82 @@ fn validate_bounty_claim_proof(
     }
 }
 
+fn validate_bounty_withdrawal(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+) -> Result<(ArtifactHeader, Option<BountyTerms>), ActionError> {
+    if txn.entity_kind(target) != Some(EntityKind::SocialArtifact) {
+        return Err(ActionError::InvalidTarget(target));
+    }
+    let header = txn
+        .get_component_artifact_header(target)
+        .copied()
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!("artifact {target} lacks header"))
+        })?;
+    if header.kind != ArtifactKind::Bounty {
+        return Err(ActionError::PreconditionFailed(format!(
+            "artifact {target} is not a bounty"
+        )));
+    }
+    if header.state != ArtifactState::Active {
+        return Err(ActionError::PreconditionFailed(format!(
+            "artifact {target} is not active"
+        )));
+    }
+    if txn.effective_place(actor) != txn.effective_place(target) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} is not co-located with bounty {target}"
+        )));
+    }
+    if header.issuer != actor {
+        let actor_controls_authority = header.issuing_authority.is_some_and(|authority| {
+            txn.entity_kind(authority) == Some(EntityKind::Office)
+                && txn.office_holder(authority) == Some(actor)
+        });
+        if !actor_controls_authority {
+            return Err(ActionError::PreconditionFailed(format!(
+                "actor {actor} cannot withdraw bounty {target}"
+            )));
+        }
+    }
+    let terms = txn.get_component_bounty_terms(target).copied();
+    Ok((header, terms))
+}
+
+fn ensure_bounty_reward_reserved(
+    txn: &WorldTxn<'_>,
+    office: EntityId,
+    bounty_artifact: EntityId,
+) -> Result<(), ActionError> {
+    if txn
+        .get_component_reward_encumbrance(office)
+        .is_some_and(|encumbrance| encumbrance.contains_bounty(bounty_artifact))
+    {
+        Ok(())
+    } else {
+        Err(ActionError::PreconditionFailed(format!(
+            "bounty {bounty_artifact} has no active reward encumbrance on office {office}"
+        )))
+    }
+}
+
+fn release_bounty_reward_or_error(
+    txn: &mut WorldTxn<'_>,
+    office: EntityId,
+    bounty_artifact: EntityId,
+) -> Result<(), ActionError> {
+    release_bounty_reward(txn, office, bounty_artifact)
+        .map_err(|error| ActionError::InternalError(error.to_string()))?
+        .then_some(())
+        .ok_or_else(|| {
+            ActionError::PreconditionFailed(format!(
+                "bounty {bounty_artifact} has no active reward encumbrance on office {office}"
+            ))
+        })
+}
+
 fn ensure_bounty_claim_contention_components(
     txn: &mut WorldTxn<'_>,
     target: EntityId,
@@ -902,7 +1053,7 @@ fn transfer_reserved_reward_lot(
 
 fn validate_post_bounty_payload_override(
     _def: &ActionDef,
-    _actor: EntityId,
+    actor: EntityId,
     targets: &[EntityId],
     payload: &ActionPayload,
     view: &dyn RuntimeBeliefView,
@@ -916,6 +1067,15 @@ fn validate_post_bounty_payload_override(
     posting_place == payload.posting_place
         && view.entity_kind(posting_place) == Some(EntityKind::Place)
         && view.entity_kind(payload.claim_place) == Some(EntityKind::Place)
+        && payload.reward_quantity > Quantity(0)
+        && match payload.reward_source {
+            RewardSource::InstitutionalTreasury { treasury_entity } => {
+                view.entity_kind(treasury_entity).is_some()
+                    && payload.issuing_authority == Some(treasury_entity)
+            }
+            RewardSource::PersonalFunds { issuer } => issuer == actor,
+            RewardSource::ReservedLot { lot } => view.entity_kind(lot) == Some(EntityKind::ItemLot),
+        }
 }
 
 fn validate_post_notice_payload_override(
@@ -1029,6 +1189,18 @@ fn commit_post_bounty(
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
     txn.set_component_contention_queue(artifact, ContentionQueue::default())
         .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    if let RewardSource::InstitutionalTreasury { treasury_entity } = payload.reward_source
+        && txn.entity_kind(treasury_entity) == Some(EntityKind::Office)
+    {
+        reserve_bounty_reward(
+            txn,
+            treasury_entity,
+            artifact,
+            payload.reward_commodity,
+            payload.reward_quantity,
+        )
+        .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    }
     let mut tracker = txn
         .get_component_obligation_execution_tracker(instance.actor)
         .cloned()
@@ -1039,6 +1211,68 @@ fn commit_post_bounty(
     txn.add_target(artifact).add_target(posting_place);
 
     Ok(CommitOutcome::empty())
+}
+
+fn start_withdraw_bounty(
+    _def: &ActionDef,
+    instance: &mut ActionInstance,
+    _context: &ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let target = artifact_target_from_instance(instance)?;
+    validate_bounty_withdrawal(txn, instance.actor, target)?;
+    Ok(Some(ActionState::Empty))
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn tick_withdraw_bounty(
+    _def: &ActionDef,
+    _instance: &mut ActionInstance,
+    _context: &ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<ActionProgress, ActionError> {
+    Ok(ActionProgress::Continue)
+}
+
+fn commit_withdraw_bounty(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    _context: &ActionExecutionContext<'_>,
+    _event_log: &EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let target = artifact_target_from_instance(instance)?;
+    let (mut header, terms) = validate_bounty_withdrawal(txn, instance.actor, target)?;
+    if let Some(BountyTerms {
+        reward_source: RewardSource::InstitutionalTreasury { treasury_entity },
+        ..
+    }) = terms
+        && txn.entity_kind(treasury_entity) == Some(EntityKind::Office)
+    {
+        release_bounty_reward(txn, treasury_entity, target)
+            .map_err(|error| ActionError::InternalError(error.to_string()))?;
+    }
+    header.state = ArtifactState::Withdrawn;
+    txn.set_component_artifact_header(target, header)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.add_target(target);
+    Ok(CommitOutcome::empty())
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn abort_withdraw_bounty(
+    _def: &ActionDef,
+    _instance: &ActionInstance,
+    _context: &ActionExecutionContext<'_>,
+    _reason: &AbortReason,
+    _event_log: &EventLog,
+    _rng: &mut DeterministicRng,
+    _txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1165,6 +1399,11 @@ fn commit_claim_bounty(
     validate_bounty_target_satisfied(txn, instance.actor, &terms)?;
     validate_bounty_claim_proof(txn, instance.actor, actor_place, &terms)?;
     claim_or_require_bounty_grant(txn, instance.actor, target, def.id, false)?;
+    if let RewardSource::InstitutionalTreasury { treasury_entity } = terms.reward_source
+        && txn.entity_kind(treasury_entity) == Some(EntityKind::Office)
+    {
+        ensure_bounty_reward_reserved(txn, treasury_entity, target)?;
+    }
 
     match terms.reward_source {
         RewardSource::InstitutionalTreasury { treasury_entity } => transfer_controlled_commodity(
@@ -1191,6 +1430,11 @@ fn commit_claim_bounty(
             terms.reward_commodity,
             terms.reward_quantity,
         )?,
+    }
+    if let RewardSource::InstitutionalTreasury { treasury_entity } = terms.reward_source
+        && txn.entity_kind(treasury_entity) == Some(EntityKind::Office)
+    {
+        release_bounty_reward_or_error(txn, treasury_entity, target)?;
     }
 
     header.state = ArtifactState::Fulfilled;
@@ -1235,10 +1479,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         AgentBeliefStore, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        CauseRef, CommodityKind, ContentionQueue, ControlSource, DeadAt, EventLog, EventTag,
-        ObligationExecutionTracker, OfficeData, PerceptionSource, ProofRequirement, PrototypePlace,
-        Quantity, RecordData, RecordKind, Seed, SuccessionLaw, Tick, VisibilitySpec, WitnessData,
-        World, WorldTxn, build_prototype_world, prototype_place_entity,
+        CauseRef, CommodityKind, Container, ContentionQueue, ControlSource, DeadAt, EventLog,
+        EventTag, LoadUnits, ObligationExecutionTracker, OfficeData, PerceptionSource,
+        ProofRequirement, PrototypePlace, Quantity, RecordData, RecordKind, Seed, SuccessionLaw,
+        Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
@@ -1303,6 +1548,14 @@ mod tests {
         let lot = txn
             .create_item_lot(commodity, Quantity(u32::from(quantity)))
             .unwrap();
+        let treasury_container = txn
+            .create_container(Container {
+                capacity: LoadUnits(1000),
+                allowed_commodities: Some(BTreeSet::from([commodity])),
+                allows_unique_items: false,
+                allows_nested_containers: false,
+            })
+            .unwrap();
         txn.set_component_office_data(
             office,
             OfficeData {
@@ -1317,6 +1570,9 @@ mod tests {
         )
         .unwrap();
         txn.set_ground_location(office, seat).unwrap();
+        txn.set_ground_location(treasury_container, seat).unwrap();
+        txn.set_owner(treasury_container, office).unwrap();
+        txn.put_into_container(lot, treasury_container).unwrap();
         let office_register_exists = txn.query_record_data().any(|(_, record)| {
             record.record_kind == RecordKind::OfficeRegister && record.home_place == seat
         });
@@ -1376,16 +1632,24 @@ mod tests {
     ) -> EntityId {
         let mut txn = new_txn(world, 3);
         let artifact = txn.create_entity(EntityKind::SocialArtifact);
+        let issuing_authority = match reward_source {
+            RewardSource::InstitutionalTreasury { treasury_entity }
+                if txn.entity_kind(treasury_entity) == Some(EntityKind::Office) =>
+            {
+                Some(treasury_entity)
+            }
+            _ => None,
+        };
         txn.set_component_artifact_header(
             artifact,
             ArtifactHeader {
                 kind: ArtifactKind::Bounty,
                 issuer,
-                issuing_authority: None,
+                issuing_authority,
                 created_at: Tick(3),
                 expires_at: Some(Tick(12)),
                 state: ArtifactState::Active,
-                jurisdiction: None,
+                jurisdiction: issuing_authority.map(|_| posting_place),
             },
         )
         .unwrap();
@@ -1406,6 +1670,18 @@ mod tests {
             .unwrap();
         txn.set_component_contention_queue(artifact, ContentionQueue::default())
             .unwrap();
+        if let RewardSource::InstitutionalTreasury { treasury_entity } = reward_source
+            && txn.entity_kind(treasury_entity) == Some(EntityKind::Office)
+        {
+            reserve_bounty_reward(
+                &mut txn,
+                treasury_entity,
+                artifact,
+                CommodityKind::Coin,
+                Quantity(4),
+            )
+            .unwrap();
+        }
         commit_txn(txn);
         artifact
     }
@@ -1477,6 +1753,28 @@ mod tests {
         })
     }
 
+    fn institutional_post_bounty_payload(
+        posting_place: EntityId,
+        claim_place: EntityId,
+        target: EntityId,
+        office: EntityId,
+    ) -> ActionPayload {
+        ActionPayload::PostBounty(PostBountyActionPayload {
+            posting_place,
+            issuing_authority: Some(office),
+            expires_at: Some(Tick(12)),
+            jurisdiction: Some(posting_place),
+            target: BountyTarget::EliminateEntity { target },
+            proof_requirement: ProofRequirement::PhysicalEvidence,
+            reward_commodity: CommodityKind::Coin,
+            reward_quantity: Quantity(4),
+            reward_source: RewardSource::InstitutionalTreasury {
+                treasury_entity: office,
+            },
+            claim_place,
+        })
+    }
+
     fn post_notice_payload(posting_place: EntityId, topic_place: EntityId) -> ActionPayload {
         ActionPayload::PostNotice(PostNoticeActionPayload {
             posting_place,
@@ -1493,11 +1791,12 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let ids = register_artifact_actions(&mut defs, &mut handlers);
 
-        assert_eq!(handlers.len(), 3);
-        assert_eq!(ids.len(), 3);
+        assert_eq!(handlers.len(), 4);
+        assert_eq!(ids.len(), 4);
         assert_eq!(defs.get(ids[0]).unwrap().name, "post_bounty");
         assert_eq!(defs.get(ids[1]).unwrap().name, "post_notice");
         assert_eq!(defs.get(ids[2]).unwrap().name, "claim_bounty");
+        assert_eq!(defs.get(ids[3]).unwrap().name, "withdraw_bounty");
         assert_eq!(
             defs.get(ids[0]).unwrap().targets,
             vec![TargetSpec::ActorPlace]
@@ -1508,6 +1807,13 @@ mod tests {
         );
         assert_eq!(
             defs.get(ids[2]).unwrap().targets,
+            vec![TargetSpec::SpecificEntity(EntityId {
+                slot: 0,
+                generation: 0
+            })]
+        );
+        assert_eq!(
+            defs.get(ids[3]).unwrap().targets,
             vec![TargetSpec::SpecificEntity(EntityId {
                 slot: 0,
                 generation: 0
@@ -1723,7 +2029,7 @@ mod tests {
 
         assert!(matches!(
             err,
-            ActionError::PreconditionFailed(message) if message.contains("lacks Coin x4")
+            ActionError::PreconditionFailed(message) if message.contains("lacks unencumbered Coin x4")
         ));
     }
 
@@ -1733,7 +2039,8 @@ mod tests {
         let square = prototype_place_entity(PrototypePlace::VillageSquare);
         let actor = spawn_agent_at(&mut world, "issuer", square);
         let target = spawn_agent_at(&mut world, "target", square);
-        grant_personal_funds(&mut world, actor, square, CommodityKind::Coin, 4);
+        let office =
+            create_office_treasury(&mut world, actor, square, [square], CommodityKind::Coin, 4);
 
         let mut defs = ActionDefRegistry::new();
         let mut handlers = ActionHandlerRegistry::new();
@@ -1742,7 +2049,9 @@ mod tests {
             def_id: post_bounty_id,
             actor,
             bound_targets: vec![square],
-            payload_override: Some(post_bounty_payload(square, square, target, actor)),
+            payload_override: Some(institutional_post_bounty_payload(
+                square, square, target, office,
+            )),
             explanation: None,
             contention_status: worldwake_core::ContentionStatus::Unmanaged,
         };
@@ -1812,6 +2121,14 @@ mod tests {
                 .get_component_bounty_terms(artifact)
                 .unwrap()
                 .reward_quantity,
+            Quantity(4)
+        );
+        let encumbrance = world
+            .get_component_reward_encumbrance(office)
+            .expect("office reward must be encumbered after posting");
+        assert!(encumbrance.contains_bounty(artifact));
+        assert_eq!(
+            encumbrance.reserved_quantity(CommodityKind::Coin),
             Quantity(4)
         );
         assert_eq!(
@@ -1951,6 +2268,160 @@ mod tests {
     }
 
     #[test]
+    fn second_post_bounty_with_overlapping_funds_fails_authoritatively() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let actor = spawn_agent_at(&mut world, "issuer", square);
+        let first_target = spawn_agent_at(&mut world, "first-target", square);
+        let second_target = spawn_agent_at(&mut world, "second-target", square);
+        let office =
+            create_office_treasury(&mut world, actor, square, [square], CommodityKind::Coin, 4);
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let post_bounty_id = register_post_bounty_action(&mut defs, &mut handlers);
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = DeterministicRng::new(Seed([22; 32]));
+        let first = Affordance {
+            def_id: post_bounty_id,
+            actor,
+            bound_targets: vec![square],
+            payload_override: Some(institutional_post_bounty_payload(
+                square,
+                square,
+                first_target,
+                office,
+            )),
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+        let first_action = start_action(
+            &first,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+        let outcome = tick_to_completion(
+            &mut world,
+            &defs,
+            &handlers,
+            &mut active,
+            &mut log,
+            &mut rng,
+            first_action,
+            6,
+        )
+        .unwrap();
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+
+        let second = Affordance {
+            def_id: post_bounty_id,
+            actor,
+            bound_targets: vec![square],
+            payload_override: Some(institutional_post_bounty_payload(
+                square,
+                square,
+                second_target,
+                office,
+            )),
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+        let err = start_action(
+            &second,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(8)),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            ActionError::PreconditionFailed(message)
+                if message.contains("lacks unencumbered Coin x4")
+        ));
+    }
+
+    #[test]
+    fn start_post_bounty_rejects_when_encumbrance_state_changed_since_selection() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let actor = spawn_agent_at(&mut world, "issuer", square);
+        let target = spawn_agent_at(&mut world, "target", square);
+        let office =
+            create_office_treasury(&mut world, actor, square, [square], CommodityKind::Coin, 4);
+        {
+            let mut txn = new_txn(&mut world, 4);
+            let stale_bounty = txn.create_entity(EntityKind::SocialArtifact);
+            reserve_bounty_reward(
+                &mut txn,
+                office,
+                stale_bounty,
+                CommodityKind::Coin,
+                Quantity(4),
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let post_bounty_id = register_post_bounty_action(&mut defs, &mut handlers);
+        let affordance = Affordance {
+            def_id: post_bounty_id,
+            actor,
+            bound_targets: vec![square],
+            payload_override: Some(institutional_post_bounty_payload(
+                square, square, target, office,
+            )),
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = DeterministicRng::new(Seed([23; 32]));
+
+        let err = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            ActionError::PreconditionFailed(message)
+                if message.contains("lacks unencumbered Coin x4")
+        ));
+    }
+
+    #[test]
     fn claim_bounty_transfers_reward_and_fulfills_bounty() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let posting_place = prototype_place_entity(PrototypePlace::VillageSquare);
@@ -2034,6 +2505,167 @@ mod tests {
                 .granted
                 .is_none()
         );
+    }
+
+    #[test]
+    fn claim_bounty_consumes_encumbrance_and_transfers_lot_to_claimant() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let issuer = spawn_agent_at(&mut world, "issuer", square);
+        let claimant = spawn_agent_at(&mut world, "claimant", square);
+        let target = spawn_agent_at(&mut world, "target", square);
+        kill_entity(&mut world, target, 2);
+        let office =
+            create_office_treasury(&mut world, issuer, square, [square], CommodityKind::Coin, 4);
+        let bounty = create_bounty_artifact(
+            &mut world,
+            issuer,
+            square,
+            square,
+            target,
+            RewardSource::InstitutionalTreasury {
+                treasury_entity: office,
+            },
+            ProofRequirement::PhysicalEvidence,
+        );
+        assert!(
+            world
+                .get_component_reward_encumbrance(office)
+                .is_some_and(|encumbrance| encumbrance.contains_bounty(bounty))
+        );
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let ids = register_artifact_actions(&mut defs, &mut handlers);
+        let affordance = Affordance {
+            def_id: ids[2],
+            actor: claimant,
+            bound_targets: vec![bounty],
+            payload_override: None,
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Available,
+        };
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = DeterministicRng::new(Seed([21; 32]));
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+        let outcome = tick_to_completion(
+            &mut world,
+            &defs,
+            &handlers,
+            &mut active,
+            &mut log,
+            &mut rng,
+            action_id,
+            6,
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(
+            world.get_component_artifact_header(bounty).unwrap().state,
+            ArtifactState::Fulfilled
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(claimant, CommodityKind::Coin),
+            Quantity(4)
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(office, CommodityKind::Coin),
+            Quantity(0)
+        );
+        assert!(!world.has_component_reward_encumbrance(office));
+    }
+
+    #[test]
+    fn withdraw_bounty_releases_encumbrance_without_transfer() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let issuer = spawn_agent_at(&mut world, "issuer", square);
+        let target = spawn_agent_at(&mut world, "target", square);
+        let office =
+            create_office_treasury(&mut world, issuer, square, [square], CommodityKind::Coin, 4);
+        let bounty = create_bounty_artifact(
+            &mut world,
+            issuer,
+            square,
+            square,
+            target,
+            RewardSource::InstitutionalTreasury {
+                treasury_entity: office,
+            },
+            ProofRequirement::SelfReport,
+        );
+
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let ids = register_artifact_actions(&mut defs, &mut handlers);
+        let affordance = Affordance {
+            def_id: ids[3],
+            actor: issuer,
+            bound_targets: vec![bounty],
+            payload_override: None,
+            explanation: None,
+            contention_status: worldwake_core::ContentionStatus::Unmanaged,
+        };
+        let mut active = BTreeMap::new();
+        let mut log = EventLog::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = DeterministicRng::new(Seed([24; 32]));
+
+        let action_id = start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(5)),
+        )
+        .unwrap();
+        let outcome = tick_action(
+            action_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(6)),
+        )
+        .unwrap();
+
+        assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        assert_eq!(
+            world.get_component_artifact_header(bounty).unwrap().state,
+            ArtifactState::Withdrawn
+        );
+        assert_eq!(
+            world.controlled_commodity_quantity(office, CommodityKind::Coin),
+            Quantity(4)
+        );
+        assert!(!world.has_component_reward_encumbrance(office));
     }
 
     #[test]

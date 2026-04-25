@@ -2260,10 +2260,11 @@ mod tests {
         let agent = world.create_entity(EntityKind::Agent, Tick(1));
         let bounty_artifact = world.create_entity(EntityKind::SocialArtifact, Tick(1));
         let encumbrance = RewardEncumbrance {
-            bounty_artifact,
-            commodity: CommodityKind::Coin,
-            quantity: Quantity(13),
-            office,
+            reservations: vec![crate::RewardReservation {
+                bounty_artifact,
+                commodity: CommodityKind::Coin,
+                quantity: Quantity(13),
+            }],
         };
 
         world

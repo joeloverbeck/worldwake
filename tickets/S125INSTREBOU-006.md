@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — AI candidate emitter consumes belief-view accessor
-**Deps**: S125INSTREBOU-004
+**Deps**: [S125INSTREBOU-004](../archive/tickets/S125INSTREBOU-004.md)
 
 ## Problem
 

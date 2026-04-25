@@ -799,10 +799,11 @@ mod tests {
                 listed_at: Tick(10),
             }),
             ComponentValue::RewardEncumbrance(RewardEncumbrance {
-                bounty_artifact: entity(103),
-                commodity: CommodityKind::Coin,
-                quantity: Quantity(19),
-                office: entity(104),
+                reservations: vec![crate::RewardReservation {
+                    bounty_artifact: entity(103),
+                    commodity: CommodityKind::Coin,
+                    quantity: Quantity(19),
+                }],
             }),
             ComponentValue::StockStoragePolicy(StockStoragePolicy {
                 stock_container: crate::test_utils::entity_id(100, 1),
@@ -1061,10 +1062,11 @@ mod tests {
             entity: entity(4),
             component_kind: ComponentKind::RewardEncumbrance,
             before: ComponentValue::RewardEncumbrance(RewardEncumbrance {
-                bounty_artifact: entity(5),
-                commodity: CommodityKind::Coin,
-                quantity: Quantity(7),
-                office: entity(6),
+                reservations: vec![crate::RewardReservation {
+                    bounty_artifact: entity(5),
+                    commodity: CommodityKind::Coin,
+                    quantity: Quantity(7),
+                }],
             }),
         };
 

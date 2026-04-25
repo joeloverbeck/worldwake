@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 46;
+pub const SAVE_FORMAT_VERSION: u32 = 47;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -323,10 +323,11 @@ mod tests {
             .set_component_reward_encumbrance(
                 office,
                 RewardEncumbrance {
-                    bounty_artifact: worldwake_core::test_utils::entity_id(99, 0),
-                    commodity: CommodityKind::Coin,
-                    quantity: Quantity(31),
-                    office,
+                    reservations: vec![worldwake_core::RewardReservation {
+                        bounty_artifact: worldwake_core::test_utils::entity_id(99, 0),
+                        commodity: CommodityKind::Coin,
+                        quantity: Quantity(31),
+                    }],
                 },
             )
             .unwrap();

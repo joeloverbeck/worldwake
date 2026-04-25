@@ -1245,6 +1245,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::StockManagement
             | PlannerOpKind::Craft
             | PlannerOpKind::ClaimBounty
+            | PlannerOpKind::WithdrawBounty
             | PlannerOpKind::PostBounty
             | PlannerOpKind::PostNotice
             | PlannerOpKind::Attack
@@ -1737,6 +1738,7 @@ impl GoalKindPlannerExt for GoalKind {
             | PlannerOpKind::Investigate
             | PlannerOpKind::AskWitness
             | PlannerOpKind::ClaimBounty
+            | PlannerOpKind::WithdrawBounty
             | PlannerOpKind::PostBounty
             | PlannerOpKind::PostNotice
             | PlannerOpKind::Bury

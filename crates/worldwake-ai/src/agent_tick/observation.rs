@@ -804,6 +804,7 @@ fn reconcile_committed_facility_queue_intents(
         | crate::PlannerOpKind::EscortToSafety
         | crate::PlannerOpKind::ReportFound
         | crate::PlannerOpKind::ClaimBounty
+        | crate::PlannerOpKind::WithdrawBounty
         | crate::PlannerOpKind::PostBounty
         | crate::PlannerOpKind::PostNotice
         | crate::PlannerOpKind::StaffMarket

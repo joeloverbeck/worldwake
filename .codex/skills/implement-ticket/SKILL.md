@@ -14,7 +14,7 @@ When several reassessment branches seem applicable at once, use this priority or
 - Reassess against the live branch first. Do not implement the draft literally until the ticket/spec matches current code.
 - If a narrow production fix lands but the drafted broader golden/E2E story is still false, follow `Mixed outcome: narrow fix landed, broader golden still false` below.
 - Prefer the strongest existing honest proof seam. Extend an existing focused unit/runtime/golden test instead of creating the drafted new file mechanically.
-- Keep Cargo sequential, confirm exact selectors with `-- --list`, and record only truthful verification boundaries.
+- Keep Cargo sequential, confirm ambiguous or pre-existing exact selectors with `-- --list`, and record only truthful verification boundaries.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
 
 Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here.
@@ -95,7 +95,7 @@ Pick the closest ticket shape before Step 1, then follow the matching quick path
 
 ### 2. Reassess assumptions before coding
 
-Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
+Verify the ticket against the current codebase, not stale architectural memory. Check `Deps` — confirm each dependency is present on the current branch. If a dependency ticket has already been completed and archived, rewrite `Deps` to the live archived path instead of leaving a stale active-ticket reference. If the requested ticket depends on an active pending sibling ticket, stop before implementation and use 1-3-1 to confirm whether to implement the prerequisite first, narrow/reject the requested ticket, or pause. When the user approves the dependency-first path, treat both the prerequisite and requested ticket as active closeout surfaces: implement the prerequisite first, then the requested ticket, and update both ticket/spec boundaries truthfully before final verification. For mixed-layer, planner, golden, or authoritative-validation work, name the exact symbols and boundaries under audit.
 
 Load `references/reassessment-checks.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md`.
 

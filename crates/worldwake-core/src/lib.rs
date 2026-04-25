@@ -238,7 +238,7 @@ pub use production::{
 pub use pursuit::PursuitProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
 pub use repair_memory::{RepairEntry, RepairKey, RepairMemory};
-pub use reward_encumbrance::RewardEncumbrance;
+pub use reward_encumbrance::{RewardEncumbrance, RewardReservation};
 pub use rights::{EffectiveRight, RightKind};
 pub use social_artifact::{
     ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile, ArtifactState,

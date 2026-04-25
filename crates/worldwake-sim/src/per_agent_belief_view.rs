@@ -18,11 +18,11 @@ use worldwake_core::{
     LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LoadUnits,
     MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
     OfficeData, PerceptionSource, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, WorkstationTag, World, Wound, danger_ratio_permille,
-    is_incapacitated, load_of_entity,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RewardEncumbrance,
+    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
+    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
+    World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -1352,6 +1352,23 @@ impl PoliticalBeliefView for PerAgentBeliefView<'_> {
             .get(&key)
             .cloned()
             .unwrap_or_default()
+    }
+
+    fn visible_reward_encumbrance(
+        &self,
+        actor: EntityId,
+        office: EntityId,
+    ) -> Option<&RewardEncumbrance> {
+        if actor != self.agent
+            || !matches!(
+                self.believed_office_holder(office),
+                InstitutionalBeliefRead::Certain(Some(holder)) if holder == actor
+            )
+        {
+            return None;
+        }
+
+        self.world.get_component_reward_encumbrance(office)
     }
 }
 

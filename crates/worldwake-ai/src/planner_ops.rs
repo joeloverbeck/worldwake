@@ -31,6 +31,7 @@ pub enum PlannerOpKind {
     Loot,
     Bury,
     ClaimBounty,
+    WithdrawBounty,
     PostBounty,
     PostNotice,
     Tell,
@@ -125,6 +126,7 @@ fn classify_action_def(def: &ActionDef) -> Option<PlannerOpKind> {
         (ActionDomain::Corpse, "loot") => Some(PlannerOpKind::Loot),
         (ActionDomain::Corpse, "bury") => Some(PlannerOpKind::Bury),
         (ActionDomain::Social, "claim_bounty") => Some(PlannerOpKind::ClaimBounty),
+        (ActionDomain::Social, "withdraw_bounty") => Some(PlannerOpKind::WithdrawBounty),
         (ActionDomain::Social, "post_bounty") => Some(PlannerOpKind::PostBounty),
         (ActionDomain::Social, "post_notice") => Some(PlannerOpKind::PostNotice),
         (ActionDomain::Social, "tell") => Some(PlannerOpKind::Tell),
@@ -235,6 +237,7 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
             PlannerTransitionKind::GoalModelFallback,
         ),
         PlannerOpKind::ClaimBounty
+        | PlannerOpKind::WithdrawBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice
         | PlannerOpKind::Tell
@@ -271,6 +274,7 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
         }
         PlannerOpKind::Tell
         | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::WithdrawBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice
         | PlannerOpKind::Attack
@@ -1800,6 +1804,7 @@ mod tests {
             PlannerOpKind::Loot,
             PlannerOpKind::Bury,
             PlannerOpKind::ClaimBounty,
+            PlannerOpKind::WithdrawBounty,
             PlannerOpKind::PostBounty,
             PlannerOpKind::PostNotice,
             PlannerOpKind::Tell,
@@ -1854,6 +1859,7 @@ mod tests {
             ("loot", PlannerOpKind::Loot),
             ("bury", PlannerOpKind::Bury),
             ("claim_bounty", PlannerOpKind::ClaimBounty),
+            ("withdraw_bounty", PlannerOpKind::WithdrawBounty),
             ("post_bounty", PlannerOpKind::PostBounty),
             ("post_notice", PlannerOpKind::PostNotice),
             ("heal", PlannerOpKind::Heal),

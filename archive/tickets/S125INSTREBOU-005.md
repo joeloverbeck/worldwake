@@ -1,10 +1,10 @@
 # S125INSTREBOU-005: post_bounty reservation lifecycle
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — reconcile `RewardEncumbrance` cardinality for multiple active office bounties; action handlers (`validate_reward_source`, `commit_post_bounty`, `claim_bounty`, `withdraw_bounty`), artifact-lifecycle TTL release hook, payload validator extension
-**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), [S125INSTREBOU-003](../archive/tickets/S125INSTREBOU-003.md), [S125INSTREBOU-008](../archive/tickets/S125INSTREBOU-008.md)
+**Deps**: [S125INSTREBOU-001](S125INSTREBOU-001.md), [S125INSTREBOU-003](S125INSTREBOU-003.md), [S125INSTREBOU-008](S125INSTREBOU-008.md)
 
 ## Problem
 
@@ -21,7 +21,9 @@ Today `post_bounty` validates fund availability at commit but records no encumbr
 5. Stale-request boundary: when a planner-selected `post_bounty` action starts, `start_post_bounty` must re-run `validate_reward_source` to catch the case where encumbrance state changed between candidate selection and start. First failure boundary is authoritative start (action-trace surface). Verify that the existing start handler already invokes `validate_reward_source`; if not, the rejection path must be added there per the CLAUDE.md Authoritative-to-AI Impact Rule #4.
 6. Cumulative arithmetic: the encumbrance check is `controlled_commodity_quantity(office, kind) - sum(active_encumbrances_on_office_for_kind) >= payload.reward_quantity`. The subtraction must be saturating-aware: if encumbrances exceed balance (which should be impossible by construction), the helper must return zero, not underflow.
 7. Adjacent contradictions: existing `post_bounty_commits_social_artifact_with_contention_components` test (line 226) asserts the artifact has contention components but doesn't yet assert encumbrance — required consequence of this ticket is to extend the test to assert the new `RewardEncumbrance` component on the office. Existing `claim_bounty_transfers_reward_and_fulfills_bounty` (line 449) asserts the transfer but doesn't yet assert encumbrance consumption — extend.
-8. Post-ticket-review update after [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md): the landed component is a singleton office component, but this ticket's contract requires summing multiple active encumbrance records for one office. Before wiring lifecycle logic, reassess and correct the authoritative cardinality shape so one office can represent more than one active bounty reservation without overwrite. This may require widening the component payload to a per-office collection or moving the record identity to another lawful ECS surface; choose the cleanest live shape during implementation and update this ticket before coding.
+8. Post-ticket-review update after [S125INSTREBOU-001](S125INSTREBOU-001.md): the landed component is a singleton office component, but this ticket's contract requires summing multiple active encumbrance records for one office. Before wiring lifecycle logic, reassess and correct the authoritative cardinality shape so one office can represent more than one active bounty reservation without overwrite. This may require widening the component payload to a per-office collection or moving the record identity to another lawful ECS surface; choose the cleanest live shape during implementation and update this ticket before coding.
+9. Implementation update: the authoritative shape is now one `RewardEncumbrance` component per office containing a sorted `Vec<RewardReservation>`. This keeps the office as the institutional owner boundary while allowing multiple active bounty reservations without overwrite.
+10. Implementation update: live code had `ArtifactState::Withdrawn` but no registered `withdraw_bounty` action. This ticket added the canonical social action so withdrawal can release institutional reservations through the normal action lifecycle.
 
 ## Architecture Check
 
@@ -45,13 +47,13 @@ Today `post_bounty` validates fund availability at commit but records no encumbr
 First, reconcile the authoritative `RewardEncumbrance` cardinality shape from ticket 001 so the lifecycle can store and query multiple active reservations for the same office. Keep `EntityKind::Office` as the institutional owner boundary unless live reassessment proves a different ECS attachment surface is cleaner. Update core schema/sample/save tests if the payload shape changes, and keep the save-format policy truthful.
 
 Extend the `RewardSource::InstitutionalTreasury` arm of `validate_reward_source` (`artifact_actions.rs:395-418`) to:
-- Preserve the context-aware `authorize_office_expenditure(...)` authorization path landed by [ticket 008](../archive/tickets/S125INSTREBOU-008.md).
+- Preserve the context-aware `authorize_office_expenditure(...)` authorization path landed by [ticket 008](S125INSTREBOU-008.md).
 - Compute available balance: `controlled_commodity_quantity(treasury_entity, payload.reward_commodity)` minus the sum of active `RewardEncumbrance` quantities matching `(office=treasury_entity, commodity=payload.reward_commodity)`.
 - Reject if available < `payload.reward_quantity` with the existing `ActionError` variant for insufficient funds.
 
 ### 2. Encumbrance creation at commit
 
-In `commit_post_bounty` (line 939), within the same `WorldTxn` that creates the SocialArtifact, attach a `RewardEncumbrance { bounty_artifact, commodity, quantity, office }` component to the office.
+In `commit_post_bounty`, within the same `WorldTxn` that creates the SocialArtifact, reserve `RewardReservation { bounty_artifact, commodity, quantity }` in the office's `RewardEncumbrance` component.
 
 ### 3. Encumbrance consumption at claim
 
@@ -88,6 +90,32 @@ Verify `start_post_bounty` calls `validate_reward_source`; if not, add the call.
 - `crates/worldwake-sim/src/save_load.rs` (modify if persisted shape changes)
 - `crates/worldwake-systems/src/artifact_actions.rs` (modify — primary)
 - Likely: an existing artifact-lifecycle module in `worldwake-systems` (modify — TTL release hook). Confirm exact path during implementation by greping `bounty_ttl` consumers; do not assume a path before verification.
+- `crates/worldwake-systems/src/reward_encumbrance_support.rs` (added — shared reservation accounting helpers)
+- `crates/worldwake-ai/src/planner_ops.rs`, `crates/worldwake-ai/src/failure_handling.rs`, `crates/worldwake-ai/src/goal_model.rs`, `crates/worldwake-ai/src/agent_tick/observation.rs` (updated only for exhaustive canonical action classification of `withdraw_bounty`; no AI goal emits withdrawal)
+
+## Implementation Outcome
+
+1. `RewardEncumbrance` now stores multiple `RewardReservation` entries per office and exposes summed reservation/release helpers.
+2. `post_bounty` institutional treasury validation subtracts active reservations before accepting, and commit reserves funds atomically with artifact creation.
+3. `claim_bounty` verifies the reservation is still present, transfers the reward, and releases the reservation in the same transaction.
+4. `withdraw_bounty` is registered as a canonical social action and releases institutional reservations without transferring the reward.
+5. Artifact TTL expiry releases active institutional bounty reservations.
+6. Save-format version is bumped to account for the persisted component shape change.
+
+## Deviations
+
+1. The required `commit_post_bounty_creates_reward_encumbrance_on_office` proof was implemented by extending `post_bounty_commits_social_artifact_with_contention_components` with the encumbrance assertion, rather than adding a second near-duplicate test.
+2. The existing personal-funds `claim_bounty_transfers_reward_and_fulfills_bounty` test remains personal-funds focused; institutional reservation consumption and transfer are covered by `claim_bounty_consumes_encumbrance_and_transfers_lot_to_claimant`.
+3. Office treasury tests use a real office-owned container with contained office-owned lots because the live transfer/control path resolves effective place through containment.
+
+## Verification Result
+
+Passed on 2026-04-25:
+
+1. `cargo test -p worldwake-core reward_encumbrance --lib`
+2. `cargo test -p worldwake-systems --lib artifact_actions::tests`
+3. `cargo test -p worldwake-systems --lib artifact_lifecycle::tests`
+4. `cargo test --workspace --no-run`
 
 ## Out of Scope
 
@@ -131,3 +159,19 @@ Verify `start_post_bounty` calls `validate_reward_source`; if not, add the call.
 1. `cargo test -p worldwake-systems`
 2. `cargo clippy -p worldwake-systems --all-targets -- -D warnings`
 3. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+Implemented the institutional bounty reservation lifecycle. `RewardEncumbrance` now supports multiple active reservations per office; `post_bounty` subtracts active reservations before accepting and creates a reservation at commit; `claim_bounty` consumes the reservation while transferring the reward; `withdraw_bounty` and bounty TTL expiry release reservations without transferring funds. The canonical `withdraw_bounty` action and AI action-classification surfaces were updated for the new lifecycle.
+
+Deviations from the draft: the office encumbrance payload was widened to a sorted reservation collection instead of adding separate per-bounty ECS entities; `commit_post_bounty_creates_reward_encumbrance_on_office` was covered by extending the existing `post_bounty_commits_social_artifact_with_contention_components` test; the personal-funds claim test remained personal-funds focused while institutional consumption was covered by a dedicated test.
+
+Verification passed on 2026-04-25:
+
+1. `cargo test -p worldwake-core reward_encumbrance --lib`
+2. `cargo test -p worldwake-systems --lib artifact_actions::tests`
+3. `cargo test -p worldwake-systems --lib artifact_lifecycle::tests`
+4. `cargo clippy -p worldwake-systems --all-targets -- -D warnings`
+5. `cargo test --workspace --no-run`

@@ -1,10 +1,10 @@
 # S125INSTREBOU-004: GoalBeliefView accessor for institutional reward source
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
-**Engine Changes**: Yes — new trait method on `GoalBeliefView` + `RuntimeBeliefView` impl + macro forwarding
-**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), S125INSTREBOU-005
+**Engine Changes**: Yes — new trait method on `GoalBeliefView`, blanket forwarding through the runtime belief-view surface, and role-gated `RewardEncumbrance` visibility on `PerAgentBeliefView`
+**Deps**: [S125INSTREBOU-001](S125INSTREBOU-001.md), [S125INSTREBOU-005](S125INSTREBOU-005.md)
 
 ## Problem
 
@@ -20,7 +20,8 @@ S125 Deliverable D6 mandates a `GoalBeliefView` accessor that returns whether th
 4. Adjacent contradictions: none. Accessor is additive; existing belief-view methods remain unchanged.
 5. Live `GoalKind` under test: `PostBounty` (already exists; no GoalKind variant addition). This ticket lands the accessor only — ticket 006 consumes it from `emit_bounty_posting_candidates`.
 6. Implementation note on contract shape: for v1, the accessor returns `Some(RewardSource::InstitutionalTreasury { treasury_entity: office })` based on a positive unencumbered office balance, leaving reward sizing to the candidate emitter and authoritative validation. If implementation discovers the accessor must also pre-compute reward quantity (so the emitter can pick a feasible amount), surface as a finding before completing — ticket 006 would then need to adopt the richer return shape.
-7. Post-ticket-review update after [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md): the landed substrate is a singleton office component, while this accessor needs to read the final authoritative active-encumbrance shape. Implement this ticket after S125INSTREBOU-005 reconciles cardinality and lifecycle so the belief-view accessor does not encode a temporary single-record interpretation.
+7. Post-ticket-review update after [S125INSTREBOU-001](S125INSTREBOU-001.md): the landed substrate is a singleton office component, while this accessor needs to read the final authoritative active-encumbrance shape. Implement this ticket after [S125INSTREBOU-005](S125INSTREBOU-005.md) reconciles cardinality and lifecycle so the belief-view accessor does not encode a temporary single-record interpretation.
+8. Implementation update: live code has no `AccusationCase` type. The accessor accepts `&BelievedInstitutionalClaim`, which carries both the `InstitutionalClaim::Accusation` and the `InstitutionalKnowledgeSource::RecordConsultation` needed to identify the issuing crime register and office through the belief-view boundary.
 
 ## Architecture Check
 
@@ -38,17 +39,17 @@ S125 Deliverable D6 mandates a `GoalBeliefView` accessor that returns whether th
 
 ### 1. New trait method on `GoalBeliefView`
 
-Add to `crates/worldwake-sim/src/belief_view.rs:263`:
+Added to `crates/worldwake-sim/src/belief_view.rs`:
 
 ```rust
 fn actor_lawful_reward_source_for_case(
     &self,
     actor: EntityId,
-    accusation: &AccusationCase,
+    accusation: &BelievedInstitutionalClaim,
 ) -> Option<RewardSource>;
 ```
 
-(Verify the exact `AccusationCase` parameter type during implementation by reading how `known_institutional_beliefs` and `emit_bounty_posting_candidates` currently express the case.)
+The live parameter is `BelievedInstitutionalClaim`, not the draft `AccusationCase` name.
 
 ### 2. `RuntimeBeliefView` implementation
 
@@ -60,7 +61,23 @@ In `crates/worldwake-sim/src/belief_view.rs:1199`'s impl block, implement the ac
 
 ### 3. Macro forwarding
 
-Forward through `impl_goal_belief_view!` blanket impl so any composing wrapper inherits the new method.
+Forwarded through the existing blanket `GoalBeliefView for T` implementation. No `impl_goal_belief_view!` macro exists in the live file.
+
+## Implementation Outcome
+
+1. `GoalBeliefView::actor_lawful_reward_source_for_case` now returns `Some(RewardSource::InstitutionalTreasury { treasury_entity: office })` only when the actor has a belief-backed office-holder relation, belief-backed jurisdiction over the accused, is at the office seat, and has positive locally controlled unencumbered `Coin`.
+2. `PoliticalBeliefView::visible_reward_encumbrance` is role-gated in `PerAgentBeliefView`, so active reservations are only exposed to the actor through the believed office-holder role.
+3. Ticket 006 remains the consumer ticket; `candidate_generation.rs` still hard-codes the source until that follow-up is implemented.
+4. Post-review correction: the accessor checks the bounty reward commodity (`Coin`) for both treasury balance and active reservations, independent of the theft commodity in the accusation.
+
+## Verification Result
+
+Passed on 2026-04-25:
+
+1. `cargo test -p worldwake-sim accessor_returns_ --lib`
+2. `cargo test -p worldwake-sim`
+3. `cargo clippy -p worldwake-sim --all-targets -- -D warnings`
+4. `cargo test --workspace --no-run`
 
 ## Files to Touch
 
@@ -99,3 +116,18 @@ Forward through `impl_goal_belief_view!` blanket impl so any composing wrapper i
 1. `cargo test -p worldwake-sim`
 2. `cargo clippy -p worldwake-sim --all-targets -- -D warnings`
 3. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+Implemented `GoalBeliefView::actor_lawful_reward_source_for_case` and the `RuntimeBeliefView` forwarding surface for institutional bounty funding. The accessor now requires belief-backed office-holder authority, belief-backed jurisdiction, co-location at the office seat, visible unencumbered office-controlled `Coin`, and role-gated visibility into active `RewardEncumbrance` reservations.
+
+Deviations from the draft: the live code had no `AccusationCase` type, so the accessor accepts `&BelievedInstitutionalClaim`; no `impl_goal_belief_view!` macro exists, so forwarding was added through the live blanket implementation. A post-review fix corrected the funding commodity from `theft.commodity` to the bounty reward commodity (`Coin`), with regression tests for non-Coin theft funded by Coin and non-Coin-only treasury rejection.
+
+Verification passed on 2026-04-25:
+
+1. `cargo test -p worldwake-sim accessor_returns_ --lib`
+2. `cargo test -p worldwake-sim`
+3. `cargo clippy -p worldwake-sim --all-targets -- -D warnings`
+4. `cargo test --workspace --no-run`

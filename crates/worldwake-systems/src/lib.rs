@@ -35,6 +35,7 @@ pub mod perception;
 pub mod production;
 pub mod production_actions;
 pub mod report_actions;
+mod reward_encumbrance_support;
 pub mod search_actions;
 pub mod stock_actions;
 pub mod tell_actions;
