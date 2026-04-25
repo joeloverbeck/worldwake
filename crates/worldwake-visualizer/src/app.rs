@@ -52,7 +52,7 @@ pub struct VisualizerApp {
     tick_carry: f32,
     selected_agent: Option<EntityId>,
     hovered_agent: Option<EntityId>,
-    ui_settings: UiSettings,
+    canvas_scene_rect: egui::Rect,
     reset_confirmation_open: bool,
     toast: Option<String>,
 }
@@ -85,19 +85,6 @@ impl TicksPerSecond {
 impl Default for TicksPerSecond {
     fn default() -> Self {
         Self(Self::DEFAULT)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct UiSettings {
-    show_canvas_placeholder: bool,
-}
-
-impl Default for UiSettings {
-    fn default() -> Self {
-        Self {
-            show_canvas_placeholder: true,
-        }
     }
 }
 
@@ -137,7 +124,10 @@ impl VisualizerApp {
             tick_carry: 0.0,
             selected_agent: None,
             hovered_agent: None,
-            ui_settings: UiSettings::default(),
+            canvas_scene_rect: egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::splat(1_100.0),
+            ),
             reset_confirmation_open: false,
             toast: None,
         }
@@ -222,6 +212,8 @@ impl VisualizerApp {
         self.tick_carry = 0.0;
         self.selected_agent = None;
         self.hovered_agent = None;
+        self.canvas_scene_rect =
+            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(1_100.0));
         self.toast = None;
         Ok(())
     }
@@ -350,7 +342,7 @@ impl VisualizerApp {
         }
     }
 
-    fn draw_body(&self, ui: &mut egui::Ui) {
+    fn draw_body(&mut self, ui: &mut egui::Ui) {
         if let Some(message) = &self.toast {
             ui.colored_label(egui::Color32::from_rgb(220, 90, 70), message);
         }
@@ -362,27 +354,14 @@ impl VisualizerApp {
             return;
         };
 
-        let _staged_runtime = (
-            &self.decision_trace,
-            self.selected_agent,
-            self.hovered_agent,
+        let _staged_runtime = &self.decision_trace;
+        crate::canvas::draw_canvas(
+            ui,
+            &snapshot,
+            &mut self.canvas_scene_rect,
+            &mut self.selected_agent,
+            &mut self.hovered_agent,
         );
-
-        if self.ui_settings.show_canvas_placeholder {
-            egui::Frame::group(ui.style()).show(ui, |ui| {
-                ui.set_min_height(420.0);
-                ui.vertical_centered(|ui| {
-                    ui.heading("Canvas placeholder");
-                    ui.label(format!(
-                        "{} places, {} edges, {} agents at tick {}",
-                        snapshot.places.len(),
-                        snapshot.edges.len(),
-                        snapshot.agents.len(),
-                        snapshot.tick.0
-                    ));
-                });
-            });
-        }
     }
 }
 

@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: T01DEBVIS-005, T01DEBVIS-006, T01DEBVIS-007, T01DEBVIS-008, T01DEBVIS-009
+**Deps**: [T01DEBVIS-005](../archive/tickets/T01DEBVIS-005.md), T01DEBVIS-006, T01DEBVIS-007, T01DEBVIS-008, T01DEBVIS-009
 
 ## Problem
 
@@ -14,7 +14,7 @@ The visualizer has no automated golden coverage by design (spec T01 Non-Goals: "
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. The README.md stub created by T01DEBVIS-001 is a single-paragraph placeholder; this ticket replaces it with the full QA checklist content from spec §D13.
+1. T01DEBVIS-005 replaced the original single-paragraph README stub with an interim canvas/manual-QA section. This ticket still owns replacing that partial checklist with the full 13-step QA checklist content from spec §D13.
 2. `scenarios/` is the canonical scenario directory at the workspace root. Reassessment 2026-04-25 confirmed the directory exists and contains the survival-* family used by current goldens.
 3. Tooling-only documentation ticket — no engine changes, no widget code changes.
 
@@ -31,9 +31,9 @@ The visualizer has no automated golden coverage by design (spec T01 Non-Goals: "
 
 ## What to Change
 
-### 1. Replace `README.md` stub with full QA checklist
+### 1. Replace the interim `README.md` with full QA checklist
 
-Modify `crates/worldwake-visualizer/README.md` — write the 13-item checklist from spec T01 §D13 verbatim:
+Modify `crates/worldwake-visualizer/README.md` — replace the interim canvas/manual-QA notes from T01DEBVIS-005 with the 13-item checklist from spec T01 §D13 verbatim:
 
 1. `cargo run -p worldwake-visualizer -- scenarios/<name>.ron` opens window within 2s.
 2. `cargo run -p worldwake-visualizer -- --help` prints clap-derived usage and exits.

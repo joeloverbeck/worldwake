@@ -261,8 +261,9 @@ fn step_one_tick(&mut self) {
 ### 4. Canvas Rendering
 
 All canvas drawing uses `egui::Painter` primitives inside an
-`egui::Scene::new("canvas", scene_rect)` container (built-in pan/zoom,
-introduced in egui 0.31):
+`egui::Scene::new().show(ui, &mut scene_rect, ...)` container (built-in
+pan/zoom on the pinned egui 0.34 API). The mutable `scene_rect` lives in
+visualizer app state so pan/zoom persists across frames:
 
 - **Places**: `Shape::Rect` with 8px rounded corners, stroke width 1.5,
   stroke color derived from dominant `PlaceTag`, fill `Color32::from_rgb(36,

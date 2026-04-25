@@ -250,6 +250,7 @@ If the live emitter, runtime mutation seam, and focused verification harness alr
 When the live proof seam or owned implementation boundary differs from the ticket's drafted sketch, record the exact landed seam in the ticket closeout instead of preserving the drafted shape in prose. Small/local tickets often land through a private extracted helper or a narrower same-file formatter/test seam even when the draft described a more direct in-place edit.
 Before implementation scope is final, compare `Verification Layers`, `Acceptance Criteria`, and drafted `New/Modified Tests` for one-to-one proof coverage. If the ticket names an invariant that requires its own focused proof but the drafted tests do not include it, correct the ticket/test plan up front instead of discovering the missing proof only during closeout.
 When a small/local ticket creates a user-facing UI or visualizer shell, keep the staged shell operational and avoid visible in-app text that explains implementation staging, future tickets, or debugging internals. Put staging boundaries and deferred controls in ticket/spec closeout instead; the app surface should show only user-meaningful state and controls for the slice that actually landed.
+When a small/local UI, visualizer, or tooling ticket makes a previously staged surface live, sweep the crate-local `README.md`, manual QA checklist, and nearby user-facing docs before closeout. Remove stale “empty shell”, “placeholder”, or future-tense wording that now conflicts with the implemented tool, and record any README/manual-QA refresh in the active ticket's landed file surface.
 
 For doc-only or compile-time regression tickets, use the compact checklist in `references/scope-extraction.md`.
 
@@ -348,6 +349,8 @@ When a ticket owns golden inventory regeneration, expect broad generated-doc fal
 #### Manual probes and temporary scaffolding
 
 When a ticket's manual smoke needs synthetic authored input, prefer a disposable repo-local temp file or another cleanup-safe local fixture path over ad hoc external temp locations. Record the exact command/output honestly in the ticket closeout, then remove the temporary file before finalizing the session.
+
+When a ticket requires an interactive GUI or other manual smoke that cannot be honestly run in the current environment, do not mark it as passed. Run the strongest automated seam available instead, record the skipped manual command and environment reason in `Deviations` or `Verification Result`, and make sure any README/manual-QA checklist still tells a human how to perform the deferred check.
 
 When a manual probe temporarily dirties a tracked file to prove a generator, report, or drift-check failure mode, prefer a temp backup/restore or another non-destructive restoration path over drafted cleanup like `git checkout -- ...` unless the worktree has first been confirmed clean and that destructive restore is itself the honest contract under test.
 

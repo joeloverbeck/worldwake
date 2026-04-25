@@ -1,10 +1,10 @@
 # T01DEBVIS-005: Canvas rendering
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-001](../archive/tickets/T01DEBVIS-001.md), [T01DEBVIS-002](../archive/tickets/T01DEBVIS-002.md), [T01DEBVIS-003](../archive/tickets/T01DEBVIS-003.md), [T01DEBVIS-004](../archive/tickets/T01DEBVIS-004.md)
+**Deps**: [T01DEBVIS-001](T01DEBVIS-001.md), [T01DEBVIS-002](T01DEBVIS-002.md), [T01DEBVIS-003](T01DEBVIS-003.md), [T01DEBVIS-004](T01DEBVIS-004.md)
 
 ## Problem
 
@@ -17,6 +17,10 @@ With the simulation host (T01DEBVIS-004), force-directed layout (T01DEBVIS-002),
 1. `PlaceTag` at `crates/worldwake-core/src/topology.rs:11` is a closed 14-variant enum (not `#[non_exhaustive]`). Reassessment 2026-04-25 confirmed: every variant must have an explicit color/style mapping; adding a new variant fails compilation at the rendering match site, which is the desired behavior.
 2. `egui::Scene::new(id, scene_rect)` was introduced in egui 0.31 and is reachable on the pinned `egui = 0.34` per spec T01 §D1. Implementation must verify reachability before relying on it; T01DEBVIS-010 includes a manual QA checklist item that confirms pan + zoom work end-to-end. If `Scene` is unavailable, fall back to a hand-rolled pan/zoom container as named in spec T01 §D13 step 5.
 3. Tooling-only ticket — canvas reads from `FrameSnapshot` (a derived view per FND-27) and writes nothing back. No engine surface is mutated.
+
+### Reassessment Update (2026-04-25)
+
+The resolved `egui = 0.34.1` API exposes `egui::Scene::new().show(ui, &mut scene_rect, ...)`, not the drafted `Scene::new(id, scene_rect)` constructor form. Implementation therefore stores the mutable scene rectangle on `VisualizerApp` and threads it into the canvas draw routine so pan/zoom state persists across frames.
 
 ## Architecture Check
 
@@ -40,7 +44,7 @@ Create `crates/worldwake-visualizer/src/canvas.rs` with the public draw routine:
 pub fn draw_canvas(
     ui: &mut egui::Ui,
     snapshot: &FrameSnapshot,
-    scene_rect: egui::Rect,
+    scene_rect: &mut egui::Rect,
     selected_agent: &mut Option<EntityId>,
     hovered_agent: &mut Option<EntityId>,
 );
@@ -77,6 +81,7 @@ Add `pub mod canvas;` to `crates/worldwake-visualizer/src/lib.rs`.
 - `crates/worldwake-visualizer/src/canvas.rs` (new)
 - `crates/worldwake-visualizer/src/app.rs` (modify — replace placeholder canvas with `canvas::draw_canvas` call)
 - `crates/worldwake-visualizer/src/lib.rs` (modify — add `canvas` module declaration)
+- `crates/worldwake-visualizer/README.md` (modify — refresh manual QA notes now that the canvas is live)
 
 ## Out of Scope
 
@@ -112,3 +117,27 @@ Add `pub mod canvas;` to `crates/worldwake-visualizer/src/lib.rs`.
 2. `cargo test -p worldwake-visualizer`
 3. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual smoke)
 4. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added `canvas.rs` with egui `Scene` rendering for dashed travel edges, tick labels, rounded place nodes, tag pills, deterministic agent fan-out, transit interpolation, directional chevrons, dead-agent striping, and click/hover hit testing over `FrameSnapshot`.
+- Replaced the placeholder body in `VisualizerApp` with the live canvas and stored a persistent `canvas_scene_rect` so egui pan/zoom state survives across frames and scenario reloads reset cleanly.
+- Added focused canvas tests for baseline headless drawing and BTreeMap-stable fan-out angle ordering.
+- Refreshed the visualizer README manual QA notes to describe the now-live canvas instead of the earlier empty shell.
+
+## Deviations
+
+- The pinned `egui = 0.34.1` API uses `egui::Scene::new().show(ui, &mut scene_rect, ...)`, so the final draw signature takes `&mut egui::Rect` rather than the drafted by-value `egui::Rect`.
+- The interactive GUI smoke command was not run in this headless agent session; the same scenario-backed draw path is covered by `canvas_smoke_no_panic_on_baseline_scenario`, and full manual canvas QA remains documented in the README/T01 checklist.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-visualizer --lib -- --list`
+- Passed `cargo test -p worldwake-visualizer --lib canvas::tests::canvas_smoke_no_panic_on_baseline_scenario -- --exact`
+- Passed `cargo test -p worldwake-visualizer --lib canvas::tests::agent_fan_out_angles_are_btreemap_stable -- --exact`
+- Passed `cargo test -p worldwake-visualizer canvas::`
+- Passed `cargo test -p worldwake-visualizer`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `./scripts/verify.sh` (`cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo run -p worldwake-cli --bin scenario-coverage -- --check`)
