@@ -315,7 +315,7 @@ struct AgentView {
     position: AgentPosition,
     alive: bool,
     active_action: Option<ActiveActionView>,
-    active_goal: Option<ActiveGoalView>,
+    active_goal: Option<CommittedGoalView>,
     needs: HomeostaticNeeds,
     drive_thresholds: DriveThresholds,
 }
@@ -579,8 +579,8 @@ Top-bar layout: `[Scenario name] [Tick: 247] [⏸/▶] [⏭ Step] [🔄 Reset] [
   (new fingerprint).
 - **Transit-progress division by zero**: `arrival_tick == departure_tick`
   implies zero-duration travel; the snapshot builder treats this as
-  `progress = Permille::MAX` (the agent has already arrived); defensive
-  clamp prevents NaN.
+  `progress = Permille::new_unchecked(1000)` (the agent has already
+  arrived); defensive clamp prevents NaN.
 - **Max-speed frame budget**: at `speed = 50.0`, ~50 ticks/sec requested. At
   60fps, that's ~0.83 ticks/frame, well below the
   `MAX_TICKS_PER_FRAME = 100` cap. Cap only kicks in under severe frame

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: T01DEBVIS-001
+**Deps**: [T01DEBVIS-001](../archive/tickets/T01DEBVIS-001.md)
 
 ## Problem
 

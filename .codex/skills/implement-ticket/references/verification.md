@@ -23,6 +23,7 @@ How to verify implementation at the right boundary (Step 6).
 - When a broader verification command is intentionally waived after user direction, record the exact completed command set plus the waived command in the ticket `Outcome`.
 - Remove temporary debug or trace scaffolding before final verification unless the ticket explicitly owns keeping that instrumentation. After cleanup, rerun the narrowest affected proof.
 - When a newly added ignored traceability or golden reproducer exists only to expose the pre-fix contradiction, remove or rewrite it before closeout if the shipped fix changes the live trace shape and the reproducer is no longer a stable contract test.
+- For crate-local Rust unit tests that load repo-root fixtures such as `scenarios/`, `docs/`, or generated artifacts, do not rely on the test process working directory. Use an existing repo path helper or derive the workspace path from `env!("CARGO_MANIFEST_DIR")` before opening the fixture.
 - After changing code post-verification, rerun narrowest affected tests and any stale broader commands.
 - When CI/clippy forces a signature reshape, sweep all call sites before the next verification pass.
 - When CI/compile fallout follows a shared context-field change, sweep manual struct literals as well as direct function call sites.
