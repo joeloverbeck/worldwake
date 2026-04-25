@@ -6,6 +6,7 @@ members = [
     "crates/worldwake-systems",
     "crates/worldwake-ai",
     "crates/worldwake-cli",
+    "crates/worldwake-visualizer",
 ]
 
 [workspace.lints.rust]

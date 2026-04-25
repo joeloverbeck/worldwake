@@ -113,7 +113,7 @@ worldwake-cli = { path = "../worldwake-cli" }
 eframe = { version = "0.34", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 egui = "0.34"
 rand_chacha = "0.3"
-rfd = { version = "0.14", default-features = false, features = ["xdg-portal"] }
+rfd = { version = "0.14", default-features = false, features = ["xdg-portal", "tokio"] }
 clap = { version = "4", features = ["derive"] }
 ```
 
@@ -134,7 +134,7 @@ members = [
 
 ```rust
 // crates/worldwake-visualizer/src/main.rs
-fn main() -> eframe::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = VisualizerCli::parse();
     let app = VisualizerApp::new(cli)?;
     let options = eframe::NativeOptions {
@@ -147,7 +147,8 @@ fn main() -> eframe::Result<()> {
         "worldwake-visualizer",
         options,
         Box::new(|_cc| Ok(Box::new(app))),
-    )
+    )?;
+    Ok(())
 }
 ```
 

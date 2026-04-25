@@ -1,6 +1,6 @@
 # T01DEBVIS-001: Crate skeleton + workspace registration + entry point
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None
@@ -17,6 +17,7 @@ T01 (debug visualizer) ships as a brand-new workspace crate `worldwake-visualize
 1. Workspace `Cargo.toml` currently lists 5 members at `/Cargo.toml:3`: `worldwake-core`, `worldwake-sim`, `worldwake-systems`, `worldwake-ai`, `worldwake-cli`. No existing `worldwake-visualizer` directory or member entry — this ticket adds both.
 2. `worldwake_cli::scenario::load_scenario_file` and `spawn_scenario` / `spawn_scenario_ignoring_lints` exist as `pub` at `crates/worldwake-cli/src/scenario/mod.rs:111,125,134`. Spec T01 §D1 names these as the loader pair the visualizer reuses; reassessment 2026-04-25 confirmed both are still public.
 3. Tooling-only ticket — no shared abstraction boundary or simulation data contract is under audit. The ticket adds a new binary crate that is a read-only client of existing public APIs.
+4. Reassessment during implementation corrected two live API/dependency details: `rfd` 0.14 with `xdg-portal` also requires an async runtime feature, so the crate/spec now include `tokio`; eframe 0.34.1 implements the app paint hook as `App::ui(...)`, so the placeholder shell uses that live trait method rather than a deprecated `update(...)` implementation.
 
 ## Architecture Check
 
@@ -48,7 +49,7 @@ worldwake-cli = { path = "../worldwake-cli" }
 eframe = { version = "0.34", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 egui = "0.34"
 rand_chacha = "0.3"
-rfd = { version = "0.14", default-features = false, features = ["xdg-portal"] }
+rfd = { version = "0.14", default-features = false, features = ["xdg-portal", "tokio"] }
 clap = { version = "4", features = ["derive"] }
 ```
 
@@ -60,7 +61,7 @@ Modify `Cargo.toml` (workspace root) to add `crates/worldwake-visualizer` to the
 
 `crates/worldwake-visualizer/src/main.rs` — `VisualizerCli` (clap-derived: optional positional `scenario: PathBuf`, flag `--ignore-lints: bool`), `eframe::run_native` boilerplate per spec T01 §D2.
 
-`crates/worldwake-visualizer/src/app.rs` — `VisualizerApp` shell with the persistent fields named by spec T01 §D3 (`sim: Option<SimulationState>`, `action_registries`, `dispatch_table`, `driver: AgentTickDriver`, `scenario_path: Option<PathBuf>`, trace sinks as default-constructed placeholders, `play_state`, `speed`, `tick_carry`, `selected_agent`, `hovered_agent`). `new(cli: VisualizerCli)` loads the scenario via `load_scenario_file` + the lint-conditional spawn pair. `update()` is a placeholder that draws an empty-state panel ("Load scenario…" if no scenario was provided) — full update logic lands in T01DEBVIS-004. `step_one_tick()` is unimplemented in this ticket (stub).
+`crates/worldwake-visualizer/src/app.rs` — `VisualizerApp` shell with the persistent fields named by spec T01 §D3 (`sim: Option<SimulationState>`, `action_registries`, `dispatch_table`, `driver: AgentTickDriver`, `scenario_path: Option<PathBuf>`, trace sinks as default-constructed placeholders, `play_state`, `speed`, `tick_carry`, `selected_agent`, `hovered_agent`). `new(cli: VisualizerCli)` loads the scenario via `load_scenario_file` + the lint-conditional spawn pair. The eframe 0.34.1 `ui()` hook is a placeholder that draws an empty-state panel ("Load scenario..." if no scenario was provided) — full update logic lands in T01DEBVIS-004. `step_one_tick()` is unimplemented in this ticket (stub).
 
 ### 4. Placeholder README and lib.rs
 
@@ -81,7 +82,7 @@ Modify `Cargo.toml` (workspace root) to add `crates/worldwake-visualizer` to the
 
 - Force-directed layout (T01DEBVIS-002).
 - Frame snapshot construction (T01DEBVIS-003).
-- Per-tick step routine, full `update()` logic, and step controls (T01DEBVIS-004) — the `VisualizerApp` shell here has stub `step_one_tick` and a placeholder `update()`; both are replaced by T01DEBVIS-004.
+- Per-tick step routine, full app-loop logic, and step controls (T01DEBVIS-004) — the `VisualizerApp` shell here has stub `step_one_tick` and a placeholder `ui()`; both are replaced by T01DEBVIS-004.
 - Canvas rendering (T01DEBVIS-005).
 - Tooltip, modal, tabs, trace ring buffers (T01DEBVIS-006 through -009).
 - Manual QA checklist content in README.md (T01DEBVIS-010).
@@ -112,3 +113,26 @@ Modify `Cargo.toml` (workspace root) to add `crates/worldwake-visualizer` to the
 2. `cargo build -p worldwake-visualizer`
 3. `cargo run -p worldwake-visualizer -- --help`
 4. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added `crates/worldwake-visualizer` as a workspace member with `Cargo.toml`, README stub, shared `lib.rs`, CLI entry point, and an `eframe` app shell.
+- `VisualizerCli` supports optional `scenario` and `--ignore-lints`; startup scenario loading reuses `load_scenario_file` plus the existing lint-conditional `spawn_scenario` / `spawn_scenario_ignoring_lints` pair.
+- `VisualizerApp` owns the staged simulation/runtime fields and default trace sinks but does not step or mutate engine state in this ticket.
+- Synced the active T01 spec and ticket dependency snippet to the live `rfd` feature requirement.
+
+## Deviations
+
+- `rfd = { version = "0.14", default-features = false, features = ["xdg-portal"] }` failed to compile because `rfd` 0.14.1 requires either `tokio` or `async-std` when `xdg-portal` is enabled. The landed dependency uses `features = ["xdg-portal", "tokio"]`.
+- The app shell implements eframe 0.34.1's required `App::ui(...)` hook instead of the drafted/deprecated `update(...)` hook.
+- `VisualizerCli` lives in the library `app` module so both the binary and future tests can share the CLI/app construction types.
+
+## Verification Result
+
+- Passed `cargo check -p worldwake-visualizer`.
+- Passed `cargo build -p worldwake-visualizer`.
+- Passed `cargo run -p worldwake-visualizer -- --help`; output included `Usage: worldwake-visualizer [OPTIONS] [SCENARIO]` and `--ignore-lints`.
+- Passed `cargo test --workspace`.
+- Passed `./scripts/verify.sh`, including `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
