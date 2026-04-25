@@ -138,14 +138,16 @@ Run these checks before archival to keep the active roadmap accurate:
 When a new ticket is warranted:
 1. Create from [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) per [tickets/README.md](../../../tickets/README.md).
 2. Before drafting a new ticket, inspect adjacent active tickets in the same family plus nearby active specs to confirm the concern is not already owned. If a sibling already covers the exact remainder, cite or factually update it instead of duplicating the ticket.
-3. If the new ticket is being exposed by a narrowed implementation or roadmap gap, inspect adjacent active tickets/specs first so the new ticket and any dependency updates are authored together.
+3. For numbered ticket families, scan both `tickets/` and `archive/tickets/` before choosing the new ticket ID. Use the next non-colliding append-only ID across both locations.
+4. If the new ticket is being exposed by a narrowed implementation or roadmap gap, inspect adjacent active tickets/specs first so the new ticket and any dependency updates are authored together.
    If a new active spec was authored or updated earlier in the same session and it already owns the architectural redesign, either:
    - create the first bounded implementation ticket explicitly as "derived from <spec>", with `Deps` pointing at that spec, or
    - stop at citing the spec and recommend decomposition first when ownership would otherwise be ambiguous.
-4. Reassess against current code and docs before finalizing.
-5. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
-6. Keep bounded to one coherent concern.
-7. After creating a new ticket, verify it with a direct file read and `git status --short`; plain `git diff` and `git diff --stat` do not show untracked ticket contents.
+5. Reassess against current code and docs before finalizing.
+6. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
+7. Keep bounded to one coherent concern.
+8. After creating a new ticket, verify it with a direct file read and `git status --short`; plain `git diff` and `git diff --stat` do not show untracked ticket contents.
+9. For markdown-only review edits, run `git diff --check -- <review-edited-files>` before reporting.
 
 Set fields using evidence, not placeholders:
 - `Priority`: infer from impact and blast radius

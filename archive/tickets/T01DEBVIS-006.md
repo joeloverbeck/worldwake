@@ -1,10 +1,10 @@
 # T01DEBVIS-006: Tooltip + need_bar widget
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-005](../archive/tickets/T01DEBVIS-005.md)
+**Deps**: [T01DEBVIS-005](T01DEBVIS-005.md)
 
 ## Problem
 
@@ -15,8 +15,8 @@ Hovering an agent on the canvas should reveal a compact ~240px tooltip with name
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `DriveThresholds` at `crates/worldwake-core/src/drives.rs:58` exposes per-need `ThresholdBand` with `low()`, `medium()`, `high()`, `critical()` accessors validated at construction (low < medium < high < critical). Reassessment 2026-04-25 confirmed the zone order matches spec §D6.
-2. `HomeostaticNeeds` at `crates/worldwake-core/src/needs.rs:9` carries `hunger / thirst / fatigue / bladder / dirtiness` as `Permille`. `Pain` and `Danger` are present in `DriveThresholds` but only rendered when their values are non-zero per §D6.
-3. `FrameSnapshot.agents[id]` already carries `needs: HomeostaticNeeds` and `drive_thresholds: DriveThresholds` per T01DEBVIS-003 — the tooltip reads from the snapshot, not directly from `World`.
+2. `HomeostaticNeeds` at `crates/worldwake-core/src/needs.rs:9` carries `hunger / thirst / fatigue / bladder / dirtiness` as `Permille`. `Pain` and `Danger` threshold bands exist on `DriveThresholds`, but `FrameSnapshot::AgentView` does not yet carry derived pain/danger pressure values. This ticket therefore renders the five embodied needs; derived pressure rows are deferred to [T01DEBVIS-011](../../tickets/T01DEBVIS-011.md).
+3. `FrameSnapshot.agents[id]` already carries `needs: HomeostaticNeeds` and `drive_thresholds: DriveThresholds` per T01DEBVIS-003 — the tooltip reads from the snapshot, not directly from `World`. The tooltip helper also receives the `FrameSnapshot` so it can resolve place names from `AgentPosition` IDs without widening `AgentView`.
 4. Tooling-only ticket — UI widget; no engine state, no shared abstraction boundary.
 
 ## Architecture Check
@@ -48,17 +48,17 @@ Create `crates/worldwake-visualizer/src/need_bar.rs`:
 
 Create `crates/worldwake-visualizer/src/tooltip.rs`:
 
-- `pub fn show_tooltip(ui: &mut egui::Ui, agent: &AgentView)` invoked from `on_hover_ui` registered on each agent's hit-rect in `canvas.rs`.
+- `pub fn show_tooltip(ui: &mut egui::Ui, snapshot: &FrameSnapshot, agent: &AgentView)` invoked from `on_hover_ui` registered on each agent's hit-rect in `canvas.rs`.
 - Layout per spec §D6:
   - Row 1: bold name · control-source badge · alive/dead glyph.
   - Row 2: location string (`"@ {place_name}"` or `"→ {dest_name} ({k}/{n})"`).
-  - Row 3: active action (`"travel [k/n]"` / `"{action_name}"` / `"—"`).
+  - Row 3: active action (`"travel [k/n]"` / `"{action_def_id}"` / `"—"`). The live snapshot carries `ActionDefId`, not an action-definition display name.
   - Row 4: active goal (`{goal_kind}` debug-name · `motive_score` from `AgendaState.committed`, or `"no goal"`).
-  - Need bars: vertical stack — Hunger, Thirst, Fatigue, Bladder, Dirtiness, plus Pain and Danger only when non-zero.
+  - Need bars: vertical stack — Hunger, Thirst, Fatigue, Bladder, Dirtiness. Pain and Danger pressure rows are deferred until those derived values are present in `AgentView`.
 
 ### 3. Wire tooltip into `canvas.rs`
 
-Modify `crates/worldwake-visualizer/src/canvas.rs` from T01DEBVIS-005 — wrap each agent's hit-rect with `.on_hover_ui(|ui| tooltip::show_tooltip(ui, &agent_view))`.
+Modify `crates/worldwake-visualizer/src/canvas.rs` from T01DEBVIS-005 — wrap each agent's hit-rect with `.on_hover_ui(|ui| tooltip::show_tooltip(ui, snapshot, agent))`.
 
 ### 4. Wire modules into lib.rs
 
@@ -76,6 +76,7 @@ Add `pub mod need_bar;` and `pub mod tooltip;` to `crates/worldwake-visualizer/s
 - Detail modal Needs tab (T01DEBVIS-007 — reuses the `need_bar` widget at full width).
 - Other modal tabs (T01DEBVIS-007, -008, -009).
 - Search/filter on tooltip content.
+- Derived Pain/Danger pressure rows; this ticket lands only the values currently carried by `HomeostaticNeeds`. Follow-up: [T01DEBVIS-011](../../tickets/T01DEBVIS-011.md).
 
 ## Acceptance Criteria
 
@@ -98,7 +99,31 @@ Add `pub mod need_bar;` and `pub mod tooltip;` to `crates/worldwake-visualizer/s
 
 ### Commands
 
-1. `cargo test -p worldwake-visualizer need_bar::`
+1. `cargo test -p worldwake-visualizer --lib need_bar::tests::need_bar_zone_classification -- --exact`
 2. `cargo test -p worldwake-visualizer`
 3. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual hover smoke)
 4. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added `crates/worldwake-visualizer/src/need_bar.rs` with the reusable bar widget, deterministic `classify_zone`, threshold tick marks, numeric value rendering, and critical-zone pulse outline.
+- Added `crates/worldwake-visualizer/src/tooltip.rs` with the compact hover tooltip for name/control/alive state, location/transit, active action, active goal, and five core need bars.
+- Wired canvas agent hit-rects to `egui::Response::on_hover_ui` and exported the new modules from `lib.rs`.
+
+## Deviations
+
+- The live `AgentView` carries `ActionDefId`, not an action-definition display name, so non-travel active actions render by ID.
+- The live `AgentView` carries `HomeostaticNeeds` but not derived pain/danger pressure values, so this ticket renders the five embodied needs only and leaves Pain/Danger rows to [T01DEBVIS-011](../../tickets/T01DEBVIS-011.md).
+- The manual GUI hover smoke was not run in this headless session; automated tooltip/widget smoke tests and full verify passed.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-visualizer --lib -- --list` to resolve exact selectors.
+- Passed `cargo test -p worldwake-visualizer --lib need_bar::tests::need_bar_zone_classification -- --exact`.
+- Passed `cargo test -p worldwake-visualizer`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh` before the final ASCII-only tooltip separator cleanup.
+- Passed final post-cleanup `cargo test -p worldwake-visualizer`.
+- Passed final post-cleanup `cargo clippy --workspace --all-targets -- -D warnings`.

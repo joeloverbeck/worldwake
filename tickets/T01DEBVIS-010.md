@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-005](../archive/tickets/T01DEBVIS-005.md), T01DEBVIS-006, T01DEBVIS-007, T01DEBVIS-008, T01DEBVIS-009
+**Deps**: [T01DEBVIS-005](../archive/tickets/T01DEBVIS-005.md), [T01DEBVIS-006](../archive/tickets/T01DEBVIS-006.md), T01DEBVIS-007, T01DEBVIS-008, T01DEBVIS-009, T01DEBVIS-011
 
 ## Problem
 
@@ -43,7 +43,7 @@ Modify `crates/worldwake-visualizer/README.md` — replace the interim canvas/ma
 6. Space advances exactly one tick (tick counter in header increments by 1).
 7. Play + speed slider: tick counter advances at approximately the configured rate.
 8. Reset returns tick to 0 and places agents at their initial locations.
-9. Hover agent → tooltip with zone-colored need bars; bars match numeric values.
+9. Hover agent → tooltip with zone-colored need bars, including Pain/Danger when non-zero; bars match numeric values.
 10. Click agent → modal opens; all 6 tabs render without panic.
 11. Traces tab populates with entries after several ticks.
 12. Beliefs tab shows entries from `AgentBeliefStore`, `LastSeenMemory`, `ExpectationStore`, and `SourceReliability` after the agent has observed something.
@@ -53,7 +53,7 @@ Add a "How to run" section with the standard cargo invocations and a "Known scen
 
 ### 2. Run the QA pass on landed scenarios
 
-For each `.ron` file in `scenarios/`, run the 13-step checklist and record pass/fail in the ticket's verification notes (the user's review surface — not committed to the repo). Any failure is a follow-up bug report against the responsible ticket (T01DEBVIS-001 through -009).
+For each `.ron` file in `scenarios/`, run the 13-step checklist and record pass/fail in the ticket's verification notes (the user's review surface — not committed to the repo). Any failure is a follow-up bug report against the responsible ticket (T01DEBVIS-001 through -011).
 
 ### 3. Add screenshots placeholder
 

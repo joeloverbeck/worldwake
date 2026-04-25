@@ -64,6 +64,8 @@ Pick the closest ticket shape before Step 1, then follow the matching quick path
 - canonical writer / allocator integrity
 - all other full-workflow work
 
+For tickets that clearly fit the small/local fast path, the fast-path instructions in `references/ticket-classification.md` are sufficient for the Step 2, Step 6, and Step 7 reference-loading requirements unless reassessment exposes ambiguity, mismatch, broader fallout, or verification uncertainty. In that case, load the specific deeper reference named by the workflow section that now applies. Do not force the full reassessment, verification, and closeout reference set for genuinely local work when the ticket, cited docs/specs, owned symbols, focused proof, affected crate tests, and required lint/script gates already cover the live boundary.
+
 ### 1. Load the ticket context
 
 1. Read the target ticket file.

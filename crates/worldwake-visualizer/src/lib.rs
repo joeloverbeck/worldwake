@@ -2,4 +2,6 @@ pub mod app;
 pub mod canvas;
 pub mod controls;
 pub mod layout;
+pub mod need_bar;
 pub mod snapshot;
+pub mod tooltip;

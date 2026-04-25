@@ -6,6 +6,7 @@ use egui::{
 use worldwake_core::{ControlSource, EntityId, Permille, PlaceTag};
 
 use crate::snapshot::{AgentPosition, AgentView, FrameSnapshot};
+use crate::tooltip;
 
 const PLACE_SIZE: Vec2 = Vec2::new(150.0, 78.0);
 const PLACE_RADIUS: u8 = 8;
@@ -188,7 +189,9 @@ fn draw_agents(
         );
 
         let hit_rect = Rect::from_center_size(position, Vec2::splat(AGENT_HIT_RADIUS * 2.0));
-        let response = ui.interact(hit_rect, ui.id().with(agent_id), Sense::click());
+        let response = ui
+            .interact(hit_rect, ui.id().with(agent_id), Sense::click())
+            .on_hover_ui(|ui| tooltip::show_tooltip(ui, snapshot, agent));
         if response.hovered() {
             *hovered_agent = Some(agent_id);
         }
