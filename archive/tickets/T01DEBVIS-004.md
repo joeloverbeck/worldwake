@@ -1,10 +1,10 @@
 # T01DEBVIS-004: VisualizerApp host + step controls + scenario reload
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-001](../archive/tickets/T01DEBVIS-001.md)
+**Deps**: [T01DEBVIS-001](T01DEBVIS-001.md)
 
 ## Problem
 
@@ -32,7 +32,8 @@ The shell from T01DEBVIS-001 opens a window but does not advance the simulation.
 
 1. Per-tick step correctness → focused runtime test (`step_one_tick_advances_scheduler_tick`) loading `survival-baseline.ron`, calling `step_one_tick` once, and asserting `sim.scheduler().current_tick()` advanced by exactly 1 (action trace and decision trace are populated by sinks borrowed each tick; full trace integration is T01DEBVIS-009).
 2. Scenario reload determinism → focused unit test (`reset_reloads_at_tick_zero`) calling reload after N ticks, asserting `sim.scheduler().current_tick() == Tick(0)` post-reset.
-3. Per template item 6: layout/snapshot/canvas surfaces are downstream and are tested by their own tickets (002, 003, 005). Action-trace and decision-trace assertions are deferred to T01DEBVIS-009 where sinks are fully wired.
+3. Startup load failure handling → focused unit test (`missing_startup_scenario_opens_empty_with_toast`) attempts to load a missing `.ron` file and asserts the app remains empty with an in-app error toast.
+4. Per template item 6: layout/snapshot/canvas surfaces are downstream and are tested by their own tickets (002, 003, 005). Action-trace and decision-trace assertions are deferred to T01DEBVIS-009 where sinks are fully wired.
 
 ## What to Change
 
@@ -119,7 +120,7 @@ Create `crates/worldwake-visualizer/src/controls.rs`:
 
 ### 5. Distributed D11 sub-cases
 
-- **Scenario file not found / parse error**: `new(cli)` returns `Result<Self, VisualizerError>`; on error, app opens with empty state and a visible toast carrying the error message. No panic.
+- **Scenario file not found / parse error**: `new(cli)` retains its live `Result<Self, ScenarioError>` signature for `main` compatibility, but startup scenario load failures are captured inside the returned app as an empty state with a visible toast carrying the error message. No panic.
 - **Max-speed frame budget**: the `while tick_carry >= 1.0` loop in `update()` is capped at `MAX_TICKS_PER_FRAME = 100` per spec §D11 to bound worst-case frame time.
 
 ### 6. Wire `controls` module
@@ -161,10 +162,37 @@ Add `pub mod controls;` to `crates/worldwake-visualizer/src/lib.rs`.
 
 ### New/Modified Tests
 
-1. `crates/worldwake-visualizer/src/app.rs` (`#[cfg(test)] mod tests`) — `step_one_tick_advances_scheduler_tick`, `step_one_tick_advances_100_ticks_without_panic`, `reset_reloads_at_tick_zero`. Smoke tests use `survival-baseline.ron`.
+1. `crates/worldwake-visualizer/src/app.rs` (`#[cfg(test)] mod tests`) — `step_one_tick_advances_scheduler_tick`, `step_one_tick_advances_100_ticks_without_panic`, `reset_reloads_at_tick_zero`, `missing_startup_scenario_opens_empty_with_toast`. Smoke tests use `survival-baseline.ron`.
 
 ### Commands
 
 1. `cargo test -p worldwake-visualizer app::`
 2. `cargo test -p worldwake-visualizer`
 3. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Replaced the visualizer shell with an operational host that owns the spawned `SimulationState`, `ActionRegistries`, `SystemDispatchTable`, persistent `AgentTickDriver`, trace sinks, layout cache, play state, speed, tick carry, selection state, reset modal state, and toast state.
+- Implemented `step_one_tick` using the observer-style split borrow: `AutonomousControllerRuntime::new(vec![&mut self.driver])`, `sim.tick_parts_mut()`, and a fresh `TickStepServices` per tick. The visualizer does not directly mutate authoritative world state outside `step_tick`.
+- Added `controls.rs` and wired `pub mod controls;`. The top bar shows scenario name, tick, play/pause, step, reset, logarithmic 0.5x-50x speed slider, and load-scenario control.
+- Implemented play cadence with `MAX_TICKS_PER_FRAME = 100`, reset/reload with fresh driver and trace sinks, topology-fingerprint layout reuse/recompute, and missing startup scenario handling through an in-app toast.
+- Added focused app-host tests for one-tick advance, 100-tick advance, reset to `Tick(0)`, and missing startup scenario behavior.
+
+## Deviations
+
+- `new(cli)` keeps the live `Result<Self, ScenarioError>` return type instead of introducing a separate `VisualizerError`; startup load errors are converted into app state so `main` still opens the empty visualizer.
+- `decision_trace` is retained as a staged visualizer-owned sink field for the later per-agent ring-buffer ticket, while the active AI decision trace producer remains the persistent `AgentTickDriver` tracing sink.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-visualizer --lib -- --list`
+- Passed `cargo test -p worldwake-visualizer --lib app::tests::step_one_tick_advances_scheduler_tick -- --exact`
+- Passed `cargo test -p worldwake-visualizer --lib app::tests::step_one_tick_advances_100_ticks_without_panic -- --exact`
+- Passed `cargo test -p worldwake-visualizer --lib app::tests::reset_reloads_at_tick_zero -- --exact`
+- Passed `cargo test -p worldwake-visualizer --lib app::tests::missing_startup_scenario_opens_empty_with_toast -- --exact`
+- Passed `cargo test -p worldwake-visualizer`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `bash scripts/verify.sh` (`cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo run -p worldwake-cli --bin scenario-coverage -- --check`)
+- After the final top-bar glyph-label edit, passed `cargo test -p worldwake-visualizer` and `cargo clippy -p worldwake-visualizer --all-targets -- -D warnings`
