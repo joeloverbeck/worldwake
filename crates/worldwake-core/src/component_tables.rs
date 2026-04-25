@@ -43,6 +43,7 @@ use crate::{
     },
     pursuit::PursuitProfile,
     repair_memory::RepairMemory,
+    reward_encumbrance::RewardEncumbrance,
     social_artifact::{ArtifactHeader, ArtifactPostingProfile, BountyTerms, NoticeContent},
     trade::{
         DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy,
@@ -151,9 +152,9 @@ mod tests {
         DriveThresholds, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge, ItemLot,
         KnownRecipes, LoadUnits, LotOperation, MetabolismProfile, PatrolProfile, PatrolRoute,
         Permille, PlaceVisitRecord, ProductionJob, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource, Tick,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, Wound,
-        WoundCause, WoundList,
+        ProductionOutputOwnershipPolicy, ProvenanceEntry, Quantity, ResourceSource,
+        RewardEncumbrance, Tick, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, Wound, WoundCause, WoundList,
         belief::{
             AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, PerceptionProfile,
             PerceptionSource, TellProfile,
@@ -1247,6 +1248,16 @@ mod tests {
                 allows_nested_containers: false,
             },
         );
+        tables.insert_reward_encumbrance(
+            id,
+            RewardEncumbrance {
+                reservations: vec![crate::RewardReservation {
+                    bounty_artifact: entity(13),
+                    commodity: CommodityKind::Coin,
+                    quantity: Quantity(23),
+                }],
+            },
+        );
         tables.insert_in_transit_on_edge(
             id,
             InTransitOnEdge {
@@ -1277,6 +1288,7 @@ mod tests {
         assert_eq!(tables.get_item_lot(id), None);
         assert_eq!(tables.get_unique_item(id), None);
         assert_eq!(tables.get_container(id), None);
+        assert_eq!(tables.get_reward_encumbrance(id), None);
         assert_eq!(tables.get_in_transit_on_edge(id), None);
     }
 

@@ -21,15 +21,16 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 2. If the just-finished ticket was already archived this session, use that archived ticket.
 3. Before attempting any archive move, check whether the worktree is already in the manual-archive fallback state for this ticket: `D tickets/<id>.md` plus `?? archive/tickets/<id>.md`, with the active path absent and the archive path present. If so, treat the ticket as already manually archived in the current worktree and use the archived path directly.
 4. Otherwise, search active tickets for the most recently touched candidate.
-5. Confirm the implementation state is present locally (committed or not).
-6. Record whether the completed ticket is tracked or untracked in the current worktree so the report can describe archival state accurately.
-7. Snapshot `git status --short` and classify dirty paths before review as:
+5. If the just-finished implementation completed multiple tickets in a dependency chain, review each completed ticket as its own archival candidate in dependency order. Archive ready prerequisites when appropriate, repair downstream `Deps` after moves, and block only the tickets whose own implementation or handoff remains incomplete.
+6. Confirm the implementation state is present locally (committed or not).
+7. Record whether the completed ticket is tracked or untracked in the current worktree so the report can describe archival state accurately.
+8. Snapshot `git status --short` and classify dirty paths before review as:
    - ticket-owned implementation or handoff files
    - adjacent generated/doc fallout caused by the ticket
    - unrelated pre-existing or same-session work outside the ticket
    Exclude unrelated paths from architecture findings and archival-readiness decisions except for a short implementation-state note in the report.
-8. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
-9. If the target ticket cannot be identified confidently, stop and ask.
+9. If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
+10. If the target ticket cannot be identified confidently, stop and ask.
 
 ### 2. Check archival readiness
 
@@ -43,6 +44,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
    - For active tickets, compare the live ticket's `Problem`, `What to Change`, `Acceptance Criteria`, `Invariants`, and `Test Plan` against the landed diff before deciding archival readiness. If any of those sections still overclaim the result or describe a stronger end state than the code actually landed, treat that as an unresolved in-scope handoff failure and block archival.
 4. If unresolved in-scope deliverables remain, stop and report archival as blocked — implementation must resume first.
    - This includes stale source-golden headers, generated scenario docs, or owned proof-surface prose that no longer matches the implemented contract. Treat as incomplete handoff, not a separate follow-up ticket.
+   - Name the exact active ticket that remains unarchived, the concrete implementation seam to resume, and the proof or handoff section that must be corrected. Do not create a follow-up ticket when the concern is still owned by that active ticket; resume under the implementation workflow instead.
    - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up.
    - For golden tickets, compare executable assertions against the exact ticket, source-golden, and roadmap wording. Distinguish `contains both steps` from an ordered sequence, `eventually commits` from a claimed lifecycle boundary, candidate emission from selected goal, and selected goal from selected executable plan. If the prose claims ordering, provenance, timing, or lifecycle specificity that the assertions do not prove, block archival as an incomplete proof surface.
    - When a previously completed ticket was left unarchived until a later reconciliation/disposition ticket clarified its live contract, re-read the older ticket's `Outcome`, `Verification Result`, and any remaining blocker wording against that newer archived disposition before archiving the older ticket.
@@ -122,6 +124,7 @@ Run these checks before archival to keep the active roadmap accurate:
 - **Same-session follow-ups**: When implementation created a new follow-up ticket earlier in the same session and the current review archives its prerequisite, re-check that new ticket's `Deps` after archival so it points at the archived ticket path rather than the just-deleted active path.
 - **Active spec drift**: When the completed ticket falsifies or narrows a claim in an active spec under `specs/`, classify that as active spec drift. This includes narrowed implementations where the draft spec still describes the broader pre-reassessment plan. Update the spec factually if in scope for this handoff; otherwise create/update a follow-up ticket that owns bringing the spec into alignment.
 - **Dependency chain impact**: When a new follow-up ticket changes architectural ordering or prerequisites, also check adjacent active tickets in the same subsystem sequence and update their scope or `Deps` factually.
+- **Final landing ticket drift**: When creating a new follow-up in a numbered ticket family, check the terminal landing, roadmap, docs-regeneration, or spec-archive ticket for stale completion ranges such as "once tickets 001-007 land." Update that terminal ticket when the new follow-up extends the sequence or changes final closeout prerequisites.
 - **Broader verification blockers**: When the completed ticket's broader verification surfaced a failure outside the ticket's owned surface, rerun the failing proof in isolation before deciding action. If the failure is real and still outside scope, first check nearby active tickets/specs for an existing owner, then record it in the archived handoff and create or update a bounded follow-up ticket instead of folding it silently into the completed ticket.
 
 ### 6. Author follow-up tickets
@@ -136,6 +139,7 @@ When a new ticket is warranted:
 4. Reassess against current code and docs before finalizing.
 5. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
 6. Keep bounded to one coherent concern.
+7. After creating a new ticket, verify it with a direct file read and `git status --short`; plain `git diff` and `git diff --stat` do not show untracked ticket contents.
 
 Set fields using evidence, not placeholders:
 - `Priority`: infer from impact and blast radius
@@ -216,7 +220,7 @@ If no follow-up tickets are warranted, still report reviewed areas and state tha
 
 - Do not modify production code or tests.
 - Review local implementation state as it exists now, committed or not.
-- Only change the completed ticket's `Outcome`, verification notes, and archival mechanics, including move-induced path rewrites inside the archived ticket and archived siblings when the relocation fallout is purely mechanical.
+- Limit edits to the review workflow's allowed handoff surfaces: the completed ticket's factual `Outcome` / verification notes, archival mechanics, mechanically caused path rewrites, evidence-backed follow-up tickets, factual active-ticket updates, and factual active-spec updates under `specs/` when the completed ticket's landed contract makes the drift unambiguous.
 - Every finding must be backed by concrete code, test, trace, ticket, or documentation evidence.
 - Reject any follow-up suggestion that would violate [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md).
 - Use 1-3-1 when archival readiness, ticket decomposition, or dependency ordering is genuinely ambiguous.

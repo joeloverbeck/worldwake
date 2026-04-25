@@ -18,11 +18,11 @@ use worldwake_core::{
     JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
     ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
     Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, RecordedViolation, ResourceSource, RouteExperience,
-    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound,
-    effective_claim_confidence,
+    RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation, ResourceSource,
+    RewardEncumbrance, RewardSource, RightKind, RouteExperience, SocialObservation,
+    SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -315,6 +315,22 @@ pub trait GoalBeliefView {
     fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
         let _ = agent;
         Vec::new()
+    }
+    fn actor_lawful_reward_source_for_case(
+        &self,
+        actor: EntityId,
+        accusation: &BelievedInstitutionalClaim,
+    ) -> Option<RewardSource> {
+        let _ = (actor, accusation);
+        None
+    }
+    fn visible_reward_encumbrance(
+        &self,
+        actor: EntityId,
+        office: EntityId,
+    ) -> Option<&RewardEncumbrance> {
+        let _ = (actor, office);
+        None
     }
     fn factions_of(&self, entity: EntityId) -> Vec<EntityId> {
         let _ = entity;
@@ -1176,6 +1192,14 @@ pub trait PoliticalBeliefView {
         let _ = (agent, key);
         Vec::new()
     }
+    fn visible_reward_encumbrance(
+        &self,
+        actor: EntityId,
+        office: EntityId,
+    ) -> Option<&RewardEncumbrance> {
+        let _ = (actor, office);
+        None
+    }
 }
 
 pub trait FacilityBeliefView {
@@ -1395,6 +1419,22 @@ where
         agent: worldwake_core::EntityId,
     ) -> Vec<worldwake_core::BelievedInstitutionalClaim> {
         PoliticalBeliefView::known_institutional_beliefs(self, agent)
+    }
+
+    fn actor_lawful_reward_source_for_case(
+        &self,
+        actor: worldwake_core::EntityId,
+        accusation: &worldwake_core::BelievedInstitutionalClaim,
+    ) -> Option<worldwake_core::RewardSource> {
+        actor_lawful_reward_source_from_beliefs(self, actor, accusation)
+    }
+
+    fn visible_reward_encumbrance(
+        &self,
+        actor: worldwake_core::EntityId,
+        office: worldwake_core::EntityId,
+    ) -> Option<&worldwake_core::RewardEncumbrance> {
+        PoliticalBeliefView::visible_reward_encumbrance(self, actor, office)
     }
 
     fn factions_of(&self, entity: worldwake_core::EntityId) -> Vec<worldwake_core::EntityId> {
@@ -2039,6 +2079,62 @@ where
     }
 }
 
+fn actor_lawful_reward_source_from_beliefs<V: GoalBeliefView + ?Sized>(
+    view: &V,
+    actor: EntityId,
+    accusation: &BelievedInstitutionalClaim,
+) -> Option<RewardSource> {
+    let (
+        worldwake_core::InstitutionalClaim::Accusation { accused, theft, .. },
+        worldwake_core::InstitutionalKnowledgeSource::RecordConsultation { record, .. },
+    ) = (accusation.claim, accusation.source)
+    else {
+        return None;
+    };
+    if theft.quantity == Quantity(0) {
+        return None;
+    }
+
+    let record_data = view.record_data(record)?;
+    if record_data.record_kind != RecordKind::CrimeRegister {
+        return None;
+    }
+    let office = record_data.issuer;
+    let office_data = view.office_data(office)?;
+    if view.effective_place(actor) != Some(office_data.seat) {
+        return None;
+    }
+    if !matches!(
+        view.believed_office_holder(office),
+        InstitutionalBeliefRead::Certain(Some(holder)) if holder == actor
+    ) {
+        return None;
+    }
+    if !view
+        .believed_rights(actor, accused)
+        .iter()
+        .any(|right| right.kind == RightKind::JurisdictionalAuthority && right.via == Some(office))
+    {
+        return None;
+    }
+
+    let reward_commodity = CommodityKind::Coin;
+    let local_balance =
+        view.controlled_commodity_quantity_at_place(actor, office_data.seat, reward_commodity);
+    let reserved = view
+        .visible_reward_encumbrance(actor, office)
+        .map_or(Quantity(0), |encumbrance| {
+            encumbrance.reserved_quantity(reward_commodity)
+        });
+    if local_balance.0.saturating_sub(reserved.0) == 0 {
+        return None;
+    }
+
+    Some(RewardSource::InstitutionalTreasury {
+        treasury_entity: office,
+    })
+}
+
 #[must_use]
 pub fn estimate_duration_from_beliefs(
     view: &dyn RuntimeBeliefView,
@@ -2227,14 +2323,19 @@ mod tests {
         GoalTemporalBeliefView, InventoryBeliefView, PerAgentBeliefView, ProfileBeliefView,
         SocialBeliefView,
     };
+    use std::collections::BTreeSet;
     use worldwake_core::{
-        AgentBeliefStore, BeliefConfidencePolicy, CauseRef, ClaimId, ClaimValue,
-        CommodityConsumableProfile, CommodityKind, ControlSource, DemandObservation,
-        DeprivationExposure, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
-        EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EventLog, HomeostaticNeedId,
-        HomeostaticNeeds, LastProactiveExplorationTick, LoadUnits, PatrolProfile, PerceptionSource,
-        Permille, Quantity, ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationTag, World, WorldTxn, build_prototype_world,
+        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BelievedInstitutionalClaim,
+        CauseRef, ClaimId, ClaimValue, CommodityConsumableProfile, CommodityKind, Container,
+        ControlSource, DemandObservation, DeprivationExposure, DiversificationProfile,
+        DriveEscalationProfile, DriveThresholds, EntityBeliefAspect, EntityBeliefClaim, EntityId,
+        EntityKind, EventLog, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LastProactiveExplorationTick, LoadUnits,
+        OfficeData, PatrolProfile, PerceptionProfile, PerceptionSource, Permille, Quantity,
+        RecordData, RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance,
+        RewardReservation, RewardSource, SuccessionLaw, TheftFacts, Tick, UniqueItemKind,
+        ViolationId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
     };
 
     fn sample_claim(
@@ -2543,6 +2644,218 @@ mod tests {
         let _ = txn.commit(&mut log);
     }
 
+    fn observed_entity(
+        place: EntityId,
+        kind: EntityKind,
+        commodity: CommodityKind,
+    ) -> BelievedEntityState {
+        let mut state = BelievedEntityState::single_observation_defaults(
+            Tick(1),
+            PerceptionSource::DirectObservation,
+        );
+        state.believed_kind = Some(kind);
+        state.last_known_place = Some(place);
+        state.last_known_inventory.insert(commodity, Quantity(1));
+        state
+    }
+
+    fn accusation_case(
+        accuser: EntityId,
+        suspect: EntityId,
+        missing_entity: EntityId,
+        expected_place: EntityId,
+        record: EntityId,
+        theft_commodity: CommodityKind,
+    ) -> BelievedInstitutionalClaim {
+        BelievedInstitutionalClaim {
+            claim: InstitutionalClaim::Accusation {
+                accuser,
+                accused: suspect,
+                violation_id: ViolationId(1),
+                theft: TheftFacts {
+                    missing_entity,
+                    expected_place,
+                    commodity: theft_commodity,
+                    quantity: Quantity(4),
+                },
+                effective_tick: Tick(1),
+            },
+            source: InstitutionalKnowledgeSource::RecordConsultation {
+                record,
+                entry_id: RecordEntryId(1),
+            },
+            learned_tick: Tick(1),
+            learned_at: Some(expected_place),
+        }
+    }
+
+    fn create_crime_register(txn: &mut WorldTxn<'_>, seat: EntityId, office: EntityId) -> EntityId {
+        txn.create_record(RecordData {
+            record_kind: RecordKind::CrimeRegister,
+            home_place: seat,
+            issuer: office,
+            consultation_ticks: 4,
+            max_entries_per_consult: 6,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })
+        .unwrap()
+    }
+
+    struct RewardSourceFixture {
+        world: World,
+        actor: EntityId,
+        office: EntityId,
+        accusation: BelievedInstitutionalClaim,
+    }
+
+    fn reward_source_fixture(
+        actor_holds_office: bool,
+        funds: Quantity,
+        reserved: Quantity,
+    ) -> RewardSourceFixture {
+        reward_source_fixture_with_commodities(
+            actor_holds_office,
+            funds,
+            CommodityKind::Coin,
+            reserved,
+            CommodityKind::Coin,
+        )
+    }
+
+    fn reward_source_fixture_with_commodities(
+        actor_holds_office: bool,
+        funds: Quantity,
+        treasury_commodity: CommodityKind,
+        reserved: Quantity,
+        theft_commodity: CommodityKind,
+    ) -> RewardSourceFixture {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let seat = places[0];
+        let jurisdiction_place = *places.get(1).unwrap_or(&seat);
+        let (actor, office, accused, missing_entity, record) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let holder = if actor_holds_office {
+                actor
+            } else {
+                txn.create_agent("Bram", ControlSource::Ai).unwrap()
+            };
+            let accused = txn.create_agent("Cato", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, seat).unwrap();
+            txn.set_ground_location(holder, seat).unwrap();
+            txn.set_ground_location(accused, jurisdiction_place)
+                .unwrap();
+
+            let office = txn.create_office("Marshal Seat").unwrap();
+            txn.set_component_office_data(
+                office,
+                OfficeData {
+                    title: "Marshal".to_string(),
+                    seat,
+                    jurisdiction: BTreeSet::from([seat, jurisdiction_place]),
+                    succession_law: SuccessionLaw::Support,
+                    eligibility_rules: Vec::new(),
+                    succession_period_ticks: 8,
+                    vacancy_since: None,
+                },
+            )
+            .unwrap();
+            txn.create_record(RecordData {
+                record_kind: RecordKind::OfficeRegister,
+                home_place: seat,
+                issuer: office,
+                consultation_ticks: 4,
+                max_entries_per_consult: 6,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
+            txn.assign_office(office, holder).unwrap();
+            let record = create_crime_register(&mut txn, seat, office);
+            let missing_entity = txn.create_item_lot(theft_commodity, Quantity(4)).unwrap();
+            txn.set_ground_location(missing_entity, jurisdiction_place)
+                .unwrap();
+
+            let maybe_lot = if funds == Quantity(0) {
+                None
+            } else {
+                let container = txn
+                    .create_container(Container {
+                        capacity: LoadUnits(100),
+                        allowed_commodities: None,
+                        allows_unique_items: false,
+                        allows_nested_containers: false,
+                    })
+                    .unwrap();
+                txn.set_ground_location(container, seat).unwrap();
+                txn.set_owner(container, office).unwrap();
+                let lot = txn
+                    .create_item_lot_with_owner(treasury_commodity, funds, seat, Some(office))
+                    .unwrap();
+                txn.put_into_container(lot, container).unwrap();
+                Some(lot)
+            };
+            if reserved > Quantity(0) {
+                txn.set_component_reward_encumbrance(
+                    office,
+                    RewardEncumbrance::from_reservation(RewardReservation {
+                        bounty_artifact: record,
+                        commodity: CommodityKind::Coin,
+                        quantity: reserved,
+                    }),
+                )
+                .unwrap();
+            }
+
+            let mut beliefs = AgentBeliefStore::new();
+            beliefs.update_entity(
+                accused,
+                observed_entity(jurisdiction_place, EntityKind::Agent, theft_commodity),
+            );
+            if let Some(lot) = maybe_lot {
+                beliefs.update_entity(
+                    lot,
+                    observed_entity(seat, EntityKind::ItemLot, treasury_commodity),
+                );
+            }
+            beliefs.record_institutional_belief(
+                InstitutionalBeliefKey::OfficeHolderOf { office },
+                BelievedInstitutionalClaim {
+                    claim: InstitutionalClaim::OfficeHolder {
+                        office,
+                        holder: Some(holder),
+                        effective_tick: Tick(1),
+                    },
+                    source: InstitutionalKnowledgeSource::WitnessedEvent,
+                    learned_tick: Tick(1),
+                    learned_at: Some(seat),
+                },
+                &PerceptionProfile::default(),
+            );
+            txn.set_component_agent_belief_store(actor, beliefs)
+                .unwrap();
+            commit_txn(txn);
+            (actor, office, accused, missing_entity, record)
+        };
+        let accusation = accusation_case(
+            actor,
+            accused,
+            missing_entity,
+            jurisdiction_place,
+            record,
+            theft_commodity,
+        );
+
+        RewardSourceFixture {
+            world,
+            actor,
+            office,
+            accusation,
+        }
+    }
+
     #[test]
     fn estimate_duration_from_beliefs_returns_none_for_missing_investigation_profile() {
         let mut world = World::new(build_prototype_world()).unwrap();
@@ -2670,6 +2983,112 @@ mod tests {
         assert_eq!(GoalBeliefView::repair_memory(&view, agent), None);
         assert_eq!(
             GoalBeliefView::learned_opportunity_memory(&view, agent),
+            None
+        );
+    }
+
+    #[test]
+    fn accessor_returns_institutional_source_for_holder_with_funded_unencumbered_office() {
+        let fixture = reward_source_fixture(true, Quantity(5), Quantity(1));
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+
+        assert_eq!(
+            GoalBeliefView::actor_lawful_reward_source_for_case(
+                &view,
+                fixture.actor,
+                &fixture.accusation
+            ),
+            Some(RewardSource::InstitutionalTreasury {
+                treasury_entity: fixture.office
+            })
+        );
+    }
+
+    #[test]
+    fn accessor_returns_institutional_source_for_non_coin_theft_with_coin_treasury() {
+        let fixture = reward_source_fixture_with_commodities(
+            true,
+            Quantity(5),
+            CommodityKind::Coin,
+            Quantity(1),
+            CommodityKind::Bread,
+        );
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+
+        assert_eq!(
+            GoalBeliefView::actor_lawful_reward_source_for_case(
+                &view,
+                fixture.actor,
+                &fixture.accusation
+            ),
+            Some(RewardSource::InstitutionalTreasury {
+                treasury_entity: fixture.office
+            })
+        );
+    }
+
+    #[test]
+    fn accessor_returns_none_for_non_holder() {
+        let fixture = reward_source_fixture(false, Quantity(5), Quantity(0));
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+
+        assert_eq!(
+            GoalBeliefView::actor_lawful_reward_source_for_case(
+                &view,
+                fixture.actor,
+                &fixture.accusation
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn accessor_returns_none_when_office_has_no_treasury() {
+        let fixture = reward_source_fixture(true, Quantity(0), Quantity(0));
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+
+        assert_eq!(
+            GoalBeliefView::actor_lawful_reward_source_for_case(
+                &view,
+                fixture.actor,
+                &fixture.accusation
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn accessor_returns_none_when_office_funds_are_fully_encumbered() {
+        let fixture = reward_source_fixture(true, Quantity(5), Quantity(5));
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+
+        assert_eq!(
+            GoalBeliefView::actor_lawful_reward_source_for_case(
+                &view,
+                fixture.actor,
+                &fixture.accusation
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn accessor_returns_none_for_non_coin_theft_with_only_non_coin_treasury() {
+        let fixture = reward_source_fixture_with_commodities(
+            true,
+            Quantity(5),
+            CommodityKind::Bread,
+            Quantity(0),
+            CommodityKind::Bread,
+        );
+        let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
+
+        assert_eq!(
+            GoalBeliefView::actor_lawful_reward_source_for_case(
+                &view,
+                fixture.actor,
+                &fixture.accusation
+            ),
             None
         );
     }

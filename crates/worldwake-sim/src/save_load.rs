@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 45;
+pub const SAVE_FORMAT_VERSION: u32 = 47;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -209,8 +209,8 @@ mod tests {
         PendingEvent, PerceptionSource, PlanAdoptedPayload, PlanInvalidatedPayload,
         PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        Seed, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        RewardEncumbrance, Seed, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -317,6 +317,21 @@ mod tests {
         let mut event_log = EventLog::new();
         let actor = spawn_agent(&mut world, &mut event_log, Tick(0), "save-actor");
         let target = spawn_agent(&mut world, &mut event_log, Tick(1), "save-target");
+        let mut office_txn = new_txn(&mut world, Tick(1), CauseRef::Bootstrap);
+        let office = office_txn.create_office("save-office").unwrap();
+        office_txn
+            .set_component_reward_encumbrance(
+                office,
+                RewardEncumbrance {
+                    reservations: vec![worldwake_core::RewardReservation {
+                        bounty_artifact: worldwake_core::test_utils::entity_id(99, 0),
+                        commodity: CommodityKind::Coin,
+                        quantity: Quantity(31),
+                    }],
+                },
+            )
+            .unwrap();
+        let _ = office_txn.commit(&mut event_log);
         let belief_place = world.topology().place_ids().next().unwrap();
         let (reserved_item, reservation) =
             spawn_item_with_reservation(&mut world, &mut event_log, actor);

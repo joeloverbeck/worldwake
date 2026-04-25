@@ -33,7 +33,7 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 
 ## New Component Read by AI Crate
 
-**Trigger**: Spec adds a component that candidate generation, ranking, or planning needs to read.
+**Trigger**: Spec adds any new derived read the AI crate (candidate generation, ranking, or planning) consumes through `GoalBeliefView` — whether the underlying state is a new component, an existing component, a relation, or a composite read across multiple sources. The trigger fires on the *accessor surface*, not on whether a component is being introduced.
 
 **Verify the spec addresses**:
 

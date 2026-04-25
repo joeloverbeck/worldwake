@@ -1,4 +1,8 @@
-use worldwake_core::{ArtifactState, CauseRef, EventTag, VisibilitySpec, WitnessData, WorldTxn};
+use crate::reward_encumbrance_support::release_bounty_reward;
+use worldwake_core::{
+    ArtifactKind, ArtifactState, CauseRef, EntityKind, EventTag, RewardSource, VisibilitySpec,
+    WitnessData, WorldTxn,
+};
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
 pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemError> {
@@ -41,6 +45,14 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
             .add_tag(EventTag::Social)
             .add_tag(EventTag::WorldMutation)
             .add_target(artifact);
+        if header.kind == ArtifactKind::Bounty
+            && let Some(terms) = txn.get_component_bounty_terms(artifact).copied()
+            && let RewardSource::InstitutionalTreasury { treasury_entity } = terms.reward_source
+            && txn.entity_kind(treasury_entity) == Some(EntityKind::Office)
+        {
+            release_bounty_reward(&mut txn, treasury_entity, artifact)
+                .map_err(|error| SystemError::new(error.to_string()))?;
+        }
         txn.set_component_artifact_header(artifact, header)
             .map_err(|error| SystemError::new(error.to_string()))?;
         let _ = txn.commit(event_log);
@@ -53,9 +65,11 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
 mod tests {
     use super::artifact_lifecycle_system;
     use worldwake_core::{
-        ArtifactHeader, ArtifactKind, ArtifactState, CauseRef, ControlSource, EventLog, EventTag,
-        NoticeContent, NoticeTopic, PrototypePlace, Seed, Tick, VisibilitySpec, WitnessData, World,
-        WorldTxn, build_prototype_world, prototype_place_entity,
+        ArtifactHeader, ArtifactKind, ArtifactState, BountyTarget, BountyTerms, CauseRef,
+        CommodityKind, ControlSource, EntityKind, EventLog, EventTag, NoticeContent, NoticeTopic,
+        ProofRequirement, PrototypePlace, Quantity, RewardEncumbrance, RewardReservation,
+        RewardSource, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -120,6 +134,58 @@ mod tests {
         )
         .unwrap();
         txn.set_ground_location(artifact, place).unwrap();
+        commit_txn(txn);
+        artifact
+    }
+
+    fn post_institutional_bounty(
+        world: &mut World,
+        tick: u64,
+        place: worldwake_core::EntityId,
+        office: worldwake_core::EntityId,
+        expires_at: Option<Tick>,
+    ) -> worldwake_core::EntityId {
+        let issuer = spawn_agent_at(world, 120 + tick as u32, place);
+        let target = spawn_agent_at(world, 140 + tick as u32, place);
+        let mut txn = new_txn(world, tick);
+        let artifact = txn.create_entity(EntityKind::SocialArtifact);
+        txn.set_component_artifact_header(
+            artifact,
+            ArtifactHeader {
+                kind: ArtifactKind::Bounty,
+                issuer,
+                issuing_authority: Some(office),
+                created_at: Tick(tick),
+                expires_at,
+                state: ArtifactState::Active,
+                jurisdiction: Some(place),
+            },
+        )
+        .unwrap();
+        txn.set_component_bounty_terms(
+            artifact,
+            BountyTerms {
+                target: BountyTarget::EliminateEntity { target },
+                proof_requirement: ProofRequirement::SelfReport,
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(4),
+                reward_source: RewardSource::InstitutionalTreasury {
+                    treasury_entity: office,
+                },
+                claim_place: place,
+            },
+        )
+        .unwrap();
+        txn.set_ground_location(artifact, place).unwrap();
+        txn.set_component_reward_encumbrance(
+            office,
+            RewardEncumbrance::from_reservation(RewardReservation {
+                bounty_artifact: artifact,
+                commodity: CommodityKind::Coin,
+                quantity: Quantity(4),
+            }),
+        )
+        .unwrap();
         commit_txn(txn);
         artifact
     }
@@ -206,5 +272,41 @@ mod tests {
             ArtifactState::Active
         );
         assert!(log.is_empty());
+    }
+
+    #[test]
+    fn bounty_ttl_expiry_releases_encumbrance() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let office = {
+            let mut txn = new_txn(&mut world, 1);
+            let office = txn.create_office("Market Warden").unwrap();
+            commit_txn(txn);
+            office
+        };
+        let bounty = post_institutional_bounty(&mut world, 2, square, office, Some(Tick(5)));
+        assert!(world.has_component_reward_encumbrance(office));
+        let mut log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([10; 32]));
+
+        artifact_lifecycle_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &std::collections::BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(5),
+            system_id: SystemId::ArtifactLifecycle,
+        })
+        .unwrap();
+
+        assert_eq!(
+            world.get_component_artifact_header(bounty).unwrap().state,
+            ArtifactState::Expired
+        );
+        assert!(!world.has_component_reward_encumbrance(office));
+        assert_eq!(log.events_by_tag(EventTag::WorldMutation).len(), 1);
     }
 }

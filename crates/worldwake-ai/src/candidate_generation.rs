@@ -35,7 +35,7 @@ use worldwake_core::{
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
     OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
     ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
-    Quantity, RecordData, RecordEntryId, RecordKind, RewardSource, RightKind, SocialObservation,
+    Quantity, RecordData, RecordEntryId, RecordKind, RightKind, SocialObservation,
     SocialObservationDetail, TellTopic, TheftFacts, Tick, TradeCategory, UtilityProfile,
     ViolationId, ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
     current_institutional_belief_topics, load_per_unit,
@@ -824,6 +824,20 @@ fn emit_bounty_posting_candidates(
         if theft.quantity == Quantity(0) {
             continue;
         }
+        let Some(reward_source) = ctx
+            .view
+            .actor_lawful_reward_source_for_case(ctx.agent, &belief)
+        else {
+            diagnostics
+                .omitted_political
+                .push(PoliticalCandidateOmission {
+                    family: PoliticalGoalFamily::PostBounty,
+                    office,
+                    candidate: Some(accused),
+                    reason: PoliticalCandidateOmissionReason::NoLawfulRewardSource,
+                });
+            continue;
+        };
 
         let posting_place = office_data.seat;
         let mut evidence = Evidence::with_entity(accused);
@@ -864,9 +878,7 @@ fn emit_bounty_posting_candidates(
                     proof_requirement: ProofRequirement::PhysicalEvidence,
                     reward_commodity: CommodityKind::Coin,
                     reward_quantity: theft.quantity,
-                    reward_source: RewardSource::InstitutionalTreasury {
-                        treasury_entity: office,
-                    },
+                    reward_source,
                     claim_place: posting_place,
                 },
             },
@@ -6959,6 +6971,22 @@ mod tests {
             .any(|candidate| candidate.key.kind == goal)
     }
 
+    fn seed_local_controlled_coin(
+        view: &mut TestBeliefView,
+        actor: EntityId,
+        place: EntityId,
+        lot: EntityId,
+        quantity: Quantity,
+    ) {
+        view.effective_places.insert(actor, place);
+        view.entities_at.entry(place).or_default().push(lot);
+        view.entity_kinds.insert(lot, EntityKind::ItemLot);
+        view.lot_commodities.insert(lot, CommodityKind::Coin);
+        view.commodity_quantities
+            .insert((lot, CommodityKind::Coin), quantity);
+        view.controllable.insert((actor, lot));
+    }
+
     fn free_carry_capacity_candidates(
         view: &TestBeliefView,
         agent: EntityId,
@@ -12918,6 +12946,7 @@ mod tests {
                 via: Some(office),
             }],
         );
+        seed_local_controlled_coin(&mut view, agent, seat, entity(30), Quantity(6));
 
         let result = generate_candidates_with_travel_horizon(
             &view,
@@ -12951,6 +12980,204 @@ mod tests {
                 },
             }
         ));
+    }
+
+    #[test]
+    fn emit_bounty_posting_candidates_skips_when_accessor_returns_none() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let seat = entity(10);
+        let faction = entity(11);
+        let violation_id = worldwake_core::ViolationId(12);
+        let accusation_entry = RecordEntryId(21);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: seat,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(6),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.effective_places.insert(agent, seat);
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                bounty_posting_weight: pm(700),
+                ..UtilityProfile::default()
+            },
+        );
+        view.artifact_posting_profiles
+            .insert(agent, ArtifactPostingProfile::default());
+        view.office_data
+            .insert(office, vacant_office("Magistrate", seat, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, seat, accusation_entry, claim),
+        );
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(seat),
+            }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        assert!(
+            !result
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate.key.kind, GoalKind::PostBounty { .. })),
+            "unfunded cases should not emit PostBounty candidates",
+        );
+        assert_eq!(
+            result.diagnostics.omitted_political,
+            vec![crate::PoliticalCandidateOmission {
+                family: PoliticalGoalFamily::PostBounty,
+                office,
+                candidate: Some(accused),
+                reason: PoliticalCandidateOmissionReason::NoLawfulRewardSource,
+            }]
+        );
+    }
+
+    #[test]
+    fn emit_bounty_posting_candidates_uses_accessor_returned_reward_source() {
+        let agent = entity(1);
+        let accused = entity(2);
+        let office = entity(3);
+        let record = entity(4);
+        let seat = entity(10);
+        let faction = entity(11);
+        let violation_id = worldwake_core::ViolationId(12);
+        let accusation_entry = RecordEntryId(21);
+        let theft = TheftFacts {
+            missing_entity: entity(20),
+            expected_place: seat,
+            commodity: CommodityKind::Bread,
+            quantity: Quantity(6),
+        };
+        let claim = InstitutionalClaim::Accusation {
+            accuser: entity(9),
+            accused,
+            violation_id,
+            theft,
+            effective_tick: Tick(3),
+        };
+
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, accused]);
+        view.utility_profiles.insert(
+            agent,
+            UtilityProfile {
+                bounty_posting_weight: pm(700),
+                ..UtilityProfile::default()
+            },
+        );
+        view.artifact_posting_profiles
+            .insert(agent, ArtifactPostingProfile::default());
+        view.office_data
+            .insert(office, vacant_office("Magistrate", seat, faction));
+        view.office_holder_beliefs
+            .insert(office, InstitutionalBeliefRead::Certain(Some(agent)));
+        view.record_data.insert(
+            record,
+            crime_register_record(office, seat, accusation_entry, claim),
+        );
+        view.institutional_claims.insert(
+            (
+                agent,
+                InstitutionalBeliefKey::CrimeCase {
+                    accused,
+                    violation_id,
+                },
+            ),
+            vec![BelievedInstitutionalClaim {
+                claim,
+                source: InstitutionalKnowledgeSource::RecordConsultation {
+                    record,
+                    entry_id: accusation_entry,
+                },
+                learned_tick: Tick(4),
+                learned_at: Some(seat),
+            }],
+        );
+        view.believed_rights.insert(
+            (agent, accused),
+            vec![EffectiveRight {
+                kind: RightKind::JurisdictionalAuthority,
+                via: Some(office),
+            }],
+        );
+        seed_local_controlled_coin(&mut view, agent, seat, entity(30), Quantity(6));
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+            6,
+            false,
+        );
+
+        let reward_source = result
+            .candidates
+            .iter()
+            .find_map(|candidate| match candidate.key.kind {
+                GoalKind::PostBounty { terms, .. } => Some(terms.reward_source),
+                _ => None,
+            })
+            .expect("funded case should emit a PostBounty candidate");
+
+        assert_eq!(
+            reward_source,
+            RewardSource::InstitutionalTreasury {
+                treasury_entity: office,
+            }
+        );
+        assert!(result.diagnostics.omitted_political.is_empty());
     }
 
     #[test]

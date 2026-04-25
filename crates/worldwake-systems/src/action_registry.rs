@@ -157,6 +157,7 @@ mod tests {
             "post_bounty",
             "post_notice",
             "claim_bounty",
+            "withdraw_bounty",
             "bribe",
             "threaten",
             "declare_support",

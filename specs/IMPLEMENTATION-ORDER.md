@@ -82,6 +82,8 @@ S65 ─┘
   - depends on S60 (dens use site occupancy model)
 - **S63**: Contested Evidence and Warrants — warrants, detention, case records, alibi, evidence contest, wrongful-accusation correction
   - depends on S59 ✅ (dependency satisfied)
+- **S125**: ✅ COMPLETED — Institutional Treasuries and Bounty Funding — archived at [archive/specs/S125-institutional-treasuries-and-bounty-funding.md](/home/joeloverbeck/projects/worldwake/archive/specs/S125-institutional-treasuries-and-bounty-funding.md). Landed first-class office funds, bounty reward reservation, and scenario-authored institutional assets for the `survival-justice` bounty extension without personal-funds shortcuts or perception side effects.
+  - depended on E17, S45, S51, S59 ✅; optional downstream relationship with S63 remains.
 
 **Wave 3** (after Wave 2):
 - **S64**: Scarcity Response — Debt, Rationing, and Substitution — borrowing/lending, ration orders, hoarding, sale refusal, substitute purchasing

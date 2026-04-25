@@ -46,10 +46,12 @@ For each observed gap, check whether the skill:
 - uses stale Claude-specific assumptions when the target is meant for Codex
 - would create repo-specific operational hazards such as dirtying tracked worktree paths, colliding with special directories, or leaving cleanup obligations implicit
 
-Reference concrete rule sources in findings:
-- `AGENTS.md` section names
-- FOUNDATIONS principle numbers
+Reference concrete rule sources in alignment findings:
+- `AGENTS.md` section names for repo-rule deviations
+- FOUNDATIONS principle numbers for principle violations
 - relevant repo paths or tracked-state evidence when the hazard is operational rather than purely textual
+
+For operational skill-quality findings that do not involve an AGENTS.md deviation or FOUNDATIONS violation, ground the finding in concrete session evidence instead: the target skill section, the observed workflow behavior, and any relevant repo path or command output.
 
 ### 5. Classify findings
 

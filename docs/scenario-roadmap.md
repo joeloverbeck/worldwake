@@ -56,7 +56,7 @@ This catalog mirrors the live `FEATURES` table in [`scenario_coverage.rs`](../cr
 | Disposal | `disposal_profile` present | [`disposal.rs`](../crates/worldwake-core/src/disposal.rs) | Landed in [§5.10](#510-landed-10-survival-items-decay) |
 | Facility-queue contention | `contention_disposition` plus an authored facility `contention_policy` | [`facility_queue_actions.rs`](../crates/worldwake-systems/src/facility_queue_actions.rs), [`facility_queue.rs`](../crates/worldwake-systems/src/facility_queue.rs) | Landed in [§5.9](#59-landed-9-survival-trade) |
 | Offices / succession / force-claim | Office entities plus force-claim world state | [`office_actions.rs`](../crates/worldwake-systems/src/office_actions.rs), [`offices.rs`](../crates/worldwake-core/src/offices.rs) | Landed in [§4.7](#47-landed-row-11) |
-| Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Structurally active in [§5.16](#516-landed-row-17-final-integration); standalone behavior planned as extension to [§5.12 `survival-justice` (Row 13)](#512-landed-row-13-survival-justice) |
+| Bounty posting | Non-zero `bounty_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Landed in [§5.12 `survival-justice` (Row 13)](#512-landed-row-13-survival-justice) as an institutional-treasury bounty branch |
 | Notice posting | Non-zero `notice_posting_weight` plus `artifact_posting_profile` | [`artifact_actions.rs`](../crates/worldwake-systems/src/artifact_actions.rs), [`social_artifact.rs`](../crates/worldwake-core/src/social_artifact.rs) | Landed in [§4.7](#47-landed-row-11) |
 | Theft | `theft_disposition` present | [`theft.rs`](../crates/worldwake-ai/src/theft.rs) | Landed in [§5.11](#511-landed-12-survival-theft) |
 | Justice / accusation | `justice_disposition` present | [`justice_actions.rs`](../crates/worldwake-systems/src/justice_actions.rs) | Landed in [§5.12](#512-landed-row-13-survival-justice) |
@@ -97,12 +97,11 @@ This table is derived from the live generated companion and then narrowed by the
 | Landed in `survival-items-decay.ron` | Item decay, Disposal |
 | Landed in `survival-offices.ron` | Offices / succession / force-claim, Notice posting, Obligation satiation |
 | Landed in `survival-theft.ron` | Place concealment, Theft |
-| Landed in `survival-justice.ron` | Justice / accusation, Violation investigation, Search, Report / witness found-person reporting branch |
+| Landed in `survival-justice.ron` | Justice / accusation, Violation investigation, Search, Report / witness found-person reporting branch, Bounty posting |
 | Landed in `survival-patrol.ron` | Patrol, Pursuit selection/execution from authored hostility plus last-seen memory |
 | Landed in `survival-combat.ron` | Combat, Bandit camps |
 | Landed in `survival-escort.ron` | Escort/care coordinated travel under hostile pressure |
 | Landed in `final-integration.ron` | Full gameplay catalog structural coexistence under survival-health, with hostile wound pressure |
-| Structural-only within final integration, not standalone behavior landings | Bounty posting |
 | Structurally partial outside the landed branch | Broader Report / witness |
 
 The key constraint is that structural activation alone is not a feature landing. `cli-evaluation.ron`, `survival-tell.ron`, and `survival-ask-consult.ron` can expose future substrate without automatically promoting every structurally active row to `Landed`.
@@ -169,7 +168,7 @@ Use this template for both planned entries and retrospective landed entries. A r
 | 10 | `survival-items-decay` | Item decay + disposal | Landed | Ongoing world maintenance pressure added to the landed survival-trade stack |
 | 11 | `survival-offices` | Offices / succession / force-claim + notice posting + obligation satiation | Landed | Institution-level goals, artifacts, and an authored office duty competing with needs |
 | 12 | `survival-theft` | Theft + place concealment | Landed | Concealed staged merchant stock now produces the full truthful theft branch: stage visible owned food, select `StealItem`, commit `steal`, self-consume, keep immediate witness pickup suppressed, preserve physical aftermath at the place, mature non-owner possession into investigation, and relay the resulting theft suspicion through accepted testimony |
-| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search | In Progress | Full justice row now proves accusation, fine punishment, direct search, and found-status reporting under one survival envelope; extension adds bounty posting behavior proof after accusation |
+| 13 | `survival-justice` | Justice / accusation + violation investigation + report / witness + search + bounty posting | Landed | Full justice row proves accusation, fine punishment, direct search, found-status reporting, and institutional treasury-funded bounty posting under one survival envelope |
 | 14 | `survival-patrol` | Patrol + pursuit | Landed | Scheduled duties coexist with survival self-care while remembered hostility selects and executes remote pursuit through travel into attack |
 | 15 | `survival-combat` | Combat + bandit camps | Landed | Highest direct survival risk and adversarial planning pressure |
 | 16 | `survival-escort` | Escort/care | Landed | Coordinated travel after the rest of the hostile world is live |
@@ -562,18 +561,13 @@ The row also lands place concealment honestly rather than by decorative authored
 - The same scenario now also proves the truthful fine continuation of that exact theft case: local theft evidence matures into accusation early enough for `fine` to commit, and the crime register records the resulting verdict
 - The search/report branch now proves `Searcher Ivo` commits direct `search_place` for a local overdue missing-person expectation, resolves the expectation as found safe, then commits `report_found` and writes the found-person status to the local office register
 - The same search/report golden asserts that stale exact-bound `ask_about_person` requests no longer recur for the local-search branch
+- The bounty branch now proves the lawful office holder selects and commits `PostBounty` after the accusation exists, materializes the bounty artifact at the authored posting surface, and records a matching institutional treasury reward encumbrance at the commit boundary
 - Completed substrate ticket: [`archive/tickets/S13SURJUS-001.md`](../archive/tickets/S13SURJUS-001.md)
 - Completed punishment follow-up: [`archive/tickets/S13SURJUS-006.md`](../archive/tickets/S13SURJUS-006.md)
 - Completed search/report follow-up: [`archive/tickets/S13SURJUS-003.md`](../archive/tickets/S13SURJUS-003.md)
+- Completed institutional bounty follow-up: [`archive/tickets/S125INSTREBOU-007.md`](../archive/tickets/S125INSTREBOU-007.md)
 
-The scenario is now a full row landing because it owns the lawful authority substrate and proves accusation, fine punishment, direct local search, and found-status reporting under the survival loop without helper-only setup.
-
-**Planned extension**
-
-Row is `In Progress` pending bounty posting behavior proof. The extension must:
-- Author a non-zero `bounty_posting_weight` and `artifact_posting_profile` on the lawful office holder (or an appointed deputy) so a `PostBounty` candidate can generate after the accusation/fine branch commits.
-- Prove in the backing golden a selected and committed `PostBounty` plus authoritative bounty-artifact materialization at the authored posting surface — distinct from the existing notice-posting branch proven in Row 11.
-- Keep the landed justice branch intact: `steal`, `investigate`, `accuse`, `fine`, the crime register writes, and the search/`report_found` chain must all still hold under the same 1440-tick survival envelope.
+The scenario is now a full row landing because it owns the lawful authority substrate and proves accusation, fine punishment, direct local search, found-status reporting, and institutional treasury-funded bounty posting under the survival loop without helper-only setup. The bounty proof is intentionally ordered after the accusation exists; the row does not require the fine verdict to precede bounty posting, only that the same theft case still reaches its fine continuation inside the 1440-tick survival envelope.
 
 ### 5.13 Landed Row 14: `survival-patrol`
 
@@ -634,7 +628,7 @@ The row is landed because the scenario-backed golden proves survival self-care a
 - The same run proves concrete hostile pressure still occurs in the integrated world by observing a wound on `Ward Mira`.
 
 **Structural-only within this row**
-- Bounty posting is active as part of full-stack coexistence substrate. This row does not claim a standalone behavior landing for that mechanic; a future row or ticket should add behavior-specific proof before treating it as an individually landed mechanic.
+- Bounty posting is active as part of full-stack coexistence substrate. Row 13 owns the standalone institutional bounty behavior proof; this row only proves coexistence with the full catalog.
 - Earlier rows remain the behavior owners for their individual branches. This row deliberately avoids re-proving every prior behavior in one oversized golden and instead owns the full-catalog coexistence contract.
 
 The row is landed because the scenario-backed golden proves the authored full-catalog structural contract, the survival-health contract, deterministic replay, and a concrete hostile-pressure branch under the golden-survival CI workflow.

@@ -505,6 +505,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                reward_encumbrances,
+                RewardEncumbrance,
+                insert_reward_encumbrance,
+                get_reward_encumbrance,
+                get_reward_encumbrance_mut,
+                remove_reward_encumbrance,
+                has_reward_encumbrance,
+                iter_reward_encumbrances,
+                insert_component_reward_encumbrance,
+                get_component_reward_encumbrance,
+                get_component_reward_encumbrance_mut,
+                remove_component_reward_encumbrance,
+                has_component_reward_encumbrance,
+                entities_with_reward_encumbrance,
+                query_reward_encumbrance,
+                count_with_reward_encumbrance,
+                "RewardEncumbrance",
+                |kind| kind == EntityKind::Office,
+                RewardEncumbrance,
+                crate::RewardEncumbrance,
+                set_component_reward_encumbrance,
+                clear_component_reward_encumbrance,
+                txn_simple_set
+            }
+            {
                 faction_data,
                 FactionData,
                 insert_faction_data,
@@ -2181,7 +2206,8 @@ pub(crate) use with_component_schema_entries;
 #[cfg(test)]
 mod tests {
     use crate::{
-        EntityKind, PlaceVisibilityProfile, SceneEvidence, Tick, Topology, World, WorldError,
+        CommodityKind, EntityKind, PlaceVisibilityProfile, Quantity, RewardEncumbrance,
+        SceneEvidence, Tick, Topology, World, WorldError,
     };
 
     #[test]
@@ -2223,6 +2249,36 @@ mod tests {
 
         let error = world
             .insert_component_place_visibility_profile(agent, profile)
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn reward_encumbrance_is_registered_for_offices_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let office = world.create_entity(EntityKind::Office, Tick(1));
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let bounty_artifact = world.create_entity(EntityKind::SocialArtifact, Tick(1));
+        let encumbrance = RewardEncumbrance {
+            reservations: vec![crate::RewardReservation {
+                bounty_artifact,
+                commodity: CommodityKind::Coin,
+                quantity: Quantity(13),
+            }],
+        };
+
+        world
+            .insert_component_reward_encumbrance(office, encumbrance.clone())
+            .unwrap();
+        assert_eq!(
+            world.get_component_reward_encumbrance(office),
+            Some(&encumbrance)
+        );
+        assert!(world.has_component_reward_encumbrance(office));
+        assert_eq!(world.count_with_reward_encumbrance(), 1);
+
+        let error = world
+            .insert_component_reward_encumbrance(agent, encumbrance)
             .unwrap_err();
         assert!(matches!(error, WorldError::InvalidOperation(_)));
     }

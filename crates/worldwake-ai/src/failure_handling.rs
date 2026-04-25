@@ -153,6 +153,7 @@ pub(crate) fn classify_discrepancy(
         | PlannerOpKind::EscortToSafety
         | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::WithdrawBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => {}
     }
@@ -549,6 +550,7 @@ fn classify_input_failure(
         | PlannerOpKind::EscortToSafety
         | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::WithdrawBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice
         | PlannerOpKind::Wash => None,
@@ -580,6 +582,7 @@ fn target_gone(view: &dyn RuntimeBeliefView, agent: EntityId, step: &PlannedStep
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
         | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::WithdrawBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => view.entity_kind(target).is_none(),
         PlannerOpKind::Attack | PlannerOpKind::Defend => {
@@ -1231,7 +1234,8 @@ fn related_entity(step: &PlannedStep) -> Option<EntityId> {
         | PlannerOpKind::Accuse
         | PlannerOpKind::Fine
         | PlannerOpKind::Exile
-        | PlannerOpKind::ClaimBounty => {
+        | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::WithdrawBounty => {
             step.targets.first().copied().and_then(authoritative_target)
         }
         PlannerOpKind::Bribe => step
@@ -1316,6 +1320,7 @@ fn related_place(
         | PlannerOpKind::ReportMissing
         | PlannerOpKind::ReportFound
         | PlannerOpKind::ClaimBounty
+        | PlannerOpKind::WithdrawBounty
         | PlannerOpKind::PostBounty
         | PlannerOpKind::PostNotice => view.effective_place(agent),
         PlannerOpKind::SearchPlace | PlannerOpKind::EscortToSafety => {
