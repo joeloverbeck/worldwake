@@ -350,6 +350,14 @@ fn validate_institutional_authority(
     Ok(())
 }
 
+fn authorize_office_expenditure(
+    world: &World,
+    actor: EntityId,
+    office: EntityId,
+) -> Result<(), ActionError> {
+    validate_institutional_authority(world, actor, office)
+}
+
 fn validate_reward_source(
     world: &World,
     actor: EntityId,
@@ -363,7 +371,7 @@ fn validate_reward_source(
 
     match payload.reward_source {
         RewardSource::InstitutionalTreasury { treasury_entity } => {
-            validate_institutional_authority(world, actor, treasury_entity)?;
+            authorize_office_expenditure(world, actor, treasury_entity)?;
             if world.controlled_commodity_quantity(treasury_entity, payload.reward_commodity)
                 < payload.reward_quantity
             {
@@ -1241,6 +1249,23 @@ mod tests {
         commit_txn(txn);
     }
 
+    fn create_office_treasury(
+        world: &mut World,
+        holder: EntityId,
+        commodity: CommodityKind,
+        quantity: u16,
+    ) -> EntityId {
+        let mut txn = new_txn(world, 2);
+        let office = txn.create_office("Treasury Office").unwrap();
+        let lot = txn
+            .create_item_lot(commodity, Quantity(u32::from(quantity)))
+            .unwrap();
+        txn.assign_office(office, holder).unwrap();
+        txn.set_owner(lot, office).unwrap();
+        commit_txn(txn);
+        office
+    }
+
     fn kill_entity(world: &mut World, entity: EntityId, tick: u64) {
         let mut txn = new_txn(world, tick);
         txn.set_component_dead_at(
@@ -1402,6 +1427,102 @@ mod tests {
                 generation: 0
             })]
         );
+    }
+
+    #[test]
+    fn authorize_office_expenditure_accepts_holder_with_current_authority() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let holder = spawn_agent_at(&mut world, "holder", square);
+        let office = create_office_treasury(&mut world, holder, CommodityKind::Coin, 4);
+        let balance_before = world.controlled_commodity_quantity(office, CommodityKind::Coin);
+
+        authorize_office_expenditure(&world, holder, office).unwrap();
+
+        assert_eq!(
+            world.controlled_commodity_quantity(office, CommodityKind::Coin),
+            balance_before
+        );
+    }
+
+    #[test]
+    fn authorize_office_expenditure_rejects_non_holder() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let holder = spawn_agent_at(&mut world, "holder", square);
+        let outsider = spawn_agent_at(&mut world, "outsider", square);
+        let office = create_office_treasury(&mut world, holder, CommodityKind::Coin, 4);
+
+        let err = authorize_office_expenditure(&world, outsider, office).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ActionError::PreconditionFailed(message)
+                if message.contains("is not the holder of office treasury")
+        ));
+    }
+
+    #[test]
+    fn validate_reward_source_uses_authorization_helper_for_institutional_treasury() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let holder = spawn_agent_at(&mut world, "holder", square);
+        let outsider = spawn_agent_at(&mut world, "outsider", square);
+        let target = spawn_agent_at(&mut world, "target", square);
+        let office = create_office_treasury(&mut world, holder, CommodityKind::Coin, 4);
+        let payload = PostBountyActionPayload {
+            posting_place: square,
+            issuing_authority: Some(office),
+            expires_at: Some(Tick(12)),
+            jurisdiction: Some(office),
+            target: BountyTarget::EliminateEntity { target },
+            proof_requirement: ProofRequirement::PhysicalEvidence,
+            reward_commodity: CommodityKind::Coin,
+            reward_quantity: Quantity(4),
+            reward_source: RewardSource::InstitutionalTreasury {
+                treasury_entity: office,
+            },
+            claim_place: square,
+        };
+
+        validate_reward_source(&world, holder, &payload).unwrap();
+        let err = validate_reward_source(&world, outsider, &payload).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ActionError::PreconditionFailed(message)
+                if message.contains("is not the holder of office treasury")
+        ));
+    }
+
+    #[test]
+    fn validate_reward_source_still_rejects_underfunded_institutional_treasury() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let holder = spawn_agent_at(&mut world, "holder", square);
+        let target = spawn_agent_at(&mut world, "target", square);
+        let office = create_office_treasury(&mut world, holder, CommodityKind::Coin, 3);
+        let payload = PostBountyActionPayload {
+            posting_place: square,
+            issuing_authority: Some(office),
+            expires_at: Some(Tick(12)),
+            jurisdiction: Some(office),
+            target: BountyTarget::EliminateEntity { target },
+            proof_requirement: ProofRequirement::PhysicalEvidence,
+            reward_commodity: CommodityKind::Coin,
+            reward_quantity: Quantity(4),
+            reward_source: RewardSource::InstitutionalTreasury {
+                treasury_entity: office,
+            },
+            claim_place: square,
+        };
+
+        let err = validate_reward_source(&world, holder, &payload).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ActionError::PreconditionFailed(message) if message.contains("lacks Coin x4")
+        ));
     }
 
     #[test]

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — reconcile `RewardEncumbrance` cardinality for multiple active office bounties; action handlers (`validate_reward_source`, `commit_post_bounty`, `claim_bounty`, `withdraw_bounty`), artifact-lifecycle TTL release hook, payload validator extension
-**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), S125INSTREBOU-003
+**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), [S125INSTREBOU-003](../archive/tickets/S125INSTREBOU-003.md)
 
 ## Problem
 
@@ -45,7 +45,7 @@ Today `post_bounty` validates fund availability at commit but records no encumbr
 First, reconcile the authoritative `RewardEncumbrance` cardinality shape from ticket 001 so the lifecycle can store and query multiple active reservations for the same office. Keep `EntityKind::Office` as the institutional owner boundary unless live reassessment proves a different ECS attachment surface is cleaner. Update core schema/sample/save tests if the payload shape changes, and keep the save-format policy truthful.
 
 Extend the `RewardSource::InstitutionalTreasury` arm of `validate_reward_source` (`artifact_actions.rs:353-418`) to:
-- Call `authorize_office_expenditure(world, actor, treasury_entity)?` (from ticket 003).
+- Call `authorize_office_expenditure(world, actor, treasury_entity)?` (from [ticket 003](../archive/tickets/S125INSTREBOU-003.md)).
 - Compute available balance: `controlled_commodity_quantity(treasury_entity, payload.reward_commodity)` minus the sum of active `RewardEncumbrance` quantities matching `(office=treasury_entity, commodity=payload.reward_commodity)`.
 - Reject if available < `payload.reward_quantity` with the existing `ActionError` variant for insufficient funds.
 

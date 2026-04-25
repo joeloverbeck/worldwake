@@ -26,6 +26,27 @@ If the ticket's requested invariant exposes a production contradiction, correct 
 - When a golden ticket mixes valid negative coverage gaps with an over-claimed positive proof, preserve the honest golden slice and correct the ticket.
 - Allow different proof depths per scenario (decision trace, action trace, authoritative state) rather than flattening to uniform assertion style.
 
+## Derived forensic/report/read-model tickets
+
+Use this compact checklist before editing:
+
+- name the authoritative inputs and trace inputs the model is allowed to read
+- verify nested field trait support for the requested public type shape
+- confirm the deterministic ordering/storage rule (`BTree*`, stable `Vec` order, no float math)
+- separate bounded-capture/filtering policy from raw candidate collection
+- identify any same-crate type fallout needed to keep the requested API honest
+- if the ticket asks you to prove a derived trace/report field is copied or transformed from authoritative input, target the focused proof at the actual constructor/builder boundary even when the type is declared in a different module
+- when canonical names, classifications, or display rows depend on an existing registry/catalog, verify whether the live render/helper signature must accept that input explicitly instead of assuming the change is purely local `writeln!` fallout
+
+## Doc-only or compile-time regression tickets
+
+Use this compact checklist before editing:
+
+- verify the exact external path for every symbol referenced in docs/tests (`crate_root::Type` vs `module::Type`)
+- confirm whether each negative proof fails independently for the intended regression, or only when multiple symbols change together
+- pair negative `compile_fail` coverage with a positive compile/runnable proof when that guards against always-pass regressions
+- if language privacy or type-checking semantics block the drafted proof shape, rewrite the ticket/spec to the strongest honest seam before implementation and closeout
+
 ## Type-change scope
 
 When shared types change, include the sweep surfaces from the reassessment checks ("Shared type, serialization, and persisted-shape sweep") in the task list.

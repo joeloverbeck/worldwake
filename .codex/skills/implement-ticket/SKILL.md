@@ -235,6 +235,8 @@ When a ticket makes an existing module start consuming a trait method that alrea
 
 When a ticket mostly adds a new file plus a small declaration/edit in a large existing file (for example `pub mod ...;`, enum registration, or a one-line export), treat the existing file as a fragile edit surface: confirm the expected declaration layout before patching, then immediately re-read the touched header/section after editing to confirm the file skeleton is still intact before moving on to verification.
 
+When a small/local helper-extraction ticket asks to move existing inline logic into a helper, enumerate the exact live branches currently inlined before editing. If the ticket names an extra semantic branch that is not present in the inline code, rewrite the ticket before coding and mark that branch as future-owned instead of adding new behavior during a preservation refactor.
+
 #### Second-pass correction
 
 If implementation or focused test setup later disproves a remaining ticket/spec subclaim that survived the initial reassessment, stop and do a second-pass correction before final verification. Update the active ticket/spec to the strongest honest live seam immediately instead of leaving that mismatch implicit until closeout.
@@ -265,25 +267,14 @@ If a ticket's manual regression step, `compile_fail` sketch, or claimed proof se
 
 Load `references/scope-extraction.md` when the owned edit surface, dependency boundary, or honest verification scope is not already clear from reassessment and ticket classification.
 
-For derived forensic/report/read-model tickets, use this compact scope checklist before editing:
-- name the authoritative inputs and trace inputs the model is allowed to read
-- verify nested field trait support for the requested public type shape
-- confirm the deterministic ordering/storage rule (`BTree*`, stable `Vec` order, no float math)
-- separate bounded-capture/filtering policy from raw candidate collection
-- identify any same-crate type fallout needed to keep the requested API honest
-- if the ticket asks you to prove a derived trace/report field is copied or transformed from authoritative input, target the focused proof at the actual constructor/builder boundary even when the type is declared in a different module
-- when canonical names, classifications, or display rows depend on an existing registry/catalog, verify whether the live render/helper signature must accept that input explicitly instead of assuming the change is purely local `writeln!` fallout
+For derived forensic/report/read-model tickets, use the compact checklist in `references/scope-extraction.md`.
 
 For small CLI/tooling tickets that touch a single binary or local helper surface, explicitly check whether the honest focused proof belongs beside the owned function/module (for example in `src/bin/*.rs` tests) rather than in a new integration-test binary. If the ticket sketches a new `tests/*.rs` file but the live seam is a local formatter/helper inside one binary, narrow the test placement to that seam and record the deviation in the ticket closeout.
 If the live emitter, runtime mutation seam, and focused verification harness already live together in one existing file or module, prefer landing the change there over creating a new sibling file from the drafted sketch. Record that live seam explicitly in the ticket closeout whenever it wins over the drafted file layout.
 When the live proof seam or owned implementation boundary differs from the ticket's drafted sketch, record the exact landed seam in the ticket closeout instead of preserving the drafted shape in prose. Small/local tickets often land through a private extracted helper or a narrower same-file formatter/test seam even when the draft described a more direct in-place edit.
 Before implementation scope is final, compare `Verification Layers`, `Acceptance Criteria`, and drafted `New/Modified Tests` for one-to-one proof coverage. If the ticket names an invariant that requires its own focused proof but the drafted tests do not include it, correct the ticket/test plan up front instead of discovering the missing proof only during closeout.
 
-For doc-only or compile-time regression tickets, use this compact scope checklist before editing:
-- verify the exact external path for every symbol referenced in docs/tests (`crate_root::Type` vs `module::Type`)
-- confirm whether each negative proof fails independently for the intended regression, or only when multiple symbols change together
-- pair negative `compile_fail` coverage with a positive compile/runnable proof when that guards against always-pass regressions
-- if language privacy or type-checking semantics block the drafted proof shape, rewrite the ticket/spec to the strongest honest seam before implementation and closeout
+For doc-only or compile-time regression tickets, use the compact checklist in `references/scope-extraction.md`.
 
 ### 5. Implement with Worldwake discipline
 
