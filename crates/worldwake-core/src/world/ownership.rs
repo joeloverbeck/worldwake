@@ -211,7 +211,7 @@ impl World {
 
     /// Boolean-only control check. Returns `true` if `actor` has any control
     /// right over `entity`, without allocating a `Vec<EffectiveRight>`.
-    /// Mirrors the logic of [`collect_control_rights`] but short-circuits on
+    /// Mirrors the logic of `collect_control_rights` but short-circuits on
     /// the first found right.
     #[must_use]
     pub fn has_control(&self, actor: EntityId, entity: EntityId) -> bool {

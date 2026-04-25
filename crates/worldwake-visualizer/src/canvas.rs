@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use egui::{
-    Align2, Color32, FontId, Pos2, Rect, Scene, Sense, Shape, Stroke, StrokeKind, Ui, Vec2,
+    emath::TSTransform, Align2, Color32, FontId, LayerId, PointerButton, Pos2, Rangef, Rect,
+    Response, Sense, Shape, Stroke, StrokeKind, Ui, UiBuilder, Vec2,
 };
 use worldwake_core::{ControlSource, EntityId, Permille, PlaceTag};
 
@@ -15,6 +16,8 @@ const AGENT_RING_RADIUS: f32 = 22.0;
 const AGENT_HIT_RADIUS: f32 = 14.0;
 const EDGE_OFFSET: f32 = 6.0;
 const SCENE_SIZE: Vec2 = Vec2::new(1_100.0, 1_100.0);
+const ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.15..=4.0;
+const WHEEL_ZOOM_SPEED: f32 = 1.0 / 200.0;
 
 pub fn draw_canvas(
     ui: &mut Ui,
@@ -26,15 +29,136 @@ pub fn draw_canvas(
     let draw_data = CanvasDrawData::from_snapshot(snapshot);
     *hovered_agent = None;
 
-    Scene::new()
-        .zoom_range(0.15..=4.0)
-        .max_inner_size(SCENE_SIZE)
-        .show(ui, scene_rect, |ui| {
-            ui.set_min_size(SCENE_SIZE);
-            draw_edges(ui, snapshot, &draw_data);
-            draw_places(ui, snapshot);
-            draw_agents(ui, snapshot, &draw_data, selected_agent, hovered_agent);
-        });
+    show_canvas_scene(ui, scene_rect, |ui| {
+        ui.set_min_size(SCENE_SIZE);
+        draw_edges(ui, snapshot, &draw_data);
+        draw_places(ui, snapshot);
+        draw_agents(ui, snapshot, &draw_data, selected_agent, hovered_agent);
+    });
+}
+
+fn show_canvas_scene(
+    parent_ui: &mut Ui,
+    scene_rect: &mut Rect,
+    add_contents: impl FnOnce(&mut Ui),
+) {
+    let (outer_rect, _outer_response) =
+        parent_ui.allocate_exact_size(parent_ui.available_size_before_wrap(), Sense::hover());
+    let zoom_range = Rangef::from(ZOOM_RANGE);
+    let mut to_global = fit_to_rect_in_scene(outer_rect, *scene_rect, zoom_range);
+    let scene_rect_was_good =
+        to_global.is_valid() && scene_rect.is_finite() && scene_rect.size() != Vec2::ZERO;
+    let mut inner_rect = *scene_rect;
+
+    let response = show_canvas_scene_with_transform(parent_ui, outer_rect, &mut to_global, |ui| {
+        add_contents(ui);
+        inner_rect = ui.min_rect();
+    });
+
+    if response.changed() {
+        *scene_rect = to_global.inverse() * outer_rect;
+    }
+
+    if !scene_rect_was_good {
+        let to_global = fit_to_rect_in_scene(outer_rect, inner_rect, zoom_range);
+        *scene_rect = to_global.inverse() * outer_rect;
+    }
+}
+
+fn fit_to_rect_in_scene(
+    rect_in_global: Rect,
+    rect_in_scene: Rect,
+    zoom_range: Rangef,
+) -> TSTransform {
+    let scale = (rect_in_global.size() / rect_in_scene.size()).min_elem();
+    let scale = zoom_range.clamp(scale);
+    let center_in_global = rect_in_global.center().to_vec2();
+    let center_scene = rect_in_scene.center().to_vec2();
+    TSTransform::from_translation(center_in_global - scale * center_scene)
+        * TSTransform::from_scaling(scale)
+}
+
+fn show_canvas_scene_with_transform(
+    parent_ui: &mut Ui,
+    outer_rect: Rect,
+    to_global: &mut TSTransform,
+    add_contents: impl FnOnce(&mut Ui),
+) -> Response {
+    let scene_layer_id = LayerId::new(
+        parent_ui.layer_id().order,
+        parent_ui.id().with("visualizer_canvas_scene"),
+    );
+    parent_ui
+        .ctx()
+        .set_sublayer(parent_ui.layer_id(), scene_layer_id);
+
+    let mut local_ui = parent_ui.new_child(
+        UiBuilder::new()
+            .layer_id(scene_layer_id)
+            .max_rect(Rect::from_min_size(Pos2::ZERO, SCENE_SIZE))
+            .sense(Sense::click_and_drag()),
+    );
+    let mut response = local_ui.response();
+    register_canvas_pan_and_zoom(&local_ui, &mut response, to_global);
+
+    local_ui.set_clip_rect(to_global.inverse() * outer_rect);
+    local_ui
+        .ctx()
+        .set_transform_layer(scene_layer_id, *to_global);
+
+    add_contents(&mut local_ui);
+
+    response
+}
+
+fn register_canvas_pan_and_zoom(ui: &Ui, response: &mut Response, to_global: &mut TSTransform) {
+    if response.dragged_by(PointerButton::Middle) {
+        to_global.translation += to_global.scaling * response.drag_delta();
+        response.mark_changed();
+    }
+
+    let Some(mouse_pos) = ui.input(|input| input.pointer.latest_pos()) else {
+        return;
+    };
+    if !response.contains_pointer() {
+        return;
+    }
+
+    let wheel_zoom_delta = ui.input(|input| wheel_zoom_delta(input.smooth_scroll_delta()));
+    let zoom_delta = if wheel_zoom_delta != 1.0 {
+        wheel_zoom_delta
+    } else {
+        ui.input(|input| input.zoom_delta())
+    };
+    if zoom_delta == 1.0 {
+        return;
+    }
+
+    zoom_transform_about_pointer(to_global, mouse_pos, zoom_delta, Rangef::from(ZOOM_RANGE));
+    response.mark_changed();
+}
+
+fn wheel_zoom_delta(scroll_delta: Vec2) -> f32 {
+    (WHEEL_ZOOM_SPEED * scroll_delta.y).exp()
+}
+
+fn zoom_transform_about_pointer(
+    to_global: &mut TSTransform,
+    pointer_in_global: Pos2,
+    zoom_delta: f32,
+    zoom_range: Rangef,
+) {
+    let pointer_in_scene = to_global.inverse() * pointer_in_global;
+    let zoom_delta = zoom_delta.clamp(
+        zoom_range.min / to_global.scaling,
+        zoom_range.max / to_global.scaling,
+    );
+
+    *to_global = *to_global
+        * TSTransform::from_translation(pointer_in_scene.to_vec2())
+        * TSTransform::from_scaling(zoom_delta)
+        * TSTransform::from_translation(-pointer_in_scene.to_vec2());
+    to_global.scaling = zoom_range.clamp(to_global.scaling);
 }
 
 #[derive(Clone, Debug)]
@@ -465,6 +589,30 @@ mod tests {
             (ordered.iter().map(|(_, angle)| angle).sum::<f32>() - std::f32::consts::TAU).abs()
                 < 0.000_001
         );
+    }
+
+    #[test]
+    fn mouse_wheel_delta_maps_to_zoom_not_pan() {
+        assert_eq!(wheel_zoom_delta(Vec2::ZERO), 1.0);
+        assert!(wheel_zoom_delta(Vec2::new(0.0, 80.0)) > 1.0);
+        assert!(wheel_zoom_delta(Vec2::new(0.0, -80.0)) < 1.0);
+    }
+
+    #[test]
+    fn zoom_transform_keeps_pointer_scene_position_stable() {
+        let outer_rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(200.0));
+        let scene_rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let mut to_global = fit_to_rect_in_scene(outer_rect, scene_rect, Rangef::new(0.15, 4.0));
+        let pointer = Pos2::new(40.0, 80.0);
+        let before = to_global.inverse() * pointer;
+        let before_scaling = to_global.scaling;
+
+        zoom_transform_about_pointer(&mut to_global, pointer, 1.5, Rangef::new(0.15, 4.0));
+
+        let after = to_global.inverse() * pointer;
+        assert!((after.x - before.x).abs() < 0.000_01);
+        assert!((after.y - before.y).abs() < 0.000_01);
+        assert!(to_global.scaling > before_scaling);
     }
 
     fn baseline_snapshot() -> FrameSnapshot {

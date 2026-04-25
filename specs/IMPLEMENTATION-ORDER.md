@@ -465,13 +465,15 @@ places). Lands a separate workspace crate so GUI transitive deps (winit,
 wgpu, accesskit, swash) stay isolated from engine CI runs.
 
 ```text
-T01 (independent; no spec deps)
+T01 ✅ archived (independent; no spec deps)
 ```
 
-- **T01**: Debug Visualizer — new `worldwake-visualizer` crate; live
+- **T01**: ✅ COMPLETED — Debug Visualizer — archived at
+  [archive/specs/T01-debug-visualizer.md](../archive/specs/T01-debug-visualizer.md).
+  Landed the new `worldwake-visualizer` crate: live
   stepper with play/pause/step/space/speed controls, force-directed place
   layout, agent rendering with transit-progress lerp, hover tooltips with
   zone-colored need bars, click-to-open tabbed modal (Overview / Needs /
-  Beliefs / Inventory / Plan / Traces). Observer-only boundary; reuses
-  `worldwake-cli`'s scenario loader; adds no engine-side coupling. Spec:
-  [`specs/T01-debug-visualizer.md`](./T01-debug-visualizer.md).
+  Beliefs / Inventory / Plan / Traces), local pointer-centered wheel zoom,
+  and middle-drag pan. Observer-only boundary; reuses `worldwake-cli`'s
+  scenario loader; adds no engine-side coupling.

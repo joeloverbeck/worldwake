@@ -1,6 +1,6 @@
 # T01DEBVIS-010: Manual QA checklist + verification pass
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None
@@ -16,7 +16,10 @@ The visualizer has no automated golden coverage by design (spec T01 Non-Goals: "
 
 1. T01DEBVIS-005 replaced the original single-paragraph README stub with an interim canvas/manual-QA section. This ticket still owns replacing that partial checklist with the full 13-step QA checklist content from spec §D13.
 2. `scenarios/` is the canonical scenario directory at the workspace root. Reassessment 2026-04-25 confirmed the directory exists and contains the survival-* family used by current goldens.
-3. Tooling-only documentation ticket — no engine changes, no widget code changes.
+3. Tooling/visualizer-only ticket — no engine changes.
+4. Implementation pass 2026-04-25 replaced the README checklist and proved the CLI/doc/test surfaces. Bounded GUI startup probes stayed alive until timeout for three scenarios, which proves startup/no immediate crash only.
+5. User manual QA on 2026-04-25 found checklist item 5 failed: mouse wheel input panned the canvas instead of zooming. Live reassessment showed `egui::Scene` treats plain wheel input as `smooth_scroll_delta()` pan and reserves zoom for `zoom_delta()` input, so the visualizer needs a local canvas input policy for the spec's intended "wheel zooms" contract.
+6. User manual QA after the code fix on 2026-04-25 confirmed the mouse-wheel zoom behavior is fixed, completing the remaining visual QA blocker for this ticket.
 
 ## Architecture Check
 
@@ -27,7 +30,8 @@ The visualizer has no automated golden coverage by design (spec T01 Non-Goals: "
 
 1. Documentation correctness → `cargo doc -p worldwake-visualizer` builds without warnings; the README is a Markdown file, not a doc-comment, so the doc build is a sanity check on rustdoc-reachable items.
 2. Manual QA pass → run the 13-step checklist against each scenario in `scenarios/`; record pass/fail per scenario in the ticket's verification notes (not in the README itself, which is generic).
-3. Per template item 6: documentation/verification ticket; no automated decision/action/event-log assertions apply.
+3. Canvas input contract → focused transform/unit tests prove wheel delta maps to zoom and zooming preserves the pointer's scene coordinate.
+4. Per template item 6: documentation/verification ticket; no automated decision/action/event-log assertions apply.
 
 ## What to Change
 
@@ -59,9 +63,15 @@ For each `.ron` file in `scenarios/`, run the 13-step checklist and record pass/
 
 Add a `## Screenshots` section to the README with a "TBD" note. Spec Open Questions §3 defers screenshot/canvas export to a later iteration.
 
+### 4. Fix mouse-wheel zoom
+
+Update the visualizer canvas input wrapper so plain mouse-wheel input zooms around the pointer, while middle-drag remains the panning gesture required by the checklist.
+
 ## Files to Touch
 
 - `crates/worldwake-visualizer/README.md` (modify — replace stub with full QA checklist)
+- `crates/worldwake-visualizer/src/canvas.rs` (modify — local canvas pan/zoom input policy)
+- `crates/worldwake-core/src/world/ownership.rs` (modify — rustdoc warning fix required by `cargo doc -p worldwake-visualizer`)
 
 ## Out of Scope
 
@@ -76,8 +86,9 @@ Add a `## Screenshots` section to the README with a "TBD" note. Spec Open Questi
 
 1. `cargo doc -p worldwake-visualizer` builds without warnings.
 2. The 13-step QA checklist is fully reproduced in `crates/worldwake-visualizer/README.md`.
-3. Manual QA pass run on at least: `survival-baseline.ron`, `survival-scattered.ron`, and one additional landed scenario; all 13 steps pass on each.
-4. Existing suite: `cargo test --workspace` passes.
+3. Mouse wheel zooms the canvas instead of panning; middle-drag remains the pan gesture.
+4. Manual QA pass run on at least: `survival-baseline.ron`, `survival-scattered.ron`, and one additional landed scenario; all 13 steps pass on each.
+5. Existing suite: `cargo test --workspace` passes.
 
 ### Invariants
 
@@ -88,7 +99,8 @@ Add a `## Screenshots` section to the README with a "TBD" note. Spec Open Questi
 
 ### New/Modified Tests
 
-1. None — documentation-only ticket; verification is command-based and existing runtime coverage is named in Assumption Reassessment.
+1. `crates/worldwake-visualizer/src/canvas.rs` — wheel delta maps to zoom rather than pan.
+2. `crates/worldwake-visualizer/src/canvas.rs` — zooming keeps the pointer's scene coordinate stable.
 
 ### Commands
 
@@ -97,3 +109,35 @@ Add a `## Screenshots` section to the README with a "TBD" note. Spec Open Questi
 3. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual full-checklist pass)
 4. `cargo run -p worldwake-visualizer -- scenarios/survival-scattered.ron` (manual full-checklist pass; verify item 13 — transit lerp)
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Replaced `crates/worldwake-visualizer/README.md` with the full 13-item manual QA checklist from spec T01 §D13.
+- Added README `How to Run`, `Known Scenarios`, and `Screenshots` sections.
+- Fixed a blocking rustdoc warning in `crates/worldwake-core/src/world/ownership.rs` by changing a public doc comment's private intra-doc link to plain code text.
+- Fixed the mouse-wheel canvas behavior by replacing the direct `egui::Scene` call with a visualizer-local scene wrapper that uses wheel delta for pointer-centered zoom and middle-drag for pan.
+- Added focused canvas transform regressions for wheel-to-zoom mapping and pointer-stable zoom.
+- User manual QA confirmed the intended mouse-wheel zoom behavior is fixed.
+
+## Deviations
+
+- The ticket started as documentation/manual-QA closeout, but manual QA found a real canvas input bug. The ticket absorbed the visualizer-local fix because checklist item 5 was an explicit acceptance criterion.
+- `crates/worldwake-core/src/world/ownership.rs` was touched only to remove a rustdoc warning that blocked the ticket's `cargo doc -p worldwake-visualizer` verification layer.
+
+## Verification Notes
+
+- Passed `cargo doc -p worldwake-visualizer`; rustdoc emitted no project documentation warnings after the `ownership.rs` comment fix. Cargo still printed the dependency future-incompatibility advisory for `ashpd v0.8.1`.
+- Passed `cargo run -p worldwake-visualizer -- --help`; usage printed and exited.
+- Passed bounded startup smoke for `timeout 8s cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron`; command timed out while the app remained running. Mesa/EGL warnings were printed.
+- Passed bounded startup smoke for `timeout 8s cargo run -p worldwake-visualizer -- scenarios/survival-scattered.ron`; command timed out while the app remained running. Mesa/EGL warnings were printed.
+- Passed bounded startup smoke for `timeout 8s cargo run -p worldwake-visualizer -- scenarios/final-integration.ron`; command timed out while the app remained running. Mesa/EGL warnings were printed.
+- Passed `cargo test -p worldwake-visualizer --lib -- --list` after the mouse-wheel code fix.
+- Passed `cargo test -p worldwake-visualizer --lib canvas::tests::mouse_wheel_delta_maps_to_zoom_not_pan -- --exact`.
+- Passed `cargo test -p worldwake-visualizer --lib canvas::tests::zoom_transform_keeps_pointer_scene_position_stable -- --exact`.
+- Passed `cargo test -p worldwake-visualizer`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `cargo test --workspace` after the mouse-wheel code fix.
+- User manual QA confirmed mouse-wheel zoom is fixed.
+- Passed `./scripts/verify.sh`.

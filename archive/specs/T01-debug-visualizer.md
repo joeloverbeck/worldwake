@@ -17,7 +17,7 @@ Developer Tooling (not phase-gated; independent of engine phase work).
 
 ## Status
 
-Draft.
+COMPLETED.
 
 ## Crates
 
@@ -41,9 +41,9 @@ sibling belief components), `AgentTickDriver`/`AgentDecisionRuntime`,
 action/decision trace sinks.
 
 Three completed (archived) specs supply types this spec reads:
-- [archive/specs/S81-golden-gaps-simulation-remediation.md](../archive/specs/S81-golden-gaps-simulation-remediation.md) — `DeadAt { tick, cause }` (`crates/worldwake-core/src/combat.rs`).
-- [archive/specs/S111-scenario-homogeneity-lints.md](../archive/specs/S111-scenario-homogeneity-lints.md) — scenario-load lints surfaced via `--ignore-lints`.
-- [archive/specs/S114-plan-step-guards.md](../archive/specs/S114-plan-step-guards.md) — `PlanGuard` and `PlanExpectation` attached to `PlannedStep`.
+- [archive/specs/S81-golden-gaps-simulation-remediation.md](S81-golden-gaps-simulation-remediation.md) — `DeadAt { tick, cause }` (`crates/worldwake-core/src/combat.rs`).
+- [archive/specs/S111-scenario-homogeneity-lints.md](S111-scenario-homogeneity-lints.md) — scenario-load lints surfaced via `--ignore-lints`.
+- [archive/specs/S114-plan-step-guards.md](S114-plan-step-guards.md) — `PlanGuard` and `PlanExpectation` attached to `PlannedStep`.
 
 ## Design Goals
 
@@ -731,3 +731,26 @@ Single wave; no phase gate.
    `TickStepServices` construction.
 6. Document Manual QA checklist in `README.md`.
 7. Verify on each landed scenario in `scenarios/`.
+
+## Outcome
+
+Completed 2026-04-25. T01 landed as the new `worldwake-visualizer`
+workspace crate with scenario loading, deterministic place layout, snapshot
+read models, canvas rendering, controls, hover need bars, tabbed agent detail
+modal, per-agent trace buffers, and the manual QA checklist in
+`crates/worldwake-visualizer/README.md`.
+
+Implementation deviations from the draft were bounded to live dependency/API
+facts: `rfd`'s xdg-portal support required `tokio`, the resolved `eframe`
+version uses the real app `update` hook rather than a draft `ui` hook, and the
+canvas owns pointer-centered wheel zoom plus middle-drag pan because the
+initial `egui::Scene` wheel behavior panned instead of zooming on the tested
+app.
+
+Verification included `cargo doc -p worldwake-visualizer`,
+`cargo run -p worldwake-visualizer -- --help`, bounded startup smokes for the
+baseline/scattered/final-integration scenarios, focused canvas tests,
+`cargo test -p worldwake-visualizer`, `cargo test --workspace`,
+`cargo clippy --workspace --all-targets -- -D warnings`, and
+`./scripts/verify.sh`. Manual app QA also confirmed that mouse-wheel zoom now
+zooms the canvas instead of panning.
