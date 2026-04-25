@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use eframe::egui;
-use worldwake_ai::{AgentTickDriver, DecisionTraceSink};
+use worldwake_ai::AgentTickDriver;
 use worldwake_cli::scenario::{
     load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints, ScenarioError,
 };
@@ -18,6 +18,7 @@ use crate::controls::{self, TopBarAction, TopBarState};
 use crate::layout::PlaceLayout;
 use crate::snapshot::{build_snapshot, FrameSnapshot};
 use crate::tabs::DetailTab;
+use crate::trace_buffers::AgentTraceBuffers;
 
 pub const MAX_TICKS_PER_FRAME: usize = 100;
 
@@ -42,11 +43,11 @@ pub struct VisualizerApp {
     scenario_path: Option<PathBuf>,
     ignore_lints: bool,
     action_trace: ActionTraceSink,
-    decision_trace: DecisionTraceSink,
     perception_trace: PerceptionTraceSink,
     request_resolution_trace: RequestResolutionTraceSink,
     politics_trace: PoliticalTraceSink,
     institutional_knowledge_trace: InstitutionalKnowledgeTraceSink,
+    trace_buffers: AgentTraceBuffers,
     layout: Option<PlaceLayout>,
     play_state: PlayState,
     speed: TicksPerSecond,
@@ -128,11 +129,11 @@ impl VisualizerApp {
             scenario_path: None,
             ignore_lints,
             action_trace: ActionTraceSink::new(),
-            decision_trace: DecisionTraceSink::new(),
             perception_trace: PerceptionTraceSink::new(),
             request_resolution_trace: RequestResolutionTraceSink::new(),
             politics_trace: PoliticalTraceSink::new(),
             institutional_knowledge_trace: InstitutionalKnowledgeTraceSink::new(),
+            trace_buffers: AgentTraceBuffers::default(),
             layout: None,
             play_state: PlayState::Paused,
             speed: TicksPerSecond::default(),
@@ -185,7 +186,22 @@ impl VisualizerApp {
                 institutional_knowledge_trace: Some(&mut self.institutional_knowledge_trace),
             },
         )?;
+        self.drain_trace_sinks();
         Ok(())
+    }
+
+    fn drain_trace_sinks(&mut self) {
+        if let Some(sink) = self.driver.trace_sink() {
+            self.trace_buffers
+                .record_decisions(sink.traces().iter().cloned());
+        }
+        if let Some(sink) = self.driver.trace_sink_mut() {
+            sink.clear();
+        }
+
+        self.trace_buffers
+            .record_actions(self.action_trace.events().iter().cloned());
+        self.action_trace.clear();
     }
 
     pub fn reset_scenario(&mut self) {
@@ -218,11 +234,11 @@ impl VisualizerApp {
         self.dispatch_table = spawned.dispatch_table;
         self.driver = new_tracing_driver();
         self.action_trace = ActionTraceSink::new();
-        self.decision_trace = DecisionTraceSink::new();
         self.perception_trace = PerceptionTraceSink::new();
         self.request_resolution_trace = RequestResolutionTraceSink::new();
         self.politics_trace = PoliticalTraceSink::new();
         self.institutional_knowledge_trace = InstitutionalKnowledgeTraceSink::new();
+        self.trace_buffers = AgentTraceBuffers::default();
         self.layout = Some(layout);
         self.play_state = PlayState::Paused;
         self.tick_carry = 0.0;
@@ -270,6 +286,10 @@ impl VisualizerApp {
 
     pub(crate) const fn driver(&self) -> &AgentTickDriver {
         &self.driver
+    }
+
+    pub(crate) const fn trace_buffers(&self) -> &AgentTraceBuffers {
+        &self.trace_buffers
     }
 
     pub(crate) const fn active_detail_tab(&self) -> DetailTab {
@@ -398,7 +418,6 @@ impl VisualizerApp {
             return;
         };
 
-        let _staged_runtime = &self.decision_trace;
         crate::canvas::draw_canvas(
             ui,
             &snapshot,
@@ -530,6 +549,34 @@ mod tests {
         app.clear_selected_agent();
 
         assert_eq!(app.selected_modal_agent(), None);
+    }
+
+    #[test]
+    fn traces_populated_after_steps() {
+        let mut app = baseline_app();
+
+        for _ in 0..20 {
+            app.step_one_tick();
+        }
+
+        let agent = app
+            .world()
+            .expect("scenario is loaded")
+            .entities_with_name_and_agent_data()
+            .find(|agent| {
+                app.trace_buffers().decisions_for(*agent).next().is_some()
+                    && app.trace_buffers().actions_for(*agent).next().is_some()
+            })
+            .expect("stepping baseline should record decision and action traces for an agent");
+
+        assert!(app
+            .trace_buffers()
+            .decisions_for(agent)
+            .all(|trace| trace.agent == agent && trace.tick.0 < 20));
+        assert!(app
+            .trace_buffers()
+            .actions_for(agent)
+            .all(|event| event.actor == agent && event.tick.0 < 20));
     }
 
     fn baseline_app() -> VisualizerApp {

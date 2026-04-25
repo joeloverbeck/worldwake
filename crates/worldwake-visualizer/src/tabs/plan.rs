@@ -34,7 +34,7 @@ pub fn render(ui: &mut Ui, app: &VisualizerApp, agent_id: EntityId) {
     ui.separator();
     render_current_plan(ui, app.driver().runtime(agent_id));
     ui.separator();
-    render_last_replan_reason(ui);
+    render_last_replan_reason(ui, app, agent_id);
 }
 
 pub(crate) fn intention_view(world: &World, agent_id: EntityId) -> Option<IntentionView> {
@@ -202,11 +202,17 @@ fn render_expectations(ui: &mut Ui, expectations: &[PlanExpectation]) {
         });
 }
 
-fn render_last_replan_reason(ui: &mut Ui) {
+pub(crate) fn last_replan_reason_text(app: &VisualizerApp, agent_id: EntityId) -> String {
+    app.trace_buffers()
+        .last_replan_summary(agent_id)
+        .unwrap_or_else(|| "no replan recorded".to_string())
+}
+
+fn render_last_replan_reason(ui: &mut Ui, app: &VisualizerApp, agent_id: EntityId) {
     egui::CollapsingHeader::new("Last replan reason")
         .default_open(false)
         .show(ui, |ui| {
-            ui.label("no replan recorded");
+            ui.label(last_replan_reason_text(app, agent_id));
         });
 }
 

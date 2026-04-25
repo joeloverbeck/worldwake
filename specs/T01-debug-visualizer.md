@@ -190,7 +190,6 @@ struct VisualizerApp {
 
     // Trace sinks (owned here, borrowed into TickStepServices each tick):
     action_trace: ActionTraceSink,
-    decision_trace: DecisionTraceSink,
     perception_trace: PerceptionTraceSink,
     request_resolution_trace: RequestResolutionTraceSink,
     politics_trace: PoliticalTraceSink,
@@ -498,10 +497,12 @@ struct AgentTraceBuffers {
 }
 ```
 
-The sinks are owned by `VisualizerApp` (see §3) and borrowed into
-`TickStepServices` at the start of each `step_one_tick` call. They add no
-runtime cost when no agent is selected — they always record, selection just
-controls display.
+`ActionTraceSink` is owned by `VisualizerApp` (see §3) and borrowed into
+`TickStepServices` at the start of each `step_one_tick` call. Decision traces
+are collected by the tracing sink owned by `AgentTickDriver`. After each tick,
+the visualizer drains both carriers into `AgentTraceBuffers` and clears the
+per-tick sinks so entries are not duplicated. They add no runtime cost when no
+agent is selected — they always record, selection just controls display.
 
 ### 9. Force-Directed Layout (FR)
 

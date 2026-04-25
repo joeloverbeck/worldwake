@@ -17,3 +17,4 @@ Confirm:
 - Agents render at places with deterministic fan-out; agents in transit lerp along their current travel edge.
 - Mouse wheel zooms the canvas and middle-drag pans it.
 - Space advances one tick; Play advances ticks continuously; Reset returns the scenario to tick 0.
+- Click an agent and open Traces; Decision and Action columns populate after several ticks.

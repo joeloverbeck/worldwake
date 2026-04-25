@@ -1,10 +1,10 @@
 # T01DEBVIS-009: Per-agent trace ring buffers + Traces tab
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-004](../archive/tickets/T01DEBVIS-004.md), [T01DEBVIS-007](../archive/tickets/T01DEBVIS-007.md), [T01DEBVIS-008](../archive/tickets/T01DEBVIS-008.md)
+**Deps**: [T01DEBVIS-004](T01DEBVIS-004.md), [T01DEBVIS-007](T01DEBVIS-007.md), [T01DEBVIS-008](T01DEBVIS-008.md)
 
 ## Problem
 
@@ -15,8 +15,8 @@ Spec T01 §D8 mandates per-agent ring buffers for `AgentDecisionTrace` and `Acti
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `AgentDecisionTrace` at `crates/worldwake-ai/src/decision_trace.rs:89` exposes `agent: EntityId`, `tick: Tick`, `outcome: DecisionOutcome`. `DecisionTraceSink` at `crates/worldwake-ai/src/decision_trace.rs:1240` collects traces; `DecisionTraceSink::new()` and `Default::default()` are public constructors.
-2. `ActionTraceEvent` at `crates/worldwake-sim/src/action_trace.rs:20` carries the per-action lifecycle event surface; `ActionTraceSink` at `action_trace.rs:468` collects events. Both sinks are passed by `&mut` reference into `TickStepServices` per tick (already wired in T01DEBVIS-004).
-3. The drain pattern: after `step_tick` returns, iterate the sink's collected entries, partition by `agent`/`actor`, and push into per-agent `VecDeque`s with capacity `50`. Sinks expose internal `Vec<...>` accessors per their existing test patterns; confirm the exact accessor names during implementation (drain pattern may vary between `take_traces()`-style and `iter()`-style depending on each sink's API).
+2. `ActionTraceEvent` at `crates/worldwake-sim/src/action_trace.rs:20` carries the per-action lifecycle event surface; `ActionTraceSink` at `action_trace.rs:468` collects events and is passed by `&mut` reference into `TickStepServices` per tick (already wired in T01DEBVIS-004).
+3. Live drift corrected during implementation: `DecisionTraceSink` is not a `TickStepServices` sink on this branch. Decision traces are collected by `AgentTickDriver::trace_sink()` after `AgentTickDriver::enable_tracing()`. The visualizer drains that driver-owned decision sink plus the app-owned `ActionTraceSink` after each successful `step_tick`, records entries into per-agent `VecDeque`s with capacity `50`, then clears both tick sinks to avoid duplicate routing.
 4. Tooling-only ticket — buffers are `VisualizerApp`-local; the simulation's authoritative event log is unaffected.
 
 ## Architecture Check
@@ -58,9 +58,9 @@ impl AgentTraceBuffers {
 
 ### 2. Wire sink drain into `app.rs::step_one_tick`
 
-Modify `crates/worldwake-visualizer/src/app.rs` from T01DEBVIS-004 — after `step_tick` returns, drain `self.action_trace` and `self.decision_trace` into `self.trace_buffers` (a new field on `VisualizerApp`). Use the sinks' existing iteration/take APIs (confirm exact surface during implementation).
+Modify `crates/worldwake-visualizer/src/app.rs` from T01DEBVIS-004 — after `step_tick` returns, drain `self.action_trace` and `self.driver.trace_sink()` into `self.trace_buffers` (a new field on `VisualizerApp`). Use the sinks' existing iteration/clear APIs.
 
-Add `trace_buffers: AgentTraceBuffers` field to `VisualizerApp`; default-construct with capacity 50.
+Add `trace_buffers: AgentTraceBuffers` field to `VisualizerApp`; default-construct with capacity 50. Reset clears the buffers.
 
 ### 3. Implement `tabs/traces.rs`
 
@@ -124,3 +124,30 @@ Add `pub mod trace_buffers;` to `crates/worldwake-visualizer/src/lib.rs`. Replac
 3. `cargo test -p worldwake-visualizer`
 4. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual click + Traces tab smoke)
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added visualizer-local `AgentTraceBuffers` with per-agent decision/action `VecDeque`s capped at 50, oldest-entry eviction, newest-first readers, and last-replan summary lookup from decision trace selection metadata.
+- Wired `VisualizerApp::step_one_tick` to drain `AgentTickDriver::trace_sink()` and `ActionTraceSink` after each successful tick, then clear both tick sinks so routed entries are not duplicated.
+- Added the Traces tab and registered it in the tab router; the tab renders Decision and Action columns from the same `AgentTraceBuffers` instance used by the Plan tab's "Last replan reason" surface.
+- Updated the visualizer README manual QA checklist and `specs/T01-debug-visualizer.md` to match the live driver-owned decision trace sink boundary.
+
+## Deviations
+
+- The drafted `cargo test -p worldwake-visualizer tabs::traces::` command is not an exact runnable proof seam on the live crate; selector discovery showed the actual focused test is `tabs::traces::tests::action_kind_labels_are_human_readable`.
+- Manual GUI smoke (`cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron`) was not executed in this non-GUI session. The README now records the human Traces-tab smoke step.
+- The ticket sketch named a visualizer-owned `DecisionTraceSink`. The live decision trace carrier is `AgentTickDriver::trace_sink()`, so the implementation drains that sink instead of adding a parallel decision sink.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-visualizer --lib -- --list`
+- Passed `cargo test -p worldwake-visualizer --lib trace_buffers::tests::trace_buffers_capped_at_50 -- --exact`
+- Passed `cargo test -p worldwake-visualizer --lib trace_buffers::tests::last_replan_reason_returns_most_recent -- --exact`
+- Passed `cargo test -p worldwake-visualizer --lib app::tests::traces_populated_after_steps -- --exact`
+- Passed `cargo test -p worldwake-visualizer --lib tabs::traces::tests::action_kind_labels_are_human_readable -- --exact`
+- Passed `cargo test -p worldwake-visualizer`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `git diff --check`
+- Passed `./scripts/verify.sh`

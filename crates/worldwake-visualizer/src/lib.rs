@@ -7,3 +7,4 @@ pub mod need_bar;
 pub mod snapshot;
 pub mod tabs;
 pub mod tooltip;
+pub mod trace_buffers;

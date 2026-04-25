@@ -8,6 +8,7 @@ pub mod inventory;
 pub mod needs;
 pub mod overview;
 pub mod plan;
+pub mod traces;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DetailTab {
@@ -49,8 +50,6 @@ pub fn render_tab(ui: &mut Ui, tab: DetailTab, app: &VisualizerApp, agent_id: En
         DetailTab::Inventory => inventory::render(ui, app, agent_id),
         DetailTab::Beliefs => beliefs::render(ui, app, agent_id),
         DetailTab::Plan => plan::render(ui, app, agent_id),
-        DetailTab::Traces => {
-            ui.label(format!("{} unavailable", tab.label()));
-        }
+        DetailTab::Traces => traces::render(ui, app, agent_id),
     }
 }
