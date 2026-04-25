@@ -3,9 +3,11 @@ use worldwake_core::EntityId;
 
 use crate::app::VisualizerApp;
 
+pub mod beliefs;
 pub mod inventory;
 pub mod needs;
 pub mod overview;
+pub mod plan;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DetailTab {
@@ -45,7 +47,9 @@ pub fn render_tab(ui: &mut Ui, tab: DetailTab, app: &VisualizerApp, agent_id: En
         DetailTab::Overview => overview::render(ui, app, agent_id),
         DetailTab::Needs => needs::render(ui, app, agent_id),
         DetailTab::Inventory => inventory::render(ui, app, agent_id),
-        DetailTab::Beliefs | DetailTab::Plan | DetailTab::Traces => {
+        DetailTab::Beliefs => beliefs::render(ui, app, agent_id),
+        DetailTab::Plan => plan::render(ui, app, agent_id),
+        DetailTab::Traces => {
             ui.label(format!("{} unavailable", tab.label()));
         }
     }

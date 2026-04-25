@@ -4,11 +4,11 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-004](../archive/tickets/T01DEBVIS-004.md), [T01DEBVIS-007](../archive/tickets/T01DEBVIS-007.md)
+**Deps**: [T01DEBVIS-004](../archive/tickets/T01DEBVIS-004.md), [T01DEBVIS-007](../archive/tickets/T01DEBVIS-007.md), [T01DEBVIS-008](../archive/tickets/T01DEBVIS-008.md)
 
 ## Problem
 
-Spec T01 §D8 mandates per-agent ring buffers for `AgentDecisionTrace` and `ActionTraceEvent`, capped at 50 entries each. Sinks owned by `VisualizerApp` are borrowed into `TickStepServices` per tick (T01DEBVIS-004 already holds the sinks); after each `step_tick`, drained sink contents must route into the per-agent buffers. The Traces tab (§D7.6) renders the last 50 entries for the selected agent, two columns (Decision | Action), newest first. This ticket also unblocks T01DEBVIS-008's Plan-tab "last replan reason" query that reads the same decision buffer.
+Spec T01 §D8 mandates per-agent ring buffers for `AgentDecisionTrace` and `ActionTraceEvent`, capped at 50 entries each. Sinks owned by `VisualizerApp` are borrowed into `TickStepServices` per tick (T01DEBVIS-004 already holds the sinks); after each `step_tick`, drained sink contents must route into the per-agent buffers. The Traces tab (§D7.6) renders the last 50 entries for the selected agent, two columns (Decision | Action), newest first. This ticket also completes archived T01DEBVIS-008's deferred Plan-tab "last replan reason" query that reads the same decision buffer.
 
 ## Assumption Reassessment (2026-04-25)
 
@@ -23,7 +23,7 @@ Spec T01 §D8 mandates per-agent ring buffers for `AgentDecisionTrace` and `Acti
 
 1. Per-agent ring buffers live on `VisualizerApp`, never on the engine — they are caches per FND-27. Capacity 50 is a UI tuning constant per spec, not a load-bearing simulation parameter.
 2. Traces tab queries the same buffers it populates — single source of truth for the visualizer's debug history.
-3. Plan tab's "last replan reason" query (T01DEBVIS-008) reuses the decision buffer rather than carrying a parallel store. This keeps the trace history mechanism single-implementation per FND-29 (debuggability).
+3. Plan tab's "last replan reason" query (archived T01DEBVIS-008) reuses the decision buffer rather than carrying a parallel store. This keeps the trace history mechanism single-implementation per FND-29 (debuggability).
 
 ## Verification Layers
 
@@ -71,9 +71,9 @@ Create `crates/worldwake-visualizer/src/tabs/traces.rs`:
 - Decision rows show `tick`, summarized `outcome` (e.g., `"Plan: walk to market"` / `"Replan: BeliefUpdate"`); details collapsible.
 - Action rows show `tick`, summarized event kind, target.
 
-### 4. Wire Plan tab's "last replan reason" hook (T01DEBVIS-008 dependency)
+### 4. Wire Plan tab's "last replan reason" hook (archived T01DEBVIS-008 dependency)
 
-If T01DEBVIS-008's Plan tab placeholder still says `"no replan recorded"`, replace it now with a call to `trace_buffers.last_replan_reason(agent)` — this completes the `ReplanReason`/`PlanInvalidationReason` surface promised by spec §D7.5.
+If archived T01DEBVIS-008's Plan tab placeholder still says `"no replan recorded"`, replace it now with a call to `trace_buffers.last_replan_reason(agent)` — this completes the `ReplanReason`/`PlanInvalidationReason` surface promised by spec §D7.5.
 
 ### 5. Wire modules into lib.rs and tabs router
 

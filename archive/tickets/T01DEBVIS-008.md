@@ -1,10 +1,10 @@
 # T01DEBVIS-008: Beliefs + Plan tabs
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None
-**Deps**: [T01DEBVIS-007](../archive/tickets/T01DEBVIS-007.md)
+**Deps**: [T01DEBVIS-007](T01DEBVIS-007.md)
 
 ## Problem
 
@@ -93,7 +93,7 @@ Modify `crates/worldwake-visualizer/src/tabs/mod.rs` from T01DEBVIS-007 — repl
 
 ### New/Modified Tests
 
-1. `crates/worldwake-visualizer/src/tabs/beliefs.rs` and `plan.rs` (`#[cfg(test)] mod tests`) — five tests above, using a baseline scenario advanced enough ticks for beliefs/plan state to populate.
+1. `crates/worldwake-visualizer/src/tabs/beliefs.rs` and `plan.rs` (`#[cfg(test)] mod tests`) — four focused tests above, using a baseline scenario advanced enough ticks for beliefs/plan state to populate.
 
 ### Commands
 
@@ -102,3 +102,31 @@ Modify `crates/worldwake-visualizer/src/tabs/mod.rs` from T01DEBVIS-007 — repl
 3. `cargo test -p worldwake-visualizer`
 4. `cargo run -p worldwake-visualizer -- scenarios/survival-baseline.ron` (manual click + tab smoke)
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added `crates/worldwake-visualizer/src/tabs/beliefs.rs`, rendering `AgentBeliefStore`, `LastSeenMemory`, `ExpectationStore`, and `SourceReliability` from separate component accessors with absent-state stubs.
+- Added `AgentBeliefStore` subsections for the live top-level fields, including entity-claim rows sorted by computed freshness and place-visit rows sorted by last arrival.
+- Added `crates/worldwake-visualizer/src/tabs/plan.rs`, rendering `IntentionFrame`, `AgentDecisionRuntime.current_plan`, `AgentDecisionRuntime.current_step_index`, per-step `PlanGuard`, and per-step `PlanExpectation` fields from the live runtime shapes.
+- Wired `DetailTab::Beliefs` and `DetailTab::Plan` in `crates/worldwake-visualizer/src/tabs/mod.rs`; `DetailTab::Traces` remains the T01DEBVIS-009 placeholder.
+
+## Deviations
+
+- The Plan tab's last-replan section intentionally renders `"no replan recorded"` because T01DEBVIS-009 is still pending and owns the scoped decision-trace ring buffer. This matches the ticket's integration-time fallback rather than inventing a parallel buffer.
+- Focused tests assert helper-level render inputs and live read boundaries rather than scraping egui output text. The rendered UI consumes the same helper rows and component/runtime accessors.
+- The manual GUI click smoke was not run in this headless session; automated tab and crate tests were run instead.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-visualizer --lib -- --list`.
+- Passed `cargo test -p worldwake-visualizer --lib tabs::beliefs::tests::beliefs_tab_renders_each_source_section -- --exact`.
+- Passed `cargo test -p worldwake-visualizer --lib tabs::beliefs::tests::beliefs_tab_entity_claims_render_aspect_and_confidence -- --exact`.
+- Passed `cargo test -p worldwake-visualizer --lib tabs::plan::tests::plan_tab_renders_active_intention_when_present -- --exact`.
+- Passed `cargo test -p worldwake-visualizer --lib tabs::plan::tests::plan_tab_step_guards_visible -- --exact`.
+- Passed `cargo test -p worldwake-visualizer tabs::beliefs::`.
+- Passed `cargo test -p worldwake-visualizer tabs::plan::`.
+- Passed `cargo test -p worldwake-visualizer`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh`; live gates are `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
