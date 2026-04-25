@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — scenario authoring change + new golden test
-**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), [S125INSTREBOU-002](../archive/tickets/S125INSTREBOU-002.md), [S125INSTREBOU-003](../archive/tickets/S125INSTREBOU-003.md), S125INSTREBOU-005, S125INSTREBOU-004, S125INSTREBOU-006, S125INSTREBOU-008
+**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), [S125INSTREBOU-002](../archive/tickets/S125INSTREBOU-002.md), [S125INSTREBOU-003](../archive/tickets/S125INSTREBOU-003.md), S125INSTREBOU-005, S125INSTREBOU-004, S125INSTREBOU-006, [S125INSTREBOU-008](../archive/tickets/S125INSTREBOU-008.md)
 
 ## Problem
 
-S125 Deliverable D8 requires `survival-justice` to retain its three existing branches (accusation substrate, fine punishment, search-and-report) and add a new bounty extension proving institutional bounty posting under survival. S125 Evidence #6 records the constraint that motivated this whole spec: prior attempts to add office-owned coin to `survival-justice` perturbed theft-scene perception and broke the investigation. The treasury container surface from ticket 002 is designed to scope funds out of place-floor perception; this ticket lands the scenario change and the new golden, then closes S125 by regenerating golden docs and updating `IMPLEMENTATION-ORDER.md` (Deliverable D9) after the authorization-policy remainder in S125INSTREBOU-008 lands.
+S125 Deliverable D8 requires `survival-justice` to retain its three existing branches (accusation substrate, fine punishment, search-and-report) and add a new bounty extension proving institutional bounty posting under survival. S125 Evidence #6 records the constraint that motivated this whole spec: prior attempts to add office-owned coin to `survival-justice` perturbed theft-scene perception and broke the investigation. The treasury container surface from ticket 002 is designed to scope funds out of place-floor perception; this ticket lands the scenario change and the new golden, then closes S125 by regenerating golden docs and updating `IMPLEMENTATION-ORDER.md` (Deliverable D9) after the authorization-policy remainder landed in S125INSTREBOU-008.
 
 ## Assumption Reassessment (2026-04-25)
 

@@ -1,10 +1,10 @@
 # S125INSTREBOU-008: Authorization-policy boundary for office treasury spending
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems::artifact_actions` authorization context and focused validation tests
-**Deps**: [S125INSTREBOU-003](../archive/tickets/S125INSTREBOU-003.md), [S125 spec](../specs/S125-institutional-treasuries-and-bounty-funding.md)
+**Deps**: [S125INSTREBOU-003](S125INSTREBOU-003.md), [S125 spec](../../specs/S125-institutional-treasuries-and-bounty-funding.md)
 
 ## Problem
 
@@ -84,3 +84,28 @@ S125 remains office-scoped. If the existing faction branch must be preserved for
 1. `cargo test -p worldwake-systems`
 2. `cargo clippy -p worldwake-systems --all-targets -- -D warnings`
 3. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-25.
+
+- Added a private `OfficeExpenditureContext` in `crates/worldwake-systems/src/artifact_actions.rs` and routed `validate_post_bounty_context` through it so institutional treasury authorization receives the proposed posting place, claim place, issuing authority, and declared jurisdiction.
+- `authorize_office_expenditure` now preserves the existing holder/member authority gate and, for office treasuries, requires a matching `issuing_authority`, a declared jurisdiction, and office `OfficeData.jurisdiction` coverage for the posting, claim, and jurisdiction places.
+- Added focused `artifact_actions` tests proving in-jurisdiction office-funded bounties pass, out-of-jurisdiction bounties fail authoritatively, and missing or mismatched issuing authority fails before commit.
+
+## Deviations
+
+- The live test helper had to create the same `OfficeRegister` substrate required by `WorldTxn::assign_office`; this is fixture alignment with the current office-register contract, not a production scope expansion.
+- Faction treasury behavior remains explicitly preserved by leaving the new jurisdiction-policy branch office-only.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib -- --list`.
+- Passed `cargo test -p worldwake-systems --lib artifact_actions::tests::office_treasury_authorization_accepts_bounty_inside_office_jurisdiction -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib artifact_actions::tests::office_treasury_authorization_rejects_bounty_outside_office_jurisdiction -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib artifact_actions::tests::office_treasury_authorization_rejects_mismatched_issuing_authority -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib artifact_actions::tests`.
+- Passed `cargo test -p worldwake-systems`.
+- Passed `cargo clippy -p worldwake-systems --all-targets -- -D warnings`.
+- Passed `git diff --check`.
+- Passed `./scripts/verify.sh` (format check, workspace tests, `scripts/check_active_goal_removed.sh`, workspace clippy, workspace all-targets clippy with `-D warnings`, and `scenario-coverage --check`).

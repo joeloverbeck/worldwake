@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — reconcile `RewardEncumbrance` cardinality for multiple active office bounties; action handlers (`validate_reward_source`, `commit_post_bounty`, `claim_bounty`, `withdraw_bounty`), artifact-lifecycle TTL release hook, payload validator extension
-**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), [S125INSTREBOU-003](../archive/tickets/S125INSTREBOU-003.md)
+**Deps**: [S125INSTREBOU-001](../archive/tickets/S125INSTREBOU-001.md), [S125INSTREBOU-003](../archive/tickets/S125INSTREBOU-003.md), [S125INSTREBOU-008](../archive/tickets/S125INSTREBOU-008.md)
 
 ## Problem
 
@@ -14,7 +14,7 @@ Today `post_bounty` validates fund availability at commit but records no encumbr
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `validate_reward_source` at `crates/worldwake-systems/src/artifact_actions.rs:353-418` calls `world.controlled_commodity_quantity(treasury_entity, ...)` (line 367). `commit_post_bounty` at line 939 creates the SocialArtifact entity but does no encumbrance. `validate_post_bounty_payload_override` at line 854 is already wired via `with_payload_override_validator` at `artifact_actions.rs:39` (S125 reassessment Evidence #8) — the payload-override hook exists; this ticket extends the validator's body, no new wiring. Existing tests at lines 198, 226, 333, 406, 449, 535, 616, 717, 770, 831 cover the bounty/notice lifecycle and need updates after encumbrance lands. `claim_bounty_depleted_source_fails_and_bounty_stays_active` (line 616) is particularly load-bearing — it covers the "funds disappeared" path which is the analog of "encumbrance is exhausted."
+1. `validate_reward_source` at `crates/worldwake-systems/src/artifact_actions.rs:395-430` calls `world.controlled_commodity_quantity(treasury_entity, ...)` (line 410). `commit_post_bounty` at line 988 creates the SocialArtifact entity but does no encumbrance. `validate_post_bounty_payload_override` at line 903 is already wired via `with_payload_override_validator` at `artifact_actions.rs:39` (S125 reassessment Evidence #8) — the payload-override hook exists; this ticket extends the validator's body, no new wiring. Existing tests at lines 1491, 1731, 1838, 1911, 1954, 2040, 2121, 2222, 2275, 2336 cover the bounty/notice lifecycle and need updates after encumbrance lands. `claim_bounty_depleted_source_fails_and_bounty_stays_active` (line 2121) is particularly load-bearing — it covers the "funds disappeared" path which is the analog of "encumbrance is exhausted."
 2. S125 §3 (Reward Reservation) specifies: `commit_post_bounty` creates `RewardEncumbrance`; `claim_bounty` transfers the reserved lot from office to claimant in the same authoritative transaction with encumbrance consumption; TTL expiry path releases the encumbrance; `withdraw_bounty` releases the encumbrance. Section H lifecycle: `Active → Released | Claimed`.
 3. Shared abstraction boundary: bounty action handlers + artifact-lifecycle TTL purge. The TTL expiry pathway must invoke a release hook; if the existing artifact-lifecycle code lacks a per-artifact-type release hook, this ticket adds it (small extension, not a new SystemFn per S125 SystemFn Integration). Locate the existing TTL purge code by grepping `bounty_ttl` and `ArtifactPostingProfile` (`crates/worldwake-core/src/social_artifact.rs:18-38`) consumers in `worldwake-systems`.
 4. Ordering: same-tick contested postings are resolved by the existing scheduler tie-break rules. The second posting's `validate_reward_source` (now also reading encumbrances) sees the first's encumbrance from the action-trace pre-image. The compared branches are not symmetric — the second posting's authoritative validation must consult the encumbrance state mutated by the first commit.
@@ -44,8 +44,8 @@ Today `post_bounty` validates fund availability at commit but records no encumbr
 
 First, reconcile the authoritative `RewardEncumbrance` cardinality shape from ticket 001 so the lifecycle can store and query multiple active reservations for the same office. Keep `EntityKind::Office` as the institutional owner boundary unless live reassessment proves a different ECS attachment surface is cleaner. Update core schema/sample/save tests if the payload shape changes, and keep the save-format policy truthful.
 
-Extend the `RewardSource::InstitutionalTreasury` arm of `validate_reward_source` (`artifact_actions.rs:353-418`) to:
-- Call `authorize_office_expenditure(world, actor, treasury_entity)?` (from [ticket 003](../archive/tickets/S125INSTREBOU-003.md)).
+Extend the `RewardSource::InstitutionalTreasury` arm of `validate_reward_source` (`artifact_actions.rs:395-418`) to:
+- Preserve the context-aware `authorize_office_expenditure(...)` authorization path landed by [ticket 008](../archive/tickets/S125INSTREBOU-008.md).
 - Compute available balance: `controlled_commodity_quantity(treasury_entity, payload.reward_commodity)` minus the sum of active `RewardEncumbrance` quantities matching `(office=treasury_entity, commodity=payload.reward_commodity)`.
 - Reject if available < `payload.reward_quantity` with the existing `ActionError` variant for insufficient funds.
 
