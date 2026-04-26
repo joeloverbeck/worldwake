@@ -98,6 +98,17 @@ impl DriveThresholds {
             HomeostaticNeedId::Dirtiness => self.dirtiness.critical(),
         }
     }
+
+    #[must_use]
+    pub const fn high(&self, need: HomeostaticNeedId) -> Permille {
+        match need {
+            HomeostaticNeedId::Hunger => self.hunger.high(),
+            HomeostaticNeedId::Thirst => self.thirst.high(),
+            HomeostaticNeedId::Fatigue => self.fatigue.high(),
+            HomeostaticNeedId::Bladder => self.bladder.high(),
+            HomeostaticNeedId::Dirtiness => self.dirtiness.high(),
+        }
+    }
 }
 
 impl Component for DriveThresholds {}
@@ -227,6 +238,32 @@ mod tests {
         assert_eq!(
             thresholds.critical(HomeostaticNeedId::Dirtiness),
             thresholds.dirtiness.critical()
+        );
+    }
+
+    #[test]
+    fn drive_thresholds_high_reads_all_homeostatic_bands() {
+        let thresholds = DriveThresholds::default();
+
+        assert_eq!(
+            thresholds.high(HomeostaticNeedId::Hunger),
+            thresholds.hunger.high()
+        );
+        assert_eq!(
+            thresholds.high(HomeostaticNeedId::Thirst),
+            thresholds.thirst.high()
+        );
+        assert_eq!(
+            thresholds.high(HomeostaticNeedId::Fatigue),
+            thresholds.fatigue.high()
+        );
+        assert_eq!(
+            thresholds.high(HomeostaticNeedId::Bladder),
+            thresholds.bladder.high()
+        );
+        assert_eq!(
+            thresholds.high(HomeostaticNeedId::Dirtiness),
+            thresholds.dirtiness.high()
         );
     }
 

@@ -1,6 +1,6 @@
 //! Concrete physiology state and per-agent metabolism parameters.
 
-use crate::{Component, Permille};
+use crate::{Component, Permille, Tick};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -77,6 +77,31 @@ impl HomeostaticNeeds {
             HomeostaticNeedId::Dirtiness => self.dirtiness,
         }
     }
+
+    /// Projected tick at which `need` reaches `target_level` given the
+    /// agent's `base_rate` for that need, starting from `current_tick`.
+    /// Returns `None` if the need would never reach the target (rate is
+    /// zero with the current level still below target).
+    #[must_use]
+    pub fn projected_tick_of(
+        &self,
+        need: HomeostaticNeedId,
+        target_level: Permille,
+        base_rate: Permille,
+        current_tick: Tick,
+    ) -> Option<Tick> {
+        let current = self.value(need).value();
+        let target = target_level.value();
+        if current >= target {
+            return Some(current_tick);
+        }
+        let rate = base_rate.value();
+        if rate == 0 {
+            return None;
+        }
+        let delta_ticks = u64::from(target - current).div_ceil(u64::from(rate));
+        Some(Tick(current_tick.0.saturating_add(delta_ticks)))
+    }
 }
 
 impl Component for HomeostaticNeeds {}
@@ -150,6 +175,18 @@ pub struct MetabolismProfile {
 }
 
 impl MetabolismProfile {
+    /// Per-need base depletion rate per tick.
+    #[must_use]
+    pub const fn rate(&self, need: HomeostaticNeedId) -> Permille {
+        match need {
+            HomeostaticNeedId::Hunger => self.hunger_rate,
+            HomeostaticNeedId::Thirst => self.thirst_rate,
+            HomeostaticNeedId::Fatigue => self.fatigue_rate,
+            HomeostaticNeedId::Bladder => self.bladder_rate,
+            HomeostaticNeedId::Dirtiness => self.dirtiness_rate,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
@@ -273,7 +310,7 @@ mod tests {
         BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds,
         MetabolismProfile, nz, pm,
     };
-    use crate::{Permille, traits::Component};
+    use crate::{Permille, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
     use std::num::NonZeroU32;
@@ -465,6 +502,81 @@ mod tests {
         assert_eq!(cost.fatigue_delta, pm(8));
         assert_eq!(cost.bladder_delta, pm(7));
         assert_eq!(cost.dirtiness_delta, pm(2));
+    }
+
+    #[test]
+    fn projected_tick_of_returns_current_tick_when_already_at_or_above_target() {
+        let needs = HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0));
+
+        let projected =
+            needs.projected_tick_of(HomeostaticNeedId::Hunger, pm(700), pm(50), Tick(10));
+
+        assert_eq!(projected, Some(Tick(10)));
+    }
+
+    #[test]
+    fn projected_tick_of_returns_none_when_rate_is_zero_below_target() {
+        let needs = HomeostaticNeeds::new(pm(400), pm(0), pm(0), pm(0), pm(0));
+
+        let projected =
+            needs.projected_tick_of(HomeostaticNeedId::Hunger, pm(700), pm(0), Tick(10));
+
+        assert_eq!(projected, None);
+    }
+
+    #[test]
+    fn projected_tick_of_returns_current_plus_div_ceil_of_gap_over_rate() {
+        let needs = HomeostaticNeeds::new(pm(400), pm(0), pm(0), pm(0), pm(0));
+
+        let projected =
+            needs.projected_tick_of(HomeostaticNeedId::Hunger, pm(700), pm(50), Tick(10));
+
+        // gap = 300, rate = 50, ceil(300/50) = 6, current_tick + 6 = 16
+        assert_eq!(projected, Some(Tick(16)));
+    }
+
+    #[test]
+    fn projected_tick_of_uses_div_ceil_for_partial_remainder() {
+        let needs = HomeostaticNeeds::new(pm(400), pm(0), pm(0), pm(0), pm(0));
+
+        let projected =
+            needs.projected_tick_of(HomeostaticNeedId::Hunger, pm(700), pm(40), Tick(0));
+
+        // gap = 300, rate = 40, ceil(300/40) = 8 (300/40 = 7.5)
+        assert_eq!(projected, Some(Tick(8)));
+    }
+
+    #[test]
+    fn metabolism_profile_rate_reads_all_variants() {
+        let profile = MetabolismProfile::new(
+            pm(5),
+            pm(6),
+            pm(7),
+            pm(8),
+            pm(9),
+            pm(25),
+            nz(100),
+            nz(110),
+            nz(120),
+            nz(130),
+            nz(14),
+            nz(16),
+            pm(200),
+            pm(300),
+            pm(400),
+            pm(100),
+        );
+
+        for need in HomeostaticNeedId::ALL {
+            let expected = match need {
+                HomeostaticNeedId::Hunger => profile.hunger_rate,
+                HomeostaticNeedId::Thirst => profile.thirst_rate,
+                HomeostaticNeedId::Fatigue => profile.fatigue_rate,
+                HomeostaticNeedId::Bladder => profile.bladder_rate,
+                HomeostaticNeedId::Dirtiness => profile.dirtiness_rate,
+            };
+            assert_eq!(profile.rate(need), expected);
+        }
     }
 
     #[test]

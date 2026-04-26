@@ -1,4 +1,6 @@
-use crate::{BeliefClaimKey, BlockerKey, CommodityKind, Component, EntityId, Tick};
+use crate::{
+    BeliefClaimKey, BlockerKey, CommodityKind, Component, EntityId, HomeostaticNeedId, Tick,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -24,6 +26,13 @@ pub enum Discrepancy {
     SearchBudgetExhausted,
     /// Execution partially committed before the plan drifted out from under it.
     PartialExecutionDrift,
+    /// A `NeedSafeUntilTick` assumption breached: the projected tick at
+    /// which the named need crosses its high threshold fell before the
+    /// plan-completion tick the assumption was guarding.
+    NeedHorizonExceeded {
+        need: HomeostaticNeedId,
+        projected_breach_tick: Tick,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -138,6 +147,19 @@ mod tests {
     #[test]
     fn discrepancy_roundtrips_through_bincode() {
         let discrepancy = Discrepancy::SourceInvalidated;
+
+        let bytes = bincode::serialize(&discrepancy).unwrap();
+        let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, discrepancy);
+    }
+
+    #[test]
+    fn discrepancy_need_horizon_exceeded_roundtrips_through_bincode() {
+        let discrepancy = Discrepancy::NeedHorizonExceeded {
+            need: crate::HomeostaticNeedId::Hunger,
+            projected_breach_tick: Tick(50),
+        };
 
         let bytes = bincode::serialize(&discrepancy).unwrap();
         let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();

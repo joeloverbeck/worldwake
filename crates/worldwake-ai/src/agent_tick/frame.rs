@@ -381,6 +381,12 @@ pub(super) fn evaluate_assumptions(
                     AvailabilityVerdict::UnknownOrStale => has_deferred = true,
                 }
             }
+            FrameAssumption::NeedSafeUntilTick { .. } => {
+                // PLACEHOLDER: ticket S126NEEPROTIM-003 replaces this arm with the real
+                // projection re-evaluation logic. Today the assumption is never produced
+                // (ticket 002 ships population), so the no-op match body is unreachable
+                // at runtime and is present only to keep the workspace compiling.
+            }
         }
     }
 

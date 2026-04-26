@@ -1,6 +1,6 @@
 # S126NEEPROTIM-001: Variants and projection helpers (foundation)
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — adds `FrameAssumption::NeedSafeUntilTick` variant, `Discrepancy::NeedHorizonExceeded` variant, `HomeostaticNeeds::projected_tick_of` derived helper, keyed `MetabolismProfile::rate(need)` and `DriveThresholds::high(need)` accessors. Bumps `SAVE_FORMAT_VERSION` from 47 to 48 to mark the schema change.
@@ -21,6 +21,10 @@ The bundle is compile-safe because `FrameAssumption` and `Discrepancy` are match
 3. Shared abstraction boundary: this ticket touches the type surface (`FrameAssumption`, `Discrepancy`, projection helper, keyed accessors) without changing any function's runtime contract beyond adding a no-op placeholder match arm. The placeholder arm in `evaluate_assumptions` returns the existing `AllPass`-equivalent fall-through (no-op match body); ticket 003 replaces it with the real evaluation. The placeholder is named in §1 of this ticket's What to Change so reviewers don't misread the no-op as the final contract.
 4. `decision_trace.rs:2042-2047` is the only exhaustive `FrameAssumption` formatter site in production code; `agent_tick/frame.rs:339-392` is the only exhaustive match in evaluation logic. `Discrepancy` is rendered via Debug derive (`observer.rs:476` uses `{discrepancy:?}`), so `NeedHorizonExceeded` requires no manual rendering arm.
 5. SAVE_FORMAT_VERSION bump rationale: `FrameAssumption` is stored inside `IntentionFrame.assumptions: Vec<FrameAssumption>` (an ECS component, bincode-serialized). `Discrepancy` is stored inside `DiscrepancyEntry.discrepancy` inside `DiscrepancyMemory.entries` (also an ECS component, bincode-serialized). Adding new enum variants is forward-compatible for new code reading old saves (no old save contains the new tag) but is a schema change by project convention; bump from 47 to 48.
+6. Auto-correction (2026-04-26): the ticket's compile-safety claim ("`Discrepancy` is matched exhaustively in only one place: `record_assumption_failure`") missed two additional exhaustive `Discrepancy` matches surfaced by compile errors after adding the variant. These are bounded non-owner consumers per the implementation guide's "shared enum variant" sweep:
+   - `crates/worldwake-ai/src/failure_handling.rs:1354` — `discrepancy_ttl(discrepancy, cognitive) -> u32` maps discrepancy → backoff. Inert arm: `Discrepancy::NeedHorizonExceeded { .. } => cognitive.structural_block_ticks` (matches spec D6 prescription).
+   - `crates/worldwake-ai/src/agenda_manager.rs:69` — `classify_rejection` maps `RejectedBeforeSearch.reason` → `RejectionLifecycle`. Inert arm: treat `NeedHorizonExceeded` as a TTL-recoverable discrepancy by falling into the existing `BeliefStale | SourceInvalidated | SearchBudgetExhausted | PartialExecutionDrift => TickElapsed` branch. The variant cannot reach this site at runtime in this ticket (it has no producer until ticket 003 wires `record_assumption_failure`); the inert mapping does not widen behavioral scope.
+   These inert arms are compile-safety placeholders consistent with the spec's TTL-only clearing direction. They are auto-corrections (low-risk, mechanical, directionally unambiguous) and do not require widening this ticket beyond foundation surface.
 
 ## Architecture Check
 
@@ -169,6 +173,8 @@ In `crates/worldwake-sim/src/save_load.rs`, change `pub const SAVE_FORMAT_VERSIO
 - `crates/worldwake-core/src/drives.rs` (modify) — add `DriveThresholds::high(need)` keyed accessor + tests
 - `crates/worldwake-ai/src/decision_trace.rs` (modify) — add `NeedSafeUntilTick` formatter arm + test
 - `crates/worldwake-ai/src/agent_tick/frame.rs` (modify) — add placeholder arm in `evaluate_assumptions`
+- `crates/worldwake-ai/src/failure_handling.rs` (modify) — inert arm in `discrepancy_ttl` mapping `NeedHorizonExceeded` to `cognitive.structural_block_ticks` (auto-correction §6)
+- `crates/worldwake-ai/src/agenda_manager.rs` (modify) — inert arm in `classify_rejection` folding `NeedHorizonExceeded` into the `TickElapsed` TTL family (auto-correction §6)
 - `crates/worldwake-sim/src/save_load.rs` (modify) — bump `SAVE_FORMAT_VERSION` 47 → 48
 
 ## Out of Scope
@@ -217,3 +223,32 @@ In `crates/worldwake-sim/src/save_load.rs`, change `pub const SAVE_FORMAT_VERSIO
 3. `cargo test -p worldwake-ai --lib decision_trace`
 4. `cargo build --workspace`
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-26.
+
+- Added `FrameAssumption::NeedSafeUntilTick { need, until_tick }` variant in `crates/worldwake-core/src/intention_frame.rs` plus bincode round-trip test.
+- Added `Discrepancy::NeedHorizonExceeded { need, projected_breach_tick }` variant in `crates/worldwake-core/src/discrepancy.rs` plus bincode round-trip test.
+- Added `HomeostaticNeeds::projected_tick_of` derived helper plus 4 unit tests covering current-≥-target, rate-zero, exact-divide, and partial-remainder div_ceil branches.
+- Added `MetabolismProfile::rate(need)` keyed accessor plus per-variant unit test.
+- Added `DriveThresholds::high(need)` keyed accessor plus per-variant unit test mirroring the `critical(need)` test.
+- Added `NeedSafeUntilTick` arm in `format_frame_assumption` in `crates/worldwake-ai/src/decision_trace.rs` plus a focused rendering test asserting the `"NeedSafeUntilTick { need: Hunger, until_tick: Tick(412) }"` shape.
+- Added the documented no-op placeholder arm in `evaluate_assumptions` in `crates/worldwake-ai/src/agent_tick/frame.rs`. Ticket S126NEEPROTIM-003 will replace it.
+- Bumped `SAVE_FORMAT_VERSION` 47 → 48 in `crates/worldwake-sim/src/save_load.rs`.
+
+## Deviations
+
+- Compile-safety scope expanded by one auto-correction recorded in Assumption Reassessment §6: two additional exhaustive matches on `Discrepancy` were missed in the original ticket draft and required inert arms in this ticket to keep the workspace compiling: `failure_handling.rs::discrepancy_ttl` and `agenda_manager.rs::classify_rejection`. Both arms are conservative inert mappings consistent with the spec D6 TTL-only clearing direction; the variant has no producer until ticket 003 wires `record_assumption_failure`, so neither arm is reachable at runtime in this ticket.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib needs::tests` (21 tests, including 4 new `projected_tick_of` tests and 1 new `metabolism_profile_rate_reads_all_variants` test).
+- Passed `cargo test -p worldwake-core --lib drives::tests` (9 tests, including 1 new `drive_thresholds_high_reads_all_homeostatic_bands` test).
+- Passed `cargo test -p worldwake-core --lib intention_frame::tests` (12 tests, including 1 new bincode round-trip test for `NeedSafeUntilTick`).
+- Passed `cargo test -p worldwake-core --lib discrepancy::tests` (10 tests, including 1 new bincode round-trip test for `NeedHorizonExceeded`).
+- Passed `cargo test -p worldwake-ai --lib decision_trace::tests::format_frame_assumption_renders_need_safe_until_tick`.
+- Passed `cargo build --workspace`.
+- Passed `cargo test --workspace` (no failing test result; full workspace green).
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `cargo fmt --all -- --check`.

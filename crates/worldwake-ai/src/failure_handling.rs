@@ -1363,6 +1363,7 @@ fn discrepancy_ttl(discrepancy: Discrepancy, cognitive: &CognitiveProfile) -> u3
         Discrepancy::RouteUnknown => cognitive.route_unknown_backoff_ticks,
         Discrepancy::SearchBudgetExhausted => cognitive.search_exhaustion_backoff_ticks,
         Discrepancy::PartialExecutionDrift => cognitive.partial_drift_backoff_ticks,
+        Discrepancy::NeedHorizonExceeded { .. } => cognitive.structural_block_ticks,
     }
 }
 

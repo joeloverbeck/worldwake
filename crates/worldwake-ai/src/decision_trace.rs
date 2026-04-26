@@ -2047,6 +2047,9 @@ fn format_frame_assumption(assumption: &FrameAssumption) -> String {
         FrameAssumption::CommodityAvailableAt { commodity, place } => {
             format!("CommodityAvailableAt(commodity={commodity:?}, place={place:?})")
         }
+        FrameAssumption::NeedSafeUntilTick { need, until_tick } => {
+            format!("NeedSafeUntilTick {{ need: {need:?}, until_tick: {until_tick:?} }}")
+        }
     }
 }
 
@@ -2482,6 +2485,21 @@ mod tests {
         let agent = entity(0);
 
         assert!(sink.trace_at(agent, Tick(99)).is_none());
+    }
+
+    #[test]
+    fn format_frame_assumption_renders_need_safe_until_tick() {
+        let assumption = FrameAssumption::NeedSafeUntilTick {
+            need: worldwake_core::HomeostaticNeedId::Hunger,
+            until_tick: Tick(412),
+        };
+
+        let rendered = format_frame_assumption(&assumption);
+
+        assert_eq!(
+            rendered,
+            "NeedSafeUntilTick { need: Hunger, until_tick: Tick(412) }"
+        );
     }
 
     #[test]
