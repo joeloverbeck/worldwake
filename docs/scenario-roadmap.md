@@ -647,6 +647,20 @@ Why it is not a roadmap landing:
 - It is not backed by a scenario golden.
 - Its broad profile coverage exists to keep CLI commands and scenario schema evolution honest, not to prove that those features coexist safely with the survival loop.
 
+#### `survival-need-projection.ron`
+
+- Source scenario: [`scenarios/survival-need-projection.ron`](../scenarios/survival-need-projection.ron)
+- Backing golden: [`golden_need_projection.rs`](../crates/worldwake-ai/tests/golden_need_projection.rs)
+- Status in this roadmap: spec-S126 chain-isolation coverage only
+
+Why it is not a roadmap landing:
+
+- It has no `survival_health_contract` and is not a survival-coexistence scenario. The agent is intentionally seeded with an extreme `MetabolismProfile.hunger_rate=30` (≈10× the typical authored survival rate) so the per-need projection assumption (`FrameAssumption::NeedSafeUntilTick`) deterministically breaches mid-plan within a short tick budget. It would not pass a 1440-tick survival-health contract, and it is not meant to.
+- It deliberately disables curiosity-driven exploration (`curiosity_weight=0`, suppressed via `scenario_lint_overrides`) so the planner's ranking after suppression is deterministic. A real survival-loop landing must keep exploration live.
+- Its single agent, two places, and shortened `cognitive_profile.structural_block_ticks=30` are scoped so the chain `populate_assumptions → evaluate_assumptions → record_assumption_failure → suppression → alternative-goal adoption → TTL expiry` runs end-to-end inside a focused integration test.
+
+It is the canonical proof surface for spec [`S126-need-projection-time-budget.md`](../specs/S126-need-projection-time-budget.md) D8 and is owned by ticket `S126NEEPROTIM-004`. The broader survival-coexistence proof for horizon-aware planning under real workloads remains the responsibility of survival-row goldens (`golden_survival_*.rs`) — the discrepancy-recording substep is already exercised inside the prototype-world `golden_goal_switching_during_multi_leg_travel` regression in [`golden_ai_decisions.rs`](../crates/worldwake-ai/tests/golden_ai_decisions.rs).
+
 ## 6. Maintenance Workflow
 
 ### 6.1 Adding a New Roadmap Entry

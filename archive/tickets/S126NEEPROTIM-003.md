@@ -1,6 +1,6 @@
 # S126NEEPROTIM-003: evaluate_assumptions arm and Discrepancy recording
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — replaces ticket 001's placeholder arm in `evaluate_assumptions` with the real projection re-evaluation logic. Adds `current_tick: Tick` to `evaluate_assumptions` and `failed_assumption: FrameAssumption` to `record_assumption_failure`. Extends `record_assumption_failure` to construct `Discrepancy::NeedHorizonExceeded` with `DiscrepancyClearing::TtlExpiry` when the failed assumption is `NeedSafeUntilTick`.
@@ -223,3 +223,36 @@ Add new focused unit tests in `agent_tick/frame.rs::tests`:
 3. `cargo test -p worldwake-ai`
 4. `cargo build --workspace`
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-26.
+
+- Added `current_tick: Tick` parameter to `evaluate_assumptions` and replaced the placeholder `NeedSafeUntilTick { .. }` arm in `crates/worldwake-ai/src/agent_tick/frame.rs` with the real per-tick projection re-evaluation: it reads physiology via `RuntimeBeliefView`, calls `HomeostaticNeeds::projected_tick_of`, and returns `CriticalFailure(*assumption)` when the freshly-computed projected breach falls before `until_tick`. Missing-profile cases mark `has_deferred = true` and continue.
+- Added `failed_assumption: FrameAssumption` parameter to `record_assumption_failure` and rewrote the discrepancy-construction body to dispatch on the failed-assumption variant. `NeedSafeUntilTick` failures now construct `Discrepancy::NeedHorizonExceeded { need, projected_breach_tick: until_tick }` with `DiscrepancyClearing::TtlExpiry`. All other variants preserve the existing `BeliefContradicted`/`PartialExecutionDrift` + `CommodityAvailabilityChanged`/`TtlExpiry` paths.
+- Updated 2 production callers of `evaluate_assumptions` (`agent_tick/mod.rs:1029, 1214`) to pass `tick`, and the 1 production caller of `record_assumption_failure` (`agent_tick/mod.rs:1049`) to forward the destructured `assumption`.
+- Updated 9 existing `evaluate_assumptions` tests in `frame.rs::tests` and 4 existing `record_assumption_failure` tests in the same module, plus the 1 site in `agent_tick/tests.rs:7608`, with the new parameters.
+- Added 5 new focused unit tests:
+  - `evaluate_need_safe_until_tick_returns_critical_failure_when_breach_before_until_tick`
+  - `evaluate_need_safe_until_tick_returns_all_pass_when_breach_at_or_after_until_tick`
+  - `evaluate_need_safe_until_tick_returns_deferred_when_profile_missing`
+  - `record_assumption_failure_writes_need_horizon_exceeded`
+  - `record_assumption_failure_preserves_commodity_availability_clearing`
+
+## Deviations
+
+- **Test math recalibrated to live `DriveThresholds::default().hunger.high() = 750`** (ticket text §6 referenced `700`). Auto-corrected during reassessment: tests use `current_tick=10`, `hunger=400`, `hunger_rate=50`, producing breach at `Tick(17)` (`= 10 + ⌈(750-400)/50⌉`), and the ticket math was rewritten to match the live default thresholds.
+
+- **Absorbed a `populate_assumptions` correctness fix originally in ticket 002's surface.** With ticket 003's evaluation live, two existing goldens (`golden_local_depleted_source_regenerates_without_spurious_failure_memory`, `golden_goal_switching_during_multi_leg_travel`) failed because agents starting with already-breached needs (e.g. `hunger=900` above `high=750`) caused `projected_tick_of` to return `Some(current_tick)`, which trivially satisfied `breach_tick < plan_completion_tick` for any non-trivial plan and pushed a pre-falsified `NeedSafeUntilTick`. Fix: in `populate_assumptions` (frame.rs), only push the assumption when `breach_tick > current_tick && breach_tick < plan_completion_tick`. The assumption "I will stay safe until X" is meaningful only when the agent is currently safe; once already past the high band, the assumption is incoherent and the agent's reactive ranking handles the urgency. Recorded in code via an explanatory comment at the populate site.
+
+- **Rewrote `golden_goal_switching_during_multi_leg_travel` to assert the post-S126 lawful contract.** The original test exercised pre-S126 reactive thirst interruption (agent travels through medium/high thirst and detours at critical). Under S126's horizon-aware planning, the projection assumption fires before the multi-leg journey can complete and the food-acquisition goal is suppressed via `Discrepancy::NeedHorizonExceeded`. The rewritten test asserts: (1) the agent commits to the orchard journey at least once, (2) a `NeedHorizonExceeded` discrepancy for `Thirst` is recorded, (3) that discrepancy uses `DiscrepancyClearing::TtlExpiry`. End-to-end "shorter alternative wins next ranking round" coverage is owned by ticket 004.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib agent_tick::frame::tests::evaluate` (7 tests, includes 3 new need-horizon tests)
+- Passed `cargo test -p worldwake-ai --lib agent_tick::frame::tests::record_assumption_failure` (6 tests, includes 2 new need-horizon recording tests)
+- Passed `cargo test -p worldwake-ai` (full crate: 1484 unit tests + 37 golden tests + sub-crate suites all green)
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo fmt --all -- --check`
+- Passed `./scripts/verify.sh` (full pre-PR gate)

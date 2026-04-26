@@ -1,0 +1,147 @@
+// S126 need-projection auxiliary scenario.
+//
+// Purpose: deterministically force the per-need projection chain
+// (`populate_assumptions` → `evaluate_assumptions` →
+// `record_assumption_failure` → `is_suppressed` → re-rank → adopt
+// alternative → TTL expiry) to fire for a single agent within a
+// short, isolated topology.
+//
+// This scenario is auxiliary — it is NOT a survival-coexistence
+// landing. It deliberately tightens `MetabolismProfile.hunger_rate`
+// to `30/tick` (≈10x typical) so the agent's hunger projection
+// crosses the default `DriveThresholds::hunger.high()=750` from
+// initial `hunger=600` in 5 ticks, well inside the 8-tick plan
+// completion window for the only known apple acquisition path
+// (5-tick travel to Distant Orchard + 3-tick Harvest Apples). With
+// the AcquireCommodity goal then suppressed via
+// `Discrepancy::NeedHorizonExceeded` for `structural_block_ticks=30`
+// ticks, the agent's pre-seeded high-fatigue state (`fatigue=830`,
+// above the default `fatigue.high()=800`) makes Sleep the next
+// adopted goal — Sleep is a 1-tick estimated-duration plan, so its
+// own projection check trivially passes.
+//
+// Backing golden: `crates/worldwake-ai/tests/golden_need_projection.rs`.
+(
+    seed: 126004,
+    scenario_lint_overrides: {
+        UnreachableExplorationDrive: "S126 need-projection auxiliary scenario isolates the horizon-aware planning chain; exploration is deliberately disabled (curiosity_weight=0, no DiversificationProfile) so ranking after suppression is deterministic.",
+    },
+    places: [
+        (name: "Riverside Camp", tags: [Camp, Latrine]),
+        (name: "Distant Orchard", tags: [Field]),
+    ],
+    edges: [
+        (from: "Riverside Camp", to: "Distant Orchard", travel_ticks: 5, bidirectional: true),
+    ],
+    agents: [
+        (
+            name: "Surveyor",
+            location: "Riverside Camp",
+            control: Ai,
+            known_recipes: ["Harvest Apples"],
+            needs: (
+                hunger: 600,
+                thirst: 100,
+                fatigue: 830,
+                bladder: 100,
+                dirtiness: 100,
+            ),
+            utility_profile: (
+                hunger_weight: 1000,
+                thirst_weight: 0,
+                fatigue_weight: 600,
+                bladder_weight: 0,
+                dirtiness_weight: 0,
+                pain_weight: 0,
+                danger_weight: 0,
+                enterprise_weight: 0,
+                social_weight: 0,
+                activity_awareness_weight: 0,
+                side_benefit_weight: 0,
+                bounty_posting_weight: 0,
+                notice_posting_weight: 0,
+                courage: 500,
+                care_weight: 0,
+            ),
+            perception_profile: (
+                entity_activation_threshold: 100,
+                claim_confidence_threshold: 50,
+                observation_buffer_capacity: 32,
+                need_salience_boost: 500,
+                need_salience_urgency_threshold: 450,
+                observation_fidelity: 900,
+                confidence_policy: (
+                    direct_observation_base: 900,
+                    report_base: 700,
+                    rumor_base: 400,
+                    inference_base: 500,
+                    report_chain_penalty: 100,
+                    rumor_chain_penalty: 150,
+                    staleness_penalty_per_tick: 2,
+                ),
+                institutional_memory_capacity: 16,
+                consultation_speed_factor: 500,
+                contradiction_tolerance: 300,
+            ),
+            cognitive_profile: (
+                max_candidates_to_plan: 3,
+                max_candidates_per_expansion: 240,
+                max_plan_depth: 10,
+                snapshot_travel_horizon: 6,
+                max_node_expansions: 640,
+                switch_margin: 100,
+                planning_switch_margin: 0,
+                transient_block_ticks: 10,
+                structural_block_ticks: 30,
+                initial_cooldown_ticks: 4,
+                max_cooldown_ticks: 64,
+                max_snapshot_entities_per_place: 50,
+                landmark_extraction_depth: 4,
+                use_ff_heuristic: true,
+            ),
+            intention_disposition: (
+                commitment_switch_margin: 0,
+                domain_patience: {},
+                default_patience_ticks: 4,
+            ),
+            execution_budget: (
+                max_prerequisite_locations: 4,
+                beam_width: 12,
+                preferred_operator_boost: 3,
+            ),
+            metabolism_profile: (
+                hunger_rate: 30,
+                thirst_rate: 1,
+                fatigue_rate: 1,
+                bladder_rate: 1,
+                dirtiness_rate: 1,
+                rest_efficiency: 20,
+                starvation_tolerance_ticks: 480,
+                dehydration_tolerance_ticks: 240,
+                exhaustion_collapse_ticks: 120,
+                bladder_accident_tolerance_ticks: 40,
+                toilet_ticks: 8,
+                wash_ticks: 12,
+                travel_fatigue_multiplier: 0,
+                travel_thirst_multiplier: 0,
+                travel_bladder_multiplier: 0,
+                wilderness_relief_dirtiness_penalty: 0,
+            ),
+            exploration_profile: (
+                curiosity_weight: 0,
+                need_activation_threshold: 1000,
+                frontier_depth: 1,
+                acquisition_failure_threshold: 4,
+                exploration_arrival_boost: 0,
+                max_consecutive_explorations: 1,
+                visit_lookback_ticks: 50,
+            ),
+        ),
+    ],
+    facilities: [
+        (name: "Distant Orchard Row", workstation: OrchardRow, location: "Distant Orchard"),
+    ],
+    resource_sources: [
+        (commodity: Apple, location: "Distant Orchard", facility: "Distant Orchard Row", regeneration_ticks_per_unit: Some(2), capacity: 24),
+    ],
+)

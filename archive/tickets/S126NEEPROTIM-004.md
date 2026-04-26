@@ -1,6 +1,6 @@
 # S126NEEPROTIM-004: Golden coverage for need projection
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — golden test only. May add a focused scenario file `scenarios/survival-need-projection.ron` if `survival-baseline.ron`'s rates cannot reproduce the breach within a reasonable plan-completion horizon.
@@ -24,6 +24,7 @@ This is the canonical proof surface for spec S126's behavioral contract — the 
 6. The harness boundary: this is a golden E2E test under `crates/worldwake-ai/tests/`. It requires full action registries (not the local needs-only harness) because the agent is committing real plans, executing real action durations, and going through real ranking. Existing pattern: `golden_survival_baseline.rs`, `golden_survival_drive_escalation.rs`, `golden_survival_contested.rs`.
 7. Coverage gap classification: this is missing **golden/E2E coverage** for the need-horizon chain. Sibling commodity-availability coverage exists implicitly via `golden_survival_*` tests but no dedicated `golden_need_projection.rs` exists today (verified during reassessment).
 8. Scenario isolation: the lawful competing affordances at the scenario's locations include any other need-satisfaction action (drink, eat-from-source, sleep). The golden's contract is "horizon-aware planning replaces reactive interruption when both behaviors lawfully apply." Document explicitly in the scenario rationale which competing affordances were intentionally left in (so the test exercises real ranking) vs. removed (so the test isolates the horizon-aware branch).
+9. Live confirmation (2026-04-26, implementation-time): `DriveThresholds::default().hunger.high() = 750` and `CognitiveProfile::default().structural_block_ticks = 200` were verified against `crates/worldwake-core/src/drives.rs` and `crates/worldwake-core/src/cognitive_profile.rs`. `survival-baseline.ron`'s authored hunger_rate=2 with hunger=420 produces a breach in 115 ticks — far longer than any natural plan completion window — so option (a) (focused new scenario `survival-need-projection.ron`) is required. This ticket implements option (a) with: hunger_rate=30, hunger=600, default high=750 → breach at +5 ticks; structural_block_ticks=30 (smaller than the 200 default to keep TTL-expiry phase of the test fast); 1 agent at "Riverside Camp"; "Distant Orchard" the only Apple source; 5-tick travel edge each way; plan completion ~8 ticks (5 travel + 3 harvest), so the projection breach (+5) falls strictly inside the plan window. The agent's fatigue is seeded above the default `high=780` threshold so that, after the AcquireCommodity goal is suppressed, Sleep wins ranking as the alternative goal (the spec's `harvest_before_sleep` motivating-evidence pattern, mirrored by giving the agent a high pre-existing fatigue motive). The closest live sibling that proves a subset of this chain is `golden_goal_switching_during_multi_leg_travel` (`crates/worldwake-ai/tests/golden_ai_decisions.rs:1141`); that test does not assert `is_suppressed`, alternative goal adoption, or TTL expiry — those three milestones are the new proof surface this ticket owns.
 
 ## Architecture Check
 
@@ -117,3 +118,30 @@ These compose over runtime types and remain reusable for any later assumption-dr
 2. `cargo test -p worldwake-ai`
 3. `cargo test --workspace`
 4. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-26.
+
+- Authored `scenarios/survival-need-projection.ron`: a 1-agent / 2-place auxiliary scenario that tightens `MetabolismProfile.hunger_rate` to 30/tick so the agent's `hunger=600` projects breach against the default `DriveThresholds::hunger.high()=750` in 5 ticks, well inside the 8-tick plan completion window for the only known apple-acquisition path (5-tick travel to "Distant Orchard" + 3-tick `Harvest Apples`). Sets `cognitive_profile.structural_block_ticks=30` to keep the TTL-expiry phase of the test fast. Suppresses the `UnreachableExplorationDrive` lint via `scenario_lint_overrides` because exploration is intentionally disabled to keep ranking deterministic after suppression.
+- Authored `crates/worldwake-ai/tests/golden_harness/need_projection_assertions.rs`: three reusable helpers (`frame_contains_need_safe_until_tick`, `first_need_horizon_entry`, `blocker_is_suppressed`) that compose over `IntentionFrame`, `DiscrepancyMemory`, and `BlockerKey` so future assumption-driven goldens can read the same proof surfaces without duplicating destructuring boilerplate.
+- Authored `crates/worldwake-ai/tests/golden_need_projection.rs`: a single end-to-end golden test (`golden_need_projection_chain`) that proves the full S126 chain — populate → evaluate → record → suppress → alternative-goal adoption → TTL expiry — over the new scenario via `load_scenario_file` + `spawn_scenario`. Beliefs about non-co-located entities are seeded post-spawn through `seed_actor_world_beliefs` because the scenario disables curiosity. Suppression status is captured at the discrepancy tick inline (before TTL pruning could remove the entry by test end). Alternative-goal adoption is checked against `runtime.current_plan.goal` rather than `frame.goal` because the existing intention frame transitions to `FrameState::Suspended { reason: PriorityInterrupt }` while keeping its original `goal` field; the agent's actual executed plan is the runtime's `current_plan`. The test also asserts the `expires_tick == observed_tick + structural_block_ticks` invariant and the `DiscrepancyClearing::TtlExpiry` clearing condition.
+- Wired the new helper module into `crates/worldwake-ai/tests/golden_harness/mod.rs` (`pub mod need_projection_assertions` + re-export of the three helpers).
+- Added `survival-need-projection.ron` as an auxiliary scenario in `docs/scenario-roadmap.md` §5.17 alongside `cli-evaluation.ron`, with explicit rationale for why it is not a roadmap landing (no `survival_health_contract`, deliberately extreme metabolism rate, exploration disabled).
+- Refreshed the generated companion at `docs/generated/scenario-coverage.md` via `cargo run -p worldwake-cli --bin scenario-coverage -- --write`.
+
+## Deviations
+
+- **Alternative-goal proof surface (`runtime.current_plan.goal`, not `frame.goal`)**: the spec D8 asks for "a shorter-completion alternative plan wins the next ranking round". Direct observation under the live agent-tick driver shows the original AcquireCommodity intention frame transitions to `FrameState::Suspended { reason: PriorityInterrupt }` and retains its `goal` field while the agent's runtime executes a different `current_plan` — the agent's actual behaviour is the active runtime plan, not the suspended frame's goal. The golden's `saw_alternative_plan` milestone therefore reads `runtime.current_plan.goal` for the alternative-goal check. This is a precision correction to the ticket's narrative — the proof contract still binds at the same architectural seam (a goal whose key differs from the suppressed `BlockerKey.goal_key` is executing under the suppression window).
+- **`DriveThresholds::default()` confirmation**: ticket reassessment §1 hypothesised "high ~700"; live values are `hunger.high()=750` and `fatigue.high()=800` per `crates/worldwake-core/src/drives.rs`. The scenario rates and assertions are calibrated against the live values.
+- **Suppression status captured inline at the discrepancy tick**: the test loop records `blocker_is_suppressed(...)` immediately when the discrepancy is first observed, rather than asserting it at the end of the loop, because subsequent re-observations refresh `expires_tick` and the post-loop reading would race against TTL pruning. The final assertion compares the captured snapshot.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_need_projection` (1 test: `golden_need_projection_chain`).
+- Passed `cargo test -p worldwake-ai` (full ai crate green: 1484 unit tests, 38 golden integration tests including the new `golden_need_projection`, plus conformance and forensic suites).
+- Passed `cargo test --workspace` (workspace green).
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `cargo fmt --all -- --check`.
+- Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
+- Passed `./scripts/verify.sh` (full pre-PR gate, exit 0).

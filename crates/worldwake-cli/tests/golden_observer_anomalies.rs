@@ -73,6 +73,7 @@ fn anomaly_block<'a>(report: &'a str, kind: &str) -> &'a str {
 }
 
 #[test]
+#[ignore = "CI-only: observer-binary anomaly-detector calibration; run via golden-observer-anomalies workflow"]
 fn convergence_smell_fires_on_forced_hub_scenario() {
     let report = run_observer("tests/fixtures/observer_anomalies/convergence_hub.ron", 300);
 
@@ -88,6 +89,7 @@ fn convergence_smell_fires_on_forced_hub_scenario() {
 }
 
 #[test]
+#[ignore = "CI-only: observer-binary anomaly-detector calibration; run via golden-observer-anomalies workflow"]
 fn convergence_smell_stays_absent_on_survival_baseline() {
     let report = run_observer("../../scenarios/survival-baseline.ron", 1440);
 
@@ -98,6 +100,7 @@ fn convergence_smell_stays_absent_on_survival_baseline() {
 }
 
 #[test]
+#[ignore = "CI-only: observer-binary anomaly-detector calibration; run via golden-observer-anomalies workflow"]
 fn maintenance_starvation_fires_on_wash_gap() {
     let report = run_observer(
         "tests/fixtures/observer_anomalies/maintenance_starvation_wash_gap.ron",
@@ -120,6 +123,7 @@ fn maintenance_starvation_fires_on_wash_gap() {
 }
 
 #[test]
+#[ignore = "CI-only: observer-binary anomaly-detector calibration; run via golden-observer-anomalies workflow"]
 fn stuck_detector_excludes_wash_travel_cycle() {
     let report = run_observer(
         "tests/fixtures/observer_anomalies/stuck_detector_wash_travel_cycle.ron",
@@ -135,6 +139,7 @@ fn stuck_detector_excludes_wash_travel_cycle() {
 }
 
 #[test]
+#[ignore = "CI-only: observer-binary anomaly-detector calibration; run via golden-observer-anomalies workflow"]
 fn stuck_detector_still_fires_on_genuine_idle() {
     let report = run_observer(
         "tests/fixtures/observer_anomalies/stuck_detector_genuine_idle.ron",
@@ -147,6 +152,7 @@ fn stuck_detector_still_fires_on_genuine_idle() {
 }
 
 #[test]
+#[ignore = "CI-only: observer-binary anomaly-detector calibration; run via golden-observer-anomalies workflow"]
 fn recipe_monoculture_fires_on_single_food_dependency() {
     let report = run_observer(
         "tests/fixtures/observer_anomalies/recipe_monoculture_apples_vs_grain.ron",
@@ -166,6 +172,7 @@ fn recipe_monoculture_fires_on_single_food_dependency() {
 }
 
 #[test]
+#[ignore = "CI-only: observer-binary anomaly-detector calibration; run via golden-observer-anomalies workflow"]
 fn acute_thirst_fixture_surfaces_sustained_thirst_anomalies() {
     let report = run_observer(
         "tests/fixtures/observer_anomalies/acute_thirst_spike.ron",

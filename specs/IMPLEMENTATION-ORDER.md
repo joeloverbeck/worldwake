@@ -489,13 +489,13 @@ Phase 10 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S126 (independent)
+S126 ✅ archived
 S130 (independent; soft dep on S122 ✅)
 S131 (independent; existing SourceReliability extension)
    │           │
-   │           └── S127 (soft deps on S126, S131)
+   │           └── S127 (soft deps on S126 ✅, S131)
    │                 │
-   └── S128 (soft dep on S126; hard dep on S110 ✅)
+   └── S128 (soft dep on S126 ✅; hard dep on S110 ✅)
          │
          └── S129 (soft dep on S128; hard deps on S106 ✅, S110 ✅)
 ```
@@ -505,13 +505,13 @@ All cross-spec dependencies among S126–S131 are **soft** (benefit but not bloc
 ### Active Execution Steps
 
 **Wave 1** (parallel, no hard deps among new specs):
-- **S126**: Need Projection and Plan Time-Budget Assumptions — derived `projected_tick_of` helper on `HomeostaticNeeds`; new `FrameAssumption::NeedSafeUntilTick { need, until_tick }` variant routed through S109's typed-discrepancy chain. Closes the symmetric gap to S122 for need-horizon assumptions.
+- **S126**: ✅ COMPLETED — Need Projection and Plan Time-Budget Assumptions — archived at [archive/specs/S126-need-projection-time-budget.md](/home/joeloverbeck/projects/worldwake/archive/specs/S126-need-projection-time-budget.md). Landed `FrameAssumption::NeedSafeUntilTick`, `Discrepancy::NeedHorizonExceeded`, `HomeostaticNeeds::projected_tick_of`, keyed `MetabolismProfile::rate(need)` and `DriveThresholds::high(need)` accessors, the populate/evaluate/record chain through S109's typed-discrepancy path with `DiscrepancyClearing::TtlExpiry`, decision-trace surfacing, and end-to-end golden coverage in `golden_need_projection.rs` against the new auxiliary `scenarios/survival-need-projection.ron`. `SAVE_FORMAT_VERSION` bumped 47 → 48. The pre-existing `golden_goal_switching_during_multi_leg_travel` golden was rewritten under the new lawful horizon-aware contract during ticket -003.
 - **S130**: Survey Records and Frontier Disconfirmation — `SurveyMemory` per-agent component; `HypothesisKind` on `ExploreLocation`; perception-time arrival evaluation; ranking damps re-exploration of confirmed-empty places. Folds in PR-7's narrow arrival-diff piece.
 - **S131**: Source Reliability Wait and Capacity Extension — extends existing `ReliabilityRecord` with `average_wait_ticks`, `wait_observation_count`, `last_observed_capacity`, `last_observed_capacity_tick`; new `wait_sensitivity_weight` on `PreferenceProfile`; ranking integration.
 
 **Wave 2** (after Wave 1; soft deps consumable):
-- **S127**: Quantity-Aware Acquisition and Visible Source State — `AcquisitionQuantity { desired_min, desired_target, horizon_ticks }` on `AcquireCommodity`; `extraction_slots` + `extraction_duration_ticks` + `LastHarvestTrace` on `ResourceSource`; partial-harvest outcome on commit (PR-11 fold-in). Soft consumes S126 (`desired_target` derivation) and S131 (wait-aware ranking).
-- **S128**: Sleep Episodes and Place-Quality Recovery — `SleepEpisode` runtime component, `WakeCondition` enum, `SleepQualityProfile` per-place, `EventTag::SleepEpisodeStarted` / `SleepEpisodeEnded`; replaces per-tick re-commit pattern. Soft consumes S126 (wake-on-projection); folds in PR-9 sleep-quality, PR-11 interrupted-sleep, PR-12 sleep events.
+- **S127**: Quantity-Aware Acquisition and Visible Source State — `AcquisitionQuantity { desired_min, desired_target, horizon_ticks }` on `AcquireCommodity`; `extraction_slots` + `extraction_duration_ticks` + `LastHarvestTrace` on `ResourceSource`; partial-harvest outcome on commit (PR-11 fold-in). Soft consumes S126 ✅ (`desired_target` derivation) and S131 (wait-aware ranking).
+- **S128**: Sleep Episodes and Place-Quality Recovery — `SleepEpisode` runtime component, `WakeCondition` enum, `SleepQualityProfile` per-place, `EventTag::SleepEpisodeStarted` / `SleepEpisodeEnded`; replaces per-tick re-commit pattern. Soft consumes S126 ✅ (wake-on-projection); folds in PR-9 sleep-quality, PR-11 interrupted-sleep, PR-12 sleep events.
 
 **Wave 3** (after Wave 2; soft deps consumable):
 - **S129**: Place Dirtiness and Facility Wear — `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` components; `WasteCreated`/`WashFacilityUsed`/`LatrineMaintained` event tags; relieve/toilet/wash handler extensions; partial-wash outcome (PR-11 fold-in). Soft consumes S128 (sleep ranking reads dirtiness as quality modifier). Folds in PR-9 hygiene topology, PR-11 partial-wash, PR-12 waste/wash events.

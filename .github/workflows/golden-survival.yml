@@ -39,6 +39,8 @@ jobs:
             test_target: golden_survival_items_decay
           - scenario: justice
             test_target: golden_survival_justice
+          - scenario: need_projection
+            test_target: golden_need_projection
           - scenario: offices
             test_target: golden_survival_offices
           - scenario: patrol

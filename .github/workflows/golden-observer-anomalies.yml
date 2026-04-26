@@ -1,0 +1,54 @@
+# Family-per-matrix-workflow convention: add scenarios to the matrix below; create a
+# new golden-<family>.yml when a new scenario family lands (combat, trade, exploration, …).
+# See docs/plans/2026-04-17-per-family-golden-scenario-workflows-design.md.
+#
+# This family covers the observer-binary anomaly-detector calibration suite in
+# `crates/worldwake-cli/tests/golden_observer_anomalies.rs`. Each test spawns the
+# observer subprocess against a scenario (forced fixture or `survival-baseline.ron`)
+# and asserts whether a specific anomaly kind fires (positive fixtures) or stays
+# silent (negative calibration against a known-healthy scenario). The full file is
+# gated as a unit because every test pays observer-subprocess startup cost and
+# several runs span 600-1440 ticks.
+name: Golden Observer Anomalies
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+concurrency:
+  group: golden-observer-anomalies-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenario:
+    name: golden-observer-anomalies / ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: observer_anomalies
+            test_target: golden_observer_anomalies
+            test_crate: worldwake-cli
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+          components: clippy,rustfmt
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: golden-observer-anomalies-${{ matrix.scenario }}
+
+      - name: Run ${{ matrix.test_target }}
+        run: cargo test --release -p ${{ matrix.test_crate }} --test ${{ matrix.test_target }} -- --ignored --test-threads=1

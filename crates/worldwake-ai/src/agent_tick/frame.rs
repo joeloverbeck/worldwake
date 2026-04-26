@@ -384,7 +384,17 @@ pub(super) fn populate_assumptions(
             metabolism.rate(need),
             current_tick,
         );
+        // The assumption "I will stay safe until X" requires that the agent is
+        // currently safe — i.e., the projected breach is genuinely in the
+        // future (`breach_tick > current_tick`). When the level is already at
+        // or above the high threshold, `projected_tick_of` returns
+        // `Some(current_tick)`, indicating the breach has already occurred.
+        // Pushing the assumption in that case would pre-falsify it for any
+        // non-trivial plan. The agent's reactive ranking already handles
+        // already-breached needs; the projection assumption only adds value
+        // when the agent has time to revise before breach.
         if let Some(breach_tick) = projected
+            && breach_tick > current_tick
             && breach_tick < plan_completion_tick
         {
             assumptions.push(FrameAssumption::NeedSafeUntilTick {
@@ -409,6 +419,7 @@ pub(super) fn evaluate_assumptions(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
     ranked_candidates: Option<&OrderedRanked<'_>>,
+    current_tick: Tick,
 ) -> AssumptionEvalResult {
     let mut has_deferred = false;
 
@@ -449,11 +460,26 @@ pub(super) fn evaluate_assumptions(
                     AvailabilityVerdict::UnknownOrStale => has_deferred = true,
                 }
             }
-            FrameAssumption::NeedSafeUntilTick { .. } => {
-                // PLACEHOLDER: ticket S126NEEPROTIM-003 replaces this arm with the real
-                // projection re-evaluation logic. Today the assumption is never produced
-                // (ticket 002 ships population), so the no-op match body is unreachable
-                // at runtime and is present only to keep the workspace compiling.
+            FrameAssumption::NeedSafeUntilTick { need, until_tick } => {
+                let (Some(metabolism), Some(needs), Some(thresholds)) = (
+                    view.metabolism_profile(agent),
+                    view.homeostatic_needs(agent),
+                    view.drive_thresholds(agent),
+                ) else {
+                    has_deferred = true;
+                    continue;
+                };
+                let projected = needs.projected_tick_of(
+                    need,
+                    thresholds.high(need),
+                    metabolism.rate(need),
+                    current_tick,
+                );
+                if let Some(breach_tick) = projected
+                    && breach_tick < until_tick
+                {
+                    return AssumptionEvalResult::CriticalFailure(*assumption);
+                }
             }
         }
     }
@@ -574,18 +600,33 @@ pub(super) fn record_assumption_failure(
     discrepancy_memory: &mut DiscrepancyMemory,
     tick: Tick,
     structural_block_ticks: u32,
+    failed_assumption: FrameAssumption,
 ) {
     let target = blocker_target.or_else(|| frame_blocker_target(&frame.domain));
-    let clearing_condition = frame
-        .expected_commodity()
-        .map_or(DiscrepancyClearing::TtlExpiry, |(commodity, place)| {
-            DiscrepancyClearing::CommodityAvailabilityChanged { commodity, place }
-        });
-    let discrepancy = if target.is_some() {
-        Discrepancy::BeliefContradicted
-    } else {
-        Discrepancy::PartialExecutionDrift
-    };
+    let (discrepancy, clearing_condition) =
+        if let FrameAssumption::NeedSafeUntilTick { need, until_tick } = failed_assumption {
+            (
+                Discrepancy::NeedHorizonExceeded {
+                    need,
+                    projected_breach_tick: until_tick,
+                },
+                DiscrepancyClearing::TtlExpiry,
+            )
+        } else {
+            let clearing = frame.expected_commodity().map_or(
+                DiscrepancyClearing::TtlExpiry,
+                |(commodity, place)| DiscrepancyClearing::CommodityAvailabilityChanged {
+                    commodity,
+                    place,
+                },
+            );
+            let discrepancy = if target.is_some() {
+                Discrepancy::BeliefContradicted
+            } else {
+                Discrepancy::PartialExecutionDrift
+            };
+            (discrepancy, clearing)
+        };
     discrepancy_memory.record(DiscrepancyEntry {
         blocker_key: BlockerKey {
             goal_key: frame.goal,
@@ -1453,6 +1494,7 @@ mod tests {
             &view,
             make_entity(0),
             Some(&ordered(&[])),
+            Tick(0),
         );
         assert!(matches!(
             result,
@@ -1472,6 +1514,7 @@ mod tests {
             &view,
             make_entity(0),
             Some(&ordered(&[])),
+            Tick(0),
         );
         assert_eq!(
             result,
@@ -1489,6 +1532,7 @@ mod tests {
             &view,
             make_entity(0),
             Some(&ordered(&candidates)),
+            Tick(0),
         );
         assert_eq!(
             result,
@@ -1513,6 +1557,7 @@ mod tests {
             &view,
             make_entity(0),
             Some(&ordered(&[])),
+            Tick(0),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
     }
@@ -1526,6 +1571,7 @@ mod tests {
             &view,
             make_entity(0),
             None,
+            Tick(0),
         );
         assert_eq!(result, AssumptionEvalResult::Deferred);
     }
@@ -1548,6 +1594,7 @@ mod tests {
             &view,
             agent,
             Some(&ordered(&[])),
+            Tick(0),
         );
         assert_eq!(
             result,
@@ -1580,6 +1627,7 @@ mod tests {
             &view,
             agent,
             Some(&ordered(&[])),
+            Tick(0),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
     }
@@ -1599,6 +1647,7 @@ mod tests {
             &view,
             agent,
             Some(&ordered(&[])),
+            Tick(0),
         );
         assert_eq!(result, AssumptionEvalResult::Deferred);
     }
@@ -1630,8 +1679,103 @@ mod tests {
             &view,
             agent,
             Some(&ordered(&[])),
+            Tick(0),
         );
         assert_eq!(result, AssumptionEvalResult::AllPass);
+    }
+
+    // ── evaluate_assumptions need-horizon tests (S126 D5) ──
+
+    #[test]
+    fn evaluate_need_safe_until_tick_returns_critical_failure_when_breach_before_until_tick() {
+        // hunger=400, hunger_rate=50, hunger.high()=750 (DriveThresholds::default).
+        // breach_tick = 10 + ⌈(750-400)/50⌉ = 10 + 7 = Tick(17).
+        // until_tick = Tick(20) > breach_tick → CriticalFailure.
+        let agent = make_entity(0);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        seed_physiology(
+            &mut view,
+            agent,
+            HomeostaticNeeds::new(
+                permille(400),
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+            ),
+            metabolism_with_only(HomeostaticNeedId::Hunger, permille(50)),
+        );
+
+        let assumption = FrameAssumption::NeedSafeUntilTick {
+            need: HomeostaticNeedId::Hunger,
+            until_tick: Tick(20),
+        };
+        let result =
+            evaluate_assumptions(&[assumption], &view, agent, Some(&ordered(&[])), Tick(10));
+        assert_eq!(
+            result,
+            AssumptionEvalResult::CriticalFailure(assumption),
+            "breach (17) < until_tick (20) must produce CriticalFailure",
+        );
+    }
+
+    #[test]
+    fn evaluate_need_safe_until_tick_returns_all_pass_when_breach_at_or_after_until_tick() {
+        // Same setup as above but until_tick = Tick(15).
+        // breach_tick = Tick(17) >= until_tick (15) → AllPass.
+        let agent = make_entity(0);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        seed_physiology(
+            &mut view,
+            agent,
+            HomeostaticNeeds::new(
+                permille(400),
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+            ),
+            metabolism_with_only(HomeostaticNeedId::Hunger, permille(50)),
+        );
+
+        let result = evaluate_assumptions(
+            &[FrameAssumption::NeedSafeUntilTick {
+                need: HomeostaticNeedId::Hunger,
+                until_tick: Tick(15),
+            }],
+            &view,
+            agent,
+            Some(&ordered(&[])),
+            Tick(10),
+        );
+        assert_eq!(
+            result,
+            AssumptionEvalResult::AllPass,
+            "breach (17) >= until_tick (15) must produce AllPass",
+        );
+    }
+
+    #[test]
+    fn evaluate_need_safe_until_tick_returns_deferred_when_profile_missing() {
+        // No physiology seeded → metabolism_profile/homeostatic_needs/drive_thresholds
+        // return None. The arm marks has_deferred and continues; with no other
+        // assumptions to fail, the loop exits Deferred.
+        let agent = make_entity(0);
+        let view = MockBeliefView::new();
+
+        let result = evaluate_assumptions(
+            &[FrameAssumption::NeedSafeUntilTick {
+                need: HomeostaticNeedId::Hunger,
+                until_tick: Tick(20),
+            }],
+            &view,
+            agent,
+            Some(&ordered(&[])),
+            Tick(10),
+        );
+        assert_eq!(result, AssumptionEvalResult::Deferred);
     }
 
     // ── apply_assumption_result tests ──
@@ -1941,6 +2085,7 @@ mod tests {
             &mut memory,
             tick,
             ttl,
+            FrameAssumption::TargetAlive(target),
         );
 
         let entry = memory
@@ -1989,6 +2134,10 @@ mod tests {
             &mut memory,
             tick,
             ttl,
+            FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place: destination,
+            },
         );
 
         let entry = memory
@@ -2017,7 +2166,15 @@ mod tests {
         let tick = Tick(75);
         let ttl = structural_block_ticks_default();
 
-        record_assumption_failure(&frame, Some(agent_place), None, &mut memory, tick, ttl);
+        record_assumption_failure(
+            &frame,
+            Some(agent_place),
+            None,
+            &mut memory,
+            tick,
+            ttl,
+            FrameAssumption::NoCriticalThreat,
+        );
 
         let entry = memory
             .entries
@@ -2048,6 +2205,7 @@ mod tests {
             &mut memory,
             Tick(10),
             ttl,
+            FrameAssumption::TargetAlive(target),
         );
         record_assumption_failure(
             &frame,
@@ -2056,6 +2214,7 @@ mod tests {
             &mut memory,
             Tick(40),
             ttl,
+            FrameAssumption::TargetAlive(target),
         );
 
         // Same blocker_key (goal/place/target) → second record replaces first.
@@ -2063,6 +2222,100 @@ mod tests {
         let entry = memory.entries.values().next().unwrap();
         assert_eq!(entry.observed_tick, Tick(40));
         assert_eq!(entry.expires_tick, Tick(40 + u64::from(ttl)));
+    }
+
+    #[test]
+    fn record_assumption_failure_writes_need_horizon_exceeded() {
+        // NeedSafeUntilTick failure routes to Discrepancy::NeedHorizonExceeded
+        // with TtlExpiry clearing — independent of target/commodity framing.
+        let target = make_entity(7);
+        let agent_place = make_entity(1);
+        let frame = assumption_failure_frame(IntentionDomain::Care { patient: target });
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(50);
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(
+            &frame,
+            Some(agent_place),
+            Some(target),
+            &mut memory,
+            tick,
+            ttl,
+            FrameAssumption::NeedSafeUntilTick {
+                need: HomeostaticNeedId::Hunger,
+                until_tick: Tick(20),
+            },
+        );
+
+        let entry = memory
+            .entries
+            .values()
+            .next()
+            .expect("entry recorded for need-horizon failure");
+        assert_eq!(
+            entry.discrepancy,
+            Discrepancy::NeedHorizonExceeded {
+                need: HomeostaticNeedId::Hunger,
+                projected_breach_tick: Tick(20),
+            },
+        );
+        assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);
+        assert_eq!(entry.expires_tick, Tick(tick.0 + u64::from(ttl)));
+        assert_eq!(entry.blocker_key.target, Some(target));
+        assert_eq!(entry.blocker_key.place, Some(agent_place));
+    }
+
+    #[test]
+    fn record_assumption_failure_preserves_commodity_availability_clearing() {
+        // Regression guard: passing a CommodityAvailableAt failed_assumption
+        // with a frame whose expected_commodity is Some preserves the existing
+        // CommodityAvailabilityChanged clearing path.
+        let destination = make_entity(7);
+        let source = make_entity(11);
+        let frame = IntentionFrame {
+            goal: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+            }),
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(0),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        };
+        let mut memory = worldwake_core::DiscrepancyMemory::default();
+        let tick = Tick(50);
+        let ttl = structural_block_ticks_default();
+
+        record_assumption_failure(
+            &frame,
+            Some(destination),
+            Some(source),
+            &mut memory,
+            tick,
+            ttl,
+            FrameAssumption::CommodityAvailableAt {
+                commodity: CommodityKind::Apple,
+                place: destination,
+            },
+        );
+
+        let entry = memory
+            .entries
+            .values()
+            .next()
+            .expect("entry recorded for commodity-availability failure");
+        assert_eq!(entry.discrepancy, Discrepancy::BeliefContradicted);
+        assert_eq!(
+            entry.clearing_condition,
+            DiscrepancyClearing::CommodityAvailabilityChanged {
+                commodity: CommodityKind::Apple,
+                place: destination,
+            },
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ Give agents a forward horizon for their own physiology so plan adoption can ask 
 
 ## Phase and Status
 
-Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft.
+Phase 10: Survival Mechanic Depth (Adjunct). **Status**: ✅ COMPLETED.
 
 ## Crates
 
@@ -317,3 +317,30 @@ Per FND-22, all parameters that vary per agent are sourced from existing profile
 - Suppression TTL: `CognitiveProfile.structural_block_ticks` (consumed by S109's discrepancy memory through `record_assumption_failure`).
 
 No magic numbers introduced.
+
+## Outcome
+
+Completed on 2026-04-26.
+
+D1–D8 landed across the four-ticket chain S126NEEPROTIM-001..-004 (all archived):
+
+- **D1 / D6 (variants)**: Added `FrameAssumption::NeedSafeUntilTick { need, until_tick }` in `crates/worldwake-core/src/intention_frame.rs` and `Discrepancy::NeedHorizonExceeded { need, projected_breach_tick }` in `crates/worldwake-core/src/discrepancy.rs`. Both preserve `Copy` derives. `SAVE_FORMAT_VERSION` bumped 47 → 48 to mark the schema change.
+- **D2**: `HomeostaticNeeds::projected_tick_of(need, target_level, base_rate, current_tick) -> Option<Tick>` derived helper in `crates/worldwake-core/src/needs.rs`. Integer-only `div_ceil` arithmetic; returns `Some(current_tick)` when `current >= target` (caller-side guard) and `None` when `rate == 0`.
+- **D3**: `MetabolismProfile::rate(need)` and `DriveThresholds::high(need)` keyed accessors mirroring the existing `DriveThresholds::critical(need)` precedent.
+- **D4**: `populate_assumptions` extended with `current_tick: Tick` and `plan_completion_tick: Tick` parameters; per-need projection arms iterate `HomeostaticNeedId::ALL` and push `NeedSafeUntilTick` only when `breach_tick > current_tick && breach_tick < plan_completion_tick` (the second condition makes the assumption guarding a future breach inside the plan window; the first prevents pre-falsified assumptions when the agent is already past the high threshold). Plan-completion-tick computed at call sites via `plan_completion_tick(runtime, current_tick)` for the per-tick refresh path and `plan_completion_tick_for_adoption(plan, current_tick)` for the planner adoption sites.
+- **D5**: `evaluate_assumptions` extended with `current_tick: Tick`; the new `NeedSafeUntilTick` arm re-derives the projection at evaluation time and returns `AssumptionEvalResult::CriticalFailure(*assumption)` when `breach_tick < until_tick`.
+- **D6 (recording)**: `record_assumption_failure` extended with `failed_assumption: FrameAssumption`; the function dispatches on the variant, constructing `Discrepancy::NeedHorizonExceeded { need, projected_breach_tick: until_tick }` with `DiscrepancyClearing::TtlExpiry` for `NeedSafeUntilTick` failures and preserving the existing `BeliefContradicted`/`PartialExecutionDrift` + `CommodityAvailabilityChanged`/`TtlExpiry` paths for other assumptions.
+- **D7**: Decision-trace formatter arm in `crates/worldwake-ai/src/decision_trace.rs` renders `NeedSafeUntilTick { need, until_tick }` through the existing `CriticalFailure(FrameAssumption)` carrier; observer rendering inherits the new variant via `Display`/`Debug` without a new `EventTag`.
+- **D8**: End-to-end golden coverage authored in `crates/worldwake-ai/tests/golden_need_projection.rs` against `scenarios/survival-need-projection.ron` (auxiliary scenario documented in `docs/scenario-roadmap.md` §5.17). The golden proves the full chain: assumption populated → `Discrepancy::NeedHorizonExceeded` recorded with `TtlExpiry` and `expires_tick == observed_tick + structural_block_ticks` → suppression status holds at the recording tick → an alternative goal executes via `runtime.current_plan.goal` during the suppression window → TTL expires and `is_suppressed` returns false.
+
+### Deviations
+
+- **`populate_assumptions` correctness fix absorbed during ticket -003**: `breach_tick > current_tick` guard added so already-breached needs do not pre-falsify the assumption. Originally the spec text only required `breach_tick < plan_completion_tick`; the live arithmetic of `projected_tick_of` returns `Some(current_tick)` when the need is already past the high threshold, which would pre-push a doomed assumption for any non-trivial plan. The deviation is documented in archived ticket S126NEEPROTIM-003.
+- **Pre-existing golden rewritten under the new lawful contract**: `golden_goal_switching_during_multi_leg_travel` in `golden_ai_decisions.rs` was rewritten during S126NEEPROTIM-003 to assert the post-S126 horizon-aware contract (records `Discrepancy::NeedHorizonExceeded { need: Thirst, .. }` for the multi-leg apple journey) instead of the pre-S126 reactive interruption it formerly verified. End-to-end "alternative wins next ranking round" coverage now lives in the ticket-004 golden.
+- **D8 alternative-goal proof surface (`runtime.current_plan.goal`, not `frame.goal`)**: under the live agent-tick driver the original AcquireCommodity intention frame transitions to `FrameState::Suspended { reason: PriorityInterrupt }` and retains its `goal` field while the runtime executes a different `current_plan`. The golden therefore reads `runtime.current_plan.goal` for the alternative-goal milestone. Recorded as a precision correction to the spec narrative — the proof contract still binds at the same architectural seam (a goal whose key differs from the suppressed `BlockerKey.goal_key` is executing under the suppression window).
+- **Test default thresholds**: ticket assumptions referenced `hunger.high() ≈ 700`; live `DriveThresholds::default()` is `hunger.high() = 750` and `fatigue.high() = 800`. All ticket tests and the new scenario's rates are calibrated against the live values.
+
+### Verification
+
+- All four tickets passed `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and `./scripts/verify.sh` at completion.
+- Ticket-004 also passed `cargo run -p worldwake-cli --bin scenario-coverage -- --check` after refreshing `docs/generated/scenario-coverage.md`.

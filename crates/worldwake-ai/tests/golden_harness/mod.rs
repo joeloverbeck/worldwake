@@ -7,6 +7,7 @@
 #![allow(dead_code)]
 
 pub mod commodity_assumption_falsification;
+pub mod need_projection_assertions;
 pub mod soak_world;
 pub mod survival_forensics_assertions;
 mod timeline;
@@ -44,6 +45,10 @@ use worldwake_systems::{build_full_action_registries, dispatch_table};
 #[allow(unused_imports)]
 pub use commodity_assumption_falsification::{
     CommodityAssumptionFalsificationProbes, commodity_assumption_falsification_probes_from_env,
+};
+#[allow(unused_imports)]
+pub use need_projection_assertions::{
+    blocker_is_suppressed, first_need_horizon_entry, frame_contains_need_safe_until_tick,
 };
 #[allow(unused_imports)]
 pub use survival_forensics_assertions::{
