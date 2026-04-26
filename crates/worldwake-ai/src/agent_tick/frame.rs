@@ -6,8 +6,8 @@ use crate::{GoalPriorityClass, ranking::OrderedRanked};
 use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, CommodityKind,
     ContentionIntents, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
-    EntityId, FrameAssumption, FrameClearReason, FrameState, IntentionDomain, IntentionFrame,
-    Permille, Quantity, SuspensionReason, Tick,
+    EntityId, FrameAssumption, FrameClearReason, FrameState, HomeostaticNeedId, IntentionDomain,
+    IntentionFrame, Permille, Quantity, SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -273,18 +273,61 @@ pub(super) fn assess_commodity_availability(
     AvailabilityVerdict::UnknownOrStale
 }
 
+/// Sum of `estimated_ticks` for the steps that have already been completed
+/// in `plan` according to `current_step_index`.
+pub(super) fn completed_step_ticks(plan: &crate::PlannedPlan, current_step_index: usize) -> u64 {
+    plan.steps
+        .iter()
+        .take(current_step_index)
+        .map(|step| u64::from(step.estimated_ticks))
+        .sum()
+}
+
+/// Compute the tick at which the agent's currently active plan is expected
+/// to complete, given the runtime's plan-and-step-index state. Returns
+/// `current_tick` when no plan is active (suppresses need-horizon assumption
+/// population on the trivial no-plan branch).
+pub(super) fn plan_completion_tick(runtime: &AgentDecisionRuntime, current_tick: Tick) -> Tick {
+    let Some(plan) = runtime.current_plan.as_ref() else {
+        return current_tick;
+    };
+    let completed = completed_step_ticks(plan, runtime.current_step_index);
+    let remaining = u64::from(plan.total_estimated_ticks).saturating_sub(completed);
+    Tick(current_tick.0.saturating_add(remaining))
+}
+
+/// Compute the tick at which `plan` is expected to complete, given that no
+/// steps have been completed yet (the just-being-adopted case). Returns
+/// `current_tick + plan.total_estimated_ticks`.
+pub(super) fn plan_completion_tick_for_adoption(
+    plan: &crate::PlannedPlan,
+    current_tick: Tick,
+) -> Tick {
+    Tick(
+        current_tick
+            .0
+            .saturating_add(u64::from(plan.total_estimated_ticks)),
+    )
+}
+
 /// Populate assumptions for an intention frame based on its domain and the
 /// agent's current believed position. This is a standalone function (not a
 /// method on `IntentionFrame`) to keep `worldwake-core` free of `BeliefView`
 /// dependencies.
+///
+/// `current_tick` and `plan_completion_tick` drive per-need horizon
+/// projection (S126 D4). When `plan_completion_tick == current_tick` (the
+/// no-plan branch), need-horizon population is trivially skipped.
 pub(super) fn populate_assumptions(
     frame: &IntentionFrame,
     agent: EntityId,
     view: &dyn RuntimeBeliefView,
+    current_tick: Tick,
+    plan_completion_tick: Tick,
 ) -> Vec<FrameAssumption> {
     let domain = &frame.domain;
     let current_place = view.effective_place(agent);
-    match *domain {
+    let mut assumptions = match *domain {
         IntentionDomain::Travel { destination } | IntentionDomain::Errand { destination } => {
             let mut assumptions = Vec::with_capacity(2);
             if let Some(from) = current_place {
@@ -325,7 +368,32 @@ pub(super) fn populate_assumptions(
         IntentionDomain::Generic => {
             vec![FrameAssumption::NoCriticalThreat]
         }
+    };
+
+    let (Some(metabolism), Some(needs), Some(thresholds)) = (
+        view.metabolism_profile(agent),
+        view.homeostatic_needs(agent),
+        view.drive_thresholds(agent),
+    ) else {
+        return assumptions;
+    };
+    for &need in &HomeostaticNeedId::ALL {
+        let projected = needs.projected_tick_of(
+            need,
+            thresholds.high(need),
+            metabolism.rate(need),
+            current_tick,
+        );
+        if let Some(breach_tick) = projected
+            && breach_tick < plan_completion_tick
+        {
+            assumptions.push(FrameAssumption::NeedSafeUntilTick {
+                need,
+                until_tick: plan_completion_tick,
+            });
+        }
     }
+    assumptions
 }
 
 /// Evaluate a set of assumptions against the agent's beliefs. Returns the
@@ -585,6 +653,9 @@ mod tests {
         item_lot_commodities: BTreeMap<EntityId, CommodityKind>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
         belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
+        homeostatic_needs: BTreeMap<EntityId, HomeostaticNeeds>,
+        metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
+        drive_thresholds: BTreeMap<EntityId, DriveThresholds>,
     }
 
     impl MockBeliefView {
@@ -597,6 +668,9 @@ mod tests {
                 item_lot_commodities: BTreeMap::new(),
                 resource_sources: BTreeMap::new(),
                 belief_stores: BTreeMap::new(),
+                homeostatic_needs: BTreeMap::new(),
+                metabolism_profiles: BTreeMap::new(),
+                drive_thresholds: BTreeMap::new(),
             }
         }
     }
@@ -634,14 +708,14 @@ mod tests {
     }
 
     impl ProfileBeliefView for MockBeliefView {
-        fn homeostatic_needs(&self, _agent: EntityId) -> Option<HomeostaticNeeds> {
-            None
+        fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds> {
+            self.homeostatic_needs.get(&agent).copied()
         }
-        fn drive_thresholds(&self, _agent: EntityId) -> Option<DriveThresholds> {
-            None
+        fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds> {
+            self.drive_thresholds.get(&agent).copied()
         }
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
+        fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+            self.metabolism_profiles.get(&agent).copied()
         }
     }
 
@@ -996,7 +1070,7 @@ mod tests {
             FrameState::Active,
         );
 
-        let assumptions = populate_assumptions(&frame, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(0));
         assert_eq!(
             assumptions,
             vec![FrameAssumption::RouteExists {
@@ -1019,7 +1093,7 @@ mod tests {
         view.places.insert(patient, place_b);
         let frame = make_frame(IntentionDomain::Care { patient }, FrameState::Active);
 
-        let assumptions = populate_assumptions(&frame, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(0));
         assert_eq!(
             assumptions,
             vec![
@@ -1050,7 +1124,7 @@ mod tests {
             FrameState::Active,
         );
 
-        let assumptions = populate_assumptions(&frame, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(0));
         assert_eq!(
             assumptions,
             vec![
@@ -1076,7 +1150,7 @@ mod tests {
             FrameState::Active,
         );
 
-        let assumptions = populate_assumptions(&frame, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(0));
         assert_eq!(
             assumptions,
             vec![FrameAssumption::RouteExists {
@@ -1092,7 +1166,7 @@ mod tests {
         let view = MockBeliefView::new();
         let frame = make_frame(IntentionDomain::Generic, FrameState::Active);
 
-        let assumptions = populate_assumptions(&frame, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(0));
         assert_eq!(assumptions, vec![FrameAssumption::NoCriticalThreat]);
     }
 
@@ -1118,7 +1192,7 @@ mod tests {
             patience_limit: 30,
         };
 
-        let assumptions = populate_assumptions(&frame, agent, &view);
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(0));
         assert_eq!(
             assumptions,
             vec![
@@ -1132,6 +1206,239 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // ── populate_assumptions need-horizon tests (S126 D4) ──
+
+    /// Build a `MetabolismProfile` with a single non-zero rate for `need` (set
+    /// to `rate`) and zero rates for all other needs. Other (non-rate) fields
+    /// are taken from `MetabolismProfile::default()`. Used to isolate per-need
+    /// projection arithmetic in horizon tests.
+    fn metabolism_with_only(need: HomeostaticNeedId, rate: Permille) -> MetabolismProfile {
+        let mut profile = MetabolismProfile::default();
+        let zero = Permille::ZERO;
+        profile.hunger_rate = zero;
+        profile.thirst_rate = zero;
+        profile.fatigue_rate = zero;
+        profile.bladder_rate = zero;
+        profile.dirtiness_rate = zero;
+        match need {
+            HomeostaticNeedId::Hunger => profile.hunger_rate = rate,
+            HomeostaticNeedId::Thirst => profile.thirst_rate = rate,
+            HomeostaticNeedId::Fatigue => profile.fatigue_rate = rate,
+            HomeostaticNeedId::Bladder => profile.bladder_rate = rate,
+            HomeostaticNeedId::Dirtiness => profile.dirtiness_rate = rate,
+        }
+        profile
+    }
+
+    fn permille(value: u16) -> Permille {
+        Permille::new(value).expect("test permille in range")
+    }
+
+    fn seed_physiology(
+        view: &mut MockBeliefView,
+        agent: EntityId,
+        needs: HomeostaticNeeds,
+        metabolism: MetabolismProfile,
+    ) {
+        view.homeostatic_needs.insert(agent, needs);
+        view.metabolism_profiles.insert(agent, metabolism);
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+    }
+
+    #[test]
+    fn populate_produces_need_safe_until_tick_when_breach_before_plan_completion() {
+        // hunger=400, hunger_rate=50, hunger.high()=750 (DriveThresholds::default).
+        // breach_tick = 10 + ⌈(750-400)/50⌉ = 10 + 7 = Tick(17).
+        // plan_completion_tick = Tick(20) > breach_tick → assumption pushed.
+        let agent = make_entity(0);
+        let view_place = make_entity(10);
+        let dest = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        view.places.insert(agent, view_place);
+        seed_physiology(
+            &mut view,
+            agent,
+            HomeostaticNeeds::new(
+                permille(400),
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+            ),
+            metabolism_with_only(HomeostaticNeedId::Hunger, permille(50)),
+        );
+        let frame = make_frame(
+            IntentionDomain::Travel { destination: dest },
+            FrameState::Active,
+        );
+
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(10), Tick(20));
+        assert!(
+            assumptions.contains(&FrameAssumption::NeedSafeUntilTick {
+                need: HomeostaticNeedId::Hunger,
+                until_tick: Tick(20),
+            }),
+            "expected hunger NeedSafeUntilTick assumption, got {assumptions:?}",
+        );
+    }
+
+    #[test]
+    fn populate_omits_need_safe_until_tick_when_breach_after_plan_completion() {
+        // hunger=400, hunger_rate=50, hunger.high()=750.
+        // breach_tick = 10 + 7 = Tick(17). plan_completion_tick = Tick(15).
+        // breach_tick (17) >= plan_completion_tick (15) → no assumption.
+        let agent = make_entity(0);
+        let view_place = make_entity(10);
+        let dest = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        view.places.insert(agent, view_place);
+        seed_physiology(
+            &mut view,
+            agent,
+            HomeostaticNeeds::new(
+                permille(400),
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+            ),
+            metabolism_with_only(HomeostaticNeedId::Hunger, permille(50)),
+        );
+        let frame = make_frame(
+            IntentionDomain::Travel { destination: dest },
+            FrameState::Active,
+        );
+
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(10), Tick(15));
+        assert!(
+            !assumptions
+                .iter()
+                .any(|a| matches!(a, FrameAssumption::NeedSafeUntilTick { .. })),
+            "expected no NeedSafeUntilTick assumption, got {assumptions:?}",
+        );
+    }
+
+    #[test]
+    fn populate_omits_need_safe_until_tick_when_no_plan() {
+        // plan_completion_tick == current_tick (no plan branch). breach_tick is
+        // strictly less than plan_completion_tick is impossible because
+        // breach_tick >= current_tick by construction → no assumption.
+        let agent = make_entity(0);
+        let view_place = make_entity(10);
+        let dest = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        view.places.insert(agent, view_place);
+        seed_physiology(
+            &mut view,
+            agent,
+            HomeostaticNeeds::new(
+                permille(990),
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+                Permille::ZERO,
+            ),
+            metabolism_with_only(HomeostaticNeedId::Hunger, permille(50)),
+        );
+        let frame = make_frame(
+            IntentionDomain::Travel { destination: dest },
+            FrameState::Active,
+        );
+
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(10), Tick(10));
+        assert!(
+            !assumptions
+                .iter()
+                .any(|a| matches!(a, FrameAssumption::NeedSafeUntilTick { .. })),
+            "no-plan branch must skip need-horizon assumption, got {assumptions:?}",
+        );
+    }
+
+    #[test]
+    fn populate_skips_need_horizon_when_profile_missing() {
+        // No physiology seeded → metabolism_profile/homeostatic_needs/drive_thresholds
+        // return None. Need-horizon population is skipped; domain assumptions stand.
+        let agent = make_entity(0);
+        let view_place = make_entity(10);
+        let dest = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        view.places.insert(agent, view_place);
+        let frame = make_frame(
+            IntentionDomain::Travel { destination: dest },
+            FrameState::Active,
+        );
+
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(1000));
+        assert_eq!(
+            assumptions,
+            vec![FrameAssumption::RouteExists {
+                from: view_place,
+                to: dest,
+            }],
+            "missing profile must skip need-horizon population while preserving \
+             domain assumptions",
+        );
+    }
+
+    #[test]
+    fn populate_produces_need_safe_until_tick_per_breaching_need() {
+        // All five needs at 600, all rates at 100. With DriveThresholds::default
+        // each high() is in [700, 800] range; every need projects a breach
+        // strictly before a far-future plan_completion_tick. Expect one
+        // NeedSafeUntilTick per need (5 entries).
+        let agent = make_entity(0);
+        let view_place = make_entity(10);
+        let dest = make_entity(20);
+        let mut view = MockBeliefView::new();
+        view.alive.insert(agent);
+        view.places.insert(agent, view_place);
+        let needs = HomeostaticNeeds::new(
+            permille(600),
+            permille(600),
+            permille(600),
+            permille(600),
+            permille(600),
+        );
+        let metabolism = MetabolismProfile {
+            hunger_rate: permille(100),
+            thirst_rate: permille(100),
+            fatigue_rate: permille(100),
+            bladder_rate: permille(100),
+            dirtiness_rate: permille(100),
+            ..MetabolismProfile::default()
+        };
+        seed_physiology(&mut view, agent, needs, metabolism);
+        let frame = make_frame(
+            IntentionDomain::Travel { destination: dest },
+            FrameState::Active,
+        );
+
+        let assumptions = populate_assumptions(&frame, agent, &view, Tick(0), Tick(1000));
+        let need_horizon_count = assumptions
+            .iter()
+            .filter(|a| matches!(a, FrameAssumption::NeedSafeUntilTick { .. }))
+            .count();
+        assert_eq!(
+            need_horizon_count,
+            HomeostaticNeedId::ALL.len(),
+            "expected one NeedSafeUntilTick per breaching need, got {assumptions:?}",
+        );
+        for &need in &HomeostaticNeedId::ALL {
+            assert!(
+                assumptions.contains(&FrameAssumption::NeedSafeUntilTick {
+                    need,
+                    until_tick: Tick(1000),
+                }),
+                "missing NeedSafeUntilTick for {need:?}: {assumptions:?}",
+            );
+        }
     }
 
     // ── evaluate_assumptions tests ──

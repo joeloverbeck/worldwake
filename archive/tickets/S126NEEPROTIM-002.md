@@ -1,6 +1,6 @@
 # S126NEEPROTIM-002: populate_assumptions need-horizon extension
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends `populate_assumptions` to derive per-need `NeedSafeUntilTick` assumptions when the agent's projected need-high crossing falls before the plan's completion tick. Adds `current_tick: Tick` and `plan_completion_tick: Tick` to the function signature; updates 6 production call sites and 7 existing unit tests.
@@ -171,3 +171,30 @@ The mock belief view used by existing tests likely needs `metabolism_profile`, `
 3. `cargo test -p worldwake-ai`
 4. `cargo build --workspace`
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-26.
+
+- Extended `populate_assumptions` (`crates/worldwake-ai/src/agent_tick/frame.rs`) with two new parameters (`current_tick: Tick`, `plan_completion_tick: Tick`) and per-need horizon-projection arms iterating `HomeostaticNeedId::ALL`. The function now appends `FrameAssumption::NeedSafeUntilTick { need, until_tick: plan_completion_tick }` for each need whose `projected_tick_of(...)` strictly precedes `plan_completion_tick`. When the agent is missing any of `metabolism_profile`, `homeostatic_needs`, or `drive_thresholds`, need-horizon population is skipped and only the existing domain assumptions are returned.
+- Added two helpers in `frame.rs`: `completed_step_ticks(plan, current_step_index)` (sum of `estimated_ticks` across already-completed steps) and `plan_completion_tick(runtime, current_tick)` (returns `current_tick` when `runtime.current_plan` is `None`, else `current_tick + remaining_estimated_ticks`).
+- Added `plan_completion_tick_for_adoption(plan, current_tick)` for the adoption call path where the plan being adopted is `selected_plan` and zero steps have completed.
+- Updated all 5 production call sites: `agent_tick/mod.rs:1027` uses `plan_completion_tick(runtime, tick)`; `agent_tick/planning.rs:1683` and `:2124` use `plan_completion_tick_for_adoption(&selected_plan, tick)`; the two test sites in `agent_tick/planning.rs::tests` (around lines 2768 and 2872) use the same helper with `Tick(5)`.
+- Updated all 6 existing `populate_assumptions` test calls in `agent_tick/frame.rs::tests` to pass `Tick(0), Tick(0)` so domain-only assertions remain unchanged.
+- Extended `MockBeliefView` in the test module with `homeostatic_needs`, `metabolism_profiles`, and `drive_thresholds` BTreeMap fields; the `ProfileBeliefView` impl now reads from those maps so per-test physiology can be seeded.
+- Added 5 new focused unit tests covering each invariant: breach-before-completion produces a `NeedSafeUntilTick`, breach-after-completion does not, no-plan branch (`plan_completion_tick == current_tick`) skips population, missing physiology profile skips population, and a multi-need scenario produces one `NeedSafeUntilTick` per breaching need across all `HomeostaticNeedId::ALL`.
+
+## Deviations
+
+- The `completed_step_ticks` helper takes `current_step_index: usize` rather than `u8` as the ticket's draft sketch suggested; the live `AgentDecisionRuntime.current_step_index` field is already `usize` (`crates/worldwake-ai/src/decision_runtime.rs:153`). Recorded as a low-risk auto-correction.
+- Two helpers are introduced (rather than one): `plan_completion_tick` for the per-tick refresh path (`mod.rs:1027`) and `plan_completion_tick_for_adoption` for the adoption paths in `planning.rs`. At adoption time the plan is `selected_plan` (not yet on `runtime.current_plan`) and no steps are complete; conflating the two would force the adoption sites to temporarily install `selected_plan` on the runtime before calling `populate_assumptions`. Splitting the helpers keeps the call-site contract local and read-only.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib agent_tick::frame::tests::populate` (11 tests including the 5 new need-horizon tests).
+- Passed `cargo test -p worldwake-ai --lib agent_tick::frame::tests` (46 tests, all green).
+- Passed `cargo test -p worldwake-ai` (entire ai crate green).
+- Passed `cargo test --workspace` (workspace green).
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `cargo fmt --all -- --check`.
+- Passed `./scripts/verify.sh`.

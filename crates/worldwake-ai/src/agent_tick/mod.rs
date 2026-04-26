@@ -18,8 +18,8 @@ use execution::{
 };
 use frame::{
     AssumptionEvalResult, apply_assumption_result, check_patience_exhaustion, evaluate_assumptions,
-    handle_recoverable_travel_step_blockage, populate_assumptions, record_assumption_failure,
-    record_source_invalidation, update_frame_for_adopted_plan,
+    handle_recoverable_travel_step_blockage, plan_completion_tick, populate_assumptions,
+    record_assumption_failure, record_source_invalidation, update_frame_for_adopted_plan,
 };
 pub use frame::{FrameDebugSnapshot, FrameSwitchMarginSource};
 use observation::{
@@ -1024,7 +1024,8 @@ fn process_agent(
                 recipe_registry,
             );
             let frame = current_frame.as_mut().unwrap();
-            frame.assumptions = populate_assumptions(frame, agent, &view);
+            let completion_tick = plan_completion_tick(runtime, tick);
+            frame.assumptions = populate_assumptions(frame, agent, &view, tick, completion_tick);
             let eval = evaluate_assumptions(&frame.assumptions, &view, agent, None);
             if !matches!(eval, AssumptionEvalResult::Deferred) {
                 let pre_state = current_frame.as_ref().unwrap().state;

@@ -39,6 +39,7 @@ use worldwake_sim::{
     Scheduler, SpatialBeliefView, get_affordances_for_defs,
 };
 
+use super::frame::plan_completion_tick_for_adoption;
 use super::{
     current_step, emit_decision_event, populate_assumptions, runtime_belief_view,
     update_frame_for_adopted_plan,
@@ -1677,7 +1678,15 @@ pub(super) fn plan_and_validate_next_step(
                     let mut prepared_frame =
                         update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
                     if let Some(frame) = prepared_frame.as_mut() {
-                        frame.assumptions = populate_assumptions(frame, agent, &refreshed_view);
+                        let completion_tick =
+                            plan_completion_tick_for_adoption(&selected_plan, tick);
+                        frame.assumptions = populate_assumptions(
+                            frame,
+                            agent,
+                            &refreshed_view,
+                            tick,
+                            completion_tick,
+                        );
                     }
                     let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                         .expect("plan adoption expects actor to have an effective place");
@@ -2111,7 +2120,9 @@ pub(super) fn plan_and_validate_next_step_traced(
                 let mut prepared_frame =
                     update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
                 if let Some(frame) = prepared_frame.as_mut() {
-                    frame.assumptions = populate_assumptions(frame, agent, &refreshed_view);
+                    let completion_tick = plan_completion_tick_for_adoption(&selected_plan, tick);
+                    frame.assumptions =
+                        populate_assumptions(frame, agent, &refreshed_view, tick, completion_tick);
                 }
                 let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                     .expect("plan adoption expects actor to have an effective place");
@@ -2258,9 +2269,9 @@ fn goal_target_entity(goal: GoalKind) -> Option<EntityId> {
 mod tests {
     use super::{
         CandidatePlanSearch, found_plan_blocks_later_goals, has_pending_budget_retry,
-        plan_search_result_to_trace, planning_time_target_belief_presence, record_exhausted_goals,
-        selected_plan_value, summarize_ranked_goal, summarize_selected_plan,
-        summarize_snapshot_continuation,
+        plan_completion_tick_for_adoption, plan_search_result_to_trace,
+        planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
+        summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
     };
     use crate::{
         AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime, DirtySet, ExhaustionEntry,
@@ -2748,7 +2759,9 @@ mod tests {
                 &mut runtime,
             );
             if let Some(frame) = prepared_frame.as_mut() {
-                frame.assumptions = super::populate_assumptions(frame, agent, &view);
+                let completion_tick = plan_completion_tick_for_adoption(&selected_plan, Tick(5));
+                frame.assumptions =
+                    super::populate_assumptions(frame, agent, &view, Tick(5), completion_tick);
             }
             let current_place = worldwake_sim::SpatialBeliefView::effective_place(&view, agent)
                 .expect("adopted test agent should have an effective place");
@@ -2844,7 +2857,9 @@ mod tests {
                 &mut runtime,
             );
             if let Some(frame) = prepared_frame.as_mut() {
-                frame.assumptions = super::populate_assumptions(frame, agent, &view);
+                let completion_tick = plan_completion_tick_for_adoption(&selected_plan, Tick(5));
+                frame.assumptions =
+                    super::populate_assumptions(frame, agent, &view, Tick(5), completion_tick);
             }
             let current_place = worldwake_sim::SpatialBeliefView::effective_place(&view, agent)
                 .expect("adopted test agent should have an effective place");
