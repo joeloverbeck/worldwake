@@ -211,6 +211,11 @@ Present:
   This surfaces the change so downstream handling is correct. Omit if the classification is unchanged.
 - **Suggested next step**:
   - **Default path** (classifications (a)–(e)): `/spec-to-tickets <spec-path>` — the spec-to-tickets skill will prompt for the ticket namespace.
+  - **Deferred path** (classifications (a)–(e), prerequisite-gated): selected when (a) reassessment promoted at least one dependency from soft to hard AND (b) the newly-hard prerequisite is unimplemented (not yet archived). Common in adjunct spec clusters where dependency designations were drafted as "all soft" but reassessment surfaced a true hard dep. Required actions:
+    1. Name the prerequisite explicitly in the spec's Dependencies section (already done if the soft→hard promotion was applied in Step 7).
+    2. Add a Status preamble note recording the deferral, e.g., `Status: Draft. **Implementation deferred** until <prereq-id> lands.` Place this in the Phase and Status section so future readers see the gating constraint before the deliverables.
+    3. If the deferral has roadmap implications (the prerequisite lives in a later wave/phase than this spec), note in the same preamble that `specs/IMPLEMENTATION-ORDER.md` should be updated as part of the prerequisite's archival pass — do **not** edit IMPLEMENTATION-ORDER.md as part of this reassessment, since the deliverable is the spec file.
+    4. Suggested next step text: "Wait for prerequisite `<spec-id>` to land. Once that ships, re-run `/reassess-spec <this-spec>` to confirm assumptions still hold, then `/spec-to-tickets <this-spec>`." `/spec-to-tickets` is **not** the immediate next step — running it now would generate tickets that cannot be implemented.
   - **Retroactive path** (classification (f)): `/spec-to-tickets` is **not** applicable. Instead, complete the archival flow:
     1. Archive the spec per `docs/archival-workflow.md` — move it from `specs/` to `archive/specs/`.
     2. **Reconcile `specs/IMPLEMENTATION-ORDER.md`**: find the spec's roadmap entry, verify it doesn't already say "✅ COMPLETED", and rewrite it using the canonical format used elsewhere in that file: `- **<ID>**: ✅ COMPLETED — archived at [archive/specs/<file>.md](...). <1–2 line summary of landed artifacts>.` Include delivering-ticket IDs and note any fallout absorbed by sibling specs.
