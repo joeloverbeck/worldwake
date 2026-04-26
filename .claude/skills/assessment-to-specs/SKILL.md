@@ -44,7 +44,7 @@ Read ALL of these files before any analysis:
 1. **The assessment document** (from the argument) — read the entire file
 2. **`docs/FOUNDATIONS.md`** — architectural commandments. Skip if read earlier in this session and not modified since.
 3. **`docs/spec-drafting-rules.md`** — spec format requirements. Skip if read earlier in this session and not modified since.
-4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. Also determine the highest completed phase number for use in Phase 3. If the file does not exist in `specs/`, check `archive/specs/IMPLEMENTATION-ORDER*.md` for the most recently archived version and read that instead.
+4. **Current `specs/IMPLEMENTATION-ORDER.md`** — understand what is already built, what phases are completed, what the current state of the project is. (Step 4 will derive the next phase number from this file under the "highest existing phase + 1" rule, so a careful read here speeds that step.) If the file does not exist in `specs/`, check `archive/specs/IMPLEMENTATION-ORDER*.md` for the most recently archived version and read that instead.
 
 **Temporal context**: After reading the assessment, determine its generation date (look for timestamps, headers, or metadata). If the document lacks an explicit date, check filesystem modification time (`stat`), then `git log` for the file's last commit date. If neither is available, ask the user for the assessment's generation date before proceeding. Cross-reference against completion dates of specs referenced in the assessment. If the assessment was generated *after* referenced completed specs, note this: "Assessment post-dates S{N} (completed YYYY-MM-DD) — observations reflect post-fix simulation state." Carry this forward to Step 3.2 — post-fix observations take precedence over "already addressed" claims.
 
@@ -85,19 +85,22 @@ When the proposal count is large (>5), use up to 3 Explore agents in parallel to
 
 **Verify critical agent negatives**: Explore agents can return confidently-wrong negatives — "type X does not exist," "field Y is missing," "no call sites for Z" — when the agent's grep strategy did not cover the call sites where those names actually live. Any agent negative that would flip a classification outcome ("reject as already addressed," "accept because missing," "reject as overlap") must be independently verified with a direct `Grep` before being used to classify the proposal. One or two verifications per audit is cheap; trusting a false negative can silently reject valid proposals or accept already-implemented ones. Agent positives (the type was found at file:line) are lower-risk but still warrant a spot-check when they drive a scope-down decision.
 
-#### Step 4: Auto-Detect Next S-Number
+#### Step 4: Auto-Detect Next S-Number and Phase Number
 
-Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec. This is needed before presenting the triage report so that spec number assignments are concrete.
+**S-number**: Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec. This is needed before presenting the triage report so that spec number assignments are concrete.
+
+**Phase number**: Scan `specs/IMPLEMENTATION-ORDER.md` (or its archived equivalent) for the highest existing `## Phase N` heading regardless of completion status. Increment by 1 for the new phase. The "highest existing" rule (rather than "highest completed") avoids ambiguity when prior phases have outstanding work — Phase 7 with partial drafts still counts as Phase 7's slot occupied. This number is the tentative phase; the user may redirect to an adjunct-wave inside an existing phase during Step 10. Carry the tentative phase number into Phase 2's spec drafts so each spec's "Phase and Status" line can be written without later rework. If Step 10 ultimately resolves to an adjunct-wave inside a different phase, update the affected specs' "Phase and Status" lines in the same pass that writes IMPLEMENTATION-ORDER.md.
 
 #### Step 5: Classify Each Proposal
 
 Before classifying, identify causal dependencies between proposals. If proposal A's problem is a downstream symptom of proposal B's root cause, note this relationship. Root-cause proposals should be classified first; downstream proposals can be rejected with "downstream of PR-{N}" if the root-cause fix is expected to resolve them.
 
-For each proposal, assign one of three classifications:
+For each proposal, assign one of four classifications:
 
 - **Accept**: The proposal's assumptions are valid, it aligns with FOUNDATIONS, and the change would be beneficial. Record: which spec(s) it maps to, estimated scope. If a prior spec addressed the same scope but the assessment demonstrates the problem persists (post-fix observation per Temporal Context from Step 1), classify as Accept with note: "Prior fix (S{N}) was insufficient — investigation required." The new spec should: (a) name the prior spec and what it attempted, (b) explain why it was insufficient based on the assessment's post-fix observations, and (c) describe how the new approach differs. This prevents the new spec from repeating the same narrow fix.
-- **Reject**: The proposal's assumptions are wrong (already addressed, codebase differs from what assessment assumes), it violates FOUNDATIONS, or it fails YAGNI (no meaningful downstream consequences). Record: the specific reason for rejection.
 - **Scope-Down**: The core idea is valuable but the proposal is too ambitious or mixes concerns. Record: what the reduced spec would cover, what is deferred to later.
+- **Fold**: The proposal's intent is preserved but absorbed into another accepted spec's deliverables — no standalone spec. Use when one proposal's core ask is naturally a feature of another proposal's spec (e.g., partial-failure outcomes folding into the action-handler spec; event-tag declarations folding into the spec that owns each tag's source-of-truth state). Record: which receiving spec absorbs it, and which aspect of the proposal lands there. Distinct from Reject because the intent survives; distinct from Scope-Down because no new spec is created. The receiving spec must cite the absorbed PR-N per Step 7.
+- **Reject**: The proposal's assumptions are wrong (already addressed, codebase differs from what assessment assumes), it violates FOUNDATIONS, or it fails YAGNI (no meaningful downstream consequences). Record: the specific reason for rejection. Use *only* when the proposal's intent is discarded — fold-ins go in the Fold bucket above.
 
 **Tooling and debuggability proposals**: Proposals that improve diagnostic capability (observer enhancements, trace enrichment, dump format improvements) should not be rejected as YAGNI solely because they don't introduce new simulation components or systems. FND-29 (Debuggability Is a Product Feature) makes diagnostic capability a first-class architectural concern. If a tooling proposal concretely improves the ability to diagnose an identified architectural gap or behavioral pathology, it has meaningful downstream consequences and should be classified as Accept. The proposal must still cite a specific diagnostic gap it addresses — "generally useful" is not sufficient.
 
@@ -107,6 +110,8 @@ Present the triage to the user in a structured format:
 
 ```
 ## Triage Report: <assessment title>
+
+**Temporal context**: Assessment generated YYYY-MM-DD; post-dates completed specs S{N1}, S{N2}, ... (cite the most recent ones whose claims the assessment may supersede). If the assessment pre-dates all completed specs, write "no post-dating concerns."
 
 ### Accepted (N proposals)
 1. **PR-1: <title>** — <1-sentence rationale>. FOUNDATIONS: <aligned / Principle N misnumbered / Principle N violated>. Scope: <Small/Medium/Large>. Spec: S{next}-<name>.
@@ -119,8 +124,12 @@ Present the triage to the user in a structured format:
    - Spec: S{next}-<name>.
 2. ...
 
+### Folded Into Other Specs (N proposals)
+1. **PR-9: <title>** — folded into S{N}-<name>. <1-sentence note on which aspect of the proposal lands in the receiving spec.>
+2. ...
+
 ### Rejected (N proposals)
-1. **PR-5: <title>** — <specific reason for rejection>. FOUNDATIONS: <aligned / Principle N violated / N/A>.
+1. **PR-5: <title>** — <specific reason for rejection: already addressed / FOUNDATIONS violation / YAGNI>. FOUNDATIONS: <aligned / Principle N violated / N/A>.
 2. ...
 
 ### Investigation Signals
@@ -131,7 +140,7 @@ Present the triage to the user in a structured format:
 [If any proposals are ambiguous, ask here. Max 3 questions.]
 ```
 
-Omit classification sections that have 0 entries (e.g., skip the "Rejected" header entirely if nothing was rejected). For rejection lists with 5+ proposals, a table format is acceptable as an alternative to the numbered list. When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
+Omit classification sections that have 0 entries (e.g., skip the "Rejected" header entirely if nothing was rejected). For lists with 5+ entries, a table format is acceptable as an alternative to the numbered list (works equally well for Rejected and Folded sections). When a question has 2-4 discrete options, use `AskUserQuestion` with labeled options. When open-ended, present in the report.
 
 **Wait for user response.** Do not proceed to Phase 2 until the user has approved or adjusted the triage. Treat classifications as approved unless the user explicitly changes them. The triage approval question must not be bundled with other decisions (e.g., append vs. fresh from Step 10). Present the triage report and wait for classification approval only. Defer implementation-order decisions to Phase 3.
 
@@ -173,6 +182,8 @@ For golden-gaps specs (bundled test scenarios), use the project's golden-gaps co
 
 These are **draft specs**. They contain the architectural shape and key deliverables but expect a `/reassess-spec` pass before ticket decomposition. Do not attempt exhaustive codebase validation of every reference — that is reassess-spec's job. **Exception**: For type names, function names, and enum variants used in deliverable code blocks, grep the codebase to confirm the exact name. Draft quality exempts architectural shape, not concrete identifiers.
 
+**Fold-in attribution**: If the spec absorbs other proposals via the Fold classification (Step 5), the spec's Summary or Design Goals section MUST cite the absorbed PR-Ns and the source assessment file. This preserves traceability from the spec back to the original proposal — without it, future readers (reassess-spec, ticket-decomposition, the implementer) cannot reconstruct which proposal each piece of the spec satisfies. Example phrasing: "Folds in PR-9 sleep-quality, PR-11 interrupted-sleep, and PR-12 sleep events from `reports/proposed-gameplay-mechanic-changes.md`."
+
 When writing multiple specs and the existing context from Phase 1 is insufficient to write them confidently, use Explore agents in parallel to trace additional codebase references for different specs simultaneously.
 
 #### Step 8: Verify and Present Written Specs
@@ -204,9 +215,23 @@ A spec depends on another if it: (a) references types or components the other sp
 
 #### Step 10: Write Implementation Order
 
-Determine the next phase number from the completed phases in the old `specs/IMPLEMENTATION-ORDER.md` (read in Step 1). Increment the highest completed phase number by 1.
+The phase number was tentatively assigned in Step 4 (highest existing phase + 1). This step decides the *write strategy* and may override the tentative phase if the user redirects to an adjunct-wave inside an existing phase.
 
-**Append vs. fresh**: If the accepted specs are adjunct to the current phase (small scope, no dependencies on unreleased Phase N specs, and they integrate naturally into the existing dependency graph), offer the user a choice: (a) append to the existing phase as an adjunct wave (recommended for small additions), or (b) create a new phase. Appending is the default recommendation when the specs don't interact with the existing wave structure. If the decision was already resolved during a planning phase (e.g., plan mode approval that specified append or fresh), the prior approval satisfies this requirement — do not re-ask. If appending, edit the existing `specs/IMPLEMENTATION-ORDER.md` to add the new spec(s) to the dependency graph and wave list — do not overwrite. If creating a new phase or if no active IMPLEMENTATION-ORDER.md exists, warn the user that a fresh file will be written and suggest archiving the old one (see `docs/archival-workflow.md`).
+**Three write strategies** (always use `AskUserQuestion` to choose, unless plan-mode approval already resolved the decision or no active file exists):
+
+- **(A) Adjunct wave inside an existing phase**: Edit `specs/IMPLEMENTATION-ORDER.md` to add a new wave under an existing `## Phase N` heading. Use when the new specs share the existing phase's theme and naturally extend its dependency graph. Choosing (A) requires updating each spec's "Phase and Status" line written in Phase 2 (per Step 4's note) so it names the host phase rather than the tentative new phase.
+- **(B) New phase appended to the file**: Edit `specs/IMPLEMENTATION-ORDER.md` to add a new `## Phase N` section after the last existing phase, leaving prior phases untouched. Use when the new specs form a coherent new phase but the existing file's plan is not obsolete (typical case). The tentative phase number from Step 4 stands.
+- **(C) Fresh file**: Replace `specs/IMPLEMENTATION-ORDER.md` entirely. Use when the existing plan is obsolete or being archived. Warn the user that a fresh file will be written and suggest archiving the old one (see `docs/archival-workflow.md`).
+
+**When to skip the AskUserQuestion**:
+- Plan-mode approval earlier in the conversation specified the strategy.
+- No active `specs/IMPLEMENTATION-ORDER.md` exists (read from `archive/` per Step 1) — (C) is the only option.
+
+**When to ask**: All other cases. The decision affects file lifecycle and prior plan preservation; the user must own it.
+
+**Recommended-default phrasing for the AskUserQuestion**: Mark (B) as recommended when the new specs share survival/AI/system surface with current phase work but form their own conceptual unit; mark (A) as recommended when fewer than ~3 specs are accepted and they slot into an existing phase's dependency graph; (C) is never recommended by default — it's user-driven archival.
+
+**Strategy-(A) phase override**: If the user picks (A), update each spec's "Phase and Status" line in the same write pass. Grep for "Phase {tentative_N}" in the new specs and replace with the host phase name (e.g., "Phase 7: Consequence Carriers — Adjunct Wave: <name>").
 
 **When writing a fresh file**, use the following structure:
 
@@ -252,6 +277,7 @@ S50, S51 (parallel)
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [ ] `cargo test --workspace` passing
 - [ ] Golden E2E coverage for each new spec's core behavior
+- [ ] (If assessment was scenario-derived) Rerun of `<scenario-name>` narrative report shows the targeted behavioral changes — name the specific observable shifts (e.g., "no `sleep → sleep` artifact," "measurable variation in sleep-site preference across agents," "`desired_target > 1` acquisition under projected horizons")
 ```
 
 Match the existing style from the current `specs/IMPLEMENTATION-ORDER.md` but start fresh — do not carry forward completed work details beyond the one-line reference.

@@ -46,7 +46,7 @@ The argument is the skill directory path. The framework automatically resolves `
    - **HIGH**: Missing guardrail or instruction that has already caused rework or wrong output in this session, or a plausibly near-term failure mode on the next use.
    - **MEDIUM**: Friction that cost non-trivial improvisation or required non-obvious judgment to work around. The skill still produced the right outcome, but the path was not smooth.
    - **LOW**: Wording refinement, coverage gap, or polish. Did not block progress and a competent operator could work past it without guidance.
-7. **Present the report** — Output the structured report using the template below.
+7. **Cross-skill consistency scan and report** — Before constructing the report, evaluate the trigger list in the `Cross-skill consistency` Guardrail (below). If any finding affects a shared surface, scan the named sibling skills for inconsistencies; record any inconsistencies as additional Issues. Then output the structured report using the template below — the scan result MUST appear as a `Cross-skill consistency:` line in the report's Alignment Check section (either listing the scanned skills with "no inconsistencies" or naming the inconsistencies surfaced as Issues). When no triggers fire, write `Cross-skill consistency: not triggered (no findings affect shared surfaces).`
 
 ## Report Template
 
@@ -63,6 +63,7 @@ Output this structure to the conversation (do not write to a file):
 
 - **FOUNDATIONS.md**: <aligned / N violations found>
 - **CLAUDE.md**: <aligned / N deviations found>
+- **Cross-skill consistency**: <not triggered (no findings affect shared surfaces) / Scanned: skill-X, skill-Y — no inconsistencies / Scanned: skill-X — N inconsistencies surfaced as Issues>
 [If violations: bullet list with specific foundation # or CLAUDE.md section + what conflicts]
 
 ## Issues
@@ -132,7 +133,13 @@ If a finding's conclusion is that no change is needed (the current behavior is s
 
   **Edit ordering**: Apply edits in document order (top to bottom within each file) to minimize line-number shifts invalidating later edits. For multi-file batches, file-to-file order is unconstrained because different files don't share line numbers — order by finding number is acceptable. Within a single file, earlier-line edits always go first so that insertions above don't invalidate `old_string` anchors in later edits targeting the same file. If applying an earlier finding renders a later finding moot (e.g., the target text no longer exists), skip the moot finding and note it in the post-edit verification as "superseded by finding N." If an Edit call fails because a prior edit changed the target text, re-read the file to find the updated text and retry with the corrected `old_string`. If an edit inserts a new numbered step, renumber all subsequent steps and verify that the output summary or other sections referencing step numbers are updated accordingly. When an edit inserts or removes a numbered item, grep the entire target file for references to the affected step numbers (e.g., `Step 7`, `Step 8`, `Step 9` for a Step-7 insertion) and queue a cascade edit for each stale reference before the first Edit call — not just the refs visible in preceding planned edits. Apply those cascade edits in the same batch or immediately after. When a single finding requires multiple `replace_all` calls whose old and new values overlap on a number range (e.g., Section 3→4, 4→5, 5→6 in a renumbering cascade), apply them in highest-to-lowest order so that no single replacement double-bumps a value that an earlier call just renamed.
 
-  **Cascade edits**: After planning the primary edit(s) for a finding, scan the rest of the file for related text that uses the same terminology, references the same concept, would become inconsistent if only the finding's target text is changed, or when a parent guard, skip rule, or precondition excludes the case the primary edit is adding (reachability cascade) — without the cascade, the primary edit's new text is dead code. Apply cascade edits alongside the finding's primary edit. Note cascade edits in the post-implementation summary as "cascade from finding N." For content-based cascades that share a target file with the primary edit (terminology rename, dump-section renumbering, identifier rename, prose-level concept rewrite), grep the file for the affected pattern before the first Edit call to enumerate every site, then queue all primary and cascade edits in one batch — do not rely on post-edit re-reads to discover missed sites. When the target term has a plural variant ("Sections X and Y", "Sections 1, 2, and 3", "X-series and Y-series"), grep for both the singular and the plural patterns in that pre-edit pass. Plural forms typically require manual single-Edit calls because `replace_all` is a literal-substring match and will not pick up digits that appear separated from the noun by other words.
+  **Cascade edits**: When a primary edit creates inconsistency or dead code elsewhere in the file, queue a cascade edit alongside it. Apply the following sub-rules in order:
+
+  - **What counts as a cascade trigger**: Related text uses the same terminology, references the same concept, would become inconsistent if only the finding's target text is changed, or — for reachability cascades — a parent guard, skip rule, or precondition excludes the case the primary edit is adding. Without the cascade, the primary edit's new text is dead code or contradicts an unchanged sibling.
+  - **Pre-edit grep (REQUIRED before the first Edit call)**: For content-based cascades that share a target file with the primary edit (terminology rename, dump-section renumbering, identifier rename, prose-level concept rewrite), grep the file for the affected pattern to enumerate every site. Queue all primary and cascade edits in one batch. Do not rely on post-edit re-reads to discover missed sites — the post-edit verification's job is to confirm the batch landed coherently, not to find sites the pre-edit grep should have caught.
+  - **Plural-variant grep**: When the target term has a plural variant ("Sections X and Y", "Sections 1, 2, and 3", "X-series and Y-series"), grep for both the singular and the plural patterns in the same pre-edit pass.
+  - **Plural-form Edit mechanics**: Plural forms typically require manual single-Edit calls because `replace_all` is a literal-substring match and will not pick up digits that appear separated from the noun by other words.
+  - **Summary tagging**: Note cascade edits in the post-implementation summary as "cascade from finding N."
 
   **Post-implementation summary**: After all edits, present a summary table showing the status of each finding: "implemented" (optionally with a brief anchor suffix, e.g., "implemented (line 149)" or "implemented (frontmatter)"), "superseded by finding N", "cascade from finding N", "co-edit with finding N", or "skipped (reason)". This gives the user a clear per-finding status rather than requiring them to infer outcomes from the edit sequence. The table uses three canonical columns:
 
@@ -156,17 +163,17 @@ If a finding's conclusion is that no change is needed (the current behavior is s
   If any check fails, fix the offending edit(s), then re-run the full 5-check pass. Do not selectively re-check — a fix in one area can introduce issues in another.
 
   **Additive-only shortcut**: For edit batches that are purely additive — new text inserted into existing structure with no renumbering, no cross-reference rewrites, no frontmatter touches, and no modifications to existing sentences — a grep-for-anchors verification may substitute for the full 5-check re-read pass. Grep for one content-tied anchor per edit (a distinctive phrase from the new text) and confirm each appears exactly the expected number of times. If any edit renumbers a list, rewrites or removes a cross-reference, alters frontmatter, or modifies existing sentences (not just appends), the full 5-check pass is required.
-- **Cross-skill consistency** — If the target skill is part of a multi-skill workflow AND any finding affects interfaces shared with sibling skills, scan sibling skills for inconsistencies. Report cross-skill inconsistencies as Issues. Skip when all findings are internal to the target skill.
+- **Cross-skill consistency** — If the target skill is part of a multi-skill workflow AND any finding affects interfaces shared with sibling skills, scan sibling skills for inconsistencies. Report cross-skill inconsistencies as Issues. When all findings are internal to the target skill (no triggers fire), no scan is needed — but Step 7 still requires the `Cross-skill consistency: not triggered` line in the report so that absence of scan is auditable.
 
-  **Concrete shared-surface triggers**: A finding affects a shared surface when it changes any of the following:
-  - `specs/IMPLEMENTATION-ORDER.md` content conventions (wave naming, phase placement, derivation preamble format, dependency-graph notation)
-  - `MEMORY.md` entry schema or frontmatter fields
-  - `docs/generated/*` output format (golden inventory, coverage matrix, scenario details)
-  - `archive/*/` archival destination paths or naming conventions
-  - Spec or ticket numbering conventions (S-series, ticket ID prefixes)
-  - Report-file output paths (`reports/*.md`, `docs/triage/*.md`)
-  - Shared terminology that appears in multiple skills (e.g., "Adjunct Wave", "Phase Gate", "Damning Moment", "Pre-flight Warning")
-  - Output format consumed by a downstream skill in the same pipeline (e.g., observer dump consumed by `/scenario-analysis`, scenario report consumed by `/simulation-remediation`)
+  **Concrete shared-surface triggers**: A finding affects a shared surface when it changes any of the following. Each trigger is tagged with the kind of scan it warrants — `[file-convention]` (grep sibling skills for writes to the same file), `[schema]` (check producer/consumer schema contracts), `[downstream-format]` (read the consumer skill's input contract), `[archival]` (cross-reference archival workflow doc), `[numbering-convention]` (check the registry skill that owns the convention), `[shared-term]` (grep sibling skills for the term), or `[output-path]` (check overlapping write paths):
+  - **[file-convention]** `specs/IMPLEMENTATION-ORDER.md` content conventions (wave naming, phase placement, derivation preamble format, dependency-graph notation)
+  - **[schema]** `MEMORY.md` entry schema or frontmatter fields
+  - **[downstream-format]** `docs/generated/*` output format (golden inventory, coverage matrix, scenario details)
+  - **[archival]** `archive/*/` archival destination paths or naming conventions
+  - **[numbering-convention]** Spec or ticket numbering conventions (S-series, ticket ID prefixes)
+  - **[output-path]** Report-file output paths (`reports/*.md`, `docs/triage/*.md`)
+  - **[shared-term]** Shared terminology that appears in multiple skills (e.g., "Adjunct Wave", "Phase Gate", "Damning Moment", "Pre-flight Warning")
+  - **[downstream-format]** Output format consumed by a downstream skill in the same pipeline (e.g., observer dump consumed by `/scenario-analysis`, scenario report consumed by `/simulation-remediation`)
 
   When triggered, list the scanned sibling skills in the audit report alongside what (if anything) was adjusted. If no inconsistency was found, state "Scanned: <skill list> — no inconsistencies." This makes the scan auditable.
 - **Repeated audit shortcut** — If the same skill has been audited *as the target* 2+ times in the current session and the most recent audit found 0 findings, note "Skill stable — no new session evidence since last audit" and skip the full checklist unless the skill was modified between audits. If the skill was modified since the last audit (including by follow-up implementation from a prior audit), treat the next audit as fresh — do not use the shortcut.

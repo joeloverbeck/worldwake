@@ -477,3 +477,59 @@ T01 ✅ archived (independent; no spec deps)
   Beliefs / Inventory / Plan / Traces), local pointer-centered wheel zoom,
   and middle-drag pan. Observer-only boundary; reuses `worldwake-cli`'s
   scenario loader; adds no engine-side coupling.
+
+---
+
+## Phase 10: Survival Mechanic Depth
+
+Derived from external gameplay assessment `reports/proposed-gameplay-mechanic-changes.md` (generated 2026-04-25 against `reports/scenario-narrative-survival-baseline-20260425-223423.md`), validated against the actual codebase post-S121/S122/S124/S125 and `docs/FOUNDATIONS.md`. Of 12 proposals, 6 accepted and scoped down into 6 specs (S126–S131). The remaining 6 proposals were rejected: PR-5 (UseClaim/FacilityQueue) is already addressed by `ContentionQueue` + `queue_for_facility_use`; PR-7 (broad perception-as-prediction-error) is largely addressed by S114/S122/S101/S105 with the narrow arrival-diff piece folded into S130; PR-9 (topology authoring) folds engine pieces into S128 + S129 with the per-place rebalance becoming a downstream scenario-authoring ticket; PR-10 (dampener checklist) is already addressed by `docs/spec-drafting-rules.md` Section H requirements; PR-11 (standalone partial-failure spec) folds into S127/S128/S129 as the granular-aftermath aspect of each; PR-12 (standalone event-tag spec) folds into S128/S129/S130 events per FND-30.
+
+Phase 10 runs independently of Phase 7's pending consequence-carrier specs (S60–S66) — no hard dependency in either direction. The new specs deepen self-care mechanics that all current `survival-*.ron` scenarios exercise; they do not require persistent site occupancy, predator ecology, or boundary processes.
+
+### Dependency Graph
+
+```text
+S126 (independent)
+S130 (independent; soft dep on S122 ✅)
+S131 (independent; existing SourceReliability extension)
+   │           │
+   │           └── S127 (soft deps on S126, S131)
+   │                 │
+   └── S128 (soft dep on S126; hard dep on S110 ✅)
+         │
+         └── S129 (soft dep on S128; hard deps on S106 ✅, S110 ✅)
+```
+
+All cross-spec dependencies among S126–S131 are **soft** (benefit but not blocking). Hard dependencies on S106, S110, S122 are already satisfied (those specs are completed).
+
+### Active Execution Steps
+
+**Wave 1** (parallel, no hard deps among new specs):
+- **S126**: Need Projection and Plan Time-Budget Assumptions — derived `projected_tick_of` helper on `HomeostaticNeeds`; new `FrameAssumption::NeedSafeUntilTick { need, until_tick }` variant routed through S109's typed-discrepancy chain. Closes the symmetric gap to S122 for need-horizon assumptions.
+- **S130**: Survey Records and Frontier Disconfirmation — `SurveyMemory` per-agent component; `HypothesisKind` on `ExploreLocation`; perception-time arrival evaluation; ranking damps re-exploration of confirmed-empty places. Folds in PR-7's narrow arrival-diff piece.
+- **S131**: Source Reliability Wait and Capacity Extension — extends existing `ReliabilityRecord` with `average_wait_ticks`, `wait_observation_count`, `last_observed_capacity`, `last_observed_capacity_tick`; new `wait_sensitivity_weight` on `PreferenceProfile`; ranking integration.
+
+**Wave 2** (after Wave 1; soft deps consumable):
+- **S127**: Quantity-Aware Acquisition and Visible Source State — `AcquisitionQuantity { desired_min, desired_target, horizon_ticks }` on `AcquireCommodity`; `extraction_slots` + `extraction_duration_ticks` + `LastHarvestTrace` on `ResourceSource`; partial-harvest outcome on commit (PR-11 fold-in). Soft consumes S126 (`desired_target` derivation) and S131 (wait-aware ranking).
+- **S128**: Sleep Episodes and Place-Quality Recovery — `SleepEpisode` runtime component, `WakeCondition` enum, `SleepQualityProfile` per-place, `EventTag::SleepEpisodeStarted` / `SleepEpisodeEnded`; replaces per-tick re-commit pattern. Soft consumes S126 (wake-on-projection); folds in PR-9 sleep-quality, PR-11 interrupted-sleep, PR-12 sleep events.
+
+**Wave 3** (after Wave 2; soft deps consumable):
+- **S129**: Place Dirtiness and Facility Wear — `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` components; `WasteCreated`/`WashFacilityUsed`/`LatrineMaintained` event tags; relieve/toilet/wash handler extensions; partial-wash outcome (PR-11 fold-in). Soft consumes S128 (sleep ranking reads dirtiness as quality modifier). Folds in PR-9 hygiene topology, PR-11 partial-wash, PR-12 waste/wash events.
+
+### Follow-up Tickets (not specs)
+
+- **Survival-baseline contention authoring** (post-S127/S131): enable `ContentionPolicy::FirstArrival` on the wells/orchard in `scenarios/survival-baseline.ron` so the existing `queue_for_facility_use` substrate is exercised under realistic pressure. Authoring task, not a spec.
+- **Place sleep-quality rebalance** (post-S128): author `SleepQualityProfile` per place in `scenarios/survival-baseline.ron` and other survival scenarios so Hillside Shelter becomes a meaningful sleep destination (Roofed/Soft, recovery_modifier ~1300) and Fertile Fields becomes hygiene-poor (Open/Earth, slower decay).
+- **Place dirtiness authoring** (post-S129): author `PlaceDirtiness.decay_per_tick` per place to differentiate accumulation/recovery rates per topology character.
+
+### Phase 10 Gate
+
+- [ ] All 6 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [ ] Wave 1 specs implemented and passing golden E2E tests
+- [ ] Wave 2 specs implemented and passing golden E2E tests
+- [ ] Wave 3 specs implemented and passing golden E2E tests
+- [ ] Authored survival-baseline scenario rebalance landed (sleep_quality, place_dirtiness)
+- [ ] Survival-baseline narrative report shows: (a) measurable variation in sleep-site preference across agents, (b) `desired_target > 1` acquisition under projected horizons, (c) at least one `SurveyRecord` damping observable in decision trace, (d) one `SleepEpisodeStarted` per sleep adoption (no `sleep → sleep` artifact)
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [ ] `cargo test --workspace` passing
+- [ ] Golden E2E coverage for each new spec's core behavior

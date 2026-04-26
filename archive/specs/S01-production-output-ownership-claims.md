@@ -14,7 +14,7 @@ The correct architectural direction is:
 - extend `can_exercise_control()` for institutional delegation (faction membership, office holding)
 - reserve unauthorized transfer for explicit theft-style actions later
 
-This spec establishes ownership semantics, not final merchant stock custody semantics. If the project later wants merchants, carriers, and institutions to deliver into explicit stock rooms or display stalls instead of treating destination-local carried stock as sufficient, that follow-on architecture is specified in [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md).
+This spec establishes ownership semantics, not final merchant stock custody semantics. If the project later wants merchants, carriers, and institutions to deliver into explicit stock rooms or display stalls instead of treating destination-local carried stock as sufficient, that follow-on architecture is specified in [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/archive/specs/S05-merchant-stock-storage-and-stalls.md).
 
 ## Why This Exists
 Current production commit behavior creates output lots and places them at the workstation location, but assigns no owner. This has three architectural costs:
@@ -370,7 +370,7 @@ Derived transient state:
 - [E16-offices-succession-factions.md](/home/joeloverbeck/projects/worldwake/archive/specs/E16-offices-succession-factions.md)
 - [E05-relations-ownership.md](/home/joeloverbeck/projects/worldwake/archive/specs/E05-relations-ownership.md)
 - [E10-production-transport.md](/home/joeloverbeck/projects/worldwake/archive/specs/E10-production-transport.md)
-- [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md)
+- [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/archive/specs/S05-merchant-stock-storage-and-stalls.md)
 
 ## Outcome
 

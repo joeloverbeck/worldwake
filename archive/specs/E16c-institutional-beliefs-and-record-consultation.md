@@ -633,7 +633,7 @@ No remote institutional belief may appear without a witness, report, or consulte
 - [FOUNDATIONS.md](/home/joeloverbeck/projects/worldwake/docs/FOUNDATIONS.md) Principles 7, 12, 13, 14, 16, 21, 23, 24, 26, 27
 - [E16b-force-legitimacy-and-jurisdiction-control.md](/home/joeloverbeck/projects/worldwake/specs/E16b-force-legitimacy-and-jurisdiction-control.md)
 - [E17-crime-theft-justice.md](/home/joeloverbeck/projects/worldwake/specs/E17-crime-theft-justice.md)
-- [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md)
+- [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/archive/specs/S05-merchant-stock-storage-and-stalls.md)
 
 ## Outcome
 
