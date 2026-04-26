@@ -43,20 +43,22 @@ cargo run -p worldwake-cli --bin observer -- <scenario_path> --ticks <N> --outpu
 
 Read `reports/scenario-analysis-dump.md`. If it exceeds 500 lines, read section by section using headers (`## Section N`) with offset-based reads. Build an entity-name mapping from Section 1 (agents + places tables) — all subsequent sections reference entities by EntityId (e.g., `e5g0`). Use names in the report; translate EntityIds when quoting raw dump data. Section 1 only maps agents and places; item EntityIds in failed plan attempts and blocked desires cannot be translated — leave as-is.
 
-**ControlSource heuristic**: The dump doesn't list ControlSource per agent. If the scenario file is accessible, check `AgentDef.control_source: Human`. Otherwise, treat no planning activity in Section 7 as evidence of human control. Matters for smell 3 (stuck agents): a human-controlled agent with no input will always appear stuck — expected behavior.
+**ControlSource heuristic**: The dump doesn't list ControlSource per agent. If the scenario file is accessible, check `AgentDef.control_source: Human`. Otherwise, treat no planning activity in Section 8 as evidence of human control. Matters for smell 3 (stuck agents): a human-controlled agent with no input will always appear stuck — expected behavior.
 
-**The dump has 7 sections** (some versions also include Section 8; fall back to Section 7 failed plan attempts if absent):
+**The dump has 10 sections** (older dumps may collapse some of the newer ones; verify against the actual file before pinning to a section number):
 
 - **Section 1**: Run Metadata (scenario, seed, ticks, agents, places)
 - **Section 2**: Per-Agent Summary (actions, perception, needs, locations, idle ticks, behavioral transitions, death tick/cause)
-- **Section 3**: Anomaly Flags (mechanically detected smells)
-- **Section 4**: Raw Event Sample (first/last 100 events)
-- **Section 5**: Per-Agent Belief Summary (known entities, believed locations, social/told/heard/institutional beliefs; uses item type names e.g., "Waste", "Apple", not EntityIds)
-- **Section 6**: End-State Inventory & Resources (agent possessions, place contents). Places with 500+ SocialArtifacts from post_notice/tell spam appear as extremely long single lines — note the pollution count and skip enumeration.
-- **Section 7**: Per-Agent Decision Summary (planning outcomes, goal selection, failed plans, blocked desires, affordances)
-- **Section 8** (optional): Budget Exhaustion Snapshots — may be absent.
+- **Section 3**: Decision History — chronological per-tick rows of `GoalOffered`, `GoalCommitted`, `PlanAdopted`, `BlockerRecorded`, `ReplanTriggered`, `GoalSuppressed`, `GoalAbandoned`, `GoalSwitched` events with payload summaries.
+- **Section 4**: Anomaly Flags (mechanically detected smells)
+- **Section 5**: Raw Event Sample (first/last 100 events plus a per-agent action timeline binned by 100 ticks)
+- **Section 6**: Per-Agent Belief Summary (known entities, believed locations, social/told/heard/institutional beliefs; uses item type names e.g., "Waste", "Apple", not EntityIds)
+- **Section 7**: End-State Inventory & Resources (agent possessions, place contents). Places with 500+ SocialArtifacts from post_notice/tell spam appear as extremely long single lines — note the pollution count and skip enumeration.
+- **Section 8**: Per-Agent Decision Summary (planning outcomes, goal selection, failed plans, blocked desires, affordances)
+- **Section 9**: Budget Exhaustion Snapshots — may be empty if no budget exhaustion occurred this run.
+- **Section 10**: Critical Window Forensics — per-agent forensic entries for any authored-critical window entered. May be empty if no such windows were entered.
 
-**Section 7 reading protocol** (lines are extremely dense — individual rows can exceed 5000 tokens; never use Read with `limit` > 10 on Section 7). For each agent, extract in this order:
+**Section 8 reading protocol** (lines are extremely dense — individual rows can exceed 5000 tokens; never use Read with `limit` > 10 on Section 8). For each agent, extract in this order:
 
 1. Grep `Tick breakdown` and `Plan search outcomes` — planning health baseline.
 2. `bash grep 'Goals selected' <dump>` — goal types (too long for the Grep tool).

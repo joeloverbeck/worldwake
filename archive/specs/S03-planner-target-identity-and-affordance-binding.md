@@ -357,7 +357,7 @@ No derived binding result may become authoritative truth.
 ## Recommended Sequencing
 When this spec is scheduled, it should be implemented before or alongside:
 - listed-lot trade from [S04-merchant-selling-market-presence.md](/home/joeloverbeck/projects/worldwake/specs/S04-merchant-selling-market-presence.md)
-- facility stock/display targeting from [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/specs/S05-merchant-stock-storage-and-stalls.md)
+- facility stock/display targeting from [S05-merchant-stock-storage-and-stalls.md](/home/joeloverbeck/projects/worldwake/archive/specs/S05-merchant-stock-storage-and-stalls.md)
 - exact evidence targeting in E17 crime/theft/justice follow-on work
 
 Otherwise those efforts will likely reintroduce one-off exact-target hacks.

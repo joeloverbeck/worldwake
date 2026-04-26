@@ -31,9 +31,9 @@ If no scenario path is provided, glob for `scenarios/*.ron` and present the list
 
 Follow these steps in order. Do not skip any step.
 
-1. **Steps 0–2 — Pre-flight, observer run, dump reading.** Load `references/observer-and-dump.md`. This covers scanning the scenario file for profiles and survival gaps, building and running the observer binary (with hard gates on build/dump), and reading the 7-section dump with the Section 7 dense-row protocol.
+1. **Steps 0–2 — Pre-flight, observer run, dump reading.** Load `references/observer-and-dump.md`. This covers scanning the scenario file for profiles and survival gaps, building and running the observer binary (with hard gates on build/dump), and reading the 10-section dump with the Section 8 dense-row protocol.
 
-2. **Step 3 — Triage checkpoint.** Load `references/triage-checkpoint.md`. After reading Sections 1–3, decide whether any agent has a critical-needs failure. This gates Layer 2 and selects the report template.
+2. **Step 3 — Triage checkpoint.** Load `references/triage-checkpoint.md`. After reading Sections 1–4, decide whether any agent has a critical-needs failure. This gates Layer 2 and selects the report template.
 
 3. **Step 4 — Layer 1 behavioral smell analysis.** Load `references/layer-1-behavioral-smells.md`. Analyze all 10 smell categories (6 mechanical + 4 LLM-only) with severity ratings and known pathology signatures. Record data gaps for Layer 3.
 

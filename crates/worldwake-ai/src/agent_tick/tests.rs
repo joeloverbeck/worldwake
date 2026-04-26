@@ -7612,6 +7612,7 @@ fn assumption_failure_creates_discrepancy_memory_entry() {
         &mut discrepancy_memory,
         Tick(5),
         cognitive.structural_block_ticks,
+        worldwake_core::FrameAssumption::TargetAlive(patient),
     );
 
     assert_eq!(discrepancy_memory.entries.len(), 1);

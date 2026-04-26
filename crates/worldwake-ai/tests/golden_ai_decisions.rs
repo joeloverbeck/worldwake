@@ -1139,12 +1139,24 @@ fn golden_bladder_relief_with_travel() {
 #[allow(clippy::too_many_lines)]
 #[test]
 fn golden_goal_switching_during_multi_leg_travel() {
+    // Originally a pre-S126 reactive-thirst test (agent travels through high
+    // thirst until critical, then drinks and resumes). With S126's horizon-
+    // aware planning live, the agent's thirst projection (rate=180/tick from
+    // thirst=0 to high=700 in 4 ticks) breaches before the multi-leg journey
+    // can complete. The frame's `NeedSafeUntilTick` assumption fails on
+    // evaluation, the typed `Discrepancy::NeedHorizonExceeded` lands in
+    // `DiscrepancyMemory`, and the original food-acquisition goal is
+    // suppressed for `structural_block_ticks`. The test now asserts that
+    // lawful contract: the agent recognizes the projected thirst breach and
+    // suppresses the long journey rather than reactively traveling through
+    // high thirst until critical. End-to-end "shorter alternative wins next
+    // ranking round" coverage lives in the S126 ticket-004 golden suite.
     let mut h = GoldenHarness::new(Seed([81; 32]));
     let bandit_camp = prototype_place_entity(PrototypePlace::BanditCamp);
 
     let thirst_escalates_after_first_leg = MetabolismProfile::new(
         pm(2),   // hunger_rate
-        pm(180), // thirst_rate — rises through medium/high before crossing critical
+        pm(180), // thirst_rate — projects a high-band breach in ~4 ticks
         pm(2),
         pm(4),
         pm(1),
@@ -1245,92 +1257,36 @@ fn golden_goal_switching_during_multi_leg_travel() {
     );
 
     let initial_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
-    let initial_water = h.agent_commodity_qty(agent, CommodityKind::Water);
-    let initial_hunger = h.agent_hunger(agent);
-    let thirst_thresholds = h
-        .world
-        .get_component_drive_thresholds(agent)
-        .expect("seeded agent should have drive thresholds")
-        .thirst;
-    let mut left_bandit_camp = false;
-    let mut saw_travel_with_medium_thirst = false;
-    let mut saw_travel_with_high_thirst = false;
-    let mut thirst_reached_critical_before_drink = false;
-    let mut drank_before_critical = false;
-    let mut drink_place = None;
-    let mut resumed_to_orchard_after_drink = false;
-    let mut hunger_relieved_after_drink = false;
-    let mut saw_active_commitment_to_orchard = false;
-    let mut saw_suspended_commitment_to_orchard = false;
-    let mut saw_reactivated_commitment_to_orchard = false;
-    let mut saw_progress_tick_recorded = false;
-    let mut visited_places = vec![bandit_camp];
 
-    for _ in 0..150 {
+    let mut saw_thirst_horizon_discrepancy = false;
+    let mut saw_active_commitment_to_orchard = false;
+
+    for _ in 0..30 {
         h.step_once();
 
-        let thirst = h.agent_thirst(agent);
-        let active_action_name = h
-            .scheduler
-            .active_actions()
-            .values()
-            .find(|instance| instance.actor == agent)
-            .and_then(|instance| h.defs.get(instance.def_id))
-            .map(|def| def.name.as_str());
         let frame_snapshot = h
             .driver
             .frame_snapshot(&h.world, agent)
             .expect("golden harness should retain runtime state for the seeded AI agent");
 
-        if frame_snapshot.runtime.committed_destination == Some(ORCHARD_FARM) {
-            if frame_snapshot.runtime.frame_state == Some(FrameState::Active) {
-                saw_active_commitment_to_orchard = true;
-                if saw_suspended_commitment_to_orchard {
-                    saw_reactivated_commitment_to_orchard = true;
-                }
-            }
-            if matches!(
-                frame_snapshot.runtime.frame_state,
-                Some(FrameState::Suspended { .. })
-            ) {
-                saw_suspended_commitment_to_orchard = true;
-            }
-        }
-        saw_progress_tick_recorded |= frame_snapshot.runtime.last_progress_tick.is_some();
-
-        if h.world.is_in_transit(agent) || h.world.effective_place(agent) != Some(bandit_camp) {
-            left_bandit_camp = true;
+        if frame_snapshot.runtime.committed_destination == Some(ORCHARD_FARM)
+            && frame_snapshot.runtime.frame_state == Some(FrameState::Active)
+        {
+            saw_active_commitment_to_orchard = true;
         }
 
-        if h.agent_commodity_qty(agent, CommodityKind::Water) == initial_water {
-            if thirst >= thirst_thresholds.medium() && thirst < thirst_thresholds.critical() {
-                saw_travel_with_medium_thirst |= active_action_name == Some("travel");
-            }
-            if thirst >= thirst_thresholds.high() && thirst < thirst_thresholds.critical() {
-                saw_travel_with_high_thirst |= active_action_name == Some("travel");
-            }
-            if thirst >= thirst_thresholds.critical() {
-                thirst_reached_critical_before_drink = true;
-            }
-        } else if !thirst_reached_critical_before_drink {
-            drank_before_critical = true;
-        }
-
-        if let Some(place) = h.world.effective_place(agent) {
-            if !visited_places.contains(&place) {
-                visited_places.push(place);
-            }
-            if h.agent_commodity_qty(agent, CommodityKind::Water) < initial_water {
-                drink_place = Some(place);
-            }
-            if drink_place.is_some() && place == ORCHARD_FARM {
-                resumed_to_orchard_after_drink = true;
-            }
-        }
-
-        if drink_place.is_some() && h.agent_hunger(agent) < initial_hunger {
-            hunger_relieved_after_drink = true;
-            break;
+        if let Some(disc_mem) = h.world.get_component_discrepancy_memory(agent)
+            && disc_mem.entries.values().any(|entry| {
+                matches!(
+                    entry.discrepancy,
+                    worldwake_core::Discrepancy::NeedHorizonExceeded {
+                        need: worldwake_core::HomeostaticNeedId::Thirst,
+                        ..
+                    }
+                )
+            })
+        {
+            saw_thirst_horizon_discrepancy = true;
         }
 
         let current_water_total = total_live_lot_quantity(&h.world, CommodityKind::Water);
@@ -1338,57 +1294,42 @@ fn golden_goal_switching_during_multi_leg_travel() {
             current_water_total <= initial_water_total,
             "Water lots should not increase — conservation: initial={initial_water_total}, now={current_water_total}"
         );
+
+        if saw_thirst_horizon_discrepancy && saw_active_commitment_to_orchard {
+            break;
+        }
     }
 
     assert!(
-        left_bandit_camp,
-        "Agent should begin the distant food journey from Bandit Camp"
-    );
-    assert!(
         saw_active_commitment_to_orchard,
-        "The runtime should establish an active journey commitment to Orchard Farm before the detour"
+        "Agent should commit to the Orchard Farm food journey at least once before the horizon assumption aborts it"
     );
     assert!(
-        saw_progress_tick_recorded,
-        "The runtime should record journey progress after completing at least one travel leg"
+        saw_thirst_horizon_discrepancy,
+        "S126: thirst projection breach during multi-leg travel must record a Discrepancy::NeedHorizonExceeded for Thirst"
     );
-    assert!(
-        saw_travel_with_medium_thirst,
-        "The penalty-interruptible travel action should continue after thirst reaches the medium band"
-    );
-    assert!(
-        saw_travel_with_high_thirst,
-        "The penalty-interruptible travel action should continue after thirst reaches the high band"
-    );
-    assert!(
-        !drank_before_critical,
-        "The agent should not interrupt penalty travel for a subcritical thirst challenger"
-    );
-    assert!(
-        thirst_reached_critical_before_drink,
-        "The water detour should only happen after thirst reaches the critical band"
-    );
-    assert!(
-        saw_suspended_commitment_to_orchard,
-        "The runtime should preserve but suspend the Orchard Farm commitment while the local thirst detour is active"
-    );
-    let drink_place = drink_place
-        .expect("Agent should consume carried water after departing on the food journey");
-    assert_ne!(
-        drink_place, bandit_camp,
-        "Water-driven goal switch should occur after departure, not at the origin"
-    );
-    assert!(
-        resumed_to_orchard_after_drink || drink_place == ORCHARD_FARM,
-        "Agent should either resume the original food journey after drinking or already be at the destination when the local thirst detour resolves; visited={visited_places:?}, drink_place={drink_place:?}"
-    );
-    assert!(
-        saw_reactivated_commitment_to_orchard || drink_place == ORCHARD_FARM,
-        "The runtime should reactivate the original Orchard Farm commitment after the detour, unless the detour resolves at Orchard Farm itself; visited={visited_places:?}, drink_place={drink_place:?}"
-    );
-    assert!(
-        hunger_relieved_after_drink,
-        "Agent should complete the resumed food journey after the detour; visited={visited_places:?}, drink_place={drink_place:?}"
+
+    let disc_mem = h
+        .world
+        .get_component_discrepancy_memory(agent)
+        .expect("agent should have discrepancy memory after horizon failure");
+    let entry = disc_mem
+        .entries
+        .values()
+        .find(|entry| {
+            matches!(
+                entry.discrepancy,
+                worldwake_core::Discrepancy::NeedHorizonExceeded {
+                    need: worldwake_core::HomeostaticNeedId::Thirst,
+                    ..
+                }
+            )
+        })
+        .expect("thirst horizon discrepancy entry should still be present");
+    assert_eq!(
+        entry.clearing_condition,
+        worldwake_core::DiscrepancyClearing::TtlExpiry,
+        "S126: NeedHorizonExceeded clears via TTL expiry only"
     );
 }
 

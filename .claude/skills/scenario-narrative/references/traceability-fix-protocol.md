@@ -7,7 +7,7 @@ When the skill is composing a section of the report and discovers it cannot writ
 Trigger on any of:
 
 - The narrative needs an *event tick* (when a belief was acquired, when a contradiction registered, when a goal first appeared) but the dump only emits end-state summaries.
-- The narrative needs the *reason* the planner ranked goal A above goal B at a specific tick, and Section 7's goal-selection rows are aggregate-only for that agent.
+- The narrative needs the *reason* the planner ranked goal A above goal B at a specific tick, and Section 8's goal-selection rows are aggregate-only for that agent.
 - The narrative wants to attribute a failure to a specific decision-failure category from `agent-narrative-structure.md` but the dump does not surface enough provenance to do so honestly.
 - A Section B feature is *active by substrate* but no dump anchor exists to confirm activation, even though the feature is widely understood to have fired.
 
@@ -61,7 +61,7 @@ If any condition fails, the gap is structural.
 4. Re-run the observer with the same arguments and output path.
 5. Re-read the affected dump section.
 6. Continue composing.
-7. In the report's Run Notes appendix, name the file and a one-line description of what was added (e.g., "Added belief-acquisition tick to Section 5 per-agent belief summary so the per-agent narrative could anchor discovery moments to specific ticks.").
+7. In the report's Run Notes appendix, name the file and a one-line description of what was added (e.g., "Added belief-acquisition tick to Section 6 per-agent belief summary so the per-agent narrative could anchor discovery moments to specific ticks.").
 
 The cheap-fix is a runtime convenience, not a design change. It must not alter simulation behavior, scenario loading, or any non-observer module. If the smallest viable fix would touch anything outside `observer.rs`, treat it as structural.
 
@@ -72,7 +72,7 @@ The cheap-fix is a runtime convenience, not a design change. It must not alter s
 3. Continue composing the rest of the report. Where the affected section is, write a "Data limitation" note inline in the report (one or two sentences, plain English) that names exactly what could not be told and what was inferred or omitted instead.
 4. After the report is composed and written, draft a ticket in `tickets/` using the template at `tickets/_TEMPLATE.md`. The ticket should:
    - Name a clear `<PREFIX-NNN>` ID. Use `OBSTRACE` (observer traceability) as the prefix unless the user has set a different convention.
-   - Title: short imperative ("Surface belief-acquisition tick per entry in observer Section 5").
+   - Title: short imperative ("Surface belief-acquisition tick per entry in observer Section 6").
    - **Status**: PENDING.
    - **Priority**: MEDIUM unless the gap blocked a feature row entirely (HIGH).
    - **Effort**: Small for fields/lines, Medium for new sections, Large for new event types or component reads.

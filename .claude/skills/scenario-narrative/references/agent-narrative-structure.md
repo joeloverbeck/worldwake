@@ -9,6 +9,7 @@ Every agent in the scenario gets a narrative entry. Depth scales with causal con
 - **Tracked principals** (agents named in the scenario's `survival_health_contract` or whose actions own the scenario's primary feature row): full template, all sections below.
 - **Supporting causal actors** (witnesses, hostile targets, wards, bystanders whose presence is required for the principal's branch): the Starting State, Critical Decisions, and Final State sections only, focused on their causal role rather than their full lifecycle.
 - **Human-controlled agents with no input**: a one-paragraph entry stating that no AI decisions occurred for this agent and naming any human-driven actions present in Section 2. Do not pad.
+- **Symmetric-cast fallback**: if neither the `survival_health_contract` nor the roadmap row names a principal — typical for symmetric-cast scenarios where every agent contributes equally to the demonstration — treat every agent in the cast as a tracked principal.
 
 The roadmap's per-row prose typically names the principals explicitly ("Agent X owns the 1440-tick survival-health envelope while Y is a supporting hostile target"). Use that classification when present; otherwise infer from the survival-health contract field.
 
@@ -33,7 +34,7 @@ For each decision quoted, name:
 
 - The tick.
 - The goal kind selected (or the decision context if no plan was selected).
-- The plain-English reason the planner reached for it (drawn from Section 7's "Goals selected" rows, ranking notes, and the active needs at the tick).
+- The plain-English reason the planner reached for it (drawn from Section 8's "Goals selected" rows, ranking notes, and the active needs at the tick).
 - What happened next — committed action, blocked desire, replan, or budget exhaustion.
 
 Avoid blow-by-blow tick-level rehearsal. The narrative arc matters; redundant ticks of the same self-care loop should be summarized ("between ticks 200 and 600 the agent committed `drink` four more times at Stone Well, each preceded by a routine perception sweep at Central Crossing").
@@ -47,7 +48,7 @@ For every decision failure that mattered, classify the cause using the fixed voc
 - **Precondition violation** — the planner selected an action whose authoritative validator rejected it at start time. Name the precondition.
 - **Belief-target unknown** — the planner needed a target entity (place, item lot, recipe source) the agent had no belief about. Useful tag for "geographic desert" stories.
 - **Frontier exhaustion** — the planner's frontier emptied without finding a viable plan. Frequently signals contention or substrate gaps.
-- **Budget exhaustion** — the planner ran out of search budget. Quote the tick and the goal in flight from Section 7's snapshot if Section 8 is present.
+- **Budget exhaustion** — the planner ran out of search budget. Quote the tick and the goal in flight from Section 9's snapshot if it is non-empty.
 - **Contention loss** — the agent committed `queue_for_facility_use` (or its equivalent) and never received a grant within the relevant window.
 - **Payload revalidation rejection** — `plan_revalidation` rejected a planner-synthesized payload at execution time. State whether a `with_payload_override_validator` was registered for the action and whether the rejection was structural.
 - **Stale belief contradiction** — the agent's plan depended on a belief that the world or perception subsequently invalidated; replan followed.
@@ -65,7 +66,7 @@ A narrative summary of how the agent's beliefs changed across the run. Cover:
 - Contradictions registered — when a belief was invalidated by direct observation or a later authoritative event.
 - Persistent gaps — places visited but never reflected in the belief summary, durable failure memory carried forward, expectations resolved or unresolved.
 
-If the dump's belief summary is end-state-only and cannot tell the evolution story, this is the most common cheap-fix candidate per `traceability-fix-protocol.md`.
+Section 6 (per-agent belief summary) is end-state-only by design. The primary tick anchors for belief evolution are Section 3 (Decision History) and Section 5's first/last-100-events log: Section 3 carries `GoalOffered`, `GoalCommitted`, `BlockerRecorded`, `ReplanTriggered`, `GoalSuppressed`, `GoalAbandoned`, and `GoalSwitched` rows that establish when a planner reacted to a new or invalidated belief, and Section 5's event sample carries `Discovery`-tagged WorldMutation rows that mark when an agent first perceived a place or facility. Reach for the cheap-fix candidate per `traceability-fix-protocol.md` only when neither section provides the needed timing.
 
 ### Final State
 

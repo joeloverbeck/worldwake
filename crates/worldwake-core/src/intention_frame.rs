@@ -6,7 +6,7 @@
 //! structure that tracks assumptions, patience, and suspension/resume lifecycle.
 
 use crate::traits::Component;
-use crate::{CommodityKind, EntityId, GoalKey, GoalKind, Tick};
+use crate::{CommodityKind, EntityId, GoalKey, GoalKind, HomeostaticNeedId, Tick};
 use serde::{Deserialize, Serialize};
 
 /// Domain-specific context carried by an intention frame.
@@ -70,6 +70,13 @@ pub enum FrameAssumption {
     CommodityAvailableAt {
         commodity: CommodityKind,
         place: EntityId,
+    },
+    /// The named need is projected to remain below its high threshold
+    /// at least until `until_tick`, given the agent's current level
+    /// and base metabolism rate. Recomputed each tick by the evaluator.
+    NeedSafeUntilTick {
+        need: HomeostaticNeedId,
+        until_tick: Tick,
     },
 }
 
@@ -290,6 +297,19 @@ mod tests {
         );
 
         assert_eq!(frame.expected_commodity(), None);
+    }
+
+    #[test]
+    fn frame_assumption_need_safe_until_tick_roundtrips_through_bincode() {
+        let assumption = FrameAssumption::NeedSafeUntilTick {
+            need: crate::HomeostaticNeedId::Hunger,
+            until_tick: Tick(100),
+        };
+
+        let bytes = bincode::serialize(&assumption).unwrap();
+        let roundtrip: FrameAssumption = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, assumption);
     }
 
     #[test]
