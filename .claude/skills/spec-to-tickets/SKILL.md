@@ -54,6 +54,8 @@ Before decomposing, validate the spec's assumptions against the actual codebase:
 
   After the spot-checks, render the exercised sub-checks as a compact inline list before moving to Step 3 (e.g., `Spot-checks: (a) ✓, (b) ✓, (c) skipped — no new sibling specs, (d) 164 sites flagged, (e) N/A, (f) ✓, (g) N/A — no renames`). This proves each applicable sub-check ran and surfaces N/A cases explicitly.
 
+  **(f) checkpoint**: Before emitting the spot-check inline summary, if (f) fired for any deliverable (the spec modifies existing functions exercised by inline `#[cfg(test)]` tests), list the existing test names found per affected module — `<module>: <test_name_1>, <test_name_2>`. Deferring (f) results to ticket-body placeholders like `(named during reassessment)` is not a substitute and will leave implementation tickets with implicit homework. The grep cost is paid once during Step 2; deferring it forces the same grep to be re-run during every ticket's `/implement-ticket` reassessment.
+
   **Auto-mode checkpoint**: If auto mode is active and all spot-checks passed (no Issue findings, no stale references, no missing files, no renamed symbols, no deferred reassessment findings), proceed directly to Step 4's auto-approval branch and write tickets in the same turn — do not present the Step 4 summary as a wait-gate. The auto-mode interaction rule at the end of Step 4 is binding here; making the decision at this point (when the no-Issues condition is freshest) avoids a redundant round-trip in Step 4.
 - If `/reassess-spec` was run but some findings were deferred by the user, treat deferred items as out-of-scope for ticket decomposition. Note them in the Step 6 final summary as "deferred reassessment findings that may warrant separate tickets." Do not silently incorporate deferred findings into ticket scope.
 
@@ -166,6 +168,9 @@ Present Step 6 in this layout to keep downstream `/implement-ticket` inputs pred
 
 ### Suggested Implementation Order
 <numbered list with one-line rationale per ticket — name what the ticket unblocks or why it sits at this position>
+
+### Merge-Order Constraints
+<omit this heading entirely if sub-check (b) found no multi-ticket serialization impact. If multiple tickets bump `SAVE_FORMAT_VERSION`, list the per-ticket bump sequence as a merge-order constraint note — e.g., `SAVE_FORMAT_VERSION cascade: 002→49, 003→50, 004→51, 005→52, 006→53 — must land in dependency order; landing two tickets out of order produces a value collision.` Other cascading constraints (schema versions, magic numbers in shared registries) follow the same format.>
 ```
 
 Do NOT commit. Leave files for user review.

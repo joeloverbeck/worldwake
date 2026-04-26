@@ -10,7 +10,7 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 
 1. `GoalDispatchKey` — new variant + `ALL` constant + `from_goal_kind` match arm (`crates/worldwake-ai/src/goal_dispatch_key.rs`)
 2. `GoalDispatchDeclaration` — entry with `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `progress_barrier_ops`, `family_policy` (`crates/worldwake-ai/src/goal_dispatch_decl.rs`)
-3. `GoalKindPlannerExt` — implementation of all 11 methods (`crates/worldwake-ai/src/goal_model.rs`)
+3. `GoalKindPlannerExt` — implementation of all 12 methods (`crates/worldwake-ai/src/goal_model.rs`)
 4. Ranking — `GoalPriorityClass` assignment and `motive_score` formula
 5. Candidate generation — emitter function in `crates/worldwake-ai/src/candidate_generation.rs`
 6. `GoalKind` derive compatibility — new variant fields must all be `Copy` (GoalKind derives Copy)
