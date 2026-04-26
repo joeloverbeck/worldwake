@@ -536,6 +536,8 @@ fn conformance_wash() {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -761,6 +763,8 @@ fn conformance_harvest_noop_coverage_gap() {
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -1233,6 +1237,8 @@ fn conformance_investigate() {
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -1981,6 +1987,8 @@ fn conformance_queue_for_facility() {
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         nz(20), // grant_hold_ticks
         ProductionOutputOwner::Actor,

@@ -763,6 +763,8 @@ fn golden_exploration_is_suppressed_when_known_satisfaction_path_exists() {
             max_quantity: Quantity(5),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -875,6 +877,8 @@ fn golden_exploration_arrival_unlocks_beliefs_and_concrete_relief() {
             max_quantity: Quantity(5),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -1036,6 +1040,8 @@ fn golden_s102_gate_unlock_after_budget_exhaustion() {
             max_quantity: Quantity(5),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -1193,6 +1199,8 @@ fn golden_s102_multi_hop_frontier_discovery() {
             max_quantity: Quantity(5),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -1463,6 +1471,8 @@ fn golden_s102_counter_reset_on_need_satisfaction() {
             max_quantity: Quantity(5),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );

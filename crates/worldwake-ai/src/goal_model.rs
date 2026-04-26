@@ -6194,6 +6194,8 @@ mod tests {
                         max_quantity: Quantity(4),
                         regeneration_ticks_per_unit: None,
                         last_regeneration_tick: None,
+                        extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                        extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                     }),
                 ),
             )],
@@ -6325,6 +6327,8 @@ mod tests {
                         max_quantity: Quantity(4),
                         regeneration_ticks_per_unit: None,
                         last_regeneration_tick: None,
+                        extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                        extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                     }),
                 ),
             )],
@@ -7140,6 +7144,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&resource_entity).cloned();
@@ -7220,6 +7226,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&resource_entity).cloned();
@@ -7407,6 +7415,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let recipes = worldwake_sim::RecipeRegistry::new();
@@ -7467,6 +7477,8 @@ mod tests {
                             max_quantity: Quantity(2),
                             regeneration_ticks_per_unit: None,
                             last_regeneration_tick: None,
+                            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                         }),
                         alive: true,
                         wounds: Vec::new(),
@@ -7710,6 +7722,8 @@ mod tests {
                 max_quantity: Quantity(1),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let mut loose_medicine_belief = believed_entity_state_at(place_b, Tick(1), None);
@@ -7750,6 +7764,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&wheat_field).cloned();
@@ -7834,6 +7850,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&wheat_field).cloned();
@@ -7891,6 +7909,8 @@ mod tests {
                     max_quantity: Quantity(3),
                     regeneration_ticks_per_unit: None,
                     last_regeneration_tick: None,
+                    extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                 },
             );
             let believed_source = view.resource_sources.get(&field).cloned();
@@ -7943,6 +7963,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&wheat_field).cloned();
@@ -7996,6 +8018,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -9596,6 +9620,8 @@ mod tests {
                         max_quantity: Quantity(4),
                         regeneration_ticks_per_unit: None,
                         last_regeneration_tick: None,
+                        extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                        extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                     }),
                 ),
             )],
@@ -9684,6 +9710,8 @@ mod tests {
                         max_quantity: Quantity(4),
                         regeneration_ticks_per_unit: None,
                         last_regeneration_tick: None,
+                        extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                        extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                     }),
                 ),
             )],

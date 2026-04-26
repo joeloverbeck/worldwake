@@ -460,6 +460,8 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
             max_quantity: Quantity(20),
             regeneration_ticks_per_unit: Some(NonZeroU32::new(2).unwrap()),
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -710,6 +712,8 @@ fn cross_location_water_acquisition_succeeds_without_budget_exhaustion() {
             max_quantity: Quantity(15),
             regeneration_ticks_per_unit: Some(NonZeroU32::new(3).unwrap()),
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );

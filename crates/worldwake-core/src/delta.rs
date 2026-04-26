@@ -681,6 +681,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(4).unwrap()),
                 last_regeneration_tick: Some(Tick(12)),
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             }),
             ComponentValue::ProductionOutputOwnershipPolicy(ProductionOutputOwnershipPolicy {
                 output_owner: ProductionOutputOwner::ProducerOwner,

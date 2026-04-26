@@ -1,6 +1,6 @@
 # S127QUAAWAACQ-003: ResourceSource extraction_slots and extraction_duration_ticks
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends `ResourceSource` with two new fields, extends `ResourceSourceDef`, updates the scenario translator, bumps `SAVE_FORMAT_VERSION`
@@ -14,7 +14,7 @@ S127 makes per-source extraction concurrency and per-extraction time cost concre
 
 1. `crates/worldwake-core/src/production.rs:74-83` defines `ResourceSource { commodity: CommodityKind, available_quantity: Quantity, max_quantity: Quantity, regeneration_ticks_per_unit: Option<NonZeroU32>, last_regeneration_tick: Option<Tick> }` — confirmed during reassessment. The struct derives `Component` (line 83) and `Default` (`#[derive(... Default ...)]` at line 41 of the surrounding scope per spot-check).
 2. `specs/S127-quantity-aware-acquisition.md` D4 prescribes the field additions; D10 prescribes the `ResourceSourceDef` mirror with `#[serde(default = "default_extraction_slots")]` and `default_extraction_slots() -> u8 { 1 }`.
-3. Construction-site spot-check: `grep -rn "ResourceSource {" crates/ | wc -l` → 163 sites. `ResourceSource` derives `Default`, but `NonZeroU8` does not have a stdlib `Default` impl — adding `extraction_slots: NonZeroU8` and `extraction_duration_ticks: NonZeroU32` to a `Default`-deriving struct will break the derive unless we either (a) drop the `Default` derive and write a manual `Default` impl returning `NonZeroU8::new(1).unwrap()`, or (b) use a wrapper type. Option (a) is cleanest and matches the field semantics (single-slot, one-tick extraction is the legacy default).
+3. Construction-site spot-check: `grep -rn "ResourceSource {" crates/ | wc -l` → 163 sites. **Auto-correction (2026-04-26):** ticket originally claimed `ResourceSource` derives `Default`; reassessment confirmed it does NOT (line 74 derives `Clone, Debug, Eq, PartialEq, Serialize, Deserialize` only). No `ResourceSource::default()` call sites exist (`grep -rn "ResourceSource::default" crates/` → 0 hits). No `Default` derive needs to be dropped or replaced; the field additions are purely additive at all 163 construction sites.
 4. `crates/worldwake-cli/src/scenario/types.rs:500` defines `ResourceSourceDef` with fields `commodity, location, facility, regeneration_ticks_per_unit, capacity` — confirmed during reassessment.
 5. `crates/worldwake-cli/src/scenario/mod.rs:417` constructs `ResourceSource { … }` from `ResourceSourceDef` in `spawn_scenario` (the second site is `crates/worldwake-cli/src/bin/observer.rs:4669` in test fixtures). Both must add the two new fields with `NonZeroU8::new(def.extraction_slots).unwrap_or(NonZeroU8::MIN)` and `NonZeroU32::new(def.extraction_duration_ticks).unwrap_or(NonZeroU32::MIN)`.
 6. `SAVE_FORMAT_VERSION` is at `crates/worldwake-sim/src/save_load.rs:6`. After ticket 002 it lands at `49`; this ticket bumps it to `50` (sequential bumps because both tickets break the format).
@@ -25,7 +25,7 @@ S127 makes per-source extraction concurrency and per-extraction time cost concre
 
 1. `extraction_slots` and `extraction_duration_ticks` are concrete entity state, not derived "throughput score" abstractions (FND-3). The waiting agent's projected delay is now `extraction_duration_ticks * queue_position` — concrete world time, not an opaque blocker cooldown.
 2. `serde(default)` on `ResourceSourceDef` keeps existing `scenarios/*.ron` files compiling without edit, satisfying the spec's backward-compat scenario claim. This is a boundary-only compat (RON parsing), not a live-authority shim — the runtime always reads the resolved `NonZeroU8`/`NonZeroU32` value, never the optional default.
-3. Dropping the `Default` derive on `ResourceSource` and writing a manual `impl Default` is cleaner than wrapping fields in `Option<NonZero…>` — the wrapper would propagate `None`-handling through every consumer for a default that is never `None` in practice (single-slot, one-tick extraction is the universal legacy baseline).
+3. `ResourceSource` does not derive `Default` and has no `::default()` call sites (auto-corrected from the original ticket draft). All 163 construction sites are explicit field literals, so the field additions land cleanly without any `Default` impl work.
 
 ## Verification Layers
 
@@ -39,7 +39,7 @@ S127 makes per-source extraction concurrency and per-extraction time cost concre
 
 ### 1. Extend `ResourceSource` in `crates/worldwake-core/src/production.rs:74-83`
 
-Add `extraction_slots: NonZeroU8` and `extraction_duration_ticks: NonZeroU32` per spec D4. Drop the `Default` derive (will fail because `NonZeroU8` has no `Default`) and replace with a manual `impl Default for ResourceSource` returning all fields at their legacy defaults: `available_quantity: Quantity(0)`, `max_quantity: Quantity(0)`, `regeneration_ticks_per_unit: None`, `last_regeneration_tick: None`, `extraction_slots: NonZeroU8::new(1).unwrap()`, `extraction_duration_ticks: NonZeroU32::new(1).unwrap()`, `commodity: CommodityKind::default()` (assuming `CommodityKind` derives `Default` — confirm during implementation; if not, the manual `Default` impl drops too and call sites use explicit construction).
+Add `extraction_slots: NonZeroU8` and `extraction_duration_ticks: NonZeroU32` per spec D4. `ResourceSource` does not derive `Default`, so no `Default` impl work is required — the field additions are purely additive at the type level. All 163 construction sites get explicit `extraction_slots: NonZeroU8::new(1).unwrap()` and `extraction_duration_ticks: NonZeroU32::new(1).unwrap()` (legacy single-slot, one-tick semantics).
 
 ### 2. Update all `ResourceSource { … }` construction sites
 
@@ -47,7 +47,7 @@ Add `extraction_slots: NonZeroU8` and `extraction_duration_ticks: NonZeroU32` pe
 
 - `crates/worldwake-cli/src/scenario/mod.rs:417` (production scenario translator) — read `def.extraction_slots` and `def.extraction_duration_ticks` and construct with `NonZeroU8::new(def.extraction_slots).unwrap_or(NonZeroU8::MIN)`, `NonZeroU32::new(def.extraction_duration_ticks).unwrap_or(NonZeroU32::MIN)`.
 - `crates/worldwake-cli/src/bin/observer.rs:4669` (test fixture) — add explicit `extraction_slots: NonZeroU8::new(1).unwrap()`, `extraction_duration_ticks: NonZeroU32::new(1).unwrap()`.
-- All other test fixtures — same pattern, or use `..ResourceSource::default()` if the manual `Default` impl is preserved.
+- All other test fixtures — same explicit-field-literal pattern (no `..Default::default()` shorthand applies because `ResourceSource` doesn't derive `Default`).
 
 ### 3. Extend `ResourceSourceDef` in `crates/worldwake-cli/src/scenario/types.rs:500`
 
@@ -122,3 +122,28 @@ In `production.rs` `#[cfg(test)]`: bincode round-trip preserving the two new fie
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-26.
+
+- Extended `ResourceSource` with `extraction_slots: NonZeroU8` and `extraction_duration_ticks: NonZeroU32` (`crates/worldwake-core/src/production.rs`).
+- Extended `ResourceSourceDef` with `extraction_slots: u8` and `extraction_duration_ticks: u32`, both backed by `#[serde(default = ...)]` defaulting to `1` (`crates/worldwake-cli/src/scenario/types.rs`). Existing `scenarios/*.ron` files load unchanged.
+- Updated the scenario translator at `crates/worldwake-cli/src/scenario/mod.rs:415` to map `def.extraction_slots` and `def.extraction_duration_ticks` through `NonZeroU8::new(...).unwrap_or(NonZeroU8::MIN)` / `NonZeroU32::new(...).unwrap_or(NonZeroU32::MIN)`.
+- Bumped `SAVE_FORMAT_VERSION` from `49` to `50` per FND-28 (`crates/worldwake-sim/src/save_load.rs:6`).
+- Mass-updated 142 `ResourceSource { ... }` literal construction sites across 38 files (139 from the initial sweep, 3 `ResourceSourceDef` literals in scenario/mod.rs tests, plus the `worldwake-systems::production::tests::source` parameterized helper). New field references use fully-qualified `std::num::NonZero{U8,U32}::new(1).unwrap()` so no per-file imports were required.
+- Added one bincode round-trip test in `production.rs` (`resource_source_bincode_roundtrip_includes_extraction_fields`) and four scenario tests: two on `ResourceSourceDef` (defaults vs explicit) in `types.rs`, two on the `spawn_scenario` translator (defaults vs explicit) in `scenario/mod.rs`.
+
+## Deviations
+
+- The ticket reassessment originally claimed `ResourceSource` derives `Default` and instructed a manual `impl Default` replacement. Reassessment showed the struct does not derive `Default` and has zero `::default()` call sites, so no `Default` work was required. Auto-correction recorded under `Assumption Reassessment` item 3 and reflected in `What to Change` step 1.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core resource_source_bincode_roundtrip` (1 new test).
+- Passed `cargo test -p worldwake-cli scenario_def_resource_source` (2 new tests).
+- Passed `cargo test -p worldwake-cli spawn_scenario_resource_source` (2 new tests).
+- Passed `cargo test --workspace` (full suite, all crates green).
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `cargo fmt --all -- --check`.
+- Passed `./scripts/verify.sh` (exit 0; runs fmt-check, full test workspace, clippy, clippy with `--all-targets -D warnings`, scenario coverage check).

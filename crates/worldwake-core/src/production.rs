@@ -3,7 +3,7 @@
 use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU8, NonZeroU32};
 
 /// Tag identifying what kind of workstation an entity is.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -78,6 +78,8 @@ pub struct ResourceSource {
     pub max_quantity: Quantity,
     pub regeneration_ticks_per_unit: Option<NonZeroU32>,
     pub last_regeneration_tick: Option<Tick>,
+    pub extraction_slots: NonZeroU8,
+    pub extraction_duration_ticks: NonZeroU32,
 }
 
 impl Component for ResourceSource {}
@@ -134,7 +136,7 @@ mod tests {
     use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU8, NonZeroU32};
 
     fn assert_bounds<
         T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,
@@ -326,6 +328,8 @@ mod tests {
             max_quantity: Quantity(12),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
         };
 
         let bytes = bincode::serialize(&source).unwrap();
@@ -342,12 +346,34 @@ mod tests {
             max_quantity: Quantity(20),
             regeneration_ticks_per_unit: Some(NonZeroU32::new(6).unwrap()),
             last_regeneration_tick: Some(Tick(44)),
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
         };
 
         let bytes = bincode::serialize(&source).unwrap();
         let roundtrip: ResourceSource = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, source);
+    }
+
+    #[test]
+    fn resource_source_bincode_roundtrip_includes_extraction_fields() {
+        let source = ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(7),
+            max_quantity: Quantity(15),
+            regeneration_ticks_per_unit: Some(NonZeroU32::new(3).unwrap()),
+            last_regeneration_tick: Some(Tick(12)),
+            extraction_slots: NonZeroU8::new(5).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(8).unwrap(),
+        };
+
+        let bytes = bincode::serialize(&source).unwrap();
+        let roundtrip: ResourceSource = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, source);
+        assert_eq!(roundtrip.extraction_slots.get(), 5);
+        assert_eq!(roundtrip.extraction_duration_ticks.get(), 8);
     }
 
     #[test]

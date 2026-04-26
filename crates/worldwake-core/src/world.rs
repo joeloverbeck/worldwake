@@ -931,6 +931,8 @@ mod tests {
             max_quantity: Quantity(15),
             regeneration_ticks_per_unit: Some(NonZeroU32::new(4).unwrap()),
             last_regeneration_tick: Some(Tick(7)),
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         }
     }
 
@@ -5791,6 +5793,8 @@ mod tests {
             max_quantity: Quantity(18),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         };
 
         world

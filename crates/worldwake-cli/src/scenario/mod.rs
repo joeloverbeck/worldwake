@@ -7,6 +7,7 @@ pub mod lints;
 pub mod types;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::{NonZeroU8, NonZeroU32};
 use std::path::Path;
 
 use types::ScenarioDef;
@@ -420,6 +421,10 @@ fn spawn_entities(
                 max_quantity: source_def.capacity,
                 regeneration_ticks_per_unit: source_def.regeneration_ticks_per_unit,
                 last_regeneration_tick: None,
+                extraction_slots: NonZeroU8::new(source_def.extraction_slots)
+                    .unwrap_or(NonZeroU8::MIN),
+                extraction_duration_ticks: NonZeroU32::new(source_def.extraction_duration_ticks)
+                    .unwrap_or(NonZeroU32::MIN),
             },
         )?;
     }
@@ -2166,6 +2171,8 @@ mod tests {
                 facility: None,
                 regeneration_ticks_per_unit: NonZeroU32::new(5),
                 capacity: Quantity(20),
+                extraction_slots: 1,
+                extraction_duration_ticks: 1,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -2296,6 +2303,8 @@ mod tests {
                 facility: Some("North Orchard".into()),
                 regeneration_ticks_per_unit: NonZeroU32::new(2),
                 capacity: Quantity(20),
+                extraction_slots: 1,
+                extraction_duration_ticks: 1,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -2364,6 +2373,8 @@ mod tests {
                 facility: Some("Village Well".into()),
                 regeneration_ticks_per_unit: NonZeroU32::new(3),
                 capacity: Quantity(15),
+                extraction_slots: 1,
+                extraction_duration_ticks: 1,
             }],
             hostilities: vec![],
             commodity_decay: None,
@@ -3529,5 +3540,51 @@ mod tests {
             !world.ground_entities_at(seat).contains(&lot),
             "treasury lot should not be a loose place-floor item"
         );
+    }
+
+    #[test]
+    fn spawn_scenario_resource_source_defaults_to_one_slot_one_tick() {
+        let mut def = minimal_def();
+        def.resource_sources = vec![ResourceSourceDef {
+            commodity: CommodityKind::Apple,
+            location: "Village".into(),
+            facility: None,
+            regeneration_ticks_per_unit: NonZeroU32::new(5),
+            capacity: Quantity(20),
+            extraction_slots: 1,
+            extraction_duration_ticks: 1,
+        }];
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let (_, source) = world
+            .query_resource_source()
+            .next()
+            .expect("resource source should be spawned");
+        assert_eq!(source.extraction_slots.get(), 1);
+        assert_eq!(source.extraction_duration_ticks.get(), 1);
+    }
+
+    #[test]
+    fn spawn_scenario_resource_source_explicit_extraction_fields() {
+        let mut def = minimal_def();
+        def.resource_sources = vec![ResourceSourceDef {
+            commodity: CommodityKind::Water,
+            location: "Village".into(),
+            facility: None,
+            regeneration_ticks_per_unit: NonZeroU32::new(3),
+            capacity: Quantity(40),
+            extraction_slots: 5,
+            extraction_duration_ticks: 4,
+        }];
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let (_, source) = world
+            .query_resource_source()
+            .next()
+            .expect("resource source should be spawned");
+        assert_eq!(source.extraction_slots.get(), 5);
+        assert_eq!(source.extraction_duration_ticks.get(), 4);
     }
 }

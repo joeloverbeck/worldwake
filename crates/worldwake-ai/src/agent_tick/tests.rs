@@ -1319,6 +1319,8 @@ fn build_exclusive_queue_harness() -> ExclusiveQueueHarness {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -6221,6 +6223,8 @@ fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detect
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();

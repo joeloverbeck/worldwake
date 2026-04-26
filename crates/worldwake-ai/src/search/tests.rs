@@ -4157,6 +4157,8 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -4268,6 +4270,8 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -4400,6 +4404,8 @@ fn search_local_wash_candidates_require_basin_and_water_source() {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -4594,6 +4600,8 @@ fn build_restock_threat_fixture(with_combat_belief: bool) -> RestockThreatFixtur
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -4895,6 +4903,8 @@ fn build_exclusive_orchard_fixture(granted: bool) -> ExclusiveOrchardFixture {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -5636,6 +5646,8 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -6186,6 +6198,8 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -10489,6 +10503,8 @@ fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_s
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -13298,6 +13314,8 @@ fn search_trace_records_ask_witness_omission_when_no_stale_epistemic_subjects_ex
                     max_quantity: Quantity(4),
                     regeneration_ticks_per_unit: None,
                     last_regeneration_tick: None,
+                    extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                 }),
             ),
         )],
@@ -13386,6 +13404,8 @@ fn search_trace_records_ask_witness_omission_when_no_witness_affordance_exists()
                     max_quantity: Quantity(4),
                     regeneration_ticks_per_unit: None,
                     last_regeneration_tick: None,
+                    extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                 }),
             ),
         )],

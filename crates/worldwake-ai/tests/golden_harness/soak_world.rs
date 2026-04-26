@@ -3,6 +3,7 @@
 
 use super::*;
 use std::collections::BTreeSet;
+use std::num::{NonZeroU8, NonZeroU32};
 use worldwake_core::{
     BanditCamp, BanditFactionPolicy, CombatProfile, CommodityKind, DemandMemory, EligibilityRule,
     EntityId, HomeostaticNeeds, JusticeDispositionProfile, MerchandiseProfile, MetabolismProfile,
@@ -196,6 +197,8 @@ pub fn build_t30_world(
             available_quantity: Quantity(20),
             regeneration_ticks_per_unit: std::num::NonZeroU32::new(50),
             last_regeneration_tick: None,
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -211,6 +214,8 @@ pub fn build_t30_world(
             available_quantity: Quantity(15),
             regeneration_ticks_per_unit: std::num::NonZeroU32::new(80),
             last_regeneration_tick: None,
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -226,6 +231,8 @@ pub fn build_t30_world(
             available_quantity: Quantity(15),
             regeneration_ticks_per_unit: std::num::NonZeroU32::new(60),
             last_regeneration_tick: None,
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
