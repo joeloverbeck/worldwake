@@ -159,7 +159,9 @@ mod tests {
         CandidateTrace, DirtySet, ExecutionTrace, PlanSearchTrace, PlanningPipelineTrace,
         SelectedPlanReplacementKind, SelectionTrace,
     };
-    use worldwake_core::{ActionDefId, CommodityKind, CommodityPurpose, GoalKey, GoalKind, Tick};
+    use worldwake_core::{
+        AcquisitionQuantity, ActionDefId, CommodityKind, CommodityPurpose, GoalKey, GoalKind, Tick,
+    };
     use worldwake_sim::{ActionTraceEvent, ActionTraceKind};
 
     #[test]
@@ -222,6 +224,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
         ));
 

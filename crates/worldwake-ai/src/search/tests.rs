@@ -20,22 +20,22 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState, BelievedArtifactState,
-    BelievedBountyTerms, BelievedEntityState, Blocker, BlockerKey, BlockerMemory, BlockingFact,
-    BodyCostPerTick, BodyPart, BountyTarget, BountyTerms, CarryCapacity, CauseRef,
-    CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind, ContentionGrant,
-    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DemandMemory, DemandObservation,
-    DemandObservationReason, DeprivationExposure, DeprivationKind, DriveThresholds, EntityId,
-    EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget, HomeostaticNeedId,
-    HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute, PerceptionSource, Permille, Place,
-    PlaceTag, PortfolioSlotWeights, ProofRequirement, PrototypePlace, Quantity, RecipeId,
-    RecordedViolation, ResourceSource, RewardSource, TheftDispositionProfile, Tick, TickRange,
-    Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
-    ViolationDispositionProfile, ViolationId, ViolationKind, VisibilitySpec, WitnessData,
-    WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile,
+    AcquisitionQuantity, ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState,
+    BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, Blocker, BlockerKey,
+    BlockerMemory, BlockingFact, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms,
+    CarryCapacity, CauseRef, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
+    CommodityKind, ContentionGrant, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
+    DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
+    DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget,
+    HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute,
+    PerceptionSource, Permille, Place, PlaceTag, PortfolioSlotWeights, ProofRequirement,
+    PrototypePlace, Quantity, RecipeId, RecordedViolation, ResourceSource, RewardSource,
+    TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
+    TravelEdgeId, UniqueItemKind, ViolationDispositionProfile, ViolationId, ViolationKind,
+    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
+    WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
+    prototype_place_entity, test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, CombatBeliefView, ControlBeliefView,
@@ -1077,7 +1077,11 @@ fn consume_goal(commodity: CommodityKind) -> GoalOffer {
 fn acquire_goal_with_purpose(commodity: CommodityKind, purpose: CommodityPurpose) -> GoalOffer {
     GoalOffer {
         anchor: worldwake_core::OpportunityAnchor::None,
-        key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity { commodity, purpose }),
+        key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
+            commodity,
+            purpose,
+            quantity: AcquisitionQuantity::single(),
+        }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),
         obligation_source: None,
@@ -1468,6 +1472,7 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([market]),
@@ -1592,6 +1597,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([market]),
@@ -1719,6 +1725,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_displayed_sale_lot_with_c
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([market]),
@@ -1826,6 +1833,7 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([town]),
@@ -1920,6 +1928,7 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Firewood,
             purpose: CommodityPurpose::RecipeInput(RecipeId(0)),
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([town]),
@@ -2448,6 +2457,7 @@ fn search_rejects_branch_when_duration_estimation_fails() {
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([market]),
@@ -2713,6 +2723,7 @@ fn place_anchored_acquire_search_does_not_retarget_sibling_place_lot() {
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([home_apple, orchard_apple]),
         evidence_places: BTreeSet::from([home, orchard]),
@@ -2815,6 +2826,7 @@ fn place_anchored_acquire_search_does_not_escape_blocked_local_lot_to_sibling_pl
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([home_apple, orchard_apple]),
         evidence_places: BTreeSet::from([home, orchard]),
@@ -5193,6 +5205,7 @@ fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_witho
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
@@ -5314,6 +5327,7 @@ fn search_acquire_self_consume_skips_queue_when_matching_grant_is_already_active
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([fixture.orchard_row]),
         evidence_places: BTreeSet::from([fixture.orchard_farm]),
@@ -6349,6 +6363,7 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller_b]),
         evidence_places: BTreeSet::from([market]),
@@ -6670,6 +6685,7 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([market]),
@@ -6893,6 +6909,7 @@ fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([bread]),
         evidence_places: BTreeSet::from([market]),
@@ -9353,6 +9370,7 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller, bread]),
         evidence_places: BTreeSet::from([town, market]),
@@ -9452,6 +9470,7 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([town]),
@@ -9553,6 +9572,7 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
         key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller]),
         evidence_places: BTreeSet::from([town]),
@@ -10483,6 +10503,7 @@ fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_s
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([orchard_farm]),
@@ -10758,6 +10779,7 @@ fn search_explore_tactical_goal_produced_despite_nonempty_evidence() {
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([destination]),
@@ -10824,6 +10846,7 @@ fn search_evidence_directed_exploration_prefers_evidence_place() {
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([evidence_place]),
@@ -11017,6 +11040,7 @@ fn search_acquire_commodity_uses_travel_to_goal() {
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([market]),
@@ -11451,6 +11475,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([place]),
@@ -11974,6 +11999,7 @@ fn search_pipeline_records_commodity_irrelevant_root_candidate_filtering() {
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([market]),
@@ -13192,6 +13218,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller_a, seller_b]),
         evidence_places: BTreeSet::new(),
@@ -14196,6 +14223,7 @@ fn search_empty_beliefs_exploration_fallback_returns_nearest_travel_barrier() {
         key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::new(),

@@ -145,8 +145,8 @@ mod tests {
     use std::collections::BTreeSet;
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        CommodityKind, EntityId, FrameState, IntentionDomain, IntentionFrame, OpportunityAnchor,
-        Permille, Tick,
+        AcquisitionQuantity, CommodityKind, EntityId, FrameState, IntentionDomain, IntentionFrame,
+        OpportunityAnchor, Permille, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -444,6 +444,7 @@ mod tests {
         let goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let dangerous_anchor = OpportunityAnchor::Place(entity(40));
         let safe_anchor = OpportunityAnchor::Place(entity(41));
@@ -542,10 +543,12 @@ mod tests {
         let current_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let challenger_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let current_plan = plan(current_goal, 1, 3);
         let challenger_plan = plan(challenger_goal, 2, 2);
@@ -554,6 +557,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1000,
@@ -562,6 +566,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1099,
@@ -643,10 +648,12 @@ mod tests {
         let market_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let orchard_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let market_plan = plan(market_goal, 1, 3);
         let orchard_plan = plan(orchard_goal, 2, 3);
@@ -655,6 +662,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 700,
@@ -663,6 +671,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 700,
@@ -720,6 +729,7 @@ mod tests {
         let lower_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let candidates = vec![
             ranked(
@@ -733,6 +743,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 200,
@@ -799,10 +810,12 @@ mod tests {
         let current_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let challenger_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let current_plan = plan(current_goal, 5, 3);
         let challenger_plan = plan(challenger_goal, 6, 3);
@@ -811,6 +824,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_000,
@@ -819,6 +833,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_000,
@@ -890,6 +905,7 @@ mod tests {
         let goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let stale_plan = PlannedPlan::new(
             opportunity(goal),
@@ -927,6 +943,7 @@ mod tests {
             worldwake_core::GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalPriorityClass::High,
             900,
@@ -1081,10 +1098,12 @@ mod tests {
         let current_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let challenger_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let current_plan = plan(current_goal, 1, 3);
         let challenger_plan = plan(challenger_goal, 2, 2);
@@ -1093,6 +1112,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_000,
@@ -1101,6 +1121,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_350,
@@ -1163,6 +1184,7 @@ mod tests {
         let current_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let fallback_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
             commodity: CommodityKind::Water,
@@ -1174,6 +1196,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_000,
@@ -1218,6 +1241,7 @@ mod tests {
         let committed_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let detour_goal = GoalKey::from(worldwake_core::GoalKind::ConsumeOwnedCommodity {
             commodity: CommodityKind::Water,
@@ -1263,6 +1287,7 @@ mod tests {
         let abandon_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let abandon_plan = plan(abandon_goal, 3, 1);
         let candidates = vec![
@@ -1270,6 +1295,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_150,
@@ -1285,6 +1311,7 @@ mod tests {
                 worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_000,

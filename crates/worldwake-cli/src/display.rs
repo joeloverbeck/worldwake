@@ -287,8 +287,17 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::ConsumeOwnedCommodity { commodity } => {
             format!("ConsumeOwnedCommodity({commodity:?})")
         }
-        GoalKind::AcquireCommodity { commodity, purpose } => {
-            format!("AcquireCommodity({commodity:?}, {purpose:?})")
+        GoalKind::AcquireCommodity {
+            commodity,
+            purpose,
+            quantity,
+        } => {
+            format!(
+                "AcquireCommodity({commodity:?}, {purpose:?}, min={}/target={}/horizon={})",
+                quantity.desired_min.get(),
+                quantity.desired_target.get(),
+                quantity.horizon_ticks.get(),
+            )
         }
         GoalKind::Sleep => "Sleep".to_string(),
         GoalKind::Relieve => "Relieve".to_string(),

@@ -39,8 +39,8 @@ use golden_harness::{
 use worldwake_ai::CommodityPurpose;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
-    BlockerKey, CommodityKind, DiscrepancyClearing, EntityId, FrameAssumption, GoalKey, GoalKind,
-    HomeostaticNeedId, PerceptionSource, Tick,
+    AcquisitionQuantity, BlockerKey, CommodityKind, DiscrepancyClearing, EntityId, FrameAssumption,
+    GoalKey, GoalKind, HomeostaticNeedId, PerceptionSource, Tick,
 };
 
 const STRUCTURAL_BLOCK_TICKS: u32 = 30;
@@ -84,6 +84,7 @@ fn original_apple_goal_key() -> GoalKey {
     GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     })
 }
 

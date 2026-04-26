@@ -4085,10 +4085,10 @@ mod tests {
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
-        ActionDefId, AgentBeliefStore, BeliefClaimKey, BelievedEntityState, BlockerKey,
-        BlockerRecordedPayload, BodyCostPerTick, CauseRef, CommodityKind, CommodityPurpose,
-        ControlSource, DeadAt, DeathCause, DecisionEventPayload, DriveThresholds, EmitterTag,
-        EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload, EventTag,
+        AcquisitionQuantity, ActionDefId, AgentBeliefStore, BeliefClaimKey, BelievedEntityState,
+        BlockerKey, BlockerRecordedPayload, BodyCostPerTick, CauseRef, CommodityKind,
+        CommodityPurpose, ControlSource, DeadAt, DeathCause, DecisionEventPayload, DriveThresholds,
+        EmitterTag, EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload, EventTag,
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
         GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, OpportunityAnchor,
@@ -4234,6 +4234,7 @@ mod tests {
         let acquire_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let sleep_goal = GoalKey::from(GoalKind::Sleep);
         let patrol_goal = GoalKey::from(GoalKind::Patrol { place: entity(20) });
@@ -5196,6 +5197,7 @@ mod tests {
         let pending_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let suspended_goal = GoalKey::from(GoalKind::MoveCargo {
             commodity: CommodityKind::Bread,
@@ -5261,9 +5263,8 @@ mod tests {
 
         assert!(report.contains("**Agenda state**: committed=Sleep, pending=1, suspended=1"));
         assert!(report.contains("**Pending goals**:"));
-        assert!(report.contains(
-            "- AcquireCommodity { commodity: Water, purpose: SelfConsume } | revive on counterparty Unknown#77 at Unknown#18"
-        ));
+        assert!(report.contains("- AcquireCommodity { commodity: Water, purpose: SelfConsume,"));
+        assert!(report.contains("revive on counterparty Unknown#77 at Unknown#18"));
         assert!(report.contains("**Suspended goals**:"));
         assert!(report.contains(
             "- MoveCargo { commodity: Bread, destination: EntityId { slot: 44, generation: 0 } } | expires at tick 25"
@@ -5318,6 +5319,7 @@ mod tests {
                     goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     }),
                     rejection_reason: GoalRejectionReason::LowerMotive,
                     score_gap: 17,

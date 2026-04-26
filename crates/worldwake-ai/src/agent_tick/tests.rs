@@ -33,11 +33,11 @@ use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use worldwake_core::{
-    ActionDefId, AgentBeliefStore, BanditFactionPolicy, BeliefConfidencePolicy,
-    BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockerRecordedPayload,
-    BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef, CognitiveProfile,
-    CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy, ContentionQueue,
-    ControlSource, DeadAt, DecisionEventPayload, DemandMemory, DemandObservation,
+    AcquisitionQuantity, ActionDefId, AgentBeliefStore, BanditFactionPolicy,
+    BeliefConfidencePolicy, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
+    BlockerRecordedPayload, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
+    CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy,
+    ContentionQueue, ControlSource, DeadAt, DecisionEventPayload, DemandMemory, DemandObservation,
     DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
     DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
     EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
@@ -339,6 +339,7 @@ fn save_runtime_state_serializes_persisted_driver_state() {
     let current_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let current_opportunity = OpportunityKey {
         goal_key: current_goal,
@@ -544,6 +545,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
             GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             OpportunityAnchor::Place(dead_place),
         ),
@@ -624,6 +626,7 @@ fn from_saved_runtime_restores_and_validates_driver_state() {
         GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         OpportunityAnchor::Place(dead_place),
     )));
@@ -2874,6 +2877,7 @@ fn progress_barrier_completion_preserves_goal_and_forces_replan() {
     let goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let destination = entity(11);
     let jc = Some(IntentionFrame {
@@ -2932,6 +2936,7 @@ fn suspended_detour_completion_preserves_commitment_and_reactivates_it() {
     let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let detour_goal = GoalKey::from(GoalKind::ConsumeOwnedCommodity {
         commodity: CommodityKind::Water,
@@ -4461,6 +4466,7 @@ fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }
     ));
     assert!(
@@ -4493,6 +4499,7 @@ fn same_place_perception_seeds_seller_belief_for_runtime_candidates() {
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }
     ));
 }
@@ -4573,6 +4580,7 @@ fn unseen_seller_relocation_preserves_stale_acquisition_belief() {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ),
         "stale same-place seller belief may survive until refresh, but local acquisition must not remain visible once authoritative local state disagrees"
@@ -4621,6 +4629,7 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }
     ));
     assert_eq!(
@@ -4641,6 +4650,7 @@ fn expired_remote_acquisition_belief_remains_until_perception_refresh() {
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }
     ));
     assert!(
@@ -4666,6 +4676,7 @@ fn perception_refresh_preserves_remote_seller_belief_above_activation_threshold(
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }
     ));
     assert_eq!(
@@ -4712,6 +4723,7 @@ fn perception_refresh_evicts_remote_acquisition_belief_below_activation_threshol
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }
     ));
     assert_eq!(
@@ -4747,6 +4759,7 @@ fn perception_refresh_evicts_remote_acquisition_belief_below_activation_threshol
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ),
         "once activation pruning removes the stale remote seller, the acquire goal must disappear"
@@ -5096,6 +5109,7 @@ fn read_phase_emits_goal_offered_and_goal_suppressed_events_from_candidate_prove
     let goal_key = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     run_same_place_observation(&mut harness, Tick(1), origin, seller);
     run_same_place_observation(&mut harness, Tick(1), origin, bread);
@@ -5366,10 +5380,12 @@ fn trace_planning_outcome_includes_exhaustion_snapshot() {
     let retry_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let frontier_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Water,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let retry_opportunity = exhaustion_key(retry_goal, OpportunityAnchor::Place(place));
     let frontier_opportunity = default_opportunity(frontier_goal);
@@ -5819,6 +5835,7 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
     let goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let trade_step = PlannedStep {
         def_id: trade_id,
@@ -6213,6 +6230,7 @@ fn refresh_runtime_for_read_phase_uses_committed_source_for_local_failure_detect
     let goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let runtime = harness
         .driver
@@ -6287,6 +6305,7 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
     let goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
 
     let mut preference = harness
@@ -7639,6 +7658,7 @@ fn committed_source_invalidation_records_source_invalidated_and_forces_replan() 
     let goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let opportunity = OpportunityKey {
         goal_key: goal,
@@ -7827,6 +7847,7 @@ fn commodity_assumption_fixture(
     let goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     {
         let mut txn = new_txn(&mut harness.world, 2);
@@ -8219,6 +8240,7 @@ fn discrepancy_trace_populated_from_discrepancy_memory() {
         goal_key: GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         }),
         place: Some(entity(20)),
         target: Some(entity(21)),
@@ -8555,6 +8577,7 @@ fn completed_alternate_merchant_plan_emits_without_recording_target_memory() {
     let goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let merchant = entity(92);
     let mut repair_memory = RepairMemory::default();
@@ -8665,6 +8688,7 @@ fn in_transit_read_phase_records_learned_opportunity_memory_entry() {
     let learned_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Water,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
 
     record_learned_opportunities_from_read_phase(

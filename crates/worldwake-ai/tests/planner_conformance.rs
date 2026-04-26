@@ -18,11 +18,12 @@ use worldwake_ai::{
     build_planning_snapshot, build_semantics_table,
 };
 use worldwake_core::{
-    AgentBeliefStore, AgentData, CommodityKind, ContentionIntents, ControlSource, EntityId,
-    GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim, MetabolismProfile, PerceptionSource,
-    Permille, Quantity, QueuedContentionIntent, RecordData, RecordKind, Seed, SuccessionLaw,
-    TellProfile, TellTopic, TheftFacts, Tick, UtilityProfile, ViolationDispositionProfile,
-    ViolationKind, ViolationMemory, prototype_place_entity, total_live_lot_quantity,
+    AcquisitionQuantity, AgentBeliefStore, AgentData, CommodityKind, ContentionIntents,
+    ControlSource, EntityId, GoalKey, GoalKind, HomeostaticNeeds, InstitutionalClaim,
+    MetabolismProfile, PerceptionSource, Permille, Quantity, QueuedContentionIntent, RecordData,
+    RecordKind, Seed, SuccessionLaw, TellProfile, TellTopic, TheftFacts, Tick, UtilityProfile,
+    ViolationDispositionProfile, ViolationKind, ViolationMemory, prototype_place_entity,
+    total_live_lot_quantity,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionPayload, ActionRequestMode, InputKind, InvestigateActionPayload,
@@ -642,6 +643,7 @@ fn conformance_pick_up() {
     let goal = grounded(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let initial_state = PlanningState::new(&snapshot);
     let agent_ref = PlanningEntityRef::Authoritative(agent);
@@ -788,6 +790,7 @@ fn conformance_harvest_noop_coverage_gap() {
     let goal = grounded(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let initial_state = PlanningState::new(&snapshot);
     let source_ref = PlanningEntityRef::Authoritative(source);
@@ -946,6 +949,7 @@ fn conformance_travel() {
     let goal = grounded(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let initial_state = PlanningState::new(&snapshot);
     let agent_ref = PlanningEntityRef::Authoritative(agent);
@@ -1079,6 +1083,7 @@ fn conformance_trade_exact_acquisition() {
     let goal = grounded(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let initial_state = PlanningState::new(&snapshot);
 
@@ -2027,6 +2032,7 @@ fn conformance_queue_for_facility() {
     let goal = grounded(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: worldwake_core::CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let initial_state = PlanningState::new(&snapshot);
     let facility_ref = PlanningEntityRef::Authoritative(facility);

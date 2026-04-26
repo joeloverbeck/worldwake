@@ -405,8 +405,8 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, EntityId, GoalKey, GoalKind, IntentionFrame, OpportunityAnchor,
-        PlanInvalidationReason, ReplanReason, Tick,
+        AcquisitionQuantity, ActionDefId, EntityId, GoalKey, GoalKind, IntentionFrame,
+        OpportunityAnchor, PlanInvalidationReason, ReplanReason, Tick,
     };
     use worldwake_sim::{
         AbortReason, ActionInstanceId, ActionStartFailure, ActionStartFailureReason,
@@ -458,6 +458,7 @@ mod tests {
         let current_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: worldwake_core::CommodityKind::Water,
             purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let runtime = AgentDecisionRuntime {
             current_plan: Some(PlannedPlan::new(

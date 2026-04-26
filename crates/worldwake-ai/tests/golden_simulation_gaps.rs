@@ -9,11 +9,11 @@ use worldwake_ai::{
     CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    BeliefConfidencePolicy, CognitiveProfile, CommodityKind, ComponentKind, ComponentValue,
-    DeathCause, EntityId, EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes,
-    MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
-    UtilityProfile, WorkstationTag, hash_event_log, hash_world, verify_authoritative_conservation,
-    verify_live_lot_conservation,
+    AcquisitionQuantity, BeliefConfidencePolicy, CognitiveProfile, CommodityKind, ComponentKind,
+    ComponentValue, DeathCause, EntityId, EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash,
+    Tick, UtilityProfile, WorkstationTag, hash_event_log, hash_world,
+    verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -796,6 +796,7 @@ fn selected_harvest_plan_within_ticks(
     let expected_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
 
     (0..=max_tick).any(|tick| {

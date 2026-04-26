@@ -2266,7 +2266,42 @@ fn format_knowledge_path(kp: &KnowledgePath) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worldwake_core::{GoalKind, OpportunityAnchor, Tick};
+    use worldwake_core::{
+        AcquisitionQuantity, CommodityPurpose, GoalKind, OpportunityAnchor, Tick,
+    };
+
+    #[test]
+    fn format_goal_kind_emits_acquire_quantity_fields() {
+        let quantity = AcquisitionQuantity {
+            desired_min: std::num::NonZeroU16::new(2).unwrap(),
+            desired_target: std::num::NonZeroU16::new(5).unwrap(),
+            horizon_ticks: std::num::NonZeroU32::new(123).unwrap(),
+        };
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity,
+        };
+
+        let formatted = format_goal_kind(&goal);
+
+        assert!(
+            formatted.contains("AcquireCommodity(SelfConsume)"),
+            "expected dispatch label in trace, got: {formatted}"
+        );
+        assert!(
+            formatted.contains("desired_min"),
+            "expected desired_min in trace, got: {formatted}"
+        );
+        assert!(
+            formatted.contains("desired_target"),
+            "expected desired_target in trace, got: {formatted}"
+        );
+        assert!(
+            formatted.contains("horizon_ticks"),
+            "expected horizon_ticks in trace, got: {formatted}"
+        );
+    }
 
     fn entity(slot: u32) -> EntityId {
         EntityId {
@@ -2938,6 +2973,7 @@ mod tests {
         let goal = GoalKey::new(GoalKind::AcquireCommodity {
             commodity: worldwake_core::CommodityKind::Bread,
             purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let orchard = OpportunityKey {
             goal_key: goal,
@@ -3092,6 +3128,7 @@ mod tests {
         let bread = GoalKey::new(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: worldwake_core::CommodityPurpose::Restock,
+            quantity: AcquisitionQuantity::single(),
         });
         let mut slots = std::collections::BTreeMap::new();
         slots.insert(
@@ -3797,6 +3834,7 @@ mod tests {
         let goal = GoalKey::new(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let outcome = DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
             affordances: None,
@@ -4709,6 +4747,7 @@ mod tests {
             kind: GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             commodity: Some(CommodityKind::Apple),
             entity: Some(seller),

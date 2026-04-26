@@ -11,7 +11,7 @@ use golden_harness::*;
 use std::collections::BTreeSet;
 use worldwake_ai::DecisionOutcome;
 use worldwake_core::{
-    AgentData, CommodityKind, ControlSource, DemandMemory, DemandObservation,
+    AcquisitionQuantity, AgentData, CommodityKind, ControlSource, DemandMemory, DemandObservation,
     DemandObservationReason, EventTag, GoalKind, HomeostaticNeeds, KnownRecipes, LoadUnits,
     MerchandiseProfile, MetabolismProfile, PerceptionProfile, Quantity, SaleListing, Seed,
     StockAssignmentKind, Tick, TradeDispositionProfile, UtilityProfile, hash_event_log, hash_world,
@@ -663,6 +663,7 @@ fn merchant_return_revives_pending_purchase_agenda_entry() {
     let purchase_goal = worldwake_ai::GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: worldwake_ai::CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
 
     set_control_source(&mut h, merchant, ControlSource::Human, 0);
@@ -811,6 +812,7 @@ fn seller_return_restores_displayed_listing_after_pending_revival() {
     let purchase_goal = worldwake_ai::GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: worldwake_ai::CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
 
     set_control_source(&mut h, merchant, ControlSource::Human, 0);
@@ -959,6 +961,7 @@ fn seller_return_completes_resumed_purchase_after_live_offer_refresh() {
     let purchase_goal = worldwake_ai::GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: worldwake_ai::CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
 
     set_control_source(&mut h, merchant, ControlSource::Human, 0);

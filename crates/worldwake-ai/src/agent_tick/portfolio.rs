@@ -230,8 +230,9 @@ mod tests {
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        ArtifactPostingContext, CommodityKind, CommodityPurpose, Discrepancy, EntityId, GoalKey,
-        GoalKind, NoticeTopic, OpportunityAnchor, OpportunityKey, PortfolioSlotWeights, Tick,
+        AcquisitionQuantity, ArtifactPostingContext, CommodityKind, CommodityPurpose, Discrepancy,
+        EntityId, GoalKey, GoalKind, NoticeTopic, OpportunityAnchor, OpportunityKey,
+        PortfolioSlotWeights, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -400,6 +401,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 550,
                 OpportunityAnchor::Place(entity(21)),
@@ -408,6 +410,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Firewood,
                     purpose: CommodityPurpose::Restock,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 600,
                 OpportunityAnchor::Place(entity(22)),
@@ -428,6 +431,7 @@ mod tests {
             GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             })
         );
         assert_eq!(
@@ -441,6 +445,7 @@ mod tests {
             GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
                 purpose: CommodityPurpose::Restock,
+                quantity: AcquisitionQuantity::single(),
             })
         );
     }
@@ -512,6 +517,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 900,

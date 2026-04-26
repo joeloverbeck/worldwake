@@ -452,11 +452,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
-        CommodityKind, DeprivationKind, EntityId, EntityKind, GoalKind, InTransitOnEdge,
-        InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, OpportunityAnchor, PatrolRoute,
-        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, ToldBeliefMemory, Wound,
-        WoundCause, WoundId,
+        AcquisitionQuantity, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+        BodyCostPerTick, BodyPart, CommodityKind, DeprivationKind, EntityId, EntityKind, GoalKind,
+        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, OpportunityAnchor,
+        PatrolRoute, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        ToldBeliefMemory, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, EconomicBeliefView,
@@ -1076,6 +1076,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1112,6 +1113,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1177,6 +1179,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1212,6 +1215,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1256,6 +1260,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1329,6 +1334,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::from([local_seller, remote_source]),
@@ -1388,6 +1394,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::Place(place_b),
             evidence_entities: BTreeSet::from([local_source, remote_source]),

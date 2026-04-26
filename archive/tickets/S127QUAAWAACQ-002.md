@@ -1,6 +1,6 @@
 # S127QUAAWAACQ-002: GoalKind::AcquireCommodity quantity field + workspace-wide migration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — extends `GoalKind::AcquireCommodity` payload, migrates ~344 destructure/construction sites, surfaces quantity in decision trace, bumps `SAVE_FORMAT_VERSION`
@@ -127,3 +127,28 @@ Locate the existing decision-trace emitter that formats `AcquireCommodity` (like
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-26.
+
+- Extended `GoalKind::AcquireCommodity` in `crates/worldwake-core/src/goal.rs` with `quantity: AcquisitionQuantity`. `GoalKey::from(GoalKind)` normalizes the variant's `quantity` to `AcquisitionQuantity::single()` before extracting identity components, so two acquisition goals with the same commodity+purpose share a key regardless of `desired_target` / `desired_min` / `horizon_ticks` (Design Goal 9).
+- Migrated all `~344` construction and destructure sites across the workspace (57 files): three reify constructors in `goal_dispatch_decl.rs`, ranking/feasibility/candidate-generation/planner/agent_tick destructures and constructions, all 12 `GoalKindPlannerExt` impl sites in `goal_model.rs`, plus all golden tests and unit-test fixtures. The migration is atomic per FND-28 — no shim, no alias, no dual path.
+- Implemented the `is_satisfied` semantic change at `goal_model.rs:1335`: the new contract is `believed inventory >= quantity.desired_min`, preserving the per-purpose distinction (SelfConsume reads direct possessions; Restock/RecipeInput reads `commodity_quantity` over controlled holdings). Both purposes now compare against `desired_min.get() as u32`.
+- Updated `crates/worldwake-cli/src/display.rs::format_goal_kind` to render `AcquireCommodity({commodity:?}, {purpose:?}, min={…}/target={…}/horizon={…})`. The decision-trace formatter at `crates/worldwake-ai/src/decision_trace.rs::format_goal_kind` surfaces the quantity tuple naturally through the existing `{goal:?}` Debug detail (D11 part a).
+- Bumped `SAVE_FORMAT_VERSION` from `48` to `49` in `crates/worldwake-sim/src/save_load.rs`. Existing `load_rejects_wrong_version` test still passes because it constructs the rejected version as `SAVE_FORMAT_VERSION - 1`.
+- Refreshed the golden snapshot at `crates/worldwake-cli/tests/fixtures/observer_decision_history/survival_baseline_5_ticks.md` with the new `quantity: AcquisitionQuantity { … }` Debug surface so the decision-history golden matches the new authoritative format.
+- Added focused tests: `goal_key_ignores_quantity` in `goal.rs`; `is_satisfied_acquire_commodity_below_desired_min` and `is_satisfied_acquire_commodity_at_desired_min` in `goal_model.rs`; `format_goal_kind_emits_acquire_quantity_fields` in `decision_trace.rs`.
+
+## Deviations
+
+- The ticket's reassessment paragraph claimed `~344` distinct construction sites; the bulk script migrated `325` sites and `19` more were destructure patterns the script correctly skipped. Total destructure sites updated by hand: ~16 (those with `..` rest patterns where the script had to be undone). The `~344` figure was a `grep | wc -l` count of `GoalKind::AcquireCommodity {` matches (which conflates constructions and destructures); the actual breakdown is closer to `325 constructions + ~19 explicit destructures`. Final workspace tracks the spec D3 atomic migration faithfully.
+- Decision-trace surfacing (D11 part a) was satisfied via the existing `format!("{goal:?}")` fallback in `format_goal_kind`, since `AcquisitionQuantity` derives `Debug` and the variant's Debug representation now includes all three quantity fields. No structural rewrite of `format_goal_kind` was required beyond the `display.rs` CLI path, which got an explicit tuple. The new `format_goal_kind_emits_acquire_quantity_fields` test asserts the substrings appear regardless of the underlying mechanism.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core acquisition_quantity` and `cargo test -p worldwake-core goal_key_ignores_quantity` — focused tests green.
+- Passed `cargo test -p worldwake-ai is_satisfied_acquire_commodity` (2 tests) and `cargo test -p worldwake-ai format_goal_kind_emits_acquire_quantity_fields`.
+- Passed `cargo test --workspace` — full workspace green after updating two snapshot tests (`format_report_renders_agenda_state_summary` in observer.rs and `survival_baseline_decision_history_section_matches_golden` golden fixture).
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh` end-to-end (fmt, test, clippy, scenario-coverage).

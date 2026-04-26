@@ -5,8 +5,8 @@ use worldwake_ai::{
     ActionTraceSnapshot, GoalPriorityClass, SelectedPlanSource, SurvivalForensicExtractor,
 };
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKey, GoalKind,
-    HomeostaticNeeds, Tick,
+    AcquisitionQuantity, CommodityKind, CommodityPurpose, DriveThresholds, EntityId, GoalKey,
+    GoalKind, HomeostaticNeeds, Tick,
 };
 
 #[test]
@@ -19,6 +19,7 @@ fn forensic_wash_vs_water_competition() {
     let water_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Water,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let sleep_goal = GoalKey::from(GoalKind::Sleep);
     let thresholds = DriveThresholds::default();

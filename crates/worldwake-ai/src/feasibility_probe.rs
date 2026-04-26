@@ -325,7 +325,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingContext,
+        AcquisitionQuantity, ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingContext,
         BeliefConfidencePolicy, Blocker, BlockerClearingCondition, BlockerMemory, BlockingFact,
         BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
@@ -794,6 +794,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: crate::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             OpportunityAnchor::Place(place),
         );
@@ -872,6 +873,7 @@ mod tests {
                 goal_key: GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: crate::CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }
                 .into(),
                 anchor: OpportunityAnchor::None,
@@ -880,6 +882,7 @@ mod tests {
                 key: GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: crate::CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }
                 .into(),
                 anchor: OpportunityAnchor::None,
@@ -941,6 +944,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: crate::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             OpportunityAnchor::Entity(source),
         );

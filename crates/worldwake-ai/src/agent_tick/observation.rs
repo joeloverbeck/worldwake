@@ -974,10 +974,10 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, CauseRef, CommodityKind, ControlSource, DecisionEventPayload, EntityId,
-        EventLog, EventTag, EventView, GoalKey, GoalKind, MaterializationTag, OpportunityAnchor,
-        Quantity, ResourceSource, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
-        build_prototype_world,
+        AcquisitionQuantity, ActionDefId, CauseRef, CommodityKind, ControlSource,
+        DecisionEventPayload, EntityId, EventLog, EventTag, EventView, GoalKey, GoalKind,
+        MaterializationTag, OpportunityAnchor, Quantity, ResourceSource, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::PerAgentBeliefView;
 
@@ -1012,6 +1012,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let committed_plan = PlannedPlan::new(
             worldwake_core::OpportunityKey {
@@ -1078,6 +1079,7 @@ mod tests {
         let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let other_goal = GoalKey::from(GoalKind::Sleep);
         let committed_plan = PlannedPlan::new(
@@ -1113,6 +1115,7 @@ mod tests {
         let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let committed_plan = PlannedPlan::new(
             worldwake_core::OpportunityKey {
@@ -1229,6 +1232,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let current_plan = PlannedPlan::new(
             worldwake_core::OpportunityKey {

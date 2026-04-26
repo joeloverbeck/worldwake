@@ -671,9 +671,9 @@ mod tests {
     use crate::goal_policy::SuppressionRule;
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
     use worldwake_core::{
-        ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommodityPurpose,
-        EntityId, ExpectationId, GoalKind, HomeostaticNeedId, ProofRequirement, PunishmentKind,
-        Quantity, RecipeId, RecordEntryId, RewardSource, TellTopic, ViolationId,
+        AcquisitionQuantity, ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind,
+        CommodityPurpose, EntityId, ExpectationId, GoalKind, HomeostaticNeedId, ProofRequirement,
+        PunishmentKind, Quantity, RecipeId, RecordEntryId, RewardSource, TellTopic, ViolationId,
     };
 
     const ALL_KEYS: &[GoalDispatchKey] = &[
@@ -738,14 +738,17 @@ mod tests {
             GoalDispatchKey::AcquireSelfConsume => GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalDispatchKey::AcquireRecipeInput => GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Grain,
                 purpose: CommodityPurpose::RecipeInput(RecipeId(7)),
+                quantity: AcquisitionQuantity::single(),
             },
             GoalDispatchKey::AcquireRestock => GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::Restock,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalDispatchKey::Sleep => GoalKind::Sleep,
             GoalDispatchKey::Relieve => GoalKind::Relieve,

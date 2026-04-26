@@ -489,9 +489,9 @@ mod tests {
         PlanningPipelineTrace, SelectedPlanTrace, SelectionTrace, decision_trace::DiscrepancyTrace,
     };
     use worldwake_core::{
-        ActionDefId, CauseRef, ControlSource, DriveThresholds, GoalKind, OpportunityAnchor,
-        PrototypePlace, Quantity, ResourceSource, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorldTxn, build_prototype_world, prototype_place_entity,
+        AcquisitionQuantity, ActionDefId, CauseRef, ControlSource, DriveThresholds, GoalKind,
+        OpportunityAnchor, PrototypePlace, Quantity, ResourceSource, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorldTxn, build_prototype_world, prototype_place_entity,
     };
 
     #[test]
@@ -565,6 +565,7 @@ mod tests {
                 GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 })
             };
             extractor.observe(

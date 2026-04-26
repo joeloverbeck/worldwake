@@ -1088,11 +1088,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, BeliefClaimKey, BodyCostPerTick, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DriveThresholds, EntityBeliefAspect, EntityId,
-        EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, TellTopic, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, load_per_unit,
+        AcquisitionQuantity, ActionDefId, ActionDomain, BeliefClaimKey, BodyCostPerTick,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
+        EntityBeliefAspect, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
+        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        load_per_unit,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionPayload, BribeActionPayload,
@@ -1698,6 +1699,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let mut second = sample_step();
         second.estimated_ticks = 9;
@@ -1737,6 +1739,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let opportunity = worldwake_core::OpportunityKey {
             goal_key: goal,
@@ -2352,6 +2355,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -2394,6 +2398,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -2525,6 +2530,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -2564,6 +2570,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),

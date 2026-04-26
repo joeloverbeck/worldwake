@@ -2293,13 +2293,14 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
-        CommodityPurpose, ContentionIntents, ControlSource, DecisionEventPayload, EntityId,
-        EventLog, EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
-        GoalRejectionReason, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille,
-        Place, PlanAdoptedPayload, Quantity, RepairKind, SourceKey, Tick, Topology, TravelEdge,
-        TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_believed_entity_state, build_prototype_world,
+        AcquisitionQuantity, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
+        CognitiveProfile, CommodityKind, CommodityPurpose, ContentionIntents, ControlSource,
+        DecisionEventPayload, EntityId, EventLog, EventTag, EventView, ExecutionBudget,
+        FrameAssumption, GoalCommittedPayload, GoalRejectionReason, HomeostaticNeeds,
+        MerchandiseProfile, PerceptionSource, Permille, Place, PlanAdoptedPayload, Quantity,
+        RepairKind, SourceKey, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -2410,6 +2411,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor,
             evidence_entities,
@@ -2906,6 +2908,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let current_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3046,6 +3049,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3151,6 +3155,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3190,6 +3195,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3226,6 +3232,7 @@ mod tests {
         let failed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3313,6 +3320,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_trade_step = PlannedStep {
             def_id: ActionDefId(0),
@@ -4109,6 +4117,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let plan = PlannedPlan::new(
             OpportunityKey {
@@ -4518,6 +4527,7 @@ mod tests {
                 key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 anchor: worldwake_core::OpportunityAnchor::None,
                 evidence_entities: BTreeSet::new(),
@@ -4574,6 +4584,7 @@ mod tests {
             GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             })
         );
         assert!(
@@ -4904,6 +4915,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let satisfied_plan = PlannedPlan::new(
             opportunity(goal),

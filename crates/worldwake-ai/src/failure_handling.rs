@@ -1381,14 +1381,14 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
-        ClearingBaseline, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents, DemandObservation,
-        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds,
-        EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
-        IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound,
+        AcquisitionQuantity, ActionDefId, Blocker, BlockerClearingCondition, BlockerKey,
+        BlockerMemory, BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
+        ContentionIntents, DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
+        DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -1814,6 +1814,7 @@ mod tests {
         GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         })
     }
 
@@ -2091,6 +2092,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let step = move_cargo_step(bread_lot);
         let mut view = TestBeliefView::default();
@@ -2147,6 +2149,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let step = move_cargo_step(missing_lot);
         let mut view = TestBeliefView::default();
@@ -2203,6 +2206,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let step = move_cargo_step(local_lot);
         let mut view = TestBeliefView::default();

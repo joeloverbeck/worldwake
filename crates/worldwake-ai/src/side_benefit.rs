@@ -130,8 +130,8 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
-        Permille, Tick,
+        AcquisitionQuantity, ActionDefId, CommodityKind, EntityId, GoalKey, GoalKind,
+        OpportunityAnchor, OpportunityKey, Permille, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -228,6 +228,7 @@ mod tests {
         let primary_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let plan = plan(primary_goal, &[market, orchard]);
         let candidates = vec![
@@ -278,6 +279,7 @@ mod tests {
         let primary_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let plan = PlannedPlan::new(
             OpportunityKey {
@@ -315,6 +317,7 @@ mod tests {
         let primary_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let plan = plan(primary_goal, &[market]);
         let candidates = vec![
@@ -384,6 +387,7 @@ mod tests {
         let primary_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let plan = plan(primary_goal, &[market]);
         let candidates = vec![
@@ -445,6 +449,7 @@ mod tests {
         let primary_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let plan = plan(primary_goal, &[market]);
         let candidates = vec![ranked(

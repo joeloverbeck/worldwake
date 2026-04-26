@@ -672,11 +672,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
-        IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        PerceptionSource, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        AcquisitionQuantity, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        DemandObservation, DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
+        InTransitOnEdge, IntentionDispositionProfile, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, PerceptionSource, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -1223,6 +1223,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             domain: IntentionDomain::Travel { destination: dest },
             assumptions: Vec::new(),
@@ -2114,6 +2115,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             domain: IntentionDomain::Travel { destination },
             assumptions: Vec::new(),
@@ -2277,6 +2279,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             domain: IntentionDomain::Travel { destination },
             assumptions: Vec::new(),
@@ -2323,6 +2326,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let frame = IntentionFrame {
             goal,

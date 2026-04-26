@@ -26,7 +26,7 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
+    AcquisitionQuantity, ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
     EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
@@ -2972,6 +2972,7 @@ fn emit_need_driven_candidates(
                 GoalKind::AcquireCommodity {
                     commodity,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 OpportunityAnchor::Place(candidate_place),
                 evidence,
@@ -3036,6 +3037,7 @@ fn emit_need_driven_candidates(
             GoalKind::AcquireCommodity {
                 commodity: candidate.commodity,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             OpportunityAnchor::Place(current_place),
             evidence,
@@ -5840,15 +5842,16 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile,
-        ArtifactState, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyPart,
-        BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
-        DemandObservationReason, Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile,
-        DiversificationProfile, DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag,
-        EntityId, EntityKind, EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis,
-        ExpectationId, ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
+        AcquisitionQuantity, AgentBeliefStore, ArtifactKind, ArtifactPostingContext,
+        ArtifactPostingProfile, ArtifactState, BelievedArtifactState, BelievedBountyTerms,
+        BelievedEntityState, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
+        BlockingFact, BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
+        DemandObservation, DemandObservationReason, Discrepancy, DiscrepancyEntry,
+        DiscrepancyMemory, DisposalProfile, DiversificationProfile, DriveThresholds,
+        EffectiveRight, EligibilityRule, EmitterTag, EntityId, EntityKind,
+        EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis, ExpectationId,
+        ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
         ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
         InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
@@ -8137,6 +8140,7 @@ mod tests {
                     == GoalKey::from(GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     })
                     && candidate.anchor == worldwake_core::OpportunityAnchor::Place(market)
             })
@@ -8211,6 +8215,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Grain,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert!(!contains_goal(
@@ -8218,6 +8223,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         let grain_goal = candidates
@@ -8227,6 +8233,7 @@ mod tests {
                     == GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Grain,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     }
             })
             .expect("preferred substitute grain goal should be emitted");
@@ -8318,6 +8325,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -8390,6 +8398,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -8427,6 +8436,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert_eq!(
@@ -8582,6 +8592,7 @@ mod tests {
                     == GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Apple,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     }
             })
             .expect("reachable remote harvest source should emit direct self-consume acquisition");
@@ -8679,6 +8690,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -8723,6 +8735,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, seller, bread_lot]);
@@ -8817,6 +8830,7 @@ mod tests {
         let key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, orchard_seller, market_seller]);
@@ -8856,6 +8870,7 @@ mod tests {
             &GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
         );
         assert_eq!(acquire_goals.len(), 1);
@@ -8876,6 +8891,7 @@ mod tests {
         let key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, orchard_seller, bread_lot]);
@@ -8918,6 +8934,7 @@ mod tests {
             &GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
         );
 
@@ -8943,6 +8960,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let key = GoalKey::from(goal);
         let mut view = TestBeliefView::default();
@@ -9021,6 +9039,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let key = GoalKey::from(goal);
         let mut view = TestBeliefView::default();
@@ -9079,6 +9098,7 @@ mod tests {
         let goal_key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let opportunity = OpportunityKey {
             goal_key,
@@ -9192,10 +9212,12 @@ mod tests {
         let apple_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let water_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let mut discrepancies = DiscrepancyMemory::default();
         discrepancies.record(DiscrepancyEntry {
@@ -9270,6 +9292,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -9328,6 +9351,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert!(!contains_goal(
@@ -10374,6 +10398,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert!(!contains_goal(
@@ -10381,6 +10406,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
                 purpose: CommodityPurpose::RecipeInput(recipe_id),
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -10634,6 +10660,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -11163,6 +11190,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -11198,6 +11226,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -14441,6 +14470,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert!(contains_goal(
@@ -15218,6 +15248,7 @@ mod tests {
         let acquire_key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let trace = evidence_trace_for_goal(&result.diagnostics, acquire_key);
 
@@ -15272,6 +15303,7 @@ mod tests {
         let acquire_key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let trace = evidence_trace_for_goal(&result.diagnostics, acquire_key);
 
@@ -16679,6 +16711,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
 
         let mut view = TestBeliefView::default();
@@ -16767,6 +16800,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
 
         let mut view = TestBeliefView::default();

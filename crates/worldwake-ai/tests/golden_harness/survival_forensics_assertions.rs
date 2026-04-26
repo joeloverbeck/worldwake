@@ -288,6 +288,7 @@ fn is_water_acquire_goal(goal: &GoalKind) -> bool {
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            quantity: _,
         }
     )
 }

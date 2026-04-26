@@ -179,7 +179,7 @@ impl Component for IntentionFrame {}
 mod tests {
     use super::*;
     use crate::test_utils::entity_id;
-    use crate::{CommodityPurpose, GoalKind};
+    use crate::{AcquisitionQuantity, CommodityPurpose, GoalKind};
     use serde::{Serialize as SerializeTrait, de::DeserializeOwned};
     use std::fmt::Debug;
 
@@ -278,6 +278,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
         );
 
@@ -321,6 +322,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
         );
 

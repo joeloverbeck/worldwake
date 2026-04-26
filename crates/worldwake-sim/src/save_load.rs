@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 48;
+pub const SAVE_FORMAT_VERSION: u32 = 49;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -196,12 +196,12 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, BeliefClaimKey, BeliefSnapshot,
-        BeliefStatusTag, BelievedActivity, BelievedEntityState, BlockerKey, BlockerRecordedPayload,
-        BlockingFact, BodyCostPerTick, CauseRef, ClaimId, ClaimValue, CommodityKind,
-        CommodityPurpose, ControlSource, DecisionEventPayload, Discrepancy, EmitterTag,
-        EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload, EventTag,
-        EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
+        AcquisitionQuantity, ActionDefId, ActionDomain, AgentBeliefStore, BeliefClaimKey,
+        BeliefSnapshot, BeliefStatusTag, BelievedActivity, BelievedEntityState, BlockerKey,
+        BlockerRecordedPayload, BlockingFact, BodyCostPerTick, CauseRef, ClaimId, ClaimValue,
+        CommodityKind, CommodityPurpose, ControlSource, DecisionEventPayload, Discrepancy,
+        EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload,
+        EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
         ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
@@ -700,6 +700,7 @@ mod tests {
         let trade_goal = decision_goal(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let sleep_goal = decision_goal(GoalKind::Sleep);
         let produce_goal = decision_goal(GoalKind::ProduceCommodity {

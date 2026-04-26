@@ -192,7 +192,8 @@ pub use experience::{
 pub use exploration::{AcquisitionExhaustionTracker, ExplorationProfile};
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{
-    CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
+    AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
+    OpportunityAnchor, OpportunityKey,
 };
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use institutional::{

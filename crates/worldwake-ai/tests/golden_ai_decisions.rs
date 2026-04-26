@@ -13,8 +13,8 @@ use worldwake_ai::{
     OpportunityKey, PlanTerminalKind,
 };
 use worldwake_core::{
-    AgentData, BeliefConfidencePolicy, BlockingFact, CognitiveProfile, CommodityKind,
-    ControlSource, DeadAt, DeathCause, EntityId, FrameState, HomeostaticNeeds,
+    AcquisitionQuantity, AgentData, BeliefConfidencePolicy, BlockingFact, CognitiveProfile,
+    CommodityKind, ControlSource, DeadAt, DeathCause, EntityId, FrameState, HomeostaticNeeds,
     IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
     ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag, prototype_place_entity,
     total_live_lot_quantity,
@@ -238,6 +238,7 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
     let apple_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let apple_opportunity = OpportunityKey {
         goal_key: apple_goal,

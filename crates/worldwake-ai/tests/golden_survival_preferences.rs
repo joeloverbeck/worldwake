@@ -9,8 +9,9 @@ use golden_harness::*;
 use worldwake_ai::DecisionOutcome;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, DriveThresholds, EntityId, ExplorationMotivation, GoalKind,
-    OpportunityAnchor, PerceptionSource, SourceKey, Tick, WorkstationTag,
+    AcquisitionQuantity, CommodityKind, CommodityPurpose, DriveThresholds, EntityId,
+    ExplorationMotivation, GoalKind, OpportunityAnchor, PerceptionSource, SourceKey, Tick,
+    WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -248,6 +249,7 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
                                 == GoalKind::AcquireCommodity {
                                     commodity: CommodityKind::Apple,
                                     purpose: CommodityPurpose::SelfConsume,
+                                    quantity: AcquisitionQuantity::single(),
                                 }
                         }) && planning.selection.selected_opportunity
                             == Some(worldwake_core::OpportunityKey {
@@ -255,6 +257,7 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
                                     GoalKind::AcquireCommodity {
                                         commodity: CommodityKind::Apple,
                                         purpose: CommodityPurpose::SelfConsume,
+                                        quantity: AcquisitionQuantity::single(),
                                     },
                                 ),
                                 anchor: OpportunityAnchor::Place(novel_grove_place),
@@ -264,6 +267,7 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
                                     == GoalKind::AcquireCommodity {
                                         commodity: CommodityKind::Apple,
                                         purpose: CommodityPurpose::SelfConsume,
+                                        quantity: AcquisitionQuantity::single(),
                                     }
                                     && ranked.opportunity.anchor
                                         == OpportunityAnchor::Place(familiar_orchard_place)

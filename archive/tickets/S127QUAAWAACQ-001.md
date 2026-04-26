@@ -1,6 +1,6 @@
 # S127QUAAWAACQ-001: AcquisitionQuantity struct
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — adds `AcquisitionQuantity` value type to `worldwake-core`
@@ -108,3 +108,18 @@ In the `#[cfg(test)]` block of `goal.rs`:
 1. `cargo test -p worldwake-core acquisition_quantity`
 2. `cargo test -p worldwake-core`
 3. `cargo clippy -p worldwake-core --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-26.
+
+- Added `AcquisitionQuantity` struct in `crates/worldwake-core/src/goal.rs` with three `NonZero` fields (`desired_min`, `desired_target`, `horizon_ticks`) and a `const fn single()` constructor matching spec D1 exactly.
+- Added `use std::num::{NonZeroU16, NonZeroU32};` import to `goal.rs` (the file did not previously use either type).
+- Re-exported `AcquisitionQuantity` from `crates/worldwake-core/src/lib.rs` alongside the existing `goal` module re-exports.
+- Added two focused unit tests in `goal.rs`'s `#[cfg(test)]` block: `acquisition_quantity_single_invariant` and `acquisition_quantity_bincode_roundtrip`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core acquisition_quantity` — both new tests green.
+- Passed `cargo test -p worldwake-core` — 1228 tests pass, no regressions.
+- Passed `cargo clippy -p worldwake-core --all-targets -- -D warnings` — no warnings.

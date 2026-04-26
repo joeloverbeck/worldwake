@@ -1566,7 +1566,7 @@ mod tests {
         AgentDecisionRuntime, CommodityPurpose, ExhaustionBaseline, ExhaustionEntry,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
     };
-    use worldwake_core::{ActionDefId, FrameClearReason};
+    use worldwake_core::{AcquisitionQuantity, ActionDefId, FrameClearReason};
     use worldwake_sim::{PerAgentBeliefView, SpatialBeliefView};
 
     #[derive(Serialize, Deserialize)]
@@ -1670,6 +1670,7 @@ mod tests {
                 goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 anchor: OpportunityAnchor::Place(dead_place),
             },
@@ -1739,6 +1740,7 @@ mod tests {
             goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::Place(dead_place),
         }));

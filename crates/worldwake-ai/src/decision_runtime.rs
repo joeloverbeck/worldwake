@@ -307,9 +307,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::ActionDefId;
     use worldwake_core::{
-        BodyPart, CognitiveProfile, CommodityKind, EntityId, FrameClearReason, FrameState,
-        HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity, RepairKind, Tick,
-        UniqueItemKind, Wound, WoundCause, WoundId,
+        AcquisitionQuantity, BodyPart, CognitiveProfile, CommodityKind, EntityId, FrameClearReason,
+        FrameState, HomeostaticNeeds, IntentionDomain, IntentionFrame, PatrolRoute, Quantity,
+        RepairKind, Tick, UniqueItemKind, Wound, WoundCause, WoundId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -345,6 +345,7 @@ mod tests {
         let goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         PlannedPlan::new(
             opportunity(goal),
@@ -550,6 +551,7 @@ mod tests {
                 let pending_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 });
                 let suspended_goal = GoalKey::from(worldwake_core::GoalKind::MoveCargo {
                     commodity: CommodityKind::Bread,
@@ -623,6 +625,7 @@ mod tests {
                 goal_key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 repair_kind: RepairKind::AlternateMerchant,
                 substitute_target: Some(entity(99)),
@@ -633,6 +636,7 @@ mod tests {
                     goal_key: GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Water,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     }),
                     anchor: OpportunityAnchor::Place(entity(44)),
                 },
@@ -981,6 +985,7 @@ mod tests {
         let abandon_goal = GoalKey::from(worldwake_core::GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let abandon = PlannedPlan::new(
             OpportunityKey {

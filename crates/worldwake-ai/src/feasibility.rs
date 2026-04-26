@@ -273,12 +273,12 @@ mod tests {
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ArtifactPostingContext, BeliefConfidencePolicy, Blocker, BlockerKey, BlockingFact,
-        BountyTarget, BountyTerms, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
-        IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile, NoticeTopic,
-        PunishmentKind, Quantity, RecipeId, ResourceSource, RewardSource, TellTopic, Tick,
-        UniqueItemKind, ViolationId, WorkstationTag,
+        AcquisitionQuantity, ArtifactPostingContext, BeliefConfidencePolicy, Blocker, BlockerKey,
+        BlockingFact, BountyTarget, BountyTerms, CommodityConsumableProfile, CommodityKind,
+        CommodityPurpose, DriveThresholds, EntityId, EntityKind, GoalKey, GoalKind,
+        HomeostaticNeeds, IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile,
+        NoticeTopic, PunishmentKind, Quantity, RecipeId, ResourceSource, RewardSource, TellTopic,
+        Tick, UniqueItemKind, ViolationId, WorkstationTag,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -1031,6 +1031,7 @@ mod tests {
         let goal = ranked_goal(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let blocked = empty_blocked_memory();
 
@@ -1140,6 +1141,7 @@ mod tests {
             goal_specific_feasibility_strategy(&ranked_goal(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             })),
             crate::FeasibilityStrategy::EvidencePlaceLocal
         );

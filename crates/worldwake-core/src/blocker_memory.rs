@@ -214,7 +214,7 @@ mod tests {
         BlockingFact, ClearingBaseline,
     };
     use crate::{
-        ActionDefId, CommodityKind, GoalKind, Quantity, Tick, UniqueItemKind,
+        AcquisitionQuantity, ActionDefId, CommodityKind, GoalKind, Quantity, Tick, UniqueItemKind,
         test_utils::{entity_id, sample_blocker, sample_blocker_key, sample_goal_key},
         traits::Component,
     };
@@ -381,6 +381,7 @@ mod tests {
         let other = crate::GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: crate::CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let bk1 = BlockerKey {
             goal_key: key,
