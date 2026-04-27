@@ -18,11 +18,12 @@ use worldwake_core::{
     JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LoadUnits, MerchandiseProfile,
     MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
-    RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation, ResourceSource,
-    RewardEncumbrance, RewardSource, RightKind, RouteExperience, SocialObservation,
-    SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
+    RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation,
+    ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource, RightKind,
+    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
+    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -416,6 +417,10 @@ pub trait GoalBeliefView {
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
+        let _ = entity;
+        None
+    }
+    fn resource_extraction_queues(&self, entity: EntityId) -> Option<ResourceExtractionQueues> {
         let _ = entity;
         None
     }
@@ -1217,6 +1222,10 @@ pub trait FacilityBeliefView {
         let _ = entity;
         None
     }
+    fn resource_extraction_queues(&self, entity: EntityId) -> Option<ResourceExtractionQueues> {
+        let _ = entity;
+        None
+    }
     fn has_production_job(&self, entity: EntityId) -> bool;
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
@@ -1615,6 +1624,13 @@ where
         entity: worldwake_core::EntityId,
     ) -> Option<worldwake_core::LastHarvestTrace> {
         FacilityBeliefView::last_harvest_trace(self, entity)
+    }
+
+    fn resource_extraction_queues(
+        &self,
+        entity: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::ResourceExtractionQueues> {
+        FacilityBeliefView::resource_extraction_queues(self, entity)
     }
 
     fn resource_sources_at(

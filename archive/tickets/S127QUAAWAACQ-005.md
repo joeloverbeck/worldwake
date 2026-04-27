@@ -1,9 +1,9 @@
 # S127QUAAWAACQ-005: ResourceExtractionQueues component + per-slot reservation key widening
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — adds `ResourceExtractionQueues` component to `worldwake-core`, registers it via `component_schema.rs`, widens reservation registration paths to take `slot_index: u8`, adds `GoalBeliefView::resource_extraction_queues` accessor, registers queues in scenario translator at `spawn_scenario`, bumps `SAVE_FORMAT_VERSION`
+**Engine Changes**: Yes — adds `ResourceExtractionQueues` component to `worldwake-core`, registers it via `component_schema.rs`, adds `GoalBeliefView::resource_extraction_queues` and `FacilityBeliefView::resource_extraction_queues` accessors with FND-14A co-location gating, registers queues in scenario translator at `spawn_scenario`, bumps `SAVE_FORMAT_VERSION` to 52. Note: the slot-aware reservation registration contract was reassessed out of scope and assigned to ticket 007 (see Assumption Reassessment item 14).
 **Deps**: S127QUAAWAACQ-003
 
 ## Problem
@@ -22,6 +22,7 @@ S127 makes per-slot extraction contention explicit world state (D6). With `extra
 8. Existing tests exercising the reservation registration path: locate during implementation by grepping `crates/` for tests on `ContentionQueue` and `reserve_*` symbols. Update Test Plan once known.
 9. Stale-request / contested-affordance boundary check: the first-failure boundary for "all slots occupied" is the **harvest action's start handler** (ticket 007 will scan `queues[..]` for a free slot and fall back to enqueuing); this ticket only widens the key surface and registers the storage. Contention-conflict emission via `BlockingFact(ReservationConflict)` continues to fire from the same blocker-memory path it does today.
 13. Adjacent contradictions: tickets 006 and 007 both consume `ResourceExtractionQueues` (commit handler appends and ticket 007's start handler reads queues to pick a slot). They depend on this ticket — sequential consumers, no contradiction.
+14. **Auto-correction (2026-04-27)**: the original "Widen reservation registration paths" deliverable (former section 3 of `What to Change`) is bogus — the existing `enqueue_for_contention` / `validate_contention_queue_admission` / `ensure_matching_contention_grant` helpers (at `crates/worldwake-systems/src/facility_queue_actions.rs:160-214` and `crates/worldwake-systems/src/production_actions.rs:339-396`) operate on the singleton `ContentionQueue` component used by facilities, beds, corpses, patients, and unique items. None of these entities have `extraction_slots` and the harvest action does **not currently route through any contention helper at all** — `start_harvest` at `production_actions.rs:410` does not enqueue/grant against `ResourceSource`. Adding a `slot_index: u8` parameter to those helpers is meaningless because their target storage is unslotted. The ticket's "per-slot reservation key widening" claim is satisfied structurally: the new `ResourceExtractionQueues` component holds `Vec<ContentionQueue>`, so the key is `(entity, slot_index)` because the storage holds N independent queues. Ticket 007 (`tickets/S127QUAAWAACQ-007.md`) explicitly owns the harvest start handler that consumes the slotted storage; ticket 007 will inline `txn.get_component_resource_extraction_queues(workstation).cloned()` and operate on `queues[chosen_slot]` directly. **Correction applied:** removed former section 3 of `What to Change`, dropped the speculative reservation-call-site sweep entry from `Files to Touch`, narrowed the per-slot isolation tests to exercise the new component's storage (`ResourceExtractionQueues.queues[i].enqueue/promote_head/...`), and dropped invariant 2 ("`slot_index < queues.len()` is enforced at every registration site") since no production registration site is added in this ticket — that invariant lands with ticket 007. The remaining invariant on slot bounds is implicit in `ResourceExtractionQueues.queues.len() == ResourceSource.extraction_slots.get() as usize` (invariant 1). **Why safe:** narrows scope to the storage substrate this ticket actually owns; the slotted-reservation contract becomes live in ticket 007 with the harvest start handler that produces real slot indices. Per-slot isolation is still proved at the `ContentionQueue` substrate level (each slot's queue is independently stateful).
 
 ## Architecture Check
 
@@ -57,11 +58,7 @@ impl Component for ResourceExtractionQueues {}
 
 Same pattern as ticket 004's `LastHarvestTrace`: `with_component_schema_entries!` entry, plus `delta.rs`/`world.rs`/`component_tables.rs` import updates per `tickets/README.md` check #13.
 
-### 3. Widen reservation registration paths
-
-Enumerate every site that registers, releases, or transitions a reservation against an entity-keyed queue. Each site gains a `slot_index: u8` parameter that selects which `queues[slot_index]` to operate on. Backwards-compatible default is `slot_index = 0` for non-multi-slot facilities, but per FND-28 we do NOT add a defaulting wrapper — every call site is updated explicitly. Discovery instruction: `grep -rn "ContentionQueue\|reserve_\|grant_\|release_" crates/worldwake-core/src/ crates/worldwake-sim/src/ crates/worldwake-systems/src/`.
-
-### 4. Add `GoalBeliefView::resource_extraction_queues` accessor in `crates/worldwake-sim/src/belief_view.rs`
+### 3. Add `GoalBeliefView::resource_extraction_queues` accessor in `crates/worldwake-sim/src/belief_view.rs`
 
 Same pattern as ticket 004's `last_harvest_trace` accessor:
 
@@ -71,7 +68,7 @@ fn resource_extraction_queues(&self, entity: EntityId) -> Option<ResourceExtract
 
 `RuntimeBeliefView` impl with FND-14A co-location gating; macro/blanket-impl forwarding.
 
-### 5. Register queues at scenario spawn in `crates/worldwake-cli/src/scenario/mod.rs:417`
+### 4. Register queues at scenario spawn in `crates/worldwake-cli/src/scenario/mod.rs:417`
 
 After constructing `ResourceSource` (per ticket 003), additionally call:
 
@@ -84,11 +81,11 @@ txn.set_component_resource_extraction_queues(
 )?;
 ```
 
-### 6. Bump `SAVE_FORMAT_VERSION`
+### 5. Bump `SAVE_FORMAT_VERSION`
 
 `crates/worldwake-sim/src/save_load.rs:6` — bump from `51` to `52`.
 
-### 7. Add focused tests
+### 6. Add focused tests
 
 - `resource_extraction_queues_bincode_roundtrip` in `contention.rs`
 - `per_slot_reservation_isolation` — two reservations at different slot indices have independent grants
@@ -102,8 +99,8 @@ txn.set_component_resource_extraction_queues(
 - `crates/worldwake-core/src/delta.rs` (modify — macro-expansion-site import)
 - `crates/worldwake-core/src/world.rs` (modify — macro-expansion-site import)
 - `crates/worldwake-core/src/component_tables.rs` (modify — macro-expansion-site import)
-- `crates/worldwake-sim/src/belief_view.rs` (modify — accessor trait method, RuntimeBeliefView impl, blanket-impl forwarding)
-- **Likely:** all reservation-registration call sites discovered via `grep -rn "ContentionQueue\|reserve_\|grant_\|release_" crates/worldwake-core/src/ crates/worldwake-sim/src/ crates/worldwake-systems/src/` (modify — add `slot_index` parameter)
+- `crates/worldwake-sim/src/belief_view.rs` (modify — accessor trait method, blanket-impl forwarding)
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — `RuntimeBeliefView` impl with FND-14A co-location gating; mirrors ticket 004's `last_harvest_trace` pattern)
 - `crates/worldwake-cli/src/scenario/mod.rs` (modify — register queues at spawn)
 - `crates/worldwake-sim/src/save_load.rs` (modify — bump SAVE_FORMAT_VERSION)
 
@@ -128,18 +125,20 @@ txn.set_component_resource_extraction_queues(
 ### Invariants
 
 1. `ResourceExtractionQueues.queues.len() == ResourceSource.extraction_slots.get() as usize` always (post-spawn).
-2. Reservations key by `(entity, slot_index)`; `slot_index < queues.len()` is enforced at every registration site.
+2. Each slot's `ContentionQueue` is independently stateful (per-slot `granted` / `waiting` bookkeeping).
 3. The belief-view accessor honors FND-14A co-location gating.
 4. `SAVE_FORMAT_VERSION = 52`.
+
+> Note: ticket 007 owns the slotted-reservation registration contract (harvest start handler scanning `queues[..]`); slot-bounds enforcement at registration sites lands there.
 
 ## Test Plan
 
 ### New/Modified Tests
 
 1. `crates/worldwake-core/src/contention.rs` `#[cfg(test)]` — bincode round-trip and per-slot isolation tests.
-2. `crates/worldwake-sim/src/belief_view.rs` `#[cfg(test)]` — co-location gating test.
+2. `crates/worldwake-sim/src/per_agent_belief_view.rs` `#[cfg(test)]` — co-location gating test (the `RuntimeBeliefView` impl with FND-14A gating lives there; `belief_view.rs` only declares the trait).
 3. `crates/worldwake-cli/src/scenario/mod.rs` `#[cfg(test)]` — spawn registers queue per slot.
-4. Update existing reservation-path tests (named during reassessment) to use the slot-aware key.
+4. ~~Update existing reservation-path tests~~ — dropped per reassessment item 14: existing reservation paths operate on the unslotted `ContentionQueue` for facility/unique-item contention; the slot-aware contract is owned by ticket 007.
 
 ### Commands
 
@@ -149,3 +148,28 @@ txn.set_component_resource_extraction_queues(
 4. `cargo test --workspace`
 5. `cargo clippy --workspace --all-targets -- -D warnings`
 6. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-27.
+
+- Added `ResourceExtractionQueues { queues: Vec<ContentionQueue> }` (`crates/worldwake-core/src/contention.rs`) with `Component` impl and crate-root re-export.
+- Registered the component through `with_component_schema_entries!` (`crates/worldwake-core/src/component_schema.rs`) gated to `EntityKind::Facility | EntityKind::Place`, and threaded the macro-expansion-site imports (`delta.rs`, `world.rs`, `component_tables.rs`) and the `ComponentValue` / `ComponentKind::ALL` test inventories.
+- Added `resource_extraction_queues(entity) -> Option<ResourceExtractionQueues>` on `GoalBeliefView` and `FacilityBeliefView` (`crates/worldwake-sim/src/belief_view.rs`) with macro forwarding from the goal blanket-impl, plus the `RuntimeBeliefView`-side concrete impl on `PerAgentBeliefView` (`crates/worldwake-sim/src/per_agent_belief_view.rs`) gated by FND-14A co-location.
+- Scenario translator (`crates/worldwake-cli/src/scenario/mod.rs:420`) now registers `ResourceExtractionQueues { queues: vec![ContentionQueue::default(); extraction_slots] }` on every resource source at spawn so the queue length matches `ResourceSource::extraction_slots`.
+- Bumped `SAVE_FORMAT_VERSION` from 51 to 52 (`crates/worldwake-sim/src/save_load.rs`).
+- Focused tests added: `resource_extraction_queues_bincode_roundtrip`, `per_slot_reservation_isolation`, `belief_view_resource_extraction_queues_co_located_only`, `scenario_spawn_registers_queue_per_slot`.
+
+## Deviations
+
+- Per Assumption Reassessment item 14, the original "Widen reservation registration paths" deliverable was dropped: the existing facility/unique-item contention helpers (`enqueue_for_contention`, `validate_contention_queue_admission`, `ensure_matching_contention_grant`) operate on the unslotted `ContentionQueue` component, which is not the storage `ResourceExtractionQueues` adds. The slot-aware reservation contract — picking a free slot, enqueueing on contention — is owned by ticket 007 (`tickets/S127QUAAWAACQ-007.md`), which will inline operations on `ResourceExtractionQueues.queues[chosen_slot]` from inside the harvest start handler. Per-slot isolation is still proved at the substrate level (`per_slot_reservation_isolation` exercises independent `granted` / `waiting` bookkeeping across two `ContentionQueue` slots).
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core resource_extraction_queues` (1/1 ok).
+- Passed `cargo test -p worldwake-core per_slot_reservation` (1/1 ok).
+- Passed `cargo test -p worldwake-sim belief_view_resource_extraction_queues` (1/1 ok).
+- Passed `cargo test -p worldwake-cli scenario_spawn_registers_queue_per_slot` (1/1 ok).
+- Passed `cargo test --workspace` (no failures across all crates).
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh` (exit 0; runs fmt-check, workspace tests, both clippy variants, and `scenario-coverage --check`).

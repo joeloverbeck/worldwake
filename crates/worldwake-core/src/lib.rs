@@ -143,6 +143,7 @@ pub use conservation::{
 pub use contention::{
     ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
     ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter, QueuedContentionIntent,
+    ResourceExtractionQueues,
 };
 pub use control::ControlSource;
 pub use crime::{

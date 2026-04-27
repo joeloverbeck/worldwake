@@ -18,8 +18,8 @@ use worldwake_core::{
     LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LoadUnits,
     MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
     OfficeData, PerceptionSource, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RewardEncumbrance,
-    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues, ResourceSource,
+    RewardEncumbrance, RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
     SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
     ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
     World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
@@ -1825,6 +1825,20 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
         None
     }
 
+    fn resource_extraction_queues(&self, entity: EntityId) -> Option<ResourceExtractionQueues> {
+        // FND-14A: extraction queues are physical occupancy of the source
+        // (slot count and per-slot queue/grant state are concrete world
+        // state on a co-located entity). Off-place propagation goes
+        // through ShareBelief / report channels, not this surface.
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
+            return self
+                .world
+                .get_component_resource_extraction_queues(entity)
+                .cloned();
+        }
+        None
+    }
+
     fn has_production_job(&self, entity: EntityId) -> bool {
         self.world.has_component_production_job(entity)
     }
@@ -1880,11 +1894,11 @@ mod tests {
         InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory, LastSeenProvenance,
         LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
         PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, PreferenceProfile,
-        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
-        RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
-        TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
-        build_prototype_world,
+        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceExtractionQueues,
+        ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
+        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId, build_believed_entity_state, build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile, sample_discrepancy_memory,
             sample_learned_opportunity_memory, sample_preference_profile, sample_repair_memory,
@@ -5234,6 +5248,63 @@ mod tests {
         );
         assert_eq!(
             GoalBeliefView::last_harvest_trace(&view, remote_source),
+            None
+        );
+    }
+
+    #[test]
+    fn belief_view_resource_extraction_queues_co_located_only() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let near_place = places[0];
+        let remote_place = world.topology().neighbors(near_place)[0];
+
+        let queues = ResourceExtractionQueues {
+            queues: vec![
+                worldwake_core::ContentionQueue::default(),
+                worldwake_core::ContentionQueue::default(),
+                worldwake_core::ContentionQueue::default(),
+            ],
+        };
+
+        let (agent, near_source, remote_source) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let near_source = txn.create_entity(EntityKind::Facility);
+            let remote_source = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(agent, near_place).unwrap();
+            txn.set_ground_location(near_source, near_place).unwrap();
+            txn.set_ground_location(remote_source, remote_place)
+                .unwrap();
+            txn.set_component_resource_extraction_queues(near_source, queues.clone())
+                .unwrap();
+            txn.set_component_resource_extraction_queues(remote_source, queues.clone())
+                .unwrap();
+            commit_txn(txn);
+            (agent, near_source, remote_source)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        // Co-located source: queues are visible (FND-14A — concrete
+        // physical occupancy of a co-located entity).
+        assert_eq!(
+            FacilityBeliefView::resource_extraction_queues(&view, near_source),
+            Some(queues.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::resource_extraction_queues(&view, near_source),
+            Some(queues.clone())
+        );
+
+        // Remote source: queues are gated off.
+        assert_eq!(
+            FacilityBeliefView::resource_extraction_queues(&view, remote_source),
+            None
+        );
+        assert_eq!(
+            GoalBeliefView::resource_extraction_queues(&view, remote_source),
             None
         );
     }

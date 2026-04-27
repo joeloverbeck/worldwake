@@ -1590,6 +1590,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                resource_extraction_queues,
+                ResourceExtractionQueues,
+                insert_resource_extraction_queues,
+                get_resource_extraction_queues,
+                get_resource_extraction_queues_mut,
+                remove_resource_extraction_queues,
+                has_resource_extraction_queues,
+                iter_resource_extraction_queues,
+                insert_component_resource_extraction_queues,
+                get_component_resource_extraction_queues,
+                get_component_resource_extraction_queues_mut,
+                remove_component_resource_extraction_queues,
+                has_component_resource_extraction_queues,
+                entities_with_resource_extraction_queues,
+                query_resource_extraction_queues,
+                count_with_resource_extraction_queues,
+                "ResourceExtractionQueues",
+                |kind| kind == EntityKind::Facility || kind == EntityKind::Place,
+                ResourceExtractionQueues,
+                crate::ResourceExtractionQueues,
+                set_component_resource_extraction_queues,
+                clear_component_resource_extraction_queues,
+                txn_simple_set
+            }
+            {
                 production_output_ownership_policies,
                 ProductionOutputOwnershipPolicy,
                 insert_production_output_ownership_policy,

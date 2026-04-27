@@ -20,9 +20,9 @@ use worldwake_core::{
     LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
     MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
     OfficeForceState, PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-    RecordData, RecordKind, ResourceSource, Seed, SocialObservation, SocialObservationDetail, Tick,
-    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
-    WorldTxn, default_commodity_decay_map, hash_world, load_per_unit,
+    RecordData, RecordKind, ResourceExtractionQueues, ResourceSource, Seed, SocialObservation,
+    SocialObservationDetail, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+    WorkstationMarker, World, WorldTxn, default_commodity_decay_map, hash_world, load_per_unit,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -417,6 +417,8 @@ fn spawn_entities(
             facility_locations.insert(source_id, place_id);
             source_id
         };
+        let extraction_slots =
+            NonZeroU8::new(source_def.extraction_slots).unwrap_or(NonZeroU8::MIN);
         txn.set_component_resource_source(
             source_id,
             ResourceSource {
@@ -425,10 +427,15 @@ fn spawn_entities(
                 max_quantity: source_def.capacity,
                 regeneration_ticks_per_unit: source_def.regeneration_ticks_per_unit,
                 last_regeneration_tick: None,
-                extraction_slots: NonZeroU8::new(source_def.extraction_slots)
-                    .unwrap_or(NonZeroU8::MIN),
+                extraction_slots,
                 extraction_duration_ticks: NonZeroU32::new(source_def.extraction_duration_ticks)
                     .unwrap_or(NonZeroU32::MIN),
+            },
+        )?;
+        txn.set_component_resource_extraction_queues(
+            source_id,
+            ResourceExtractionQueues {
+                queues: vec![ContentionQueue::default(); extraction_slots.get() as usize],
             },
         )?;
     }
@@ -3642,5 +3649,35 @@ mod tests {
             .expect("resource source should be spawned");
         assert_eq!(source.extraction_slots.get(), 5);
         assert_eq!(source.extraction_duration_ticks.get(), 4);
+    }
+
+    #[test]
+    fn scenario_spawn_registers_queue_per_slot() {
+        let mut def = minimal_def();
+        def.resource_sources = vec![ResourceSourceDef {
+            commodity: CommodityKind::Water,
+            location: "Village".into(),
+            facility: None,
+            regeneration_ticks_per_unit: NonZeroU32::new(3),
+            capacity: Quantity(40),
+            extraction_slots: 5,
+            extraction_duration_ticks: 4,
+        }];
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let (source_entity, source) = world
+            .query_resource_source()
+            .next()
+            .expect("resource source should be spawned");
+        assert_eq!(source.extraction_slots.get(), 5);
+
+        let queues = world
+            .get_component_resource_extraction_queues(source_entity)
+            .expect("scenario spawn should register ResourceExtractionQueues");
+        assert_eq!(queues.queues.len(), source.extraction_slots.get() as usize);
+        for slot in &queues.queues {
+            assert_eq!(slot, &ContentionQueue::default());
+        }
     }
 }

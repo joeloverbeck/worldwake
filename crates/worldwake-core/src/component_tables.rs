@@ -12,6 +12,7 @@ use crate::{
     components::{AgentData, Name},
     contention::{
         ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
+        ResourceExtractionQueues,
     },
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     discrepancy::DiscrepancyMemory,

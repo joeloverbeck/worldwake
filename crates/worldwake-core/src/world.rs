@@ -17,11 +17,12 @@ use crate::{
     OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
     PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
     ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, RecordData,
-    RelationTables, RepairMemory, ResourceSource, RewardEncumbrance, RouteExperience, SaleListing,
-    SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences,
-    TellProfile, TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
-    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
+    RelationTables, RepairMemory, ResourceExtractionQueues, ResourceSource, RewardEncumbrance,
+    RouteExperience, SaleListing, SceneEvidence, SourceReliability, StockAssignment,
+    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick,
+    Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
+    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
+    component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

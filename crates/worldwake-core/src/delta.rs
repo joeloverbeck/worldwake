@@ -17,11 +17,11 @@ use crate::{
     OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
     PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
     ProductionOutputOwnershipPolicy, PursuitProfile, Quantity, RecordData, RepairMemory,
-    ReservationRecord, ResourceSource, RewardEncumbrance, RouteExperience, SaleListing,
-    SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences,
-    TellProfile, TheftDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WoundList,
-    component_schema::with_component_schema_entries,
+    ReservationRecord, ResourceExtractionQueues, ResourceSource, RewardEncumbrance,
+    RouteExperience, SaleListing, SceneEvidence, SourceReliability, StockAssignment,
+    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UniqueItem, UtilityProfile, ViolationDispositionProfile,
+    ViolationMemory, WorkstationMarker, WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 
@@ -292,11 +292,12 @@ mod tests {
         PerceptionSource, Permille, PlaceVisibilityProfile, PlaceVisitRecord, PortfolioSlotWeights,
         ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement,
         ProvenanceEntry, PursuitProfile, Quantity, QueuedContentionIntent, RecordData,
-        RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceSource,
-        RewardEncumbrance, RewardSource, SaleListing, SceneEvidence, StockAssignment,
-        StockAssignmentKind, StockStoragePolicy, TellProfile, TheftDispositionProfile, Tick,
-        TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile,
-        ViolationMemory, WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        RecordEntryId, RecordKind, ReservationId, ReservationRecord, ResourceExtractionQueues,
+        ResourceSource, RewardEncumbrance, RewardSource, SaleListing, SceneEvidence,
+        StockAssignment, StockAssignmentKind, StockStoragePolicy, TellProfile,
+        TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
+        ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile,
             sample_contention_disposition_profile, sample_demand_memory, sample_discrepancy_memory,
@@ -692,6 +693,9 @@ mod tests {
                     partial: false,
                 }],
             }),
+            ComponentValue::ResourceExtractionQueues(ResourceExtractionQueues {
+                queues: vec![ContentionQueue::default(), ContentionQueue::default()],
+            }),
             ComponentValue::ProductionOutputOwnershipPolicy(ProductionOutputOwnershipPolicy {
                 output_owner: ProductionOutputOwner::ProducerOwner,
             }),
@@ -966,6 +970,7 @@ mod tests {
                 ComponentKind::WorkstationMarker,
                 ComponentKind::ResourceSource,
                 ComponentKind::LastHarvestTrace,
+                ComponentKind::ResourceExtractionQueues,
                 ComponentKind::ProductionOutputOwnershipPolicy,
                 ComponentKind::BanditCamp,
                 ComponentKind::SceneEvidence,
