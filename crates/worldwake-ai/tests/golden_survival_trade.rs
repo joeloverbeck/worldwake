@@ -9,8 +9,8 @@ use golden_harness::*;
 use worldwake_ai::{DecisionOutcome, PlannerOpKind};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    CommodityKind, CommodityPurpose, DriveThresholds, EntityId, EventTag, EventView, GoalKey,
-    GoalKind, PerceptionSource, Quantity, Tick,
+    AcquisitionQuantity, CommodityKind, CommodityPurpose, DriveThresholds, EntityId, EventTag,
+    EventView, GoalKey, GoalKind, PerceptionSource, Quantity, Tick,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -155,6 +155,7 @@ fn run_survival_trade() -> SurvivalTradeObservation {
     let substitute_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: SUBSTITUTE_COMMODITY,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let critical_thresholds = agents
         .iter()

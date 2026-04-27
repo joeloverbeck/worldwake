@@ -287,8 +287,17 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::ConsumeOwnedCommodity { commodity } => {
             format!("ConsumeOwnedCommodity({commodity:?})")
         }
-        GoalKind::AcquireCommodity { commodity, purpose } => {
-            format!("AcquireCommodity({commodity:?}, {purpose:?})")
+        GoalKind::AcquireCommodity {
+            commodity,
+            purpose,
+            quantity,
+        } => {
+            format!(
+                "AcquireCommodity({commodity:?}, {purpose:?}, min={}/target={}/horizon={})",
+                quantity.desired_min.get(),
+                quantity.desired_target.get(),
+                quantity.horizon_ticks.get(),
+            )
         }
         GoalKind::Sleep => "Sleep".to_string(),
         GoalKind::Relieve => "Relieve".to_string(),
@@ -738,6 +747,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         }
     }
 
@@ -900,6 +910,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
         let spawned = spawn_scenario(&def).unwrap();
 

@@ -9,11 +9,11 @@ use worldwake_ai::{
     CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, PlannerOpKind, SelectedPlanSource,
 };
 use worldwake_core::{
-    BeliefConfidencePolicy, CognitiveProfile, CommodityKind, ComponentKind, ComponentValue,
-    DeathCause, EntityId, EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes,
-    MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash, Tick,
-    UtilityProfile, WorkstationTag, hash_event_log, hash_world, verify_authoritative_conservation,
-    verify_live_lot_conservation,
+    AcquisitionQuantity, BeliefConfidencePolicy, CognitiveProfile, CommodityKind, ComponentKind,
+    ComponentValue, DeathCause, EntityId, EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, Quantity, ResourceSource, Seed, StateHash,
+    Tick, UtilityProfile, WorkstationTag, hash_event_log, hash_world,
+    verify_authoritative_conservation, verify_live_lot_conservation,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -102,6 +102,8 @@ fn run_remote_travel_when_local_supply_exhausted(
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -277,6 +279,8 @@ fn run_max_idle_under_remote_resource_scarcity(
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -509,6 +513,8 @@ fn run_multi_agent_convergence(
             max_quantity: Quantity(12),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -523,6 +529,8 @@ fn run_multi_agent_convergence(
             max_quantity: Quantity(12),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -796,6 +804,7 @@ fn selected_harvest_plan_within_ticks(
     let expected_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
 
     (0..=max_tick).any(|tick| {
@@ -902,6 +911,8 @@ fn run_harvest_to_consume(seed: Seed) -> (HarvestToConsumeObservation, StateHash
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -916,6 +927,8 @@ fn run_harvest_to_consume(seed: Seed) -> (HarvestToConsumeObservation, StateHash
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );

@@ -169,9 +169,9 @@ impl From<GoalKind> for GoalDispatchKey {
 mod tests {
     use super::GoalDispatchKey;
     use worldwake_core::{
-        ArtifactPostingContext, CommodityKind, CommodityPurpose, CommunicationClass, EntityId,
-        ExpectationId, GoalKind, InstitutionalClaim, NoticeTopic, PunishmentKind, Quantity,
-        RecipeId, RecordEntryId, TellTopic, ViolationId,
+        AcquisitionQuantity, ArtifactPostingContext, CommodityKind, CommodityPurpose,
+        CommunicationClass, EntityId, ExpectationId, GoalKind, InstitutionalClaim, NoticeTopic,
+        PunishmentKind, Quantity, RecipeId, RecordEntryId, TellTopic, ViolationId,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -186,14 +186,17 @@ mod tests {
         let self_consume = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let recipe_input = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::RecipeInput(RecipeId(1)),
+            quantity: AcquisitionQuantity::single(),
         };
         let restock = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::Restock,
+            quantity: AcquisitionQuantity::single(),
         };
 
         assert_eq!(
@@ -323,10 +326,12 @@ mod tests {
         let first = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Grain,
             purpose: CommodityPurpose::RecipeInput(RecipeId(1)),
+            quantity: AcquisitionQuantity::single(),
         };
         let second = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::RecipeInput(RecipeId(99)),
+            quantity: AcquisitionQuantity::single(),
         };
 
         assert_eq!(
@@ -381,6 +386,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalKind::Sleep,
             GoalKind::Relieve,

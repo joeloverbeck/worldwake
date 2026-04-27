@@ -319,6 +319,7 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
         source_reliability_discount: ranked.source_reliability_discount.clone(),
         competition_discount: ranked.competition_discount.clone(),
         feasibility: ranked.feasibility,
+        acquisition_quantity: ranked.offer.acquisition_quantity,
     }
 }
 
@@ -2293,13 +2294,14 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, BodyCostPerTick, CauseRef, CognitiveProfile, CommodityKind,
-        CommodityPurpose, ContentionIntents, ControlSource, DecisionEventPayload, EntityId,
-        EventLog, EventTag, EventView, ExecutionBudget, FrameAssumption, GoalCommittedPayload,
-        GoalRejectionReason, HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille,
-        Place, PlanAdoptedPayload, Quantity, RepairKind, SourceKey, Tick, Topology, TravelEdge,
-        TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_believed_entity_state, build_prototype_world,
+        AcquisitionQuantity, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
+        CognitiveProfile, CommodityKind, CommodityPurpose, ContentionIntents, ControlSource,
+        DecisionEventPayload, EntityId, EventLog, EventTag, EventView, ExecutionBudget,
+        FrameAssumption, GoalCommittedPayload, GoalRejectionReason, HomeostaticNeeds,
+        MerchandiseProfile, PerceptionSource, Permille, Place, PlanAdoptedPayload, Quantity,
+        RepairKind, SourceKey, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
+        WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -2410,6 +2412,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor,
             evidence_entities,
@@ -2419,6 +2422,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         }
     }
 
@@ -2906,6 +2910,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let current_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3046,6 +3051,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3151,6 +3157,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3190,6 +3197,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3226,6 +3234,7 @@ mod tests {
         let failed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_plan = PlannedPlan::new(
             OpportunityKey {
@@ -3313,6 +3322,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let failed_trade_step = PlannedStep {
             def_id: ActionDefId(0),
@@ -3440,6 +3450,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 120,
@@ -3469,6 +3480,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 110,
@@ -3498,6 +3510,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 90,
@@ -3527,6 +3540,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 80,
@@ -3634,6 +3648,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score,
@@ -3741,6 +3756,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 900,
@@ -3771,6 +3787,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 800,
@@ -3801,6 +3818,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 600,
@@ -4035,6 +4053,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class,
             motive_score,
@@ -4103,12 +4122,39 @@ mod tests {
     }
 
     #[test]
+    fn summarize_ranked_goal_preserves_acquisition_quantity() {
+        // S127QUAAWAACQ-009: the per-emission `AcquisitionQuantity` set on
+        // `GoalOffer.acquisition_quantity` at candidate emission time must
+        // reach the decision-trace `RankedGoalSummary` so consumers can
+        // inspect `desired_min` / `desired_target` / `horizon_ticks`
+        // without re-deriving from agent state.
+        let goal = acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(place_entity(40)),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        );
+        let mut ranked = ranked_goal(goal);
+        let expected = AcquisitionQuantity {
+            desired_min: std::num::NonZeroU16::new(2).unwrap(),
+            desired_target: std::num::NonZeroU16::new(5).unwrap(),
+            horizon_ticks: std::num::NonZeroU32::new(123).unwrap(),
+        };
+        ranked.offer.acquisition_quantity = Some(expected);
+
+        let summary = summarize_ranked_goal(&ranked);
+
+        assert_eq!(summary.acquisition_quantity, Some(expected));
+    }
+
+    #[test]
     fn summarize_selected_plan_preserves_side_benefit_trace_fields() {
         let market = place_entity(40);
         let orchard = place_entity(41);
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let plan = PlannedPlan::new(
             OpportunityKey {
@@ -4156,6 +4202,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 800,
@@ -4188,6 +4235,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::Low,
                 motive_score: 300,
@@ -4518,6 +4566,7 @@ mod tests {
                 key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 anchor: worldwake_core::OpportunityAnchor::None,
                 evidence_entities: BTreeSet::new(),
@@ -4527,6 +4576,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             }),
             ranked_goal(GoalOffer {
                 key: GoalKey::from(GoalKind::Sleep),
@@ -4538,6 +4588,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             }),
         ];
         let budget = ProfileFixture {
@@ -4574,6 +4625,7 @@ mod tests {
             GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             })
         );
         assert!(
@@ -4904,6 +4956,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let satisfied_plan = PlannedPlan::new(
             opportunity(goal),
@@ -5067,6 +5120,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let _ranked_candidates = [
             ranked_goal(GoalOffer {
@@ -5079,6 +5133,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             }),
             ranked_goal(GoalOffer {
                 key: goal,
@@ -5090,6 +5145,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             }),
             ranked_goal(sleep_goal.clone()),
         ];

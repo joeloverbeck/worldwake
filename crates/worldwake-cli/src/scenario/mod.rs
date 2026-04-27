@@ -7,6 +7,7 @@ pub mod lints;
 pub mod types;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::{NonZeroU8, NonZeroU32};
 use std::path::Path;
 
 use types::ScenarioDef;
@@ -19,9 +20,9 @@ use worldwake_core::{
     LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
     MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
     OfficeForceState, PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-    RecordData, RecordKind, ResourceSource, Seed, SocialObservation, SocialObservationDetail, Tick,
-    Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationMarker, World,
-    WorldTxn, default_commodity_decay_map, hash_world, load_per_unit,
+    RecordData, RecordKind, ResourceExtractionQueues, ResourceSource, Seed, SocialObservation,
+    SocialObservationDetail, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData,
+    WorkstationMarker, World, WorldTxn, default_commodity_decay_map, hash_world, load_per_unit,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -150,6 +151,10 @@ fn spawn_scenario_inner(def: &ScenarioDef) -> Result<SpawnedSimulation, Scenario
         def.commodity_decay
             .clone()
             .unwrap_or_else(default_commodity_decay_map),
+    );
+    world.set_harvest_trace_retention_ticks(
+        def.harvest_trace_retention_ticks
+            .unwrap_or(worldwake_core::HARVEST_TRACE_RETENTION_TICKS),
     );
     let mut event_log = EventLog::new();
 
@@ -412,6 +417,8 @@ fn spawn_entities(
             facility_locations.insert(source_id, place_id);
             source_id
         };
+        let extraction_slots =
+            NonZeroU8::new(source_def.extraction_slots).unwrap_or(NonZeroU8::MIN);
         txn.set_component_resource_source(
             source_id,
             ResourceSource {
@@ -420,6 +427,15 @@ fn spawn_entities(
                 max_quantity: source_def.capacity,
                 regeneration_ticks_per_unit: source_def.regeneration_ticks_per_unit,
                 last_regeneration_tick: None,
+                extraction_slots,
+                extraction_duration_ticks: NonZeroU32::new(source_def.extraction_duration_ticks)
+                    .unwrap_or(NonZeroU32::MIN),
+            },
+        )?;
+        txn.set_component_resource_extraction_queues(
+            source_id,
+            ResourceExtractionQueues {
+                queues: vec![ContentionQueue::default(); extraction_slots.get() as usize],
             },
         )?;
     }
@@ -1320,6 +1336,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         }
     }
 
@@ -1457,6 +1474,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1535,6 +1553,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1631,6 +1650,26 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_minimal_scenario_uses_default_harvest_trace_retention() {
+        let spawned = spawn_scenario(&minimal_def()).unwrap();
+
+        assert_eq!(
+            spawned.state.world().harvest_trace_retention_ticks(),
+            worldwake_core::HARVEST_TRACE_RETENTION_TICKS,
+        );
+    }
+
+    #[test]
+    fn test_spawn_scenario_applies_harvest_trace_retention_override() {
+        let mut def = minimal_def();
+        def.harvest_trace_retention_ticks = Some(75);
+
+        let spawned = spawn_scenario(&def).unwrap();
+
+        assert_eq!(spawned.state.world().harvest_trace_retention_ticks(), 75,);
+    }
+
+    #[test]
     fn test_spawn_agents_at_places() {
         let def = ScenarioDef {
             seed: 1,
@@ -1662,6 +1701,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1710,6 +1750,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1747,6 +1788,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1789,6 +1831,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1830,6 +1873,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1886,6 +1930,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1940,6 +1985,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1994,6 +2040,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2053,6 +2100,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2114,6 +2162,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let result = spawn_scenario(&def);
@@ -2166,12 +2215,15 @@ mod tests {
                 facility: None,
                 regeneration_ticks_per_unit: NonZeroU32::new(5),
                 capacity: Quantity(20),
+                extraction_slots: 1,
+                extraction_duration_ticks: 1,
             }],
             hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2237,6 +2289,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2296,12 +2349,15 @@ mod tests {
                 facility: Some("North Orchard".into()),
                 regeneration_ticks_per_unit: NonZeroU32::new(2),
                 capacity: Quantity(20),
+                extraction_slots: 1,
+                extraction_duration_ticks: 1,
             }],
             hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2364,12 +2420,15 @@ mod tests {
                 facility: Some("Village Well".into()),
                 regeneration_ticks_per_unit: NonZeroU32::new(3),
                 capacity: Quantity(15),
+                extraction_slots: 1,
+                extraction_duration_ticks: 1,
             }],
             hostilities: vec![],
             commodity_decay: None,
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2454,6 +2513,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2528,6 +2588,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2582,6 +2643,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2625,6 +2687,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2744,6 +2807,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2794,6 +2858,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2864,6 +2929,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2916,6 +2982,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3032,6 +3099,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3096,6 +3164,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3151,6 +3220,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3249,6 +3319,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3362,6 +3433,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let Err(error) = spawn_scenario(&def) else {
@@ -3403,6 +3475,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).expect("office scenario should spawn");
@@ -3489,6 +3562,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).expect("office treasury scenario should spawn");
@@ -3529,5 +3603,81 @@ mod tests {
             !world.ground_entities_at(seat).contains(&lot),
             "treasury lot should not be a loose place-floor item"
         );
+    }
+
+    #[test]
+    fn spawn_scenario_resource_source_defaults_to_one_slot_one_tick() {
+        let mut def = minimal_def();
+        def.resource_sources = vec![ResourceSourceDef {
+            commodity: CommodityKind::Apple,
+            location: "Village".into(),
+            facility: None,
+            regeneration_ticks_per_unit: NonZeroU32::new(5),
+            capacity: Quantity(20),
+            extraction_slots: 1,
+            extraction_duration_ticks: 1,
+        }];
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let (_, source) = world
+            .query_resource_source()
+            .next()
+            .expect("resource source should be spawned");
+        assert_eq!(source.extraction_slots.get(), 1);
+        assert_eq!(source.extraction_duration_ticks.get(), 1);
+    }
+
+    #[test]
+    fn spawn_scenario_resource_source_explicit_extraction_fields() {
+        let mut def = minimal_def();
+        def.resource_sources = vec![ResourceSourceDef {
+            commodity: CommodityKind::Water,
+            location: "Village".into(),
+            facility: None,
+            regeneration_ticks_per_unit: NonZeroU32::new(3),
+            capacity: Quantity(40),
+            extraction_slots: 5,
+            extraction_duration_ticks: 4,
+        }];
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let (_, source) = world
+            .query_resource_source()
+            .next()
+            .expect("resource source should be spawned");
+        assert_eq!(source.extraction_slots.get(), 5);
+        assert_eq!(source.extraction_duration_ticks.get(), 4);
+    }
+
+    #[test]
+    fn scenario_spawn_registers_queue_per_slot() {
+        let mut def = minimal_def();
+        def.resource_sources = vec![ResourceSourceDef {
+            commodity: CommodityKind::Water,
+            location: "Village".into(),
+            facility: None,
+            regeneration_ticks_per_unit: NonZeroU32::new(3),
+            capacity: Quantity(40),
+            extraction_slots: 5,
+            extraction_duration_ticks: 4,
+        }];
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let (source_entity, source) = world
+            .query_resource_source()
+            .next()
+            .expect("resource source should be spawned");
+        assert_eq!(source.extraction_slots.get(), 5);
+
+        let queues = world
+            .get_component_resource_extraction_queues(source_entity)
+            .expect("scenario spawn should register ResourceExtractionQueues");
+        assert_eq!(queues.queues.len(), source.extraction_slots.get() as usize);
+        for slot in &queues.queues {
+            assert_eq!(slot, &ContentionQueue::default());
+        }
     }
 }

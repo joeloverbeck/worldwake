@@ -13,8 +13,8 @@ use worldwake_ai::{
     OpportunityKey, PlanTerminalKind,
 };
 use worldwake_core::{
-    AgentData, BeliefConfidencePolicy, BlockingFact, CognitiveProfile, CommodityKind,
-    ControlSource, DeadAt, DeathCause, EntityId, FrameState, HomeostaticNeeds,
+    AcquisitionQuantity, AgentData, BeliefConfidencePolicy, BlockingFact, CognitiveProfile,
+    CommodityKind, ControlSource, DeadAt, DeathCause, EntityId, FrameState, HomeostaticNeeds,
     IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
     ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag, prototype_place_entity,
     total_live_lot_quantity,
@@ -89,6 +89,8 @@ fn golden_goal_invalidation_by_another_agent() {
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -223,6 +225,8 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -238,6 +242,7 @@ fn run_unrelated_commodity_change_preserves_frontier_exhaustion(
     let apple_goal = GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Apple,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     });
     let apple_opportunity = OpportunityKey {
         goal_key: apple_goal,
@@ -495,6 +500,8 @@ fn golden_local_depleted_source_regenerates_without_spurious_failure_memory() {
             max_quantity: Quantity(2),
             regeneration_ticks_per_unit: Some(nz(5)),
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -763,6 +770,8 @@ fn golden_wash_action() {
             max_quantity: Quantity(2),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -1245,6 +1254,8 @@ fn golden_goal_switching_during_multi_leg_travel() {
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );
@@ -1425,6 +1436,8 @@ fn golden_utility_weight_diversity_in_need_selection() {
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     );

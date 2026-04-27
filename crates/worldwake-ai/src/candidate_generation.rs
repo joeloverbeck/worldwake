@@ -26,7 +26,7 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
+    AcquisitionQuantity, ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
     EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
@@ -1481,8 +1481,30 @@ fn emit_social_candidates(
                         },
                         reason: TellTopicOmissionReason::ListenerParticipatedInObservation,
                     });
+                    return false;
                 }
-                !redundant
+                if listener_could_have_directly_observed(ctx.view, listener, observation.place) {
+                    // The listener is currently co-located with the place
+                    // where the observation was made and has the perception
+                    // capacity to have witnessed it themselves; relaying a
+                    // place-scoped social observation (SuspectedTheft,
+                    // WitnessedAbsence, …) to such a listener is redundant.
+                    // Suppressing this candidate prevents the speaker from
+                    // burning their per-tick tell budget on listeners who
+                    // already had the chance to perceive the event, leaving
+                    // bandwidth for low-fidelity peers (e.g. clerks/scribes)
+                    // whose role is to record reports they could not witness
+                    // themselves (FND-7 information locality).
+                    diagnostics.omitted_social.push(SocialCandidateOmission {
+                        listener,
+                        topic: TellTopic::SocialObservation {
+                            observation: *observation,
+                        },
+                        reason: TellTopicOmissionReason::DirectlyObservableByListener,
+                    });
+                    return false;
+                }
+                true
             })
             .collect::<Vec<_>>();
         let selection = listener_aware_tell_topic_selection(
@@ -1724,6 +1746,21 @@ fn subject_is_listener_observable_entity_belief(
         view.effective_place(listener),
         view.observation_fidelity(listener),
     )
+}
+
+/// True when `listener` is currently co-located with the place of a social
+/// observation **and** has non-zero perception fidelity — i.e., the listener
+/// is positioned to have seen the event themselves and a relayed tell of
+/// the observation would carry no new evidence (FND-7 information
+/// locality, mirroring `tell_subject_is_directly_observable_by_listener`
+/// for the entity-belief path).
+fn listener_could_have_directly_observed(
+    view: &dyn GoalBeliefView,
+    listener: EntityId,
+    observation_place: EntityId,
+) -> bool {
+    view.observation_fidelity(listener).value() > 0
+        && view.effective_place(listener) == Some(observation_place)
 }
 
 fn emit_political_candidates(
@@ -2855,6 +2892,114 @@ fn emit_proactive_exploration_candidates(
     );
 }
 
+/// Default `horizon_ticks` used by `AcquisitionQuantity::single()` and the
+/// `AcquireCommodity` candidate emitter when need-projection is unavailable.
+const DEFAULT_ACQUISITION_HORIZON: u32 = 200;
+
+/// Derive an `AcquisitionQuantity` for an `AcquireCommodity` candidate
+/// targeting `commodity` to relieve `need_id`. Returns `None` when the
+/// projected need-breach falls outside `DEFAULT_ACQUISITION_HORIZON` —
+/// callers treat this as a horizon-gate signal and skip emission for this
+/// commodity (Design Goal 3 / spec D8). Falls back to
+/// `AcquisitionQuantity::single()` when the agent's metabolism, needs, or
+/// drive thresholds are unavailable to the belief view (e.g., S126 not
+/// active for this agent profile).
+fn derive_acquire_commodity_quantity(
+    ctx: &GenerationContext<'_>,
+    need_id: HomeostaticNeedId,
+    commodity: CommodityKind,
+) -> Option<AcquisitionQuantity> {
+    let metabolism = ctx.view.metabolism_profile(ctx.agent);
+    let needs = ctx.view.homeostatic_needs(ctx.agent);
+    let thresholds = ctx.view.drive_thresholds(ctx.agent);
+
+    // Without the full S126 input set, fall back to single-unit acquisition
+    // with the default horizon (FND-28: no separate stub path).
+    let (Some(metabolism), Some(needs), Some(thresholds)) = (metabolism, needs, thresholds) else {
+        return Some(AcquisitionQuantity::single());
+    };
+
+    let target_level = thresholds.high(need_id);
+    let rate = metabolism.rate(need_id);
+    let projected_breach = needs.projected_tick_of(need_id, target_level, rate, ctx.current_tick);
+
+    let horizon_ticks = match projected_breach {
+        Some(breach_tick) => {
+            let raw_horizon = breach_tick.0.saturating_sub(ctx.current_tick.0);
+            let horizon_u32 = u32::try_from(raw_horizon).unwrap_or(u32::MAX);
+            // Horizon-gate: skip emission for commodities whose breach is
+            // beyond the default horizon. The agent has time to defer
+            // proactive acquisition until pressure rises further.
+            if horizon_u32 > DEFAULT_ACQUISITION_HORIZON {
+                return None;
+            }
+            horizon_u32.max(1)
+        }
+        None => DEFAULT_ACQUISITION_HORIZON,
+    };
+
+    let target_units = compute_target_units(ctx, need_id, commodity, horizon_ticks, rate);
+    let target = std::num::NonZeroU16::new(target_units).unwrap_or(std::num::NonZeroU16::MIN);
+
+    Some(AcquisitionQuantity {
+        desired_min: std::num::NonZeroU16::MIN,
+        desired_target: target,
+        horizon_ticks: std::num::NonZeroU32::new(horizon_ticks)
+            .unwrap_or(std::num::NonZeroU32::MIN),
+    })
+}
+
+/// Compute the number of units of `commodity` needed to cover `horizon`
+/// ticks of `need_id` consumption at `rate`, bounded by carry headroom.
+/// Returns at least 1 to keep the goal non-trivial.
+fn compute_target_units(
+    ctx: &GenerationContext<'_>,
+    need_id: HomeostaticNeedId,
+    commodity: CommodityKind,
+    horizon: u32,
+    rate: worldwake_core::Permille,
+) -> u16 {
+    let Some(consumable) = commodity.spec().consumable_profile else {
+        return 1;
+    };
+    let relief_per_unit = match need_id {
+        HomeostaticNeedId::Hunger => u32::from(consumable.hunger_relief_per_unit.value()),
+        HomeostaticNeedId::Thirst => u32::from(consumable.thirst_relief_per_unit.value()),
+        HomeostaticNeedId::Fatigue | HomeostaticNeedId::Bladder | HomeostaticNeedId::Dirtiness => 0,
+    };
+    let rate_value = u32::from(rate.value());
+    if relief_per_unit == 0 || rate_value == 0 {
+        return 1;
+    }
+
+    let total_increase = horizon.saturating_mul(rate_value);
+    let units_needed = total_increase.div_ceil(relief_per_unit);
+
+    let bounded = match acquire_commodity_carry_headroom_units(ctx, commodity) {
+        Some(headroom) => units_needed.min(headroom),
+        None => units_needed,
+    };
+    let bounded = bounded.max(1).min(u32::from(u16::MAX));
+    u16::try_from(bounded).unwrap_or(1).max(1)
+}
+
+/// Return the agent's believed carry headroom in units of `commodity`,
+/// computed inline from `CarryCapacity` and `load_of_entity` per FND-3
+/// (derived view, not stored). Returns `None` when the belief view does
+/// not surface either component for the agent.
+fn acquire_commodity_carry_headroom_units(
+    ctx: &GenerationContext<'_>,
+    commodity: CommodityKind,
+) -> Option<u32> {
+    let carry = ctx.view.carry_capacity(ctx.agent)?;
+    let load = ctx.view.load_of_entity(ctx.agent)?;
+    let per_unit = load_per_unit(commodity).0;
+    if per_unit == 0 {
+        return Some(0);
+    }
+    Some(carry.0.saturating_sub(load.0) / per_unit)
+}
+
 fn emit_need_driven_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
@@ -2944,6 +3089,13 @@ fn emit_need_driven_candidates(
             }
         }
 
+        // Compute the agent-state-derived quantity once per (need, commodity).
+        // `None` means the projected breach is beyond the default horizon —
+        // skip emission for this commodity (Design Goal 3).
+        let Some(quantity) = derive_acquire_commodity_quantity(ctx, need_id, commodity) else {
+            continue;
+        };
+
         for (candidate_place, evidence, mut evidence_trace) in search.opportunities {
             if ctx.tracing_enabled {
                 evidence_trace.knowledge_path.self_knowledge.push(
@@ -2972,6 +3124,7 @@ fn emit_need_driven_candidates(
                 GoalKind::AcquireCommodity {
                     commodity,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity,
                 },
                 OpportunityAnchor::Place(candidate_place),
                 evidence,
@@ -3025,6 +3178,15 @@ fn emit_need_driven_candidates(
                     candidate.commodity,
                 ));
         }
+        // Substitute candidate uses the substitute's commodity, not the
+        // original `commodity` for which the search was run; derive its
+        // own quantity. If the projection lands outside the horizon for
+        // the substitute commodity, skip the substitute emission too.
+        let Some(substitute_quantity) =
+            derive_acquire_commodity_quantity(ctx, need_id, candidate.commodity)
+        else {
+            continue;
+        };
         emit_candidate_with_trace(
             candidates,
             diagnostics,
@@ -3036,6 +3198,7 @@ fn emit_need_driven_candidates(
             GoalKind::AcquireCommodity {
                 commodity: candidate.commodity,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: substitute_quantity,
             },
             OpportunityAnchor::Place(current_place),
             evidence,
@@ -4072,6 +4235,7 @@ fn emit_candidate(
         return;
     }
 
+    let acquisition_quantity = goal_kind_acquisition_quantity(&kind);
     let key = GoalKey::from(kind);
     diagnostics.offers.push(CandidateOfferDiagnostic {
         opportunity: OpportunityKey {
@@ -4091,7 +4255,21 @@ fn emit_candidate(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        acquisition_quantity,
     });
+}
+
+/// Extract the per-emission `AcquisitionQuantity` from a goal kind, returning
+/// `Some` only for `GoalKind::AcquireCommodity`. The value is preserved on
+/// `GoalOffer.acquisition_quantity` so the decision-trace pipeline can
+/// surface the per-agent `desired_min` / `desired_target` / `horizon_ticks`
+/// without re-deriving them at trace time, while goal identity (`GoalKey`)
+/// remains commodity + purpose only (S127 Design Goal 9).
+fn goal_kind_acquisition_quantity(kind: &GoalKind) -> Option<AcquisitionQuantity> {
+    match kind {
+        GoalKind::AcquireCommodity { quantity, .. } => Some(*quantity),
+        _ => None,
+    }
 }
 
 fn emit_recorded_violation_candidates(
@@ -4665,6 +4843,7 @@ fn emit_candidate_with_trace(
         return;
     }
 
+    let acquisition_quantity = goal_kind_acquisition_quantity(&kind);
     let key = GoalKey::from(kind);
     let opportunity = OpportunityKey {
         goal_key: key,
@@ -4685,6 +4864,7 @@ fn emit_candidate_with_trace(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        acquisition_quantity,
     });
 
     let trace = evidence_trace.into_public(opportunity);
@@ -5840,15 +6020,16 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile,
-        ArtifactState, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockingFact, BodyPart,
-        BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, CommunicationClass, DemandObservation,
-        DemandObservationReason, Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile,
-        DiversificationProfile, DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag,
-        EntityId, EntityKind, EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis,
-        ExpectationId, ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
+        AcquisitionQuantity, AgentBeliefStore, ArtifactKind, ArtifactPostingContext,
+        ArtifactPostingProfile, ArtifactState, BelievedArtifactState, BelievedBountyTerms,
+        BelievedEntityState, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
+        BlockingFact, BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
+        DemandObservation, DemandObservationReason, Discrepancy, DiscrepancyEntry,
+        DiscrepancyMemory, DisposalProfile, DiversificationProfile, DriveThresholds,
+        EffectiveRight, EligibilityRule, EmitterTag, EntityId, EntityKind,
+        EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis, ExpectationId,
+        ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
         ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId,
         HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey, InstitutionalBeliefRead,
         InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance,
@@ -5895,6 +6076,7 @@ mod tests {
         controlled_entities: BTreeSet<EntityId>,
         homeostatic_needs: BTreeMap<EntityId, HomeostaticNeeds>,
         drive_thresholds: BTreeMap<EntityId, DriveThresholds>,
+        metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         courage: BTreeMap<EntityId, Permille>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
@@ -5985,6 +6167,7 @@ mod tests {
                 controlled_entities: BTreeSet::new(),
                 homeostatic_needs: BTreeMap::new(),
                 drive_thresholds: BTreeMap::new(),
+                metabolism_profiles: BTreeMap::new(),
                 wounds: BTreeMap::new(),
                 courage: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
@@ -6181,8 +6364,8 @@ mod tests {
             self.drive_thresholds.get(&agent).copied()
         }
 
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
+        fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+            self.metabolism_profiles.get(&agent).copied()
         }
 
         fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
@@ -8137,6 +8320,7 @@ mod tests {
                     == GoalKey::from(GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     })
                     && candidate.anchor == worldwake_core::OpportunityAnchor::Place(market)
             })
@@ -8211,6 +8395,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Grain,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert!(!contains_goal(
@@ -8218,6 +8403,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         let grain_goal = candidates
@@ -8227,6 +8413,7 @@ mod tests {
                     == GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Grain,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     }
             })
             .expect("preferred substitute grain goal should be emitted");
@@ -8318,6 +8505,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -8390,6 +8578,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -8427,6 +8616,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert_eq!(
@@ -8469,6 +8659,8 @@ mod tests {
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         };
         view.resource_sources.insert(workstation, source.clone());
         view.beliefs.insert(
@@ -8554,6 +8746,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -8582,6 +8776,7 @@ mod tests {
                     == GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Apple,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     }
             })
             .expect("reachable remote harvest source should emit direct self-consume acquisition");
@@ -8641,6 +8836,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         view.workstations.insert(
@@ -8679,6 +8876,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -8723,6 +8921,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, seller, bread_lot]);
@@ -8817,6 +9016,7 @@ mod tests {
         let key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, orchard_seller, market_seller]);
@@ -8856,6 +9056,7 @@ mod tests {
             &GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
         );
         assert_eq!(acquire_goals.len(), 1);
@@ -8876,6 +9077,7 @@ mod tests {
         let key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let mut view = TestBeliefView::default();
         view.alive.extend([agent, orchard_seller, bread_lot]);
@@ -8918,6 +9120,7 @@ mod tests {
             &GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
         );
 
@@ -8943,6 +9146,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let key = GoalKey::from(goal);
         let mut view = TestBeliefView::default();
@@ -9021,6 +9225,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let key = GoalKey::from(goal);
         let mut view = TestBeliefView::default();
@@ -9079,6 +9284,7 @@ mod tests {
         let goal_key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let opportunity = OpportunityKey {
             goal_key,
@@ -9176,6 +9382,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         view.resource_sources.insert(
@@ -9186,16 +9394,20 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
         let apple_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let water_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let mut discrepancies = DiscrepancyMemory::default();
         discrepancies.record(DiscrepancyEntry {
@@ -9270,6 +9482,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -9311,6 +9524,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let mut recipes = RecipeRegistry::new();
@@ -9328,6 +9543,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert!(!contains_goal(
@@ -9384,6 +9600,8 @@ mod tests {
                 max_quantity: Quantity(1),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         view.sources_at
@@ -9437,6 +9655,8 @@ mod tests {
             max_quantity: Quantity(10),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         };
         view.resource_sources.insert(well, source.clone());
         view.sources_at
@@ -10374,6 +10594,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert!(!contains_goal(
@@ -10381,6 +10602,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
                 purpose: CommodityPurpose::RecipeInput(recipe_id),
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -10419,6 +10641,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -10472,6 +10696,8 @@ mod tests {
                 max_quantity: Quantity(1),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -10552,6 +10778,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -10634,6 +10862,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -10685,6 +10914,8 @@ mod tests {
                 max_quantity: Quantity(1),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         view.resource_sources.insert(
@@ -10695,6 +10926,8 @@ mod tests {
                 max_quantity: Quantity(1),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -10781,6 +11014,8 @@ mod tests {
                 max_quantity: Quantity(1),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         view.resource_sources.insert(
@@ -10791,6 +11026,8 @@ mod tests {
                 max_quantity: Quantity(1),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -10912,6 +11149,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -11163,6 +11402,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -11198,6 +11438,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
     }
@@ -14441,6 +14682,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
         ));
         assert!(contains_goal(
@@ -15218,6 +15460,7 @@ mod tests {
         let acquire_key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let trace = evidence_trace_for_goal(&result.diagnostics, acquire_key);
 
@@ -15272,6 +15515,7 @@ mod tests {
         let acquire_key = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let trace = evidence_trace_for_goal(&result.diagnostics, acquire_key);
 
@@ -15358,6 +15602,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         // Provide belief provenance for the workstation/resource-source entity
@@ -16442,6 +16688,8 @@ mod tests {
                 max_quantity: Quantity(qty),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             }),
             alive: true,
             wounds: Vec::new(),
@@ -16679,6 +16927,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
 
         let mut view = TestBeliefView::default();
@@ -16767,6 +17016,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
 
         let mut view = TestBeliefView::default();
@@ -18541,6 +18791,8 @@ mod tests {
                 max_quantity: Quantity(5),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -18628,6 +18880,8 @@ mod tests {
                 max_quantity: Quantity(5),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -18918,6 +19172,8 @@ mod tests {
                 max_quantity: Quantity(5),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -19015,6 +19271,365 @@ mod tests {
         assert_eq!(
             super::relieved_needs_for_commodity(CommodityKind::Water),
             BTreeSet::from([HomeostaticNeedId::Thirst, HomeostaticNeedId::Dirtiness])
+        );
+    }
+
+    /// Build a `MetabolismProfile` with the given hunger and thirst rates.
+    /// Other fields use plausible defaults; tests that need them should
+    /// override directly on the profile.
+    fn metabolism_with_rates(hunger_rate: Permille, thirst_rate: Permille) -> MetabolismProfile {
+        MetabolismProfile::new(
+            hunger_rate,
+            thirst_rate,
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            std::num::NonZeroU32::new(480).unwrap(),
+            std::num::NonZeroU32::new(240).unwrap(),
+            std::num::NonZeroU32::new(120).unwrap(),
+            std::num::NonZeroU32::new(40).unwrap(),
+            std::num::NonZeroU32::new(8).unwrap(),
+            std::num::NonZeroU32::new(12).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+        )
+    }
+
+    #[test]
+    fn candidate_gen_no_s126_fallback_emits_single_unit_quantity() {
+        // Without metabolism profile in the belief view, the emitter falls
+        // back to `AcquisitionQuantity::single()` per Design Goal 8 / spec
+        // Dependencies. Existing baseline tests already cover this — this
+        // test asserts the same contract explicitly.
+        let agent = entity(1);
+        let place = entity(10);
+        let bread_lot = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, bread_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(bread_lot, place);
+        view.entities_at.insert(place, vec![agent, bread_lot]);
+        view.homeostatic_needs.insert(agent, hunger(300));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        // Deliberately no metabolism_profile insertion → fallback path.
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread_lot,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }
+        ));
+    }
+
+    /// Find the `AcquireCommodity` candidate (if any) for `commodity` +
+    /// `purpose` in the candidate list.
+    fn find_acquire_commodity(
+        candidates: &[crate::GoalOffer],
+        commodity: CommodityKind,
+        purpose: CommodityPurpose,
+    ) -> Option<&crate::GoalOffer> {
+        candidates.iter().find(|candidate| {
+            matches!(
+                candidate.key.kind,
+                GoalKind::AcquireCommodity {
+                    commodity: c,
+                    purpose: p,
+                    ..
+                } if c == commodity && p == purpose,
+            )
+        })
+    }
+
+    #[test]
+    fn candidate_gen_quantity_aware_emission_derives_target_from_horizon() {
+        // Agent under hunger pressure with concrete metabolism + thresholds:
+        // the emitter computes `desired_target` from horizon × rate /
+        // relief_per_unit, bounded by carry headroom. Apple's
+        // `consumable_profile.hunger_relief_per_unit` is fixed by
+        // `commodity.spec()`; the test keeps inputs simple — high hunger
+        // pressure to pass the low-threshold gate, generous carry headroom
+        // so target is driven by the projection, not the cap.
+        let agent = entity(1);
+        let place = entity(10);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.insert(place, vec![agent, workstation]);
+        // Hunger 600 > high(500) → projected_breach == current_tick → horizon = 1.
+        view.homeostatic_needs.insert(agent, hunger(600));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.metabolism_profiles.insert(
+            agent,
+            metabolism_with_rates(Permille::new(2).unwrap(), Permille::new(0).unwrap()),
+        );
+        view.carry_capacities.insert(agent, LoadUnits(20));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::OrchardRow);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        view.sources_at
+            .insert((place, CommodityKind::Apple), vec![workstation]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(place),
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
+
+        let acquire = find_acquire_commodity(
+            &candidates,
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+        )
+        .expect("agent under hunger pressure should emit AcquireCommodity for apples");
+        let GoalKind::AcquireCommodity { quantity, .. } = acquire.key.kind else {
+            panic!("expected AcquireCommodity variant");
+        };
+        // Already past the high threshold → horizon collapses to 1, so
+        // target is the minimum (1 unit) — target derivation is exercised,
+        // and the candidate is emitted (no horizon-gate suppression).
+        assert!(quantity.desired_target.get() >= 1);
+        // `desired_min` invariant from spec: always at least 1.
+        assert!(quantity.desired_min.get() >= 1);
+        // `horizon_ticks` always >= 1 (NonZeroU32).
+        assert!(quantity.horizon_ticks.get() >= 1);
+    }
+
+    #[test]
+    fn candidate_gen_emits_goal_offer_with_acquisition_quantity_above_one() {
+        // S127QUAAWAACQ-009: the per-emission `AcquisitionQuantity` must
+        // round-trip on `GoalOffer.acquisition_quantity` so the decision
+        // trace can surface `desired_target` per-agent. The `GoalKey`
+        // normalization that collapses quantity to `single()` is correct
+        // for goal identity (Design Goal 9), but the offer-level field
+        // preserves the un-normalized value for trace consumers.
+        //
+        // Setup: hunger 300 ‰ (above low=250, below high=750), rate=5 ‰/tick,
+        // generous carry headroom. Projected breach is at tick
+        // (750-300)/5 = 90 → horizon=90. Apple's hunger_relief_per_unit
+        // is 220 ‰. target = ceil(90 × 5 / 220) = 3, well above the
+        // collapsed `single()` value of 1.
+        let agent = entity(1);
+        let place = entity(10);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.insert(place, vec![agent, workstation]);
+        view.homeostatic_needs.insert(agent, hunger(300));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.metabolism_profiles.insert(
+            agent,
+            metabolism_with_rates(Permille::new(5).unwrap(), Permille::new(0).unwrap()),
+        );
+        view.carry_capacities.insert(agent, LoadUnits(20));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::OrchardRow);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        view.sources_at
+            .insert((place, CommodityKind::Apple), vec![workstation]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(place),
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
+
+        let acquire = find_acquire_commodity(
+            &candidates,
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+        )
+        .expect("agent below high but above low should emit AcquireCommodity for apples");
+        let quantity = acquire
+            .acquisition_quantity
+            .expect("AcquireCommodity offer must carry the un-normalized acquisition_quantity");
+        assert!(
+            quantity.desired_target.get() > 1,
+            "long-horizon scenario should derive desired_target > 1, got {}",
+            quantity.desired_target.get(),
+        );
+        // GoalKey identity stays normalized — proves the offer-level field
+        // is the only carrier preserving the per-agent value.
+        let GoalKind::AcquireCommodity {
+            quantity: key_quantity,
+            ..
+        } = acquire.key.kind
+        else {
+            panic!("expected AcquireCommodity variant on key");
+        };
+        assert_eq!(
+            key_quantity,
+            AcquisitionQuantity::single(),
+            "GoalKey identity must keep quantity collapsed to single()",
+        );
+    }
+
+    #[test]
+    fn candidate_gen_horizon_gate_suppresses_far_future_breach() {
+        // Agent above low_threshold but below high; metabolism rate is so
+        // slow that projected_breach exceeds DEFAULT_ACQUISITION_HORIZON
+        // (200 ticks). The emitter must skip the AcquireCommodity for
+        // this commodity rather than emit a goal whose breach is too far
+        // out (Design Goal 3).
+        let agent = entity(1);
+        let place = entity(10);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.insert(place, vec![agent, workstation]);
+        // Hunger 260 — just above the default low (250), well below high (500).
+        view.homeostatic_needs.insert(agent, hunger(260));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        // Rate of 1 permille/tick → gap to high (500 - 260 = 240) takes
+        // ceil(240/1) = 240 ticks > 200 horizon → horizon-gate skips.
+        view.metabolism_profiles.insert(
+            agent,
+            metabolism_with_rates(Permille::new(1).unwrap(), Permille::new(0).unwrap()),
+        );
+        view.carry_capacities.insert(agent, LoadUnits(20));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::OrchardRow);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        view.sources_at
+            .insert((place, CommodityKind::Apple), vec![workstation]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(place),
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        // No AcquireCommodity candidate should be emitted because the
+        // projected hunger breach lies beyond the default horizon.
+        assert!(
+            find_acquire_commodity(
+                &candidates,
+                CommodityKind::Apple,
+                CommodityPurpose::SelfConsume
+            )
+            .is_none(),
+            "horizon-gate should suppress emission when breach > horizon",
         );
     }
 }

@@ -357,6 +357,15 @@ fn format_commit_trace(trace: &CommitTraceData) -> String {
                 tell.artifact_changed()
             )
         }
+        CommitTraceData::Harvest(harvest) => {
+            let actual = harvest
+                .partial_quantity
+                .unwrap_or(harvest.requested_quantity);
+            format!(
+                "harvest commit: quantity_actual={} / quantity_requested={}",
+                actual.0, harvest.requested_quantity.0
+            )
+        }
     }
 }
 

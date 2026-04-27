@@ -490,11 +490,10 @@ Phase 10 runs independently of Phase 7's pending consequence-carrier specs (S60�
 
 ```text
 S126 ✅ archived
+S127 ✅ archived
 S130 (independent; soft dep on S122 ✅)
 S131 (independent; existing SourceReliability extension)
-   │           │
-   │           └── S127 (soft deps on S126 ✅, S131)
-   │                 │
+   │
    └── S128 (soft dep on S126 ✅; hard dep on S110 ✅)
          │
          └── S129 (soft dep on S128; hard deps on S106 ✅, S110 ✅)
@@ -510,7 +509,7 @@ All cross-spec dependencies among S126–S131 are **soft** (benefit but not bloc
 - **S131**: Source Reliability Wait and Capacity Extension — extends existing `ReliabilityRecord` with `average_wait_ticks`, `wait_observation_count`, `last_observed_capacity`, `last_observed_capacity_tick`; new `wait_sensitivity_weight` on `PreferenceProfile`; ranking integration.
 
 **Wave 2** (after Wave 1; soft deps consumable):
-- **S127**: Quantity-Aware Acquisition and Visible Source State — `AcquisitionQuantity { desired_min, desired_target, horizon_ticks }` on `AcquireCommodity`; `extraction_slots` + `extraction_duration_ticks` + `LastHarvestTrace` on `ResourceSource`; partial-harvest outcome on commit (PR-11 fold-in). Soft consumes S126 ✅ (`desired_target` derivation) and S131 (wait-aware ranking).
+- **S127**: ✅ COMPLETED — Quantity-Aware Acquisition and Visible Source State — archived at [archive/specs/S127-quantity-aware-acquisition.md](/home/joeloverbeck/projects/worldwake/archive/specs/S127-quantity-aware-acquisition.md). Landed `AcquisitionQuantity { desired_min, desired_target, horizon_ticks }` on `AcquireCommodity`, `extraction_slots` + `extraction_duration_ticks` on `ResourceSource`, `LastHarvestTrace` ring buffer pruned by the existing `item_decay_system`, `ResourceExtractionQueues` per-slot contention substrate, `CommitTraceData::Harvest.partial_quantity` for partial-success harvest aftermath, candidate-generation quantity derivation from agent state, decision-trace surfacing of the quantity tuple, and five-scenario golden coverage in `golden_quantity_aware_acquisition.rs` (single-slot queue, multi-slot parallel grants, partial success, S126-driven target, FOUNDATIONS Section VI Scenario E). Final ticket S127QUAAWAACQ-010 also wired the AI's `BlockingFact::ReservationConflict` clearing baseline through new `extraction_slot_*` accessors so harvest-contention blockers clear structurally rather than by TTL.
 - **S128**: Sleep Episodes and Place-Quality Recovery — `SleepEpisode` runtime component, `WakeCondition` enum, `SleepQualityProfile` per-place, `EventTag::SleepEpisodeStarted` / `SleepEpisodeEnded`; replaces per-tick re-commit pattern. Soft consumes S126 ✅ (wake-on-projection); folds in PR-9 sleep-quality, PR-11 interrupted-sleep, PR-12 sleep events.
 
 **Wave 3** (after Wave 2; soft deps consumable):

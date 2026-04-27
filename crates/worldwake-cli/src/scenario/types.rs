@@ -55,6 +55,11 @@ pub struct ScenarioDef {
     /// Values must be non-empty justification strings.
     #[serde(default)]
     pub scenario_lint_overrides: BTreeMap<crate::scenario::lints::LintRule, String>,
+    /// Optional override for the `LastHarvestTrace` retention window
+    /// (ticks). When `None`, the global default
+    /// `worldwake_core::HARVEST_TRACE_RETENTION_TICKS` is used. (S127 §D5/§D10)
+    #[serde(default)]
+    pub harvest_trace_retention_ticks: Option<u32>,
 }
 
 /// Authored directed hostility relation between two named entities.
@@ -504,6 +509,18 @@ pub struct ResourceSourceDef {
     pub facility: Option<String>,
     pub regeneration_ticks_per_unit: Option<NonZeroU32>,
     pub capacity: Quantity,
+    #[serde(default = "default_extraction_slots")]
+    pub extraction_slots: u8,
+    #[serde(default = "default_extraction_duration_ticks")]
+    pub extraction_duration_ticks: u32,
+}
+
+fn default_extraction_slots() -> u8 {
+    1
+}
+
+fn default_extraction_duration_ticks() -> u32 {
+    1
 }
 
 fn default_true() -> bool {
@@ -1397,5 +1414,58 @@ mod tests {
             def.edges[0].bidirectional,
             "bidirectional should default to true"
         );
+    }
+
+    #[test]
+    fn scenario_def_resource_source_defaults_to_one_slot() {
+        let ron_str = r#"(
+            seed: 1,
+            places: [
+                (name: "Orchard", tags: [Forest]),
+            ],
+            resource_sources: [
+                (
+                    commodity: Apple,
+                    location: "Orchard",
+                    regeneration_ticks_per_unit: Some(5),
+                    capacity: 12,
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(def.resource_sources.len(), 1);
+        assert_eq!(
+            def.resource_sources[0].extraction_slots, 1,
+            "extraction_slots default must be 1"
+        );
+        assert_eq!(
+            def.resource_sources[0].extraction_duration_ticks, 1,
+            "extraction_duration_ticks default must be 1"
+        );
+    }
+
+    #[test]
+    fn scenario_def_resource_source_explicit_slots() {
+        let ron_str = r#"(
+            seed: 1,
+            places: [
+                (name: "RiverBank", tags: [Forest]),
+            ],
+            resource_sources: [
+                (
+                    commodity: Water,
+                    location: "RiverBank",
+                    regeneration_ticks_per_unit: Some(3),
+                    capacity: 30,
+                    extraction_slots: 5,
+                    extraction_duration_ticks: 4,
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(def.resource_sources[0].extraction_slots, 5);
+        assert_eq!(def.resource_sources[0].extraction_duration_ticks, 4);
     }
 }

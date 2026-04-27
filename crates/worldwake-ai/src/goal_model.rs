@@ -12,8 +12,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
-    EntityId, EntityKind, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
+    AcquisitionQuantity, ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind,
+    CommodityPurpose, EntityId, EntityKind, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
     InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS, Permille,
     PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick, WorkstationTag, belief_confidence,
 };
@@ -1230,7 +1230,7 @@ impl GoalKindPlannerExt for GoalKind {
                     next = next.set_quantity_ref(
                         hypothetical_ref,
                         harvest.output_commodity,
-                        harvest.output_quantity,
+                        harvest.requested_quantity,
                     );
                     if let Some(place) = next.effective_place(actor) {
                         next = next.move_entity_ref(hypothetical_ref, place);
@@ -1334,14 +1334,13 @@ impl GoalKindPlannerExt for GoalKind {
 
     fn is_satisfied(&self, state: &PlanningState<'_>) -> bool {
         let actor = state.snapshot().actor();
-        let holds_concrete_commodity = |commodity: CommodityKind| {
+        let direct_possession_quantity = |commodity: CommodityKind| -> u32 {
             state
                 .direct_possessions_ref(PlanningEntityRef::Authoritative(actor))
                 .into_iter()
-                .any(|entity| {
-                    state.item_lot_commodity_ref(entity) == Some(commodity)
-                        && state.commodity_quantity_ref(entity, commodity) > Quantity(0)
-                })
+                .filter(|entity| state.item_lot_commodity_ref(*entity) == Some(commodity))
+                .map(|entity| state.commodity_quantity_ref(entity, commodity).0)
+                .sum()
         };
         match self {
             GoalKind::ConsumeOwnedCommodity { commodity } => {
@@ -1359,12 +1358,21 @@ impl GoalKindPlannerExt for GoalKind {
                     !(relieves_hunger || relieves_thirst)
                 })
             }
-            GoalKind::AcquireCommodity { commodity, purpose } => match purpose {
-                CommodityPurpose::SelfConsume => holds_concrete_commodity(*commodity),
-                CommodityPurpose::Restock | CommodityPurpose::RecipeInput(_) => {
-                    state.commodity_quantity(actor, *commodity) > Quantity(0)
+            GoalKind::AcquireCommodity {
+                commodity,
+                purpose,
+                quantity,
+            } => {
+                let floor = u32::from(quantity.desired_min.get());
+                match purpose {
+                    CommodityPurpose::SelfConsume => {
+                        direct_possession_quantity(*commodity) >= floor
+                    }
+                    CommodityPurpose::Restock | CommodityPurpose::RecipeInput(_) => {
+                        state.commodity_quantity(actor, *commodity).0 >= floor
+                    }
                 }
-            },
+            }
             GoalKind::Sleep => state
                 .homeostatic_needs(actor)
                 .zip(state.drive_thresholds(actor))
@@ -2335,6 +2343,13 @@ pub struct GoalOffer {
     pub required_information_gaps: Vec<worldwake_core::BeliefClaimKey>,
     pub invalidators: Vec<crate::Invalidator>,
     pub learned_expectation_refs: Vec<worldwake_core::ExpectationId>,
+    /// Per-emission `AcquisitionQuantity` preserved alongside the normalized
+    /// `GoalKey`. `Some` when the offer's `kind` was `AcquireCommodity`;
+    /// `None` for all other goal families. Surfaces the per-agent
+    /// `desired_min` / `desired_target` / `horizon_ticks` through the
+    /// decision-trace pipeline (FND-29) without affecting goal identity
+    /// (S127 Design Goal 9).
+    pub acquisition_quantity: Option<AcquisitionQuantity>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2572,18 +2587,19 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::ActionDomain;
     use worldwake_core::{
-        ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState, AskWitnessMemory,
-        AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        BelievedInstitutionalClaim, BlockerMemory, BodyCostPerTick, BountyTarget, BountyTerms,
-        CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DemandObservationReason, DeprivationExposure, DisposalProfile,
-        DriveEscalationProfile, DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile,
-        EpistemicSubject, ExecutionBudget, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement,
-        PunishmentKind, Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource,
-        RewardSource, SuccessionLaw, TellTopic, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, ViolationId, VisibilitySpec, WorkstationTag, Wound,
+        AcquisitionQuantity, ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState,
+        AskWitnessMemory, AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms,
+        BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory, BodyCostPerTick,
+        BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, DemandObservation, DemandObservationReason, DeprivationExposure,
+        DisposalProfile, DriveEscalationProfile, DriveThresholds, EntityId, EntityKind,
+        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeedId,
+        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile,
+        NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind, Quantity, RecipeId,
+        RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw, TellTopic, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
+        WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
     use worldwake_sim::PressForceClaimActionPayload;
@@ -2730,6 +2746,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score: discount.post_discount_motive,
@@ -2768,6 +2785,7 @@ mod tests {
                 key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 evidence_entities: BTreeSet::from([entity_id(9, 0)]),
                 evidence_places: BTreeSet::new(),
@@ -2776,6 +2794,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score: discount.post_discount_motive,
@@ -2804,6 +2823,7 @@ mod tests {
         let kind = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let key = GoalKey::from(kind);
 
@@ -2825,6 +2845,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let bytes = bincode::serialize(&goal).unwrap();
@@ -2854,6 +2875,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score: 900,
@@ -2882,6 +2904,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
             .ranked_goal_provenance_family(),
             Some(RankedGoalProvenanceFamily::Drive)
@@ -2890,6 +2913,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::Restock,
+                quantity: AcquisitionQuantity::single(),
             }
             .ranked_goal_provenance_family(),
             None
@@ -3143,6 +3167,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }
             .target_commodity(&recipes),
             Some(CommodityKind::Water)
@@ -4212,6 +4237,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let def = ActionDef {
             id: ActionDefId(9),
@@ -5096,6 +5122,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5150,6 +5177,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5198,6 +5226,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5256,6 +5285,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(13),
@@ -5324,6 +5354,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(14),
@@ -5378,6 +5409,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5421,6 +5453,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::from([seller]),
             evidence_places: BTreeSet::new(),
@@ -5429,6 +5462,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5473,6 +5507,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::from([entity(11), entity(12)]),
             evidence_places: BTreeSet::new(),
@@ -5481,6 +5516,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5530,6 +5566,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5580,6 +5617,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5630,6 +5668,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(13),
@@ -5683,6 +5722,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(25),
@@ -5743,6 +5783,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(27),
@@ -5800,6 +5841,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(28),
@@ -5896,6 +5938,84 @@ mod tests {
         );
 
         assert_eq!(result, Err(GoalPayloadOverrideError::UnsupportedGoal));
+    }
+
+    #[test]
+    fn is_satisfied_acquire_commodity_below_desired_min() {
+        let (mut view, actor, _seller) = base_view();
+        let bread_lot = entity(20);
+        view.commodity_quantities
+            .insert((bread_lot, CommodityKind::Bread), Quantity(2));
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Bread), Quantity(2));
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        let quantity = AcquisitionQuantity {
+            desired_min: std::num::NonZeroU16::new(5).unwrap(),
+            desired_target: std::num::NonZeroU16::new(5).unwrap(),
+            horizon_ticks: std::num::NonZeroU32::new(200).unwrap(),
+        };
+
+        let self_consume = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity,
+        };
+        let restock = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::Restock,
+            quantity,
+        };
+
+        assert!(
+            !self_consume.is_satisfied(&state),
+            "SelfConsume with desired_min=5 should not be satisfied with 2 units in possession"
+        );
+        assert!(
+            !restock.is_satisfied(&state),
+            "Restock with desired_min=5 should not be satisfied with controlled_commodity_quantity=2"
+        );
+    }
+
+    #[test]
+    fn is_satisfied_acquire_commodity_at_desired_min() {
+        let (mut view, actor, _seller) = base_view();
+        let bread_lot = entity(20);
+        view.commodity_quantities
+            .insert((bread_lot, CommodityKind::Bread), Quantity(5));
+        view.commodity_quantities
+            .insert((actor, CommodityKind::Bread), Quantity(5));
+
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+
+        let quantity = AcquisitionQuantity {
+            desired_min: std::num::NonZeroU16::new(5).unwrap(),
+            desired_target: std::num::NonZeroU16::new(7).unwrap(),
+            horizon_ticks: std::num::NonZeroU32::new(200).unwrap(),
+        };
+
+        let self_consume = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity,
+        };
+        let restock = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::Restock,
+            quantity,
+        };
+
+        assert!(
+            self_consume.is_satisfied(&state),
+            "SelfConsume with desired_min=5 should be satisfied with 5 units in possession"
+        );
+        assert!(
+            restock.is_satisfied(&state),
+            "Restock with desired_min=5 should be satisfied with controlled_commodity_quantity=5"
+        );
     }
 
     #[test]
@@ -6035,6 +6155,7 @@ mod tests {
         let acquire_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let sleep_goal = GoalKind::Sleep;
         let sleep_step = PlannedStep {
@@ -6098,6 +6219,8 @@ mod tests {
                         max_quantity: Quantity(4),
                         regeneration_ticks_per_unit: None,
                         last_regeneration_tick: None,
+                        extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                        extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                     }),
                 ),
             )],
@@ -6123,6 +6246,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert_eq!(
@@ -6187,6 +6311,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(
@@ -6229,6 +6354,8 @@ mod tests {
                         max_quantity: Quantity(4),
                         regeneration_ticks_per_unit: None,
                         last_regeneration_tick: None,
+                        extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                        extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                     }),
                 ),
             )],
@@ -6254,6 +6381,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let subjects = grounded_goal_epistemic_subjects(&goal, &state);
@@ -6316,6 +6444,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
 
         let advanced = goal.apply_planner_step(
@@ -6326,7 +6455,7 @@ mod tests {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(3),
+                requested_quantity: Quantity(3),
                 required_tool_kinds: Vec::new(),
             })),
         );
@@ -6352,7 +6481,7 @@ mod tests {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::Well,
                 output_commodity: CommodityKind::Water,
-                output_quantity: Quantity(2),
+                requested_quantity: Quantity(2),
                 required_tool_kinds: Vec::new(),
             })),
         );
@@ -6381,6 +6510,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let before = base_state.commodity_quantity(actor, CommodityKind::Apple);
 
@@ -6400,6 +6530,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
 
         assert!(!goal.is_satisfied(&base_state));
@@ -6412,7 +6543,7 @@ mod tests {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(3),
+                requested_quantity: Quantity(3),
                 required_tool_kinds: Vec::new(),
             })),
         );
@@ -6432,6 +6563,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
 
         assert!(
@@ -6549,6 +6681,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::Restock,
+                quantity: AcquisitionQuantity::single(),
             }
             .is_progress_barrier(&queue_step)
         );
@@ -7039,6 +7172,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&resource_entity).cloned();
@@ -7119,6 +7254,8 @@ mod tests {
                 max_quantity: Quantity(10),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&resource_entity).cloned();
@@ -7157,6 +7294,7 @@ mod tests {
         let goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let places = goal.goal_relevant_places(&state, &recipes);
         assert!(
@@ -7305,6 +7443,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let recipes = worldwake_sim::RecipeRegistry::new();
@@ -7365,6 +7505,8 @@ mod tests {
                             max_quantity: Quantity(2),
                             regeneration_ticks_per_unit: None,
                             last_regeneration_tick: None,
+                            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                         }),
                         alive: true,
                         wounds: Vec::new(),
@@ -7608,6 +7750,8 @@ mod tests {
                 max_quantity: Quantity(1),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let mut loose_medicine_belief = believed_entity_state_at(place_b, Tick(1), None);
@@ -7648,6 +7792,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&wheat_field).cloned();
@@ -7732,6 +7878,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&wheat_field).cloned();
@@ -7789,6 +7937,8 @@ mod tests {
                     max_quantity: Quantity(3),
                     regeneration_ticks_per_unit: None,
                     last_regeneration_tick: None,
+                    extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                 },
             );
             let believed_source = view.resource_sources.get(&field).cloned();
@@ -7841,6 +7991,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         let believed_source = view.resource_sources.get(&wheat_field).cloned();
@@ -7894,6 +8046,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -8046,6 +8200,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalKind::Sleep,
             GoalKind::Relieve,
@@ -8148,6 +8303,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalKind::Sleep,
             GoalKind::Relieve,
@@ -9453,6 +9609,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         }
     }
 
@@ -9492,6 +9649,8 @@ mod tests {
                         max_quantity: Quantity(4),
                         regeneration_ticks_per_unit: None,
                         last_regeneration_tick: None,
+                        extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                        extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                     }),
                 ),
             )],
@@ -9509,6 +9668,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9580,6 +9740,8 @@ mod tests {
                         max_quantity: Quantity(4),
                         regeneration_ticks_per_unit: None,
                         last_regeneration_tick: None,
+                        extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                        extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                     }),
                 ),
             )],
@@ -9597,6 +9759,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9679,6 +9842,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9737,6 +9901,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9833,6 +9998,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(

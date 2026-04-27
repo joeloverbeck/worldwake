@@ -301,6 +301,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
         let spawned = spawn_scenario(&def).unwrap();
         let agent_id = spawned
@@ -375,6 +376,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: std::collections::BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
         spawn_scenario(&def).unwrap()
     }

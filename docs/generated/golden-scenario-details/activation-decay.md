@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
-- Source: `golden_activation_decay.rs:315`
+- Source: `golden_activation_decay.rs:321`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm
@@ -24,7 +24,7 @@ Scenarios: 3
 
 ### Scenario 146: Need Salience Extends Item Retention But Not Facility Retention
 
-- Source: `golden_activation_decay.rs:353`
+- Source: `golden_activation_decay.rs:359`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm
@@ -41,7 +41,7 @@ Scenarios: 3
 
 ### Scenario 147: Claim Confidence Threshold Prunes Stale Reports Before Fresh Reports
 
-- Source: `golden_activation_decay.rs:391`
+- Source: `golden_activation_decay.rs:397`
 - Systems: Perception, Social Information
 - ActionDomains: N/A
 - Places: VillageSquare, OrchardFarm

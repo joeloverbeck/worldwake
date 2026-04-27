@@ -452,11 +452,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, BodyCostPerTick, BodyPart,
-        CommodityKind, DeprivationKind, EntityId, EntityKind, GoalKind, InTransitOnEdge,
-        InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, OpportunityAnchor, PatrolRoute,
-        Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange, ToldBeliefMemory, Wound,
-        WoundCause, WoundId,
+        AcquisitionQuantity, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+        BodyCostPerTick, BodyPart, CommodityKind, DeprivationKind, EntityId, EntityKind, GoalKind,
+        InTransitOnEdge, InstitutionalBeliefRead, LoadUnits, MerchandiseProfile, OpportunityAnchor,
+        PatrolRoute, Permille, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        ToldBeliefMemory, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, EconomicBeliefView,
@@ -974,6 +974,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1020,6 +1021,8 @@ mod tests {
                 max_quantity: Quantity(3),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         connect(&mut view, place_a, place_b, 3);
@@ -1045,6 +1048,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1076,6 +1080,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1085,6 +1090,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1112,6 +1118,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1121,6 +1128,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1153,6 +1161,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1177,6 +1186,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1186,6 +1196,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1212,6 +1223,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1221,6 +1233,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).is_none());
@@ -1244,6 +1257,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         connect(&mut view, place_a, place_b, 7);
@@ -1256,6 +1271,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::new(),
@@ -1265,6 +1281,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1302,6 +1319,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         view.kinds.insert(local_lot, EntityKind::ItemLot);
@@ -1329,6 +1348,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::None,
             evidence_entities: BTreeSet::from([local_seller, remote_source]),
@@ -1338,6 +1358,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1367,6 +1388,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         register_facility(
@@ -1379,6 +1402,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
         connect(&mut view, place_a, place_b, 5);
@@ -1388,6 +1413,7 @@ mod tests {
             key: worldwake_core::GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::Place(place_b),
             evidence_entities: BTreeSet::from([local_source, remote_source]),
@@ -1397,6 +1423,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1442,6 +1469,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &recipes).unwrap();
@@ -1475,6 +1503,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(

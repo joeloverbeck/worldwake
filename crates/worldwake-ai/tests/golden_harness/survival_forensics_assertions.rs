@@ -184,6 +184,7 @@ pub fn synthetic_ranked_goal_summary(
         source_reliability_discount: None,
         competition_discount: None,
         feasibility: worldwake_ai::FeasibilityHint::Likely,
+        acquisition_quantity: None,
     }
 }
 
@@ -288,6 +289,7 @@ fn is_water_acquire_goal(goal: &GoalKind) -> bool {
         GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            quantity: _,
         }
     )
 }

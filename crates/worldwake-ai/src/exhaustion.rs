@@ -565,15 +565,15 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ArtifactKind, ArtifactState, BeliefConfidencePolicy, BelievedArtifactState,
-        BelievedBountyTerms, BelievedEntityState, BodyCostPerTick, BodyPart, BountyTarget,
-        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds, EntityId,
-        EntityKind, GoalKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead,
-        JusticeDispositionProfile, LoadUnits, MerchandiseProfile, OfficeData, Permille,
-        PunishmentKind, Quantity, RecipientKnowledgeStatus, RecordEntryId, ResourceSource,
-        TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile, ThresholdBand,
-        UniqueItemKind, ViolationDispositionProfile, ViolationId, WorkstationTag, Wound,
-        WoundCause, WoundId,
+        AcquisitionQuantity, ArtifactKind, ArtifactState, BeliefConfidencePolicy,
+        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, BodyCostPerTick, BodyPart,
+        BountyTarget, CommodityConsumableProfile, CommodityKind, DemandObservation,
+        DriveThresholds, EntityId, EntityKind, GoalKind, HomeostaticNeedId, HomeostaticNeeds,
+        InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MerchandiseProfile,
+        OfficeData, Permille, PunishmentKind, Quantity, RecipientKnowledgeStatus, RecordEntryId,
+        ResourceSource, TellMemoryKey, TellProfile, TellTopic, TheftDispositionProfile,
+        ThresholdBand, UniqueItemKind, ViolationDispositionProfile, ViolationId, WorkstationTag,
+        Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{GoalBeliefView, RecipeDefinition, RecipeRegistry};
 
@@ -1590,6 +1590,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalKind::Sleep,
             GoalKind::Relieve,
@@ -1694,10 +1695,12 @@ mod tests {
         let restock = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: worldwake_core::CommodityPurpose::Restock,
+            quantity: AcquisitionQuantity::single(),
         };
         let self_consume = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
 
         let (restock_conditions, restock_baseline) =
@@ -2221,6 +2224,7 @@ mod tests {
         let shared_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let orchard = OpportunityKey {
             goal_key: shared_goal,

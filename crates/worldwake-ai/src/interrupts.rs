@@ -310,7 +310,9 @@ mod tests {
         GoalPriorityClass, PlannedPlan,
     };
     use std::collections::BTreeSet;
-    use worldwake_core::{ActionDefId, CommodityKind, EntityId, GoalKind, Permille, Tick};
+    use worldwake_core::{
+        AcquisitionQuantity, ActionDefId, CommodityKind, EntityId, GoalKind, Permille, Tick,
+    };
     use worldwake_sim::Interruptibility;
 
     fn entity(slot: u32) -> EntityId {
@@ -336,6 +338,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class,
             motive_score,
@@ -573,6 +576,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::Critical,
                 1_100,
@@ -606,6 +610,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 900,
@@ -639,6 +644,7 @@ mod tests {
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let jc = Some(IntentionFrame {
             goal: GoalKey::from(current_goal),
@@ -681,6 +687,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_099,
@@ -692,6 +699,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_100,
@@ -851,11 +859,13 @@ mod tests {
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let current_goal_key = GoalKey::from(current_goal);
         let challenger_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let jc = Some(IntentionFrame {
             goal: current_goal_key,
@@ -897,6 +907,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_350,
@@ -962,6 +973,7 @@ mod tests {
         let current_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let current_goal_key = GoalKey::from(current_goal);
         let runtime = AgentDecisionRuntime {
@@ -992,6 +1004,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::Low,
                 10,
@@ -1156,6 +1169,7 @@ mod tests {
         let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let destination = entity(40);
         let detour_goal = GoalKey::from(GoalKind::ConsumeOwnedCommodity {
@@ -1164,6 +1178,7 @@ mod tests {
         let abandon_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let jc = Some(IntentionFrame {
             goal: committed_goal,
@@ -1201,6 +1216,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_150,
@@ -1216,6 +1232,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::High,
                 1_000,

@@ -6,11 +6,12 @@ use golden_harness::*;
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_ai::{CommodityPurpose, DecisionOutcome, PlannerOpKind, SelectedPlanSource};
 use worldwake_core::{
-    AgentData, BeliefConfidencePolicy, CauseRef, CommodityKind, ControlSource, EdgeExperience,
-    EntityId, EventLog, EventPayload, EventTag, GoalKey, GoalKind, HomeostaticNeeds, PendingEvent,
-    PerceptionProfile, PerceptionSource, Place, PlaceTag, PreferenceProfile, ProductionOutputOwner,
-    Quantity, ResourceSource, RouteExperience, Seed, Tick, Topology, TravelEdge, TravelEdgeId,
-    UtilityProfile, VisibilitySpec, WitnessData, WorkstationTag, World, hash_event_log, hash_world,
+    AcquisitionQuantity, AgentData, BeliefConfidencePolicy, CauseRef, CommodityKind, ControlSource,
+    EdgeExperience, EntityId, EventLog, EventPayload, EventTag, GoalKey, GoalKind,
+    HomeostaticNeeds, PendingEvent, PerceptionProfile, PerceptionSource, Place, PlaceTag,
+    PreferenceProfile, ProductionOutputOwner, Quantity, ResourceSource, RouteExperience, Seed,
+    Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData,
+    WorkstationTag, World, hash_event_log, hash_world,
 };
 use worldwake_sim::{
     ActionExecutionContext, ActionRequestMode, InputKind, InterruptReason, RequestProvenance,
@@ -207,6 +208,8 @@ fn place_orchard_source(h: &mut GoldenHarness) -> EntityId {
             max_quantity: Quantity(12),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         },
         ProductionOutputOwner::Actor,
     )
@@ -304,6 +307,7 @@ fn latest_selected_apple_travel_destination(
                 .selected_goal_is(GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }))
             {
                 return None;

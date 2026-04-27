@@ -911,12 +911,20 @@ pub fn place_workstation_with_source(
     source: ResourceSource,
     ownership_policy: ProductionOutputOwner,
 ) -> EntityId {
+    let slot_count = source.extraction_slots.get() as usize;
     let mut txn = new_txn(world, 0);
     let ws = txn.create_entity(EntityKind::Facility);
     txn.set_ground_location(ws, place).unwrap();
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
+    txn.set_component_resource_extraction_queues(
+        ws,
+        worldwake_core::ResourceExtractionQueues {
+            queues: vec![ContentionQueue::default(); slot_count],
+        },
+    )
+    .unwrap();
     txn.set_component_production_output_ownership_policy(
         ws,
         ProductionOutputOwnershipPolicy {
@@ -937,12 +945,20 @@ pub fn place_exclusive_workstation_with_source(
     grant_hold_ticks: NonZeroU32,
     ownership_policy: ProductionOutputOwner,
 ) -> EntityId {
+    let slot_count = source.extraction_slots.get() as usize;
     let mut txn = new_txn(world, 0);
     let ws = txn.create_entity(EntityKind::Facility);
     txn.set_ground_location(ws, place).unwrap();
     txn.set_component_workstation_marker(ws, WorkstationMarker(tag))
         .unwrap();
     txn.set_component_resource_source(ws, source).unwrap();
+    txn.set_component_resource_extraction_queues(
+        ws,
+        worldwake_core::ResourceExtractionQueues {
+            queues: vec![ContentionQueue::default(); slot_count],
+        },
+    )
+    .unwrap();
     txn.set_component_contention_policy(
         ws,
         ContentionPolicy {
@@ -1566,7 +1582,7 @@ mod tests {
         AgentDecisionRuntime, CommodityPurpose, ExhaustionBaseline, ExhaustionEntry,
         ExhaustionRetryState, GoalKey, GoalKind, GoalPriorityClass, HypotheticalEntityId,
     };
-    use worldwake_core::{ActionDefId, FrameClearReason};
+    use worldwake_core::{AcquisitionQuantity, ActionDefId, FrameClearReason};
     use worldwake_sim::{PerAgentBeliefView, SpatialBeliefView};
 
     #[derive(Serialize, Deserialize)]
@@ -1670,6 +1686,7 @@ mod tests {
                 goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 anchor: OpportunityAnchor::Place(dead_place),
             },
@@ -1739,6 +1756,7 @@ mod tests {
             goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::Place(dead_place),
         }));

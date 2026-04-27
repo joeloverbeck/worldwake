@@ -57,10 +57,10 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        BlockerMemory, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        ContentionGrant, DemandObservation, DriveThresholds, EntityId, EntityKind, GoalKind,
-        HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
+        AcquisitionQuantity, BlockerMemory, CommodityConsumableProfile, CommodityKind,
+        CommodityPurpose, ContentionGrant, DemandObservation, DriveThresholds, EntityId,
+        EntityKind, GoalKind, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, Permille, PlaceTag, Quantity, RecipeId,
         ResourceSource, TellProfile, Tick, TickRange, TradeDispositionProfile, UniqueItemKind,
         UtilityProfile, WorkstationTag, Wound,
     };
@@ -512,6 +512,7 @@ mod tests {
         let missing_goal = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
 
         let explanation = explain_goal(

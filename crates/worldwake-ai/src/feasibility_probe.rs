@@ -325,7 +325,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingContext,
+        AcquisitionQuantity, ActionDefId, ActionDomain, AgentBeliefStore, ArtifactPostingContext,
         BeliefConfidencePolicy, Blocker, BlockerClearingCondition, BlockerMemory, BlockingFact,
         BodyCostPerTick, CombatProfile, CommodityConsumableProfile, CommodityKind,
         DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
@@ -367,6 +367,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score: 500,
@@ -794,6 +795,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: crate::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             OpportunityAnchor::Place(place),
         );
@@ -872,6 +874,7 @@ mod tests {
                 goal_key: GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: crate::CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }
                 .into(),
                 anchor: OpportunityAnchor::None,
@@ -880,6 +883,7 @@ mod tests {
                 key: GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: crate::CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }
                 .into(),
                 anchor: OpportunityAnchor::None,
@@ -890,6 +894,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score: 500,
@@ -941,6 +946,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: crate::CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             OpportunityAnchor::Entity(source),
         );

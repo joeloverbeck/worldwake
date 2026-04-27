@@ -489,9 +489,9 @@ mod tests {
         PlanningPipelineTrace, SelectedPlanTrace, SelectionTrace, decision_trace::DiscrepancyTrace,
     };
     use worldwake_core::{
-        ActionDefId, CauseRef, ControlSource, DriveThresholds, GoalKind, OpportunityAnchor,
-        PrototypePlace, Quantity, ResourceSource, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorldTxn, build_prototype_world, prototype_place_entity,
+        AcquisitionQuantity, ActionDefId, CauseRef, ControlSource, DriveThresholds, GoalKind,
+        OpportunityAnchor, PrototypePlace, Quantity, ResourceSource, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorldTxn, build_prototype_world, prototype_place_entity,
     };
 
     #[test]
@@ -565,6 +565,7 @@ mod tests {
                 GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 })
             };
             extractor.observe(
@@ -688,6 +689,8 @@ mod tests {
                 max_quantity: Quantity(5),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         )
         .unwrap();
@@ -757,6 +760,7 @@ mod tests {
                         source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: crate::FeasibilityHint::Likely,
+                        acquisition_quantity: None,
                     }],
                     top_ranked_comparison: None,
                     suppressed: Vec::new(),

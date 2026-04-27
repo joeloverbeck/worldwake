@@ -438,6 +438,7 @@ fn reinstate_current_plan_candidate(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        acquisition_quantity: None,
     });
     candidates
         .diagnostics
@@ -974,10 +975,10 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        ActionDefId, CauseRef, CommodityKind, ControlSource, DecisionEventPayload, EntityId,
-        EventLog, EventTag, EventView, GoalKey, GoalKind, MaterializationTag, OpportunityAnchor,
-        Quantity, ResourceSource, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
-        build_prototype_world,
+        AcquisitionQuantity, ActionDefId, CauseRef, CommodityKind, ControlSource,
+        DecisionEventPayload, EntityId, EventLog, EventTag, EventView, GoalKey, GoalKind,
+        MaterializationTag, OpportunityAnchor, Quantity, ResourceSource, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::PerAgentBeliefView;
 
@@ -1012,6 +1013,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let committed_plan = PlannedPlan::new(
             worldwake_core::OpportunityKey {
@@ -1049,6 +1051,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
@@ -1078,6 +1081,7 @@ mod tests {
         let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let other_goal = GoalKey::from(GoalKind::Sleep);
         let committed_plan = PlannedPlan::new(
@@ -1113,6 +1117,7 @@ mod tests {
         let committed_goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let committed_plan = PlannedPlan::new(
             worldwake_core::OpportunityKey {
@@ -1138,6 +1143,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
@@ -1220,6 +1226,8 @@ mod tests {
                     max_quantity: Quantity(10),
                     regeneration_ticks_per_unit: None,
                     last_regeneration_tick: None,
+                    extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
                 },
             )
             .unwrap();
@@ -1229,6 +1237,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let current_plan = PlannedPlan::new(
             worldwake_core::OpportunityKey {

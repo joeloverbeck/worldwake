@@ -225,8 +225,8 @@ mod tests {
         RequiredFact,
     };
     use worldwake_core::{
-        ActionDefId, CommodityKind, CommodityPurpose, GoalKey, GoalKind, OpportunityAnchor,
-        OpportunityKey, Permille, Quantity,
+        AcquisitionQuantity, ActionDefId, CommodityKind, CommodityPurpose, GoalKey, GoalKind,
+        OpportunityAnchor, OpportunityKey, Permille, Quantity,
     };
     use worldwake_sim::ActionPayload;
 
@@ -269,6 +269,7 @@ mod tests {
         let goal = GoalKey::new(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         PlannedPlan::new(
             OpportunityKey {

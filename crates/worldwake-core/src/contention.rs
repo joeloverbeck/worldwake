@@ -15,6 +15,21 @@ pub struct ContentionQueue {
 
 impl Component for ContentionQueue {}
 
+/// Per-slot contention queues for resource extraction. Length matches
+/// the host source's `ResourceSource::extraction_slots`. Each slot has
+/// its own `ContentionQueue`; reservations key by
+/// `(source_entity, slot_index)`.
+///
+/// Per FND-26 this lives separately from `ResourceSource` so that
+/// commodity/quantity state and reservation state remain independently
+/// registered carriers on the source entity.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResourceExtractionQueues {
+    pub queues: Vec<ContentionQueue>,
+}
+
+impl Component for ResourceExtractionQueues {}
+
 /// One waiting actor's intended exclusive action on a contended entity.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ContentionWaiter {
@@ -193,7 +208,7 @@ mod tests {
     use super::{
         ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
         ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter,
-        QueuedContentionIntent,
+        QueuedContentionIntent, ResourceExtractionQueues,
     };
     use crate::{ActionDefId, GoalKey, GoalKind, Tick, traits::Component};
     use serde::{Serialize, de::DeserializeOwned};
@@ -215,6 +230,7 @@ mod tests {
         assert_component_bounds::<ContentionQueue>();
         assert_component_bounds::<ContentionIntents>();
         assert_component_bounds::<ContentionDispositionProfile>();
+        assert_component_bounds::<ResourceExtractionQueues>();
         assert_value_bounds::<ContentionPolicy>();
         assert_value_bounds::<ContentionQueue>();
         assert_value_bounds::<ContentionWaiter>();
@@ -223,6 +239,7 @@ mod tests {
         assert_value_bounds::<QueuedContentionIntent>();
         assert_value_bounds::<ContentionDispositionProfile>();
         assert_value_bounds::<ContentionStatus>();
+        assert_value_bounds::<ResourceExtractionQueues>();
     }
 
     #[test]
@@ -411,5 +428,79 @@ mod tests {
     #[test]
     fn contention_status_defaults_to_unmanaged() {
         assert_eq!(ContentionStatus::default(), ContentionStatus::Unmanaged);
+    }
+
+    #[test]
+    fn resource_extraction_queues_bincode_roundtrip() {
+        let mut slot_zero = ContentionQueue::default();
+        slot_zero
+            .enqueue(actor(1), ActionDefId(4), Tick(10), None)
+            .unwrap();
+        slot_zero.promote_head(Tick(11), NonZeroU32::new(5).unwrap());
+
+        let mut slot_one = ContentionQueue::default();
+        slot_one
+            .enqueue(actor(2), ActionDefId(4), Tick(12), None)
+            .unwrap();
+        slot_one
+            .enqueue(actor(3), ActionDefId(4), Tick(13), None)
+            .unwrap();
+
+        let queues = ResourceExtractionQueues {
+            queues: vec![slot_zero, slot_one, ContentionQueue::default()],
+        };
+
+        let roundtrip: ResourceExtractionQueues =
+            bincode::deserialize(&bincode::serialize(&queues).unwrap()).unwrap();
+
+        assert_eq!(roundtrip, queues);
+    }
+
+    #[test]
+    fn per_slot_reservation_isolation() {
+        let mut queues = ResourceExtractionQueues {
+            queues: vec![ContentionQueue::default(), ContentionQueue::default()],
+        };
+
+        // Slot 0: actor(1) is granted.
+        queues.queues[0]
+            .enqueue(actor(1), ActionDefId(4), Tick(10), None)
+            .unwrap();
+        queues.queues[0].promote_head(Tick(10), NonZeroU32::new(5).unwrap());
+
+        // Slot 1: actor(2) is granted independently.
+        queues.queues[1]
+            .enqueue(actor(2), ActionDefId(4), Tick(11), None)
+            .unwrap();
+        queues.queues[1].promote_head(Tick(11), NonZeroU32::new(5).unwrap());
+
+        assert_eq!(
+            queues.queues[0].granted.as_ref().map(|g| g.actor),
+            Some(actor(1))
+        );
+        assert_eq!(
+            queues.queues[1].granted.as_ref().map(|g| g.actor),
+            Some(actor(2))
+        );
+        assert!(queues.queues[0].waiting.is_empty());
+        assert!(queues.queues[1].waiting.is_empty());
+
+        // A third actor enqueued into the already-granted slot 0
+        // lands in `waiting`, not `granted`.
+        queues.queues[0]
+            .enqueue(actor(3), ActionDefId(4), Tick(12), None)
+            .unwrap();
+        assert_eq!(
+            queues.queues[0].granted.as_ref().map(|g| g.actor),
+            Some(actor(1)),
+            "existing grant on slot 0 is unchanged"
+        );
+        assert_eq!(queues.queues[0].position_of(actor(3)), Some(0));
+        // Slot 1 stays untouched by slot 0 activity.
+        assert_eq!(
+            queues.queues[1].granted.as_ref().map(|g| g.actor),
+            Some(actor(2))
+        );
+        assert!(queues.queues[1].waiting.is_empty());
     }
 }

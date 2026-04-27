@@ -4,8 +4,8 @@
 //! deterministic testing.
 
 use crate::{
-    ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
-    ClearingBaseline, CommodityKind, CommodityPurpose, CommodityValuationProfile,
+    AcquisitionQuantity, ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory,
+    BlockingFact, ClearingBaseline, CommodityKind, CommodityPurpose, CommodityValuationProfile,
     ContentionDispositionProfile, DemandMemory, DemandObservation, DemandObservationReason,
     Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EdgeExperience,
     EntityId, GoalKey, GoalKind, LearnedOpportunityMemory, MemoryCapacityProfile,
@@ -168,6 +168,7 @@ pub fn sample_goal_key() -> GoalKey {
     GoalKey::from(GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
         purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     })
 }
 

@@ -267,8 +267,8 @@ mod tests {
     };
     use worldwake_ai::CommodityPurpose;
     use worldwake_core::{
-        CommodityKind, EntityId, FrameAssumption, FrameState, GoalKey, GoalKind, IntentionDomain,
-        IntentionFrame, Tick,
+        AcquisitionQuantity, CommodityKind, EntityId, FrameAssumption, FrameState, GoalKey,
+        GoalKind, IntentionDomain, IntentionFrame, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -283,6 +283,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             domain: IntentionDomain::Travel {
                 destination: entity(5),
@@ -305,6 +306,7 @@ mod tests {
                 goal: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 commodity: CommodityKind::Apple,
                 place: entity(5),
@@ -411,6 +413,7 @@ mod tests {
                 goal: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 commodity: CommodityKind::Bread,
                 place: entity(7),

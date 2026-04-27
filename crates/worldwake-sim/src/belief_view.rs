@@ -15,14 +15,15 @@ use worldwake_core::{
     DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
     ExpectationStore, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PatrolProfile, PatrolRoute,
-    Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation, ResourceSource,
-    RewardEncumbrance, RewardSource, RightKind, RouteExperience, SocialObservation,
-    SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
+    JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LoadUnits, MerchandiseProfile,
+    MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+    PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
+    RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation,
+    ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource, RightKind,
+    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
+    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+    ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -415,6 +416,14 @@ pub trait GoalBeliefView {
         None
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
+        let _ = entity;
+        None
+    }
+    fn resource_extraction_queues(&self, entity: EntityId) -> Option<ResourceExtractionQueues> {
+        let _ = entity;
+        None
+    }
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
     fn has_production_job(&self, entity: EntityId) -> bool;
@@ -425,6 +434,10 @@ pub trait GoalBeliefView {
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+        let _ = agent;
+        None
+    }
     fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
         let _ = agent;
         None
@@ -852,6 +865,43 @@ pub trait TemporalBeliefView {
         let _ = facility;
         None
     }
+    /// Position of `actor` within whichever slot of `source`'s
+    /// `ResourceExtractionQueues` they are currently waiting on. Returns
+    /// `None` if the actor is not enqueued, or the source has no
+    /// `ResourceExtractionQueues` registered. Mirrors
+    /// `facility_queue_position` but reads the per-slot extraction
+    /// substrate (FND-26 split between extraction-state and reservation-state).
+    fn extraction_slot_queue_position(&self, source: EntityId, actor: EntityId) -> Option<u32> {
+        let _ = (source, actor);
+        None
+    }
+    /// True if `actor` currently holds a grant on any slot of `source`'s
+    /// `ResourceExtractionQueues`.
+    fn actor_holds_extraction_slot_grant(&self, source: EntityId, actor: EntityId) -> bool {
+        let _ = (source, actor);
+        false
+    }
+    /// True if `actor` can legally claim a slot of `source`'s
+    /// `ResourceExtractionQueues` on their next harvest start request.
+    /// A slot is claimable iff it has no active grant **and** either the
+    /// slot has no waiters, or `actor` is the head of the waiting list
+    /// (FND-26 FIFO semantics enforced by `grant_or_signal_full`).
+    /// Returns `false` when the source has no `ResourceExtractionQueues`
+    /// registered.
+    fn actor_can_claim_extraction_slot(&self, source: EntityId, actor: EntityId) -> bool {
+        let _ = (source, actor);
+        false
+    }
+    /// True if `source` carries a `ResourceExtractionQueues` component
+    /// with at least one slot. Identifies a resource source so that
+    /// callers reasoning about harvest contention can avoid falling
+    /// back to legacy temporal-reservation logic, which never applies
+    /// to harvest sources (FND-26 separates extraction-state from
+    /// reservation-state).
+    fn has_extraction_queues(&self, source: EntityId) -> bool {
+        let _ = source;
+        false
+    }
     fn contention_queue_is_full(&self, entity: EntityId) -> bool {
         let _ = entity;
         false
@@ -1209,6 +1259,14 @@ pub trait FacilityBeliefView {
         None
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
+        let _ = entity;
+        None
+    }
+    fn resource_extraction_queues(&self, entity: EntityId) -> Option<ResourceExtractionQueues> {
+        let _ = entity;
+        None
+    }
     fn has_production_job(&self, entity: EntityId) -> bool;
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
@@ -1602,6 +1660,20 @@ where
         FacilityBeliefView::resource_source(self, entity)
     }
 
+    fn last_harvest_trace(
+        &self,
+        entity: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::LastHarvestTrace> {
+        FacilityBeliefView::last_harvest_trace(self, entity)
+    }
+
+    fn resource_extraction_queues(
+        &self,
+        entity: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::ResourceExtractionQueues> {
+        FacilityBeliefView::resource_extraction_queues(self, entity)
+    }
+
     fn resource_sources_at(
         &self,
         place: worldwake_core::EntityId,
@@ -1671,6 +1743,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::DriveThresholds> {
         ProfileBeliefView::drive_thresholds(self, agent)
+    }
+
+    fn metabolism_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::MetabolismProfile> {
+        ProfileBeliefView::metabolism_profile(self, agent)
     }
 
     fn deprivation_exposure(

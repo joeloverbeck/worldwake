@@ -6,6 +6,7 @@ use crate::{
     TellTopic, ViolationId,
 };
 use serde::{Deserialize, Serialize};
+use std::num::{NonZeroU16, NonZeroU32};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum CommodityPurpose {
@@ -20,6 +21,32 @@ pub enum ExplorationMotivation {
     Proactive,
 }
 
+/// Quantity intent on an `AcquireCommodity` goal. The goal is satisfied
+/// when the agent has obtained at least `desired_min` units; the planner
+/// prefers plans projected to deliver `desired_target`. `horizon_ticks`
+/// is consumed by the candidate emitter — it stops emitting when
+/// `current_tick + horizon_ticks` no longer covers the projected
+/// need-breach tick.
+///
+/// Invariant: `desired_min <= desired_target`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct AcquisitionQuantity {
+    pub desired_min: NonZeroU16,
+    pub desired_target: NonZeroU16,
+    pub horizon_ticks: NonZeroU32,
+}
+
+impl AcquisitionQuantity {
+    #[must_use]
+    pub const fn single() -> Self {
+        Self {
+            desired_min: NonZeroU16::MIN,
+            desired_target: NonZeroU16::MIN,
+            horizon_ticks: NonZeroU32::new(200).unwrap(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum GoalKind {
     ConsumeOwnedCommodity {
@@ -28,6 +55,7 @@ pub enum GoalKind {
     AcquireCommodity {
         commodity: CommodityKind,
         purpose: CommodityPurpose,
+        quantity: AcquisitionQuantity,
     },
     Sleep,
     Relieve,
@@ -171,6 +199,20 @@ impl GoalKey {
 
 impl From<GoalKind> for GoalKey {
     fn from(kind: GoalKind) -> Self {
+        // Per S127 Design Goal 9: `quantity` does not participate in goal
+        // identity. Normalize it to a canonical value so two acquisition
+        // goals with the same commodity+purpose share a key regardless of
+        // `desired_target` / `desired_min` / `horizon_ticks`.
+        let kind = match kind {
+            GoalKind::AcquireCommodity {
+                commodity, purpose, ..
+            } => GoalKind::AcquireCommodity {
+                commodity,
+                purpose,
+                quantity: AcquisitionQuantity::single(),
+            },
+            other => other,
+        };
         let (commodity, entity, place) = match kind {
             GoalKind::ConsumeOwnedCommodity { commodity }
             | GoalKind::AcquireCommodity { commodity, .. }
@@ -253,8 +295,8 @@ impl From<&GoalKind> for GoalKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind, OpportunityAnchor,
-        OpportunityKey, TellTopic, ViolationId,
+        AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
+        OpportunityAnchor, OpportunityKey, TellTopic, ViolationId,
     };
     use crate::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
@@ -266,6 +308,28 @@ mod tests {
     use std::fmt::Debug;
 
     fn assert_value_bounds<T: Clone + Eq + Ord + Debug + Serialize + DeserializeOwned>() {}
+
+    #[test]
+    fn acquisition_quantity_single_invariant() {
+        let q = AcquisitionQuantity::single();
+        assert!(q.desired_min <= q.desired_target);
+        assert_eq!(q.desired_min, q.desired_target);
+        assert_eq!(q.horizon_ticks.get(), 200);
+    }
+
+    #[test]
+    fn acquisition_quantity_bincode_roundtrip() {
+        let q = AcquisitionQuantity {
+            desired_min: std::num::NonZeroU16::new(2).unwrap(),
+            desired_target: std::num::NonZeroU16::new(5).unwrap(),
+            horizon_ticks: std::num::NonZeroU32::new(123).unwrap(),
+        };
+
+        let bytes = bincode::serialize(&q).unwrap();
+        let roundtrip: AcquisitionQuantity = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, q);
+    }
 
     #[test]
     fn goal_model_types_satisfy_value_bounds() {
@@ -287,11 +351,39 @@ mod tests {
         let key = GoalKey::from(&GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
 
         assert_eq!(key.commodity, Some(CommodityKind::Apple));
         assert_eq!(key.entity, None);
         assert_eq!(key.place, None);
+    }
+
+    #[test]
+    fn goal_key_ignores_quantity() {
+        let q1 = AcquisitionQuantity {
+            desired_min: std::num::NonZeroU16::new(1).unwrap(),
+            desired_target: std::num::NonZeroU16::new(2).unwrap(),
+            horizon_ticks: std::num::NonZeroU32::new(50).unwrap(),
+        };
+        let q2 = AcquisitionQuantity {
+            desired_min: std::num::NonZeroU16::new(3).unwrap(),
+            desired_target: std::num::NonZeroU16::new(7).unwrap(),
+            horizon_ticks: std::num::NonZeroU32::new(180).unwrap(),
+        };
+        assert_ne!(q1, q2);
+        let a = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: q1,
+        });
+        let b = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: q2,
+        });
+
+        assert_eq!(a, b);
     }
 
     #[test]
@@ -561,6 +653,7 @@ mod tests {
             goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::Place(entity_id(42, 0)),
         };
@@ -581,6 +674,7 @@ mod tests {
             goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::Place(entity_id(43, 0)),
         };

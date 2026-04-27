@@ -672,11 +672,11 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, DemandObservation,
-        DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
-        IntentionDispositionProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        PerceptionSource, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        AcquisitionQuantity, AgentBeliefStore, BeliefConfidencePolicy, BelievedEntityState,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        DemandObservation, DriveThresholds, EntityKind, GoalKey, GoalKind, HomeostaticNeeds,
+        InTransitOnEdge, IntentionDispositionProfile, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, PerceptionSource, Quantity, RecipeId, ResourceSource, Tick, TickRange,
         TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
@@ -981,6 +981,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class,
             motive_score: 100,
@@ -1046,6 +1047,8 @@ mod tests {
                 max_quantity: Quantity(5),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -1223,6 +1226,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             domain: IntentionDomain::Travel { destination: dest },
             assumptions: Vec::new(),
@@ -1668,6 +1672,8 @@ mod tests {
                 max_quantity: Quantity(5),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 
@@ -2114,6 +2120,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             domain: IntentionDomain::Travel { destination },
             assumptions: Vec::new(),
@@ -2277,6 +2284,7 @@ mod tests {
             goal: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             domain: IntentionDomain::Travel { destination },
             assumptions: Vec::new(),
@@ -2323,6 +2331,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let frame = IntentionFrame {
             goal,

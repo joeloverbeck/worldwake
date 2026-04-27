@@ -586,9 +586,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgendaProfile, BeliefConfidencePolicy, CommodityConsumableProfile, CommodityKind,
-        DemandObservation, DemandObservationReason, Discrepancy, DriveThresholds, EntityId,
-        EntityKind, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
+        AcquisitionQuantity, AgendaProfile, BeliefConfidencePolicy, CommodityConsumableProfile,
+        CommodityKind, DemandObservation, DemandObservationReason, Discrepancy, DriveThresholds,
+        EntityId, EntityKind, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
         ExpectationStore, LoadUnits, MerchandiseProfile, OpportunityAnchor, OpportunityKey,
         Quantity, ResourceSource, Tick, UniqueItemKind, WorkstationTag,
     };
@@ -826,6 +826,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         }
     }
 
@@ -1374,6 +1375,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 OpportunityAnchor::Place(PLACE),
                 Discrepancy::MissingObservation,
@@ -1500,6 +1502,7 @@ mod tests {
                     GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     },
                     OpportunityAnchor::Entity(TARGET),
                 ),

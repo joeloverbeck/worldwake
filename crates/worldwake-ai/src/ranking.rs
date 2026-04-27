@@ -620,10 +620,12 @@ fn drive_goal_ranking_provenance(
         | GoalKind::AcquireCommodity {
             commodity,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: _,
         } => self_consume_provenance(*commodity, context).map(RankedGoalProvenance::Drive),
         GoalKind::AcquireCommodity {
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
+            quantity: _,
         }
         | GoalKind::ProduceCommodity { recipe_id } => {
             best_recipe_output_assessment(*recipe_id, context)
@@ -790,10 +792,12 @@ fn priority_class(candidate: &GoalOffer, context: &RankingContext<'_>) -> GoalPr
         | GoalKind::AcquireCommodity {
             commodity,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: _,
         } => self_consume_priority(commodity, context),
         GoalKind::AcquireCommodity {
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
+            quantity: _,
         }
         | GoalKind::ProduceCommodity { recipe_id } => {
             best_recipe_output_assessment(recipe_id, context)
@@ -968,28 +972,56 @@ fn drive_provenance_from_inputs(
     }
 }
 
+/// Tiebreak bonus added to `AcquireCommodity` motive scores so agents whose
+/// goal demands more units rank the goal slightly higher when other things
+/// are equal. Capped at `+100` to keep the base urgency-driven score
+/// dominant. Single-unit acquisition (existing baseline) gets `+0`, so
+/// pre-quantity-aware ranking semantics are preserved for `AcquisitionQuantity::single()`.
+fn acquire_commodity_quantity_bonus(quantity: worldwake_core::AcquisitionQuantity) -> u32 {
+    u32::from(quantity.desired_target.get().saturating_sub(1)).min(100)
+}
+
 fn motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
     match candidate.key.kind {
-        GoalKind::ConsumeOwnedCommodity { commodity }
-        | GoalKind::AcquireCommodity {
+        GoalKind::ConsumeOwnedCommodity { commodity } => {
+            relevant_self_consume_factors(commodity, context)
+                .into_iter()
+                .map(effective_drive_factor_score)
+                .max()
+                .unwrap_or(0)
+        }
+        GoalKind::AcquireCommodity {
             commodity,
             purpose: CommodityPurpose::SelfConsume,
-        } => relevant_self_consume_factors(commodity, context)
-            .into_iter()
-            .map(effective_drive_factor_score)
-            .max()
-            .unwrap_or(0),
+            quantity,
+        } => {
+            let base = relevant_self_consume_factors(commodity, context)
+                .into_iter()
+                .map(effective_drive_factor_score)
+                .max()
+                .unwrap_or(0);
+            base.saturating_add(acquire_commodity_quantity_bonus(quantity))
+        }
         GoalKind::AcquireCommodity {
             commodity: _,
             purpose: CommodityPurpose::RecipeInput(recipe_id),
-        }
-        | GoalKind::ProduceCommodity { recipe_id } => {
+            quantity,
+        } => best_recipe_output_assessment(recipe_id, context)
+            .map_or(0, |assessment| assessment.motive_score)
+            .saturating_add(acquire_commodity_quantity_bonus(quantity)),
+        GoalKind::ProduceCommodity { recipe_id } => {
             best_recipe_output_assessment(recipe_id, context)
                 .map_or(0, |assessment| assessment.motive_score)
         }
-        GoalKind::AcquireCommodity { commodity, .. }
-        | GoalKind::SellCommodity { commodity }
-        | GoalKind::RestockCommodity { commodity } => enterprise_score(commodity, context),
+        GoalKind::AcquireCommodity {
+            commodity,
+            quantity,
+            ..
+        } => enterprise_score(commodity, context)
+            .saturating_add(acquire_commodity_quantity_bonus(quantity)),
+        GoalKind::SellCommodity { commodity } | GoalKind::RestockCommodity { commodity } => {
+            enterprise_score(commodity, context)
+        }
         GoalKind::Sleep => drive_score(
             context,
             HomeostaticNeedId::Fatigue,
@@ -2184,10 +2216,12 @@ fn compare_substitute_preference_order(left: &AgendaEntry, right: &AgendaEntry) 
         GoalKind::AcquireCommodity {
             commodity: left_commodity,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: _,
         },
         GoalKind::AcquireCommodity {
             commodity: right_commodity,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: _,
         },
     ) = (&left.offer.key.kind, &right.offer.key.kind)
     else {
@@ -2411,10 +2445,10 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDomain, ArtifactKind, ArtifactPostingContext, ArtifactState, BeliefConfidencePolicy,
-        BelievedActivity, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms,
-        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        AcquisitionQuantity, ActionDomain, ArtifactKind, ArtifactPostingContext, ArtifactState,
+        BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
+        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget,
+        BountyTerms, CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
         CommodityValuationProfile, DemandObservation, DemandObservationReason, DeprivationExposure,
         DeprivationKind, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
         DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
@@ -3031,6 +3065,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         }
     }
 
@@ -3045,6 +3080,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         }
     }
 
@@ -3063,6 +3099,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         }
     }
 
@@ -4597,6 +4634,7 @@ mod tests {
         let goal_kind = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let candidates = [
             goal_at_place(goal_kind, place_a),
@@ -4650,6 +4688,7 @@ mod tests {
         let goal_kind = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Water,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         };
         let candidates = [
             goal_at_place(goal_kind, place_a),
@@ -5160,6 +5199,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::Restock,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 market,
             )],
@@ -5224,6 +5264,7 @@ mod tests {
                     GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     },
                     market,
                     BTreeSet::from([source]),
@@ -5268,6 +5309,7 @@ mod tests {
                     GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     },
                     market,
                     BTreeSet::from([source]),
@@ -5313,6 +5355,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 market,
                 BTreeSet::from([source]),
@@ -5379,6 +5422,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Bread,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 market,
                 BTreeSet::from([source]),
@@ -5436,6 +5480,7 @@ mod tests {
                     GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     },
                     market,
                     BTreeSet::from([source]),
@@ -5444,6 +5489,101 @@ mod tests {
                 100
             ),
             None
+        );
+    }
+
+    #[test]
+    fn motive_score_falls_back_to_success_ratio_for_acquire_commodity() {
+        // Two believed sources for the same commodity with different
+        // reliability records (3-success/1-failure vs 1-success/3-failure).
+        // The ranking pipeline's `apply_source_reliability_discount` uses
+        // `failure_ratio_permille` (= 1 - success_ratio) as the discount,
+        // so the source with the higher success ratio retains a higher
+        // post-discount motive — i.e. ranks higher. This is the spec D8
+        // "fallback to success_ratio without S131" contract.
+        let agent = entity(1);
+        let place_a = entity(10);
+        let place_b = entity(11);
+        let source_a = entity(20);
+        let source_b = entity(21);
+        let mut view = base_view(agent);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 100,
+            },
+        );
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([
+                    (
+                        SourceKey {
+                            entity: source_a,
+                            commodity: CommodityKind::Bread,
+                        },
+                        // 75% success → 250 permille failure ratio.
+                        source_reliability_record(3, 1),
+                    ),
+                    (
+                        SourceKey {
+                            entity: source_b,
+                            commodity: CommodityKind::Bread,
+                        },
+                        // 25% success → 750 permille failure ratio.
+                        source_reliability_record(1, 3),
+                    ),
+                ]),
+            },
+        );
+        // Hunger pressure to give the AcquireCommodity goal nonzero motive.
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+
+        let goal_kind = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        };
+        let ranked = rank(
+            &[
+                goal_at_place_with_sources(goal_kind, place_a, BTreeSet::from([source_a])),
+                goal_at_place_with_sources(goal_kind, place_b, BTreeSet::from([source_b])),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 2);
+        let entry_a = ranked
+            .iter()
+            .find(|entry| entry.offer.evidence_entities.contains(&source_a))
+            .expect("entry for source_a exists");
+        let entry_b = ranked
+            .iter()
+            .find(|entry| entry.offer.evidence_entities.contains(&source_b))
+            .expect("entry for source_b exists");
+        // Discount produced for each source:
+        let discount_a = entry_a.source_reliability_discount.as_ref().unwrap();
+        let discount_b = entry_b.source_reliability_discount.as_ref().unwrap();
+        assert_eq!(discount_a.failure_ratio_permille, 250);
+        assert_eq!(discount_b.failure_ratio_permille, 750);
+        // Higher-success-ratio source retains a higher post-discount motive,
+        // and thus ranks higher (lower index) in the output ordering.
+        assert!(
+            entry_a.motive_score > entry_b.motive_score,
+            "75%-success source should rank above 25%-success source: a={}, b={}",
+            entry_a.motive_score,
+            entry_b.motive_score,
         );
     }
 
@@ -5569,6 +5709,7 @@ mod tests {
                     GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     },
                     familiar_place,
                     BTreeSet::from([familiar_source]),
@@ -5577,6 +5718,7 @@ mod tests {
                     GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     },
                     novel_place,
                     BTreeSet::from([novel_source]),
@@ -5667,6 +5809,7 @@ mod tests {
             &[goal(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Firewood,
                 purpose: CommodityPurpose::RecipeInput(recipe_id),
+                quantity: AcquisitionQuantity::single(),
             })],
             &view,
             agent,
@@ -5802,12 +5945,14 @@ mod tests {
                 goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 anchor: OpportunityAnchor::None,
             },
             offer: goal(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             priority_class: GoalPriorityClass::Medium,
             motive_score: 250_000,
@@ -5884,12 +6029,14 @@ mod tests {
                 goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 }),
                 anchor: OpportunityAnchor::None,
             },
             offer: goal(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             priority_class: GoalPriorityClass::Medium,
             motive_score: 250_000,
@@ -6550,6 +6697,7 @@ mod tests {
                     GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Apple,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     },
                     market,
                 ),
@@ -6557,6 +6705,7 @@ mod tests {
                     GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Grain,
                         purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
                     },
                     market,
                 ),
@@ -6573,6 +6722,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Grain,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: _,
             }
         ));
         assert_eq!(
@@ -7904,6 +8054,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class,
             motive_score: motive,
@@ -7996,6 +8147,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 orchard,
             ),
@@ -8003,6 +8155,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 well,
             ),
@@ -8028,6 +8181,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 orchard,
             ),
@@ -8035,6 +8189,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Water,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 well,
             ),
@@ -8164,6 +8319,7 @@ mod tests {
                 GoalKind::AcquireCommodity {
                     commodity: CommodityKind::Apple,
                     purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
                 },
                 GoalPriorityClass::Critical,
                 617_400,
@@ -8184,6 +8340,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: _,
             }
         ));
     }

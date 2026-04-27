@@ -50,8 +50,9 @@ impl Component for LearnedOpportunityMemory {}
 mod tests {
     use super::{LearnedOpportunityMemory, OpportunityEntry};
     use crate::{
-        CommodityKind, CommodityPurpose, GoalKey, GoalKind, MemoryCapacityProfile,
-        OpportunityAnchor, OpportunityKey, Tick, test_utils::entity_id, traits::Component,
+        AcquisitionQuantity, CommodityKind, CommodityPurpose, GoalKey, GoalKind,
+        MemoryCapacityProfile, OpportunityAnchor, OpportunityKey, Tick, test_utils::entity_id,
+        traits::Component,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
@@ -67,6 +68,7 @@ mod tests {
             goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             anchor: OpportunityAnchor::Place(entity_id(slot, 0)),
         }

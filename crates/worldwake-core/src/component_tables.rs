@@ -12,6 +12,7 @@ use crate::{
     components::{AgentData, Name},
     contention::{
         ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
+        ResourceExtractionQueues,
     },
     crime::{JusticeDispositionProfile, TheftDispositionProfile},
     discrepancy::DiscrepancyMemory,
@@ -38,7 +39,7 @@ use crate::{
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
     production::{
-        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
+        CarryCapacity, InTransitOnEdge, KnownRecipes, LastHarvestTrace, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
     },
     pursuit::PursuitProfile,
@@ -736,6 +737,8 @@ mod tests {
             max_quantity: Quantity(12),
             regeneration_ticks_per_unit: Some(NonZeroU32::new(5).unwrap()),
             last_regeneration_tick: Some(Tick(9)),
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         };
 
         assert_eq!(tables.insert_resource_source(id, source.clone()), None);

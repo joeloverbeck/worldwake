@@ -1088,11 +1088,12 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, ActionDomain, BeliefClaimKey, BodyCostPerTick, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DriveThresholds, EntityBeliefAspect, EntityId,
-        EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource, TellTopic, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, load_per_unit,
+        AcquisitionQuantity, ActionDefId, ActionDomain, BeliefClaimKey, BodyCostPerTick,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
+        EntityBeliefAspect, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
+        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        load_per_unit,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionPayload, BribeActionPayload,
@@ -1698,6 +1699,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let mut second = sample_step();
         second.estimated_ticks = 9;
@@ -1737,6 +1739,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let opportunity = worldwake_core::OpportunityKey {
             goal_key: goal,
@@ -2254,6 +2257,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let semantics = build_phase_two_registry()
             .iter()
@@ -2295,6 +2299,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced = apply_hypothetical_transition(
@@ -2332,6 +2337,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(apply_hypothetical_transition(&goal, semantics, state, &[lot], None).is_none());
@@ -2352,6 +2358,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -2360,6 +2367,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced =
@@ -2394,6 +2402,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -2402,6 +2411,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced =
@@ -2464,6 +2474,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced = apply_hypothetical_transition(
@@ -2525,6 +2536,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -2533,6 +2545,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(apply_hypothetical_transition(&goal, semantics, state, &[lot], None).is_none());
@@ -2564,6 +2577,7 @@ mod tests {
             key: GoalKey::from(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::new(),
             evidence_places: BTreeSet::new(),
@@ -2572,6 +2586,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced =

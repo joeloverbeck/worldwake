@@ -193,12 +193,23 @@ pub(crate) fn record_failure_classification(
         action_def: Some(context.failed_step.def_id),
     };
 
-    if should_scope_local_commodity_unavailability_to_place(
-        context.view,
-        context.agent,
-        &blocker_key,
-        context.failed_step,
-    ) {
+    // Place-scoping rewrites the target to `None` when the failure is
+    // "this place has no source of the commodity at all." Contention
+    // failures (the source exists but is currently busy or queued)
+    // must keep the target so that `derive_clearing_condition` can
+    // anchor the blocker on the contended facility's
+    // `ResourceExtractionQueues`/`ContentionQueue` substrate. Without
+    // this guard, harvest start failures at a single-source place are
+    // scoped to the place, lose facility identity, and can only expire
+    // via TTL.
+    if !is_contention_blocker(&classification)
+        && should_scope_local_commodity_unavailability_to_place(
+            context.view,
+            context.agent,
+            &blocker_key,
+            context.failed_step,
+        )
+    {
         blocker_key.target = None;
     }
 
@@ -396,6 +407,23 @@ fn classify_trade_handler_abort_reason(
     }
 }
 
+/// True when the classification represents a contention failure on a
+/// concrete facility (the source/workstation exists and has the resource,
+/// but is currently being held or queued for by another actor). Such
+/// blockers must retain their target so that the contention substrate
+/// (`ResourceExtractionQueues` for harvest sources, `ContentionQueue`
+/// for legacy workstations) can drive clearing.
+fn is_contention_blocker(classification: &FailureClassification) -> bool {
+    matches!(
+        classification,
+        FailureClassification::Blocker(
+            BlockingFact::ReservationConflict
+                | BlockingFact::ExclusiveFacilityUnavailable
+                | BlockingFact::WorkstationBusy,
+        )
+    )
+}
+
 fn should_scope_local_commodity_unavailability_to_place(
     view: &dyn RuntimeBeliefView,
     agent: EntityId,
@@ -494,6 +522,22 @@ fn classify_production_failure(
         return Some(BlockingFact::WorkstationBusy);
     }
     if !view.reservation_ranges(workstation).is_empty() {
+        return Some(BlockingFact::ReservationConflict);
+    }
+    // Multi-slot harvest start: every slot has a foreign grant. The agent
+    // is enqueued by `record_harvest_start_failure` and replans; classify
+    // as a contention conflict (matches the pre-multi-slot single-slot
+    // temporal-reservation semantics).
+    if view
+        .resource_extraction_queues(workstation)
+        .is_some_and(|queues| {
+            !queues.queues.is_empty()
+                && queues
+                    .queues
+                    .iter()
+                    .all(|queue| queue.granted.as_ref().is_some_and(|g| g.actor != agent))
+        })
+    {
         return Some(BlockingFact::ReservationConflict);
     }
     if view
@@ -716,6 +760,17 @@ fn classify_precondition_failure_detail(detail: &str) -> Option<FailureClassific
             Discrepancy::ImproperPlanningState,
         ));
     }
+    // Multi-slot harvest start: all extraction slots occupied. Semantically
+    // equivalent to the old single-slot temporal-reservation conflict —
+    // another agent currently holds the slot, the actor is enqueued by the
+    // failure handler, and a replan is appropriate. Classify as
+    // `ReservationConflict` so the blocker memory matches the prior
+    // contention-conflict expiry/clearing semantics.
+    if detail.contains("extraction_slots_full") {
+        return Some(FailureClassification::Blocker(
+            BlockingFact::ReservationConflict,
+        ));
+    }
     None
 }
 
@@ -762,7 +817,13 @@ fn map_handler_abort_reason(reason: &ActionAbortRequestReason) -> Option<Failure
         | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. } => Some(
             FailureClassification::Blocker(BlockingFact::SellerOutOfStock),
         ),
-        ActionAbortRequestReason::ViolationNoLongerActive { .. } => None,
+        // ViolationNoLongerActive: justice/violation expired, no further classification.
+        // HarvestSourceDepleted: mid-harvest source depletion is observable directly via
+        // `available_quantity == 0` and `LastHarvestTrace` aftermath (FND-29A); the
+        // replan loop reads the live world state, so no specific blocker classification
+        // is needed at this layer.
+        ActionAbortRequestReason::ViolationNoLongerActive { .. }
+        | ActionAbortRequestReason::HarvestSourceDepleted { .. } => None,
     }
 }
 
@@ -899,11 +960,16 @@ fn derive_clearing_condition(
             let Some(facility) = blocker_key.target else {
                 return (BlockerClearingCondition::TtlOnly, None);
             };
+            // Resource sources expose contention through `ResourceExtractionQueues`;
+            // legacy workstations expose it through `ContentionQueue`. The two
+            // substrates do not coexist on a single entity, so reading both and
+            // taking the first hit yields the correct baseline either way (FND-26).
+            let position = view
+                .extraction_slot_queue_position(facility, agent)
+                .or_else(|| view.facility_queue_position(facility, agent));
             (
                 BlockerClearingCondition::ContentionChanged { facility },
-                Some(ClearingBaseline::ContentionPosition(
-                    view.facility_queue_position(facility, agent),
-                )),
+                Some(ClearingBaseline::ContentionPosition(position)),
             )
         }
         BlockingFact::SourceDepleted => {
@@ -1056,6 +1122,49 @@ fn commodity_availability_reobserved(
     })
 }
 
+/// Decide whether a `ReservationConflict` blocker on `facility` has been
+/// cleared for `agent`. Two substrates carry contention here:
+///
+/// - Resource sources expose per-slot occupancy through
+///   `ResourceExtractionQueues`. A `ReservationConflict` raised by
+///   `extraction_slots_full` clears when the actor either holds a slot
+///   grant or is in a position to claim one immediately (slot free and
+///   actor is the head waiter, or actor isn't enqueued and a slot has no
+///   waiters). Position-only progress (e.g., moving from rank 3 to rank
+///   2 while another actor still holds the grant) does not clear the
+///   blocker, since re-emitting the goal would only produce another
+///   `extraction_slots_full` start failure.
+/// - Legacy workstations using temporal reservations clear when the
+///   target's reservation ranges are empty.
+///
+/// The two substrates do not coexist on a single entity (FND-26), so
+/// this helper checks each independently and returns true on the first
+/// hit. The `baseline` parameter is reserved for future expiry/prune
+/// signals (e.g., position decrease combined with a structurally
+/// invalid head); the current implementation does not consult it.
+fn reservation_conflict_cleared(
+    view: &dyn RuntimeBeliefView,
+    facility: EntityId,
+    agent: EntityId,
+    baseline: Option<u32>,
+) -> bool {
+    let _ = baseline;
+    if view.has_extraction_queues(facility) {
+        // Resource sources expose contention exclusively through
+        // `ResourceExtractionQueues`. The legacy
+        // temporal-reservation path never applies here — harvest
+        // sources have no `reservation_ranges`, so falling back to
+        // it would clear every blocker spuriously.
+        if view.actor_holds_extraction_slot_grant(facility, agent) {
+            return true;
+        }
+        return view.actor_can_claim_extraction_slot(facility, agent);
+    }
+    // Legacy workstation path: clearing fires when the facility's
+    // temporal reservations are gone.
+    view.reservation_ranges(facility).is_empty()
+}
+
 fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &Blocker) -> bool {
     match (&blocker.clearing_condition, &blocker.baseline_snapshot) {
         (
@@ -1121,7 +1230,9 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
             Some(ClearingBaseline::ContentionPosition(baseline)),
         ) => match blocker.blocking_fact {
             BlockingFact::WorkstationBusy => !view.has_production_job(*facility),
-            BlockingFact::ReservationConflict => view.reservation_ranges(*facility).is_empty(),
+            BlockingFact::ReservationConflict => {
+                reservation_conflict_cleared(view, *facility, agent, *baseline)
+            }
             BlockingFact::ExclusiveFacilityUnavailable => {
                 view.facility_queue_position(*facility, agent)
                     .zip(*baseline)
@@ -1135,7 +1246,9 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
         (BlockerClearingCondition::ContentionChanged { facility }, None) => {
             match blocker.blocking_fact {
                 BlockingFact::WorkstationBusy => !view.has_production_job(*facility),
-                BlockingFact::ReservationConflict => view.reservation_ranges(*facility).is_empty(),
+                BlockingFact::ReservationConflict => {
+                    reservation_conflict_cleared(view, *facility, agent, None)
+                }
                 BlockingFact::ExclusiveFacilityUnavailable => view
                     .facility_grant(*facility)
                     .is_some_and(|grant| grant.actor == agent),
@@ -1381,14 +1494,14 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
-        ClearingBaseline, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, CommodityPurpose, ContentionGrant, ContentionIntents, DemandObservation,
-        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds,
-        EntityId, EntityKind, FrameState, GoalKey, GoalKind, HomeostaticNeeds, InTransitOnEdge,
-        IntentionDomain, IntentionFrame, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        Quantity, RecipeId, ResourceSource, Tick, TickRange, TradeDispositionProfile,
-        UniqueItemKind, WorkstationTag, Wound,
+        AcquisitionQuantity, ActionDefId, Blocker, BlockerClearingCondition, BlockerKey,
+        BlockerMemory, BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
+        ContentionIntents, DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
+        DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
+        HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
+        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -1416,6 +1529,10 @@ mod tests {
         reservation_ranges: BTreeMap<EntityId, Vec<TickRange>>,
         facility_queue_positions: BTreeMap<(EntityId, EntityId), u32>,
         facility_grants: BTreeMap<EntityId, ContentionGrant>,
+        extraction_slot_positions: BTreeMap<(EntityId, EntityId), u32>,
+        extraction_slot_grants: BTreeSet<(EntityId, EntityId)>,
+        extraction_slot_claimable: BTreeSet<(EntityId, EntityId)>,
+        extraction_facilities: BTreeSet<EntityId>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
@@ -1539,6 +1656,24 @@ mod tests {
 
         fn facility_grant(&self, facility: EntityId) -> Option<&ContentionGrant> {
             self.facility_grants.get(&facility)
+        }
+
+        fn extraction_slot_queue_position(&self, source: EntityId, actor: EntityId) -> Option<u32> {
+            self.extraction_slot_positions
+                .get(&(source, actor))
+                .copied()
+        }
+
+        fn actor_holds_extraction_slot_grant(&self, source: EntityId, actor: EntityId) -> bool {
+            self.extraction_slot_grants.contains(&(source, actor))
+        }
+
+        fn actor_can_claim_extraction_slot(&self, source: EntityId, actor: EntityId) -> bool {
+            self.extraction_slot_claimable.contains(&(source, actor))
+        }
+
+        fn has_extraction_queues(&self, source: EntityId) -> bool {
+            self.extraction_facilities.contains(&source)
         }
 
         fn estimate_duration(
@@ -1814,6 +1949,7 @@ mod tests {
         GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         })
     }
 
@@ -2091,6 +2227,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let step = move_cargo_step(bread_lot);
         let mut view = TestBeliefView::default();
@@ -2147,6 +2284,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let step = move_cargo_step(missing_lot);
         let mut view = TestBeliefView::default();
@@ -2203,6 +2341,7 @@ mod tests {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Bread,
             purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
         });
         let step = move_cargo_step(local_lot);
         let mut view = TestBeliefView::default();
@@ -2745,6 +2884,148 @@ mod tests {
         view.facility_queue_positions.insert((facility, agent), 1);
 
         assert!(is_blocker_cleared(&view, agent, &blocker));
+    }
+
+    fn reservation_conflict_blocker_at(
+        agent: EntityId,
+        facility: EntityId,
+        baseline_position: Option<u32>,
+    ) -> Blocker {
+        let _ = agent;
+        Blocker {
+            blocker_key: BlockerKey {
+                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                }),
+                place: Some(entity(10)),
+                target: Some(facility),
+                action_def: Some(ActionDefId(3)),
+            },
+            blocking_fact: BlockingFact::ReservationConflict,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(20),
+            clearing_condition: BlockerClearingCondition::ContentionChanged { facility },
+            baseline_snapshot: Some(ClearingBaseline::ContentionPosition(baseline_position)),
+        }
+    }
+
+    #[test]
+    fn derive_clearing_condition_reservation_conflict_uses_extraction_slot_position() {
+        // S127QUAAWAACQ-010: harvest source contention is exposed via
+        // `ResourceExtractionQueues`, not the legacy `ContentionQueue`.
+        // The baseline must therefore prefer the extraction-slot position.
+        let agent = entity(1);
+        let source = entity(3);
+        let mut view = TestBeliefView::default();
+        view.extraction_slot_positions.insert((source, agent), 2);
+        let blocker_key = BlockerKey {
+            goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }),
+            place: Some(entity(10)),
+            target: Some(source),
+            action_def: Some(ActionDefId(11)),
+        };
+
+        let (condition, baseline) = derive_clearing_condition(
+            &view,
+            agent,
+            BlockingFact::ReservationConflict,
+            &blocker_key,
+        );
+
+        assert_eq!(
+            condition,
+            BlockerClearingCondition::ContentionChanged { facility: source }
+        );
+        assert_eq!(
+            baseline,
+            Some(ClearingBaseline::ContentionPosition(Some(2))),
+            "harvest sources expose contention via ResourceExtractionQueues",
+        );
+    }
+
+    #[test]
+    fn is_blocker_cleared_holds_when_position_decreases_but_slot_still_held() {
+        // Position-only progress is insufficient to clear the blocker:
+        // moving from rank 2 to rank 1 while another actor still holds
+        // the grant means re-emitting the goal would just produce another
+        // `extraction_slots_full` start failure. The blocker must stay
+        // active until the actor can actually claim a slot (FND-26 FIFO
+        // semantics enforced by `grant_or_signal_full`).
+        let agent = entity(1);
+        let source = entity(3);
+        let blocker = reservation_conflict_blocker_at(agent, source, Some(2));
+
+        let mut view = TestBeliefView::default();
+        view.extraction_facilities.insert(source);
+        view.extraction_slot_positions.insert((source, agent), 1);
+
+        assert!(
+            !is_blocker_cleared(&view, agent, &blocker),
+            "queue position improved but slot still held — blocker must stay active",
+        );
+    }
+
+    #[test]
+    fn is_blocker_cleared_when_actor_is_promoted_to_extraction_slot_grant() {
+        let agent = entity(1);
+        let source = entity(3);
+        let blocker = reservation_conflict_blocker_at(agent, source, Some(2));
+
+        let mut view = TestBeliefView::default();
+        view.extraction_facilities.insert(source);
+        view.extraction_slot_grants.insert((source, agent));
+
+        assert!(
+            is_blocker_cleared(&view, agent, &blocker),
+            "an actor newly granted a slot must see their conflict blocker clear",
+        );
+    }
+
+    #[test]
+    fn is_blocker_cleared_when_actor_left_queue_and_slot_is_available() {
+        // FOUNDATIONS Section VI Scenario E "Competing Claimants -> Queue
+        // -> Expiry/Prune -> Next Actor Acts": the actor was queued at
+        // baseline, has since been removed from the queue (out-of-band
+        // abandonment), and a slot is now free — the next harvest start
+        // request would succeed, so the blocker must clear.
+        let agent = entity(1);
+        let source = entity(3);
+        let blocker = reservation_conflict_blocker_at(agent, source, Some(2));
+
+        let mut view = TestBeliefView::default();
+        view.extraction_facilities.insert(source);
+        view.extraction_slot_claimable.insert((source, agent));
+
+        assert!(
+            is_blocker_cleared(&view, agent, &blocker),
+            "actor no longer queued + slot available must clear the blocker",
+        );
+    }
+
+    #[test]
+    fn is_blocker_cleared_holds_when_extraction_position_unchanged_and_no_slot_available() {
+        // Negative case: nothing in the world has changed since the
+        // blocker was recorded — position is the same and no slot has
+        // freed. The blocker must NOT clear.
+        let agent = entity(1);
+        let source = entity(3);
+        let blocker = reservation_conflict_blocker_at(agent, source, Some(2));
+
+        let mut view = TestBeliefView::default();
+        view.extraction_facilities.insert(source);
+        view.extraction_slot_positions.insert((source, agent), 2);
+
+        assert!(
+            !is_blocker_cleared(&view, agent, &blocker),
+            "no contention change must leave the blocker active",
+        );
     }
 
     #[test]
@@ -3631,6 +3912,8 @@ mod tests {
                 max_quantity: Quantity(2),
                 regeneration_ticks_per_unit: None,
                 last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             },
         );
 

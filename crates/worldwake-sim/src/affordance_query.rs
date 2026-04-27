@@ -1672,7 +1672,7 @@ mod tests {
                 recipe_id: RecipeId(3),
                 required_workstation_tag: WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
                 required_tool_kinds: Vec::new(),
             }),
             handler: ActionHandlerId(0),

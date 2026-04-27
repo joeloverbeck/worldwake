@@ -122,8 +122,8 @@ pub fn evaluate_suppression(kind: &GoalKind, context: &DecisionContext) -> GoalP
 mod tests {
     use super::*;
     use worldwake_core::{
-        ArtifactPostingContext, CommodityKind, CommodityPurpose, EntityId, GoalKind, NoticeTopic,
-        PunishmentKind, Quantity, RecipeId, ViolationId,
+        AcquisitionQuantity, ArtifactPostingContext, CommodityKind, CommodityPurpose, EntityId,
+        GoalKind, NoticeTopic, PunishmentKind, Quantity, RecipeId, ViolationId,
     };
 
     // Helpers
@@ -149,6 +149,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalKind::Sleep,
             GoalKind::Relieve,
@@ -326,6 +327,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalKind::Sleep,
             GoalKind::Relieve,
@@ -445,6 +447,7 @@ mod tests {
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Apple,
                 purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
             },
             GoalKind::Sleep,
             GoalKind::Relieve,
@@ -556,6 +559,7 @@ mod tests {
         let enterprise_acquire = GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::Restock,
+            quantity: AcquisitionQuantity::single(),
         };
         let policy = crate::GoalDispatchKey::from_goal_kind(&enterprise_acquire)
             .declaration()

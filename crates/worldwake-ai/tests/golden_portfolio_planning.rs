@@ -72,6 +72,7 @@ fn committed_goal_entry(goal_key: GoalKey, opportunity: OpportunityKey, tick: Ti
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         },
         phase: AgendaPhase::Committed,
         origin: AgendaOrigin::NeedDrive,

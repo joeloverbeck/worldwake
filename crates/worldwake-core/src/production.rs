@@ -3,7 +3,7 @@
 use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU8, NonZeroU32};
 
 /// Tag identifying what kind of workstation an entity is.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -78,9 +78,57 @@ pub struct ResourceSource {
     pub max_quantity: Quantity,
     pub regeneration_ticks_per_unit: Option<NonZeroU32>,
     pub last_regeneration_tick: Option<Tick>,
+    pub extraction_slots: NonZeroU8,
+    pub extraction_duration_ticks: NonZeroU32,
 }
 
 impl Component for ResourceSource {}
+
+/// Default retention window (in ticks) for entries in [`LastHarvestTrace`].
+/// Anchored to the agent's near-term observation horizon (S127 §D5).
+/// Per-scenario overrides flow through `World::set_harvest_trace_retention_ticks`.
+pub const HARVEST_TRACE_RETENTION_TICKS: u32 = 200;
+
+/// Maximum number of entries retained in [`LastHarvestTrace`] before the
+/// oldest entry by `tick` is evicted (S127 §D5).
+pub const HARVEST_TRACE_MAX_ENTRIES: usize = 8;
+
+/// One observed harvest event at a resource source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HarvestTraceEntry {
+    pub harvester: EntityId,
+    pub tick: Tick,
+    pub quantity: u16,
+    pub partial: bool,
+}
+
+/// Bounded ring of recent harvest events at a resource source. Decays
+/// alongside other site evidence in the existing item-decay maintenance
+/// pass; retention is configured via `World::harvest_trace_retention_ticks`
+/// (default `HARVEST_TRACE_RETENTION_TICKS`).
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LastHarvestTrace {
+    pub entries: Vec<HarvestTraceEntry>,
+}
+
+impl LastHarvestTrace {
+    /// Append an entry, dropping the oldest by `tick` if the ring is at
+    /// capacity. Ties on `tick` drop the earliest-positioned entry.
+    pub fn push(&mut self, entry: HarvestTraceEntry) {
+        if self.entries.len() >= HARVEST_TRACE_MAX_ENTRIES {
+            let evict_index = self
+                .entries
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, e)| e.tick.0)
+                .map_or(0, |(idx, _)| idx);
+            self.entries.remove(evict_index);
+        }
+        self.entries.push(entry);
+    }
+}
+
+impl Component for LastHarvestTrace {}
 
 /// Policy describing who owns output materialized by a producer.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -127,14 +175,14 @@ impl Component for InTransitOnEdge {}
 #[cfg(test)]
 mod tests {
     use super::{
-        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker,
-        WorkstationTag,
+        CarryCapacity, HARVEST_TRACE_MAX_ENTRIES, HarvestTraceEntry, InTransitOnEdge, KnownRecipes,
+        LastHarvestTrace, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
     };
     use crate::{CommodityKind, Component, EntityId, LoadUnits, Quantity, Tick, TravelEdgeId};
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU8, NonZeroU32};
 
     fn assert_bounds<
         T: Copy + Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + Serialize + DeserializeOwned,
@@ -326,6 +374,8 @@ mod tests {
             max_quantity: Quantity(12),
             regeneration_ticks_per_unit: None,
             last_regeneration_tick: None,
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
         };
 
         let bytes = bincode::serialize(&source).unwrap();
@@ -342,12 +392,34 @@ mod tests {
             max_quantity: Quantity(20),
             regeneration_ticks_per_unit: Some(NonZeroU32::new(6).unwrap()),
             last_regeneration_tick: Some(Tick(44)),
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
         };
 
         let bytes = bincode::serialize(&source).unwrap();
         let roundtrip: ResourceSource = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, source);
+    }
+
+    #[test]
+    fn resource_source_bincode_roundtrip_includes_extraction_fields() {
+        let source = ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(7),
+            max_quantity: Quantity(15),
+            regeneration_ticks_per_unit: Some(NonZeroU32::new(3).unwrap()),
+            last_regeneration_tick: Some(Tick(12)),
+            extraction_slots: NonZeroU8::new(5).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(8).unwrap(),
+        };
+
+        let bytes = bincode::serialize(&source).unwrap();
+        let roundtrip: ResourceSource = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, source);
+        assert_eq!(roundtrip.extraction_slots.get(), 5);
+        assert_eq!(roundtrip.extraction_duration_ticks.get(), 8);
     }
 
     #[test]
@@ -379,6 +451,81 @@ mod tests {
         let roundtrip: CarryCapacity = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, capacity);
+    }
+
+    #[test]
+    fn last_harvest_trace_trait_bounds() {
+        assert_component_bounds::<LastHarvestTrace>();
+    }
+
+    fn entry(slot: u32, tick: u64, quantity: u16, partial: bool) -> HarvestTraceEntry {
+        HarvestTraceEntry {
+            harvester: EntityId {
+                slot,
+                generation: 0,
+            },
+            tick: Tick(tick),
+            quantity,
+            partial,
+        }
+    }
+
+    #[test]
+    fn last_harvest_trace_bincode_roundtrip() {
+        let trace = LastHarvestTrace {
+            entries: vec![
+                entry(1, 10, 3, false),
+                entry(2, 14, 1, true),
+                entry(3, 22, 5, false),
+            ],
+        };
+
+        let bytes = bincode::serialize(&trace).unwrap();
+        let roundtrip: LastHarvestTrace = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, trace);
+        assert_eq!(roundtrip.entries.len(), 3);
+        assert_eq!(roundtrip.entries[1].quantity, 1);
+        assert!(roundtrip.entries[1].partial);
+    }
+
+    #[test]
+    fn last_harvest_trace_default_is_empty() {
+        let trace = LastHarvestTrace::default();
+        assert!(trace.entries.is_empty());
+    }
+
+    #[test]
+    fn last_harvest_trace_push_evicts_oldest_when_full() {
+        let mut trace = LastHarvestTrace::default();
+        for tick in 1..=HARVEST_TRACE_MAX_ENTRIES as u64 {
+            trace.push(entry(1, tick, 1, false));
+        }
+        assert_eq!(trace.entries.len(), HARVEST_TRACE_MAX_ENTRIES);
+        assert_eq!(trace.entries.first().unwrap().tick, Tick(1));
+
+        // 9th push should evict the entry with the smallest tick (Tick(1)).
+        trace.push(entry(2, 99, 7, true));
+        assert_eq!(trace.entries.len(), HARVEST_TRACE_MAX_ENTRIES);
+        let smallest_tick = trace.entries.iter().map(|e| e.tick.0).min().unwrap();
+        assert_eq!(smallest_tick, 2, "Tick(1) should have been evicted");
+        assert!(
+            trace
+                .entries
+                .iter()
+                .any(|e| e.tick == Tick(99) && e.quantity == 7),
+            "newest entry must be retained"
+        );
+    }
+
+    #[test]
+    fn last_harvest_trace_push_under_capacity_appends() {
+        let mut trace = LastHarvestTrace::default();
+        trace.push(entry(1, 5, 2, false));
+        trace.push(entry(1, 10, 1, true));
+        assert_eq!(trace.entries.len(), 2);
+        assert_eq!(trace.entries[0].tick, Tick(5));
+        assert_eq!(trace.entries[1].tick, Tick(10));
     }
 
     #[test]

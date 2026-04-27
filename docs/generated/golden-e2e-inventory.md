@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 30
-- Files contributing `golden_*` tests: 30
-- Total `golden_*` tests: 140
+- Golden test files: 32
+- Files contributing `golden_*` tests: 32
+- Total `golden_*` tests: 146
 
 ## Per-File Inventory
 
@@ -21,10 +21,12 @@ Do not hand-edit it.
 | `golden_final_integration.rs` | 2 |
 | `golden_item_decay.rs` | 1 |
 | `golden_merchant_selling.rs` | 13 |
+| `golden_need_projection.rs` | 1 |
 | `golden_offices.rs` | 12 |
 | `golden_perception_exposure.rs` | 7 |
 | `golden_planner_pathology.rs` | 3 |
 | `golden_portfolio_planning.rs` | 1 |
+| `golden_quantity_aware_acquisition.rs` | 5 |
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_survival_ask_consult.rs` | 1 |
 | `golden_survival_baseline.rs` | 7 |
@@ -120,6 +122,10 @@ Do not hand-edit it.
 - `demand_memory_raises_sell_ranking`
 - `hungry_merchant_eats_listed_stock`
 
+### `golden_need_projection.rs`
+
+- `golden_need_projection_chain`
+
 ### `golden_offices.rs`
 
 - `golden_simple_office_claim_via_declare_support`
@@ -154,6 +160,14 @@ Do not hand-edit it.
 ### `golden_portfolio_planning.rs`
 
 - `portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal`
+
+### `golden_quantity_aware_acquisition.rs`
+
+- `golden_single_slot_queue_forms_with_concrete_wait`
+- `golden_multi_slot_parallel_grants_all_three`
+- `golden_partial_success_emits_partial_quantity`
+- `golden_s126_long_horizon_scales_desired_target`
+- `golden_scenario_e_queue_abandonment_promotes_next_actor`
 
 ### `golden_simulation_gaps.rs`
 

@@ -38,6 +38,13 @@ pub struct Materialization {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum CommitTraceData {
     Tell(TellCommitTrace),
+    Harvest(HarvestCommitTrace),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HarvestCommitTrace {
+    pub requested_quantity: Quantity,
+    pub partial_quantity: Option<Quantity>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -360,6 +367,9 @@ pub enum ActionAbortRequestReason {
     },
     ViolationNoLongerActive {
         violation_id: u64,
+    },
+    HarvestSourceDepleted {
+        workstation: EntityId,
     },
 }
 

@@ -143,6 +143,7 @@ pub use conservation::{
 pub use contention::{
     ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
     ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter, QueuedContentionIntent,
+    ResourceExtractionQueues,
 };
 pub use control::ControlSource;
 pub use crime::{
@@ -192,7 +193,8 @@ pub use experience::{
 pub use exploration::{AcquisitionExhaustionTracker, ExplorationProfile};
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{
-    CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind, OpportunityAnchor, OpportunityKey,
+    AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
+    OpportunityAnchor, OpportunityKey,
 };
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use institutional::{
@@ -232,7 +234,8 @@ pub use plan_step_guards::{
     ExpectationKindTag, InvalidatorTag, MismatchDetail, ObservationPredicate, StatePredicate,
 };
 pub use production::{
-    CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
+    CarryCapacity, HARVEST_TRACE_MAX_ENTRIES, HARVEST_TRACE_RETENTION_TICKS, HarvestTraceEntry,
+    InTransitOnEdge, KnownRecipes, LastHarvestTrace, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
 };
 pub use pursuit::PursuitProfile;

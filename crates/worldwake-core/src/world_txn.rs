@@ -2070,6 +2070,8 @@ mod tests {
             max_quantity: Quantity(9),
             regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(6).unwrap()),
             last_regeneration_tick: Some(Tick(3)),
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         }
     }
 
@@ -4165,6 +4167,8 @@ mod tests {
             max_quantity: Quantity(9),
             regeneration_ticks_per_unit: Some(std::num::NonZeroU32::new(6).unwrap()),
             last_regeneration_tick: Some(Tick(9)),
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         };
         world
             .insert_component_resource_source(facility, before.clone())

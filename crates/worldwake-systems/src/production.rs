@@ -133,6 +133,8 @@ mod tests {
             max_quantity: Quantity(max_quantity),
             regeneration_ticks_per_unit: regeneration_ticks_per_unit.map(nz),
             last_regeneration_tick: last_regeneration_tick.map(Tick),
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         }
     }
 
