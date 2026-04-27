@@ -823,6 +823,45 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
             .and_then(|queue| queue.granted.as_ref())
     }
 
+    fn extraction_slot_queue_position(&self, source: EntityId, actor: EntityId) -> Option<u32> {
+        self.world
+            .get_component_resource_extraction_queues(source)
+            .and_then(|queues| {
+                queues
+                    .queues
+                    .iter()
+                    .find_map(|queue| queue.position_of(actor))
+            })
+    }
+
+    fn actor_holds_extraction_slot_grant(&self, source: EntityId, actor: EntityId) -> bool {
+        self.world
+            .get_component_resource_extraction_queues(source)
+            .is_some_and(|queues| {
+                queues.queues.iter().any(|queue| {
+                    queue
+                        .granted
+                        .as_ref()
+                        .is_some_and(|grant| grant.actor == actor)
+                })
+            })
+    }
+
+    fn extraction_slot_available(&self, source: EntityId) -> bool {
+        self.world
+            .get_component_resource_extraction_queues(source)
+            .is_some_and(|queues| {
+                !queues.queues.is_empty()
+                    && queues.queues.iter().any(|queue| queue.granted.is_none())
+            })
+    }
+
+    fn has_extraction_queues(&self, source: EntityId) -> bool {
+        self.world
+            .get_component_resource_extraction_queues(source)
+            .is_some_and(|queues| !queues.queues.is_empty())
+    }
+
     fn contention_queue_is_full(&self, entity: EntityId) -> bool {
         let Some(policy) = self.world.get_component_contention_policy(entity) else {
             return false;

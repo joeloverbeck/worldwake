@@ -865,6 +865,40 @@ pub trait TemporalBeliefView {
         let _ = facility;
         None
     }
+    /// Position of `actor` within whichever slot of `source`'s
+    /// `ResourceExtractionQueues` they are currently waiting on. Returns
+    /// `None` if the actor is not enqueued, or the source has no
+    /// `ResourceExtractionQueues` registered. Mirrors
+    /// `facility_queue_position` but reads the per-slot extraction
+    /// substrate (FND-26 split between extraction-state and reservation-state).
+    fn extraction_slot_queue_position(&self, source: EntityId, actor: EntityId) -> Option<u32> {
+        let _ = (source, actor);
+        None
+    }
+    /// True if `actor` currently holds a grant on any slot of `source`'s
+    /// `ResourceExtractionQueues`.
+    fn actor_holds_extraction_slot_grant(&self, source: EntityId, actor: EntityId) -> bool {
+        let _ = (source, actor);
+        false
+    }
+    /// True if any slot of `source`'s `ResourceExtractionQueues` has no
+    /// active grant — meaning the next harvest start request would be
+    /// granted immediately. Returns `false` when the source has no
+    /// `ResourceExtractionQueues` registered.
+    fn extraction_slot_available(&self, source: EntityId) -> bool {
+        let _ = source;
+        false
+    }
+    /// True if `source` carries a `ResourceExtractionQueues` component
+    /// with at least one slot. Identifies a resource source so that
+    /// callers reasoning about harvest contention can avoid falling
+    /// back to legacy temporal-reservation logic, which never applies
+    /// to harvest sources (FND-26 separates extraction-state from
+    /// reservation-state).
+    fn has_extraction_queues(&self, source: EntityId) -> bool {
+        let _ = source;
+        false
+    }
     fn contention_queue_is_full(&self, entity: EntityId) -> bool {
         let _ = entity;
         false

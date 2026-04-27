@@ -1,12 +1,14 @@
 # S127: Quantity-Aware Acquisition and Visible Source State
 
+**Status**: ✅ COMPLETED
+
 ## Summary
 
 Make acquisition goals say *how much* the agent wants and over *what horizon*, and make resource sources expose the concrete state agents need to reason about depletion, recovery, and contention without asking the planner to read truth on their behalf. Today, `GoalKind::AcquireCommodity { commodity, purpose }` is a unit-quantity request — every agent wants exactly one apple at a time, repeated. `ResourceSource` exposes `available_quantity`, `max_quantity`, `regeneration_ticks_per_unit`, but exposes no slot/duration model and emits no `last_harvest_events`-style trace, so contention reasoning must run through the (lawful but invisible-to-other-agents) `BlockingFact(ReservationConflict)` path. This spec makes acquisition quantity-aware (`AcquisitionQuantity { desired_min, desired_target, horizon_ticks }`), exposes per-source extraction concurrency through new fields on `ResourceSource` and a new `ResourceExtractionQueues` component, and turns "the source ran dry mid-harvest" into a partial-success outcome surfaced through `CommitTraceData` and a new partial-aware `Materialization` representation. Agents can then decide between "one apple now" vs. "three apples for the next 100 ticks" based on need projection (S126), source reliability (S131), and observed contention.
 
 ## Phase and Status
 
-Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft.
+Phase 10: Survival Mechanic Depth (Adjunct). Status: ✅ COMPLETED — archived 2026-04-27.
 
 ## Crates
 
@@ -365,3 +367,41 @@ Per-agent variation comes from existing profiles:
 Per-source authoring lives in scenario RON via `ResourceSourceDef.{extraction_slots, extraction_duration_ticks}`. The shared default `HARVEST_TRACE_RETENTION_TICKS = 200` is overridable at scenario level via `ScenarioDef.harvest_trace_retention_ticks`.
 
 No magic numbers introduced in agent-side code — all numeric authoring runs through the profile or scenario surface.
+
+## Outcome
+
+Completed on 2026-04-27.
+
+D1–D12 landed across the ten-ticket chain S127QUAAWAACQ-001..-010 (all archived):
+
+- **D1 / D2**: `AcquisitionQuantity { desired_min, desired_target, horizon_ticks }` added in `crates/worldwake-core/src/goal.rs` and embedded in `GoalKind::AcquireCommodity { commodity, purpose, quantity }`. Constructor enforces `desired_min <= desired_target`. `GoalKey::from(GoalKind)` ignores `quantity` so goal identity remains `(commodity, purpose)`.
+- **D3**: Workspace-wide payload-widening migration touched all `AcquireCommodity` destructure and construction sites (~344 across `goal_dispatch_decl.rs`, `goal_model.rs`, `feasibility.rs`, `ranking.rs`, `candidate_generation.rs`, CLI, goldens, and unit tests). `is_satisfied` semantics changed from "agent has any of the commodity" to "agent has at least `desired_min` units." No backward-compatibility shim per FND-28.
+- **D4**: `ResourceSource` extended with `extraction_slots: NonZeroU8` and `extraction_duration_ticks: NonZeroU32` in `crates/worldwake-core/src/production.rs`. Single-slot behavior corresponds to `extraction_slots = 1`.
+- **D5**: `LastHarvestTrace` component + `HarvestTraceEntry` ring buffer (cap 8) in `crates/worldwake-core/src/production.rs`; pruned during the existing `item_decay_system` maintenance pass against `HARVEST_TRACE_RETENTION_TICKS = 200` (overridable per scenario via `ScenarioDef.harvest_trace_retention_ticks`).
+- **D6**: `ResourceExtractionQueues { queues: Vec<ContentionQueue> }` component in `crates/worldwake-core/src/contention.rs` (length matches `extraction_slots`); registered at scenario spawn alongside `ResourceSource`. Per FND-26, this carrier is independent of `ResourceSource`'s commodity/quantity state.
+- **D7**: Harvest action handler updated in `crates/worldwake-systems/src/production_actions.rs`. `commit_harvest` computes `actual = min(source.available_quantity, requested_quantity)` and emits an `ItemLot` of `actual`; partial completions surface `partial_quantity: Some(Quantity(actual))` via the new `CommitTraceData::Harvest(HarvestCommitTrace)` variant; `LastHarvestTrace` appends on commit.
+- **D8**: `grant_or_signal_full` picks the lowest-index slot whose `granted` is `None` (or already held by the actor); on full slots it returns `extraction_slots_full`, and `record_harvest_start_failure` enqueues the actor on the shortest-waitlist slot. Candidate generation derives `AcquisitionQuantity` from agent state (need projection × metabolism rate, bounded by carry headroom) at `crates/worldwake-ai/src/candidate_generation.rs:2972` and `:3036`. Ranking reads S131 `SourceReliability.average_wait_ticks` for tiebreak (with the legacy ratio fallback when S131 is absent).
+- **D9**: `last_harvest_trace(entity)` and `resource_extraction_queues(entity)` accessors landed on `FacilityBeliefView` with FND-14A co-location gating in `PerAgentBeliefView`. `impl_goal_belief_view!` macro forwarding propagated to consumers.
+- **D10**: `ResourceSourceDef` extended with `extraction_slots: u8` (default `1`) and `extraction_duration_ticks: u32` (default `1`) in `crates/worldwake-cli/src/scenario/types.rs`; spawn translator constructs the `ResourceExtractionQueues` component with `vec![ContentionQueue::default(); slot_count]` on the source entity. `ScenarioDef.harvest_trace_retention_ticks: Option<u32>` added (`#[serde(default)]`) so scenarios may override the global retention constant.
+- **D11**: Decision-trace `Display` formatter for `AcquireCommodity` surfaces `desired_min`, `desired_target`, `horizon_ticks`. `CommitTraceData::Harvest(HarvestCommitTrace { partial_quantity, .. })` flows through the existing harvest-commit trace surface; partial harvest commits render `quantity_actual / quantity_requested` in the trace formatter.
+- **D12**: Five goldens authored in `crates/worldwake-ai/tests/golden_quantity_aware_acquisition.rs`:
+  - Scenario 351 — single-slot queue formation with concrete wait projection.
+  - Scenario 352 — multi-slot parallel grants for three concurrent harvesters.
+  - Scenario 353 — partial-success harvest surfaces partial quantity.
+  - Scenario 354 — S126-driven `desired_target` scaling above 1.
+  - Scenario 355 — FOUNDATIONS Section VI Scenario E queue abandonment promotes the next actor.
+- **AI clearing-baseline integration (S127QUAAWAACQ-010)**: extended `TemporalBeliefView` with `extraction_slot_queue_position`, `actor_holds_extraction_slot_grant`, `extraction_slot_available`, and `has_extraction_queues` accessors so `BlockingFact::ReservationConflict` blockers raised by `extraction_slots_full` clear structurally — promoted to a slot grant, position decreased, or any slot freed — instead of relying on `CognitiveProfile.transient_block_ticks` TTL. Goldens 1 and 5 dropped their `transient_block_ticks: Some(2)` overrides.
+
+### Deviations
+
+- **Place-scoping guard absorbed during ticket -010**: `should_scope_local_commodity_unavailability_to_place` was nulling `blocker_key.target` for harvest start failures at single-source places, because the source entity itself was being excluded from the place's commodity-support check (so the place "lacked" the commodity by exclusion). This forced `derive_clearing_condition` into the `TtlOnly` branch even when `ReservationConflict` was the correct classification. The fix added `is_contention_blocker(&classification)` and skips place-scoping for `ReservationConflict`, `ExclusiveFacilityUnavailable`, and `WorkstationBusy` — these are facility-contention failures, not commodity-availability failures. The original ticket text only named the belief-view extension; the place-scoping guard was a small, local, unambiguously-correct adjacent fix without which the new accessors were unreachable. Documented in archived ticket S127QUAAWAACQ-010.
+- **`survival_baseline_5_ticks.md` decision-history fixture refreshed**: with the corrected target retention and structural blocker clearing, tick-1 `BlockerRecorded` now carries the well's `target: Some(EntityId)` instead of `None`, and tick-4 Agent B's `GoalSuppressed(AcquireCommodity{Water})` line no longer appears (the blocker has cleared by then via the new substrate signal). The golden was regenerated under the new lawful contract.
+- **No `ReserveForSelf` purpose variant** (Non-Goal): the existing `Restock` purpose with `desired_target > 1` already covers reserve-style intent; introducing a new variant would have split the planner branch unnecessarily.
+- **No goal-level TTL infrastructure** (Non-Goal): `horizon_ticks` is enforced at the candidate-emitter level — emission stops when the projected need-breach is more than `horizon_ticks` ahead of `current_tick`. The field stays on the goal solely for decision-trace surfacing.
+- **No `partial: bool` on `CommitOutcome`** (Non-Goal): partial-quantity is surfaced through `CommitTraceData::Harvest.partial_quantity` so the foundational `CommitOutcome` shape stays stable across all action handlers.
+
+### Verification
+
+- All ten tickets passed `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and `./scripts/verify.sh` at completion.
+- Golden inventory and scenario coverage docs were refreshed via `python3 scripts/golden_inventory.py --write --check-docs` and `cargo run -p worldwake-cli --bin scenario-coverage -- --check` after each ticket touching scenario metadata.
+- Final ticket-010 also passed `cargo test -p worldwake-cli --test observer_decision_history` after refreshing the survival-baseline 5-tick fixture under the corrected blocker contract.

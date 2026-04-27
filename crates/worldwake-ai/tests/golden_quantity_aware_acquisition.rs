@@ -89,13 +89,11 @@ fn place_orchard(
 /// Seed a thirsty AI agent at `place` who knows the water harvest recipe.
 ///
 /// `transient_block_ticks` overrides the agent's
-/// `CognitiveProfile.transient_block_ticks` when `Some`. Queue-formation
-/// goldens use a short value (e.g., 2) so that the
-/// `BlockingFact::ReservationConflict` recorded by the AI on
-/// `extraction_slots_full` failures expires within the test's tick budget,
-/// letting queued agents re-emit `AcquireCommodity` once a slot frees. The
-/// default (20 ticks) is tuned for survival-scale scenarios and is
-/// unrelated to slot-promotion latency in focused goldens.
+/// `CognitiveProfile.transient_block_ticks` when `Some`; pass `None` to
+/// use the default. The blocker recorded by the AI on
+/// `extraction_slots_full` clears structurally via
+/// `ResourceExtractionQueues` state changes (S127QUAAWAACQ-010), so
+/// queue-formation goldens no longer rely on a short TTL to advance.
 fn seed_thirsty_water_seeker(
     h: &mut GoldenHarness,
     name: &str,
@@ -248,13 +246,9 @@ fn tick_until(
 fn golden_single_slot_queue_forms_with_concrete_wait() {
     let mut h = build_quantity_harness(Seed([0xA1; 32]));
     let well = place_well(&mut h, ORCHARD_FARM, 1, 20);
-    // Short transient_block_ticks so the BlockingFact::ReservationConflict
-    // the AI records on extraction_slots_full expires before the granted
-    // actor commits, letting losing agents re-emit and the next-actor
-    // grant transition occur within the focused tick budget.
-    let agent_a = seed_thirsty_water_seeker(&mut h, "Aria", ORCHARD_FARM, Some(2));
-    let agent_b = seed_thirsty_water_seeker(&mut h, "Bram", ORCHARD_FARM, Some(2));
-    let agent_c = seed_thirsty_water_seeker(&mut h, "Cael", ORCHARD_FARM, Some(2));
+    let agent_a = seed_thirsty_water_seeker(&mut h, "Aria", ORCHARD_FARM, None);
+    let agent_b = seed_thirsty_water_seeker(&mut h, "Bram", ORCHARD_FARM, None);
+    let agent_c = seed_thirsty_water_seeker(&mut h, "Cael", ORCHARD_FARM, None);
 
     // Tick once to let the AI propose harvest requests and surface
     // grant + start_failed outcomes within the same tick boundary.
@@ -726,12 +720,9 @@ fn golden_s126_long_horizon_scales_desired_target() {
 fn golden_scenario_e_queue_abandonment_promotes_next_actor() {
     let mut h = build_quantity_harness(Seed([0xA5; 32]));
     let well = place_well(&mut h, ORCHARD_FARM, 1, 20);
-    // Same short transient_block_ticks rationale as Scenario 351 — see
-    // ticket reassessment item 15 for why ResourceExtractionQueues changes
-    // do not currently clear the AI's ReservationConflict blocker.
-    let agent_a = seed_thirsty_water_seeker(&mut h, "Aria", ORCHARD_FARM, Some(2));
-    let agent_b = seed_thirsty_water_seeker(&mut h, "Bram", ORCHARD_FARM, Some(2));
-    let agent_c = seed_thirsty_water_seeker(&mut h, "Cael", ORCHARD_FARM, Some(2));
+    let agent_a = seed_thirsty_water_seeker(&mut h, "Aria", ORCHARD_FARM, None);
+    let agent_b = seed_thirsty_water_seeker(&mut h, "Bram", ORCHARD_FARM, None);
+    let agent_c = seed_thirsty_water_seeker(&mut h, "Cael", ORCHARD_FARM, None);
 
     h.step_once();
 
