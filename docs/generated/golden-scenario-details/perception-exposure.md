@@ -7,7 +7,7 @@ Scenarios: 6
 
 ### Scenario 116: Concealment Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:412`
+- Source: `golden_perception_exposure.rs:420`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -24,7 +24,7 @@ Scenarios: 6
 
 ### Scenario 117: Fatigue Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:453`
+- Source: `golden_perception_exposure.rs:461`
 - Systems: Needs, Perception
 - ActionDomains: Needs
 - Places: ForestPath
@@ -41,7 +41,7 @@ Scenarios: 6
 
 ### Scenario 118: Attention Cost Reduces Witnessed-Event Fidelity
 
-- Source: `golden_perception_exposure.rs:494`
+- Source: `golden_perception_exposure.rs:502`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -58,7 +58,7 @@ Scenarios: 6
 
 ### Scenario 119: Multiplicative Stacking
 
-- Source: `golden_perception_exposure.rs:520`
+- Source: `golden_perception_exposure.rs:528`
 - Systems: Combat, Needs, Perception
 - ActionDomains: Combat, Needs
 - Places: ForestPath
@@ -75,7 +75,7 @@ Scenarios: 6
 
 ### Scenario 128: Perception Forms Beliefs About Resource Sources
 
-- Source: `golden_perception_exposure.rs:546`
+- Source: `golden_perception_exposure.rs:554`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: OrchardFarm
@@ -92,7 +92,7 @@ Scenarios: 6
 
 ### Scenario 341: Observation Budget Prioritizes Agents And Facilities Over Waste
 
-- Source: `golden_perception_exposure.rs:584`
+- Source: `golden_perception_exposure.rs:592`
 - Systems: Perception
 - ActionDomains: N/A
 - Places: OrchardFarm

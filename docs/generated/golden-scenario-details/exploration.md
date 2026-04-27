@@ -7,7 +7,7 @@ Scenarios: 11
 
 ### Scenario 133: Ignorance-Driven Frontier Exploration
 
-- Source: `golden_exploration.rs:669`
+- Source: `golden_exploration.rs:672`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -25,7 +25,7 @@ Scenarios: 11
 
 ### Scenario 134: Known Satisfaction Path Suppresses Exploration
 
-- Source: `golden_exploration.rs:732`
+- Source: `golden_exploration.rs:735`
 - Systems: AI, Needs, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -43,7 +43,7 @@ Scenarios: 11
 
 ### Scenario 135: Consecutive Exploration Cap Suppresses Re-Emission
 
-- Source: `golden_exploration.rs:796`
+- Source: `golden_exploration.rs:801`
 - Systems: AI, Needs, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: N/A
@@ -61,7 +61,7 @@ Scenarios: 11
 
 ### Scenario 136: Arrival Perception Unlocks Concrete Relief
 
-- Source: `golden_exploration.rs:843`
+- Source: `golden_exploration.rs:848`
 - Systems: AI, Needs, Travel, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -79,7 +79,7 @@ Scenarios: 11
 
 ### Scenario 337: Budget Exhaustion Unlocks Frontier Exploration
 
-- Source: `golden_exploration.rs:969`
+- Source: `golden_exploration.rs:976`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
 - ActionDomains: Travel, Production
@@ -97,7 +97,7 @@ Scenarios: 11
 
 ### Scenario 338: Multi-Hop Frontier Discovery Composes Across Rounds
 
-- Source: `golden_exploration.rs:1140`
+- Source: `golden_exploration.rs:1149`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -115,7 +115,7 @@ Scenarios: 11
 
 ### Scenario 339: Arrival Boost Preserves The Exploration Chain
 
-- Source: `golden_exploration.rs:1352`
+- Source: `golden_exploration.rs:1363`
 - Systems: AI, Travel, Perception, Needs, Production
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel, Perception
@@ -133,7 +133,7 @@ Scenarios: 11
 
 ### Scenario 340: Need Satisfaction Lazily Resets Exhaustion State
 
-- Source: `golden_exploration.rs:1401`
+- Source: `golden_exploration.rs:1412`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
 - ActionDomains: Travel, Production, Needs
@@ -151,7 +151,7 @@ Scenarios: 11
 
 ### Scenario 343: Diversification Profile Unlocks Proactive Discovery
 
-- Source: `golden_exploration.rs:1595`
+- Source: `golden_exploration.rs:1608`
 - Systems: AI, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -169,7 +169,7 @@ Scenarios: 11
 
 ### Scenario 344: Need Pressure Vetoes Proactive Motivation
 
-- Source: `golden_exploration.rs:1634`
+- Source: `golden_exploration.rs:1647`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -187,7 +187,7 @@ Scenarios: 11
 
 ### Scenario 345: Proactive Cooldown Spaces Repeated Exploration
 
-- Source: `golden_exploration.rs:1704`
+- Source: `golden_exploration.rs:1717`
 - Systems: AI, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel

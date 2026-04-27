@@ -24,7 +24,7 @@ Scenarios: 6
 
 ### Scenario 1b: Unrelated Commodity Change Preserves Frontier Exhaustion
 
-- Source: `golden_ai_decisions.rs:129`
+- Source: `golden_ai_decisions.rs:131`
 - Systems: Needs, AI, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Needs, Production, Travel
@@ -42,7 +42,7 @@ Scenarios: 6
 
 ### Scenario 2: Priority-Based Interrupt
 
-- Source: `golden_ai_decisions.rs:316`
+- Source: `golden_ai_decisions.rs:321`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep
 - ActionDomains: Needs
@@ -60,7 +60,7 @@ Scenarios: 6
 
 ### Scenario 5: Local Depleted Source Regenerates Without Spurious Failure Memory
 
-- Source: `golden_ai_decisions.rs:429`
+- Source: `golden_ai_decisions.rs:434`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -77,7 +77,7 @@ Scenarios: 6
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:558`
+- Source: `golden_ai_decisions.rs:565`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -94,7 +94,7 @@ Scenarios: 6
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1396`
+- Source: `golden_ai_decisions.rs:1348`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

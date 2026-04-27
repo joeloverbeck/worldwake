@@ -59,7 +59,7 @@ Scenarios: 13
 
 ### Scenario 86: Seller Return Restores Displayed Listing After Pending Revival
 
-- Source: `golden_merchant_selling.rs:787`
+- Source: `golden_merchant_selling.rs:788`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -72,7 +72,7 @@ Scenarios: 13
 
 ### Scenario 87: Seller Return Completes Resumed Purchase After Live Three-Coin Offer
 
-- Source: `golden_merchant_selling.rs:934`
+- Source: `golden_merchant_selling.rs:936`
 - Systems: Trade, AI, Needs
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Trade
@@ -85,7 +85,7 @@ Scenarios: 13
 
 ### Scenario 77: Unlisted Stock Not Sellable
 
-- Source: `golden_merchant_selling.rs:1079`
+- Source: `golden_merchant_selling.rs:1082`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -98,7 +98,7 @@ Scenarios: 13
 
 ### Scenario 79b: Unstage Round Trip Preserves Storage Contract
 
-- Source: `golden_merchant_selling.rs:1231`
+- Source: `golden_merchant_selling.rs:1234`
 - Systems: Trade, AI
 - ActionDomains: Trade
 - Principles: P4, P24
@@ -110,7 +110,7 @@ Scenarios: 13
 
 ### Scenario 80: Buyer Discovers Listed Lots, Not Unlisted Stock
 
-- Source: `golden_merchant_selling.rs:1245`
+- Source: `golden_merchant_selling.rs:1248`
 - Systems: Trade, AI
 - GoalKinds: AcquireCommodity
 - ActionDomains: Trade
@@ -123,7 +123,7 @@ Scenarios: 13
 
 ### Scenario 82: Seller Departure Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:1313`
+- Source: `golden_merchant_selling.rs:1316`
 - Systems: Trade
 - Principles: P3, P7
 - Primary tests: `seller_departure_invalidates_listing`
@@ -134,7 +134,7 @@ Scenarios: 13
 
 ### Scenario 83: Dead Seller Invalidates Listing
 
-- Source: `golden_merchant_selling.rs:1370`
+- Source: `golden_merchant_selling.rs:1373`
 - Systems: Trade
 - Principles: P3, P4
 - Primary tests: `dead_seller_invalidates_listing`
@@ -145,7 +145,7 @@ Scenarios: 13
 
 ### Scenario 88: Demand Memory Raises Sell Ranking
 
-- Source: `golden_merchant_selling.rs:1442`
+- Source: `golden_merchant_selling.rs:1445`
 - Systems: Trade, AI
 - GoalKinds: SellCommodity
 - Principles: P1, P3, P20
@@ -157,7 +157,7 @@ Scenarios: 13
 
 ### Scenario 96: Hungry Merchant Eats Own Listed Sale Stock
 
-- Source: `golden_merchant_selling.rs:1514`
+- Source: `golden_merchant_selling.rs:1517`
 - Systems: Needs, Trade, AI
 - GoalKinds: ConsumeOwnedCommodity, SellCommodity
 - ActionDomains: Needs (eat), Trade (staff_market)
