@@ -184,6 +184,7 @@ pub fn synthetic_ranked_goal_summary(
         source_reliability_discount: None,
         competition_discount: None,
         feasibility: worldwake_ai::FeasibilityHint::Likely,
+        acquisition_quantity: None,
     }
 }
 

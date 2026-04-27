@@ -2257,6 +2257,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let semantics = build_phase_two_registry()
             .iter()
@@ -2298,6 +2299,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced = apply_hypothetical_transition(
@@ -2335,6 +2337,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(apply_hypothetical_transition(&goal, semantics, state, &[lot], None).is_none());
@@ -2364,6 +2367,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced =
@@ -2407,6 +2411,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced =
@@ -2469,6 +2474,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced = apply_hypothetical_transition(
@@ -2539,6 +2545,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(apply_hypothetical_transition(&goal, semantics, state, &[lot], None).is_none());
@@ -2579,6 +2586,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let advanced =

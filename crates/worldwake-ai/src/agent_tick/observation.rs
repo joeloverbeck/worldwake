@@ -438,6 +438,7 @@ fn reinstate_current_plan_candidate(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        acquisition_quantity: None,
     });
     candidates
         .diagnostics
@@ -1050,6 +1051,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
@@ -1141,6 +1143,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),

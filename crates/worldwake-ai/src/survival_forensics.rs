@@ -760,6 +760,7 @@ mod tests {
                         source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: crate::FeasibilityHint::Likely,
+                        acquisition_quantity: None,
                     }],
                     top_ranked_comparison: None,
                     suppressed: Vec::new(),

@@ -102,15 +102,29 @@ fn seed_thirsty_water_seeker(
     place: worldwake_core::EntityId,
     transient_block_ticks: Option<u32>,
 ) -> worldwake_core::EntityId {
+    seed_thirsty_water_seeker_with_thirst(h, name, place, transient_block_ticks, pm(800))
+}
+
+/// Same as `seed_thirsty_water_seeker`, but lets the caller choose the
+/// initial thirst level. Scenarios that exercise `desired_target` derivation
+/// pass a value above `low` (200 ‰) but below `high` (700 ‰) so that
+/// `projected_tick_of` returns a non-collapsed horizon and
+/// `derive_acquire_commodity_quantity` produces a target above 1.
+fn seed_thirsty_water_seeker_with_thirst(
+    h: &mut GoldenHarness,
+    name: &str,
+    place: worldwake_core::EntityId,
+    transient_block_ticks: Option<u32>,
+    initial_thirst: worldwake_core::Permille,
+) -> worldwake_core::EntityId {
     let agent = seed_agent_with_recipes(
         &mut h.world,
         &mut h.event_log,
         name,
         place,
-        // Thirst at 800 ‰ is above the default `high` threshold (700 ‰),
-        // well above `low` (200 ‰) — emits AcquireCommodity. Hunger and
-        // fatigue zero so AcquireCommodity{Water} is the dominant goal.
-        HomeostaticNeeds::new(pm(0), pm(800), pm(0), pm(0), pm(0)),
+        // Hunger and fatigue zero so AcquireCommodity{Water} is the dominant
+        // goal regardless of `initial_thirst`.
+        HomeostaticNeeds::new(pm(0), initial_thirst, pm(0), pm(0), pm(0)),
         MetabolismProfile::default(),
         UtilityProfile::default(),
         KnownRecipes::with([WATER_RECIPE_ID]),
@@ -543,34 +557,48 @@ fn golden_partial_success_emits_partial_quantity() {
 // GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 // ActionDomains: Production, Needs
 // Places: OrchardFarm
-// Principles: 14, 14A, 20, 22, 26
+// Principles: 14, 14A, 20, 22, 26, 29
 //
 // Setup: One thirsty AI agent at OrchardFarm with one Well source
 //   (extraction_slots = 1, available_quantity = 20). Default
 //   MetabolismProfile.thirst_rate = pm(3) and DriveThresholds.thirst.high
-//   = pm(700) — projected breach from current 800 ‰ is the same tick,
-//   well within DEFAULT_ACQUISITION_HORIZON = 200. derive_acquire_commodity_quantity
-//   returns Some, candidate emitter emits AcquireCommodity{Water}.
+//   = pm(700). Initial thirst is 300 ‰ — above `low` (200 ‰), well below
+//   `high` so projected_tick_of returns current_tick + (700-300)/3 = 134.
+//   With Water's thirst_relief_per_unit = 320 ‰, derive_acquire_commodity_quantity
+//   computes desired_target = ceil(134 × 3 / 320) = 2, demonstrating
+//   per-agent target derivation rather than a collapsed single-unit value.
 //
-// Proves: With the full S127-001..007 stack live, the agent's decision
-//   trace includes the AcquireCommodity{Water} candidate (proves the
-//   horizon-gate did not suppress emission) and the agent successfully
-//   harvests through the planner -> action -> commit chain (proves the
-//   quantity-aware path is causally exercised end-to-end). The
-//   `desired_target` value is currently collapsed by GoalKey
-//   normalization before reaching any trace surface; spec D11's promise
-//   to surface desired_target through the decision trace is recorded as
-//   a follow-up gap (see ticket Outcome).
+// Proves: With the full S127-001..009 stack live, the agent's decision
+//   trace includes the AcquireCommodity{Water} candidate AND the
+//   `RankedGoalSummary.acquisition_quantity` carrier surfaces the un-normalized
+//   `AcquisitionQuantity` (desired_target > 1) through the trace pipeline
+//   without affecting `GoalKey` identity (which stays normalized to
+//   `AcquisitionQuantity::single()`). The agent then successfully harvests
+//   through the planner -> action -> commit chain, proving the quantity-aware
+//   path is causally exercised end-to-end and observable to debug consumers
+//   (FND-29).
 //
-// Chain: high-thirst projection within horizon -> derive_acquire_commodity_quantity
-//   returns Some -> emit AcquireCommodity{Water} candidate -> plan
-//   search picks harvest_water -> action commits -> agent gains water
-//   inventory.
+// Chain: thirst-projection within horizon -> derive_acquire_commodity_quantity
+//   returns AcquisitionQuantity{ desired_min=1, desired_target>1, horizon_ticks=134 }
+//   -> emit AcquireCommodity{Water} GoalOffer with `acquisition_quantity` populated
+//   -> ranking promotes offer to AgendaEntry -> summarize_ranked_goal copies
+//   into RankedGoalSummary.acquisition_quantity -> plan search picks
+//   harvest_water -> action commits -> agent gains water inventory.
 #[test]
 fn golden_s126_long_horizon_scales_desired_target() {
     let mut h = build_quantity_harness(Seed([0xA4; 32]));
     let _well = place_well(&mut h, ORCHARD_FARM, 1, 20);
-    let agent = seed_thirsty_water_seeker(&mut h, "Aria", ORCHARD_FARM, None);
+    // Thirst 300 ‰ keeps the agent above `low` (so candidate emits) but well
+    // below `high` (so projected_tick_of yields a long horizon). Without
+    // this, thirst above `high` collapses the horizon to current_tick and
+    // forces desired_target=1, masking the per-agent derivation.
+    let agent = seed_thirsty_water_seeker_with_thirst(
+        &mut h,
+        "Aria",
+        ORCHARD_FARM,
+        None,
+        worldwake_core::Permille::new(300).unwrap(),
+    );
 
     // Tick once so the AI generates candidates with tracing enabled.
     h.step_once();
@@ -600,8 +628,57 @@ fn golden_s126_long_horizon_scales_desired_target() {
         planning.candidates.generated,
     );
 
+    // S127QUAAWAACQ-009: the per-agent `AcquisitionQuantity` rides through
+    // the candidate -> ranking -> RankedGoalSummary path so trace consumers
+    // can observe `desired_target` per-emission.
+    let acquire_summary = planning
+        .candidates
+        .ranked
+        .iter()
+        .find(|summary| summary.opportunity.goal_key == acquire_water_key)
+        .expect(
+            "AcquireCommodity{Water} should appear in ranked candidates so its \
+             AcquisitionQuantity can be inspected through the decision trace",
+        );
+    let quantity = acquire_summary.acquisition_quantity.expect(
+        "RankedGoalSummary for AcquireCommodity must carry the un-normalized \
+         AcquisitionQuantity (S127 D11)",
+    );
+    assert!(
+        quantity.desired_target.get() > 1,
+        "long-horizon projection (thirst=300 ‰, rate=3 ‰/tick, water relief=320 ‰) \
+         should derive desired_target > 1 through the decision trace; got {}",
+        quantity.desired_target.get(),
+    );
+    assert_eq!(
+        quantity.desired_min.get(),
+        1,
+        "desired_min stays at 1 (NonZeroU16::MIN) per spec D8 baseline",
+    );
+    assert!(
+        quantity.horizon_ticks.get() > 1,
+        "horizon_ticks should reflect the projected breach distance (~134 ticks), \
+         not the collapsed current_tick fallback; got {}",
+        quantity.horizon_ticks.get(),
+    );
+    // GoalKey identity stays normalized — proves acquisition_quantity is the
+    // only carrier preserving per-agent values (S127 Design Goal 9).
+    let GoalKind::AcquireCommodity {
+        quantity: key_quantity,
+        ..
+    } = acquire_summary.opportunity.goal_key.kind
+    else {
+        panic!("ranked goal_key should describe AcquireCommodity");
+    };
+    assert_eq!(
+        key_quantity,
+        AcquisitionQuantity::single(),
+        "GoalKey identity must keep quantity collapsed to single() so two \
+         acquisition goals with the same commodity+purpose share a key",
+    );
+
     // Tick until the agent commits at least one harvest and accumulates water.
-    let harvest_complete = tick_until(&mut h, 20, |h| {
+    let harvest_complete = tick_until(&mut h, 40, |h| {
         first_action_event_matching(h, agent, |kind| {
             matches!(kind, ActionTraceKind::Committed { .. })
         })
@@ -610,7 +687,7 @@ fn golden_s126_long_horizon_scales_desired_target() {
     });
     assert!(
         harvest_complete,
-        "agent should commit a Water harvest and accumulate inventory within 20 ticks",
+        "agent should commit a Water harvest and accumulate inventory within 40 ticks",
     );
 }
 

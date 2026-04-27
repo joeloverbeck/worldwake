@@ -974,6 +974,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1047,6 +1048,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1088,6 +1090,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1125,6 +1128,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1157,6 +1161,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1191,6 +1196,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1227,6 +1233,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).is_none());
@@ -1274,6 +1281,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1350,6 +1358,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1414,6 +1423,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &RecipeRegistry::new()).unwrap();
@@ -1459,6 +1469,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let plan = plan(&snapshot, &goal, &base_budget(), &recipes).unwrap();
@@ -1492,6 +1503,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(

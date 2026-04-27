@@ -4198,6 +4198,7 @@ fn emit_candidate(
         return;
     }
 
+    let acquisition_quantity = goal_kind_acquisition_quantity(&kind);
     let key = GoalKey::from(kind);
     diagnostics.offers.push(CandidateOfferDiagnostic {
         opportunity: OpportunityKey {
@@ -4217,7 +4218,21 @@ fn emit_candidate(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        acquisition_quantity,
     });
+}
+
+/// Extract the per-emission `AcquisitionQuantity` from a goal kind, returning
+/// `Some` only for `GoalKind::AcquireCommodity`. The value is preserved on
+/// `GoalOffer.acquisition_quantity` so the decision-trace pipeline can
+/// surface the per-agent `desired_min` / `desired_target` / `horizon_ticks`
+/// without re-deriving them at trace time, while goal identity (`GoalKey`)
+/// remains commodity + purpose only (S127 Design Goal 9).
+fn goal_kind_acquisition_quantity(kind: &GoalKind) -> Option<AcquisitionQuantity> {
+    match kind {
+        GoalKind::AcquireCommodity { quantity, .. } => Some(*quantity),
+        _ => None,
+    }
 }
 
 fn emit_recorded_violation_candidates(
@@ -4791,6 +4806,7 @@ fn emit_candidate_with_trace(
         return;
     }
 
+    let acquisition_quantity = goal_kind_acquisition_quantity(&kind);
     let key = GoalKey::from(kind);
     let opportunity = OpportunityKey {
         goal_key: key,
@@ -4811,6 +4827,7 @@ fn emit_candidate_with_trace(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        acquisition_quantity,
     });
 
     let trace = evidence_trace.into_public(opportunity);
@@ -19393,6 +19410,109 @@ mod tests {
         assert!(quantity.desired_min.get() >= 1);
         // `horizon_ticks` always >= 1 (NonZeroU32).
         assert!(quantity.horizon_ticks.get() >= 1);
+    }
+
+    #[test]
+    fn candidate_gen_emits_goal_offer_with_acquisition_quantity_above_one() {
+        // S127QUAAWAACQ-009: the per-emission `AcquisitionQuantity` must
+        // round-trip on `GoalOffer.acquisition_quantity` so the decision
+        // trace can surface `desired_target` per-agent. The `GoalKey`
+        // normalization that collapses quantity to `single()` is correct
+        // for goal identity (Design Goal 9), but the offer-level field
+        // preserves the un-normalized value for trace consumers.
+        //
+        // Setup: hunger 300 ‰ (above low=250, below high=750), rate=5 ‰/tick,
+        // generous carry headroom. Projected breach is at tick
+        // (750-300)/5 = 90 → horizon=90. Apple's hunger_relief_per_unit
+        // is 220 ‰. target = ceil(90 × 5 / 220) = 3, well above the
+        // collapsed `single()` value of 1.
+        let agent = entity(1);
+        let place = entity(10);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.insert(place, vec![agent, workstation]);
+        view.homeostatic_needs.insert(agent, hunger(300));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.metabolism_profiles.insert(
+            agent,
+            metabolism_with_rates(Permille::new(5).unwrap(), Permille::new(0).unwrap()),
+        );
+        view.carry_capacities.insert(agent, LoadUnits(20));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::OrchardRow);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        view.sources_at
+            .insert((place, CommodityKind::Apple), vec![workstation]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(place),
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
+
+        let acquire = find_acquire_commodity(
+            &candidates,
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+        )
+        .expect("agent below high but above low should emit AcquireCommodity for apples");
+        let quantity = acquire
+            .acquisition_quantity
+            .expect("AcquireCommodity offer must carry the un-normalized acquisition_quantity");
+        assert!(
+            quantity.desired_target.get() > 1,
+            "long-horizon scenario should derive desired_target > 1, got {}",
+            quantity.desired_target.get(),
+        );
+        // GoalKey identity stays normalized — proves the offer-level field
+        // is the only carrier preserving the per-agent value.
+        let GoalKind::AcquireCommodity {
+            quantity: key_quantity,
+            ..
+        } = acquire.key.kind
+        else {
+            panic!("expected AcquireCommodity variant on key");
+        };
+        assert_eq!(
+            key_quantity,
+            AcquisitionQuantity::single(),
+            "GoalKey identity must keep quantity collapsed to single()",
+        );
     }
 
     #[test]

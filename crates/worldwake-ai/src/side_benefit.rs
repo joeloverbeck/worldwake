@@ -157,6 +157,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score,

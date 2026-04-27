@@ -786,7 +786,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Survival And Commitment Slots
 
-- Source: `golden_portfolio_planning.rs:211`
+- Source: `golden_portfolio_planning.rs:212`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production
@@ -801,7 +801,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 351: Single-Slot Queue Forms With Concrete Wait Projection
 
-- Source: `golden_quantity_aware_acquisition.rs:206`
+- Source: `golden_quantity_aware_acquisition.rs:220`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -816,7 +816,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 352: Multi-Slot Source Grants Three Concurrent Harvesters
 
-- Source: `golden_quantity_aware_acquisition.rs:342`
+- Source: `golden_quantity_aware_acquisition.rs:354`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -831,7 +831,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 353: Partial-Success Harvest Surfaces Partial Quantity
 
-- Source: `golden_quantity_aware_acquisition.rs:422`
+- Source: `golden_quantity_aware_acquisition.rs:434`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs
@@ -846,22 +846,22 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 354: Quantity-Aware Acquisition Lands Through The AI Pipeline
 
-- Source: `golden_quantity_aware_acquisition.rs:533`
+- Source: `golden_quantity_aware_acquisition.rs:553`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Production, Needs
 - Places: OrchardFarm
-- Principles: 14, 14A, 20, 22, 26
+- Principles: 14, 14A, 20, 22, 26, 29
 
-**Setup**: One thirsty AI agent at OrchardFarm with one Well source (extraction_slots = 1, available_quantity = 20). Default MetabolismProfile.thirst_rate = pm(3) and DriveThresholds.thirst.high = pm(700) — projected breach from current 800 ‰ is the same tick, well within DEFAULT_ACQUISITION_HORIZON = 200. derive_acquire_commodity_quantity returns Some, candidate emitter emits AcquireCommodity{Water}.
+**Setup**: One thirsty AI agent at OrchardFarm with one Well source (extraction_slots = 1, available_quantity = 20). Default MetabolismProfile.thirst_rate = pm(3) and DriveThresholds.thirst.high = pm(700). Initial thirst is 300 ‰ — above `low` (200 ‰), well below `high` so projected_tick_of returns current_tick + (700-300)/3 = 134. With Water's thirst_relief_per_unit = 320 ‰, derive_acquire_commodity_quantity computes desired_target = ceil(134 × 3 / 320) = 2, demonstrating per-agent target derivation rather than a collapsed single-unit value.
 
-**Proves**: With the full S127-001..007 stack live, the agent's decision trace includes the AcquireCommodity{Water} candidate (proves the horizon-gate did not suppress emission) and the agent successfully harvests through the planner -> action -> commit chain (proves the quantity-aware path is causally exercised end-to-end). The `desired_target` value is currently collapsed by GoalKey normalization before reaching any trace surface; spec D11's promise to surface desired_target through the decision trace is recorded as a follow-up gap (see ticket Outcome).
+**Proves**: With the full S127-001..009 stack live, the agent's decision trace includes the AcquireCommodity{Water} candidate AND the `RankedGoalSummary.acquisition_quantity` carrier surfaces the un-normalized `AcquisitionQuantity` (desired_target > 1) through the trace pipeline without affecting `GoalKey` identity (which stays normalized to `AcquisitionQuantity::single()`). The agent then successfully harvests through the planner -> action -> commit chain, proving the quantity-aware path is causally exercised end-to-end and observable to debug consumers (FND-29).
 
-**Cross-system chain**: high-thirst projection within horizon -> derive_acquire_commodity_quantity returns Some -> emit AcquireCommodity{Water} candidate -> plan search picks harvest_water -> action commits -> agent gains water inventory.
+**Cross-system chain**: thirst-projection within horizon -> derive_acquire_commodity_quantity returns AcquisitionQuantity{ desired_min=1, desired_target>1, horizon_ticks=134 } -> emit AcquireCommodity{Water} GoalOffer with `acquisition_quantity` populated -> ranking promotes offer to AgendaEntry -> summarize_ranked_goal copies into RankedGoalSummary.acquisition_quantity -> plan search picks harvest_water -> action commits -> agent gains water inventory.
 
 ### Scenario 355: Queue Abandonment Promotes The Next Actor
 
-- Source: `golden_quantity_aware_acquisition.rs:607`
+- Source: `golden_quantity_aware_acquisition.rs:695`
 - Systems: AI, Needs, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production, Needs

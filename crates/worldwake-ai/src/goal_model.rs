@@ -12,8 +12,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind, CommodityPurpose,
-    EntityId, EntityKind, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
+    AcquisitionQuantity, ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind,
+    CommodityPurpose, EntityId, EntityKind, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
     InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS, Permille,
     PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick, WorkstationTag, belief_confidence,
 };
@@ -2343,6 +2343,13 @@ pub struct GoalOffer {
     pub required_information_gaps: Vec<worldwake_core::BeliefClaimKey>,
     pub invalidators: Vec<crate::Invalidator>,
     pub learned_expectation_refs: Vec<worldwake_core::ExpectationId>,
+    /// Per-emission `AcquisitionQuantity` preserved alongside the normalized
+    /// `GoalKey`. `Some` when the offer's `kind` was `AcquireCommodity`;
+    /// `None` for all other goal families. Surfaces the per-agent
+    /// `desired_min` / `desired_target` / `horizon_ticks` through the
+    /// decision-trace pipeline (FND-29) without affecting goal identity
+    /// (S127 Design Goal 9).
+    pub acquisition_quantity: Option<AcquisitionQuantity>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2739,6 +2746,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score: discount.post_discount_motive,
@@ -2786,6 +2794,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score: discount.post_discount_motive,
@@ -2836,6 +2845,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let bytes = bincode::serialize(&goal).unwrap();
@@ -2865,6 +2875,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::High,
             motive_score: 900,
@@ -5111,6 +5122,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5165,6 +5177,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5213,6 +5226,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5271,6 +5285,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(13),
@@ -5339,6 +5354,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(14),
@@ -5393,6 +5409,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5445,6 +5462,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5498,6 +5516,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5547,6 +5566,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5597,6 +5617,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(12),
@@ -5647,6 +5668,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(13),
@@ -5700,6 +5722,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(25),
@@ -5760,6 +5783,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(27),
@@ -5817,6 +5841,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let def = ActionDef {
             id: ActionDefId(28),
@@ -6221,6 +6246,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert_eq!(
@@ -6285,6 +6311,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         assert!(
@@ -6354,6 +6381,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
 
         let subjects = grounded_goal_epistemic_subjects(&goal, &state);
@@ -9581,6 +9609,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         }
     }
 
@@ -9639,6 +9668,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9729,6 +9759,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9811,6 +9842,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9869,6 +9901,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(
@@ -9965,6 +9998,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
         };
         let (registry, handlers) = build_registry();
         let snapshot = build_planning_snapshot(

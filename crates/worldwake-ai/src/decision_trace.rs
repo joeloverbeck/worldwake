@@ -177,6 +177,9 @@ impl DecisionOutcome {
                 let competition_suffix = selected_summary
                     .and_then(|summary| summary.competition_discount.as_ref())
                     .map_or_else(String::new, format_competition_discount_summary);
+                let acquisition_quantity_suffix = selected_summary
+                    .and_then(|summary| summary.acquisition_quantity)
+                    .map_or_else(String::new, format_acquisition_quantity_summary);
                 let ranking_suffix = planning
                     .candidates
                     .top_ranked_comparison
@@ -211,7 +214,7 @@ impl DecisionOutcome {
                         });
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{competition_suffix}{ranking_suffix}{discrepancy_suffix}{frame_suffix}{patrol_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{competition_suffix}{acquisition_quantity_suffix}{ranking_suffix}{discrepancy_suffix}{frame_suffix}{patrol_suffix}"
                 )
             }
         }
@@ -499,6 +502,13 @@ pub struct RankedGoalSummary {
     pub source_reliability_discount: Option<SourceReliabilityDiscount>,
     pub competition_discount: Option<CompetitionDiscount>,
     pub feasibility: FeasibilityHint,
+    /// Per-emission `AcquisitionQuantity` carried alongside the normalized
+    /// goal identity. `Some` when the ranked goal is
+    /// `GoalKind::AcquireCommodity`; `None` for all other goal families.
+    /// Surfaces the per-agent `desired_min` / `desired_target` /
+    /// `horizon_ticks` to the decision-trace pipeline (FND-29) without
+    /// affecting `GoalKey` identity (S127 Design Goal 9).
+    pub acquisition_quantity: Option<worldwake_core::AcquisitionQuantity>,
 }
 
 /// Records the competition discount applied to a ranked goal's motive score.
@@ -1615,6 +1625,9 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             let competition = selected_summary
                 .and_then(|summary| summary.competition_discount.as_ref())
                 .map_or_else(String::new, format_competition_discount_summary);
+            let acquisition_quantity_suffix = selected_summary
+                .and_then(|summary| summary.acquisition_quantity)
+                .map_or_else(String::new, format_acquisition_quantity_summary);
             let ranking = planning
                 .candidates
                 .top_ranked_comparison
@@ -1622,7 +1635,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .map_or_else(String::new, format_ranked_goal_comparison_summary);
             let dirty = planning.dirty.display_names();
             let mut out = format!(
-                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition}{ranking}"
+                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition}{acquisition_quantity_suffix}{ranking}"
             );
             if let Some(ref aff) = planning.affordances {
                 let place_str = aff
@@ -1865,6 +1878,15 @@ fn format_ranked_goal_comparison_summary(comparison: &RankedGoalComparison) -> S
         comparison.decisive_dimension,
         format_opportunity_key(comparison.winner),
         format_opportunity_key(comparison.loser)
+    )
+}
+
+fn format_acquisition_quantity_summary(quantity: worldwake_core::AcquisitionQuantity) -> String {
+    format!(
+        ", acquisition=desired_min={} desired_target={} horizon_ticks={}",
+        quantity.desired_min.get(),
+        quantity.desired_target.get(),
+        quantity.horizon_ticks.get(),
     )
 }
 
@@ -2572,6 +2594,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 },
                 RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::from(&outranked_goal)),
@@ -2581,6 +2604,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 },
             ],
             Some(GoalKey::from(&selected_goal)),
@@ -2904,6 +2928,7 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Uncertain,
+                acquisition_quantity: None,
             }],
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SearchSelection),
@@ -2925,6 +2950,7 @@ mod tests {
                 source_reliability_discount: None,
                 competition_discount: None,
                 feasibility: FeasibilityHint::Uncertain,
+                acquisition_quantity: None,
             }],
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SnapshotContinuation),
@@ -3002,6 +3028,7 @@ mod tests {
                         source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Uncertain,
+                        acquisition_quantity: None,
                     },
                     RankedGoalSummary {
                         opportunity: market,
@@ -3011,6 +3038,7 @@ mod tests {
                         source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
+                        acquisition_quantity: None,
                     },
                 ],
                 top_ranked_comparison: None,
@@ -3299,6 +3327,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3513,6 +3542,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Likely,
+                    acquisition_quantity: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3583,6 +3613,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: Some(discount),
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3651,6 +3682,7 @@ mod tests {
                     source_reliability_discount: Some(discount),
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3719,6 +3751,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3929,6 +3962,7 @@ mod tests {
                         source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
+                        acquisition_quantity: None,
                     },
                     RankedGoalSummary {
                         opportunity: default_opportunity(loser),
@@ -3938,6 +3972,7 @@ mod tests {
                         source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
+                        acquisition_quantity: None,
                     },
                 ],
                 top_ranked_comparison: Some(RankedGoalComparison {
@@ -4017,6 +4052,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -4110,6 +4146,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -4184,6 +4221,7 @@ mod tests {
                     source_reliability_discount: None,
                     competition_discount: None,
                     feasibility: FeasibilityHint::Uncertain,
+                    acquisition_quantity: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -4801,6 +4839,7 @@ mod tests {
                         source_reliability_discount: None,
                         competition_discount: None,
                         feasibility: FeasibilityHint::Likely,
+                        acquisition_quantity: None,
                     }],
                     top_ranked_comparison: None,
                     suppressed: vec![],
