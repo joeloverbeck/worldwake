@@ -881,12 +881,15 @@ pub trait TemporalBeliefView {
         let _ = (source, actor);
         false
     }
-    /// True if any slot of `source`'s `ResourceExtractionQueues` has no
-    /// active grant — meaning the next harvest start request would be
-    /// granted immediately. Returns `false` when the source has no
-    /// `ResourceExtractionQueues` registered.
-    fn extraction_slot_available(&self, source: EntityId) -> bool {
-        let _ = source;
+    /// True if `actor` can legally claim a slot of `source`'s
+    /// `ResourceExtractionQueues` on their next harvest start request.
+    /// A slot is claimable iff it has no active grant **and** either the
+    /// slot has no waiters, or `actor` is the head of the waiting list
+    /// (FND-26 FIFO semantics enforced by `grant_or_signal_full`).
+    /// Returns `false` when the source has no `ResourceExtractionQueues`
+    /// registered.
+    fn actor_can_claim_extraction_slot(&self, source: EntityId, actor: EntityId) -> bool {
+        let _ = (source, actor);
         false
     }
     /// True if `source` carries a `ResourceExtractionQueues` component

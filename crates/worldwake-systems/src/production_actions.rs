@@ -442,10 +442,21 @@ fn start_harvest(
     Ok(None)
 }
 
-/// Find the lowest-index slot in `ResourceExtractionQueues` whose `granted`
-/// is `None` (or already held by `actor`); grant it and write back.
-/// Returns `Err(PreconditionFailed("extraction_slots_full"))` if every slot
-/// has a foreign grant. The failure handler enqueues the actor on the
+/// Find a slot in `ResourceExtractionQueues` that `actor` may legally
+/// claim and grant it, writing back. Slots are eligible iff the actor
+/// already holds the grant, or the slot is free **and** the actor is
+/// the head of the slot's waiting list (or the slot has no waiters).
+///
+/// The head-of-waiting precedence is what makes the queue substrate
+/// FIFO-fair: when a slot becomes free, only the queued head can claim
+/// it on the next harvest start, even if a fresh agent (with no prior
+/// queue position) tries simultaneously. Without this rule a previously
+/// granted actor could re-grab the slot tick after tick and starve out
+/// every queued waiter (FND-26: contention drives extraction state, not
+/// first-call wins).
+///
+/// Returns `Err(PreconditionFailed("extraction_slots_full"))` when no
+/// slot is eligible. The failure handler enqueues the actor on the
 /// shortest-waitlist slot using a fresh transaction (the start-handler
 /// txn is dropped on `Err`).
 fn grant_or_signal_full(
@@ -469,17 +480,23 @@ fn grant_or_signal_full(
     }
 
     let chosen_slot = queues.queues.iter().position(|queue| match &queue.granted {
-        None => true,
         Some(grant) => grant.actor == actor,
+        None => match queue.waiting.values().next() {
+            Some(head) => head.actor == actor,
+            None => true,
+        },
     });
 
     if let Some(slot) = chosen_slot {
         let queue = &mut queues.queues[slot];
         if queue.granted.is_none() {
-            // Grant immediately. `expires_at` mirrors the
-            // facility-queue grant lifecycle; commit/abort clear the grant
-            // so the expiry value only matters as a sentinel for stale
-            // grants if cleanup is missed.
+            // Promote the head waiter (or grab a free slot). Removing from
+            // waiting before granting keeps the queue invariant that an
+            // actor never appears in both `granted` and `waiting`.
+            // `expires_at` mirrors the facility-queue grant lifecycle;
+            // commit/abort clear the grant so the expiry value only
+            // matters as a sentinel for stale grants if cleanup is missed.
+            queue.remove_actor(actor);
             queue.granted = Some(ContentionGrant {
                 actor,
                 intended_action: action_def,

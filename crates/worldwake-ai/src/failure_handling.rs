@@ -1127,22 +1127,28 @@ fn commodity_availability_reobserved(
 ///
 /// - Resource sources expose per-slot occupancy through
 ///   `ResourceExtractionQueues`. A `ReservationConflict` raised by
-///   `extraction_slots_full` clears when the actor was promoted to a
-///   slot grant, when their queue position dropped, or when the actor is
-///   no longer enqueued and at least one slot is free (the next harvest
-///   start request would succeed).
+///   `extraction_slots_full` clears when the actor either holds a slot
+///   grant or is in a position to claim one immediately (slot free and
+///   actor is the head waiter, or actor isn't enqueued and a slot has no
+///   waiters). Position-only progress (e.g., moving from rank 3 to rank
+///   2 while another actor still holds the grant) does not clear the
+///   blocker, since re-emitting the goal would only produce another
+///   `extraction_slots_full` start failure.
 /// - Legacy workstations using temporal reservations clear when the
 ///   target's reservation ranges are empty.
 ///
 /// The two substrates do not coexist on a single entity (FND-26), so
 /// this helper checks each independently and returns true on the first
-/// hit.
+/// hit. The `baseline` parameter is reserved for future expiry/prune
+/// signals (e.g., position decrease combined with a structurally
+/// invalid head); the current implementation does not consult it.
 fn reservation_conflict_cleared(
     view: &dyn RuntimeBeliefView,
     facility: EntityId,
     agent: EntityId,
     baseline: Option<u32>,
 ) -> bool {
+    let _ = baseline;
     if view.has_extraction_queues(facility) {
         // Resource sources expose contention exclusively through
         // `ResourceExtractionQueues`. The legacy
@@ -1152,15 +1158,7 @@ fn reservation_conflict_cleared(
         if view.actor_holds_extraction_slot_grant(facility, agent) {
             return true;
         }
-        if view.extraction_slot_available(facility) {
-            // Any slot with no grant means the actor's next harvest
-            // start request will be granted immediately. This covers
-            // both "actor still queued and a slot just freed" and
-            // "actor was abandoned/removed and a slot is free."
-            return true;
-        }
-        let current = view.extraction_slot_queue_position(facility, agent);
-        return matches!((current, baseline), (Some(now), Some(then)) if now < then);
+        return view.actor_can_claim_extraction_slot(facility, agent);
     }
     // Legacy workstation path: clearing fires when the facility's
     // temporal reservations are gone.
@@ -1533,7 +1531,7 @@ mod tests {
         facility_grants: BTreeMap<EntityId, ContentionGrant>,
         extraction_slot_positions: BTreeMap<(EntityId, EntityId), u32>,
         extraction_slot_grants: BTreeSet<(EntityId, EntityId)>,
-        extraction_slot_availability: BTreeSet<EntityId>,
+        extraction_slot_claimable: BTreeSet<(EntityId, EntityId)>,
         extraction_facilities: BTreeSet<EntityId>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         attackers: BTreeMap<EntityId, Vec<EntityId>>,
@@ -1670,8 +1668,8 @@ mod tests {
             self.extraction_slot_grants.contains(&(source, actor))
         }
 
-        fn extraction_slot_available(&self, source: EntityId) -> bool {
-            self.extraction_slot_availability.contains(&source)
+        fn actor_can_claim_extraction_slot(&self, source: EntityId, actor: EntityId) -> bool {
+            self.extraction_slot_claimable.contains(&(source, actor))
         }
 
         fn has_extraction_queues(&self, source: EntityId) -> bool {
@@ -2953,7 +2951,13 @@ mod tests {
     }
 
     #[test]
-    fn is_blocker_cleared_when_extraction_slot_position_decreases() {
+    fn is_blocker_cleared_holds_when_position_decreases_but_slot_still_held() {
+        // Position-only progress is insufficient to clear the blocker:
+        // moving from rank 2 to rank 1 while another actor still holds
+        // the grant means re-emitting the goal would just produce another
+        // `extraction_slots_full` start failure. The blocker must stay
+        // active until the actor can actually claim a slot (FND-26 FIFO
+        // semantics enforced by `grant_or_signal_full`).
         let agent = entity(1);
         let source = entity(3);
         let blocker = reservation_conflict_blocker_at(agent, source, Some(2));
@@ -2963,8 +2967,8 @@ mod tests {
         view.extraction_slot_positions.insert((source, agent), 1);
 
         assert!(
-            is_blocker_cleared(&view, agent, &blocker),
-            "decreasing queue position must clear the ReservationConflict blocker",
+            !is_blocker_cleared(&view, agent, &blocker),
+            "queue position improved but slot still held — blocker must stay active",
         );
     }
 
@@ -2997,7 +3001,7 @@ mod tests {
 
         let mut view = TestBeliefView::default();
         view.extraction_facilities.insert(source);
-        view.extraction_slot_availability.insert(source);
+        view.extraction_slot_claimable.insert((source, agent));
 
         assert!(
             is_blocker_cleared(&view, agent, &blocker),

@@ -847,12 +847,17 @@ impl TemporalBeliefView for PerAgentBeliefView<'_> {
             })
     }
 
-    fn extraction_slot_available(&self, source: EntityId) -> bool {
+    fn actor_can_claim_extraction_slot(&self, source: EntityId, actor: EntityId) -> bool {
         self.world
             .get_component_resource_extraction_queues(source)
             .is_some_and(|queues| {
-                !queues.queues.is_empty()
-                    && queues.queues.iter().any(|queue| queue.granted.is_none())
+                queues.queues.iter().any(|queue| match &queue.granted {
+                    Some(_) => false,
+                    None => match queue.waiting.values().next() {
+                        Some(head) => head.actor == actor,
+                        None => true,
+                    },
+                })
             })
     }
 

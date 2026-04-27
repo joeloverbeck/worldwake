@@ -1481,8 +1481,30 @@ fn emit_social_candidates(
                         },
                         reason: TellTopicOmissionReason::ListenerParticipatedInObservation,
                     });
+                    return false;
                 }
-                !redundant
+                if listener_could_have_directly_observed(ctx.view, listener, observation.place) {
+                    // The listener is currently co-located with the place
+                    // where the observation was made and has the perception
+                    // capacity to have witnessed it themselves; relaying a
+                    // place-scoped social observation (SuspectedTheft,
+                    // WitnessedAbsence, …) to such a listener is redundant.
+                    // Suppressing this candidate prevents the speaker from
+                    // burning their per-tick tell budget on listeners who
+                    // already had the chance to perceive the event, leaving
+                    // bandwidth for low-fidelity peers (e.g. clerks/scribes)
+                    // whose role is to record reports they could not witness
+                    // themselves (FND-7 information locality).
+                    diagnostics.omitted_social.push(SocialCandidateOmission {
+                        listener,
+                        topic: TellTopic::SocialObservation {
+                            observation: *observation,
+                        },
+                        reason: TellTopicOmissionReason::DirectlyObservableByListener,
+                    });
+                    return false;
+                }
+                true
             })
             .collect::<Vec<_>>();
         let selection = listener_aware_tell_topic_selection(
@@ -1724,6 +1746,21 @@ fn subject_is_listener_observable_entity_belief(
         view.effective_place(listener),
         view.observation_fidelity(listener),
     )
+}
+
+/// True when `listener` is currently co-located with the place of a social
+/// observation **and** has non-zero perception fidelity — i.e., the listener
+/// is positioned to have seen the event themselves and a relayed tell of
+/// the observation would carry no new evidence (FND-7 information
+/// locality, mirroring `tell_subject_is_directly_observable_by_listener`
+/// for the entity-belief path).
+fn listener_could_have_directly_observed(
+    view: &dyn GoalBeliefView,
+    listener: EntityId,
+    observation_place: EntityId,
+) -> bool {
+    view.observation_fidelity(listener).value() > 0
+        && view.effective_place(listener) == Some(observation_place)
 }
 
 fn emit_political_candidates(
