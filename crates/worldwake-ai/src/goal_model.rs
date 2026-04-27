@@ -1230,7 +1230,7 @@ impl GoalKindPlannerExt for GoalKind {
                     next = next.set_quantity_ref(
                         hypothetical_ref,
                         harvest.output_commodity,
-                        harvest.output_quantity,
+                        harvest.requested_quantity,
                     );
                     if let Some(place) = next.effective_place(actor) {
                         next = next.move_entity_ref(hypothetical_ref, place);
@@ -6427,7 +6427,7 @@ mod tests {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(3),
+                requested_quantity: Quantity(3),
                 required_tool_kinds: Vec::new(),
             })),
         );
@@ -6453,7 +6453,7 @@ mod tests {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::Well,
                 output_commodity: CommodityKind::Water,
-                output_quantity: Quantity(2),
+                requested_quantity: Quantity(2),
                 required_tool_kinds: Vec::new(),
             })),
         );
@@ -6515,7 +6515,7 @@ mod tests {
                 recipe_id: RecipeId(4),
                 required_workstation_tag: WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(3),
+                requested_quantity: Quantity(3),
                 required_tool_kinds: Vec::new(),
             })),
         );

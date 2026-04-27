@@ -64,9 +64,9 @@ pub use action_execution::{ActionExecutionAuthority, ActionExecutionContext};
 pub use action_handler::{
     AbortReason, ActionAbortFn, ActionAbortRequestReason, ActionCommitFn, ActionError,
     ActionHandler, ActionProgress, ActionStartFn, ActionTickFn, AuthoritativePayloadValidatorFn,
-    CommitOutcome, CommitTraceData, ExternalAbortReason, InterruptReason, Materialization,
-    MaterializationTag, PayloadEntityRole, PayloadOverrideValidatorFn, SelfTargetActionKind,
-    TellBeliefDeltaKind, TellCommitResult, TellCommitTrace,
+    CommitOutcome, CommitTraceData, ExternalAbortReason, HarvestCommitTrace, InterruptReason,
+    Materialization, MaterializationTag, PayloadEntityRole, PayloadOverrideValidatorFn,
+    SelfTargetActionKind, TellBeliefDeltaKind, TellCommitResult, TellCommitTrace,
 };
 pub use action_handler_registry::ActionHandlerRegistry;
 pub use action_ids::{ActionHandlerId, ActionInstanceId};

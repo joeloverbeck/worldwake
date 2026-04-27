@@ -762,7 +762,13 @@ fn map_handler_abort_reason(reason: &ActionAbortRequestReason) -> Option<Failure
         | ActionAbortRequestReason::SaleLotNotPossessedBySeller { .. } => Some(
             FailureClassification::Blocker(BlockingFact::SellerOutOfStock),
         ),
-        ActionAbortRequestReason::ViolationNoLongerActive { .. } => None,
+        // ViolationNoLongerActive: justice/violation expired, no further classification.
+        // HarvestSourceDepleted: mid-harvest source depletion is observable directly via
+        // `available_quantity == 0` and `LastHarvestTrace` aftermath (FND-29A); the
+        // replan loop reads the live world state, so no specific blocker classification
+        // is needed at this layer.
+        ActionAbortRequestReason::ViolationNoLongerActive { .. }
+        | ActionAbortRequestReason::HarvestSourceDepleted { .. } => None,
     }
 }
 

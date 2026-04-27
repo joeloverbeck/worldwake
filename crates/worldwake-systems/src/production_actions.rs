@@ -3,15 +3,16 @@ use crate::experience_recording::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, CommodityKind, Container, EntityId, EntityKind, EventTag, LoadUnits,
-    ProductionOutputOwner, Quantity, SourceKey, VisibilitySpec, WorkstationMarker, World, WorldTxn,
+    ActionDefId, CommodityKind, Container, EntityId, EntityKind, EventTag, HarvestTraceEntry,
+    LoadUnits, ProductionOutputOwner, Quantity, SourceKey, VisibilitySpec, WorkstationMarker,
+    World, WorldTxn, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
-    HarvestActionPayload, Interruptibility, Precondition, RecipeDefinition, RecipeRegistry,
-    ReservationReq, TargetSpec,
+    CommitOutcome, CommitTraceData, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
+    HarvestActionPayload, HarvestCommitTrace, Interruptibility, Precondition, RecipeDefinition,
+    RecipeRegistry, ReservationReq, RuntimeBeliefView, TargetSpec,
 };
 
 pub fn register_harvest_actions(
@@ -22,6 +23,7 @@ pub fn register_harvest_actions(
     let handler = handlers.register(
         ActionHandler::new(start_harvest, tick_harvest, commit_harvest, abort_harvest)
             .with_start_failure(record_harvest_start_failure)
+            .with_payload_override_validator(validate_harvest_payload_override)
             .with_authoritative_payload_validator(validate_exclusive_facility_grant),
     );
 
@@ -115,14 +117,22 @@ fn harvest_action_def(
         body_cost_per_tick: recipe.body_cost_per_tick,
         attention_cost: worldwake_core::Permille::new_unchecked(200),
         interruptibility: Interruptibility::InterruptibleWithPenalty,
-        commit_conditions: preconditions,
+        // Source-availability is owned by `commit_harvest` so that the partial-success
+        // path (`available < requested && available >= 1`) and the depleted-failure
+        // path (`available == 0`) can both surface their aftermath via
+        // `LastHarvestTrace` and `CommitTraceData::Harvest`. A duplicate
+        // `TargetHasResourceSource` here would short-circuit those outcomes.
+        commit_conditions: preconditions
+            .into_iter()
+            .filter(|p| !matches!(p, Precondition::TargetHasResourceSource { .. }))
+            .collect(),
         visibility: VisibilitySpec::ParticipantsOnly,
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
         payload: ActionPayload::Harvest(HarvestActionPayload {
             recipe_id,
             required_workstation_tag: workstation_tag,
             output_commodity: *output_commodity,
-            output_quantity: *output_quantity,
+            requested_quantity: *output_quantity,
             required_tool_kinds: recipe.required_tool_kinds.clone(),
         }),
         handler,
@@ -586,35 +596,78 @@ fn commit_harvest(
             source.commodity, payload.output_commodity
         )));
     }
-    source.available_quantity = source
-        .available_quantity
-        .checked_sub(payload.output_quantity)
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!(
-                "resource source {workstation} lacks {:?} units for harvest",
-                payload.output_quantity
-            ))
-        })?;
+    let available = source.available_quantity.0;
+    let requested = payload.requested_quantity.0;
+    let actual = available.min(requested);
+
+    if actual == 0 {
+        let mut trace = txn
+            .get_component_last_harvest_trace(workstation)
+            .cloned()
+            .unwrap_or_default();
+        trace.push(HarvestTraceEntry {
+            harvester: instance.actor,
+            tick: txn.tick(),
+            quantity: 0,
+            partial: true,
+        });
+        txn.set_component_last_harvest_trace(workstation, trace)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        // AbortRequested routes through `finalize_failed_action`, which commits
+        // the WorldTxn (including the failed-harvest trace append above) before
+        // returning. PreconditionFailed would drop the txn — see ticket
+        // reassessment item 19.
+        return Err(ActionError::AbortRequested(
+            worldwake_sim::ActionAbortRequestReason::HarvestSourceDepleted { workstation },
+        ));
+    }
+
+    source.available_quantity = Quantity(available - actual);
     txn.set_component_resource_source(workstation, source)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
     let owner = resolve_output_owner(txn, instance.actor, workstation)?;
     let lot = txn
-        .create_item_lot_with_owner(
-            payload.output_commodity,
-            payload.output_quantity,
-            place,
-            owner,
-        )
+        .create_item_lot_with_owner(payload.output_commodity, Quantity(actual), place, owner)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
+
+    let mut trace = txn
+        .get_component_last_harvest_trace(workstation)
+        .cloned()
+        .unwrap_or_default();
+    let actual_u16 = u16::try_from(actual).map_err(|err| {
+        ActionError::InternalError(format!(
+            "harvest commit: actual quantity {actual} exceeds u16: {err}"
+        ))
+    })?;
+    let is_partial = actual < requested;
+    trace.push(HarvestTraceEntry {
+        harvester: instance.actor,
+        tick: txn.tick(),
+        quantity: actual_u16,
+        partial: is_partial,
+    });
+    txn.set_component_last_harvest_trace(workstation, trace)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
     record_successful_source_acquisition(
         txn,
         instance.actor,
         harvest_source_key(payload, workstation),
         txn.tick(),
     )?;
-    Ok(CommitOutcome::empty())
+
+    if is_partial {
+        Ok(
+            CommitOutcome::empty().with_trace(CommitTraceData::Harvest(HarvestCommitTrace {
+                requested_quantity: payload.requested_quantity,
+                partial_quantity: Some(Quantity(actual)),
+            })),
+        )
+    } else {
+        Ok(CommitOutcome::empty())
+    }
 }
 
 fn commit_craft(
@@ -708,7 +761,35 @@ fn harvest_source_failed_intrinsically(
         return true;
     };
     source.commodity != payload.output_commodity
-        || source.available_quantity < payload.output_quantity
+        || source.available_quantity < payload.requested_quantity
+}
+
+fn validate_harvest_payload_override(
+    _def: &ActionDef,
+    actor: EntityId,
+    _targets: &[EntityId],
+    payload: &ActionPayload,
+    view: &dyn RuntimeBeliefView,
+) -> bool {
+    let Some(harvest) = payload.as_harvest() else {
+        return false;
+    };
+    let requested = harvest.requested_quantity.0;
+    if requested == 0 {
+        return false;
+    }
+    let Some(carry_capacity) = view.carry_capacity(actor) else {
+        return false;
+    };
+    let Some(load) = view.load_of_entity(actor) else {
+        return false;
+    };
+    let per_unit = load_per_unit(harvest.output_commodity).0;
+    if per_unit == 0 {
+        return false;
+    }
+    let headroom_units = carry_capacity.0.saturating_sub(load.0) / per_unit;
+    requested <= headroom_units
 }
 
 #[allow(clippy::too_many_arguments, clippy::unnecessary_wraps)]
@@ -1235,9 +1316,18 @@ mod tests {
                 recipe_id,
                 required_workstation_tag: WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(2),
+                requested_quantity: Quantity(2),
                 required_tool_kinds: Vec::new(),
             })
+        );
+        // Commit conditions filter out `TargetHasResourceSource` so the
+        // partial-success and depleted-failure paths inside `commit_harvest`
+        // can surface their LastHarvestTrace and CommitTraceData aftermath.
+        assert!(
+            !def.commit_conditions
+                .iter()
+                .any(|p| matches!(p, Precondition::TargetHasResourceSource { .. })),
+            "harvest commit_conditions must not duplicate TargetHasResourceSource"
         );
     }
 
@@ -3235,5 +3325,322 @@ mod tests {
             .find(|r| r.tags().contains(&EventTag::ActionCommitted))
             .expect("expected an ActionCommitted event");
         assert!(commit_event.tags().contains(&EventTag::WorldMutation));
+    }
+
+    fn make_harvest_instance(
+        def: &ActionDef,
+        actor: EntityId,
+        workstation: EntityId,
+    ) -> ActionInstance {
+        ActionInstance {
+            instance_id: ActionInstanceId(1),
+            def_id: def.id,
+            payload: def.payload.clone(),
+            actor,
+            targets: vec![workstation],
+            start_tick: Tick(10),
+            remaining_duration: worldwake_sim::ActionDuration::new(0),
+            status: worldwake_sim::ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+            body_cost_override: None,
+        }
+    }
+
+    fn invoke_commit_harvest(
+        world: &mut World,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+        def_id: ActionDefId,
+        actor: EntityId,
+        workstation: EntityId,
+        commit_tick: u64,
+    ) -> Result<CommitOutcome, ActionError> {
+        let def = defs.get(def_id).unwrap().clone();
+        let handler = handlers.get(def.handler).unwrap();
+        let instance = make_harvest_instance(&def, actor, workstation);
+        let event_log = EventLog::new();
+        let mut rng = test_rng(0xCC);
+        let recipes = RecipeRegistry::new();
+        let context = worldwake_sim::ActionExecutionContext {
+            cause: CauseRef::SystemTick(Tick(commit_tick)),
+            tick: Tick(commit_tick),
+            recipe_registry: &recipes,
+            action_defs: defs,
+        };
+        let mut txn = new_txn(world, commit_tick);
+        let result = (handler.on_commit)(&def, &instance, &context, &event_log, &mut rng, &mut txn);
+        // Mirror the runtime: commit the txn on Ok and on AbortRequested
+        // (the latter routes through `finalize_failed_action` which commits).
+        // For other errors the runtime drops the txn.
+        let should_commit = matches!(&result, Ok(_) | Err(ActionError::AbortRequested(_)));
+        if should_commit {
+            commit_txn(txn);
+        }
+        result
+    }
+
+    fn drain_source_to(world: &mut World, workstation: EntityId, available: u32, tick: u64) {
+        let mut txn = new_txn(world, tick);
+        let mut source = txn
+            .get_component_resource_source(workstation)
+            .cloned()
+            .unwrap();
+        source.available_quantity = Quantity(available);
+        txn.set_component_resource_source(workstation, source)
+            .unwrap();
+        commit_txn(txn);
+    }
+
+    #[test]
+    fn commit_harvest_full_success_emits_no_partial_trace() {
+        // Recipe outputs 2 apples; source has 5 — full success.
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+
+        let outcome =
+            invoke_commit_harvest(&mut world, &defs, &handlers, ids[0], actor, workstation, 12)
+                .expect("full-quantity harvest commit succeeds");
+
+        // Trace should be absent for full-success (no partial path triggered).
+        assert!(
+            outcome.trace.is_none(),
+            "full-success commit must not emit CommitTraceData::Harvest, got {:?}",
+            outcome.trace
+        );
+
+        // Source drained by exactly the requested 2.
+        let source = world
+            .get_component_resource_source(workstation)
+            .expect("source still exists");
+        assert_eq!(source.available_quantity, Quantity(3));
+
+        // Item lot of 2 apples appears at the workstation's place.
+        let apple_lots: Vec<_> = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Apple
+                    && world.effective_place(*entity) == Some(place)
+            })
+            .collect();
+        assert_eq!(apple_lots.len(), 1);
+        assert_eq!(apple_lots[0].1.quantity, Quantity(2));
+
+        // LastHarvestTrace records a non-partial entry.
+        let trace = world
+            .get_component_last_harvest_trace(workstation)
+            .expect("LastHarvestTrace appended on commit");
+        assert_eq!(trace.entries.len(), 1);
+        let entry = trace.entries[0];
+        assert_eq!(entry.harvester, actor);
+        assert_eq!(entry.quantity, 2);
+        assert!(!entry.partial);
+    }
+
+    #[test]
+    fn commit_harvest_partial_success_emits_partial_trace_and_drains_source() {
+        // Recipe outputs 2 apples; setup with 2 to pass start preconditions, then
+        // drain to 1 to simulate concurrent depletion before commit fires.
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, place) =
+            setup_world(false, WorkstationTag::OrchardRow, 2);
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+
+        // Concurrent draw simulation: drain to 1 before commit.
+        drain_source_to(&mut world, workstation, 1, 11);
+
+        let outcome =
+            invoke_commit_harvest(&mut world, &defs, &handlers, ids[0], actor, workstation, 12)
+                .expect("partial-success commit succeeds with actual >= 1");
+
+        let trace = match outcome.trace {
+            Some(CommitTraceData::Harvest(harvest)) => harvest,
+            other => panic!("expected CommitTraceData::Harvest, got {other:?}"),
+        };
+        assert_eq!(trace.requested_quantity, Quantity(2));
+        assert_eq!(trace.partial_quantity, Some(Quantity(1)));
+
+        // Source drained to 0 (took the remaining 1).
+        let source = world
+            .get_component_resource_source(workstation)
+            .expect("source still exists");
+        assert_eq!(source.available_quantity, Quantity(0));
+
+        // Item lot of exactly the actual quantity (1 apple) is created.
+        let apple_lots: Vec<_> = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Apple
+                    && world.effective_place(*entity) == Some(place)
+            })
+            .collect();
+        assert_eq!(apple_lots.len(), 1);
+        assert_eq!(apple_lots[0].1.quantity, Quantity(1));
+
+        // LastHarvestTrace records the partial harvest.
+        let last_trace = world
+            .get_component_last_harvest_trace(workstation)
+            .expect("LastHarvestTrace appended on partial commit");
+        assert_eq!(last_trace.entries.len(), 1);
+        let entry = last_trace.entries[0];
+        assert_eq!(entry.harvester, actor);
+        assert_eq!(entry.quantity, 1);
+        assert!(entry.partial);
+    }
+
+    #[test]
+    fn commit_harvest_depleted_failure_records_zero_quantity_partial_trace() {
+        // Recipe outputs 2; pass start with 2; drain to 0 before commit.
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, place) =
+            setup_world(false, WorkstationTag::OrchardRow, 2);
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+
+        drain_source_to(&mut world, workstation, 0, 11);
+
+        let err =
+            invoke_commit_harvest(&mut world, &defs, &handlers, ids[0], actor, workstation, 12)
+                .expect_err("depleted source must fail commit");
+
+        // The depleted-failure path returns AbortRequested so that
+        // `finalize_failed_action` commits the LastHarvestTrace append
+        // (PreconditionFailed would drop the txn — see ticket reassessment 19).
+        match err {
+            ActionError::AbortRequested(
+                worldwake_sim::ActionAbortRequestReason::HarvestSourceDepleted { workstation: ws },
+            ) if ws == workstation => {}
+            other => panic!("expected AbortRequested(HarvestSourceDepleted), got {other:?}"),
+        }
+
+        // Source remains at 0; no item lot is created at the place.
+        let source = world
+            .get_component_resource_source(workstation)
+            .expect("source still exists");
+        assert_eq!(source.available_quantity, Quantity(0));
+
+        let apple_lots: Vec<_> = world
+            .query_item_lot()
+            .filter(|(entity, lot)| {
+                lot.commodity == CommodityKind::Apple
+                    && world.effective_place(*entity) == Some(place)
+            })
+            .collect();
+        assert!(
+            apple_lots.is_empty(),
+            "depleted commit must not create any item lot"
+        );
+
+        // LastHarvestTrace records the failed harvest with quantity 0 and partial=true.
+        let last_trace = world
+            .get_component_last_harvest_trace(workstation)
+            .expect("LastHarvestTrace appended even on depleted-failure commit");
+        assert_eq!(last_trace.entries.len(), 1);
+        let entry = last_trace.entries[0];
+        assert_eq!(entry.harvester, actor);
+        assert_eq!(entry.quantity, 0);
+        assert!(entry.partial);
+    }
+
+    #[test]
+    fn ai_tick_records_partial_inventory_delta() {
+        // Verifies the spec contract: after a partial harvest commit, the agent's
+        // believed inventory of the commodity reflects the *actual* harvested
+        // quantity (1), not the *requested* quantity (2). The mechanism is
+        // perception of the actual ItemLot the commit creates — no new
+        // CommitTraceData consumer is required (FND-14A).
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 2);
+        grant_recipe(&mut world, actor, recipe_id);
+        grant_facility_use(&mut world, workstation, actor, ids[0], 9);
+
+        drain_source_to(&mut world, workstation, 1, 11);
+
+        let _ = invoke_commit_harvest(&mut world, &defs, &handlers, ids[0], actor, workstation, 12)
+            .expect("partial-success commit succeeds");
+
+        // Build a belief view as the actor would observe their possessions
+        // through perception of co-located lots; carry-quantity must reflect
+        // the actual lot (1), not the requested quantity (2).
+        let store = test_belief_store(&world, actor);
+        let belief_view = PerAgentBeliefView::new(actor, &world, &store);
+        let believed_apples =
+            <PerAgentBeliefView<'_> as worldwake_sim::InventoryBeliefView>::commodity_quantity(
+                &belief_view,
+                actor,
+                CommodityKind::Apple,
+            );
+        assert_eq!(
+            believed_apples,
+            Quantity(1),
+            "agent's believed apple inventory must reflect partial-harvest actual quantity"
+        );
+    }
+
+    #[test]
+    fn harvest_payload_validator_rejects_overcarry() {
+        // Validator at registration time accepts only requested_quantity within
+        // believed carry headroom. Drives the actor's headroom near zero by
+        // adding an oversized possessed lot, then asserts the override fails.
+        let (recipes, _recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor, workstation, place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        // Saturate the actor's load so any harvest of >= 1 apple exceeds headroom.
+        // CarryCapacity default is 100 LoadUnits; load_per_unit(Apple) is 1.
+        // Possess 100 apples to drive headroom to 0.
+        let _heavy_lot = add_possessed_lot(&mut world, actor, place, CommodityKind::Apple, 100);
+
+        let def = defs.get(ids[0]).unwrap();
+        let handler = handlers.get(def.handler).unwrap();
+        let store = test_belief_store(&world, actor);
+        let view = PerAgentBeliefView::new(actor, &world, &store);
+
+        // Overrided payload requesting 2 apples — exceeds carry headroom.
+        let override_payload = ActionPayload::Harvest(HarvestActionPayload {
+            recipe_id: worldwake_core::RecipeId(0),
+            required_workstation_tag: WorkstationTag::OrchardRow,
+            output_commodity: CommodityKind::Apple,
+            requested_quantity: Quantity(2),
+            required_tool_kinds: Vec::new(),
+        });
+        assert!(
+            !(handler.payload_override_is_valid)(
+                def,
+                actor,
+                std::slice::from_ref(&workstation),
+                &override_payload,
+                &view,
+            ),
+            "validator must reject overcarry"
+        );
+
+        // A valid override with quantity = 0 also fails (>= 1 floor).
+        let zero_payload = ActionPayload::Harvest(HarvestActionPayload {
+            recipe_id: worldwake_core::RecipeId(0),
+            required_workstation_tag: WorkstationTag::OrchardRow,
+            output_commodity: CommodityKind::Apple,
+            requested_quantity: Quantity(0),
+            required_tool_kinds: Vec::new(),
+        });
+        assert!(
+            !(handler.payload_override_is_valid)(
+                def,
+                actor,
+                std::slice::from_ref(&workstation),
+                &zero_payload,
+                &view,
+            ),
+            "validator must reject zero-quantity request"
+        );
     }
 }

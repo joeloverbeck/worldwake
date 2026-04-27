@@ -24,7 +24,7 @@ fn payload_commodity(payload: &ActionPayload) -> Option<CommodityKind> {
 fn payload_quantity(payload: &ActionPayload) -> Option<Quantity> {
     payload
         .as_harvest()
-        .map(|harvest| harvest.output_quantity)
+        .map(|harvest| harvest.requested_quantity)
         .or_else(|| {
             payload
                 .as_craft()

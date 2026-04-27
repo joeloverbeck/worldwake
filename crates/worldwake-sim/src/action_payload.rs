@@ -322,7 +322,7 @@ pub struct HarvestActionPayload {
     pub recipe_id: RecipeId,
     pub required_workstation_tag: WorkstationTag,
     pub output_commodity: CommodityKind,
-    pub output_quantity: Quantity,
+    pub requested_quantity: Quantity,
     pub required_tool_kinds: Vec<UniqueItemKind>,
 }
 
@@ -457,7 +457,7 @@ mod tests {
             recipe_id: RecipeId(4),
             required_workstation_tag: WorkstationTag::OrchardRow,
             output_commodity: CommodityKind::Apple,
-            output_quantity: Quantity(2),
+            requested_quantity: Quantity(2),
             required_tool_kinds: vec![UniqueItemKind::SimpleTool],
         }
     }

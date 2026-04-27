@@ -961,7 +961,7 @@ mod tests {
                 recipe_id: worldwake_core::RecipeId(4),
                 required_workstation_tag: worldwake_core::WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
                 required_tool_kinds: Vec::new(),
             }),
             handler: ActionHandlerId(0),
@@ -1517,7 +1517,7 @@ mod tests {
                 recipe_id: worldwake_core::RecipeId(4),
                 required_workstation_tag: worldwake_core::WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(2),
+                requested_quantity: Quantity(2),
                 required_tool_kinds: Vec::new(),
             },
         ));
@@ -1546,7 +1546,7 @@ mod tests {
                 recipe_id: worldwake_core::RecipeId(4),
                 required_workstation_tag: worldwake_core::WorkstationTag::OrchardRow,
                 output_commodity: CommodityKind::Apple,
-                output_quantity: Quantity(1),
+                requested_quantity: Quantity(1),
                 required_tool_kinds: Vec::new(),
             },
         ));

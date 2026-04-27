@@ -1,6 +1,6 @@
 # S127QUAAWAACQ-006: Harvest action partial-success path + CommitTraceData.partial_quantity + payload requested_quantity
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — modifies `commit_harvest` to compute `actual = min(available, requested)`, renames `HarvestActionPayload.output_quantity` to `requested_quantity`, adds `partial_quantity: Option<Quantity>` field to `CommitTraceData` (touches all action-commit handler ctors), appends to `LastHarvestTrace` on commit, surfaces `partial_quantity` in the action-commit trace, bumps `SAVE_FORMAT_VERSION`
@@ -30,6 +30,27 @@ S127 turns "the source ran dry mid-harvest" into a partial-success outcome rathe
    - Goldens: ticket 008 covers.
 12. Scenario isolation: this ticket has no golden of its own (ticket 008 owns goldens); focused unit/runtime tests cover the partial-success branch in isolation from full-success and depleted paths.
 13. Adjacent contradictions: `CommitTraceData.partial_quantity = None` is the universal default for non-harvest handlers — they don't need touching beyond the ctor update. Ticket 008's goldens will exercise the partial path end-to-end.
+
+### Auto-corrections (2026-04-27)
+
+14. **`CommitTraceData` is a tagged enum, not a struct.** Live shape (`crates/worldwake-sim/src/action_handler.rs:39-41`):
+    ```rust
+    pub enum CommitTraceData { Tell(TellCommitTrace) }
+    ```
+    The ticket's "add `partial_quantity: Option<Quantity>` field" approach assumed a struct. **Correction applied:** add a new variant `Harvest(HarvestCommitTrace)` where `HarvestCommitTrace { partial_quantity: Option<Quantity>, requested_quantity: Quantity }`. The harvest commit handler returns `CommitOutcome::empty().with_trace(CommitTraceData::Harvest(...))` only when partial-success occurs (full-success returns `CommitOutcome::empty()` with `trace: None`). **Why safe:** directionally unambiguous given the existing per-action tagged-variant pattern; preserves `CommitOutcome` shape (FND-28); aligns with the existing `Tell(TellCommitTrace)` precedent (FND-26 — per-action state lanes); other action handlers do **not** need ctor changes (auto-correction supersedes the original "update all `CommitTraceData` constructors with `partial_quantity: None`" guidance and ticket text section 3 below). The single existing consumer site (`tell_actions.rs:1150 Some(CommitTraceData::Tell(trace))`) compiles unchanged because the match arm is non-exhaustive on shape — but the formatter at `action_trace.rs:339 match trace { CommitTraceData::Tell(tell) => ... }` requires a new arm.
+
+15. **No AI tick step consumer of `payload.output_quantity` for inventory accounting.** `grep -rn "payload.output_quantity\|harvest.output_quantity" crates/worldwake-ai/src` returns only:
+    - `plan_guard_build.rs:27` — guard `QuantitySource::PayloadCommodityQuantity` reads to construct `StatePredicate::ActorHoldsCommodity { min_quantity }` for plan expectations.
+    - `goal_model.rs:1233` — planner hypothetical state mutation in `apply_planner_step` after `PlannerOpKind::Harvest`.
+    Both represent the planner's *intended* outcome (rename to `requested_quantity` is semantically correct: the planner plans for the requested amount; partial-success is recovery via `is_satisfied` re-evaluation against `desired_min`). **Correction applied:** ticket section 5 ("AI tick step reads `partial_quantity` for inventory accounting") becomes a verification-only requirement — the agent's believed inventory after partial harvest reflects `actual` units automatically because the commit handler creates an `ItemLot` of exactly `actual` units, which the actor perceives through their belief view. Acceptance test #4 (`ai_tick_records_partial_inventory_delta`) verifies the contract via belief-view inspection of the actor's commodity quantity after a partial harvest scenario. **Why safe:** production semantics already line up — the lot carries `actual` units, perception is the canonical belief substrate (FND-14); no new direct consumer of `CommitTraceData` is required; the trace surface is observed-only for debug/golden assertion (FND-29). The validator path is unchanged: `requested_quantity` is the carry-headroom-bounded planner intent.
+
+16. **`harvest_action_def` payload construction site (`crates/worldwake-systems/src/production_actions.rs:121-127`).** The action def carries a fixed canonical payload `ActionPayload::Harvest(HarvestActionPayload { ..., output_quantity: *output_quantity })` derived from the recipe at registration. After rename, this becomes `requested_quantity: *output_quantity`. Tests at `production_actions.rs:1234-1241` and `1238` need updating. **Correction applied:** rename construction site and existing test fixtures in lockstep.
+
+17. **No `with_payload_override_validator` on harvest currently.** `register_harvest_actions` at `production_actions.rs:22-26` registers with `with_start_failure(...)` and `with_authoritative_payload_validator(validate_exclusive_facility_grant)` only. **Correction applied:** add `with_payload_override_validator(validate_harvest_payload_override)` per spec D8 / Authoritative-To-AI Impact point 6. Validator confirms `requested_quantity >= 1` and `requested_quantity <= carry_headroom` (computed from `view.carry_capacity(actor)` minus `view.load_of_entity(actor)`, divided by `load_per_unit(commodity)`). Pattern mirrors `validate_pick_up_payload_override` at `transport_actions.rs:771-807`.
+
+18. **`commit_conditions` duplicate `TargetHasResourceSource` blocks the partial-success path.** `harvest_action_def` at `production_actions.rs:120` clones `preconditions` into `commit_conditions`, including `TargetHasResourceSource { min_available: requested_quantity }`. `tick_action.rs:157-169` evaluates `commit_conditions` BEFORE `commit_harvest` runs and aborts the action when any check fails. With this duplicate check in place, the partial-success case (`available < requested && available >= 1`) is short-circuited to a `CommitConditionFailed` abort and never reaches `commit_harvest`, so the partial trace and `CommitTraceData::Harvest` aftermath would never fire. **Correction applied:** filter `TargetHasResourceSource` out of `commit_conditions` (mirrors the existing `commit_craft` filter precedent at `production_actions.rs:189-194` which strips `TargetLacksProductionJob`). Source-availability becomes solely owned by `commit_harvest`, which now handles full / partial / depleted cases authoritatively. **Why safe:** start preconditions still gate action initiation against `min_available: requested`, so the action only begins when the source has the full requested amount. Mid-action depletion (the only path where `available < requested` at commit time) is explicitly the partial-success regime the spec authorizes (FND-10 — granular outcomes with aftermath).
+
+19. **Depleted-failure trace persistence requires `AbortRequested`, not `PreconditionFailed`.** `tick_action.rs:188-220` shows that the runtime drops the WorldTxn on `Err(err) => Err(err)` for non-`AbortRequested` errors. Returning `ActionError::PreconditionFailed("source depleted...")` from `commit_harvest` rolls back the trace write the handler attempted. The ticket's invariant 1 ("trace appended on success **or failure**") and spec D7 both require persistence. **Correction applied:** the depleted-failure path returns `ActionError::AbortRequested(ActionAbortRequestReason::HarvestSourceDepleted { workstation })`, which routes through `finalize_failed_action` (`tick_action.rs:201-218`) and commits the txn including the failed-trace append. Required additions: (a) new `HarvestSourceDepleted { workstation: EntityId }` variant on `ActionAbortRequestReason` in `crates/worldwake-sim/src/action_handler.rs:296`; (b) match arm in `crates/worldwake-ai/src/failure_handling.rs:722` classifying it as `BlockingFact::MissingInput(commodity)` (closest behavioral analog — the source ran out of the commodity). **Why safe:** bounded fallout — one enum variant, one exhaustive-match arm; preserves spec invariant 1; the existing abort lifecycle already commits txn writes from the handler.
 
 ## Architecture Check
 
@@ -196,3 +217,33 @@ Register a validator via `with_payload_override_validator` for the harvest actio
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-27.
+
+- Renamed `HarvestActionPayload.output_quantity` → `requested_quantity` (`crates/worldwake-sim/src/action_payload.rs:325`) and propagated across all destructure / construction sites: `affordance.rs`, `affordance_query.rs`, `production_actions.rs` (registration + tests), `goal_model.rs` (planner hypothetical + test fixtures), `plan_guard_build.rs`, `plan_revalidation.rs` test fixtures, `search/tests.rs` test fixtures.
+- Extended the `CommitTraceData` enum with a `Harvest(HarvestCommitTrace)` variant carrying `requested_quantity: Quantity` and `partial_quantity: Option<Quantity>` (`crates/worldwake-sim/src/action_handler.rs:39-49`, re-exported from `lib.rs`). Other action handlers' `CommitOutcome` constructors are unchanged.
+- Rewrote `commit_harvest` (`crates/worldwake-systems/src/production_actions.rs:558-650`) to compute `actual = min(available, requested)`, succeed for `actual >= 1` (with partial trace data when `actual < requested`), and return `ActionError::AbortRequested(ActionAbortRequestReason::HarvestSourceDepleted { workstation })` for `actual == 0` so that `finalize_failed_action` commits the failed-trace append. Both branches push a `HarvestTraceEntry` onto `LastHarvestTrace`.
+- Filtered `TargetHasResourceSource` out of harvest `commit_conditions` (`production_actions.rs:120-129`) so the partial-success and depleted-failure paths are reachable; the start-time precondition still gates action initiation.
+- Registered `validate_harvest_payload_override` (`production_actions.rs:752-779`) on the harvest handler via `with_payload_override_validator`. Validator confirms `requested_quantity >= 1` and `requested_quantity <= believed_carry_headroom`.
+- Added the `format_commit_trace` formatter arm for `CommitTraceData::Harvest` (`crates/worldwake-sim/src/action_trace.rs:360-368`) emitting `harvest commit: quantity_actual={n} / quantity_requested={n}`.
+- Added `ActionAbortRequestReason::HarvestSourceDepleted { workstation }` (`crates/worldwake-sim/src/action_handler.rs:362-364`) and the matching `=> None` arm in `crates/worldwake-ai/src/failure_handling.rs:765-771` (consolidated with the existing `ViolationNoLongerActive` arm).
+- Bumped `SAVE_FORMAT_VERSION` 52 → 53 (`crates/worldwake-sim/src/save_load.rs:6`).
+- Added focused tests in `crates/worldwake-systems/src/production_actions.rs` `#[cfg(test)]`: `commit_harvest_full_success_emits_no_partial_trace`, `commit_harvest_partial_success_emits_partial_trace_and_drains_source`, `commit_harvest_depleted_failure_records_zero_quantity_partial_trace`, `ai_tick_records_partial_inventory_delta`, `harvest_payload_validator_rejects_overcarry`. Also augmented `register_harvest_actions_creates_recipe_backed_action_defs` with an assertion that `commit_conditions` no longer duplicates `TargetHasResourceSource`.
+
+## Deviations
+
+- The original ticket assumed `CommitTraceData` was a struct gaining a `partial_quantity: Option<Quantity>` field. Live shape is a tagged enum (`Tell(TellCommitTrace)`); auto-corrected to add a new `Harvest(HarvestCommitTrace)` variant matching the existing per-action variant precedent (FND-26). No other action handler's commit-outcome constructors needed updating. Recorded as Assumption Reassessment item 14.
+- Spec D7 / ticket invariant 1 require trace persistence on the depleted-failure branch, but `tick_action.rs:220` drops the WorldTxn for non-`AbortRequested` errors. The depleted-failure branch was promoted to `ActionError::AbortRequested(HarvestSourceDepleted)` so `finalize_failed_action` commits the trace append. Bounded fallout: one new enum variant + one match arm. Recorded as item 19.
+- Section 5 of the ticket prescribed wiring an "AI tick step consumer" of `commit_trace.partial_quantity`. Live AI code does not read `payload.output_quantity` for inventory accounting (the agent's believed inventory is established through perception of the `ItemLot` the commit creates, which now carries `actual` units, not `requested`). Section 5 is satisfied by the production semantics; the `ai_tick_records_partial_inventory_delta` test verifies the contract via `InventoryBeliefView::commodity_quantity` rather than wiring a new direct CommitTraceData consumer. Recorded as item 15.
+- Filtering `TargetHasResourceSource` out of harvest's `commit_conditions` was an unstated but necessary subscope: without it, the duplicated precondition check at `tick_action.rs:157-169` fires before `commit_harvest` runs and blocks the partial-success and depleted-failure paths entirely. Mirrors the existing `commit_craft` precedent that filters `TargetLacksProductionJob`. Recorded as item 18.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib commit_harvest` (3/3 ok).
+- Passed `cargo test -p worldwake-systems --lib ai_tick_records_partial` (1/1 ok).
+- Passed `cargo test -p worldwake-systems --lib harvest_payload_validator` (1/1 ok).
+- Passed `cargo test --workspace` (no failures across all crates).
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh` (fmt + workspace tests + both clippy variants + scenario-coverage --check; exit 0).

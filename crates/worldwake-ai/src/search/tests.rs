@@ -5321,7 +5321,7 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
             recipe_id: RecipeId(0),
             required_workstation_tag: WorkstationTag::OrchardRow,
             output_commodity: CommodityKind::Apple,
-            output_quantity: Quantity(2),
+            requested_quantity: Quantity(2),
             required_tool_kinds: Vec::new(),
         })
     );
@@ -5383,7 +5383,7 @@ fn search_acquire_self_consume_skips_queue_when_matching_grant_is_already_active
             recipe_id: RecipeId(0),
             required_workstation_tag: WorkstationTag::OrchardRow,
             output_commodity: CommodityKind::Apple,
-            output_quantity: Quantity(2),
+            requested_quantity: Quantity(2),
             required_tool_kinds: Vec::new(),
         })
     );
