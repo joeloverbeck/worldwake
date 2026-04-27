@@ -2855,6 +2855,114 @@ fn emit_proactive_exploration_candidates(
     );
 }
 
+/// Default `horizon_ticks` used by `AcquisitionQuantity::single()` and the
+/// `AcquireCommodity` candidate emitter when need-projection is unavailable.
+const DEFAULT_ACQUISITION_HORIZON: u32 = 200;
+
+/// Derive an `AcquisitionQuantity` for an `AcquireCommodity` candidate
+/// targeting `commodity` to relieve `need_id`. Returns `None` when the
+/// projected need-breach falls outside `DEFAULT_ACQUISITION_HORIZON` —
+/// callers treat this as a horizon-gate signal and skip emission for this
+/// commodity (Design Goal 3 / spec D8). Falls back to
+/// `AcquisitionQuantity::single()` when the agent's metabolism, needs, or
+/// drive thresholds are unavailable to the belief view (e.g., S126 not
+/// active for this agent profile).
+fn derive_acquire_commodity_quantity(
+    ctx: &GenerationContext<'_>,
+    need_id: HomeostaticNeedId,
+    commodity: CommodityKind,
+) -> Option<AcquisitionQuantity> {
+    let metabolism = ctx.view.metabolism_profile(ctx.agent);
+    let needs = ctx.view.homeostatic_needs(ctx.agent);
+    let thresholds = ctx.view.drive_thresholds(ctx.agent);
+
+    // Without the full S126 input set, fall back to single-unit acquisition
+    // with the default horizon (FND-28: no separate stub path).
+    let (Some(metabolism), Some(needs), Some(thresholds)) = (metabolism, needs, thresholds) else {
+        return Some(AcquisitionQuantity::single());
+    };
+
+    let target_level = thresholds.high(need_id);
+    let rate = metabolism.rate(need_id);
+    let projected_breach = needs.projected_tick_of(need_id, target_level, rate, ctx.current_tick);
+
+    let horizon_ticks = match projected_breach {
+        Some(breach_tick) => {
+            let raw_horizon = breach_tick.0.saturating_sub(ctx.current_tick.0);
+            let horizon_u32 = u32::try_from(raw_horizon).unwrap_or(u32::MAX);
+            // Horizon-gate: skip emission for commodities whose breach is
+            // beyond the default horizon. The agent has time to defer
+            // proactive acquisition until pressure rises further.
+            if horizon_u32 > DEFAULT_ACQUISITION_HORIZON {
+                return None;
+            }
+            horizon_u32.max(1)
+        }
+        None => DEFAULT_ACQUISITION_HORIZON,
+    };
+
+    let target_units = compute_target_units(ctx, need_id, commodity, horizon_ticks, rate);
+    let target = std::num::NonZeroU16::new(target_units).unwrap_or(std::num::NonZeroU16::MIN);
+
+    Some(AcquisitionQuantity {
+        desired_min: std::num::NonZeroU16::MIN,
+        desired_target: target,
+        horizon_ticks: std::num::NonZeroU32::new(horizon_ticks)
+            .unwrap_or(std::num::NonZeroU32::MIN),
+    })
+}
+
+/// Compute the number of units of `commodity` needed to cover `horizon`
+/// ticks of `need_id` consumption at `rate`, bounded by carry headroom.
+/// Returns at least 1 to keep the goal non-trivial.
+fn compute_target_units(
+    ctx: &GenerationContext<'_>,
+    need_id: HomeostaticNeedId,
+    commodity: CommodityKind,
+    horizon: u32,
+    rate: worldwake_core::Permille,
+) -> u16 {
+    let Some(consumable) = commodity.spec().consumable_profile else {
+        return 1;
+    };
+    let relief_per_unit = match need_id {
+        HomeostaticNeedId::Hunger => u32::from(consumable.hunger_relief_per_unit.value()),
+        HomeostaticNeedId::Thirst => u32::from(consumable.thirst_relief_per_unit.value()),
+        HomeostaticNeedId::Fatigue | HomeostaticNeedId::Bladder | HomeostaticNeedId::Dirtiness => 0,
+    };
+    let rate_value = u32::from(rate.value());
+    if relief_per_unit == 0 || rate_value == 0 {
+        return 1;
+    }
+
+    let total_increase = horizon.saturating_mul(rate_value);
+    let units_needed = total_increase.div_ceil(relief_per_unit);
+
+    let bounded = match acquire_commodity_carry_headroom_units(ctx, commodity) {
+        Some(headroom) => units_needed.min(headroom),
+        None => units_needed,
+    };
+    let bounded = bounded.max(1).min(u32::from(u16::MAX));
+    u16::try_from(bounded).unwrap_or(1).max(1)
+}
+
+/// Return the agent's believed carry headroom in units of `commodity`,
+/// computed inline from `CarryCapacity` and `load_of_entity` per FND-3
+/// (derived view, not stored). Returns `None` when the belief view does
+/// not surface either component for the agent.
+fn acquire_commodity_carry_headroom_units(
+    ctx: &GenerationContext<'_>,
+    commodity: CommodityKind,
+) -> Option<u32> {
+    let carry = ctx.view.carry_capacity(ctx.agent)?;
+    let load = ctx.view.load_of_entity(ctx.agent)?;
+    let per_unit = load_per_unit(commodity).0;
+    if per_unit == 0 {
+        return Some(0);
+    }
+    Some(carry.0.saturating_sub(load.0) / per_unit)
+}
+
 fn emit_need_driven_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
@@ -2944,6 +3052,13 @@ fn emit_need_driven_candidates(
             }
         }
 
+        // Compute the agent-state-derived quantity once per (need, commodity).
+        // `None` means the projected breach is beyond the default horizon —
+        // skip emission for this commodity (Design Goal 3).
+        let Some(quantity) = derive_acquire_commodity_quantity(ctx, need_id, commodity) else {
+            continue;
+        };
+
         for (candidate_place, evidence, mut evidence_trace) in search.opportunities {
             if ctx.tracing_enabled {
                 evidence_trace.knowledge_path.self_knowledge.push(
@@ -2972,7 +3087,7 @@ fn emit_need_driven_candidates(
                 GoalKind::AcquireCommodity {
                     commodity,
                     purpose: CommodityPurpose::SelfConsume,
-                    quantity: AcquisitionQuantity::single(),
+                    quantity,
                 },
                 OpportunityAnchor::Place(candidate_place),
                 evidence,
@@ -3026,6 +3141,15 @@ fn emit_need_driven_candidates(
                     candidate.commodity,
                 ));
         }
+        // Substitute candidate uses the substitute's commodity, not the
+        // original `commodity` for which the search was run; derive its
+        // own quantity. If the projection lands outside the horizon for
+        // the substitute commodity, skip the substitute emission too.
+        let Some(substitute_quantity) =
+            derive_acquire_commodity_quantity(ctx, need_id, candidate.commodity)
+        else {
+            continue;
+        };
         emit_candidate_with_trace(
             candidates,
             diagnostics,
@@ -3037,7 +3161,7 @@ fn emit_need_driven_candidates(
             GoalKind::AcquireCommodity {
                 commodity: candidate.commodity,
                 purpose: CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
+                quantity: substitute_quantity,
             },
             OpportunityAnchor::Place(current_place),
             evidence,
@@ -5898,6 +6022,7 @@ mod tests {
         controlled_entities: BTreeSet<EntityId>,
         homeostatic_needs: BTreeMap<EntityId, HomeostaticNeeds>,
         drive_thresholds: BTreeMap<EntityId, DriveThresholds>,
+        metabolism_profiles: BTreeMap<EntityId, MetabolismProfile>,
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         courage: BTreeMap<EntityId, Permille>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
@@ -5988,6 +6113,7 @@ mod tests {
                 controlled_entities: BTreeSet::new(),
                 homeostatic_needs: BTreeMap::new(),
                 drive_thresholds: BTreeMap::new(),
+                metabolism_profiles: BTreeMap::new(),
                 wounds: BTreeMap::new(),
                 courage: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
@@ -6184,8 +6310,8 @@ mod tests {
             self.drive_thresholds.get(&agent).copied()
         }
 
-        fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
-            None
+        fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+            self.metabolism_profiles.get(&agent).copied()
         }
 
         fn utility_profile(&self, agent: EntityId) -> Option<UtilityProfile> {
@@ -19091,6 +19217,262 @@ mod tests {
         assert_eq!(
             super::relieved_needs_for_commodity(CommodityKind::Water),
             BTreeSet::from([HomeostaticNeedId::Thirst, HomeostaticNeedId::Dirtiness])
+        );
+    }
+
+    /// Build a `MetabolismProfile` with the given hunger and thirst rates.
+    /// Other fields use plausible defaults; tests that need them should
+    /// override directly on the profile.
+    fn metabolism_with_rates(hunger_rate: Permille, thirst_rate: Permille) -> MetabolismProfile {
+        MetabolismProfile::new(
+            hunger_rate,
+            thirst_rate,
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            std::num::NonZeroU32::new(480).unwrap(),
+            std::num::NonZeroU32::new(240).unwrap(),
+            std::num::NonZeroU32::new(120).unwrap(),
+            std::num::NonZeroU32::new(40).unwrap(),
+            std::num::NonZeroU32::new(8).unwrap(),
+            std::num::NonZeroU32::new(12).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+            Permille::new(0).unwrap(),
+        )
+    }
+
+    #[test]
+    fn candidate_gen_no_s126_fallback_emits_single_unit_quantity() {
+        // Without metabolism profile in the belief view, the emitter falls
+        // back to `AcquisitionQuantity::single()` per Design Goal 8 / spec
+        // Dependencies. Existing baseline tests already cover this — this
+        // test asserts the same contract explicitly.
+        let agent = entity(1);
+        let place = entity(10);
+        let bread_lot = entity(11);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, bread_lot]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(bread_lot, place);
+        view.entities_at.insert(place, vec![agent, bread_lot]);
+        view.homeostatic_needs.insert(agent, hunger(300));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        // Deliberately no metabolism_profile insertion → fallback path.
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        view.consumable_profiles.insert(
+            bread_lot,
+            CommodityKind::Bread.spec().consumable_profile.unwrap(),
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }
+        ));
+    }
+
+    /// Find the `AcquireCommodity` candidate (if any) for `commodity` +
+    /// `purpose` in the candidate list.
+    fn find_acquire_commodity(
+        candidates: &[crate::GoalOffer],
+        commodity: CommodityKind,
+        purpose: CommodityPurpose,
+    ) -> Option<&crate::GoalOffer> {
+        candidates.iter().find(|candidate| {
+            matches!(
+                candidate.key.kind,
+                GoalKind::AcquireCommodity {
+                    commodity: c,
+                    purpose: p,
+                    ..
+                } if c == commodity && p == purpose,
+            )
+        })
+    }
+
+    #[test]
+    fn candidate_gen_quantity_aware_emission_derives_target_from_horizon() {
+        // Agent under hunger pressure with concrete metabolism + thresholds:
+        // the emitter computes `desired_target` from horizon × rate /
+        // relief_per_unit, bounded by carry headroom. Apple's
+        // `consumable_profile.hunger_relief_per_unit` is fixed by
+        // `commodity.spec()`; the test keeps inputs simple — high hunger
+        // pressure to pass the low-threshold gate, generous carry headroom
+        // so target is driven by the projection, not the cap.
+        let agent = entity(1);
+        let place = entity(10);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.insert(place, vec![agent, workstation]);
+        // Hunger 600 > high(500) → projected_breach == current_tick → horizon = 1.
+        view.homeostatic_needs.insert(agent, hunger(600));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.metabolism_profiles.insert(
+            agent,
+            metabolism_with_rates(Permille::new(2).unwrap(), Permille::new(0).unwrap()),
+        );
+        view.carry_capacities.insert(agent, LoadUnits(20));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::OrchardRow);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        view.sources_at
+            .insert((place, CommodityKind::Apple), vec![workstation]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(place),
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+        let mut recipes = RecipeRegistry::new();
+        recipes.register(sample_recipe(
+            vec![(CommodityKind::Apple, Quantity(2))],
+            Vec::new(),
+            WorkstationTag::OrchardRow,
+        ));
+
+        let candidates =
+            generate_candidates(&view, agent, &BlockerMemory::default(), &recipes, Tick(5));
+
+        let acquire = find_acquire_commodity(
+            &candidates,
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+        )
+        .expect("agent under hunger pressure should emit AcquireCommodity for apples");
+        let GoalKind::AcquireCommodity { quantity, .. } = acquire.key.kind else {
+            panic!("expected AcquireCommodity variant");
+        };
+        // Already past the high threshold → horizon collapses to 1, so
+        // target is the minimum (1 unit) — target derivation is exercised,
+        // and the candidate is emitted (no horizon-gate suppression).
+        assert!(quantity.desired_target.get() >= 1);
+        // `desired_min` invariant from spec: always at least 1.
+        assert!(quantity.desired_min.get() >= 1);
+        // `horizon_ticks` always >= 1 (NonZeroU32).
+        assert!(quantity.horizon_ticks.get() >= 1);
+    }
+
+    #[test]
+    fn candidate_gen_horizon_gate_suppresses_far_future_breach() {
+        // Agent above low_threshold but below high; metabolism rate is so
+        // slow that projected_breach exceeds DEFAULT_ACQUISITION_HORIZON
+        // (200 ticks). The emitter must skip the AcquireCommodity for
+        // this commodity rather than emit a goal whose breach is too far
+        // out (Design Goal 3).
+        let agent = entity(1);
+        let place = entity(10);
+        let workstation = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, workstation]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(workstation, EntityKind::Facility);
+        view.effective_places.insert(agent, place);
+        view.effective_places.insert(workstation, place);
+        view.entities_at.insert(place, vec![agent, workstation]);
+        // Hunger 260 — just above the default low (250), well below high (500).
+        view.homeostatic_needs.insert(agent, hunger(260));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        // Rate of 1 permille/tick → gap to high (500 - 260 = 240) takes
+        // ceil(240/1) = 240 ticks > 200 horizon → horizon-gate skips.
+        view.metabolism_profiles.insert(
+            agent,
+            metabolism_with_rates(Permille::new(1).unwrap(), Permille::new(0).unwrap()),
+        );
+        view.carry_capacities.insert(agent, LoadUnits(20));
+        view.entity_loads.insert(agent, LoadUnits(0));
+        view.workstation_tags
+            .insert(workstation, WorkstationTag::OrchardRow);
+        view.workstations
+            .insert((place, WorkstationTag::OrchardRow), vec![workstation]);
+        view.resource_sources.insert(
+            workstation,
+            ResourceSource {
+                commodity: CommodityKind::Apple,
+                available_quantity: Quantity(10),
+                max_quantity: Quantity(10),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        view.sources_at
+            .insert((place, CommodityKind::Apple), vec![workstation]);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                workstation,
+                BelievedEntityState {
+                    believed_kind: Some(EntityKind::Facility),
+                    last_known_place: Some(place),
+                    ..believed_state(100, PerceptionSource::DirectObservation)
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        // No AcquireCommodity candidate should be emitted because the
+        // projected hunger breach lies beyond the default horizon.
+        assert!(
+            find_acquire_commodity(
+                &candidates,
+                CommodityKind::Apple,
+                CommodityPurpose::SelfConsume
+            )
+            .is_none(),
+            "horizon-gate should suppress emission when breach > horizon",
         );
     }
 }

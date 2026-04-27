@@ -434,6 +434,10 @@ pub trait GoalBeliefView {
     fn has_wounds(&self, entity: EntityId) -> bool;
     fn homeostatic_needs(&self, agent: EntityId) -> Option<HomeostaticNeeds>;
     fn drive_thresholds(&self, agent: EntityId) -> Option<DriveThresholds>;
+    fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile> {
+        let _ = agent;
+        None
+    }
     fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
         let _ = agent;
         None
@@ -1702,6 +1706,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::DriveThresholds> {
         ProfileBeliefView::drive_thresholds(self, agent)
+    }
+
+    fn metabolism_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::MetabolismProfile> {
+        ProfileBeliefView::metabolism_profile(self, agent)
     }
 
     fn deprivation_exposure(

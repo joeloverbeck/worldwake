@@ -168,7 +168,15 @@ impl Harness {
                 WorkstationMarker(WorkstationTag::OrchardRow),
             )
             .unwrap();
+            let orchard_slot_count = source.extraction_slots.get() as usize;
             txn.set_component_resource_source(orchard, source).unwrap();
+            txn.set_component_resource_extraction_queues(
+                orchard,
+                worldwake_core::ResourceExtractionQueues {
+                    queues: vec![worldwake_core::ContentionQueue::default(); orchard_slot_count],
+                },
+            )
+            .unwrap();
             txn.set_component_production_output_ownership_policy(
                 orchard,
                 ProductionOutputOwnershipPolicy {

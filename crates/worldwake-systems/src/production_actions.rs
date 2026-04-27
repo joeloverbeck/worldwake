@@ -3,9 +3,9 @@ use crate::experience_recording::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, CommodityKind, Container, EntityId, EntityKind, EventTag, HarvestTraceEntry,
-    LoadUnits, ProductionOutputOwner, Quantity, SourceKey, VisibilitySpec, WorkstationMarker,
-    World, WorldTxn, load_per_unit,
+    ActionDefId, CommodityKind, Container, ContentionGrant, EntityId, EntityKind, EventTag,
+    HarvestTraceEntry, LoadUnits, ProductionOutputOwner, Quantity, SourceKey, VisibilitySpec,
+    WorkstationMarker, World, WorldTxn, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -14,6 +14,12 @@ use worldwake_sim::{
     HarvestActionPayload, HarvestCommitTrace, Interruptibility, Precondition, RecipeDefinition,
     RecipeRegistry, ReservationReq, RuntimeBeliefView, TargetSpec,
 };
+
+/// Sentinel `PreconditionFailed` message emitted by `start_harvest` when no
+/// extraction slot is free for the actor. `record_harvest_start_failure`
+/// matches on this string to commit the enqueue write on a fresh
+/// transaction (the start-handler txn is dropped on `Err`).
+const HARVEST_START_FAILURE_SLOTS_FULL: &str = "extraction_slots_full";
 
 pub fn register_harvest_actions(
     defs: &mut ActionDefRegistry,
@@ -112,7 +118,10 @@ fn harvest_action_def(
             kind: EntityKind::Facility,
         }],
         preconditions: preconditions.clone(),
-        reservation_requirements: vec![ReservationReq { target_index: 0 }],
+        // Slot occupancy lives in `ResourceExtractionQueues` (per FND-26),
+        // not in the temporal `try_reserve` substrate. Exclusive reservation
+        // would block parallel multi-slot harvests on the same source.
+        reservation_requirements: Vec::new(),
         duration: DurationExpr::Fixed(recipe.work_ticks),
         body_cost_per_tick: recipe.body_cost_per_tick,
         attention_cost: worldwake_core::Permille::new_unchecked(200),
@@ -429,8 +438,127 @@ fn start_harvest(
         .targets
         .first()
         .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    consume_matching_facility_grant(txn, instance.actor, workstation, def.id)?;
+    grant_or_signal_full(txn, instance.actor, workstation, def.id)?;
     Ok(None)
+}
+
+/// Find the lowest-index slot in `ResourceExtractionQueues` whose `granted`
+/// is `None` (or already held by `actor`); grant it and write back.
+/// Returns `Err(PreconditionFailed("extraction_slots_full"))` if every slot
+/// has a foreign grant. The failure handler enqueues the actor on the
+/// shortest-waitlist slot using a fresh transaction (the start-handler
+/// txn is dropped on `Err`).
+fn grant_or_signal_full(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    workstation: EntityId,
+    action_def: ActionDefId,
+) -> Result<(), ActionError> {
+    let Some(mut queues) = txn
+        .get_component_resource_extraction_queues(workstation)
+        .cloned()
+    else {
+        return Err(ActionError::PreconditionFailed(format!(
+            "workstation {workstation} lacks ResourceExtractionQueues"
+        )));
+    };
+    if queues.queues.is_empty() {
+        return Err(ActionError::PreconditionFailed(format!(
+            "workstation {workstation} has zero extraction slots"
+        )));
+    }
+
+    let chosen_slot = queues.queues.iter().position(|queue| match &queue.granted {
+        None => true,
+        Some(grant) => grant.actor == actor,
+    });
+
+    if let Some(slot) = chosen_slot {
+        let queue = &mut queues.queues[slot];
+        if queue.granted.is_none() {
+            // Grant immediately. `expires_at` mirrors the
+            // facility-queue grant lifecycle; commit/abort clear the grant
+            // so the expiry value only matters as a sentinel for stale
+            // grants if cleanup is missed.
+            queue.granted = Some(ContentionGrant {
+                actor,
+                intended_action: action_def,
+                granted_at: txn.tick(),
+                expires_at: txn.tick(),
+            });
+            txn.set_component_resource_extraction_queues(workstation, queues)
+                .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        }
+        Ok(())
+    } else {
+        Err(ActionError::PreconditionFailed(
+            HARVEST_START_FAILURE_SLOTS_FULL.to_string(),
+        ))
+    }
+}
+
+/// Enqueue `actor` at the slot with the shortest waitlist. Called from
+/// `record_harvest_start_failure` against a fresh transaction so the write
+/// persists. No-op if `actor` is already enqueued or granted.
+fn enqueue_at_shortest_slot(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    workstation: EntityId,
+    action_def: ActionDefId,
+) -> Result<(), ActionError> {
+    let Some(mut queues) = txn
+        .get_component_resource_extraction_queues(workstation)
+        .cloned()
+    else {
+        return Ok(());
+    };
+    if queues.queues.is_empty() {
+        return Ok(());
+    }
+    if queues.queues.iter().any(|queue| queue.has_actor(actor)) {
+        return Ok(());
+    }
+
+    let chosen_slot = queues
+        .queues
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, queue)| queue.waiting.len())
+        .map_or(0, |(slot, _)| slot);
+
+    queues.queues[chosen_slot]
+        .enqueue(actor, action_def, txn.tick(), None)
+        .map_err(|err| ActionError::PreconditionFailed(format!("{err:?}")))?;
+    txn.set_component_resource_extraction_queues(workstation, queues)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
+}
+
+/// Clear `actor`'s grant or queued entry from any slot in the workstation's
+/// `ResourceExtractionQueues`. Called from `commit_harvest`, `abort_harvest`,
+/// and the depleted-source abort path so a held slot is released for the
+/// next agent. No-op if the source has no queues registered.
+fn release_extraction_slot(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    workstation: EntityId,
+) -> Result<(), ActionError> {
+    let Some(mut queues) = txn
+        .get_component_resource_extraction_queues(workstation)
+        .cloned()
+    else {
+        return Ok(());
+    };
+    let mut changed = false;
+    for queue in &mut queues.queues {
+        if queue.remove_actor(actor) {
+            changed = true;
+        }
+    }
+    if changed {
+        txn.set_component_resource_extraction_queues(workstation, queues)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    }
+    Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -613,6 +741,7 @@ fn commit_harvest(
         });
         txn.set_component_last_harvest_trace(workstation, trace)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
+        release_extraction_slot(txn, instance.actor, workstation)?;
         // AbortRequested routes through `finalize_failed_action`, which commits
         // the WorldTxn (including the failed-harvest trace append above) before
         // returning. PreconditionFailed would drop the txn — see ticket
@@ -657,6 +786,8 @@ fn commit_harvest(
         harvest_source_key(payload, workstation),
         txn.tick(),
     )?;
+
+    release_extraction_slot(txn, instance.actor, workstation)?;
 
     if is_partial {
         Ok(
@@ -794,7 +925,7 @@ fn validate_harvest_payload_override(
 
 #[allow(clippy::too_many_arguments, clippy::unnecessary_wraps)]
 fn record_harvest_start_failure(
-    _def: &ActionDef,
+    def: &ActionDef,
     actor: EntityId,
     targets: &[EntityId],
     payload: &ActionPayload,
@@ -809,6 +940,16 @@ fn record_harvest_start_failure(
     let Some(workstation) = targets.first().copied() else {
         return Ok(());
     };
+    if matches!(
+        error,
+        ActionError::PreconditionFailed(message) if message == HARVEST_START_FAILURE_SLOTS_FULL,
+    ) {
+        // Slots-full failure: enqueue the actor on the shortest-waitlist
+        // slot. The start-handler txn was dropped on `Err`; this fresh
+        // failure-handler txn commits the queue write.
+        enqueue_at_shortest_slot(txn, actor, workstation, def.id)?;
+        return Ok(());
+    }
     if harvest_source_failed_intrinsically(txn, actor, workstation, payload, error) {
         record_failed_source_attempt(
             txn,
@@ -820,18 +961,21 @@ fn record_harvest_start_failure(
     Ok(())
 }
 
-#[allow(clippy::unnecessary_wraps)]
 fn abort_harvest(
     _def: &ActionDef,
-    _instance: &ActionInstance,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _reason: &AbortReason,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
+    txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     // External interruptions do not penalize source reliability. The source
-    // did not fail; the actor was interrupted.
+    // did not fail; the actor was interrupted. Release any held extraction
+    // slot so the next agent can promote into it.
+    if let Some(workstation) = instance.targets.first().copied() {
+        release_extraction_slot(txn, instance.actor, workstation)?;
+    }
     Ok(())
 }
 
@@ -949,6 +1093,16 @@ mod tests {
                 last_regeneration_tick: None,
                 extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        )
+        .unwrap();
+        // Mirror the scenario translator: every resource source has
+        // `ResourceExtractionQueues` with one queue per slot. `start_harvest`
+        // grants the actor a slot here.
+        txn.set_component_resource_extraction_queues(
+            workstation,
+            worldwake_core::ResourceExtractionQueues {
+                queues: vec![ContentionQueue::default()],
             },
         )
         .unwrap();
@@ -1698,22 +1852,24 @@ mod tests {
         assert_eq!(affordances.len(), 1);
     }
 
-    #[allow(clippy::too_many_lines)]
     #[test]
-    fn harvest_start_requires_matching_grant_and_consumes_it() {
+    fn harvest_start_grants_extraction_slot_and_releases_on_commit() {
+        // After ticket 007 the harvest start handler grants a free slot in
+        // the source's `ResourceExtractionQueues` rather than consuming a
+        // singleton `ContentionQueue` grant. The grant carries the actor
+        // identity for the duration of the action and is cleared at commit.
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
         let (defs, handlers, ids) = setup_registries(&recipes);
         let (mut world, actor, workstation, _place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
-        provision_facility_queue(&mut world, workstation, 9);
         let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
         let mut active = BTreeMap::new();
         let mut event_log = EventLog::new();
         let mut rng = test_rng(0x91);
         let mut next_id = ActionInstanceId(0);
 
-        let missing_grant_err = start_action(
+        let instance_id = start_action(
             &affordance,
             &defs,
             &handlers,
@@ -1726,99 +1882,52 @@ mod tests {
             &mut next_id,
             worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
-        .unwrap_err();
-        assert!(matches!(
-            missing_grant_err,
-            ActionError::PreconditionFailed(message)
-                if message.contains("no matching grant")
-        ));
-
-        grant_facility_use(&mut world, workstation, actor, ActionDefId(999), 10);
-        let wrong_grant_err = start_action(
-            &affordance,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active,
-                world: &mut world,
-                event_log: &mut event_log,
-                rng: &mut rng,
-            },
-            &mut next_id,
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
-        )
-        .unwrap_err();
-        assert!(matches!(
-            wrong_grant_err,
-            ActionError::PreconditionFailed(message)
-                if message.contains("grant belongs")
-        ));
-
-        grant_facility_use(&mut world, workstation, actor, ids[0], 12);
-        let instance_id = start_action(
-            &affordance,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active,
-                world: &mut world,
-                event_log: &mut event_log,
-                rng: &mut rng,
-            },
-            &mut next_id,
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(12)),
-        )
         .unwrap();
 
-        assert!(
-            world
-                .get_component_contention_queue(workstation)
-                .unwrap()
+        let slot = world
+            .get_component_resource_extraction_queues(workstation)
+            .expect("queues registered at scenario spawn");
+        assert_eq!(slot.queues.len(), 1);
+        assert_eq!(
+            slot.queues[0]
                 .granted
-                .is_none()
+                .as_ref()
+                .map(|g| (g.actor, g.intended_action)),
+            Some((actor, ids[0])),
         );
 
-        abort_action(
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
             instance_id,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active,
-                world: &mut world,
-                event_log: &mut event_log,
-                rng: &mut rng,
-            },
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(13)),
-            worldwake_sim::ExternalAbortReason::Other,
-        )
-        .unwrap();
+            &mut active,
+            11,
+        );
 
-        let consumed_grant_err = start_action(
-            &affordance,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active,
-                world: &mut world,
-                event_log: &mut event_log,
-                rng: &mut rng,
-            },
-            &mut next_id,
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(14)),
-        )
-        .unwrap_err();
-        assert!(matches!(
-            consumed_grant_err,
-            ActionError::PreconditionFailed(message)
-                if message.contains("no matching grant")
-        ));
+        // Slot grant must be released after commit so the next agent can
+        // claim it.
+        let post_commit = world
+            .get_component_resource_extraction_queues(workstation)
+            .expect("queues remain registered after commit");
+        assert!(
+            post_commit.queues[0].granted.is_none(),
+            "slot grant must be cleared on commit, got {:?}",
+            post_commit.queues[0].granted
+        );
     }
 
     #[allow(clippy::too_many_lines)]
     #[test]
-    fn harvest_reservation_blocks_second_actor_and_abort_preserves_source() {
+    fn harvest_single_slot_blocks_second_actor_and_abort_releases_slot() {
+        // Single-slot source: the second actor's start fails with
+        // `extraction_slots_full`, the failure handler enqueues them on
+        // slot 0 (the only slot), and aborting the first actor's harvest
+        // releases the slot without consuming source stock.
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
-        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (defs, handlers, _ids) = setup_registries(&recipes);
         let (mut world, actor_a, workstation, _place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor_a, recipe_id);
@@ -1832,7 +1941,6 @@ mod tests {
             let _ = txn.commit(&mut EventLog::new());
             actor
         };
-        grant_facility_use(&mut world, workstation, actor_a, ids[0], 9);
 
         let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
         let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
@@ -1871,30 +1979,16 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             second_start,
-            ActionError::PreconditionFailed(format!(
-                "entity {workstation} has no matching grant for actor {} action {:?}",
-                actor_b, ids[0]
-            ))
+            ActionError::PreconditionFailed("extraction_slots_full".to_string()),
         );
-
-        grant_facility_use(&mut world, workstation, actor_b, ids[0], 10);
-        let second_with_grant = start_action(
-            &affordance_b,
-            &defs,
-            &handlers,
-            ActionExecutionAuthority {
-                active_actions: &mut active,
-                world: &mut world,
-                event_log: &mut event_log,
-                rng: &mut rng,
-            },
-            &mut next_id,
-            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
-        )
-        .unwrap_err();
+        // Failure handler should have enqueued actor_b on the only slot.
+        let queues_after_b = world
+            .get_component_resource_extraction_queues(workstation)
+            .expect("queues registered at spawn");
+        assert_eq!(queues_after_b.queues[0].position_of(actor_b), Some(0));
         assert_eq!(
-            second_with_grant,
-            ActionError::ReservationUnavailable(workstation)
+            queues_after_b.queues[0].granted.as_ref().map(|g| g.actor),
+            Some(actor_a)
         );
 
         abort_action(
@@ -1912,6 +2006,7 @@ mod tests {
         )
         .unwrap();
 
+        // Source stock unchanged — abort never harvested.
         assert_eq!(
             world
                 .get_component_resource_source(workstation)
@@ -1919,13 +2014,21 @@ mod tests {
                 .available_quantity,
             Quantity(5)
         );
+        // Slot 0's grant was released by abort_harvest.
+        let post_abort = world
+            .get_component_resource_extraction_queues(workstation)
+            .unwrap();
+        assert!(post_abort.queues[0].granted.is_none());
+        // actor_b is still queued (manual promotion is owned by a separate
+        // ticket — no auto-promote here).
+        assert_eq!(post_abort.queues[0].position_of(actor_b), Some(0));
     }
 
-    #[allow(clippy::too_many_lines)]
     #[test]
     fn harvest_second_start_failure_preserves_source_until_winner_commit() {
+        // The losing start (slots full → enqueue) must not consume source
+        // stock; only the granted actor's commit drains the source.
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
-        let (defs, handlers, ids) = setup_registries(&recipes);
         let (mut world, actor_a, workstation, _place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor_a, recipe_id);
@@ -1939,7 +2042,7 @@ mod tests {
             let _ = txn.commit(&mut EventLog::new());
             actor
         };
-        grant_facility_use(&mut world, workstation, actor_a, ids[0], 9);
+        let (defs, handlers, _ids) = setup_registries(&recipes);
 
         let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
         let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
@@ -1963,7 +2066,6 @@ mod tests {
         )
         .unwrap();
 
-        grant_facility_use(&mut world, workstation, actor_b, ids[0], 10);
         let second_start = start_action(
             &affordance_b,
             &defs,
@@ -1980,7 +2082,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             second_start,
-            ActionError::ReservationUnavailable(workstation)
+            ActionError::PreconditionFailed("extraction_slots_full".to_string())
         );
         assert_eq!(
             world
@@ -2847,6 +2949,13 @@ mod tests {
                 },
             )
             .unwrap();
+            txn.set_component_resource_extraction_queues(
+                ws,
+                worldwake_core::ResourceExtractionQueues {
+                    queues: vec![ContentionQueue::default()],
+                },
+            )
+            .unwrap();
             // Deliberately NOT setting ProductionOutputOwnershipPolicy.
             txn.set_component_homeostatic_needs(actor, HomeostaticNeeds::new_sated())
                 .unwrap();
@@ -3642,5 +3751,194 @@ mod tests {
             ),
             "validator must reject zero-quantity request"
         );
+    }
+
+    /// Helper: spawn a second agent at the same place as `existing_actor`
+    /// with the given name and recipe knowledge.
+    fn spawn_co_located_agent(
+        world: &mut World,
+        existing_actor: EntityId,
+        name: &str,
+        recipe_id: worldwake_core::RecipeId,
+        tick: u64,
+    ) -> EntityId {
+        let place = world.effective_place(existing_actor).unwrap();
+        let mut txn = new_txn(world, tick);
+        let actor = txn.create_agent(name, ControlSource::Ai).unwrap();
+        txn.set_ground_location(actor, place).unwrap();
+        txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([recipe_id]))
+            .unwrap();
+        commit_txn(txn);
+        actor
+    }
+
+    /// Helper: replace the source's `extraction_slots` and reinitialize
+    /// `ResourceExtractionQueues` to the matching length.
+    fn set_extraction_slots(world: &mut World, workstation: EntityId, slots: u8) {
+        let mut txn = new_txn(world, 4);
+        let mut source = txn
+            .get_component_resource_source(workstation)
+            .cloned()
+            .unwrap();
+        source.extraction_slots = std::num::NonZeroU8::new(slots).unwrap();
+        txn.set_component_resource_source(workstation, source)
+            .unwrap();
+        txn.set_component_resource_extraction_queues(
+            workstation,
+            worldwake_core::ResourceExtractionQueues {
+                queues: vec![ContentionQueue::default(); usize::from(slots)],
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+    }
+
+    #[test]
+    fn harvest_start_picks_free_slot_for_three_concurrent_agents() {
+        // 3-slot source; three agents start harvest concurrently. Each should
+        // claim a different slot via the lowest-free-slot policy.
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, _ids) = setup_registries(&recipes);
+        let (mut world, actor_a, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 9);
+        grant_recipe(&mut world, actor_a, recipe_id);
+        set_extraction_slots(&mut world, workstation, 3);
+        let actor_b = spawn_co_located_agent(&mut world, actor_a, "Bram", recipe_id, 5);
+        let actor_c = spawn_co_located_agent(&mut world, actor_a, "Cael", recipe_id, 5);
+
+        let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
+        let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
+        let affordance_c = single_harvest_affordance(&world, actor_c, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xA1);
+        let mut next_id = ActionInstanceId(0);
+
+        for affordance in [affordance_a, affordance_b, affordance_c] {
+            start_action(
+                &affordance,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut event_log,
+                    rng: &mut rng,
+                },
+                &mut next_id,
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(10),
+                ),
+            )
+            .unwrap();
+        }
+
+        let queues = world
+            .get_component_resource_extraction_queues(workstation)
+            .expect("queues registered at spawn");
+        assert_eq!(queues.queues.len(), 3);
+        // Each slot has a distinct grant; together they cover all three actors.
+        let granted: Vec<EntityId> = queues
+            .queues
+            .iter()
+            .map(|q| q.granted.as_ref().expect("each slot granted").actor)
+            .collect();
+        assert_eq!(granted.len(), 3);
+        assert!(granted.contains(&actor_a));
+        assert!(granted.contains(&actor_b));
+        assert!(granted.contains(&actor_c));
+        // No actor is in any waiting queue.
+        for queue in &queues.queues {
+            assert!(queue.waiting.is_empty(), "no actor should be waiting");
+        }
+    }
+
+    #[test]
+    fn harvest_start_enqueues_third_actor_when_single_slot_is_full() {
+        // 1-slot source; first start grants slot 0, second start fails with
+        // `extraction_slots_full` and the failure handler enqueues actor_b
+        // on slot 0. A third actor enqueues behind actor_b on the same slot
+        // (only slot available has the shortest waitlist by definition).
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, _ids) = setup_registries(&recipes);
+        let (mut world, actor_a, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 9);
+        grant_recipe(&mut world, actor_a, recipe_id);
+        let actor_b = spawn_co_located_agent(&mut world, actor_a, "Bram", recipe_id, 5);
+        let actor_c = spawn_co_located_agent(&mut world, actor_a, "Cael", recipe_id, 5);
+
+        let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
+        let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
+        let affordance_c = single_harvest_affordance(&world, actor_c, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xA2);
+        let mut next_id = ActionInstanceId(0);
+
+        // First start: grants slot 0.
+        start_action(
+            &affordance_a,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        // Second start: fails with extraction_slots_full; failure handler enqueues actor_b.
+        let err_b = start_action(
+            &affordance_b,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err_b,
+            ActionError::PreconditionFailed("extraction_slots_full".to_string())
+        );
+
+        // Third start: same fate, enqueues actor_c behind actor_b.
+        let err_c = start_action(
+            &affordance_c,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err_c,
+            ActionError::PreconditionFailed("extraction_slots_full".to_string())
+        );
+
+        let queues = world
+            .get_component_resource_extraction_queues(workstation)
+            .expect("queues registered at spawn");
+        assert_eq!(queues.queues.len(), 1);
+        let slot = &queues.queues[0];
+        assert_eq!(slot.granted.as_ref().map(|g| g.actor), Some(actor_a));
+        assert_eq!(slot.position_of(actor_b), Some(0));
+        assert_eq!(slot.position_of(actor_c), Some(1));
     }
 }

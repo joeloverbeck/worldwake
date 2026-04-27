@@ -496,6 +496,22 @@ fn classify_production_failure(
     if !view.reservation_ranges(workstation).is_empty() {
         return Some(BlockingFact::ReservationConflict);
     }
+    // Multi-slot harvest start: every slot has a foreign grant. The agent
+    // is enqueued by `record_harvest_start_failure` and replans; classify
+    // as a contention conflict (matches the pre-multi-slot single-slot
+    // temporal-reservation semantics).
+    if view
+        .resource_extraction_queues(workstation)
+        .is_some_and(|queues| {
+            !queues.queues.is_empty()
+                && queues
+                    .queues
+                    .iter()
+                    .all(|queue| queue.granted.as_ref().is_some_and(|g| g.actor != agent))
+        })
+    {
+        return Some(BlockingFact::ReservationConflict);
+    }
     if view
         .resource_source(workstation)
         .is_some_and(|source| source.available_quantity == Quantity(0))
@@ -714,6 +730,17 @@ fn classify_precondition_failure_detail(detail: &str) -> Option<FailureClassific
     {
         return Some(FailureClassification::Discrepancy(
             Discrepancy::ImproperPlanningState,
+        ));
+    }
+    // Multi-slot harvest start: all extraction slots occupied. Semantically
+    // equivalent to the old single-slot temporal-reservation conflict —
+    // another agent currently holds the slot, the actor is enqueued by the
+    // failure handler, and a replan is appropriate. Classify as
+    // `ReservationConflict` so the blocker memory matches the prior
+    // contention-conflict expiry/clearing semantics.
+    if detail.contains("extraction_slots_full") {
+        return Some(FailureClassification::Blocker(
+            BlockingFact::ReservationConflict,
         ));
     }
     None

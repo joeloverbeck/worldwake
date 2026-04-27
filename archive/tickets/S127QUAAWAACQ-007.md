@@ -1,6 +1,6 @@
 # S127QUAAWAACQ-007: Multi-slot harvest start + candidate-generation quantity derivation + ranking integration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — modifies harvest action's start handler to scan `ResourceExtractionQueues.queues[..]` for free slots, replaces `AcquisitionQuantity::single()` defaults in candidate generation with computed quantity from agent state, integrates ranking with S131 soft-fallback for source selection
@@ -33,6 +33,24 @@ S127's quantity-aware reasoning becomes operative once the candidate generator s
    - Goldens: ticket 008.
 12. Scenario isolation: golden coverage in ticket 008. This ticket uses focused unit + runtime tests for each phase in isolation.
 13. Adjacent contradictions: S131's `average_wait_ticks` not yet present — this is a documented soft-dep, not a contradiction. The ranker reads `average_wait_ticks` if the field exists (gated by feature detection or trivial pattern match) and falls back otherwise.
+
+### Auto-corrections (2026-04-27)
+
+14. **Source-reliability tiebreak already lives in ranking pipeline.** `crates/worldwake-ai/src/ranking.rs:408-441` (`apply_source_reliability_discount`) already computes a `failure_ratio_permille` discount over `ReliabilityRecord.successful_acquisitions / failed_attempts` for every `AcquireCommodity` candidate carrying a single source-evidence entity (`source_reliability_discount_scope` at line 570 covers `AcquireCommodity` + `RestockCommodity`). The discount uses `Permille` integer arithmetic per CLAUDE.md determinism. **Correction applied:** the spec D8 / ticket section 4 "use success_ratio fallback" requirement is satisfied by the existing pipeline — no new tiebreak code is required. The S131 forward-compat (`average_wait_ticks`) is a no-op since `ReliabilityRecord` does not yet carry the field. Ticket section 4 narrows to: (a) make `desired_target` participate in motive_score, (b) add a focused unit test asserting the existing failure-ratio discount differentiates two sources for an `AcquireCommodity` candidate. **Why safe:** the existing discount already implements the spec's mathematical contract; reimplementing it would duplicate logic and risk drift. Test #6 from acceptance criteria (`motive_score_falls_back_to_success_ratio`) covers the existing behavior.
+
+15. **`believed_carried_load_for` helper not needed.** `GoalBeliefView::carry_capacity(actor) -> Option<LoadUnits>` and `load_of_entity(actor) -> Option<LoadUnits>` already exist (`belief_view.rs:431-432`). Headroom in units is `(carry_capacity - load_of_entity) / load_per_unit(commodity)` — the same pattern is used in `validate_harvest_payload_override` at `production_actions.rs:781-792`. **Correction applied:** drop section 2 of `What to Change` (helper addition); use the existing accessors inline. Drops `crates/worldwake-sim/src/belief_view.rs` from `Files to Touch`.
+
+16. **Multi-slot start handler conflicts with temporal `try_reserve` reservation.** `harvest_action_def` at `production_actions.rs:115` declares `reservation_requirements: vec![ReservationReq { target_index: 0 }]`. `start_gate.rs:81-115` calls `txn.try_reserve(target, actor, range)` which fails with `WorldError::ConflictingReservation` when a second agent attempts to reserve the same workstation. With `extraction_slots > 1`, multiple agents must hold concurrent extraction reservations on the same source — the temporal reservation contract is fundamentally incompatible with multi-slot. Per FND-26, slot-occupancy lives in `ResourceExtractionQueues` (the new authoritative carrier); the temporal `ReservationReq` was for exclusive single-actor use and is now superseded. **Correction applied:** remove `reservation_requirements` from `harvest_action_def` (replace with `Vec::new()`). Slot occupancy is enforced through the slot grant in `ResourceExtractionQueues.queues[slot_index].granted`.
+
+17. **Slot grant must be released on commit and abort.** With slot-occupancy lifted from `ReservationReq` (item 16) to `ResourceExtractionQueues`, the slot grant on the source's queue must be cleared when the action commits, aborts, or fails. The harvest commit handler already lives at `production_actions.rs:563-672`; need to clear the actor's grant from whichever slot they held. Same for `abort_harvest` and the source-depleted abort path (which routes through `finalize_failed_action`). **Correction applied:** add slot-clear logic to `commit_harvest`, `abort_harvest`, and the depleted-source abort path. The grant's `actor` identifies which slot to clear.
+
+18. **Enqueue write must persist when start fails.** Per `start_gate.rs:135-151`, when `start_handler` returns `Err`, the WorldTxn is dropped (writes lost) and the failure handler runs against a fresh txn. So enqueue-on-full must happen in `record_harvest_start_failure` (which gets a committable txn), not in `start_harvest`. **Correction applied:** `start_harvest` returns `Err(ActionError::PreconditionFailed("extraction_slots_full"))` when no free slot; `record_harvest_start_failure` matches the error message and writes the enqueue. Tests assert the queue state after the failed start.
+
+19. **Ranking integration adds `desired_target` to motive_score.** Two existing motive_score arms for `AcquireCommodity` use `quantity: _` (lines 981, 990, 996). Per spec D8 / ticket section 4, `desired_target` should bias the score so that a higher target scales motive higher. **Correction applied:** add a small `desired_target` multiplier to motive_score in the AcquireCommodity arms. Use `Permille` arithmetic; cap the multiplier to avoid overflow and to keep the urgency-driven base term dominant.
+
+20. **Affordance query already exposes harvest at the workstation; no `extraction_slots` field needed in the affordance descriptor.** Search treats one workstation = one affordance regardless of slot count; slot allocation is a runtime concern at start time. **Correction applied:** drop section 5 of `What to Change`. No edits to `crates/worldwake-sim/src/affordance_query.rs`. Drops it from `Files to Touch`.
+
+21. **Search terminal check already delegates to `is_satisfied`.** Ticket 002 made `is_satisfied` compare against `desired_min`; the planner's terminal-goal-satisfied path already delegates to it. **Correction applied:** drop section 6 of `What to Change` (verification only — no code edit). Drops `crates/worldwake-ai/src/goal_model.rs` from `Files to Touch`.
 
 ## Architecture Check
 
@@ -214,3 +232,41 @@ Locate the planner's terminal-goal-satisfied check (likely `crates/worldwake-ai/
 4. `cargo test --workspace`
 5. `cargo clippy --workspace --all-targets -- -D warnings`
 6. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-27.
+
+- **Multi-slot harvest start handler.** Rewrote `start_harvest` (`crates/worldwake-systems/src/production_actions.rs:441`) to scan `ResourceExtractionQueues.queues[..]` for the lowest-index free slot (or actor's existing grant) and write the grant inline. When every slot is foreign-granted the handler returns `ActionError::PreconditionFailed("extraction_slots_full")`; the new `record_harvest_start_failure` arm matches that sentinel and enqueues the actor on the shortest-waitlist slot using its fresh failure-handler transaction (the start-handler txn is dropped on `Err`). Added matching slot-release logic to `commit_harvest` (success and depleted paths) and `abort_harvest` so held slots free up for the next agent.
+- **Removed temporal `ReservationReq` from `harvest_action_def`.** Slot occupancy now lives entirely in `ResourceExtractionQueues` (FND-26); the temporal `try_reserve` substrate was incompatible with multi-slot parallel harvests on the same source. Reassessment item 16.
+- **Quantity-aware candidate emission.** Added `derive_acquire_commodity_quantity` and `compute_target_units` helpers in `candidate_generation.rs:2862` that read the agent's `MetabolismProfile`, `HomeostaticNeeds`, `DriveThresholds`, `CarryCapacity`, and `load_of_entity` to compute a quantity from need projection × rate / `consumable_profile.{hunger,thirst}_relief_per_unit`, bounded by carry headroom in units (per spec D8). The horizon-gate suppresses emission when the projected breach lies beyond `DEFAULT_ACQUISITION_HORIZON` (200 ticks) — implementing Design Goal 3 without a goal-level TTL. Both emission sites at lines 2972 and 3036 now consume the helper; the substitute-trade emitter derives its own quantity from the substitute commodity.
+- **`metabolism_profile` exposed on `GoalBeliefView`.** Added the trait method (with default `None`) on `GoalBeliefView` (`crates/worldwake-sim/src/belief_view.rs:435`) and the corresponding forwarder in the blanket `impl<T: …> GoalBeliefView for T` so the candidate generator's `&dyn GoalBeliefView` view sees it. `PerAgentBeliefView` already implemented the underlying `ProfileBeliefView::metabolism_profile`.
+- **Ranker integration.** `motive_score` (`ranking.rs:984`) now adds an `acquire_commodity_quantity_bonus` (capped at +100) for every `AcquireCommodity` arm so agents whose goal demands more units rank the goal slightly higher when other things are equal. The single-unit baseline yields +0, preserving existing rankings for goals constructed via `AcquisitionQuantity::single()`. The S131 forward-compat tiebreak is a no-op until `ReliabilityRecord.average_wait_ticks` lands; the success-ratio fallback is satisfied by the existing `apply_source_reliability_discount` pipeline (`failure_ratio_permille` is the inverse).
+- **Failure classification widening.** Updated `classify_production_failure` (`failure_handling.rs:498`) to inspect `ResourceExtractionQueues` and emit `BlockingFact::ReservationConflict` when every slot has a foreign grant — preserving the pre-multi-slot contention-conflict semantics. Also added an explicit `extraction_slots_full` arm in `classify_precondition_failure_detail` for the same outcome on the start-failure path.
+- **Test fixture migrations.** `setup_world` in `production_actions.rs` `#[cfg(test)]`, `place_workstation_with_source` and `place_exclusive_workstation_with_source` in `golden_harness/mod.rs`, the manual world setup in `harvest_missing_policy_fails_commit`, and the multi-actor scheduler fixture in `e10_production_transport_integration.rs` all now register `ResourceExtractionQueues` mirroring the production scenario translator. Two existing harvest contention tests (`harvest_reservation_blocks_second_actor_and_abort_preserves_source` → `harvest_single_slot_blocks_second_actor_and_abort_releases_slot`, and `harvest_start_requires_matching_grant_and_consumes_it` → `harvest_start_grants_extraction_slot_and_releases_on_commit`) were rewritten for the new slot-grant lifecycle.
+- **Focused tests added.**
+  - `production_actions.rs` `#[cfg(test)]`: `harvest_start_picks_free_slot_for_three_concurrent_agents`, `harvest_start_enqueues_third_actor_when_single_slot_is_full`, `harvest_start_grants_extraction_slot_and_releases_on_commit`, `harvest_single_slot_blocks_second_actor_and_abort_releases_slot`.
+  - `candidate_generation.rs` `#[cfg(test)]`: `candidate_gen_quantity_aware_emission_derives_target_from_horizon`, `candidate_gen_horizon_gate_suppresses_far_future_breach`, `candidate_gen_no_s126_fallback_emits_single_unit_quantity`. Extended `TestBeliefView` with a per-agent `metabolism_profiles` map.
+  - `ranking.rs` `#[cfg(test)]`: `motive_score_falls_back_to_success_ratio_for_acquire_commodity` — exercises the existing `failure_ratio_permille` discount on two believed sources with different reliability records.
+- **Snapshot golden refresh.** The `survival_baseline_decision_history_section_matches_golden` golden held without an update because the new failure-classification path (`ResourceExtractionQueues`-aware contention check + `extraction_slots_full` arm) preserves the prior `BlockingFact(ReservationConflict)` semantics for the multi-agent water-well scenario.
+
+## Deviations
+
+- The original ticket Section 4 ranking work assumed the source-reliability tiebreak required new code in `motive_score`. Live `apply_source_reliability_discount` already implements the `failure_ratio_permille` contract; ticket reassessment item 14 narrowed Section 4 to: (a) `desired_target` participation in motive score, (b) a focused proof of the existing fallback. Recorded as Assumption Reassessment item 14.
+- The `believed_carried_load_for` helper (Section 2 of the ticket) was dropped per reassessment item 15 — `GoalBeliefView::carry_capacity` and `load_of_entity` already exist; headroom is computed inline using the same pattern as the existing `validate_harvest_payload_override`.
+- The affordance-query `extraction_slots` exposure (Section 5) was dropped per item 20 — search treats one workstation = one affordance regardless of slot count; slot allocation is a runtime concern at start time.
+- The search terminal-check verification (Section 6) was dropped per item 21 — ticket 002 already routes the planner's terminal check through `is_satisfied`, which compares against `desired_min`.
+- `harvest_action_def` no longer declares `reservation_requirements`; the temporal `try_reserve` substrate is incompatible with multi-slot parallel harvests on the same source. Slot occupancy is owned by `ResourceExtractionQueues`. Recorded as Assumption Reassessment item 16.
+- The "enqueue when slots full" path persists writes via the failure handler (`record_harvest_start_failure`) on a fresh transaction, because `start_gate.rs` drops the start-handler txn on `Err`. Sentinel `PreconditionFailed("extraction_slots_full")` distinguishes the slots-full case from other harvest start failures. Recorded as Assumption Reassessment item 18.
+- `BlockerMemory` semantics for the multi-slot full case map to `BlockingFact::ReservationConflict`, preserving the prior single-slot-temporal-reservation classification — observable downstream in `classify_production_failure` (`failure_handling.rs`) and the `classify_precondition_failure_detail` arm.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib harvest_start` (4/4 ok — multi-slot start tests).
+- Passed `cargo test -p worldwake-ai --lib candidate_gen_` (3/3 ok — quantity emission, horizon-gate, fallback).
+- Passed `cargo test -p worldwake-ai --lib motive_score_falls_back` (1/1 ok — ranker tiebreak via existing discount).
+- Passed `cargo test -p worldwake-ai --test golden_ai_decisions golden_local_depleted_source` (1/1 ok — depleted-source regeneration golden, after harness fixture migration).
+- Passed `cargo test -p worldwake-cli --test observer_decision_history` (1/1 ok — multi-agent decision-history snapshot).
+- Passed `cargo test --workspace` — full workspace green.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh` end-to-end (fmt-check, workspace tests, both clippy variants, scenario-coverage --check; exit 0).
