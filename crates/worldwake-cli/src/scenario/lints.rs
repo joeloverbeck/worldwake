@@ -257,6 +257,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         }
     }
 
@@ -281,6 +282,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         }
     }
 

@@ -38,7 +38,7 @@ use crate::{
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
     production::{
-        CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob,
+        CarryCapacity, InTransitOnEdge, KnownRecipes, LastHarvestTrace, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,
     },
     pursuit::PursuitProfile,

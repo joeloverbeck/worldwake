@@ -1565,6 +1565,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                last_harvest_traces,
+                LastHarvestTrace,
+                insert_last_harvest_trace,
+                get_last_harvest_trace,
+                get_last_harvest_trace_mut,
+                remove_last_harvest_trace,
+                has_last_harvest_trace,
+                iter_last_harvest_traces,
+                insert_component_last_harvest_trace,
+                get_component_last_harvest_trace,
+                get_component_last_harvest_trace_mut,
+                remove_component_last_harvest_trace,
+                has_component_last_harvest_trace,
+                entities_with_last_harvest_trace,
+                query_last_harvest_trace,
+                count_with_last_harvest_trace,
+                "LastHarvestTrace",
+                |kind| kind == EntityKind::Facility || kind == EntityKind::Place,
+                LastHarvestTrace,
+                crate::LastHarvestTrace,
+                set_component_last_harvest_trace,
+                clear_component_last_harvest_trace,
+                txn_simple_set
+            }
+            {
                 production_output_ownership_policies,
                 ProductionOutputOwnershipPolicy,
                 insert_production_output_ownership_policy,

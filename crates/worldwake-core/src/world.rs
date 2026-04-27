@@ -10,18 +10,18 @@ use crate::{
     DriveEscalationProfile, DriveThresholds, EntityAllocator, EntityId, EntityKind, EntityMeta,
     EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
     FactionData, GroundSince, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
-    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastProactiveExplorationTick,
-    LastSeenMemory, LearnedOpportunityMemory, LoadUnits, LotOperation, MemoryCapacityProfile,
-    MerchandiseProfile, MetabolismProfile, Name, NoticeContent, ObligationExecutionTracker,
-    ObligationSatiationProfile, OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile,
-    PatrolRoute, PerceptionProfile, PlaceTag, PlaceTagSet, PlaceVisibilityProfile,
-    PreferenceProfile, ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry,
-    PursuitProfile, Quantity, RecordData, RelationTables, RepairMemory, ResourceSource,
-    RewardEncumbrance, RouteExperience, SaleListing, SceneEvidence, SourceReliability,
-    StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
-    WoundList, component_schema::with_component_schema_entries,
+    IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastHarvestTrace,
+    LastProactiveExplorationTick, LastSeenMemory, LearnedOpportunityMemory, LoadUnits,
+    LotOperation, MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, Name,
+    NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+    OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PlaceTag,
+    PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
+    ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, RecordData,
+    RelationTables, RepairMemory, ResourceSource, RewardEncumbrance, RouteExperience, SaleListing,
+    SceneEvidence, SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences,
+    TellProfile, TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, ViolationMemory,
+    WorkstationMarker, WorldError, WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -127,6 +127,7 @@ pub struct World {
     relations: RelationTables,
     topology: Topology,
     commodity_decay: CommodityDecayMap,
+    harvest_trace_retention_ticks: u32,
 }
 
 impl World {
@@ -142,6 +143,7 @@ impl World {
             relations: RelationTables::default(),
             topology,
             commodity_decay: CommodityDecayMap::default(),
+            harvest_trace_retention_ticks: crate::HARVEST_TRACE_RETENTION_TICKS,
         })
     }
 
@@ -152,6 +154,19 @@ impl World {
 
     pub fn set_commodity_decay(&mut self, commodity_decay: CommodityDecayMap) {
         self.commodity_decay = commodity_decay;
+    }
+
+    /// Retention window (ticks) for [`LastHarvestTrace`] entries during the
+    /// item-decay maintenance pass. Defaults to
+    /// [`crate::HARVEST_TRACE_RETENTION_TICKS`]; per-scenario overrides land
+    /// here through `spawn_scenario`.
+    #[must_use]
+    pub const fn harvest_trace_retention_ticks(&self) -> u32 {
+        self.harvest_trace_retention_ticks
+    }
+
+    pub fn set_harvest_trace_retention_ticks(&mut self, ticks: u32) {
+        self.harvest_trace_retention_ticks = ticks;
     }
 
     pub(crate) fn create_entity(&mut self, kind: EntityKind, tick: Tick) -> EntityId {

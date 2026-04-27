@@ -55,6 +55,11 @@ pub struct ScenarioDef {
     /// Values must be non-empty justification strings.
     #[serde(default)]
     pub scenario_lint_overrides: BTreeMap<crate::scenario::lints::LintRule, String>,
+    /// Optional override for the `LastHarvestTrace` retention window
+    /// (ticks). When `None`, the global default
+    /// `worldwake_core::HARVEST_TRACE_RETENTION_TICKS` is used. (S127 §D5/§D10)
+    #[serde(default)]
+    pub harvest_trace_retention_ticks: Option<u32>,
 }
 
 /// Authored directed hostility relation between two named entities.

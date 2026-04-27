@@ -15,7 +15,7 @@ use worldwake_core::{
     DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
     ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LoadUnits,
+    LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LoadUnits,
     MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
     OfficeData, PerceptionSource, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordedViolation, ResourceSource, RewardEncumbrance,
@@ -1815,6 +1815,16 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
             .and_then(|state| state.resource_source.clone())
     }
 
+    fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
+        // FND-14A: only co-located agents can perceive a source's harvest
+        // trace directly. Off-place propagation is the responsibility of
+        // ShareBelief / report channels (not this surface).
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
+            return self.world.get_component_last_harvest_trace(entity).cloned();
+        }
+        None
+    }
+
     fn has_production_job(&self, entity: EntityId) -> bool {
         self.world.has_component_production_job(entity)
     }
@@ -1865,12 +1875,12 @@ mod tests {
         ClaimValue, CognitiveProfile, CombatProfile, CommodityKind, ControlSource, DisposalProfile,
         EdgeExperience, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId,
         EntityKind, EventLog, ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState,
-        ExpectationStore, ExplorationProfile, FactionData, FactionPurpose, HomeostaticNeedId,
-        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-        ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
-        PerceptionSource, Permille, Place, PlaceTag, PreferenceProfile, Quantity,
-        RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
+        ExpectationStore, ExplorationProfile, FactionData, FactionPurpose, HarvestTraceEntry,
+        HomeostaticNeedId, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
+        PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, PreferenceProfile,
+        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceSource, RightKind,
         RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology,
         TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
@@ -5118,5 +5128,113 @@ mod tests {
         assert_eq!(stock.value, Quantity(6));
         assert_eq!(stock.status, crate::belief_view::BeliefStatus::Certain);
         assert_eq!(stock.claimed_event_tick, Some(Tick(9)));
+    }
+
+    #[test]
+    fn belief_view_last_harvest_trace_co_located_only() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let near_place = places[0];
+        let remote_place = world.topology().neighbors(near_place)[0];
+
+        let trace = LastHarvestTrace {
+            entries: vec![
+                HarvestTraceEntry {
+                    harvester: EntityId {
+                        slot: 7,
+                        generation: 0,
+                    },
+                    tick: Tick(11),
+                    quantity: 3,
+                    partial: false,
+                },
+                HarvestTraceEntry {
+                    harvester: EntityId {
+                        slot: 9,
+                        generation: 0,
+                    },
+                    tick: Tick(15),
+                    quantity: 1,
+                    partial: true,
+                },
+            ],
+        };
+
+        let (agent, near_source, remote_source) = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let near_source = txn.create_entity(EntityKind::Facility);
+            let remote_source = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(agent, near_place).unwrap();
+            txn.set_ground_location(near_source, near_place).unwrap();
+            txn.set_ground_location(remote_source, remote_place)
+                .unwrap();
+            txn.set_component_workstation_marker(
+                near_source,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_workstation_marker(
+                remote_source,
+                WorkstationMarker(WorkstationTag::OrchardRow),
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                near_source,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(8),
+                    max_quantity: Quantity(12),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                    extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_resource_source(
+                remote_source,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(5),
+                    max_quantity: Quantity(12),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                    extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+                },
+            )
+            .unwrap();
+            txn.set_component_last_harvest_trace(near_source, trace.clone())
+                .unwrap();
+            txn.set_component_last_harvest_trace(remote_source, trace.clone())
+                .unwrap();
+            commit_txn(txn);
+            (agent, near_source, remote_source)
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        // Co-located: authoritative trace is visible.
+        assert_eq!(
+            FacilityBeliefView::last_harvest_trace(&view, near_source),
+            Some(trace.clone())
+        );
+        assert_eq!(
+            GoalBeliefView::last_harvest_trace(&view, near_source),
+            Some(trace)
+        );
+
+        // Remote: trace is gated off, even though the agent could in
+        // principle hold a believed-entity snapshot for the source.
+        assert_eq!(
+            FacilityBeliefView::last_harvest_trace(&view, remote_source),
+            None
+        );
+        assert_eq!(
+            GoalBeliefView::last_harvest_trace(&view, remote_source),
+            None
+        );
     }
 }

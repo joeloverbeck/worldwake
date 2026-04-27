@@ -233,7 +233,8 @@ pub use plan_step_guards::{
     ExpectationKindTag, InvalidatorTag, MismatchDetail, ObservationPredicate, StatePredicate,
 };
 pub use production::{
-    CarryCapacity, InTransitOnEdge, KnownRecipes, ProductionJob, ProductionOutputOwner,
+    CarryCapacity, HARVEST_TRACE_MAX_ENTRIES, HARVEST_TRACE_RETENTION_TICKS, HarvestTraceEntry,
+    InTransitOnEdge, KnownRecipes, LastHarvestTrace, ProductionJob, ProductionOutputOwner,
     ProductionOutputOwnershipPolicy, RecipeId, ResourceSource, WorkstationMarker, WorkstationTag,
 };
 pub use pursuit::PursuitProfile;

@@ -152,6 +152,10 @@ fn spawn_scenario_inner(def: &ScenarioDef) -> Result<SpawnedSimulation, Scenario
             .clone()
             .unwrap_or_else(default_commodity_decay_map),
     );
+    world.set_harvest_trace_retention_ticks(
+        def.harvest_trace_retention_ticks
+            .unwrap_or(worldwake_core::HARVEST_TRACE_RETENTION_TICKS),
+    );
     let mut event_log = EventLog::new();
 
     spawn_entities(
@@ -1325,6 +1329,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         }
     }
 
@@ -1462,6 +1467,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1540,6 +1546,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1636,6 +1643,26 @@ mod tests {
     }
 
     #[test]
+    fn test_spawn_minimal_scenario_uses_default_harvest_trace_retention() {
+        let spawned = spawn_scenario(&minimal_def()).unwrap();
+
+        assert_eq!(
+            spawned.state.world().harvest_trace_retention_ticks(),
+            worldwake_core::HARVEST_TRACE_RETENTION_TICKS,
+        );
+    }
+
+    #[test]
+    fn test_spawn_scenario_applies_harvest_trace_retention_override() {
+        let mut def = minimal_def();
+        def.harvest_trace_retention_ticks = Some(75);
+
+        let spawned = spawn_scenario(&def).unwrap();
+
+        assert_eq!(spawned.state.world().harvest_trace_retention_ticks(), 75,);
+    }
+
+    #[test]
     fn test_spawn_agents_at_places() {
         let def = ScenarioDef {
             seed: 1,
@@ -1667,6 +1694,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1715,6 +1743,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1752,6 +1781,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1794,6 +1824,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1835,6 +1866,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1891,6 +1923,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1945,6 +1978,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -1999,6 +2033,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2058,6 +2093,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2119,6 +2155,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let result = spawn_scenario(&def);
@@ -2179,6 +2216,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2244,6 +2282,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2311,6 +2350,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2381,6 +2421,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2465,6 +2506,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2539,6 +2581,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2593,6 +2636,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2636,6 +2680,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2755,6 +2800,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2805,6 +2851,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2875,6 +2922,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2927,6 +2975,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3043,6 +3092,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3107,6 +3157,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3162,6 +3213,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3260,6 +3312,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -3373,6 +3426,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let Err(error) = spawn_scenario(&def) else {
@@ -3414,6 +3468,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).expect("office scenario should spawn");
@@ -3500,6 +3555,7 @@ mod tests {
             survival_health_contract: None,
             compaction_interval: 0,
             scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
         };
 
         let spawned = spawn_scenario(&def).expect("office treasury scenario should spawn");
