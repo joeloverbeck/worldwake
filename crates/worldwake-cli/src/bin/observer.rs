@@ -369,6 +369,8 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::GoalCommitted(inner) => inner.agent,
         DecisionEventPayload::GoalSuspended(inner) => inner.agent,
         DecisionEventPayload::GoalAbandoned(inner) => inner.agent,
+        DecisionEventPayload::SleepEpisodeStarted(inner) => inner.sleeper,
+        DecisionEventPayload::SleepEpisodeEnded(inner) => inner.sleeper,
         DecisionEventPayload::PlanAdopted(inner) => inner.agent,
         DecisionEventPayload::PlanInvalidated(inner) => inner.agent,
         DecisionEventPayload::ExpectationMismatch(inner) => inner.agent,
@@ -386,6 +388,8 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::GoalCommitted(_) => "GoalCommitted",
         DecisionEventPayload::GoalSuspended(_) => "GoalSuspended",
         DecisionEventPayload::GoalAbandoned(_) => "GoalAbandoned",
+        DecisionEventPayload::SleepEpisodeStarted(_) => "SleepEpisodeStarted",
+        DecisionEventPayload::SleepEpisodeEnded(_) => "SleepEpisodeEnded",
         DecisionEventPayload::PlanAdopted(_) => "PlanAdopted",
         DecisionEventPayload::PlanInvalidated(_) => "PlanInvalidated",
         DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
@@ -437,6 +441,24 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
                     switch_kind,
                 } => format!("GoalSwitched({switch_kind:?}->{:?})", new_goal.kind),
             }
+        ),
+        DecisionEventPayload::SleepEpisodeStarted(inner) => format!(
+            "place={} min={} max={} target={} modifier={} wake_conditions={:?}",
+            inner.place,
+            inner.intended_min_ticks,
+            inner.intended_max_ticks,
+            inner.target_recovery.value(),
+            inner.recovery_modifier.value(),
+            inner.wake_conditions
+        ),
+        DecisionEventPayload::SleepEpisodeEnded(inner) => format!(
+            "place={} ticks={}->{} reason={:?} recovery={} fatigue={}",
+            inner.place,
+            inner.start_tick.0,
+            inner.end_tick.0,
+            inner.end_reason,
+            inner.accumulated_recovery.value(),
+            inner.final_fatigue.value()
         ),
         DecisionEventPayload::PlanAdopted(inner) => {
             format!(

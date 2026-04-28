@@ -45,6 +45,7 @@ use crate::{
     pursuit::PursuitProfile,
     repair_memory::RepairMemory,
     reward_encumbrance::RewardEncumbrance,
+    sleep_episode::{SleepEpisode, SleepQualityProfile},
     social_artifact::{ArtifactHeader, ArtifactPostingProfile, BountyTerms, NoticeContent},
     trade::{
         DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy,

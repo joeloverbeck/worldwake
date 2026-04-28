@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 53;
+pub const SAVE_FORMAT_VERSION: u32 = 54;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -192,7 +192,7 @@ mod tests {
         SaveableRuntime, Scheduler, SimulationState, SystemDispatchTable, SystemError,
         SystemExecutionContext, SystemId, SystemManifest, TickStepServices, step_tick,
     };
-    use std::num::NonZeroU64;
+    use std::num::{NonZeroU32, NonZeroU64};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
@@ -205,12 +205,14 @@ mod tests {
         ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
-        GoalSwitchReason, LastSeenMemory, LastSeenProvenance, LastSeenRecord, MaterializationTag,
-        PendingEvent, PerceptionSource, PlanAdoptedPayload, PlanInvalidatedPayload,
-        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary,
-        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        RewardEncumbrance, Seed, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, MaterializationTag, PendingEvent, PerceptionSource, PlanAdoptedPayload,
+        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
+        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+        ReplanTriggeredPayload, ReservationId, RewardEncumbrance, Seed, ShelterTag, SleepEpisode,
+        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile, StateHash,
+        SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec, WakeCondition,
+        WakeReason, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -333,6 +335,36 @@ mod tests {
             .unwrap();
         let _ = office_txn.commit(&mut event_log);
         let belief_place = world.topology().place_ids().next().unwrap();
+        let mut sleep_txn = new_txn(&mut world, Tick(2), CauseRef::Bootstrap);
+        sleep_txn
+            .set_component_sleep_episode(
+                actor,
+                SleepEpisode {
+                    place: belief_place,
+                    start_tick: Tick(2),
+                    intended_min_ticks: NonZeroU32::new(4).unwrap(),
+                    intended_max_ticks: NonZeroU32::new(40).unwrap(),
+                    target_recovery: worldwake_core::Permille::new(750).unwrap(),
+                    accumulated_recovery: worldwake_core::Permille::new(125).unwrap(),
+                    recovery_modifier: worldwake_core::Permille::new(875).unwrap(),
+                    wake_conditions: vec![
+                        WakeCondition::TargetRecoveryReached,
+                        WakeCondition::ScheduledCommitmentDue { tick: Tick(20) },
+                    ],
+                },
+            )
+            .unwrap();
+        sleep_txn
+            .set_component_sleep_quality_profile(
+                belief_place,
+                SleepQualityProfile {
+                    shelter: ShelterTag::Shelter,
+                    ground_comfort: GroundComfortTag::Soft,
+                    recovery_modifier: worldwake_core::Permille::new(875).unwrap(),
+                },
+            )
+            .unwrap();
+        let _ = sleep_txn.commit(&mut event_log);
         let (reserved_item, reservation) =
             spawn_item_with_reservation(&mut world, &mut event_log, actor);
         let mut beliefs = AgentBeliefStore::new();
@@ -785,6 +817,38 @@ mod tests {
                 }),
             ),
             (
+                EventTag::SleepEpisodeStarted,
+                DecisionEventPayload::SleepEpisodeStarted(SleepEpisodeStartedPayload {
+                    sleeper: actor,
+                    place,
+                    intended_min_ticks: NonZeroU32::new(4).unwrap(),
+                    intended_max_ticks: NonZeroU32::new(40).unwrap(),
+                    target_recovery: worldwake_core::Permille::new(750).unwrap(),
+                    wake_conditions: vec![
+                        WakeCondition::IntendedDurationReached,
+                        WakeCondition::ProjectedNeedBreach {
+                            need: HomeostaticNeedId::Thirst,
+                        },
+                    ],
+                    recovery_modifier: worldwake_core::Permille::new(875).unwrap(),
+                }),
+            ),
+            (
+                EventTag::SleepEpisodeEnded,
+                DecisionEventPayload::SleepEpisodeEnded(SleepEpisodeEndedPayload {
+                    sleeper: actor,
+                    place,
+                    start_tick: Tick(20),
+                    end_tick: Tick(33),
+                    end_reason: WakeReason::ProjectedNeedBreach {
+                        need: HomeostaticNeedId::Thirst,
+                        projected_breach_tick: Tick(34),
+                    },
+                    accumulated_recovery: worldwake_core::Permille::new(250).unwrap(),
+                    final_fatigue: worldwake_core::Permille::new(500).unwrap(),
+                }),
+            ),
+            (
                 EventTag::PlanAdopted,
                 DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                     agent: actor,
@@ -892,6 +956,19 @@ mod tests {
         assert_eq!(
             restored.world().commodity_decay(),
             state.world().commodity_decay()
+        );
+        assert_eq!(
+            restored.world().get_component_sleep_episode(actor),
+            state.world().get_component_sleep_episode(actor)
+        );
+        let restored_sleep_place = state.world().topology().place_ids().next().unwrap();
+        assert_eq!(
+            restored
+                .world()
+                .get_component_sleep_quality_profile(restored_sleep_place),
+            state
+                .world()
+                .get_component_sleep_quality_profile(restored_sleep_place)
         );
         assert!(!restored.world().reservations_for(reserved_item).is_empty());
         let restored_belief = restored
@@ -1031,6 +1108,12 @@ mod tests {
             .chain(state.event_log().events_by_tag(EventTag::GoalCommitted))
             .chain(state.event_log().events_by_tag(EventTag::GoalSuspended))
             .chain(state.event_log().events_by_tag(EventTag::GoalAbandoned))
+            .chain(
+                state
+                    .event_log()
+                    .events_by_tag(EventTag::SleepEpisodeStarted),
+            )
+            .chain(state.event_log().events_by_tag(EventTag::SleepEpisodeEnded))
             .chain(state.event_log().events_by_tag(EventTag::PlanAdopted))
             .chain(state.event_log().events_by_tag(EventTag::PlanInvalidated))
             .chain(
@@ -1059,6 +1142,16 @@ mod tests {
             .chain(restored.event_log().events_by_tag(EventTag::GoalCommitted))
             .chain(restored.event_log().events_by_tag(EventTag::GoalSuspended))
             .chain(restored.event_log().events_by_tag(EventTag::GoalAbandoned))
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::SleepEpisodeStarted),
+            )
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::SleepEpisodeEnded),
+            )
             .chain(restored.event_log().events_by_tag(EventTag::PlanAdopted))
             .chain(
                 restored

@@ -86,6 +86,7 @@ pub mod relations;
 pub mod repair_memory;
 pub mod reward_encumbrance;
 pub mod rights;
+pub mod sleep_episode;
 pub mod social_artifact;
 pub mod test_utils;
 pub mod topology;
@@ -158,8 +159,8 @@ pub use decision_event_payload::{
     GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, OpportunityExpectationKindTag,
     PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
     PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
-    ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
-    SourceExpectationFailurePayload, SourceKeyPayload,
+    ReplanReason, ReplanTriggeredPayload, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload, WakeReason,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
@@ -243,6 +244,9 @@ pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, Re
 pub use repair_memory::{RepairEntry, RepairKey, RepairMemory};
 pub use reward_encumbrance::{RewardEncumbrance, RewardReservation};
 pub use rights::{EffectiveRight, RightKind};
+pub use sleep_episode::{
+    GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, WakeCondition,
+};
 pub use social_artifact::{
     ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile, ArtifactState,
     BountyTarget, BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
