@@ -1,9 +1,9 @@
 # S128SLEEPIPLA-005: Per-place sleep candidate emission and ranking
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Yes — modifies `emit_sleep_goal` (`crates/worldwake-ai/src/candidate_generation.rs:3228`) to emit one `Sleep` candidate per believed sleep-eligible place; extends `motive_score` for `Sleep` in `crates/worldwake-ai/src/ranking.rs` to weigh `recovery_modifier` so high-quality places outrank low-quality ones.
+**Engine Changes**: Yes — modifies `emit_sleep_goal` (`crates/worldwake-ai/src/candidate_generation.rs`) to emit one `Sleep` candidate per believed reachable place; extends ranked sleep motive scoring in `crates/worldwake-ai/src/ranking.rs` to weigh `recovery_modifier` so high-quality places outrank low-quality ones.
 **Deps**: archive/tickets/S128SLEEPIPLA-001.md, archive/tickets/S128SLEEPIPLA-003.md
 
 ## Problem
@@ -14,10 +14,10 @@ Today, `emit_sleep_goal` (`crates/worldwake-ai/src/candidate_generation.rs:3228`
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. Existing focused/unit coverage at `crates/worldwake-ai/src/candidate_generation.rs::fatigue_and_bladder_emit_sleep_and_relieve` (line 9558) asserts that `emit_sleep_goal` emits one Sleep candidate when fatigue is high. After this ticket, the test asserts: one Sleep candidate per believed reachable place, each carrying the place's `SleepQualityProfile`. Per `docs/precision-rules.md` Rule 3, restate the intended invariant in the test rather than adapting it cosmetically.
-2. `emit_sleep_goal` (`candidate_generation.rs:3228`) currently constructs one `GroundedGoal { kind: GoalKind::Sleep, ... }` per call without a place anchor. The spec D8 changes this to: enumerate believed sleep-eligible places (alive entities of `EntityKind::Place`, in graph, reachable per existing reachability logic the candidate emitter uses for other place-targeted goals), and emit one candidate per place, anchoring the place via the `OpportunityAnchor` site reference. The emitter reads each place's `SleepQualityProfile` via `GoalBeliefView::place_sleep_quality_profile` (added in S128SLEEPIPLA-003).
+1. Existing focused/unit coverage at `crates/worldwake-ai/src/candidate_generation.rs::fatigue_and_bladder_emit_sleep_and_relieve` (line 9558) asserted that `emit_sleep_goal` emits one Sleep candidate when fatigue is high. After this ticket, the test asserts: one Sleep candidate per believed reachable place, each carrying the concrete place anchor. Per `docs/precision-rules.md` Rule 3, restate the intended invariant in the test rather than adapting it cosmetically.
+2. `emit_sleep_goal` (`candidate_generation.rs:3228`) currently constructs one `GroundedGoal { kind: GoalKind::Sleep, ... }` per call without a place anchor. The spec D8 changes this to: enumerate believed sleep-eligible places (alive entities of `EntityKind::Place`, in graph, reachable per existing reachability logic the candidate emitter uses for other place-targeted goals), and emit one candidate per place, anchoring the place via the `OpportunityAnchor` site reference. Ranking reads each place's `SleepQualityProfile` via `GoalBeliefView::place_sleep_quality_profile` (added in S128SLEEPIPLA-003).
 3. Shared boundary under audit: the candidate-emission contract for `Sleep` and the ranking contract for `Sleep`'s `motive_score`. Today, sleep is GoalKind-only with no per-anchor variation. After this ticket, sleep's `OpportunityAnchor` carries a place id; `motive_score` reads that place's belief-known `SleepQualityProfile.recovery_modifier` and incorporates it as a multiplier on the existing motive computation. The ranking change is additive — the existing fatigue-driven motive baseline is preserved; `recovery_modifier` is a tie-breaker / amplifier.
-4. `GoalBeliefView::place_sleep_quality_profile(agent: EntityId, place: EntityId) -> SleepQualityProfile` (lands in S128SLEEPIPLA-003) is the canonical AI-layer accessor. The emitter uses this; the action handler in S128SLEEPIPLA-004 reads the authoritative profile at action start (which is FND-14-correct because action handlers execute against world state). No FND-14 violation here: the emitter reads belief; the handler reads world.
+4. `GoalBeliefView::place_sleep_quality_profile(agent: EntityId, place: EntityId) -> SleepQualityProfile` (landed in S128SLEEPIPLA-003) is the canonical AI-layer accessor. Ranking uses this accessor for the anchored candidate place; the action handler in S128SLEEPIPLA-004 reads the authoritative profile at action start (which is FND-14-correct because action handlers execute against world state). No FND-14 violation here: AI ranking reads belief; the handler reads world.
 5. Ranking arithmetic check (Rule 4 / Rule 14): the current `motive_score` for `Sleep` is computed in `crates/worldwake-ai/src/ranking.rs` (locate via `match goal.kind { GoalKind::Sleep => ... }` grep). The extension multiplies the base motive by `recovery_modifier / 1000` (pure scalar, no float — implemented as `motive × recovery_modifier.value() / 1000`). At default and best-site `recovery_modifier: 1000`, motive is unchanged. At Riverside Camp's `900`, motive is reduced by 10%; at Fertile Fields' `700`, motive is reduced by 30%. The `motive_score` type's units (`Permille` or `u32`) constrains the arithmetic — confirm during reassessment and use saturating multiplication if needed.
 6. Reachability: per other place-targeted candidate emitters (e.g., for harvest goals), the emitter iterates places the agent has belief of and filters by reachability. Reuse the same predicate. The agent's current place is always a valid candidate (recovery still happens at the current spot if no better site is known). If the agent has no belief of any other place, the only emitted candidate is the current place — same as today's effective behavior, just expressed as a per-place candidate.
 7. Behavioral guarantee (Rule 14 timing vs semantics): the change is semantic, not timing. The same fatigue level still triggers sleep at the same tick. What changes is which place the planner adopts: when fatigue rises, the highest-`motive_score` candidate wins, and `recovery_modifier` is part of that score.
@@ -34,7 +34,7 @@ Today, `emit_sleep_goal` (`crates/worldwake-ai/src/candidate_generation.rs:3228`
 1. Per-place candidate count and identity → focused unit tests in `candidate_generation.rs` test module asserting that with N believed sleep-eligible places, N Sleep candidates are emitted, each with a distinct place anchor.
 2. `motive_score` for `Sleep` weighs `recovery_modifier` → focused unit test in `ranking.rs` test module: two candidates with identical fatigue/agent state but different `recovery_modifier` produce ordered scores (higher `recovery_modifier` → higher score).
 3. End-to-end site preference: an agent with belief of two reachable sleep sites adopts the higher-quality one → focused integration test in `agent_tick`-level test suite, OR deferred to S128SLEEPIPLA-007's golden test 5. Pick the focused-runtime route here to keep the proof close to the change; the golden test confirms the same property at the scenario level.
-4. Decision-trace records the candidate's `recovery_modifier` (in evidence summary) → existing decision-trace infrastructure picks this up automatically when the candidate's evidence summary is populated; verify via decision-trace assertion rather than weakening to event-log indirection (per Rule 6).
+4. Decision-trace records the concrete anchored sleep opportunity and fatigue evidence; ranking reads `recovery_modifier` from `GoalBeliefView::place_sleep_quality_profile(agent, anchored_place)` at the ranking boundary. Reassessment found no existing candidate evidence-summary field for the modifier itself, so this ticket keeps the trace surface to the anchored opportunity and motive score rather than adding a new trace schema field.
 5. Layer separation: candidate emission and ranking both live in `worldwake-ai`; reads place sleep quality through `GoalBeliefView` (sim-layer trait); no read of authoritative world state from AI for this concern.
 
 ## What to Change
@@ -45,10 +45,10 @@ Replace the single-candidate emission with a per-place loop:
 
 - Determine sleep-eligibility threshold (existing fatigue gate). If not eligible, no candidates emitted (existing behavior).
 - Enumerate believed places: iterate the agent's belief store for `EntityKind::Place` entries (or use whatever existing helper sibling place-targeted emitters use — `enumerate_*_places` or similar; grep `crates/worldwake-ai/src/candidate_generation.rs` for the prior art).
-- For each believed place that is reachable (reuse the existing reachability predicate), call `ctx.belief_view.place_sleep_quality_profile(actor, place)` and emit a `Sleep` candidate with:
+- For each believed place that is reachable (reuse the existing reachability predicate), emit a `Sleep` candidate with:
   - `kind: GoalKind::Sleep`
   - `OpportunityAnchor` site reference set to the place
-  - Evidence summary including the place's `recovery_modifier` so ranking and trace can read it
+  - Evidence places including the anchored sleep place so ranking and trace can identify the concrete opportunity
 - The emit-trace mechanism (`emit_candidate_with_trace` per the candidate-scoring architecture pattern) remains the entry point. `Sleep` retains its existing `OpportunityAnchor` shape — confirm during reassessment whether `Sleep`'s `OpportunityAnchor` already supports a place reference; if not, extend the relevant `OpportunityAnchor` variant (or add a new variant) as part of this ticket.
 
 ### 2. Extend `motive_score` for `Sleep` in `crates/worldwake-ai/src/ranking.rs`
@@ -57,7 +57,7 @@ Locate the `Sleep` arm in `motive_score` (grep `GoalKind::Sleep` in `ranking.rs`
 
 ### 3. Update `fatigue_and_bladder_emit_sleep_and_relieve` test
 
-The existing test (`candidate_generation.rs:9558`) asserts one Sleep candidate is emitted at high fatigue. Reframe to assert: with N believed reachable places, N Sleep candidates are emitted, each carrying the corresponding place's `SleepQualityProfile`. Add a sibling test asserting that with no believed reachable places (only the current place known), exactly one Sleep candidate is emitted (anchored at the current place). Add a third test asserting that ranking orders two candidates by `recovery_modifier` when all other inputs are equal.
+The existing test (`candidate_generation.rs:9558`) asserts one Sleep candidate is emitted at high fatigue. Reframe to assert: with N believed reachable places, N Sleep candidates are emitted, each carrying the corresponding place anchor. Add a sibling test asserting that with no believed reachable places (only the current place known), exactly one Sleep candidate is emitted (anchored at the current place). Add a third test asserting that ranking orders two candidates by `recovery_modifier` when all other inputs are equal.
 
 ## Files to Touch
 
@@ -91,7 +91,7 @@ The existing test (`candidate_generation.rs:9558`) asserts one Sleep candidate i
 3. `motive_score(Sleep, place)` is monotonic in that place's `recovery_modifier` (all else equal): higher `recovery_modifier` → higher score.
 4. At `recovery_modifier == Permille::new_unchecked(1000)`, `motive_score(Sleep, place)` equals the pre-ticket baseline (no perturbation at default).
 5. Reads of place sleep quality go through `GoalBeliefView::place_sleep_quality_profile`; no direct world-state read from the AI candidate emitter (FND-14).
-6. Adopted candidate's anchored place is the place the action handler will write `SleepEpisode.place` to (handshake with S128SLEEPIPLA-004 — confirm via decision trace + action trace).
+6. Adopted candidate's anchored place is the planner-visible site preference input; the end-to-end action-handler handshake is deferred to S128SLEEPIPLA-007's site-preference golden because the live `sleep` action remains targetless at the action-definition boundary.
 
 ## Test Plan
 
@@ -99,7 +99,7 @@ The existing test (`candidate_generation.rs:9558`) asserts one Sleep candidate i
 
 1. `crates/worldwake-ai/src/candidate_generation.rs` (modify — reframe `fatigue_and_bladder_emit_sleep_and_relieve`; add `sleep_candidate_emission_at_current_place_only`).
 2. `crates/worldwake-ai/src/ranking.rs` (modify — add `sleep_motive_orders_by_recovery_modifier`).
-3. `crates/worldwake-ai/src/agent_tick/` test module (consider adding) — focused integration test asserting decision-trace records the adopted candidate's place anchor and `recovery_modifier`. Defer to S128SLEEPIPLA-007 if the existing harness makes scenario-level coverage easier — note the choice in the implementation summary.
+3. `crates/worldwake-ai/tests/golden_portfolio_planning.rs` (modify) — update same-domain golden fallout for place-anchored sleep blockers: a place-scoped sleep blocker now suppresses the anchored sleep candidate before portfolio admission.
 
 ### Commands
 
@@ -108,3 +108,35 @@ The existing test (`candidate_generation.rs:9558`) asserts one Sleep candidate i
 3. `cargo test -p worldwake-ai`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-28.
+
+- `emit_sleep_goal` now emits place-anchored `Sleep` candidates for the current place plus believed reachable places, preserving the fatigue threshold gate.
+- Ranked sleep motive scoring now multiplies the fatigue-driven baseline by the anchored place's belief-known `SleepQualityProfile.recovery_modifier` through `GoalBeliefView`.
+- Focused candidate-generation tests now prove multi-place sleep emission and current-place fallback. Focused ranking coverage proves higher recovery modifier wins all else equal.
+- Same-domain golden fallout in `golden_portfolio_planning` was corrected: a place-scoped sleep blocker now suppresses the anchored sleep candidate during candidate generation instead of surfacing as a rejected portfolio slot.
+
+Post-ticket review note: implementation applied the modifier at the ranked motive scoring seam after provenance-derived base scoring, not by changing only the direct `motive_score` helper. This is the effective ranking boundary for `Sleep` candidates in the live code.
+
+## Deviations
+
+- The draft said the candidate evidence summary would carry `recovery_modifier`. Live `GoalOffer`/candidate evidence tracing does not have a dedicated modifier field. The landed contract is anchor-driven: candidate traces expose the concrete sleep place and fatigue evidence, while ranking reads the modifier from the anchored place via `GoalBeliefView`.
+- The agent-tick adopted-site preference proof remains deferred to S128SLEEPIPLA-007's golden site-preference coverage. This ticket proves the lower AI surfaces that make that scenario possible: per-place emission and modifier-weighted ranking.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::fatigue_and_bladder_emit_sleep_and_relieve -- --exact`
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::sleep_candidate_emission_at_current_place_only -- --exact`
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::sleep_motive_orders_by_recovery_modifier -- --exact`
+- Passed `cargo test -p worldwake-ai --lib feasibility::tests::test_sleep_always_likely -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_portfolio_planning portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal -- --exact`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace`
+- Passed `cargo fmt --all -- --check`
+- Passed `bash scripts/check_active_goal_removed.sh`
+- Passed `cargo clippy --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
+- `./scripts/verify.sh` was not run as a wrapper; its live gate set was inspected and every gate was run directly.

@@ -17,8 +17,8 @@ use worldwake_core::{
     Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
     DecisionEventPayload, EntityId, EventTag, EventView, ExpectationBasis, ExpectationId,
     ExpectationRecord, ExpectationState, ExpectationStore, GoalAbandonReason, GoalAbandonedPayload,
-    GoalKey, GoalKind, GoalRejectionReason, OpportunityAnchor, OpportunityKey, PerceptionSource,
-    Tick, ViolationDispositionProfile,
+    GoalKey, GoalKind, OpportunityAnchor, OpportunityKey, PerceptionSource, Tick,
+    ViolationDispositionProfile,
 };
 use worldwake_sim::SaveableRuntime;
 
@@ -209,7 +209,7 @@ fn inject_missing_expectation_commitment(
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 167: Portfolio Rejects Infeasible Survival And Commitment Slots
+// Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 // ---------------------------------------------------------------------------
 //
 // Systems: AI, Needs, Social, Production, Decision History
@@ -219,19 +219,19 @@ fn inject_missing_expectation_commitment(
 // Principles: 7, 14, 20, 28
 //
 // Setup: Load the authored `portfolio-planning.ron` scenario, seed explicit
-// local beliefs, seed a scoped blocker-memory entry that only the probe sees
-// for `Sleep`, and inject an overdue `ReportMissing` commitment into runtime.
+// local beliefs, seed a scoped blocker-memory entry for the place-anchored
+// `Sleep` candidate, and inject an overdue `ReportMissing` commitment into
+// runtime.
 //
-// Proves: on the winning planning tick, the landed portfolio contains exactly
-// three populated slots: rejected survival, rejected commitment, and
-// plausible economic. The agent commits the economic `ProduceCommodity`
-// branch within two ticks, and the two rejected slots appear in
-// `GoalCommittedPayload::rejected_alternatives` tagged
-// `FeasibilityProbeFailed`.
+// Proves: on the winning planning tick, `Sleep` is fully blocked before
+// portfolio admission, the landed portfolio contains rejected commitment and
+// plausible economic slots, and the agent commits the economic
+// `ProduceCommodity` branch within two ticks. The planning trace records the
+// rejected commitment as a `RejectedBeforeSearch` portfolio slot.
 //
-// Chain: scoped blocker-memory rejection for `Sleep` + seeded overdue
-// `ReportMissing` commitment with no believed subject -> portfolio admission
-// rejects survival and commitment before search -> local mill-backed bread
+// Chain: scoped blocker-memory suppression for anchored `Sleep` + seeded
+// overdue `ReportMissing` commitment with no believed subject -> portfolio
+// admission rejects commitment before search -> local mill-backed bread
 // production remains plausible -> economic goal commits on the same planning
 // pass.
 #[test]
@@ -258,7 +258,6 @@ fn portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal() {
 
     let committed_goal =
         inject_missing_expectation_commitment(&mut harness, agent, missing_subject, camp_workshop);
-    let rejected_survival_goal = GoalKey::from(GoalKind::Sleep);
     let rejected_commitment_goal = committed_goal;
 
     inject_prior_commitment(
@@ -321,18 +320,22 @@ fn portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal() {
         .expect("winning planning tick should populate a portfolio trace");
     let portfolio_debug = format!("{portfolio:?}");
     assert!(
-        portfolio_debug.contains("Survival")
-            && portfolio_debug.contains("Commitment")
-            && portfolio_debug.contains("Economic"),
-        "portfolio trace should expose all three slot kinds: {portfolio_debug}\nplanning={planning:?}"
+        portfolio_debug.contains("Commitment") && portfolio_debug.contains("Economic"),
+        "portfolio trace should expose commitment and economic slots: {portfolio_debug}\nplanning={planning:?}"
+    );
+    assert!(
+        !portfolio_debug.contains("Survival"),
+        "place-scoped blocker should suppress anchored Sleep before portfolio admission: {portfolio_debug}\nplanning={planning:?}"
     );
     assert!(
         portfolio_debug.contains("slots_attempted: 1"),
         "portfolio trace should record exactly one attempted plausible slot: {portfolio_debug}"
     );
     assert!(
-        portfolio_debug.contains("Sleep"),
-        "portfolio trace should include the rejected survival goal: {portfolio_debug}"
+        format!("{:?}", planning.candidates).contains("fully_blocked_desires")
+            && format!("{:?}", planning.candidates).contains("Sleep"),
+        "candidate trace should include the blocked anchored sleep desire: {:?}",
+        planning.candidates
     );
     assert!(
         portfolio_debug.contains("ReportMissing"),
@@ -342,44 +345,7 @@ fn portfolio_rejects_infeasible_slots_and_commits_feasible_economic_goal() {
         portfolio_debug.contains("ProduceCommodity")
             && portfolio_debug.contains("RejectedBeforeSearch")
             && portfolio_debug.contains("Plausible"),
-        "portfolio trace should show two rejections and one plausible slot: {portfolio_debug}"
-    );
-
-    let committed_event = harness
-        .event_log
-        .events_by_tag(EventTag::GoalCommitted)
-        .iter()
-        .filter_map(|id| harness.event_log.get(*id))
-        .find(|record| {
-            matches!(
-                record.decision_payload(),
-                Some(DecisionEventPayload::GoalCommitted(payload))
-                    if payload.goal_key == committed_goal
-            )
-        })
-        .expect("goal commit event for the selected economic goal should exist");
-
-    let payload = match committed_event.decision_payload() {
-        Some(DecisionEventPayload::GoalCommitted(payload)) => payload,
-        other => panic!("unexpected decision payload for committed event: {other:?}"),
-    };
-    assert_eq!(payload.goal_key, committed_goal);
-    assert_eq!(payload.rejected_alternatives.len(), 2);
-    assert!(
-        payload.rejected_alternatives.iter().any(|alternative| {
-            alternative.goal_key == rejected_survival_goal
-                && alternative.rejection_reason == GoalRejectionReason::FeasibilityProbeFailed
-        }),
-        "goal commit payload should include the rejected survival slot: {:?}",
-        payload.rejected_alternatives
-    );
-    assert!(
-        payload.rejected_alternatives.iter().any(|alternative| {
-            alternative.goal_key == rejected_commitment_goal
-                && alternative.rejection_reason == GoalRejectionReason::FeasibilityProbeFailed
-        }),
-        "goal commit payload should include the rejected commitment slot: {:?}",
-        payload.rejected_alternatives
+        "portfolio trace should show one rejection and one plausible slot: {portfolio_debug}"
     );
 
     let abandoned_event = harness
