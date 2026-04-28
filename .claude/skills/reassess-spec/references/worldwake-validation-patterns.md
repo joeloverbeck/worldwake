@@ -31,6 +31,23 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 
 **Note**: Runtime-only components (not scenario-definable, always start at defaults) still require `component_schema.rs` registration and `create_agent()` insertion. The only exempt items are transient local variables that are never stored as ECS components. If the spec calls it a "component" and proposes `create_agent()` insertion, registration is mandatory.
 
+## New Component on EntityKind::Place
+
+**Trigger**: Spec adds a new ECS component registered on `EntityKind::Place` (or on the combined `EntityKind::Facility | EntityKind::Place` filter).
+
+**Verify the spec addresses**:
+
+1. `component_schema.rs` — registration with insert/get accessors, kind filter `|kind| kind == EntityKind::Place` (or the facility+place combination at lines 1560-1635). The component struct itself MUST live in `worldwake-core` per the same core-residence constraint as Agent components.
+2. `PlaceDef` — field in `crates/worldwake-cli/src/scenario/types.rs` (precedent: `visibility_profile: Option<PlaceVisibilityProfile>` at line 323). If the component contains `EntityId` references, create a `*Def` wrapper type with string names.
+3. `spawn_place` loop — set_component call inside the place-iteration block in `crates/worldwake-cli/src/scenario/mod.rs` (precedent: `set_component_place_visibility_profile` at line 276).
+4. **Universal vs. optional classification**:
+   - **Optional precedent** (only existing pattern as of S128 reassessment): conditional `if let Some(profile) = &place_def.field { txn.set_component_*(place_id, profile.clone())?; }`. Component is absent on places the scenario does not author. Runtime reads use `Option<&Component>` accessors.
+   - **Universal pattern** (no Place precedent prior to S128's `SleepQualityProfile` — flag the spec as setting a new convention if it picks this path): `spawn_place` always calls `txn.set_component_*(place_id, place_def.field.map(Into::into).unwrap_or_default())`. Runtime reads on known places use `expect()`. Mirrors the universal-on-Agent pattern (`metabolism_profile.unwrap_or_default()` at `mod.rs:576`).
+5. `Default` impl if universal.
+6. Sibling components co-residing on the same Place — check whether the new component duplicates or overlaps an existing place property (e.g., would the `recovery_modifier` belong on `PlaceVisibilityProfile`?). Apply 5f semantic-overlap analysis.
+
+**Note**: As of S128's reassessment, no universal-on-Place precedent exists in the codebase. The first such spec sets the convention and inherits responsibility for the precedent — flag this in the audit and note it in the spec's Component Registration table.
+
 ## New Component Read by AI Crate
 
 **Trigger**: Spec adds any new derived read the AI crate (candidate generation, ranking, or planning) consumes through `GoalBeliefView` — whether the underlying state is a new component, an existing component, a relation, or a composite read across multiple sources. The trigger fires on the *accessor surface*, not on whether a component is being introduced.

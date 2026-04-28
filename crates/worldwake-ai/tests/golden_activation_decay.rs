@@ -23,6 +23,7 @@ fn inert_metabolism() -> MetabolismProfile {
         nz(200),
         nz(8),
         nz(12),
+        nz(8),
         pm(0),
         pm(0),
         pm(0),

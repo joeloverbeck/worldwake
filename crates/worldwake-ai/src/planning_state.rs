@@ -4549,6 +4549,7 @@ mod tests {
                 NonZeroU32::new(20).unwrap(),
                 NonZeroU32::new(8).unwrap(),
                 NonZeroU32::new(9).unwrap(),
+                NonZeroU32::new(8).unwrap(),
                 pm(0),
                 pm(0),
                 pm(0),
@@ -4799,6 +4800,14 @@ mod tests {
                 PlannerDurationDependency::TravelToTarget => (
                     DurationExpr::TravelToTarget { target_index: 0 },
                     vec![market],
+                    ActionPayload::None,
+                ),
+                PlannerDurationDependency::Variable => (
+                    DurationExpr::Variable {
+                        min: std::num::NonZeroU32::new(1).unwrap(),
+                        max: std::num::NonZeroU32::new(64).unwrap(),
+                    },
+                    Vec::new(),
                     ActionPayload::None,
                 ),
             };

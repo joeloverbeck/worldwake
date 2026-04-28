@@ -150,10 +150,8 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
             .expect("survival preferences agent should always have needs");
         critical_need_runs.observe(needs, &thresholds);
 
-        let had_action = action_sink
-            .events_for_at(agent, tick)
-            .iter()
-            .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
+        let had_action =
+            golden_harness::agent_has_non_failed_action_or_active(&h, action_sink, agent, tick);
         let (start, max_need, count) = &mut idle_state;
         if had_action {
             if let Some(s) = start.take()

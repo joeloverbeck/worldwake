@@ -188,6 +188,9 @@ fn format_duration_estimate(duration: &worldwake_sim::DurationExpr) -> String {
     use worldwake_sim::DurationExpr;
     match duration {
         DurationExpr::Fixed(n) => format!(" — {} ticks", n.get()),
+        DurationExpr::Variable { min, max } => {
+            format!(" — {}-{} ticks", min.get(), max.get())
+        }
         DurationExpr::TravelToTarget { .. } | DurationExpr::EscortRouteTravel => {
             " — travel time".to_string()
         }
@@ -235,6 +238,7 @@ mod tests {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
+                sleep_quality: None,
             }],
             edges: vec![],
             bandit_camps: Vec::new(),
@@ -321,6 +325,7 @@ mod tests {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
+                sleep_quality: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {

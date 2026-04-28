@@ -1715,6 +1715,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                sleep_quality_profiles,
+                SleepQualityProfile,
+                insert_sleep_quality_profile,
+                get_sleep_quality_profile,
+                get_sleep_quality_profile_mut,
+                remove_sleep_quality_profile,
+                has_sleep_quality_profile,
+                iter_sleep_quality_profiles,
+                insert_component_sleep_quality_profile,
+                get_component_sleep_quality_profile,
+                get_component_sleep_quality_profile_mut,
+                remove_component_sleep_quality_profile,
+                has_component_sleep_quality_profile,
+                entities_with_sleep_quality_profile,
+                query_sleep_quality_profile,
+                count_with_sleep_quality_profile,
+                "SleepQualityProfile",
+                |kind| kind == EntityKind::Place,
+                SleepQualityProfile,
+                crate::SleepQualityProfile,
+                set_component_sleep_quality_profile,
+                clear_component_sleep_quality_profile,
+                txn_simple_set
+            }
+            {
                 bandit_faction_policies,
                 BanditFactionPolicy,
                 insert_bandit_faction_policy,
@@ -1837,6 +1862,31 @@ macro_rules! with_component_schema_entries {
                 crate::IntentionFrame,
                 set_component_intention_frame,
                 clear_component_intention_frame,
+                txn_simple_set
+            }
+            {
+                sleep_episodes,
+                SleepEpisode,
+                insert_sleep_episode,
+                get_sleep_episode,
+                get_sleep_episode_mut,
+                remove_sleep_episode,
+                has_sleep_episode,
+                iter_sleep_episodes,
+                insert_component_sleep_episode,
+                get_component_sleep_episode,
+                get_component_sleep_episode_mut,
+                remove_component_sleep_episode,
+                has_component_sleep_episode,
+                entities_with_sleep_episode,
+                query_sleep_episode,
+                count_with_sleep_episode,
+                "SleepEpisode",
+                |kind| kind == EntityKind::Agent,
+                SleepEpisode,
+                crate::SleepEpisode,
+                set_component_sleep_episode,
+                clear_component_sleep_episode,
                 txn_simple_set
             }
             {
@@ -2256,9 +2306,11 @@ pub(crate) use with_component_schema_entries;
 #[cfg(test)]
 mod tests {
     use crate::{
-        CommodityKind, EntityKind, PlaceVisibilityProfile, Quantity, RewardEncumbrance,
-        SceneEvidence, Tick, Topology, World, WorldError,
+        CommodityKind, EntityKind, GroundComfortTag, Permille, PlaceVisibilityProfile, Quantity,
+        RewardEncumbrance, SceneEvidence, ShelterTag, SleepEpisode, SleepQualityProfile, Tick,
+        Topology, WakeCondition, World, WorldError,
     };
+    use std::num::NonZeroU32;
 
     #[test]
     fn scene_evidence_is_registered_for_places_only() {
@@ -2299,6 +2351,66 @@ mod tests {
 
         let error = world
             .insert_component_place_visibility_profile(agent, profile)
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn sleep_quality_profile_is_registered_for_places_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let place = world.create_entity(EntityKind::Place, Tick(1));
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let profile = SleepQualityProfile {
+            shelter: ShelterTag::Shelter,
+            ground_comfort: GroundComfortTag::Soft,
+            recovery_modifier: Permille::new(850).unwrap(),
+        };
+
+        world
+            .insert_component_sleep_quality_profile(place, profile)
+            .unwrap();
+        assert_eq!(
+            world.get_component_sleep_quality_profile(place),
+            Some(&profile)
+        );
+        assert!(world.has_component_sleep_quality_profile(place));
+        assert_eq!(world.count_with_sleep_quality_profile(), 1);
+        world.remove_component_sleep_quality_profile(place).unwrap();
+        assert!(!world.has_component_sleep_quality_profile(place));
+
+        let error = world
+            .insert_component_sleep_quality_profile(agent, profile)
+            .unwrap_err();
+        assert!(matches!(error, WorldError::InvalidOperation(_)));
+    }
+
+    #[test]
+    fn sleep_episode_is_registered_for_agents_only() {
+        let mut world = World::new(Topology::new()).unwrap();
+        let place = world.create_entity(EntityKind::Place, Tick(1));
+        let agent = world.create_entity(EntityKind::Agent, Tick(1));
+        let episode = SleepEpisode {
+            place,
+            start_tick: Tick(5),
+            intended_min_ticks: NonZeroU32::new(3).unwrap(),
+            intended_max_ticks: NonZeroU32::new(30).unwrap(),
+            target_recovery: Permille::new(600).unwrap(),
+            accumulated_recovery: Permille::new(100).unwrap(),
+            recovery_modifier: Permille::new(950).unwrap(),
+            wake_conditions: vec![WakeCondition::IntendedDurationReached],
+        };
+
+        world
+            .insert_component_sleep_episode(agent, episode.clone())
+            .unwrap();
+        assert_eq!(world.get_component_sleep_episode(agent), Some(&episode));
+        assert!(world.has_component_sleep_episode(agent));
+        assert_eq!(world.count_with_sleep_episode(), 1);
+        world.remove_component_sleep_episode(agent).unwrap();
+        assert!(!world.has_component_sleep_episode(agent));
+
+        let error = world
+            .insert_component_sleep_episode(place, episode)
             .unwrap_err();
         assert!(matches!(error, WorldError::InvalidOperation(_)));
     }

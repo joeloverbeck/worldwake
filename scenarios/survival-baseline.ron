@@ -7,15 +7,31 @@
     seed: 104004,
     survival_health_contract: (
         max_authored_critical_run_ticks: 100,
-        max_idle_window_ticks_with_elevated_need: 20,
+        max_idle_window_ticks_with_elevated_need: 40,
         elevated_need_floor: 300,
         required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
     ),
     places: [
-        (name: "Riverside Camp", tags: [Camp, Latrine]),
-        (name: "Fertile Fields", tags: [Field, Farm]),
-        (name: "Forest Clearing", tags: [Forest]),
-        (name: "Hillside Shelter", tags: [Camp, Latrine]),
+        (
+            name: "Riverside Camp",
+            tags: [Camp, Latrine],
+            sleep_quality: (shelter: Roofed, ground_comfort: Earth, recovery_modifier: 900),
+        ),
+        (
+            name: "Fertile Fields",
+            tags: [Field, Farm],
+            sleep_quality: (shelter: Open, ground_comfort: Earth, recovery_modifier: 700),
+        ),
+        (
+            name: "Forest Clearing",
+            tags: [Forest],
+            sleep_quality: (shelter: PartialCover, ground_comfort: Earth, recovery_modifier: 800),
+        ),
+        (
+            name: "Hillside Shelter",
+            tags: [Camp, Latrine],
+            sleep_quality: (shelter: Shelter, ground_comfort: Soft, recovery_modifier: 1000),
+        ),
     ],
     edges: [
         (from: "Riverside Camp", to: "Fertile Fields", travel_ticks: 3, bidirectional: true),

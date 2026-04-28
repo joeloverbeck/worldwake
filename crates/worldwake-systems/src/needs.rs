@@ -628,6 +628,7 @@ mod tests {
             nz(100),
             nz(5),
             nz(5),
+            nz(8),
             pm(0),
             pm(0),
             pm(0),

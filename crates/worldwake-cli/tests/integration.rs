@@ -13,6 +13,7 @@ use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::control::ControlSource;
 use worldwake_core::event_record::EventView;
 use worldwake_core::ids::EntityId;
+use worldwake_core::{EntityKind, SleepQualityProfile};
 use worldwake_sim::{SimulationState, SystemDispatchTable};
 use worldwake_systems::ActionRegistries;
 
@@ -31,6 +32,17 @@ fn cli_evaluation_scenario_path() -> PathBuf {
         .parent()
         .unwrap()
         .join("scenarios/cli-evaluation.ron")
+}
+
+/// Path to the survival baseline scenario file, resolved relative to the workspace root.
+fn survival_baseline_scenario_path() -> PathBuf {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    PathBuf::from(manifest)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("scenarios/survival-baseline.ron")
 }
 
 /// Bundled test context: simulation state + runtime artifacts.
@@ -77,6 +89,33 @@ fn find_agent(sim: &SimulationState, name: &str) -> EntityId {
         .query_name_and_agent_data()
         .find(|(_, n, _)| n.0 == name)
         .map_or_else(|| panic!("agent \"{name}\" not found"), |(id, _, _)| id)
+}
+
+#[test]
+fn survival_baseline_spawns_sleep_quality_for_every_place() {
+    let def = load_scenario_file(&survival_baseline_scenario_path())
+        .expect("survival-baseline.ron should parse");
+    let spawned = spawn_scenario(&def).expect("survival-baseline.ron should spawn");
+    let world = spawned.state.world();
+
+    let places = world
+        .entities_of_kind(EntityKind::Place)
+        .collect::<Vec<_>>();
+    assert_eq!(places.len(), def.places.len());
+    assert!(
+        places
+            .iter()
+            .all(|place| world.get_component_sleep_quality_profile(*place).is_some())
+    );
+
+    let non_default_count = places
+        .iter()
+        .filter(|place| {
+            world.get_component_sleep_quality_profile(**place)
+                != Some(&SleepQualityProfile::default())
+        })
+        .count();
+    assert_eq!(non_default_count, 4);
 }
 
 // ── test_scenario_loads_and_ticks (spec T-integration line 171) ──────

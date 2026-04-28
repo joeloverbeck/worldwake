@@ -60,7 +60,7 @@ Scenarios: 6
 
 ### Scenario 5: Local Depleted Source Regenerates Without Spurious Failure Memory
 
-- Source: `golden_ai_decisions.rs:434`
+- Source: `golden_ai_decisions.rs:435`
 - Systems: Production, AI
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -77,7 +77,7 @@ Scenarios: 6
 
 ### Scenario 7: Deprivation Cascade
 
-- Source: `golden_ai_decisions.rs:565`
+- Source: `golden_ai_decisions.rs:566`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -94,7 +94,7 @@ Scenarios: 6
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1348`
+- Source: `golden_ai_decisions.rs:1353`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs

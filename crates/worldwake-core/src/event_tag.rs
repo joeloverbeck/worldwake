@@ -32,6 +32,8 @@ pub enum EventTag {
     WildernessRelief,
     BladderAccident,
     Death,
+    SleepEpisodeStarted,
+    SleepEpisodeEnded,
     GoalOffered,
     GoalSuppressed,
     GoalCommitted,
@@ -56,7 +58,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 39] = [
+    const ALL_EVENT_TAGS: [EventTag; 41] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -84,6 +86,8 @@ mod tests {
         EventTag::WildernessRelief,
         EventTag::BladderAccident,
         EventTag::Death,
+        EventTag::SleepEpisodeStarted,
+        EventTag::SleepEpisodeEnded,
         EventTag::GoalOffered,
         EventTag::GoalSuppressed,
         EventTag::GoalCommitted,
@@ -105,7 +109,7 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 39);
+        assert_eq!(ALL_EVENT_TAGS.len(), 41);
     }
 
     #[test]

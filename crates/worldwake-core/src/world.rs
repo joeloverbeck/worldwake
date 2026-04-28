@@ -18,11 +18,11 @@ use crate::{
     PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile, ProductionJob,
     ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity, RecordData,
     RelationTables, RepairMemory, ResourceExtractionQueues, ResourceSource, RewardEncumbrance,
-    RouteExperience, SaleListing, SceneEvidence, SourceReliability, StockAssignment,
-    StockStoragePolicy, SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick,
-    Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError, WoundList,
-    component_schema::with_component_schema_entries,
+    RouteExperience, SaleListing, SceneEvidence, SleepEpisode, SleepQualityProfile,
+    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
+    TheftDispositionProfile, Tick, Topology, TradeDispositionProfile, UniqueItem, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, ViolationMemory, WorkstationMarker, WorldError,
+    WoundList, component_schema::with_component_schema_entries,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -933,6 +933,7 @@ mod tests {
             NonZeroU32::new(70).unwrap(),
             NonZeroU32::new(8).unwrap(),
             NonZeroU32::new(10).unwrap(),
+            NonZeroU32::new(8).unwrap(),
             Permille::new(0).unwrap(),
             Permille::new(0).unwrap(),
             Permille::new(0).unwrap(),

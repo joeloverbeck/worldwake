@@ -1,10 +1,12 @@
 use crate::{
     ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy, EntityId,
-    ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey, MaterializationTag,
-    MismatchDetail, OpportunityKey, Permille, SuspensionReason, Tick,
+    ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey, HomeostaticNeedId,
+    MaterializationTag, MismatchDetail, OpportunityKey, Permille, SuspensionReason, Tick,
+    WakeCondition,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum DecisionEventPayload {
@@ -13,6 +15,8 @@ pub enum DecisionEventPayload {
     GoalCommitted(GoalCommittedPayload),
     GoalSuspended(GoalSuspendedPayload),
     GoalAbandoned(GoalAbandonedPayload),
+    SleepEpisodeStarted(SleepEpisodeStartedPayload),
+    SleepEpisodeEnded(SleepEpisodeEndedPayload),
     PlanAdopted(PlanAdoptedPayload),
     PlanInvalidated(PlanInvalidatedPayload),
     ExpectationMismatch(ExpectationMismatchPayload),
@@ -28,6 +32,40 @@ pub struct GoalOfferedPayload {
     pub goal_key: GoalKey,
     pub emitter: EmitterTag,
     pub source_evidence: EvidenceSummary,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SleepEpisodeStartedPayload {
+    pub sleeper: EntityId,
+    pub place: EntityId,
+    pub intended_min_ticks: NonZeroU32,
+    pub intended_max_ticks: NonZeroU32,
+    pub target_recovery: Permille,
+    pub wake_conditions: Vec<WakeCondition>,
+    pub recovery_modifier: Permille,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SleepEpisodeEndedPayload {
+    pub sleeper: EntityId,
+    pub place: EntityId,
+    pub start_tick: Tick,
+    pub end_tick: Tick,
+    pub end_reason: WakeReason,
+    pub accumulated_recovery: Permille,
+    pub final_fatigue: Permille,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum WakeReason {
+    IntendedDuration,
+    TargetRecovery,
+    ProjectedNeedBreach {
+        need: HomeostaticNeedId,
+        projected_breach_tick: Tick,
+    },
+    ScheduledCommitment,
+    LocalDisturbance,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -342,18 +380,20 @@ mod tests {
         OpportunityExpectationKindTag, PlanAdoptedPayload, PlanInvalidatedPayload,
         PlanInvalidationReason, PursuitInvalidationReasonTag, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
-        SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
+        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SourceAttributionOutcomeTag,
+        SourceExpectationFailurePayload, SourceKeyPayload, WakeReason,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
-        ExpectationKindTag, FrameAssumption, FrameClearReason, InvalidatorTag, MaterializationTag,
-        MismatchDetail, ObservationPredicate, OpportunityAnchor, OpportunityKey, SuspensionReason,
-        Tick,
+        ExpectationKindTag, FrameAssumption, FrameClearReason, HomeostaticNeedId, InvalidatorTag,
+        MaterializationTag, MismatchDetail, ObservationPredicate, OpportunityAnchor,
+        OpportunityKey, SuspensionReason, Tick, WakeCondition,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
     use std::fmt::Debug;
+    use std::num::NonZeroU32;
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
@@ -434,6 +474,32 @@ mod tests {
                     switch_kind: GoalSwitchReason::SameClassMargin,
                 },
             }),
+            DecisionEventPayload::SleepEpisodeStarted(SleepEpisodeStartedPayload {
+                sleeper: entity_id(5, 1),
+                place: entity_id(5, 2),
+                intended_min_ticks: NonZeroU32::new(4).unwrap(),
+                intended_max_ticks: NonZeroU32::new(40).unwrap(),
+                target_recovery: crate::Permille::new(750).unwrap(),
+                wake_conditions: vec![
+                    WakeCondition::IntendedDurationReached,
+                    WakeCondition::ProjectedNeedBreach {
+                        need: HomeostaticNeedId::Thirst,
+                    },
+                ],
+                recovery_modifier: crate::Permille::new(875).unwrap(),
+            }),
+            DecisionEventPayload::SleepEpisodeEnded(SleepEpisodeEndedPayload {
+                sleeper: entity_id(5, 1),
+                place: entity_id(5, 2),
+                start_tick: Tick(10),
+                end_tick: Tick(24),
+                end_reason: WakeReason::ProjectedNeedBreach {
+                    need: HomeostaticNeedId::Thirst,
+                    projected_breach_tick: Tick(25),
+                },
+                accumulated_recovery: crate::Permille::new(225).unwrap(),
+                final_fatigue: crate::Permille::new(375).unwrap(),
+            }),
             DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                 agent: entity_id(6, 0),
                 goal_key: sample_goal_key(),
@@ -510,6 +576,9 @@ mod tests {
         assert_value_bounds::<GoalAbandonedPayload>();
         assert_value_bounds::<GoalAbandonReason>();
         assert_copy_value_bounds::<GoalSwitchReason>();
+        assert_value_bounds::<SleepEpisodeStartedPayload>();
+        assert_value_bounds::<SleepEpisodeEndedPayload>();
+        assert_copy_value_bounds::<WakeReason>();
         assert_value_bounds::<PlanAdoptedPayload>();
         assert_value_bounds::<BeliefSnapshot>();
         assert_copy_value_bounds::<BeliefStatusTag>();

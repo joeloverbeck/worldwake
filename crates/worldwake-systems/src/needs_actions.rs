@@ -2,8 +2,10 @@ use crate::inventory::consume_one_unit;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, CommodityKind, EntityId, EventTag, HomeostaticNeeds, ItemLot, MetabolismProfile,
-    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, VisibilitySpec, WorkstationTag, WorldTxn,
+    ActionDefId, CommodityKind, DecisionEventPayload, EntityId, EventTag, FrameAssumption,
+    HomeostaticNeedId, HomeostaticNeeds, ItemLot, MetabolismProfile, OUTDOOR_RELIEF_TAGS, Permille,
+    PlaceTag, Quantity, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, Tick,
+    VisibilitySpec, WakeCondition, WakeReason, WorkstationTag, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -28,10 +30,10 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         abort_noop,
     ));
     let sleep_handler = handlers.register(ActionHandler::new(
-        start_noop,
+        start_sleep_episode,
         tick_sleep,
-        commit_noop,
-        abort_noop,
+        commit_sleep_episode,
+        abort_sleep_episode,
     ));
     let toilet_handler = handlers.register(ActionHandler::new(
         start_noop,
@@ -71,7 +73,10 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         "sleep",
         sleep_handler,
         vec![Precondition::ActorAlive],
-        DurationExpr::Fixed(NonZeroU32::MIN),
+        DurationExpr::Variable {
+            min: NonZeroU32::new(1).unwrap(),
+            max: NonZeroU32::new(64).unwrap(),
+        },
     );
     register_def(
         defs,
@@ -163,7 +168,10 @@ fn register_def(
         duration,
         body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
         attention_cost: Permille::ZERO,
-        interruptibility: Interruptibility::InterruptibleWithPenalty,
+        interruptibility: match name {
+            "sleep" => Interruptibility::FreelyInterruptible,
+            _ => Interruptibility::InterruptibleWithPenalty,
+        },
         commit_conditions: preconditions,
         visibility: VisibilitySpec::ParticipantsOnly,
         causal_event_tags: BTreeSet::from([EventTag::WorldMutation]),
@@ -304,18 +312,6 @@ fn tick_continue(
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn commit_noop(
-    _def: &ActionDef,
-    _instance: &ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
-    _event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
-    _txn: &mut WorldTxn<'_>,
-) -> Result<CommitOutcome, ActionError> {
-    Ok(CommitOutcome::empty())
-}
-
-#[allow(clippy::unnecessary_wraps)]
 fn abort_noop(
     _def: &ActionDef,
     _instance: &ActionInstance,
@@ -328,24 +324,237 @@ fn abort_noop(
     Ok(())
 }
 
+fn start_sleep_episode(
+    _def: &ActionDef,
+    instance: &mut ActionInstance,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<Option<ActionState>, ActionError> {
+    let needs = actor_needs(txn, instance.actor)?;
+    let profile = actor_profile(txn, instance.actor)?;
+    let place = txn.effective_place(instance.actor).ok_or_else(|| {
+        ActionError::InternalError(format!("actor {} has no place", instance.actor))
+    })?;
+    let quality = txn
+        .get_component_sleep_quality_profile(place)
+        .copied()
+        .unwrap_or_default();
+    let intended_min_ticks = profile.min_sleep_ticks;
+    let intended_max_ticks = intended_sleep_ticks(needs.fatigue, profile, intended_min_ticks);
+    let target_recovery = Permille::ZERO;
+    let wake_conditions = crate::sleep_synthesis::synthesize_wake_conditions(
+        instance.actor,
+        intended_max_ticks,
+        target_recovery,
+        context.tick,
+        txn,
+    );
+    let episode = SleepEpisode {
+        place,
+        start_tick: context.tick,
+        intended_min_ticks,
+        intended_max_ticks,
+        target_recovery,
+        accumulated_recovery: Permille::ZERO,
+        recovery_modifier: quality.recovery_modifier,
+        wake_conditions,
+    };
+    txn.set_component_sleep_episode(instance.actor, episode.clone())
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.add_tag(EventTag::SleepEpisodeStarted)
+        .set_decision_payload(DecisionEventPayload::SleepEpisodeStarted(
+            SleepEpisodeStartedPayload {
+                sleeper: instance.actor,
+                place,
+                intended_min_ticks,
+                intended_max_ticks,
+                target_recovery,
+                wake_conditions: episode.wake_conditions,
+                recovery_modifier: episode.recovery_modifier,
+            },
+        ));
+    Ok(Some(ActionState::Empty))
+}
+
+fn intended_sleep_ticks(
+    fatigue: Permille,
+    profile: MetabolismProfile,
+    intended_min_ticks: NonZeroU32,
+) -> NonZeroU32 {
+    let hard_cap = 64_u32.max(intended_min_ticks.get());
+    let rest_efficiency = u32::from(profile.rest_efficiency.value());
+    let ticks_to_recover = if fatigue.value() == 0 {
+        1
+    } else if rest_efficiency == 0 {
+        hard_cap
+    } else {
+        u32::from(fatigue.value()).div_ceil(rest_efficiency)
+    };
+    let bounded = ticks_to_recover
+        .max(intended_min_ticks.get())
+        .min(hard_cap)
+        .max(1);
+    NonZeroU32::new(bounded).unwrap()
+}
+
 fn tick_sleep(
     _def: &ActionDef,
     instance: &mut ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<ActionProgress, ActionError> {
+    let mut episode = txn
+        .get_component_sleep_episode(instance.actor)
+        .cloned()
+        .ok_or_else(|| {
+            ActionError::InternalError(format!(
+                "actor {} lacks active sleep episode",
+                instance.actor
+            ))
+        })?;
     let needs = actor_needs(txn, instance.actor)?;
     let profile = actor_profile(txn, instance.actor)?;
+    let recovery = sleep_recovery_delta(profile.rest_efficiency, episode.recovery_modifier);
     let next = HomeostaticNeeds::new(
         needs.hunger,
         needs.thirst,
-        needs.fatigue.saturating_sub(profile.rest_efficiency),
+        needs.fatigue.saturating_sub(recovery),
         needs.bladder,
         needs.dirtiness,
     );
+    episode.accumulated_recovery = episode.accumulated_recovery.saturating_add(recovery);
     set_actor_needs(txn, instance.actor, next)?;
-    Ok(ActionProgress::Continue)
+    txn.set_component_sleep_episode(instance.actor, episode.clone())
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    if sleep_wake_reason(txn, instance.actor, &episode, context.tick).is_some() {
+        Ok(ActionProgress::Complete)
+    } else {
+        Ok(ActionProgress::Continue)
+    }
+}
+
+fn sleep_recovery_delta(rest_efficiency: Permille, recovery_modifier: Permille) -> Permille {
+    let scaled = (u32::from(rest_efficiency.value()) * u32::from(recovery_modifier.value())) / 1000;
+    Permille::new(scaled.min(1000) as u16).unwrap()
+}
+
+fn sleep_wake_reason(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    episode: &SleepEpisode,
+    current_tick: Tick,
+) -> Option<WakeReason> {
+    episode
+        .wake_conditions
+        .iter()
+        .find_map(|condition| match *condition {
+            WakeCondition::IntendedDurationReached => {
+                (current_tick.0.saturating_sub(episode.start_tick.0)
+                    >= u64::from(episode.intended_max_ticks.get()))
+                .then_some(WakeReason::IntendedDuration)
+            }
+            WakeCondition::TargetRecoveryReached => {
+                let required_recovery =
+                    Permille::new_unchecked(1000).saturating_sub(episode.target_recovery);
+                (episode.accumulated_recovery >= required_recovery)
+                    .then_some(WakeReason::TargetRecovery)
+            }
+            WakeCondition::ProjectedNeedBreach { need } => {
+                projected_need_breach_tick(txn, actor, need)
+                    .filter(|until_tick| *until_tick <= current_tick)
+                    .map(|projected_breach_tick| WakeReason::ProjectedNeedBreach {
+                        need,
+                        projected_breach_tick,
+                    })
+            }
+            WakeCondition::ScheduledCommitmentDue { tick } => {
+                (current_tick >= tick).then_some(WakeReason::ScheduledCommitment)
+            }
+            WakeCondition::LocalDisturbance => None,
+        })
+}
+
+fn projected_need_breach_tick(
+    txn: &WorldTxn<'_>,
+    actor: EntityId,
+    need: HomeostaticNeedId,
+) -> Option<Tick> {
+    txn.get_component_intention_frame(actor).and_then(|frame| {
+        frame
+            .assumptions
+            .iter()
+            .find_map(|assumption| match *assumption {
+                FrameAssumption::NeedSafeUntilTick {
+                    need: assumed_need,
+                    until_tick,
+                } if assumed_need == need => Some(until_tick),
+                _ => None,
+            })
+    })
+}
+
+fn commit_sleep_episode(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    end_sleep_episode(instance.actor, context.tick, None, txn)?;
+    Ok(CommitOutcome::empty())
+}
+
+fn abort_sleep_episode(
+    _def: &ActionDef,
+    instance: &ActionInstance,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
+    _reason: &AbortReason,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    end_sleep_episode(
+        instance.actor,
+        context.tick,
+        Some(WakeReason::LocalDisturbance),
+        txn,
+    )
+}
+
+fn end_sleep_episode(
+    actor: EntityId,
+    current_tick: Tick,
+    forced_reason: Option<WakeReason>,
+    txn: &mut WorldTxn<'_>,
+) -> Result<(), ActionError> {
+    let episode = txn
+        .get_component_sleep_episode(actor)
+        .cloned()
+        .ok_or_else(|| ActionError::InternalError(format!("actor {actor} lacks sleep episode")))?;
+    let end_reason = forced_reason
+        .or_else(|| sleep_wake_reason(txn, actor, &episode, current_tick))
+        .unwrap_or(WakeReason::IntendedDuration);
+    let final_fatigue = actor_needs(txn, actor)?.fatigue;
+
+    txn.clear_component_sleep_episode(actor)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.add_tag(EventTag::SleepEpisodeEnded)
+        .set_decision_payload(DecisionEventPayload::SleepEpisodeEnded(
+            SleepEpisodeEndedPayload {
+                sleeper: actor,
+                place: episode.place,
+                start_tick: episode.start_tick,
+                end_tick: current_tick,
+                end_reason,
+                accumulated_recovery: episode.accumulated_recovery,
+                final_fatigue,
+            },
+        ));
+    Ok(())
 }
 
 fn commit_eat(
@@ -534,12 +743,14 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, AgentBeliefStore, CauseRef, CommodityKind, ControlSource, DeprivationExposure,
-        DisturbanceKind, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EvidenceKind,
-        HomeostaticNeeds, MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity,
-        ResourceSource, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag,
-        World, WorldTxn, build_believed_entity_state, build_prototype_world,
-        prototype_place_entity,
+        ActionDefId, AgentBeliefStore, CauseRef, CommodityKind, ControlSource,
+        DecisionEventPayload, DeprivationExposure, DisturbanceKind, DriveThresholds, EntityId,
+        EntityKind, EventLog, EventTag, EventView, EvidenceKind, FrameAssumption, FrameState,
+        GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame,
+        MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity, ResourceSource,
+        Seed, SleepEpisode, Tick, VisibilitySpec, WakeCondition, WakeReason, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
@@ -601,6 +812,7 @@ mod tests {
                 NonZeroU32::new(10).unwrap(),
                 NonZeroU32::new(2).unwrap(),
                 NonZeroU32::new(3).unwrap(),
+                NonZeroU32::new(8).unwrap(),
                 pm(0),
                 pm(0),
                 pm(0),
@@ -741,6 +953,19 @@ mod tests {
         assert_eq!(defs.len(), 6);
         assert_eq!(handlers.len(), 6);
         assert_eq!(defs.get(ActionDefId(0)).unwrap().name, "eat");
+        let sleep = defs.get(ActionDefId(2)).unwrap();
+        assert_eq!(sleep.name, "sleep");
+        assert_eq!(
+            sleep.duration,
+            worldwake_sim::DurationExpr::Variable {
+                min: NonZeroU32::new(1).unwrap(),
+                max: NonZeroU32::new(64).unwrap(),
+            }
+        );
+        assert_eq!(
+            sleep.interruptibility,
+            worldwake_sim::Interruptibility::FreelyInterruptible
+        );
         assert_eq!(defs.get(ActionDefId(4)).unwrap().name, "wash");
         assert_eq!(defs.get(ActionDefId(5)).unwrap().name, "relieve_wilderness");
     }
@@ -877,25 +1102,202 @@ mod tests {
     }
 
     #[test]
-    fn sleep_reduces_fatigue_without_a_bed() {
+    fn sleep_episode_reduces_fatigue_at_default_place() {
         let mut world = World::new(build_prototype_world()).unwrap();
         let (actor, _) = setup_actor(&mut world);
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
+        let mut active = BTreeMap::<ActionInstanceId, ActionInstance>::new();
+        let mut next_id = ActionInstanceId(0);
+        let mut rng = test_rng();
 
         let affordances = affordances_for(&world, actor, &defs, &handlers);
         let sleep_index = affordances
             .iter()
             .position(|affordance| affordance.def_id == ActionDefId(2))
             .unwrap();
-        run_action_to_completion(actor, sleep_index, &mut world, &mut log, &defs, &handlers);
+        let instance_id = start_action(
+            &affordances[sleep_index],
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
 
+        let started = log.events_by_tag(EventTag::SleepEpisodeStarted);
+        assert_eq!(started.len(), 1);
+        let DecisionEventPayload::SleepEpisodeStarted(payload) = log
+            .get(started[0])
+            .and_then(|record| record.decision_payload())
+            .unwrap()
+        else {
+            panic!("expected SleepEpisodeStarted payload");
+        };
+        assert_eq!(payload.sleeper, actor);
+        assert_eq!(payload.recovery_modifier, pm(1000));
+        assert!(world.get_component_sleep_episode(actor).is_some());
+
+        let first_tick = tick_action(
+            instance_id,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut log,
+                rng: &mut rng,
+            },
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(11)),
+        )
+        .unwrap();
+        assert_eq!(first_tick, TickOutcome::Continuing);
         assert_eq!(
             world
                 .get_component_homeostatic_needs(actor)
                 .unwrap()
                 .fatigue,
             pm(400).saturating_sub(pm(40))
+        );
+        assert_eq!(
+            world
+                .get_component_sleep_episode(actor)
+                .unwrap()
+                .accumulated_recovery,
+            pm(40)
+        );
+
+        for tick in 12..=20 {
+            if let TickOutcome::Committed { .. } = tick_action(
+                instance_id,
+                &defs,
+                &handlers,
+                ActionExecutionAuthority {
+                    active_actions: &mut active,
+                    world: &mut world,
+                    event_log: &mut log,
+                    rng: &mut rng,
+                },
+                worldwake_sim::ActionExecutionContext::without_recipes(
+                    CauseRef::Bootstrap,
+                    Tick(tick),
+                ),
+            )
+            .unwrap()
+            {
+                break;
+            }
+        }
+
+        assert_eq!(
+            world
+                .get_component_homeostatic_needs(actor)
+                .unwrap()
+                .fatigue,
+            pm(0)
+        );
+        assert!(world.get_component_sleep_episode(actor).is_none());
+        assert_eq!(log.events_by_tag(EventTag::ActionStarted).len(), 1);
+        assert_eq!(log.events_by_tag(EventTag::ActionCommitted).len(), 1);
+        let ended = log.events_by_tag(EventTag::SleepEpisodeEnded);
+        assert_eq!(ended.len(), 1);
+        let DecisionEventPayload::SleepEpisodeEnded(payload) = log
+            .get(ended[0])
+            .and_then(|record| record.decision_payload())
+            .unwrap()
+        else {
+            panic!("expected SleepEpisodeEnded payload");
+        };
+        assert_eq!(payload.sleeper, actor);
+        assert_eq!(payload.end_reason, WakeReason::IntendedDuration);
+        assert_eq!(payload.accumulated_recovery, pm(400));
+        assert_eq!(payload.final_fatigue, pm(0));
+    }
+
+    #[test]
+    fn sleep_wake_reason_uses_first_matching_condition() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        let episode = SleepEpisode {
+            place,
+            start_tick: Tick(10),
+            intended_min_ticks: NonZeroU32::new(1).unwrap(),
+            intended_max_ticks: NonZeroU32::new(10).unwrap(),
+            target_recovery: pm(960),
+            accumulated_recovery: pm(40),
+            recovery_modifier: pm(1000),
+            wake_conditions: vec![
+                WakeCondition::TargetRecoveryReached,
+                WakeCondition::IntendedDurationReached,
+            ],
+        };
+        let txn = new_txn(&mut world, 11);
+
+        assert_eq!(
+            super::sleep_wake_reason(&txn, actor, &episode, Tick(20)),
+            Some(WakeReason::TargetRecovery)
+        );
+    }
+
+    #[test]
+    fn sleep_wake_reason_maps_projected_need_and_scheduled_commitment() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let (actor, place) = setup_actor(&mut world);
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_component_intention_frame(
+                actor,
+                IntentionFrame {
+                    goal: GoalKey::from(GoalKind::Sleep),
+                    domain: IntentionDomain::Generic,
+                    assumptions: vec![FrameAssumption::NeedSafeUntilTick {
+                        need: HomeostaticNeedId::Hunger,
+                        until_tick: Tick(12),
+                    }],
+                    state: FrameState::Active,
+                    established_at: Tick(3),
+                    last_progress_tick: None,
+                    stalled_ticks: 0,
+                    patience_limit: 10,
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+        let projected = SleepEpisode {
+            place,
+            start_tick: Tick(10),
+            intended_min_ticks: NonZeroU32::new(1).unwrap(),
+            intended_max_ticks: NonZeroU32::new(10).unwrap(),
+            target_recovery: pm(1000),
+            accumulated_recovery: pm(0),
+            recovery_modifier: pm(1000),
+            wake_conditions: vec![WakeCondition::ProjectedNeedBreach {
+                need: HomeostaticNeedId::Hunger,
+            }],
+        };
+        let scheduled = SleepEpisode {
+            wake_conditions: vec![WakeCondition::ScheduledCommitmentDue { tick: Tick(14) }],
+            ..projected.clone()
+        };
+        let txn = new_txn(&mut world, 12);
+
+        assert_eq!(
+            super::sleep_wake_reason(&txn, actor, &projected, Tick(12)),
+            Some(WakeReason::ProjectedNeedBreach {
+                need: HomeostaticNeedId::Hunger,
+                projected_breach_tick: Tick(12),
+            })
+        );
+        assert_eq!(
+            super::sleep_wake_reason(&txn, actor, &scheduled, Tick(14)),
+            Some(WakeReason::ScheduledCommitment)
         );
     }
 
@@ -930,6 +1332,7 @@ mod tests {
                 NonZeroU32::new(10).unwrap(),
                 NonZeroU32::new(2).unwrap(),
                 NonZeroU32::new(3).unwrap(),
+                NonZeroU32::new(8).unwrap(),
                 pm(0),
                 pm(0),
                 pm(0),
@@ -1218,6 +1621,7 @@ mod tests {
                 NonZeroU32::new(10).unwrap(),
                 NonZeroU32::new(2).unwrap(),
                 NonZeroU32::new(3).unwrap(),
+                NonZeroU32::new(8).unwrap(),
                 pm(0),
                 pm(0),
                 pm(0),

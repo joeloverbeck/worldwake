@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 170: Survival Ask-Consult Lands Roadmap Row Six
 
-- Source: `golden_survival_ask_consult.rs:366`
+- Source: `golden_survival_ask_consult.rs:364`
 - Systems: AI, Needs, Travel, Search, Epistemic, Offices
 - GoalKinds: SearchForMissing, ClaimOffice, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve
 - ActionDomains: Needs, Travel, Epistemic, Social

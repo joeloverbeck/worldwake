@@ -19,7 +19,7 @@
     seed: 518006,
     survival_health_contract: (
         max_authored_critical_run_ticks: 260,
-        max_idle_window_ticks_with_elevated_need: 45,
+        max_idle_window_ticks_with_elevated_need: 70,
         elevated_need_floor: 300,
         required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
         critical_run_limits: (

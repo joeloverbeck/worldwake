@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 347: survival-combat
 
-- Source: `golden_survival_combat.rs:237`
+- Source: `golden_survival_combat.rs:235`
 - Primary tests: `survival_combat_proves_combat_and_bandit_camp_abandonment`, `survival_combat_replay_is_deterministic`
 - Replay tests: None
 - All tests: `survival_combat_proves_combat_and_bandit_camp_abandonment`, `survival_combat_replay_is_deterministic`

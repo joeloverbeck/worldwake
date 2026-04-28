@@ -308,6 +308,7 @@ fn ranked_motive_score(
                 .unwrap_or(0),
         },
     );
+    let base = apply_sleep_motive_modifier(candidate, context, base);
     base.saturating_add(memory_motive_bonus(candidate, context, base))
 }
 
@@ -1640,6 +1641,25 @@ fn drive_score(
     }
 }
 
+fn apply_sleep_motive_modifier(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+    base: u32,
+) -> u32 {
+    if !matches!(candidate.key.kind, GoalKind::Sleep) {
+        return base;
+    }
+    let OpportunityAnchor::Place(place) = candidate.anchor else {
+        return base;
+    };
+    let modifier = context
+        .view
+        .place_sleep_quality_profile(context.agent, place)
+        .recovery_modifier;
+    // S128 D8: place quality modulates sleep preference without changing the fatigue baseline.
+    base.saturating_mul(u32::from(modifier.value())) / 1000
+}
+
 fn self_consume_provenance(
     commodity: CommodityKind,
     context: &RankingContext<'_>,
@@ -2453,17 +2473,17 @@ mod tests {
         DeprivationKind, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
         DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
         ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+        GoalRejectionReason, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds,
+        InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile,
         MetabolismProfile, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
         ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
         PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity,
         RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
-        RouteExperience, SourceKey, SourceReliability, SubstitutePreferences, TellTopic,
-        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
-        WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
+        RouteExperience, ShelterTag, SleepQualityProfile, SourceKey, SourceReliability,
+        SubstitutePreferences, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
+        TradeCategory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
+        ViolationKind, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -2480,6 +2500,7 @@ mod tests {
         place_entities: BTreeMap<EntityId, Vec<EntityId>>,
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
+        sleep_quality_profiles: BTreeMap<EntityId, SleepQualityProfile>,
         exposures: BTreeMap<EntityId, DeprivationExposure>,
         escalation_profiles: BTreeMap<EntityId, DriveEscalationProfile>,
         exploration_profiles: BTreeMap<EntityId, worldwake_core::ExplorationProfile>,
@@ -2600,6 +2621,16 @@ mod tests {
         }
         fn metabolism_profile(&self, _agent: EntityId) -> Option<MetabolismProfile> {
             None
+        }
+        fn place_sleep_quality_profile(
+            &self,
+            _agent: EntityId,
+            place: EntityId,
+        ) -> SleepQualityProfile {
+            self.sleep_quality_profiles
+                .get(&place)
+                .copied()
+                .unwrap_or_default()
         }
         fn exploration_profile(
             &self,
@@ -2973,6 +3004,14 @@ mod tests {
 
     fn pm(value: u16) -> Permille {
         Permille::new(value).unwrap()
+    }
+
+    fn sleep_profile(recovery_modifier: u16) -> SleepQualityProfile {
+        SleepQualityProfile {
+            shelter: ShelterTag::Shelter,
+            ground_comfort: GroundComfortTag::Soft,
+            recovery_modifier: pm(recovery_modifier),
+        }
     }
 
     fn patrol_profile(weight: u16) -> PatrolProfile {
@@ -6952,6 +6991,44 @@ mod tests {
             ranked[0].provenance,
             Some(RankedGoalProvenance::Drive(_))
         ));
+    }
+
+    #[test]
+    fn sleep_motive_orders_by_recovery_modifier() {
+        let agent = entity(1);
+        let low_quality = entity(10);
+        let high_quality = entity(11);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(100), pm(100), pm(500), pm(100), pm(100)),
+        );
+        view.sleep_quality_profiles
+            .insert(low_quality, sleep_profile(700));
+        view.sleep_quality_profiles
+            .insert(high_quality, sleep_profile(1000));
+
+        let ranked = rank(
+            &[
+                goal_at_place(GoalKind::Sleep, low_quality),
+                goal_at_place(GoalKind::Sleep, high_quality),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].offer.anchor,
+            OpportunityAnchor::Place(high_quality)
+        );
+        assert_eq!(
+            ranked[1].offer.anchor,
+            OpportunityAnchor::Place(low_quality)
+        );
+        assert!(ranked[0].motive_score > ranked[1].motive_score);
     }
 
     #[test]

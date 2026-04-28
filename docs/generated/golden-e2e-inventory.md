@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 32
-- Files contributing `golden_*` tests: 32
-- Total `golden_*` tests: 146
+- Golden test files: 33
+- Files contributing `golden_*` tests: 33
+- Total `golden_*` tests: 152
 
 ## Per-File Inventory
 
@@ -28,6 +28,7 @@ Do not hand-edit it.
 | `golden_portfolio_planning.rs` | 1 |
 | `golden_quantity_aware_acquisition.rs` | 5 |
 | `golden_simulation_gaps.rs` | 5 |
+| `golden_sleep_episode.rs` | 6 |
 | `golden_survival_ask_consult.rs` | 1 |
 | `golden_survival_baseline.rs` | 7 |
 | `golden_survival_combat.rs` | 2 |
@@ -176,6 +177,15 @@ Do not hand-edit it.
 - `golden_multi_agent_convergence`
 - `golden_death_traceability`
 - `golden_harvest_to_consume`
+
+### `golden_sleep_episode.rs`
+
+- `sleep_episode_at_default_place_runs_to_intended_max`
+- `projected_hunger_breach_wakes_sleep_early`
+- `place_quality_modulates_per_tick_recovery`
+- `interrupted_sleep_records_partial_recovery`
+- `site_preference_adopts_higher_quality_sleep_place`
+- `sleep_episode_events_render_in_decision_trace`
 
 ### `golden_survival_ask_consult.rs`
 

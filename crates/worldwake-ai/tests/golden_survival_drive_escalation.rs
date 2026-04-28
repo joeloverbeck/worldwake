@@ -164,10 +164,12 @@ fn run_survival_drive_escalation() -> SurvivalDriveEscalationObservation {
                         .expect("threshold should exist for agent"),
                 );
 
-            let had_action = action_sink
-                .events_for_at(*agent, tick)
-                .iter()
-                .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
+            let had_action = golden_harness::agent_has_non_failed_action_or_active(
+                &h,
+                action_sink,
+                *agent,
+                tick,
+            );
             let (start, max_need, count) = idle_state
                 .get_mut(agent_name)
                 .expect("every agent should have idle state");

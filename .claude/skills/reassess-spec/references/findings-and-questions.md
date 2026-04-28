@@ -17,7 +17,7 @@ Tag severity: CRITICAL (blocks tickets), HIGH (fix before tickets), MEDIUM (impr
 
 ## Step 6: Present Findings
 
-**Redesign-count checkpoint (before drafting the presentation)**: Count the deliverables whose approach was materially changed by the reassessment — eliminated, replaced with a different mechanism, or restructured such that the implementation path is not a refinement of the original. Include this count as `N / total`. If `N / total > 50%`, the Substantial Redesign Flag section below MUST appear in the output immediately above Questions. If `N / total <= 50%`, omit the Substantial Redesign Flag section entirely. Emit the `N / total` count as a one-line note at the top of the Step 6 `### Classification` block regardless of whether the flag fires — e.g., `Redesign count: 1/6 deliverables materially changed (below 50% threshold; Substantial Redesign Flag omitted)` — so the checkpoint's decision is auditable from the user-facing report.
+**Redesign-count checkpoint (before drafting the presentation)**: Count two values: (a) **redesign count** — deliverables whose approach was materially changed by the reassessment (eliminated, replaced with a different mechanism, or restructured such that the implementation path is not a refinement of the original), as `N_r / total_original`; (b) **addition count** — net-new deliverables the reassessment adds to the spec, as `N_a` (also expressed as percentage of `total_original`, e.g., `4 added (44% of original)`). The Substantial Redesign Flag section below MUST appear in the output immediately above Questions when **either** trigger fires: redesign count `N_r / total_original > 50%`, **or** addition count `N_a / total_original > 25%`. If neither trigger fires, omit the Substantial Redesign Flag section entirely. Emit both counts as one-line notes at the top of the Step 6 `### Classification` block regardless of whether the flag fires — e.g., `Redesign count: 1/6 deliverables materially changed (below 50% threshold). Addition count: 4 added (67% of original — exceeds 25% addition trigger; Substantial Redesign Flag fires).` — so the checkpoint's decision is auditable from the user-facing report.
 
 **Material-change boundary — anchoring examples**: Borderline cases appear frequently, so the material-vs-refinement boundary needs concrete anchors. Examples of *refinements that do not count as material*: field renames (`observed_at` → `acquired_tick`), type-shape adjustments that preserve the deliverable's read-model role (`BeliefSet<Vec<T>>` → `Vec<BeliefValue<T>>`), signature-preserving parameter reorderings, prose rewording of the deliverable's framing without changing what the implementation does. Examples of *material changes*: elimination of a deliverable, replacement of its mechanism (e.g., derived from stored field X becomes computed from physical process Y), restructuring that changes the set of crates or call sites the deliverable touches, changing the read/write direction of data flow, introducing a new authoritative state where the original was a derived view (or vice versa).
 
@@ -55,7 +55,9 @@ Present in this format:
 7. Golden tests — pass | N/A | **flag** (reason)
 
 ### Substantial Redesign Flag
-[If >50% of deliverables change approach: "This reassessment proposes substantial redesign of N/M deliverables. Goals preserved but implementation path changes significantly."]
+[If redesign trigger fires (>50% of original deliverables change approach): "This reassessment proposes substantial redesign of N_r/M deliverables. Goals preserved but implementation path changes significantly."]
+[If addition trigger fires (>25% of original deliverables added as net-new): "This reassessment expands the deliverable surface by N_a additions on top of M original deliverables. Goals preserved but ticket-decomposition surface grows significantly."]
+[If both triggers fire: combine both lines into one paragraph.]
 [If not triggered: omit section.]
 
 ### Questions

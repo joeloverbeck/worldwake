@@ -6,7 +6,7 @@ When an agent travels somewhere expecting to find a resource and arrives to find
 
 ## Phase and Status
 
-Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft. **Implementation deferred** until S128 lands `SleepQualityProfile` (see Dependencies). `specs/IMPLEMENTATION-ORDER.md` should be updated to move S130 from Wave 1 to Wave 2 (after S128) as part of S128's archival pass.
+Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft. S128 has landed and is archived; the `SleepQualityProfile` dependency for `MayContainSleepSite` is now satisfied.
 
 ## Crates
 
@@ -21,7 +21,7 @@ Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft. **Implementation def
 - **S80 (Exploration Drive)** — completed. `ExploreLocation` substrate exists; this spec extends it.
 - **S102 (Frontier-Aware Exploration)** — completed. Frontier selection feeds into the candidate generator that populates the new hypothesis.
 - **S107 (Proactive Diversification)** — completed. `ExplorationMotivation::Proactive` exists; proactive exploration uses `HypothesisKind::Proactive`.
-- **S128 (Sleep Episodes and Place-Quality Recovery)** — **hard**. `MayContainSleepSite` evaluation in D5 requires `SleepQualityProfile.recovery_modifier` introduced by S128. Implementation of S130 is deferred until S128 lands.
+- **S128 (Sleep Episodes and Place-Quality Recovery)** — **hard, satisfied**. `MayContainSleepSite` evaluation in D5 requires `SleepQualityProfile.recovery_modifier`; S128 is completed and archived at `archive/specs/S128-sleep-episode-place-quality.md`.
 - **S122 (Frame Assumption — Commodity Availability)** — soft. Arrival-time mismatch on `CommodityAvailableAt` already surfaces through S109 discrepancy memory; this spec piggybacks the existing `ExpectationMismatch` event for the resource-not-found case rather than introducing a new event type for the same concern.
 - **S101 (Activation-Based Belief Decay)** — soft. Survey records decay via the same per-tick maintenance pass that calls `enforce_limits` on other learned-state components.
 - **S110 (Decision History Events)** — soft. `SurveyRecorded` event lands in the same `EventTag` / `decision_event_payload` infrastructure S110 already established.

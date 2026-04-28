@@ -7,7 +7,7 @@ Scenarios: 3
 
 ### Scenario 177: Survival Justice Proves Accusation Substrate
 
-- Source: `golden_survival_justice.rs:634`
+- Source: `golden_survival_justice.rs:632`
 - Systems: AI, Needs, Trade, Perception, Offices, Investigation
 - GoalKinds: StealItem, InvestigateViolation, Accuse
 - ActionDomains: Social, Trade, Needs
@@ -25,7 +25,7 @@ Scenarios: 3
 
 ### Scenario 178: Survival Justice Proves Search And Report Found
 
-- Source: `golden_survival_justice.rs:717`
+- Source: `golden_survival_justice.rs:715`
 - Systems: AI, Needs, Search, Reports, Perception, Offices
 - GoalKinds: SearchForMissing, ReportFound
 - ActionDomains: Social, Needs
@@ -43,7 +43,7 @@ Scenarios: 3
 
 ### Scenario 179: Survival Justice Proves Institutional Bounty Posted
 
-- Source: `golden_survival_justice.rs:773`
+- Source: `golden_survival_justice.rs:771`
 - Systems: AI, Needs, Offices, Investigation, Social Artifacts, Treasury
 - GoalKinds: Accuse, PunishAccused, PostBounty
 - ActionDomains: Social, Needs

@@ -95,6 +95,7 @@ fn golden_travel_escalation() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(500), // travel_bladder_multiplier
@@ -247,6 +248,7 @@ fn golden_critical_bladder_local_relief() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(800), // travel_bladder_multiplier
@@ -390,6 +392,7 @@ fn golden_agent_diversity() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(200), // travel_bladder_multiplier
@@ -411,6 +414,7 @@ fn golden_agent_diversity() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(800), // travel_bladder_multiplier
@@ -571,6 +575,7 @@ fn golden_travel_bladder_escalation_switches_to_relief_between_legs() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(900), // travel_bladder_multiplier
@@ -777,6 +782,7 @@ fn golden_latrine_preferred() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -954,6 +960,7 @@ fn golden_wilderness_fallback() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -1136,6 +1143,7 @@ fn golden_deprivation_accident() {
         nz(1),   // bladder_accident_tolerance_ticks — fires after 1 critical tick
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -1293,6 +1301,7 @@ fn golden_witness_observation() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -1327,6 +1336,7 @@ fn golden_witness_observation() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -1500,6 +1510,7 @@ fn golden_no_witness() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -1534,6 +1545,7 @@ fn golden_no_witness() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -1696,6 +1708,7 @@ fn golden_need_continuity_toilet() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -1787,6 +1800,7 @@ fn golden_need_continuity_wilderness() {
         nz(200), // bladder_accident_tolerance_ticks
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier
@@ -1878,6 +1892,7 @@ fn golden_need_continuity_accident() {
         nz(1),   // bladder_accident_tolerance_ticks — fires after 1 critical tick
         nz(8),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier

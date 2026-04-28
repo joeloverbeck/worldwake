@@ -16,9 +16,10 @@ pub enum PlannerDurationDependency {
     TargetTreatment,
     ConsultRecord,
     TravelToTarget,
+    Variable,
 }
 
-pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 14] = [
+pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 15] = [
     PlannerDurationDependency::TargetConsumable,
     PlannerDurationDependency::ActorMetabolism,
     PlannerDurationDependency::BanditCampEstablishmentProfile,
@@ -33,6 +34,7 @@ pub const PLANNER_DURATION_DEPENDENCIES: [PlannerDurationDependency; 14] = [
     PlannerDurationDependency::TargetTreatment,
     PlannerDurationDependency::ConsultRecord,
     PlannerDurationDependency::TravelToTarget,
+    PlannerDurationDependency::Variable,
 ];
 
 impl PlannerDurationDependency {
@@ -56,6 +58,7 @@ impl PlannerDurationDependency {
             Self::TargetTreatment => "TargetTreatment",
             Self::ConsultRecord => "ConsultRecord",
             Self::TravelToTarget => "TravelToTarget",
+            Self::Variable => "Variable",
         }
     }
 
@@ -72,6 +75,7 @@ impl PlannerDurationDependency {
             }
             DurationExpr::ActorWitnessQueryDisposition => Some(Self::ActorWitnessQueryDisposition),
             DurationExpr::Fixed(_) => None,
+            DurationExpr::Variable { .. } => Some(Self::Variable),
             DurationExpr::BanditCampEstablishmentProfile => {
                 Some(Self::BanditCampEstablishmentProfile)
             }

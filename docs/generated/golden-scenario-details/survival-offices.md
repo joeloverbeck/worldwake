@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 175: Survival Offices Proves Force-Law Uptake Under Survival
 
-- Source: `golden_survival_offices.rs:432`
+- Source: `golden_survival_offices.rs:430`
 - Systems: AI, Needs, Offices, Search, Social artifact actions
 - GoalKinds: ClaimOffice, PostNotice, SearchForMissing, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Social, Needs

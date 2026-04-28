@@ -142,7 +142,7 @@ const FEATURES: &[FeatureDef] = &[
             "metabolism_profile",
             "drive_thresholds",
         ],
-        covered_place_fields: &[],
+        covered_place_fields: &["sleep_quality"],
         covered_scenario_fields: &[],
     },
     FeatureDef {
@@ -623,6 +623,22 @@ fn render_scenario_detail(out: &mut String, scenario: &ScenarioCoverage) {
             "none".to_owned()
         } else {
             concealment_places.join(", ")
+        }
+    )
+    .unwrap();
+    let sleep_quality_places = scenario
+        .def
+        .places
+        .iter()
+        .filter_map(|place| place.sleep_quality.as_ref().map(|_| place.name.as_str()))
+        .collect::<Vec<_>>();
+    writeln!(
+        out,
+        "- sleep_quality places: {}",
+        if sleep_quality_places.is_empty() {
+            "none".to_owned()
+        } else {
+            sleep_quality_places.join(", ")
         }
     )
     .unwrap();
@@ -1234,9 +1250,13 @@ fn authored_place_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             name: _,
             tags: _,
             visibility_profile,
+            sleep_quality,
         } = place;
         if visibility_profile.is_some() {
             fields.insert("visibility_profile");
+        }
+        if sleep_quality.is_some() {
+            fields.insert("sleep_quality");
         }
     }
     fields

@@ -12,10 +12,11 @@ use worldwake_core::{
     CommodityDecayMap, CommodityValuationProfile, CommunicationProfile, Container,
     ContentionDispositionProfile, ContentionPolicy, ControlSource, DisposalProfile,
     DiversificationProfile, DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile,
-    ExecutionBudget, HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile,
-    LoadUnits, MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
-    PerceptionSource, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
-    Quantity, SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
+    ExecutionBudget, GroundComfortTag, HomeostaticNeeds, IntentionDispositionProfile,
+    JusticeDispositionProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile,
+    PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
+    PreferenceProfile, PursuitProfile, Quantity, ShelterTag, SleepQualityProfile,
+    SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
     TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
     items::CommodityKind, topology::PlaceTag,
 };
@@ -321,6 +322,32 @@ pub struct PlaceDef {
     pub tags: Vec<PlaceTag>,
     #[serde(default)]
     pub visibility_profile: Option<PlaceVisibilityProfile>,
+    #[serde(default)]
+    pub sleep_quality: Option<SleepQualityProfileDef>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct SleepQualityProfileDef {
+    pub shelter: ShelterTag,
+    pub ground_comfort: GroundComfortTag,
+    pub recovery_modifier: u16,
+}
+
+impl SleepQualityProfileDef {
+    pub fn into_profile(self) -> Result<SleepQualityProfile, String> {
+        let recovery_modifier = Permille::new(self.recovery_modifier).map_err(|_| {
+            format!(
+                "sleep_quality.recovery_modifier {} exceeds 1000",
+                self.recovery_modifier
+            )
+        })?;
+
+        Ok(SleepQualityProfile {
+            shelter: self.shelter,
+            ground_comfort: self.ground_comfort,
+            recovery_modifier,
+        })
+    }
 }
 
 /// A travel edge connecting two places.
@@ -557,6 +584,7 @@ mod tests {
         assert_eq!(def.places[0].name, "Village");
         assert_eq!(def.places[0].tags, vec![PlaceTag::Village]);
         assert_eq!(def.places[0].visibility_profile, None);
+        assert_eq!(def.places[0].sleep_quality, None);
         assert!(def.edges.is_empty());
         assert_eq!(def.agents.len(), 1);
         assert_eq!(def.agents[0].name, "Alice");
@@ -571,6 +599,51 @@ mod tests {
         assert!(def.notices.is_empty());
         assert!(def.resource_sources.is_empty());
         assert_eq!(def.commodity_decay, None);
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_place_sleep_quality() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (
+                    name: "Hillside Shelter",
+                    tags: [Camp],
+                    sleep_quality: (
+                        shelter: Shelter,
+                        ground_comfort: Soft,
+                        recovery_modifier: 900,
+                    ),
+                ),
+            ],
+            agents: [
+                (name: "Alice", location: "Hillside Shelter", control: Human),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        assert_eq!(
+            def.places[0].sleep_quality,
+            Some(SleepQualityProfileDef {
+                shelter: ShelterTag::Shelter,
+                ground_comfort: GroundComfortTag::Soft,
+                recovery_modifier: 900,
+            })
+        );
+    }
+
+    #[test]
+    fn sleep_quality_profile_def_rejects_out_of_range_modifier() {
+        let def = SleepQualityProfileDef {
+            shelter: ShelterTag::Open,
+            ground_comfort: GroundComfortTag::Earth,
+            recovery_modifier: 1001,
+        };
+
+        assert_eq!(
+            def.into_profile().unwrap_err(),
+            "sleep_quality.recovery_modifier 1001 exceeds 1000"
+        );
     }
 
     #[test]

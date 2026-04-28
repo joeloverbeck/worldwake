@@ -25,7 +25,7 @@ Scenarios: 10
 
 ### Scenario 59: Critical Bladder Local Relief
 
-- Source: `golden_travel_physiology.rs:202`
+- Source: `golden_travel_physiology.rs:203`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -43,7 +43,7 @@ Scenarios: 10
 
 ### Scenario 60: Agent Diversity in Travel Escalation
 
-- Source: `golden_travel_physiology.rs:343`
+- Source: `golden_travel_physiology.rs:345`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -61,7 +61,7 @@ Scenarios: 10
 
 ### Scenario 61: Travel Bladder Escalation Switches To Relief Between Legs
 
-- Source: `golden_travel_physiology.rs:520`
+- Source: `golden_travel_physiology.rs:524`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Relieve, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs, Production
@@ -79,7 +79,7 @@ Scenarios: 10
 
 ### Scenario 62: Latrine Preferred — toilet at Latrine place
 
-- Source: `golden_travel_physiology.rs:737`
+- Source: `golden_travel_physiology.rs:742`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -97,7 +97,7 @@ Scenarios: 10
 
 ### Scenario 63: Wilderness Fallback — relieve_wilderness at outdoor place
 
-- Source: `golden_travel_physiology.rs:914`
+- Source: `golden_travel_physiology.rs:920`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -115,7 +115,7 @@ Scenarios: 10
 
 ### Scenario 64: Deprivation Accident — no relief option available
 
-- Source: `golden_travel_physiology.rs:1090`
+- Source: `golden_travel_physiology.rs:1097`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -133,7 +133,7 @@ Scenarios: 10
 
 ### Scenario 65: Witness Observation — co-located agent perceives wilderness relief
 
-- Source: `golden_travel_physiology.rs:1249`
+- Source: `golden_travel_physiology.rs:1257`
 - Systems: Needs, AI, Perception
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -151,7 +151,7 @@ Scenarios: 10
 
 ### Scenario 66: No Witness — isolated agent produces no social consequences
 
-- Source: `golden_travel_physiology.rs:1459`
+- Source: `golden_travel_physiology.rs:1469`
 - Systems: Needs, AI, Perception
 - GoalKinds: Relieve
 - ActionDomains: Needs
@@ -169,7 +169,7 @@ Scenarios: 10
 
 ### Scenario 67: Need Continuity — cross-path bladder and dirtiness invariants
 
-- Source: `golden_travel_physiology.rs:1651`
+- Source: `golden_travel_physiology.rs:1663`
 - Systems: Needs, AI
 - GoalKinds: Relieve
 - ActionDomains: Needs

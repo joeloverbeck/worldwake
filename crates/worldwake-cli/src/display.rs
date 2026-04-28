@@ -692,6 +692,7 @@ mod tests {
                 name: "Village".into(),
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
+                sleep_quality: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -812,6 +813,7 @@ mod tests {
                 name: "Village".into(),
                 tags: vec![],
                 visibility_profile: None,
+                sleep_quality: None,
             }],
             edges: vec![],
             agents: vec![

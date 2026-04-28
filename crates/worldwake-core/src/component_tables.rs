@@ -45,6 +45,7 @@ use crate::{
     pursuit::PursuitProfile,
     repair_memory::RepairMemory,
     reward_encumbrance::RewardEncumbrance,
+    sleep_episode::{SleepEpisode, SleepQualityProfile},
     social_artifact::{ArtifactHeader, ArtifactPostingProfile, BountyTerms, NoticeContent},
     trade::{
         DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy,
@@ -716,6 +717,7 @@ mod tests {
             NonZeroU32::new(70).unwrap(),
             NonZeroU32::new(8).unwrap(),
             NonZeroU32::new(10).unwrap(),
+            NonZeroU32::new(8).unwrap(),
             Permille::new(0).unwrap(),
             Permille::new(0).unwrap(),
             Permille::new(0).unwrap(),

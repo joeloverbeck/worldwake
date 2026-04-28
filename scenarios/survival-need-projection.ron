@@ -15,10 +15,10 @@
 // (5-tick travel to Distant Orchard + 3-tick Harvest Apples). With
 // the AcquireCommodity goal then suppressed via
 // `Discrepancy::NeedHorizonExceeded` for `structural_block_ticks=30`
-// ticks, the agent's pre-seeded high-fatigue state (`fatigue=830`,
-// above the default `fatigue.high()=800`) makes Sleep the next
-// adopted goal — Sleep is a 1-tick estimated-duration plan, so its
-// own projection check trivially passes.
+// ticks, the agent's pre-seeded moderate fatigue state (`fatigue=500`,
+// above the default `fatigue.low()=300`) keeps Sleep available as the next
+// adopted goal without letting it outrank the initial hunger-driven
+// acquisition branch.
 //
 // Backing golden: `crates/worldwake-ai/tests/golden_need_projection.rs`.
 (
@@ -42,7 +42,7 @@
             needs: (
                 hunger: 600,
                 thirst: 100,
-                fatigue: 830,
+                fatigue: 500,
                 bladder: 100,
                 dirtiness: 100,
             ),

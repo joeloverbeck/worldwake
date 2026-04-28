@@ -230,10 +230,8 @@ fn run_survival_patrol() -> SurvivalPatrolObservation {
             .copied()
             .expect("guard should always have needs");
         need_runs.observe(&needs, &thresholds);
-        let guard_had_action = action_sink
-            .events_for_at(guard, tick)
-            .iter()
-            .any(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. }));
+        let guard_had_action =
+            golden_harness::agent_has_non_failed_action_or_active(&h, action_sink, guard, tick);
         observe_idle_window(
             &mut idle_state,
             guard_had_action,

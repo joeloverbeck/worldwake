@@ -33,11 +33,12 @@ use worldwake_core::{
     prototype_place_entity, to_shared_belief_snapshot,
 };
 use worldwake_sim::{
-    ActionDefRegistry, ActionHandlerRegistry, ActionTraceSink, AutonomousControllerRuntime,
-    ControllerState, DeterministicRng, InstitutionalKnowledgeTraceSink, PerceptionTraceSink,
-    PoliticalTraceSink, RecipeDefinition, RecipeRegistry, ReplayRecordingConfig, ReplayState,
-    RequestResolutionTraceSink, SaveableRuntime, Scheduler, SimulationState, SystemManifest,
-    TickStepResult, TickStepServices, load_from_bytes, save_to_bytes, step_tick,
+    ActionDefRegistry, ActionHandlerRegistry, ActionTraceKind, ActionTraceSink,
+    AutonomousControllerRuntime, ControllerState, DeterministicRng,
+    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
+    RecipeRegistry, ReplayRecordingConfig, ReplayState, RequestResolutionTraceSink,
+    SaveableRuntime, Scheduler, SimulationState, SystemManifest, TickStepResult, TickStepServices,
+    load_from_bytes, save_to_bytes, step_tick,
 };
 use worldwake_systems::{build_full_action_registries, dispatch_table};
 
@@ -255,6 +256,19 @@ pub fn assert_no_stuck_idle_windows(
         windows.is_empty(),
         "{scenario_name} should have no idle windows >= {max_idle_window_ticks_with_elevated_need} ticks with needs > {elevated_need_floor} permille: {windows:?}"
     );
+}
+
+pub fn agent_has_non_failed_action_or_active(
+    harness: &GoldenHarness,
+    action_sink: &ActionTraceSink,
+    agent: EntityId,
+    tick: Tick,
+) -> bool {
+    harness.agent_has_active_action(agent)
+        || action_sink
+            .events_for_at(agent, tick)
+            .iter()
+            .any(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. }))
 }
 
 /// Village Square — central hub, slot 0.

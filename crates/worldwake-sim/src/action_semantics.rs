@@ -104,6 +104,10 @@ pub enum MetabolismDurationKind {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub enum DurationExpr {
     Fixed(NonZeroU32),
+    Variable {
+        min: NonZeroU32,
+        max: NonZeroU32,
+    },
     ConsultRecord {
         target_index: u8,
     },
@@ -137,7 +141,8 @@ impl DurationExpr {
     pub const fn fixed_ticks(self) -> Option<u32> {
         match self {
             Self::Fixed(ticks) => Some(ticks.get()),
-            Self::ConsultRecord { .. }
+            Self::Variable { .. }
+            | Self::ConsultRecord { .. }
             | Self::TargetConsumable { .. }
             | Self::TravelToTarget { .. }
             | Self::EscortRouteTravel
@@ -165,6 +170,7 @@ impl DurationExpr {
     ) -> Result<ActionDuration, String> {
         match self {
             Self::Fixed(ticks) => Ok(ActionDuration::new(ticks.get())),
+            Self::Variable { max, .. } => Ok(ActionDuration::new(max.get())),
             Self::ConsultRecord { target_index } => {
                 Self::resolve_consult_record_duration(world, actor, targets, target_index)
             }
@@ -481,9 +487,13 @@ mod tests {
         ReservationReq { target_index: 3 },
     ];
 
-    const ALL_DURATION_EXPRS: [DurationExpr; 16] = [
+    const ALL_DURATION_EXPRS: [DurationExpr; 17] = [
         DurationExpr::Fixed(NonZeroU32::MIN),
         DurationExpr::Fixed(NonZeroU32::new(5).unwrap()),
+        DurationExpr::Variable {
+            min: NonZeroU32::new(1).unwrap(),
+            max: NonZeroU32::new(64).unwrap(),
+        },
         DurationExpr::ConsultRecord { target_index: 0 },
         DurationExpr::TargetConsumable { target_index: 0 },
         DurationExpr::TravelToTarget { target_index: 1 },
@@ -534,6 +544,14 @@ mod tests {
         assert_eq!(
             DurationExpr::Fixed(NonZeroU32::new(5).unwrap()).fixed_ticks(),
             Some(5)
+        );
+        assert_eq!(
+            DurationExpr::Variable {
+                min: NonZeroU32::new(1).unwrap(),
+                max: NonZeroU32::new(64).unwrap(),
+            }
+            .fixed_ticks(),
+            None
         );
         assert_eq!(
             DurationExpr::ConsultRecord { target_index: 0 }.fixed_ticks(),
@@ -633,6 +651,22 @@ mod tests {
     }
 
     #[test]
+    fn variable_duration_expr_resolves_to_upper_bound() {
+        let world = World::new(build_prototype_world()).unwrap();
+        let actor = world.topology().place_ids().next().unwrap();
+
+        assert_eq!(
+            DurationExpr::Variable {
+                min: NonZeroU32::new(2).unwrap(),
+                max: NonZeroU32::new(64).unwrap(),
+            }
+            .resolve_for(&world, actor, &[], &ActionPayload::None)
+            .unwrap(),
+            ActionDuration::new(64)
+        );
+    }
+
+    #[test]
     fn interruptibility_bincode_roundtrip_covers_every_variant() {
         for interruptibility in ALL_INTERRUPTIBILITY {
             let bytes = bincode::serialize(&interruptibility).unwrap();
@@ -687,6 +721,7 @@ mod tests {
                     NonZeroU32::new(5).unwrap(),
                     NonZeroU32::new(7).unwrap(),
                     NonZeroU32::new(9).unwrap(),
+                    NonZeroU32::new(8).unwrap(),
                     pm(0),
                     pm(0),
                     pm(0),

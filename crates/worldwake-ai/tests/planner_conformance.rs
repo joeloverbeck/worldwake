@@ -397,6 +397,7 @@ fn conformance_sleep() {
         MetabolismProfile::default(),
         UtilityProfile::default(),
     );
+    disable_ai_control(&mut ch.h, agent);
     seed_actor_local_beliefs(
         &mut ch.h.world,
         &mut ch.h.event_log,
@@ -427,7 +428,7 @@ fn conformance_sleep() {
             .get_component_homeostatic_needs(agent)
             .unwrap()
             .fatigue;
-    ch.run_action_to_completion(agent, "sleep", vec![], None, 30);
+    ch.run_action_to_completion(agent, "sleep", vec![], None, 80);
     let handler_after =
         ch.h.world
             .get_component_homeostatic_needs(agent)

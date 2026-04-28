@@ -20,7 +20,7 @@ use worldwake_core::{
     PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
     RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation,
     ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource, RightKind,
-    RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
+    RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
     SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
     ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
@@ -438,6 +438,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn place_sleep_quality_profile(&self, agent: EntityId, place: EntityId) -> SleepQualityProfile {
+        let _ = (agent, place);
+        SleepQualityProfile::default()
+    }
     fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
         let _ = agent;
         None
@@ -763,6 +767,10 @@ pub trait ProfileBeliefView {
         None
     }
     fn metabolism_profile(&self, agent: EntityId) -> Option<MetabolismProfile>;
+    fn place_sleep_quality_profile(&self, agent: EntityId, place: EntityId) -> SleepQualityProfile {
+        let _ = (agent, place);
+        SleepQualityProfile::default()
+    }
     fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
         let _ = agent;
         None
@@ -1752,6 +1760,14 @@ where
         ProfileBeliefView::metabolism_profile(self, agent)
     }
 
+    fn place_sleep_quality_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+        place: worldwake_core::EntityId,
+    ) -> worldwake_core::SleepQualityProfile {
+        ProfileBeliefView::place_sleep_quality_profile(self, agent, place)
+    }
+
     fn deprivation_exposure(
         &self,
         agent: worldwake_core::EntityId,
@@ -2224,6 +2240,7 @@ pub fn estimate_duration_from_beliefs(
 ) -> Option<ActionDuration> {
     match *duration {
         DurationExpr::Fixed(ticks) => Some(ActionDuration::new(ticks.get())),
+        DurationExpr::Variable { max, .. } => Some(ActionDuration::new(max.get())),
         DurationExpr::ConsultRecord { target_index } => {
             let target = targets.get(usize::from(target_index)).copied()?;
             let record = view.record_data(target)?;
@@ -2408,13 +2425,13 @@ mod tests {
         CauseRef, ClaimId, ClaimValue, CommodityConsumableProfile, CommodityKind, Container,
         ControlSource, DemandObservation, DeprivationExposure, DiversificationProfile,
         DriveEscalationProfile, DriveThresholds, EntityBeliefAspect, EntityBeliefClaim, EntityId,
-        EntityKind, EventLog, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
-        InstitutionalClaim, InstitutionalKnowledgeSource, LastProactiveExplorationTick, LoadUnits,
-        OfficeData, PatrolProfile, PerceptionProfile, PerceptionSource, Permille, Quantity,
-        RecordData, RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance,
-        RewardReservation, RewardSource, SuccessionLaw, TheftFacts, Tick, UniqueItemKind,
-        ViolationId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_prototype_world,
+        EntityKind, EventLog, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds,
+        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+        LastProactiveExplorationTick, LoadUnits, OfficeData, PatrolProfile, PerceptionProfile,
+        PerceptionSource, Permille, Quantity, RecordData, RecordEntryId, RecordKind,
+        ResourceSource, RewardEncumbrance, RewardReservation, RewardSource, ShelterTag,
+        SleepQualityProfile, SuccessionLaw, TheftFacts, Tick, UniqueItemKind, ViolationId,
+        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
 
     fn sample_claim(
@@ -3031,6 +3048,57 @@ mod tests {
         assert_eq!(
             GoalBeliefView::acquisition_exhaustion_count(&view, agent, HomeostaticNeedId::Hunger),
             0
+        );
+    }
+
+    #[test]
+    fn goal_belief_view_place_sleep_quality_profile_is_belief_scoped() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let known_place = places[1];
+        let unknown_place = places[2];
+        let known_profile = SleepQualityProfile {
+            shelter: ShelterTag::Shelter,
+            ground_comfort: GroundComfortTag::Soft,
+            recovery_modifier: Permille::new(950).unwrap(),
+        };
+        let unknown_profile = SleepQualityProfile {
+            shelter: ShelterTag::Roofed,
+            ground_comfort: GroundComfortTag::Hard,
+            recovery_modifier: Permille::new(700).unwrap(),
+        };
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, home).unwrap();
+            txn.set_component_sleep_quality_profile(known_place, known_profile)
+                .unwrap();
+            txn.set_component_sleep_quality_profile(unknown_place, unknown_profile)
+                .unwrap();
+
+            let mut beliefs = AgentBeliefStore::default();
+            let mut known_state = BelievedEntityState::single_observation_defaults(
+                Tick(1),
+                PerceptionSource::DirectObservation,
+            );
+            known_state.believed_kind = Some(EntityKind::Place);
+            known_state.last_known_place = Some(known_place);
+            beliefs.update_entity(known_place, known_state);
+            txn.set_component_agent_belief_store(actor, beliefs)
+                .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            GoalBeliefView::place_sleep_quality_profile(&view, actor, known_place),
+            known_profile
+        );
+        assert_eq!(
+            GoalBeliefView::place_sleep_quality_profile(&view, actor, unknown_place),
+            SleepQualityProfile::default()
         );
     }
 

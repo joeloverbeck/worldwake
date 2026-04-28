@@ -7,9 +7,9 @@ use crate::{
 };
 use crate::{
     BeliefStoreDiff, CauseRef, ComponentDelta, ComponentDiff, ComponentKind, ComponentValue,
-    EntityDelta, EventLog, EventPayload, EventTag, EvidenceRef, PendingEvent, ProvenanceEntry,
-    QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta, StateDelta,
-    VisibilitySpec, WitnessData,
+    DecisionEventPayload, EntityDelta, EventLog, EventPayload, EventTag, EvidenceRef, PendingEvent,
+    ProvenanceEntry, QuantityDelta, RelationDelta, RelationKind, RelationValue, ReservationDelta,
+    StateDelta, VisibilitySpec, WitnessData,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
@@ -26,6 +26,7 @@ pub struct WorldTxn<'w> {
     target_ids: Vec<EntityId>,
     visibility: VisibilitySpec,
     witness_data: WitnessData,
+    decision_payload: Option<DecisionEventPayload>,
     deltas: Vec<StateDelta>,
     evidence: Vec<EvidenceRef>,
     pending_provenance_event_links: Vec<PendingProvenanceEventLink>,
@@ -100,6 +101,7 @@ impl<'w> WorldTxn<'w> {
             target_ids: Vec::new(),
             visibility,
             witness_data,
+            decision_payload: None,
             deltas: Vec::new(),
             evidence: Vec::new(),
             pending_provenance_event_links: Vec::new(),
@@ -177,7 +179,7 @@ impl<'w> WorldTxn<'w> {
             visibility: self.visibility,
             witness_data: self.witness_data,
             tags: self.tags,
-            decision_payload: None,
+            decision_payload: self.decision_payload,
         })
     }
 
@@ -198,6 +200,11 @@ impl<'w> WorldTxn<'w> {
 
     pub fn add_tag(&mut self, tag: EventTag) -> &mut Self {
         self.tags.insert(tag);
+        self
+    }
+
+    pub fn set_decision_payload(&mut self, payload: DecisionEventPayload) -> &mut Self {
+        self.decision_payload = Some(payload);
         self
     }
 

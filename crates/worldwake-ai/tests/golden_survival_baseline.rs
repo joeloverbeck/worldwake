@@ -176,10 +176,12 @@ fn run_survival_baseline() -> SurvivalBaselineObservation {
             );
 
             // Track idle windows.
-            let had_action = action_sink
-                .events_for_at(*agent, tick)
-                .iter()
-                .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
+            let had_action = golden_harness::agent_has_non_failed_action_or_active(
+                &h,
+                action_sink,
+                *agent,
+                tick,
+            );
 
             let (start, max_need, count) = idle_state
                 .get_mut(agent_name)
@@ -474,6 +476,7 @@ fn survival_contract_guard_rejects_missing_authored_contract() {
             name: "Village".into(),
             tags: vec![],
             visibility_profile: None,
+            sleep_quality: None,
         }],
         edges: vec![],
         agents: vec![],
