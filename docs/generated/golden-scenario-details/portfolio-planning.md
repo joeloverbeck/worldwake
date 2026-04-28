@@ -5,7 +5,7 @@ Do not hand-edit it.
 
 Scenarios: 1
 
-### Scenario 167: Portfolio Rejects Infeasible Survival And Commitment Slots
+### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
 - Source: `golden_portfolio_planning.rs:212`
 - Systems: AI, Needs, Social, Production, Decision History
@@ -19,6 +19,6 @@ Scenarios: 1
 
 **Setup**: Load the authored `portfolio-planning.ron` scenario, seed explicit
 
-**Proves**: on the winning planning tick, the landed portfolio contains exactly
+**Proves**: on the winning planning tick, `Sleep` is fully blocked before
 
-**Cross-system chain**: scoped blocker-memory rejection for `Sleep` + seeded overdue
+**Cross-system chain**: scoped blocker-memory suppression for anchored `Sleep` + seeded

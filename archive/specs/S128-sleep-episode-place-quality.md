@@ -6,7 +6,7 @@ Replace the per-tick re-commit pattern that produces 143–146 separate `sleep` 
 
 ## Phase and Status
 
-Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft.
+Phase 10: Survival Mechanic Depth (Adjunct). Status: ✅ COMPLETED.
 
 ## Crates
 
@@ -331,7 +331,7 @@ Add `crates/worldwake-ai/tests/golden_sleep_episode.rs`:
 
 - **Test 1 — episode lifecycle.** Agent with high fatigue adopts sleep at default place; confirm one `SleepEpisode` runtime component, one `SleepEpisodeStarted` event, one `SleepEpisodeEnded` event after `intended_max_ticks`, no `sleep → sleep` loop in the action log.
 - **Test 2 — projected need breach wake.** With S126 enabled, agent with rising hunger adopts sleep; confirm wake fires on `WakeCondition::ProjectedNeedBreach { Hunger }` before `intended_max_ticks` and the `SleepEpisodeEnded.end_reason` records the breach.
-- **Test 3 — place-quality recovery differentiation.** Two agents, agent A spawned at Riverside Camp (`recovery_modifier: 900`), agent B spawned at Fertile Fields (`recovery_modifier: 700`); same starting fatigue and metabolism. Agent A wakes at fewer ticks than agent B because place quality differs. Asserts the recovery-rate path independent of site selection.
+- **Test 3 — place-quality recovery differentiation.** Two agents, agent A spawned at Riverside Camp (`recovery_modifier: 900`), agent B spawned at Fertile Fields (`recovery_modifier: 700`); same starting fatigue and metabolism. Because the live episode duration cap is derived from unmodified `MetabolismProfile.rest_efficiency`, both agents may wake on the same intended-duration boundary; the golden proves the place-quality path by asserting that agent A accumulates more recovery and ends with lower fatigue than agent B over the same episode window. Asserts the recovery-rate path independent of site selection.
 - **Test 4 — interrupted-sleep partial recovery.** Wake at tick `T < intended_max_ticks`; confirm `accumulated_recovery` reflects integrated curve up to T and `HomeostaticNeeds.fatigue` is reduced by exactly `accumulated_recovery`.
 - **Test 5 — site preference via candidate ranking.** Agent with belief of two reachable sleep sites (Hillside Shelter `1000`, Riverside Camp `900`) and no other distinguishing factors (same fatigue, same metabolism, same travel cost). Confirm the agent commits to a Sleep goal anchored at Hillside Shelter — exercises D8's per-place emission and `motive_score` integration.
 - **Test 6 — decision-trace integration.** Confirm `SleepEpisodeStarted` and `SleepEpisodeEnded` events appear in the event log at the expected ticks, payload fields populated, and renderable through the observer's decision-history surface.
@@ -374,3 +374,32 @@ Per-place variation:
 - `SleepQualityProfile.{shelter, ground_comfort, recovery_modifier}` — authored per place in scenario RON; defaults to `(Open, Earth, 1000)` when absent.
 
 No magic numbers introduced. All `Permille` for [0,1000] range values; no `f32`/`f64`.
+
+## Outcome
+
+Completed and archived on 2026-04-28.
+
+- Landed the S128 sleep episode substrate across the decomposed S128SLEEPIPLA ticket series:
+  `SleepEpisode`, `WakeCondition`, `SleepQualityProfile`, variable-duration sleep semantics,
+  `MetabolismProfile.min_sleep_ticks`, `GoalBeliefView::place_sleep_quality_profile`,
+  episode-based sleep action handling, per-place sleep candidate ranking, and scenario authoring for
+  universal place sleep-quality profiles.
+- Authored the survival-baseline sleep-quality profiles for the S128 example places through
+  `archive/tickets/S128SLEEPIPLA-006.md`.
+- Added `golden_sleep_episode.rs` with six golden scenarios covering lifecycle, projected-need wake,
+  place-quality recovery, partial recovery, site preference, and decision-history payload surfacing.
+- Extended the observer decision-history renderer test to cover `SleepEpisodeStarted` and
+  `SleepEpisodeEnded` payload names and summaries.
+- Corrected the D13 place-quality golden expectation during implementation: live sleep quality
+  modulates accumulated recovery and final fatigue, while `intended_max_ticks` is still derived from
+  unmodified `MetabolismProfile.rest_efficiency`.
+
+Verification completed in `archive/tickets/S128SLEEPIPLA-007.md`:
+
+- `cargo test -p worldwake-ai --test golden_sleep_episode`
+- `cargo test -p worldwake-cli --bin observer tests::render_decision_history_section_covers_all_variants -- --exact`
+- `cargo test -p worldwake-ai`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `./scripts/verify.sh`

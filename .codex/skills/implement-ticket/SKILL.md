@@ -101,6 +101,8 @@ When a ticket or spec claims that a value will appear in an evidence summary, tr
 
 Load `references/reassessment-golden-observer-report.md` when a ticket's proof surface is a golden, observer fixture, generated report, roadmap summary, or other read-only companion. Keep the top-level workflow focused on routing and ownership; use that reference for the detailed scenario-isolation, fixture-truthing, and generated-report representability checks.
 
+When the claimed proof target is an observer/CLI formatter or renderer that is private to a `src/bin/*` binary, do not replace renderer proof with a handwritten formatting surrogate while still claiming renderer coverage. Either drive the compiled binary, add a same-binary unit test if the formatter is test-reachable there, or rewrite the ticket/spec/golden wording to the strongest honest seam, such as proving the decision payload fields that the private renderer consumes rather than rendered output itself.
+
 #### Mixed AI/runtime synthesis and trade arithmetic
 
 When a mixed AI/runtime ticket can synthesize the same payload family or opening offer through both planner fallback and authoritative affordance/runtime code, compare those constructors up front and treat parity across those generation paths as current-ticket scope rather than fixing only one side by default.
@@ -338,7 +340,7 @@ When a planner/ranking ticket changes stored agenda metadata, ranking provenance
 
 #### Fixture refresh and generated-doc fallout
 
-When a golden ticket's live proof seam changes during reassessment, also update any scenario metadata comments or other doc-feeding annotations inside the golden test file before regenerating inventory/docs. Before running `golden_inventory.py`, sweep the edited golden file for duplicate `Scenario NN` identifiers so renumbering or inserting a scenario does not break doc regeneration with a duplicate-id error. Generated golden docs reflect those metadata blocks, so stale labels there will silently publish the wrong scenario summary even when the executable assertions are correct.
+When a golden ticket's live proof seam changes during reassessment, also update any scenario metadata comments or other doc-feeding annotations inside the golden test file before regenerating inventory/docs. Before adding or renumbering `Scenario NN` comments, allocate identifiers against the repo-global golden namespace, not just the edited file: scan all `crates/worldwake-ai/tests/golden_*.rs` scenario headers, choose an unused block, and only then patch the metadata comments. Before running `golden_inventory.py`, re-sweep the edited file for duplicate identifiers so local copy/paste mistakes are still caught before doc generation. Generated golden docs reflect those metadata blocks, so stale labels there will silently publish the wrong scenario summary even when the executable assertions are correct.
 
 When broadened verification fails only because an observer/report/golden fixture still reflects the old truthful output and the new output matches the landed contract, refresh that fixture in-scope, rerun the exact snapshot/fixture test that failed, and only then continue to broader workspace verification. Record the fixture refresh explicitly in closeout instead of treating it as invisible fallout.
 

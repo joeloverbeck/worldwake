@@ -4115,7 +4115,8 @@ mod tests {
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
         GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, OpportunityAnchor,
         PendingEvent, Permille, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
-        PrototypePlace, Quantity, RecipeId, ResourceSource, Tick, VisibilitySpec, WitnessData,
+        PrototypePlace, Quantity, RecipeId, ResourceSource, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, Tick, VisibilitySpec, WakeCondition, WakeReason, WitnessData,
         WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
@@ -4426,6 +4427,44 @@ mod tests {
                 blocking_fact: None,
                 expires_tick: Tick(99),
                 belief_snapshot: None,
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            12,
+            agent,
+            EventTag::SleepEpisodeStarted,
+            DecisionEventPayload::SleepEpisodeStarted(SleepEpisodeStartedPayload {
+                sleeper: agent,
+                place: entity(24),
+                intended_min_ticks: NonZeroU32::new(4).unwrap(),
+                intended_max_ticks: NonZeroU32::new(40).unwrap(),
+                target_recovery: Permille::new(750).unwrap(),
+                wake_conditions: vec![
+                    WakeCondition::IntendedDurationReached,
+                    WakeCondition::ProjectedNeedBreach {
+                        need: HomeostaticNeedId::Thirst,
+                    },
+                ],
+                recovery_modifier: Permille::new(875).unwrap(),
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            13,
+            agent,
+            EventTag::SleepEpisodeEnded,
+            DecisionEventPayload::SleepEpisodeEnded(SleepEpisodeEndedPayload {
+                sleeper: agent,
+                place: entity(24),
+                start_tick: Tick(12),
+                end_tick: Tick(24),
+                end_reason: WakeReason::ProjectedNeedBreach {
+                    need: HomeostaticNeedId::Thirst,
+                    projected_breach_tick: Tick(25),
+                },
+                accumulated_recovery: Permille::new(225).unwrap(),
+                final_fatigue: Permille::new(525).unwrap(),
             }),
         );
 
@@ -5309,7 +5348,7 @@ mod tests {
         assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
         assert_eq!(
             out.lines().filter(|line| line.starts_with("| ")).count(),
-            12
+            14
         );
         for event_name in [
             "GoalOffered",
@@ -5323,6 +5362,8 @@ mod tests {
             "RepairApplied",
             "ReplanTriggered",
             "BlockerRecorded",
+            "SleepEpisodeStarted",
+            "SleepEpisodeEnded",
         ] {
             assert!(
                 out.contains(event_name),
@@ -5331,6 +5372,8 @@ mod tests {
         }
         assert!(out.contains("Guard Theron"));
         assert!(out.contains("goal=ProduceCommodity { recipe_id: RecipeId(3) } motive=420 alts=1"));
+        assert!(out.contains("min=4 max=40 target=750 modifier=875"));
+        assert!(out.contains("ticks=12->24 reason=ProjectedNeedBreach"));
     }
 
     #[test]

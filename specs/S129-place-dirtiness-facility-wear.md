@@ -18,7 +18,7 @@ Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft.
 ## Dependencies
 
 - S106 (Ground Item Decay) — **completed**. Place dirtiness decay reuses the existing maintenance-pass cadence (per-tick check, threshold-based decrement).
-- S128 (Sleep Episodes and Place-Quality Recovery) — **soft**. Sleep ranking reads `PlaceDirtiness` as a multiplicative factor on `SleepQualityProfile.recovery_modifier`. Without S128, the dirtiness signal still drives wash candidate ranking but has no sleep-quality consumer.
+- S128 (Sleep Episodes and Place-Quality Recovery) — **soft, satisfied**. Sleep ranking reads `PlaceDirtiness` as a multiplicative factor on `SleepQualityProfile.recovery_modifier`; S128 is completed and archived at `archive/specs/S128-sleep-episode-place-quality.md`.
 - S110 (Decision History Events) — **hard**. The three new event tags follow the S110 payload-struct conventions.
 - S82 (Waste Disposal and Inventory Management) — **completed**. `Waste` as `ItemLot` plus `drop_item` already exists; place-side dirtiness is the missing per-place aggregate.
 

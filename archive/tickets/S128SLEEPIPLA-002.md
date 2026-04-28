@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `min_sleep_ticks: NonZeroU32` field on the universal `MetabolismProfile` agent component, cascading construction-site updates, and a save-format bump for the persisted profile shape.
-**Deps**: specs/S128-sleep-episode-place-quality.md (D6)
+**Deps**: archive/specs/S128-sleep-episode-place-quality.md (D6)
 
 ## Problem
 

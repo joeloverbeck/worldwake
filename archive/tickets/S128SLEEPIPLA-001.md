@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new core components (`SleepEpisode`, `SleepQualityProfile`), new core enum (`WakeCondition`), new core payload structs and enum (`SleepEpisodeStartedPayload`, `SleepEpisodeEndedPayload`, `WakeReason`), two new `EventTag` variants, save format bump.
-**Deps**: specs/S128-sleep-episode-place-quality.md (D1, D2, D3, D4)
+**Deps**: archive/specs/S128-sleep-episode-place-quality.md (D1, D2, D3, D4)
 
 ## Problem
 

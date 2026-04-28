@@ -491,12 +491,10 @@ Phase 10 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ```text
 S126 ✅ archived
 S127 ✅ archived
-S130 (independent; soft dep on S122 ✅)
+S128 ✅ archived
 S131 (independent; existing SourceReliability extension)
-   │
-   └── S128 (soft dep on S126 ✅; hard dep on S110 ✅)
-         │
-         └── S129 (soft dep on S128; hard deps on S106 ✅, S110 ✅)
+S130 (hard dep on S128 ✅; soft dep on S122 ✅)
+S129 (soft dep on S128 ✅; hard deps on S106 ✅, S110 ✅)
 ```
 
 All cross-spec dependencies among S126–S131 are **soft** (benefit but not blocking). Hard dependencies on S106, S110, S122 are already satisfied (those specs are completed).
@@ -505,20 +503,20 @@ All cross-spec dependencies among S126–S131 are **soft** (benefit but not bloc
 
 **Wave 1** (parallel, no hard deps among new specs):
 - **S126**: ✅ COMPLETED — Need Projection and Plan Time-Budget Assumptions — archived at [archive/specs/S126-need-projection-time-budget.md](/home/joeloverbeck/projects/worldwake/archive/specs/S126-need-projection-time-budget.md). Landed `FrameAssumption::NeedSafeUntilTick`, `Discrepancy::NeedHorizonExceeded`, `HomeostaticNeeds::projected_tick_of`, keyed `MetabolismProfile::rate(need)` and `DriveThresholds::high(need)` accessors, the populate/evaluate/record chain through S109's typed-discrepancy path with `DiscrepancyClearing::TtlExpiry`, decision-trace surfacing, and end-to-end golden coverage in `golden_need_projection.rs` against the new auxiliary `scenarios/survival-need-projection.ron`. `SAVE_FORMAT_VERSION` bumped 47 → 48. The pre-existing `golden_goal_switching_during_multi_leg_travel` golden was rewritten under the new lawful horizon-aware contract during ticket -003.
-- **S130**: Survey Records and Frontier Disconfirmation — `SurveyMemory` per-agent component; `HypothesisKind` on `ExploreLocation`; perception-time arrival evaluation; ranking damps re-exploration of confirmed-empty places. Folds in PR-7's narrow arrival-diff piece.
 - **S131**: Source Reliability Wait and Capacity Extension — extends existing `ReliabilityRecord` with `average_wait_ticks`, `wait_observation_count`, `last_observed_capacity`, `last_observed_capacity_tick`; new `wait_sensitivity_weight` on `PreferenceProfile`; ranking integration.
 
 **Wave 2** (after Wave 1; soft deps consumable):
 - **S127**: ✅ COMPLETED — Quantity-Aware Acquisition and Visible Source State — archived at [archive/specs/S127-quantity-aware-acquisition.md](/home/joeloverbeck/projects/worldwake/archive/specs/S127-quantity-aware-acquisition.md). Landed `AcquisitionQuantity { desired_min, desired_target, horizon_ticks }` on `AcquireCommodity`, `extraction_slots` + `extraction_duration_ticks` on `ResourceSource`, `LastHarvestTrace` ring buffer pruned by the existing `item_decay_system`, `ResourceExtractionQueues` per-slot contention substrate, `CommitTraceData::Harvest.partial_quantity` for partial-success harvest aftermath, candidate-generation quantity derivation from agent state, decision-trace surfacing of the quantity tuple, and five-scenario golden coverage in `golden_quantity_aware_acquisition.rs` (single-slot queue, multi-slot parallel grants, partial success, S126-driven target, FOUNDATIONS Section VI Scenario E). Final ticket S127QUAAWAACQ-010 also wired the AI's `BlockingFact::ReservationConflict` clearing baseline through new `extraction_slot_*` accessors so harvest-contention blockers clear structurally rather than by TTL.
-- **S128**: Sleep Episodes and Place-Quality Recovery — `SleepEpisode` runtime component, `WakeCondition` enum, `SleepQualityProfile` per-place, `EventTag::SleepEpisodeStarted` / `SleepEpisodeEnded`; replaces per-tick re-commit pattern. Soft consumes S126 ✅ (wake-on-projection); folds in PR-9 sleep-quality, PR-11 interrupted-sleep, PR-12 sleep events.
+- **S128**: ✅ COMPLETED — Sleep Episodes and Place-Quality Recovery — archived at [archive/specs/S128-sleep-episode-place-quality.md](/home/joeloverbeck/projects/worldwake/archive/specs/S128-sleep-episode-place-quality.md). Landed `SleepEpisode` runtime component, `WakeCondition` enum, universal `SleepQualityProfile` per-place, `EventTag::SleepEpisodeStarted` / `SleepEpisodeEnded`, episode-based sleep action handling, wake-on-S126 projection, per-place sleep candidate ranking, survival-baseline sleep-quality authoring, observer decision-history rendering, and six-scenario golden coverage in `golden_sleep_episode.rs`.
+- **S130**: Survey Records and Frontier Disconfirmation — `SurveyMemory` per-agent component; `HypothesisKind` on `ExploreLocation`; perception-time arrival evaluation; ranking damps re-exploration of confirmed-empty places. Folds in PR-7's narrow arrival-diff piece. S128's `SleepQualityProfile` dependency for `MayContainSleepSite` is now satisfied.
 
 **Wave 3** (after Wave 2; soft deps consumable):
-- **S129**: Place Dirtiness and Facility Wear — `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` components; `WasteCreated`/`WashFacilityUsed`/`LatrineMaintained` event tags; relieve/toilet/wash handler extensions; partial-wash outcome (PR-11 fold-in). Soft consumes S128 (sleep ranking reads dirtiness as quality modifier). Folds in PR-9 hygiene topology, PR-11 partial-wash, PR-12 waste/wash events.
+- **S129**: Place Dirtiness and Facility Wear — `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` components; `WasteCreated`/`WashFacilityUsed`/`LatrineMaintained` event tags; relieve/toilet/wash handler extensions; partial-wash outcome (PR-11 fold-in). Soft consumes completed S128 (sleep ranking reads dirtiness as quality modifier). Folds in PR-9 hygiene topology, PR-11 partial-wash, PR-12 waste/wash events.
 
 ### Follow-up Tickets (not specs)
 
 - **Survival-baseline contention authoring** (post-S127/S131): enable `ContentionPolicy::FirstArrival` on the wells/orchard in `scenarios/survival-baseline.ron` so the existing `queue_for_facility_use` substrate is exercised under realistic pressure. Authoring task, not a spec.
-- **Place sleep-quality rebalance** (post-S128): author `SleepQualityProfile` per place in `scenarios/survival-baseline.ron` and other survival scenarios so Hillside Shelter becomes a meaningful sleep destination (Roofed/Soft, recovery_modifier ~1300) and Fertile Fields becomes hygiene-poor (Open/Earth, slower decay).
+- **Additional sleep-quality rebalance** (post-S128): `scenarios/survival-baseline.ron` now has the S128 four-place `SleepQualityProfile` authoring. Extend the bounded `0..=1000` sleep-quality profiles to other survival scenarios when those scenarios need place-specific sleep-site differentiation.
 - **Place dirtiness authoring** (post-S129): author `PlaceDirtiness.decay_per_tick` per place to differentiate accumulation/recovery rates per topology character.
 
 ### Phase 10 Gate

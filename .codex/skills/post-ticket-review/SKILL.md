@@ -17,6 +17,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 - If the concern is still an unmet deliverable of the reviewed ticket, block archival and return ownership to that ticket; do not create a follow-up.
 - If archival is blocked after the ticket already says `COMPLETED`, leave the active ticket truthful by adding a `Post-ticket review blocker` note or applying a factual status correction that matches the repo's active-ticket convention.
+- Prefer a `Post-ticket review blocker` note when the repo has no clear reopened/in-progress status convention for completed tickets, or when the implementation is mostly complete but one handoff/proof seam must resume. Change the status only when the active-ticket convention defines an unambiguous non-completed state for resumed work or when `COMPLETED` would materially mislead downstream planning even with the blocker note.
 
 ## Workflow
 
@@ -159,6 +160,40 @@ Set fields using evidence, not placeholders:
 Create high-confidence tickets directly. Ask before creating only when scope or dependency graph is uncertain.
 
 ### 7. Present the report
+
+If archival is blocked by an in-scope deliverable, use this compact report shape and do not fill the full follow-up-oriented template unless the user asks for the broader review anyway:
+
+```markdown
+# Post-Ticket Review: <ticket-id>
+
+**Ticket**: <path>
+**Review date**: YYYY-MM-DD
+**Implementation state reviewed**: <worktree/index/committed summary, including unrelated same-session dirty paths when relevant>
+
+## Archival Status
+
+- blocked
+- <Outcome + verification notes check result>
+- <ticket blocker note or status correction made>
+
+## Blocker
+
+- **Resume seam**: <exact ticket-owned implementation/proof/handoff seam>
+- **Evidence**: <code/test/ticket/generated-doc evidence>
+- **Required before archival**: <specific correction and proof/regeneration command>
+
+## Skipped By Design
+
+- Follow-up ticket creation skipped because the blocker remains owned by this ticket.
+- Full archival maintenance and adjacent-roadmap sweeps skipped until the ticket is ready to archive.
+
+## Summary
+
+**Result**: archival blocked
+**Follow-up**: 0 new tickets, <N> updated tickets, 0 covered by existing tickets
+```
+
+For archived, already-archived, or follow-up-producing reviews, use the full report shape:
 
 ```markdown
 # Post-Ticket Review: <ticket-id>
