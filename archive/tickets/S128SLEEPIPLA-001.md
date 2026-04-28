@@ -16,7 +16,7 @@ The current `tick_sleep` handler runs every tick and the planner re-selects slee
 
 1. `crates/worldwake-core/src/event_tag.rs` enumerates 39 `EventTag` variants today (lines 8-47); no `SleepEpisodeStarted` / `SleepEpisodeEnded` exist. `EventTag` is consumed via `event_log.events_by_tag(...)` queries — no exhaustive match on `EventTag` exists in the workspace, so the two new variants do not require match-arm updates.
 2. `crates/worldwake-core/src/decision_event_payload.rs` follows the convention: `pub enum DecisionEventPayload { Variant(VariantPayload), ... }` with one struct per tag (lines 10-22, 26-294). `Sleep`-prefixed payload structs do not exist. The S128 spec (D4) requires `SleepEpisodeStartedPayload`, `SleepEpisodeEndedPayload`, and a new `WakeReason` enum following this convention.
-3. Shared boundary under audit: serialized state. `crates/worldwake-sim/src/save_load.rs:6` has `SAVE_FORMAT_VERSION = 53`. New components serialized via `bincode` and new `EventTag` variants change the on-disk shape, requiring a single bump to `54` in this ticket. S128SLEEPIPLA-002 will add `min_sleep_ticks` to `MetabolismProfile` with `#[serde(default)]`, intentionally avoiding a second bump.
+3. Shared boundary under audit: serialized state. `crates/worldwake-sim/src/save_load.rs:6` has `SAVE_FORMAT_VERSION = 53`. New components serialized via `bincode` and new `EventTag` variants change the on-disk shape, requiring a single bump to `54` in this ticket. Later S128SLEEPIPLA-002 reassessment corrected the handoff: adding `min_sleep_ticks` to persisted `MetabolismProfile` also requires its own current-format bump to `55`, while `#[serde(default)]` only preserves authored scenario omission.
 4. `crates/worldwake-core/src/component_schema.rs` `with_component_schema_entries!` macro (line 3) registers components by referencing types via `crate::TypeName`; both `SleepEpisode` and `SleepQualityProfile` must therefore live in `worldwake-core` (per the core-residence constraint at `references/worldwake-validation-patterns.md`). Existing place components register with `|kind| kind == EntityKind::Place` filter (lines 1660, 1685, 1710); `SleepQualityProfile` follows this filter. Existing agent components register with the agent kind filter; `SleepEpisode` follows that filter.
 5. `WakeCondition::PlaceNoLongerSafe` is intentionally absent per spec Non-Goals — deferred until S60 lands `OccupancyClaim`/`OccupancyPosture`. The variant must NOT appear in this ticket. Spec Non-Goals (line 46) and D1 explanation (line 110) document the deferral.
 
@@ -118,7 +118,7 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from `5
 ## Out of Scope
 
 - `WakeCondition::PlaceNoLongerSafe` — deferred per spec Non-Goals (S60 dependency not yet implemented)
-- `MetabolismProfile.min_sleep_ticks` field addition — handled by S128SLEEPIPLA-002
+- `MetabolismProfile.min_sleep_ticks` field addition — handled by archive/tickets/S128SLEEPIPLA-002.md
 - `DurationExpr::Variable { min, max }` — handled by S128SLEEPIPLA-003
 - `GoalBeliefView::place_sleep_quality_profile` accessor — handled by S128SLEEPIPLA-003
 - `tick_sleep` handler refactor — handled by S128SLEEPIPLA-004
@@ -164,17 +164,20 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from `5
 
 Completed on 2026-04-28.
 
+Outcome amended: 2026-04-28.
+
 - Added `SleepEpisode`, `WakeCondition`, `SleepQualityProfile`, `ShelterTag`, and `GroundComfortTag` in `worldwake-core`, with crate re-exports and focused bincode/default tests.
 - Registered `SleepEpisode` for agents and `SleepQualityProfile` for places through the component schema macro, including `ComponentKind` / `ComponentValue` sample coverage and focused component-schema tests.
 - Added `SleepEpisodeStarted` / `SleepEpisodeEnded` event tags, matching `DecisionEventPayload` variants, payload structs, and `WakeReason`.
 - Bumped `SAVE_FORMAT_VERSION` to `54` and extended save/load round-trip coverage to preserve non-default sleep components and the new decision-event payloads.
 - Updated the CLI observer's exhaustive decision-payload rendering so the new sleep episode events have an agent, event name, and compact payload summary.
+- Amended the S128SLEEPIPLA-002 handoff note after live reassessment proved the later persisted `MetabolismProfile.min_sleep_ticks` field needs a separate `SAVE_FORMAT_VERSION` bump to `55`.
 
 ## Deviations
 
 - The ticket's drafted file list missed `crates/worldwake-cli/src/bin/observer.rs`; workspace verification exposed it as legitimate shared-payload fallout.
 - `SleepQualityProfile` is place-valid and defaultable after this ticket, but scenario-spawned places are not universally seeded here; S128SLEEPIPLA-006 still owns the `PlaceDef.sleep_quality` and `spawn_place` wiring.
-- No handler, AI, scenario authoring, or golden behavior landed here. Those remain owned by S128SLEEPIPLA-002 through S128SLEEPIPLA-007 as drafted.
+- No handler, AI, scenario authoring, or golden behavior landed here. The metabolism-profile substrate is now archived in S128SLEEPIPLA-002; the remaining behavior and proof slices stay owned by S128SLEEPIPLA-003 through S128SLEEPIPLA-007 as drafted.
 
 ## Verification Result
 

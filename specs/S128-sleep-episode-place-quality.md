@@ -241,7 +241,7 @@ pub struct MetabolismProfile {
 }
 ```
 
-`Default` impl (around `needs.rs:233-254`) extends with `min_sleep_ticks: NonZeroU32::new(8).unwrap()`. `AgentDef.metabolism_profile` already exposes the full `MetabolismProfile` struct in scenario authoring (`crates/worldwake-cli/src/scenario/types.rs`), so no separate `AgentDef` field is needed; existing scenarios using `metabolism_profile: None` continue to work because the field defaults to `8` ticks.
+`Default` impl (around `needs.rs:233-254`) extends with `min_sleep_ticks: NonZeroU32::new(8).unwrap()`. `AgentDef.metabolism_profile` already exposes the full `MetabolismProfile` struct in scenario authoring (`crates/worldwake-cli/src/scenario/types.rs`), so no separate `AgentDef` field is needed; existing scenarios using `metabolism_profile: None` continue to work because the field defaults to `8` ticks. Because `MetabolismProfile` is persisted in the current bincode save payload, the D6 implementation bumps `SAVE_FORMAT_VERSION` from `54` to `55`; older saves remain rejected by the existing version gate instead of being loaded through a compatibility shim.
 
 ### D7: `sleep` action handler refactor
 

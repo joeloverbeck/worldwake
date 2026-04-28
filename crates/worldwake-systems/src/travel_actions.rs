@@ -1643,6 +1643,7 @@ mod tests {
                     nz(10),  // bladder_accident_tolerance_ticks
                     nz(2),   // toilet_ticks
                     nz(3),   // wash_ticks
+                    nz(8),   // min_sleep_ticks
                     pm(500), // travel_fatigue_multiplier
                     pm(300), // travel_thirst_multiplier
                     pm(200), // travel_bladder_multiplier

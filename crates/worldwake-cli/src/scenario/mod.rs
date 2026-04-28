@@ -1416,6 +1416,13 @@ mod tests {
         let place_id = world.effective_place(agent_id).unwrap();
         let place = world.topology().place(place_id).unwrap();
         assert_eq!(place.name, "Village");
+        assert_eq!(
+            world
+                .get_component_metabolism_profile(agent_id)
+                .unwrap()
+                .min_sleep_ticks,
+            NonZeroU32::new(8).unwrap()
+        );
     }
 
     #[test]

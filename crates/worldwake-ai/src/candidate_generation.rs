@@ -19291,6 +19291,7 @@ mod tests {
             std::num::NonZeroU32::new(40).unwrap(),
             std::num::NonZeroU32::new(8).unwrap(),
             std::num::NonZeroU32::new(12).unwrap(),
+            std::num::NonZeroU32::new(8).unwrap(),
             Permille::new(0).unwrap(),
             Permille::new(0).unwrap(),
             Permille::new(0).unwrap(),

@@ -25,6 +25,7 @@ fn decay_cycle_metabolism() -> MetabolismProfile {
         nz(200), // bladder_accident_tolerance_ticks
         nz(2),   // toilet_ticks
         nz(12),  // wash_ticks
+        nz(8),   // min_sleep_ticks
         pm(0),   // travel_fatigue_multiplier
         pm(0),   // travel_thirst_multiplier
         pm(0),   // travel_bladder_multiplier

@@ -323,6 +323,7 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
             bladder_accident_tolerance_ticks: NonZeroU32::new(40).unwrap(),
             toilet_ticks: NonZeroU32::new(8).unwrap(),
             wash_ticks: NonZeroU32::new(12).unwrap(),
+            min_sleep_ticks: NonZeroU32::new(8).unwrap(),
             travel_fatigue_multiplier: pm(0),
             travel_thirst_multiplier: pm(0),
             travel_bladder_multiplier: pm(0),

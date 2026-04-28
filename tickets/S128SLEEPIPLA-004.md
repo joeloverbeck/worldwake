@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — replaces the per-tick re-commit `tick_sleep` handler with a duration-bearing episode, adds wake-condition synthesis, populates `SleepEpisode` at start, emits `SleepEpisodeStarted`/`SleepEpisodeEnded` events. Updates the existing `sleep_reduces_fatigue_without_a_bed` test.
-**Deps**: archive/tickets/S128SLEEPIPLA-001.md, S128SLEEPIPLA-002, S128SLEEPIPLA-003
+**Deps**: archive/tickets/S128SLEEPIPLA-001.md, archive/tickets/S128SLEEPIPLA-002.md, S128SLEEPIPLA-003
 
 ## Problem
 

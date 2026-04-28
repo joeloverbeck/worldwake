@@ -933,6 +933,7 @@ mod tests {
             NonZeroU32::new(70).unwrap(),
             NonZeroU32::new(8).unwrap(),
             NonZeroU32::new(10).unwrap(),
+            NonZeroU32::new(8).unwrap(),
             Permille::new(0).unwrap(),
             Permille::new(0).unwrap(),
             Permille::new(0).unwrap(),

@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 54;
+pub const SAVE_FORMAT_VERSION: u32 = 55;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -206,13 +206,14 @@ mod tests {
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
         GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, MaterializationTag, PendingEvent, PerceptionSource, PlanAdoptedPayload,
-        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
-        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, ReservationId, RewardEncumbrance, Seed, ShelterTag, SleepEpisode,
-        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile, StateHash,
-        SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec, WakeCondition,
-        WakeReason, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        LastSeenRecord, MaterializationTag, MetabolismProfile, PendingEvent, PerceptionSource,
+        PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
+        PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary, RepairAppliedPayload,
+        RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId, RewardEncumbrance, Seed,
+        ShelterTag, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+        SleepQualityProfile, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
+        VisibilitySpec, WakeCondition, WakeReason, WitnessData, WorkstationTag, World, WorldTxn,
+        build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -319,6 +320,17 @@ mod tests {
         let mut event_log = EventLog::new();
         let actor = spawn_agent(&mut world, &mut event_log, Tick(0), "save-actor");
         let target = spawn_agent(&mut world, &mut event_log, Tick(1), "save-target");
+        let mut profile_txn = new_txn(&mut world, Tick(1), CauseRef::Bootstrap);
+        profile_txn
+            .set_component_metabolism_profile(
+                actor,
+                MetabolismProfile {
+                    min_sleep_ticks: NonZeroU32::new(11).unwrap(),
+                    ..MetabolismProfile::default()
+                },
+            )
+            .unwrap();
+        let _ = profile_txn.commit(&mut event_log);
         let mut office_txn = new_txn(&mut world, Tick(1), CauseRef::Bootstrap);
         let office = office_txn.create_office("save-office").unwrap();
         office_txn
@@ -938,6 +950,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
+        assert_eq!(SAVE_FORMAT_VERSION, 55);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -960,6 +973,14 @@ mod tests {
         assert_eq!(
             restored.world().get_component_sleep_episode(actor),
             state.world().get_component_sleep_episode(actor)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_metabolism_profile(actor)
+                .unwrap()
+                .min_sleep_ticks,
+            NonZeroU32::new(11).unwrap()
         );
         let restored_sleep_place = state.world().topology().place_ids().next().unwrap();
         assert_eq!(

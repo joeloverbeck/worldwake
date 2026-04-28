@@ -230,6 +230,7 @@ fn metabolism_profile(rates: [u16; 6], timings: [u32; 6]) -> MetabolismProfile {
         nz(timings[3]),
         nz(timings[4]),
         nz(timings[5]),
+        nz(8),
         pm(0),
         pm(0),
         pm(0),
@@ -543,6 +544,7 @@ fn authoritative_schema_includes_expected_shared_e09_e12_and_e14_components_and_
         bladder_accident_tolerance_ticks,
         toilet_ticks,
         wash_ticks,
+        min_sleep_ticks,
         ..
     } = MetabolismProfile::default();
     let _ = (
@@ -558,5 +560,6 @@ fn authoritative_schema_includes_expected_shared_e09_e12_and_e14_components_and_
         bladder_accident_tolerance_ticks,
         toilet_ticks,
         wash_ticks,
+        min_sleep_ticks,
     );
 }
