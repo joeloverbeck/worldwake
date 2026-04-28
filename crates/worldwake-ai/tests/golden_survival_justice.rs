@@ -273,10 +273,8 @@ fn run_survival_justice() -> JusticeObservation {
             first_social_suspected_theft_tick = Some(tick);
         }
         merchant_need_runs.observe(&merchant_needs, &merchant_thresholds);
-        let merchant_had_action = action_sink
-            .events_for_at(merchant, tick)
-            .iter()
-            .any(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. }));
+        let merchant_had_action =
+            golden_harness::agent_has_non_failed_action_or_active(&h, action_sink, merchant, tick);
         observe_idle_window(
             &mut merchant_idle_state,
             merchant_had_action,

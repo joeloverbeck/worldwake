@@ -345,7 +345,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 349: Final Integration Authors The Full Coexistence Stack
 
-- Source: `golden_final_integration.rs:329`
+- Source: `golden_final_integration.rs:327`
 
 ### Scenario 342: Waste Decay Reaches A Bounded Steady State
 
@@ -1011,7 +1011,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 170: Survival Ask-Consult Lands Roadmap Row Six
 
-- Source: `golden_survival_ask_consult.rs:366`
+- Source: `golden_survival_ask_consult.rs:364`
 - Systems: AI, Needs, Travel, Search, Epistemic, Offices
 - GoalKinds: SearchForMissing, ClaimOffice, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve
 - ActionDomains: Needs, Travel, Epistemic, Social
@@ -1026,7 +1026,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 148: Survival Baseline Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_baseline.rs:298`
+- Source: `golden_survival_baseline.rs:300`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1041,7 +1041,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 149: Survival Baseline Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_baseline.rs:337`
+- Source: `golden_survival_baseline.rs:339`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1056,7 +1056,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 150: Survival Baseline Explorer Discovers Fertile Fields Orchard
 
-- Source: `golden_survival_baseline.rs:370`
+- Source: `golden_survival_baseline.rs:372`
 - Systems: AI, Exploration, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production, Needs
@@ -1071,7 +1071,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 151: Survival Baseline Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_baseline.rs:405`
+- Source: `golden_survival_baseline.rs:407`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -1086,7 +1086,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 152: Survival Baseline Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_baseline.rs:436`
+- Source: `golden_survival_baseline.rs:438`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1101,11 +1101,11 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 347: survival-combat
 
-- Source: `golden_survival_combat.rs:237`
+- Source: `golden_survival_combat.rs:235`
 
 ### Scenario 158: Contested Survival Keeps All Four Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_contested.rs:382`
+- Source: `golden_survival_contested.rs:385`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1120,7 +1120,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 159: Contested Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_contested.rs:431`
+- Source: `golden_survival_contested.rs:434`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1135,7 +1135,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 160: Contested Survival Draws From Both Water Sources Across The Run
 
-- Source: `golden_survival_contested.rs:466`
+- Source: `golden_survival_contested.rs:469`
 - Systems: AI, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity
 - ActionDomains: Needs, Travel, Production
@@ -1150,7 +1150,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 161: Contested Survival Has Both Camp Sides Reach A Food Source
 
-- Source: `golden_survival_contested.rs:510`
+- Source: `golden_survival_contested.rs:513`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -1165,7 +1165,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 162: Contested Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_contested.rs:547`
+- Source: `golden_survival_contested.rs:550`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -1180,7 +1180,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 163: Contested Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_contested.rs:581`
+- Source: `golden_survival_contested.rs:584`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1195,11 +1195,11 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 348: Survival Escort Lands Coordinated Care Travel
 
-- Source: `golden_survival_escort.rs:265`
+- Source: `golden_survival_escort.rs:263`
 
 ### Scenario 174: Survival Item Decay Lands Roadmap Row Ten
 
-- Source: `golden_survival_items_decay.rs:395`
+- Source: `golden_survival_items_decay.rs:397`
 - Systems: AI, Needs, Trade, Transport, ItemDecay
 - GoalKinds: FreeCarryCapacity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Transport, Needs
@@ -1214,7 +1214,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 177: Survival Justice Proves Accusation Substrate
 
-- Source: `golden_survival_justice.rs:634`
+- Source: `golden_survival_justice.rs:632`
 - Systems: AI, Needs, Trade, Perception, Offices, Investigation
 - GoalKinds: StealItem, InvestigateViolation, Accuse
 - ActionDomains: Social, Trade, Needs
@@ -1229,7 +1229,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 178: Survival Justice Proves Search And Report Found
 
-- Source: `golden_survival_justice.rs:717`
+- Source: `golden_survival_justice.rs:715`
 - Systems: AI, Needs, Search, Reports, Perception, Offices
 - GoalKinds: SearchForMissing, ReportFound
 - ActionDomains: Social, Needs
@@ -1244,7 +1244,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 179: Survival Justice Proves Institutional Bounty Posted
 
-- Source: `golden_survival_justice.rs:773`
+- Source: `golden_survival_justice.rs:771`
 - Systems: AI, Needs, Offices, Investigation, Social Artifacts, Treasury
 - GoalKinds: Accuse, PunishAccused, PostBounty
 - ActionDomains: Social, Needs
@@ -1259,7 +1259,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 175: Survival Offices Proves Force-Law Uptake Under Survival
 
-- Source: `golden_survival_offices.rs:432`
+- Source: `golden_survival_offices.rs:430`
 - Systems: AI, Needs, Offices, Search, Social artifact actions
 - GoalKinds: ClaimOffice, PostNotice, SearchForMissing, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Social, Needs
@@ -1274,11 +1274,11 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 346: survival-patrol
 
-- Source: `golden_survival_patrol.rs:270`
+- Source: `golden_survival_patrol.rs:268`
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 
-- Source: `golden_survival_preferences.rs:357`
+- Source: `golden_survival_preferences.rs:355`
 - Systems: AI, Needs, Travel, Production, proactive diversification
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Travel, Production, Needs
@@ -1293,7 +1293,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 172: Survival Production Lands Roadmap Row Eight
 
-- Source: `golden_survival_production.rs:254`
+- Source: `golden_survival_production.rs:252`
 - Systems: AI, Needs, Production
 - GoalKinds: ProduceCommodity, ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Production, Needs
@@ -1308,7 +1308,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 153: Scattered Survival Keeps All Agents Alive For 1440 Ticks
 
-- Source: `golden_survival_scattered.rs:322`
+- Source: `golden_survival_scattered.rs:324`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1323,7 +1323,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 154: Scattered Survival Exercises All Five Self-Care Action Families
 
-- Source: `golden_survival_scattered.rs:364`
+- Source: `golden_survival_scattered.rs:366`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1338,7 +1338,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 155: Isolated Agent Reaches A Food Source From Ravine Shelter
 
-- Source: `golden_survival_scattered.rs:398`
+- Source: `golden_survival_scattered.rs:400`
 - Systems: AI, Exploration, Perception, Travel
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Needs
@@ -1353,7 +1353,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 156: Scattered Survival Avoids Budget Exhaustion On Survival Goals
 
-- Source: `golden_survival_scattered.rs:430`
+- Source: `golden_survival_scattered.rs:432`
 - Systems: AI, Search, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, ExploreLocation
 - ActionDomains: Needs, Travel, Production
@@ -1368,7 +1368,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 157: Scattered Survival Has No Stuck Idle Windows With Elevated Needs
 
-- Source: `golden_survival_scattered.rs:464`
+- Source: `golden_survival_scattered.rs:466`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Needs, Travel, Production
@@ -1383,7 +1383,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 168: Seeded Target-Location Belief Decays To Stale Without Refresh
 
-- Source: `golden_survival_scattered.rs:497`
+- Source: `golden_survival_scattered.rs:499`
 - Systems: Perception, Belief Envelope
 - GoalKinds: none (envelope-surfacing proof only)
 - ActionDomains: none
@@ -1398,7 +1398,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 169: Survival Tell Lands Roadmap Row Five
 
-- Source: `golden_survival_tell.rs:400`
+- Source: `golden_survival_tell.rs:402`
 - Systems: AI, Needs, Travel, Production, Tell
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Wash, Sleep, Relieve, ShareBelief
 - ActionDomains: Needs, Travel, Production, Social
@@ -1413,7 +1413,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 176: Survival Theft Lands the Concealed Staged-Lot Branch
 
-- Source: `golden_survival_theft.rs:400`
+- Source: `golden_survival_theft.rs:398`
 - Systems: AI, Needs, Trade, Perception, Transport
 - GoalKinds: StealItem, ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Needs, Transport
@@ -1428,7 +1428,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 350: Survival Trade Proves the Substitute Market Branch
 
-- Source: `golden_survival_trade.rs:467`
+- Source: `golden_survival_trade.rs:469`
 - Systems: AI, Needs, Trade, Travel, Perception, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Travel, Needs, Production

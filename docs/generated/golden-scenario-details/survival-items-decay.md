@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 174: Survival Item Decay Lands Roadmap Row Ten
 
-- Source: `golden_survival_items_decay.rs:395`
+- Source: `golden_survival_items_decay.rs:397`
 - Systems: AI, Needs, Trade, Transport, ItemDecay
 - GoalKinds: FreeCarryCapacity, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Transport, Needs

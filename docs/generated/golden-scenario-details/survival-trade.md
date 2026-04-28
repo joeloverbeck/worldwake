@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 350: Survival Trade Proves the Substitute Market Branch
 
-- Source: `golden_survival_trade.rs:467`
+- Source: `golden_survival_trade.rs:469`
 - Systems: AI, Needs, Trade, Travel, Perception, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Travel, Needs, Production

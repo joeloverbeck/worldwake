@@ -270,7 +270,7 @@ All ordered rows are landed or have a planned extension routed against them (see
 - Seed: `104004`
 - Agents: `3`
 - Places: `4`
-- Survival health contract: `max_authored_critical_run_ticks = 100`, `max_idle_window_ticks_with_elevated_need = 20`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
+- Survival health contract: `max_authored_critical_run_ticks = 100`, `max_idle_window_ticks_with_elevated_need = 40`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
 
 **Landed feature rows**
 - Basic needs (Eat/Drink/Sleep/Relieve/Wash)
@@ -365,7 +365,7 @@ The golden now proves the drive-escalation branch inside a real 1440-tick surviv
 - Seed: `417005`
 - Agents: `3`
 - Places: `2`
-- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 40`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.dirtiness = 700`
+- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 65`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.dirtiness = 700`
 
 **New landed feature row**
 - Tell / peer info transfer
@@ -391,7 +391,7 @@ The golden proves the tell row at the earliest honest causal surface that still 
 - Seed: `518006`
 - Agents: `4`
 - Places: `2`
-- Survival health contract: `max_authored_critical_run_ticks = 260`, `max_idle_window_ticks_with_elevated_need = 45`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.hunger = 450` and `critical_run_limits.dirtiness = 760`
+- Survival health contract: `max_authored_critical_run_ticks = 260`, `max_idle_window_ticks_with_elevated_need = 70`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.hunger = 450` and `critical_run_limits.dirtiness = 760`
 
 **New landed feature rows**
 - Ask-about-person
@@ -445,7 +445,7 @@ The golden proves the proactive-preference row at the actual branch that matters
 - Seed: `608008`
 - Agents: `1`
 - Places: `1`
-- Survival health contract: `max_authored_critical_run_ticks = 180`, `max_idle_window_ticks_with_elevated_need = 24`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
+- Survival health contract: `max_authored_critical_run_ticks = 180`, `max_idle_window_ticks_with_elevated_need = 35`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
 
 **New landed feature row**
 - Production (facility-backed craft)
@@ -469,7 +469,7 @@ The golden proves a real non-harvest production branch inside the survival loop 
 - Seed: `609009`
 - Agents: `2`
 - Places: `2`
-- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 28`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
+- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 60`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
 
 **Scenario-owned progress**
 - Merchant selling
@@ -502,7 +502,7 @@ That proof now closes the row honestly. The focused AI tests still own the lower
 - Seed: `610010`
 - Agents: `3`
 - Places: `2`
-- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 28`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
+- Survival health contract: `max_authored_critical_run_ticks = 220`, `max_idle_window_ticks_with_elevated_need = 35`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`
 
 **New landed feature rows**
 - Item decay

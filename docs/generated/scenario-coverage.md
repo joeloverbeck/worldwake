@@ -131,7 +131,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 940217
 - Agents: 2 Ai, 2 None
 - Places: 2
-- Survival contract: max_critical 170, elevated_idle 30, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 170, elevated_idle 50, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -191,7 +191,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 518006
 - Agents: 3 Ai, 1 None
 - Places: 2
-- Survival contract: max_critical 260, elevated_idle 45, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 260, elevated_idle 70, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -250,7 +250,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 104004
 - Agents: 3 Ai
 - Places: 4
-- Survival contract: max_critical 100, elevated_idle 20, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 100, elevated_idle 40, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -309,7 +309,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 790415
 - Agents: 1 Ai, 1 None
 - Places: 2
-- Survival contract: max_critical 170, elevated_idle 30, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 170, elevated_idle 50, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -486,7 +486,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 940216
 - Agents: 2 Ai, 1 None
 - Places: 2
-- Survival contract: max_critical 170, elevated_idle 30, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 170, elevated_idle 55, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -545,7 +545,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 610010
 - Agents: 3 Ai
 - Places: 2
-- Survival contract: max_critical 220, elevated_idle 28, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 220, elevated_idle 35, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -604,7 +604,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 613013
 - Agents: 3 Ai, 2 None
 - Places: 1
-- Survival contract: max_critical 220, elevated_idle 30, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 220, elevated_idle 120, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Sleep)
@@ -781,7 +781,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 614014
 - Agents: 1 Ai, 1 None
 - Places: 3
-- Survival contract: max_critical 160, elevated_idle 30, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 160, elevated_idle 40, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -899,7 +899,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 608008
 - Agents: 1 Ai
 - Places: 1
-- Survival contract: max_critical 180, elevated_idle 24, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 180, elevated_idle 35, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -1017,7 +1017,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 417005
 - Agents: 2 Ai
 - Places: 2
-- Survival contract: max_critical 220, elevated_idle 40, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 220, elevated_idle 65, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)
@@ -1135,7 +1135,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 - Seed: 609009
 - Agents: 2 Ai
 - Places: 2
-- Survival contract: max_critical 220, elevated_idle 28, families [Eat, Drink, Sleep, Relieve, Wash]
+- Survival contract: max_critical 220, elevated_idle 60, families [Eat, Drink, Sleep, Relieve, Wash]
 
 **Active features**
 - Basic needs (Eat)

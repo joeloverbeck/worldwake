@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 348: Survival Escort Lands Coordinated Care Travel
 
-- Source: `golden_survival_escort.rs:265`
+- Source: `golden_survival_escort.rs:263`
 - Primary tests: `survival_escort_proves_coordinated_care_travel`, `survival_escort_replay_is_deterministic`
 - Replay tests: None
 - All tests: `survival_escort_proves_coordinated_care_travel`, `survival_escort_replay_is_deterministic`

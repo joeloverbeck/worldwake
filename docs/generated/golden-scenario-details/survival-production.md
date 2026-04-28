@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 172: Survival Production Lands Roadmap Row Eight
 
-- Source: `golden_survival_production.rs:254`
+- Source: `golden_survival_production.rs:252`
 - Systems: AI, Needs, Production
 - GoalKinds: ProduceCommodity, ConsumeOwnedCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Production, Needs

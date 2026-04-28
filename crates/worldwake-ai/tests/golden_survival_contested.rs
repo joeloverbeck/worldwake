@@ -265,9 +265,12 @@ fn run_survival_contested() -> SurvivalContestedObservation {
 
             let tick_events = action_sink.events_for_at(*agent, tick);
 
-            let had_action = tick_events
-                .iter()
-                .any(|e| !matches!(e.kind, ActionTraceKind::StartFailed { .. }));
+            let had_action = golden_harness::agent_has_non_failed_action_or_active(
+                &h,
+                action_sink,
+                *agent,
+                tick,
+            );
 
             // Capture drink commits with the agent's current place (committed
             // actions occur at the actor's place, so effective_place post-step

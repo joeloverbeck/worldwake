@@ -223,10 +223,8 @@ fn run_survival_escort() -> SurvivalEscortObservation {
             .copied()
             .expect("caretaker should always have needs");
         need_runs.observe(&needs, &thresholds);
-        let caretaker_had_action = action_sink
-            .events_for_at(caretaker, tick)
-            .iter()
-            .any(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. }));
+        let caretaker_had_action =
+            golden_harness::agent_has_non_failed_action_or_active(&h, action_sink, caretaker, tick);
         observe_idle_window(
             &mut idle_state,
             caretaker_had_action,

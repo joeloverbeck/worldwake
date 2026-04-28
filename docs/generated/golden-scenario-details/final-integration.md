@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 349: Final Integration Authors The Full Coexistence Stack
 
-- Source: `golden_final_integration.rs:329`
+- Source: `golden_final_integration.rs:327`
 - Primary tests: `final_integration_proves_full_stack_coexistence`, `final_integration_replay_is_deterministic`
 - Replay tests: None
 - All tests: `final_integration_proves_full_stack_coexistence`, `final_integration_replay_is_deterministic`

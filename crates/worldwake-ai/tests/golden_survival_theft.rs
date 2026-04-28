@@ -176,10 +176,8 @@ fn run_survival_theft() -> SurvivalTheftObservation {
         let action_sink = h
             .action_trace_sink()
             .expect("action tracing should be enabled");
-        let had_action = action_sink
-            .events_for_at(thief, tick)
-            .iter()
-            .any(|event| !matches!(event.kind, ActionTraceKind::StartFailed { .. }));
+        let had_action =
+            golden_harness::agent_has_non_failed_action_or_active(&h, action_sink, thief, tick);
         if had_action {
             if let Some(start_tick) = idle_state.0.take()
                 && idle_state.2 >= contract.max_idle_window_ticks_with_elevated_need
