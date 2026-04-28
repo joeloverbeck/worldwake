@@ -1,6 +1,6 @@
 # S128SLEEPIPLA-004: Sleep action handler refactor and wake-condition synthesis
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — replaces the per-tick re-commit `tick_sleep` handler with a duration-bearing episode, adds wake-condition synthesis, populates `SleepEpisode` at start, emits `SleepEpisodeStarted`/`SleepEpisodeEnded` events. Updates the existing `sleep_reduces_fatigue_without_a_bed` test.
@@ -17,8 +17,8 @@ The current `tick_sleep` (`crates/worldwake-systems/src/needs_actions.rs:331-349
 1. Existing focused/unit coverage at `crates/worldwake-systems/src/needs_actions.rs::sleep_reduces_fatigue_without_a_bed` (line 738) asserts that `tick_sleep` reduces `HomeostaticNeeds.fatigue` by `rest_efficiency`. This test must be reframed (or extended) to assert the new episode-based behavior — recovery accumulates across ticks, `SleepEpisode` component is present mid-episode, fatigue reduction equals integrated recovery up to wake. Per `docs/precision-rules.md` Rule 13, do not adapt the test to the new behavior cosmetically — restate the intended invariant first. Existing AI-layer coverage: `crates/worldwake-ai/src/feasibility.rs::test_sleep_always_likely` (line 689) asserts sleep is always feasible — this should remain green; sleep does not gain new preconditions in this ticket.
 2. `tick_sleep` handler signature: `fn tick_sleep(_def: &ActionDef, instance: &mut ActionInstance, _context: &worldwake_sim::ActionExecutionContext<'_>, _rng: &mut DeterministicRng, txn: &mut WorldTxn<'_>) -> Result<ActionProgress, ActionError>`. Sleep is registered at `needs_actions.rs:30-35` (handler binding) and `needs_actions.rs:69-75` (`register_def` call) with `DurationExpr::Fixed(NonZeroU32::MIN)` and `Interruptibility::InterruptibleWithPenalty`. Start handler is `start_noop`; commit handler is `commit_noop`. All four handler functions (`start_noop`, `tick_sleep`, `commit_noop`, `abort_noop`) are referenced; `start_noop` and `commit_noop` need bespoke replacements for sleep — `start_sleep_episode`, `commit_sleep_episode`, plus a new `abort_sleep_episode` mirroring commit semantics for unexpected interruptions.
 3. Shared boundary under audit: the action lifecycle. The new handler replaces all three of start, tick, and commit (and abort) for the `sleep` action. `Interruptibility` becomes `FreelyInterruptible` (no penalty for wake-condition-driven exit; the wake machinery is internal to the tick handler). `DurationExpr` becomes `DurationExpr::Variable { min: NonZeroU32::new(1).unwrap(), max: NonZeroU32::new(64).unwrap() }` — the per-episode actual bounds come from `SleepEpisode`, but the registration carries placeholder bounds for scheduler bookkeeping.
-4. Wake-condition synthesis location (D10 architectural concern): the spec proposes `crates/worldwake-ai/src/agent_tick/sleep_synthesis.rs` (new). However, the synthesis logic reads `FrameAssumption::NeedSafeUntilTick` (in `worldwake-core/src/intention_frame.rs`), agent intention queue (also core), and emits `WakeCondition` (core). The handler at sleep start (in `worldwake-systems`) needs the synthesized vec. Three options: (a) synthesis lives in `worldwake-systems` next to the handler — direct construction at `start_sleep_episode` time; (b) synthesis lives in `worldwake-ai` and writes wake conditions to the agent's `IntentionFrame` (or similar core-layer carrier) before adoption, and the handler reads them off; (c) synthesis lives in `worldwake-ai` and is called as a free function from `worldwake-systems` — illegal under the layer rule. **Recommendation: option (a)** — synthesis at start_sleep_episode time keeps the data flow local and avoids cross-crate coupling. The spec's proposed module path (`worldwake-ai/src/agent_tick/sleep_synthesis.rs`) is corrected to `crates/worldwake-systems/src/sleep_synthesis.rs` (new). Reflect this correction in the implementation; flag if reassessment surfaces a different constraint.
-5. Information-path: at start, the handler reads (i) `MetabolismProfile.min_sleep_ticks` and `rest_efficiency` from the agent (authoritative — the agent owns this); (ii) `SleepQualityProfile` from the agent's current place (authoritative — actions execute against world state per FND-14 exception for action handlers; `recovery_modifier` is cached on `SleepEpisode` so the tick loop doesn't re-read); (iii) `FrameAssumption::NeedSafeUntilTick` from the agent's `IntentionFrame` for each non-Fatigue need; (iv) any scheduled commitments in the intention queue for the sleep window. At tick, the handler reads `SleepEpisode.recovery_modifier` (cached), `MetabolismProfile.rest_efficiency`, and current `HomeostaticNeeds.fatigue`. Wake-condition evaluation re-reads `FrameAssumption::NeedSafeUntilTick` each tick (projection may shift). At commit, the handler removes `SleepEpisode` and emits `SleepEpisodeEnded`.
+4. Wake-condition synthesis location (D10 architectural concern): the spec proposes `crates/worldwake-ai/src/agent_tick/sleep_synthesis.rs` (new). However, the synthesis logic reads `FrameAssumption::NeedSafeUntilTick` (in `worldwake-core/src/intention_frame.rs`), `ExpectationStore` commitment records (also core), and emits `WakeCondition` (core). The handler at sleep start (in `worldwake-systems`) needs the synthesized vec. Three options: (a) synthesis lives in `worldwake-systems` next to the handler — direct construction at `start_sleep_episode` time; (b) synthesis lives in `worldwake-ai` and writes wake conditions to the agent's `IntentionFrame` (or similar core-layer carrier) before adoption, and the handler reads them off; (c) synthesis lives in `worldwake-ai` and is called as a free function from `worldwake-systems` — illegal under the layer rule. **Recommendation: option (a)** — synthesis at start_sleep_episode time keeps the data flow local and avoids cross-crate coupling. The spec's proposed module path (`worldwake-ai/src/agent_tick/sleep_synthesis.rs`) is corrected to `crates/worldwake-systems/src/sleep_synthesis.rs` (new). Reflect this correction in the implementation; flag if reassessment surfaces a different constraint.
+5. Information-path: at start, the handler reads (i) `MetabolismProfile.min_sleep_ticks` and `rest_efficiency` from the agent (authoritative — the agent owns this); (ii) `SleepQualityProfile` from the agent's current place (authoritative — actions execute against world state per FND-14 exception for action handlers; `recovery_modifier` is cached on `SleepEpisode` so the tick loop doesn't re-read); (iii) `FrameAssumption::NeedSafeUntilTick` from the agent's `IntentionFrame` for each non-Fatigue need; (iv) active or overdue agent-owned non-plan-step records in the agent's `ExpectationStore` for scheduled commitments due by the sleep horizon. At tick, the handler reads `SleepEpisode.recovery_modifier` (cached), `MetabolismProfile.rest_efficiency`, and current `HomeostaticNeeds.fatigue`. Wake-condition evaluation re-reads `FrameAssumption::NeedSafeUntilTick` each tick (projection may shift). At commit, the handler removes `SleepEpisode` and emits `SleepEpisodeEnded`.
 6. Removed path: the per-tick re-commit pattern is removed, not preserved alongside the new path. Per FND-28, no live-authority shim survives. The `Interruptibility::InterruptibleWithPenalty → FreelyInterruptible` change is also a clean transition; no compat layer.
 7. Cumulative arithmetic check (Rule 7): per-tick recovery becomes `MetabolismProfile.rest_efficiency × SleepEpisode.recovery_modifier ÷ 1000`. With default values (`rest_efficiency: pm(20)`, `recovery_modifier: pm(1000)`) this equals `pm(20)` per tick, identical to current behavior. With Hillside Shelter's `recovery_modifier: pm(1000)` (per corrected spec), per-tick recovery remains `pm(20)`. With Fertile Fields' `pm(700)`, recovery becomes `pm(14)`. `accumulated_recovery` is bounded by `Permille::new_unchecked(1000)` (saturates at full recovery). Fatigue cannot drop below `Permille::new_unchecked(0)` per existing saturating subtraction. Survivability envelope: an agent can recover from `fatigue: pm(900)` to `fatigue: pm(0)` in `900/20 = 45` ticks at Hillside Shelter/default place and `900/14 ≈ 65` ticks at Fertile Fields. With `intended_max_ticks: 64` (placeholder), the best/default site completes fully while the poorest site may produce an intentionally partial episode.
 8. Adjacent contradictions check: existing AI behavior assumes sleep is per-tick — the candidate emitter at `crates/worldwake-ai/src/candidate_generation.rs:3228 emit_sleep_goal` emits one untargeted Sleep candidate per tick. After this ticket, the sleep tick handler holds the action open, and the planner sees the action as in-flight — the candidate emitter still emits, but the action lifecycle prevents a parallel sleep. This is consistent with how other duration-bearing actions work. Per-place candidate emission (S128SLEEPIPLA-005) is the orthogonal change; this ticket leaves emission untargeted.
@@ -60,7 +60,7 @@ Behavior per S128 spec D10:
 
 1. Always push `WakeCondition::IntendedDurationReached`.
 2. For each `HomeostaticNeedId` in `HomeostaticNeedId::ALL` except `Fatigue`: read the agent's `IntentionFrame` for `FrameAssumption::NeedSafeUntilTick { need: <this need>, until_tick }`. If `until_tick < current_tick + intended_max_ticks.get()`, push `WakeCondition::ProjectedNeedBreach { need }`. (S126's projection is recomputed at evaluation time inside the tick handler — this synthesis only declares which needs to monitor.)
-3. Read the agent's intention queue for scheduled commitments due within `[current_tick, current_tick + intended_max_ticks.get()]`. For each, push `WakeCondition::ScheduledCommitmentDue { tick }`.
+3. Read the agent's `ExpectationStore` for active or overdue agent-owned non-plan-step commitment records due by `current_tick + intended_max_ticks.get()`. For each unique deadline tick, push `WakeCondition::ScheduledCommitmentDue { tick }` in chronological order.
 4. Always push `WakeCondition::LocalDisturbance`.
 5. If `target_recovery < Permille::new_unchecked(1000)`, push `WakeCondition::TargetRecoveryReached`.
 
@@ -155,3 +155,48 @@ The existing test at `needs_actions.rs:738` asserts `tick_sleep` reduces fatigue
 3. `cargo test -p worldwake-ai feasibility candidate_generation` (ensures the existing AI tests still pass while sleep stays untargeted)
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed: 2026-04-28
+
+Implemented the episode-based sleep lifecycle in `worldwake-systems`:
+
+- Added `crates/worldwake-systems/src/sleep_synthesis.rs` and wired it through `crates/worldwake-systems/src/lib.rs`.
+- Replaced the old per-tick sleep re-commit path with `start_sleep_episode`, `tick_sleep`, `commit_sleep_episode`, and `abort_sleep_episode`.
+- Registered sleep as `DurationExpr::Variable { min: 1, max: 64 }` and `Interruptibility::FreelyInterruptible`.
+- Added `SleepEpisodeStarted` / `SleepEpisodeEnded` tags and decision payloads to the existing action start/commit transactions.
+- Added `WorldTxn::set_decision_payload` so action handlers can attach the shared decision payload without creating a parallel event path.
+- Updated AI duration-contract handling for `DurationExpr::Variable` and adjusted planner conformance sleep coverage for the longer episode lifecycle.
+
+Live-scope corrections from reassessment:
+
+- Scheduled commitment synthesis now reads the live systems-readable commitment carrier: the agent's `ExpectationStore`. It includes active or overdue agent-owned non-plan-step records due by the sleep horizon and excludes internal `PlanStepCompletion` records.
+- `WakeCondition::LocalDisturbance` is synthesized and remains the abort reason for externally interrupted sleep, but normal tick evaluation does not fire it yet because there is no clean local-disturbance perception carrier for systems to read.
+- `TargetRecoveryReached` is synthesized for the default full-recovery target, but with `target_recovery = 0` it only fires after full recovery; intended duration will usually be the visible end condition for default sleep.
+- The drafted combined filters (`cargo test -p worldwake-systems sleep_episode sleep_synthesis`, `cargo test -p worldwake-ai feasibility candidate_generation`) are not valid Cargo filter shapes for this repo. Verification used exact selectors and full crate/workspace lanes instead.
+
+Verification completed:
+
+- `cargo test -p worldwake-systems --lib needs_actions::tests::sleep_episode_reduces_fatigue_at_default_place -- --exact`
+- `cargo test -p worldwake-systems --lib sleep_synthesis::tests::test_sleep_synthesis_defaults_to_duration_disturbance_and_target_recovery -- --exact`
+- `cargo test -p worldwake-systems --lib sleep_synthesis::tests::test_sleep_synthesis_includes_projected_need_breach_inside_window -- --exact`
+- `cargo test -p worldwake-systems --lib sleep_synthesis::tests::test_sleep_synthesis_includes_scheduled_commitments_due_by_horizon -- --exact`
+- `cargo test -p worldwake-systems --lib sleep_synthesis`
+- `cargo test -p worldwake-systems --lib needs_actions::tests::sleep_wake_reason_uses_first_matching_condition -- --exact`
+- `cargo test -p worldwake-systems --lib needs_actions::tests::sleep_wake_reason_maps_projected_need_and_scheduled_commitment -- --exact`
+- `cargo test -p worldwake-systems --lib needs_actions::tests::register_needs_actions_adds_all_six_defs_and_handlers -- --exact`
+- `cargo test -p worldwake-systems`
+- `cargo test -p worldwake-ai --lib feasibility::tests::test_sleep_always_likely -- --exact`
+- `cargo test -p worldwake-ai --lib planner_duration_contract::tests::planner_duration_inventory_matches_live_non_fixed_planner_surface -- --exact`
+- `cargo test -p worldwake-ai --test planner_conformance conformance_sleep -- --exact`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo fmt --all -- --check`
+
+`./scripts/verify.sh` was not rerun after the explicit fmt, workspace test, and CI clippy lanes above.
+
+## Post-ticket Review Blocker Resolution (2026-04-28)
+
+Resolved the archival blocker by wiring scheduled-commitment synthesis into `crates/worldwake-systems/src/sleep_synthesis.rs`. The live substrate is the agent's `ExpectationStore`: active or overdue agent-owned non-plan-step commitment records due by the sleep horizon synthesize `WakeCondition::ScheduledCommitmentDue { tick }`. Internal `PlanStepCompletion` records are excluded because they are planner bookkeeping, not external commitments that should wake the agent.

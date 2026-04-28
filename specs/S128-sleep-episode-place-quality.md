@@ -37,13 +37,13 @@ PR-9's topology depth ask resolves naturally if `SleepQualityProfile` differenti
 4. Place quality modulates recovery rate, not whether sleep is allowed. A bad sleep site still produces fatigue reduction — just less per tick. A great site produces more per tick. No "you cannot sleep here" gating.
 5. Place quality also drives site preference. The candidate emitter produces one sleep candidate per believed sleep-eligible place; `motive_score` for `Sleep` weighs `recovery_modifier` so a well-authored shelter ranks above an open-air orchard. This addresses the "Hillside Shelter remained dormant" smell from the gameplay report.
 6. Interrupted sleep is partial success. Recovery accumulated up to the wake tick is preserved (the agent's `fatigue` is reduced by the integrated curve up to the wake point). This is the canonical FND-10 partial-aftermath case for sleep.
-7. The episode is interruptible only through local or internal causes: projected need breach, scheduled commitment, local disturbance. Not through global scheduling magic. Per the assessment: "Do not add danger or social interruptions if those systems are inactive." Place-safety wake conditions are deferred to S60 (see Non-Goals).
+7. The episode is interruptible only through local or internal causes: projected need breach, scheduled commitment, and external interruption recorded as local disturbance. Not through global scheduling magic. Per the assessment: "Do not add danger or social interruptions if those systems are inactive." Place-safety wake conditions are deferred to S60 (see Non-Goals).
 8. Two new event tags. Per FND-30, every spec declares its own causal records. PR-12's standalone "sleep event tags" proposal is folded here because the events are intrinsic to this spec's deliverables, not a separate concern.
 
 ## Non-Goals
 
 - Bedding items, blanket entities, or mattress-grade simulation. The assessment explicitly rejects this: "Make place matter without over-simulating bedding."
-- `WakeCondition::PlaceNoLongerSafe` (place safety as a wake trigger). Deferred until S60 (Persistent Site Occupancy) lands and `OccupancyClaim`/`OccupancyPosture` exist in code. The remaining wake conditions (duration, target recovery, projected need breach, scheduled commitment, local disturbance) are sufficient for Phase 10.
+- `WakeCondition::PlaceNoLongerSafe` (place safety as a wake trigger). Deferred until S60 (Persistent Site Occupancy) lands and `OccupancyClaim`/`OccupancyPosture` exist in code. The remaining live wake conditions (duration, target recovery, projected need breach, scheduled commitment, plus local-disturbance abort recording) are sufficient for Phase 10.
 - Crowding effects on sleep quality. Deferred until S129 lands `PlaceDirtiness` (which will give the substrate for "this place has too many sleepers"); PR-9's crowding ask is deferred to a follow-up.
 - Weather exposure modulation. No weather system exists yet (FND-5 YAGNI).
 - Dream content, REM cycles, sleep debt rollover beyond the existing `fatigue` and `DeprivationExposure` surfaces. The body's `fatigue` field already carries integrated debt.
@@ -99,10 +99,10 @@ pub enum WakeCondition {
     /// S126's projection for the named need would breach before
     /// `until_tick`. Read fresh each tick from the agent's own state.
     ProjectedNeedBreach { need: HomeostaticNeedId },
-    /// A scheduled commitment (existing intention frame queue) becomes
+    /// A scheduled commitment (existing expectation-store obligation) becomes
     /// due at the named tick.
     ScheduledCommitmentDue { tick: Tick },
-    /// Local disturbance perceived (per existing perception channel).
+    /// External interruption or a future local-disturbance perception carrier.
     LocalDisturbance,
 }
 ```
@@ -248,7 +248,7 @@ pub struct MetabolismProfile {
 In `crates/worldwake-systems/src/needs_actions.rs`, the `sleep` action:
 
 - Registration: `DurationExpr::Variable { min: NonZeroU32::new(1).unwrap(), max: <large default like 64> }` (placeholder bounds; per-episode actual bounds come from `SleepEpisode`). Sleep stays untargeted at the action-registration level (`ActionPayload::None`); per-place selection is handled in the AI candidate emitter (D8) by emitting one candidate per believed sleep place. The action's `Interruptibility` becomes `FreelyInterruptible` (no penalty for wake-condition-driven exit; the wake machinery is internal to the tick handler).
-- `start`: derives `intended_min_ticks` from `MetabolismProfile.min_sleep_ticks`, `intended_max_ticks` from agent fatigue and `rest_efficiency` (long enough to fully recover under typical conditions, capped). Reads the agent's current place's `SleepQualityProfile` to capture `recovery_modifier` on the episode. Derives `wake_conditions` from S126's per-need projections plus any scheduled commitments in the agent's intention queue (see D10). Inserts `SleepEpisode` component. Emits `SleepEpisodeStarted` event.
+- `start`: derives `intended_min_ticks` from `MetabolismProfile.min_sleep_ticks`, `intended_max_ticks` from agent fatigue and `rest_efficiency` (long enough to fully recover under typical conditions, capped). Reads the agent's current place's `SleepQualityProfile` to capture `recovery_modifier` on the episode. Derives `wake_conditions` from S126's per-need projections plus any scheduled commitments in the agent's `ExpectationStore` (see D10). Inserts `SleepEpisode` component. Emits `SleepEpisodeStarted` event.
 - `tick`: each tick, applies recovery `MetabolismProfile.rest_efficiency × SleepEpisode.recovery_modifier × per-tick-step`. Updates `SleepEpisode.accumulated_recovery` and reduces `HomeostaticNeeds.fatigue`. Evaluates each `WakeCondition`. If any fires, the action transitions to commit on the next step.
 - `commit`: removes `SleepEpisode` component, emits `SleepEpisodeEnded` event with `end_reason`. Returns `CommitOutcome` with the recovery delta.
 
@@ -274,16 +274,18 @@ Implement on `RuntimeBeliefView` by reading the place's component (universal —
 
 ### D10: Wake-condition synthesis
 
-In `crates/worldwake-ai/src/agent_tick/sleep_synthesis.rs` (new):
+In `crates/worldwake-systems/src/sleep_synthesis.rs`:
 
 For an agent adopting `Sleep`, build the wake-condition vec:
 
 1. `WakeCondition::IntendedDurationReached` — always present.
 2. For each `HomeostaticNeedId` in `HomeostaticNeedId::ALL` except `Fatigue`: if S126 projection returns `Some(breach_tick)` with `breach_tick < current_tick + intended_max_ticks`, push `WakeCondition::ProjectedNeedBreach { need }`.
-3. Read the agent's intention frame queue for scheduled commitments; if any tick falls within the sleep window, push `WakeCondition::ScheduledCommitmentDue { tick }`.
+3. Read the agent's `ExpectationStore` for active or overdue agent-owned commitment records, excluding internal `PlanStepCompletion` records; if any deadline falls by the sleep horizon, push `WakeCondition::ScheduledCommitmentDue { tick }` in chronological order.
 4. `WakeCondition::LocalDisturbance` — always present.
 
 `WakeCondition::TargetRecoveryReached` is added if `target_recovery < 1000` (the agent has explicit "wake when fatigue is below X" intent).
+
+`LocalDisturbance` is live as the `abort_sleep_episode` end reason. Normal tick evaluation does not fire it until a clean systems-readable local-disturbance carrier exists.
 
 ### D11: Decision-trace surfacing
 

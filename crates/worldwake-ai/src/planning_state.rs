@@ -4802,6 +4802,14 @@ mod tests {
                     vec![market],
                     ActionPayload::None,
                 ),
+                PlannerDurationDependency::Variable => (
+                    DurationExpr::Variable {
+                        min: std::num::NonZeroU32::new(1).unwrap(),
+                        max: std::num::NonZeroU32::new(64).unwrap(),
+                    },
+                    Vec::new(),
+                    ActionPayload::None,
+                ),
             };
             let runtime_duration =
                 estimate_duration_from_beliefs(&view, actor, &duration, &targets, &payload);

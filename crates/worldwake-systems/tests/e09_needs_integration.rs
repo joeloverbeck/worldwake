@@ -338,10 +338,21 @@ fn scheduler_driven_care_actions_apply_effects_and_preserve_conservation() {
     );
 
     harness.queue_action("sleep", Vec::new());
-    harness.run_queued_action_to_completion(2);
+    harness.run_queued_action_to_completion(15);
+    assert_eq!(actor_needs(&harness).fatigue, pm(0));
     assert_eq!(
-        actor_needs(&harness).fatigue,
-        pm(400).saturating_sub(profile.rest_efficiency)
+        harness
+            .event_log
+            .events_by_tag(worldwake_core::EventTag::SleepEpisodeStarted)
+            .len(),
+        1
+    );
+    assert_eq!(
+        harness
+            .event_log
+            .events_by_tag(worldwake_core::EventTag::SleepEpisodeEnded)
+            .len(),
+        1
     );
 
     let public_latrine = prototype_place_entity(PrototypePlace::PublicLatrine);

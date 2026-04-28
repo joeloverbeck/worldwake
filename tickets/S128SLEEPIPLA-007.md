@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: No — adds new golden E2E test file `crates/worldwake-ai/tests/golden_sleep_episode.rs` with 6 tests covering episode lifecycle, projected-need wake, place-quality recovery differentiation, partial recovery aftermath, site preference via candidate ranking, and decision-trace integration.
-**Deps**: S128SLEEPIPLA-004, S128SLEEPIPLA-005, S128SLEEPIPLA-006
+**Deps**: archive/tickets/S128SLEEPIPLA-004.md, S128SLEEPIPLA-005, S128SLEEPIPLA-006
 
 ## Problem
 
