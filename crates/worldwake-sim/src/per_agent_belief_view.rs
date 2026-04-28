@@ -19,10 +19,10 @@ use worldwake_core::{
     MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
     OfficeData, PerceptionSource, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
     RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RouteExperience, SocialObservation, SourceReliability, StockStoragePolicy,
-    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WorkstationTag,
-    World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
+    RewardEncumbrance, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
+    StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick,
+    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+    WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -552,6 +552,23 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
         (agent == self.agent)
             .then(|| self.world.get_component_metabolism_profile(agent).copied())
             .flatten()
+    }
+
+    fn place_sleep_quality_profile(&self, agent: EntityId, place: EntityId) -> SleepQualityProfile {
+        if agent != self.agent {
+            return SleepQualityProfile::default();
+        }
+
+        let place_is_known =
+            self.world.effective_place(agent) == Some(place) || self.knows_entity(place);
+        if !place_is_known {
+            return SleepQualityProfile::default();
+        }
+
+        self.world
+            .get_component_sleep_quality_profile(place)
+            .copied()
+            .unwrap_or_default()
     }
 
     fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {

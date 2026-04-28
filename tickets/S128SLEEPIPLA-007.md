@@ -23,7 +23,7 @@ After S128SLEEPIPLA-004 lands the episode-based handler, S128SLEEPIPLA-005 lands
    - **Test 4 (interrupted-sleep partial recovery)** — D7 partial-recovery aftermath, D4 `SleepEpisodeEnded.accumulated_recovery`
    - **Test 5 (site preference via candidate ranking)** — D8 per-place emission, D8 ranking
    - **Test 6 (decision-trace integration)** — D11 surfacing
-4. Authoring fidelity (rule 3.3B Scenario Content Validation): each test fixture references concrete `PlaceTag`, `WorkstationTag`, agent profiles, and commodity names. Reuse fixtures from `crates/worldwake-ai/tests/golden_harness/soak_world.rs` where possible; otherwise author minimal in-test scenarios. Verify `SleepQualityProfile` authored values match spec D3 examples (Hillside Shelter `1300`, Riverside Camp `1100`, Forest Clearing `1000`, Fertile Fields `900`).
+4. Authoring fidelity (rule 3.3B Scenario Content Validation): each test fixture references concrete `PlaceTag`, `WorkstationTag`, agent profiles, and commodity names. Reuse fixtures from `crates/worldwake-ai/tests/golden_harness/soak_world.rs` where possible; otherwise author minimal in-test scenarios. Verify `SleepQualityProfile` authored values match spec D3 examples (Hillside Shelter `1000`, Riverside Camp `900`, Forest Clearing `800`, Fertile Fields `700`).
 5. S126 dependency: Test 2 requires `FrameAssumption::NeedSafeUntilTick` to be populated for the test agent. S126 is `✅ COMPLETED` per `archive/specs/S126-need-projection-time-budget.md:9`; the assumption-population path is exercised in `crates/worldwake-ai/tests/golden_need_projection.rs`. Reuse the population pattern from there.
 6. Coverage gap classification (Rule 3): missing golden/E2E coverage. Focused unit coverage exists from -004 and -005 for action handler and candidate emission respectively. Golden coverage proves the integration: planner adopts a Sleep candidate at a specific place → action handler runs the episode through wake → event log and decision trace record the full causal chain. This is the strongest end-to-end proof surface for the spec's behavioral guarantees.
 7. Test 5 prerequisite: `survival-baseline.ron` must have authored `SleepQualityProfile` for at least two named places, OR the test must construct a minimal scenario with two authored places. Per S128SLEEPIPLA-006's optional Section 4, the four named places may already carry authored profiles. If not, the test fixture seeds them inline.
@@ -67,7 +67,7 @@ Create with the following six tests:
 
 **Test 3 — `place_quality_modulates_per_tick_recovery`** (covers D3 + D7 modulated recovery):
 
-- Seed: two agents with identical starting fatigue (`pm(800)`) and identical `MetabolismProfile`. Agent A spawned at a place with `SleepQualityProfile { ..., recovery_modifier: Permille::new_unchecked(1100) }`; agent B at a place with `recovery_modifier: Permille::new_unchecked(900)`.
+- Seed: two agents with identical starting fatigue (`pm(800)`) and identical `MetabolismProfile`. Agent A spawned at a place with `SleepQualityProfile { ..., recovery_modifier: Permille::new_unchecked(900) }`; agent B at a place with `recovery_modifier: Permille::new_unchecked(700)`.
 - Run: tick until both agents wake (whichever wake reason fires).
 - Assert (world state): both agents wake; agent A's wake tick `< agent B's wake tick` (A recovers faster, hits target sooner). The exact tick difference is computed from the spec's recovery formula and asserted with concrete values per `docs/precision-rules.md` Rule 7 (cumulative arithmetic).
 
@@ -80,7 +80,7 @@ Create with the following six tests:
 
 **Test 5 — `site_preference_adopts_higher_quality_sleep_place`** (covers D8 per-place emission + ranking):
 
-- Seed: one agent with high fatigue and belief of two reachable places. Place 1: `recovery_modifier: 1300` (Hillside-Shelter analog). Place 2: `recovery_modifier: 1100` (Riverside-Camp analog). Equal travel distance from agent's current location.
+- Seed: one agent with high fatigue and belief of two reachable places. Place 1: `recovery_modifier: 1000` (Hillside-Shelter analog). Place 2: `recovery_modifier: 900` (Riverside-Camp analog). Equal travel distance from agent's current location.
 - Run: one tick of agent decision (or until adoption).
 - Assert (decision trace): the adopted Sleep candidate's `OpportunityAnchor` references Place 1 (the higher-quality place).
 - Assert (decision trace): two Sleep candidates were emitted (one per believed place); ranking ordered Place 1 above Place 2.

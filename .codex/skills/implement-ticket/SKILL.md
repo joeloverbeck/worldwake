@@ -86,6 +86,8 @@ Verify the ticket against the current codebase, not stale architectural memory. 
 
 When a ticket adds a new crate, binary, GUI shell, or other dependency-bearing tooling surface, treat drafted third-party dependency snippets as provisional until compiled on the live branch. Run an early focused compile/check after adding the manifest, and if crate feature constraints, build scripts, or current dependency APIs disprove the draft, update the ticket/spec dependency text before continuing instead of leaving the correction only in Cargo fallout.
 
+When a ticket/spec touches `Permille` or another bounded numeric wrapper, validate cited examples, profile values, and sibling-ticket snippets against the live type bounds during reassessment. If active spec-family examples are out of range, correct the active spec/ticket family before coding instead of letting focused tests discover the invalid values later.
+
 Load `references/reassessment-checks.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md` and `references/reassessment-golden-observer-report.md`.
 
 For AI candidate-generation tickets whose acceptance criteria mention diagnostics, name the full visibility chain before coding: the local diagnostic carrier, any exported decision-trace carrier, the omission/reason taxonomy, and the focused test that proves the externally visible trace path. Do not treat a local diagnostic record as sufficient evidence when the ticket's proof surface is a public trace, report, or debugging view.

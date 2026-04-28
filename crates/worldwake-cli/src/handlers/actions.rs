@@ -188,6 +188,9 @@ fn format_duration_estimate(duration: &worldwake_sim::DurationExpr) -> String {
     use worldwake_sim::DurationExpr;
     match duration {
         DurationExpr::Fixed(n) => format!(" — {} ticks", n.get()),
+        DurationExpr::Variable { min, max } => {
+            format!(" — {}-{} ticks", min.get(), max.get())
+        }
         DurationExpr::TravelToTarget { .. } | DurationExpr::EscortRouteTravel => {
             " — travel time".to_string()
         }

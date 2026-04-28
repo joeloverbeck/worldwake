@@ -11,7 +11,7 @@ Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft.
 ## Crates
 
 - `worldwake-core` — `SleepEpisode` runtime component (per-agent, populated on sleep start, removed on wake), `WakeCondition` enum, `SleepQualityProfile` per-place component (universal default applied at `spawn_place` via `unwrap_or_default()`), `SleepRecoveryCurve` derived helper, two new `EventTag` variants, new `MetabolismProfile.min_sleep_ticks` field, new `DurationExpr::Variable { min, max }` variant in `worldwake-sim`'s shared semantics import.
-- `worldwake-sim` — new `DurationExpr::Variable { min, max }` variant in `action_semantics.rs`; new `GoalBeliefView::place_sleep_quality_profile(place: EntityId) -> SleepQualityProfile` accessor in `belief_view.rs` with `RuntimeBeliefView` impl and `impl_goal_belief_view!` forwarding.
+- `worldwake-sim` — new `DurationExpr::Variable { min, max }` variant in `action_semantics.rs`; new `GoalBeliefView::place_sleep_quality_profile(agent: EntityId, place: EntityId) -> SleepQualityProfile` accessor in `belief_view.rs` with `RuntimeBeliefView` impl and `impl_goal_belief_view!` forwarding.
 - `worldwake-systems` — `sleep` action handler refactor: start populates `SleepEpisode` with the bound place's `SleepQualityProfile`, tick consumes the recovery curve (modulated by place quality), commit removes `SleepEpisode` and emits the end event. Wake-condition evaluation runs once per tick within the sleep tick handler.
 - `worldwake-ai` — sleep candidate emission becomes per-place: one candidate per believed sleep-eligible place, each carrying the place's `SleepQualityProfile` for ranking. `motive_score` for `Sleep` incorporates `recovery_modifier` so higher-quality places outrank lower-quality ones. Wake-condition synthesis reads S126's `NeedSafeUntilTick` projection to populate `WakeCondition::ProjectedNeedBreach`.
 - `worldwake-cli` — `PlaceDef.sleep_quality` optional field; `spawn_place` always calls `set_component_sleep_quality_profile(place_id, sleep_quality.map(Into::into).unwrap_or_default())` so every place carries the component.
@@ -169,7 +169,7 @@ impl Default for SleepQualityProfile {
 }
 ```
 
-`recovery_modifier = 1000` is "no modulation" — matches existing per-tick recovery exactly. Riverside Camp authored as `(Roofed, Earth, 1100)`; Hillside Shelter as `(Shelter, Soft, 1300)`; Fertile Fields as `(Open, Earth, 900)`; Forest Clearing as `(PartialCover, Earth, 1000)`. Authored numbers tunable per scenario.
+`recovery_modifier = 1000` is "no modulation" — matches existing per-tick recovery exactly. Because this is a `Permille`, authored values must stay in `0..=1000`: Hillside Shelter is authored as `(Shelter, Soft, 1000)`; Riverside Camp as `(Roofed, Earth, 900)`; Forest Clearing as `(PartialCover, Earth, 800)`; Fertile Fields as `(Open, Earth, 700)`. Authored numbers are tunable per scenario within the `Permille` range.
 
 `SleepQualityProfile` is a **universal place component** — every place has one (see Component Registration and D9).
 
@@ -260,17 +260,17 @@ In the AI candidate-emission pipeline (`crates/worldwake-ai/src/candidate_genera
 
 In `crates/worldwake-ai/src/ranking.rs`, extend the `motive_score` computation for `Sleep` to weigh `recovery_modifier`: a place with higher `recovery_modifier` produces a higher `motive_score` for sleep at that place, so a well-authored shelter ranks above an open-air orchard at the same fatigue level. Per the candidate-scoring architecture pattern, this is a ranking concern (not an emission gate) — every reachable place still emits a candidate; ranking decides which one wins.
 
-This delivers the spec's goal of differentiated sleep sites: at equal fatigue, an agent with belief of both Hillside Shelter (`1300`) and Riverside Camp (`1100`) prefers Hillside Shelter.
+This delivers the spec's goal of differentiated sleep sites: at equal fatigue, an agent with belief of both Hillside Shelter (`1000`) and Riverside Camp (`900`) prefers Hillside Shelter.
 
 ### D9: `GoalBeliefView::place_sleep_quality_profile` accessor
 
 In `crates/worldwake-sim/src/belief_view.rs`, add to the `GoalBeliefView` trait (or the appropriate sub-trait such as `ProfileBeliefView` if place-state accessors live there):
 
 ```rust
-fn place_sleep_quality_profile(&self, place: EntityId) -> SleepQualityProfile;
+fn place_sleep_quality_profile(&self, agent: EntityId, place: EntityId) -> SleepQualityProfile;
 ```
 
-Implement on `RuntimeBeliefView` by reading the place's component (universal — always present per Component Registration). Forward through `impl_goal_belief_view!` macro / blanket impl. Returns `SleepQualityProfile::default()` if the place is unknown to the agent's belief store (i.e., the agent has no belief about it) — this prevents the AI from constructing site preference for places it has never observed.
+Implement on `RuntimeBeliefView` by reading the place's component (universal — always present per Component Registration) only when the named agent knows the place or is currently there. Forward through `impl_goal_belief_view!` macro / blanket impl. Returns `SleepQualityProfile::default()` if the place is unknown to the named agent's belief store (i.e., the agent has no belief about it) — this prevents the AI from constructing site preference for places it has never observed.
 
 ### D10: Wake-condition synthesis
 
@@ -329,9 +329,9 @@ Add `crates/worldwake-ai/tests/golden_sleep_episode.rs`:
 
 - **Test 1 — episode lifecycle.** Agent with high fatigue adopts sleep at default place; confirm one `SleepEpisode` runtime component, one `SleepEpisodeStarted` event, one `SleepEpisodeEnded` event after `intended_max_ticks`, no `sleep → sleep` loop in the action log.
 - **Test 2 — projected need breach wake.** With S126 enabled, agent with rising hunger adopts sleep; confirm wake fires on `WakeCondition::ProjectedNeedBreach { Hunger }` before `intended_max_ticks` and the `SleepEpisodeEnded.end_reason` records the breach.
-- **Test 3 — place-quality recovery differentiation.** Two agents, agent A spawned at Riverside Camp (`recovery_modifier: 1100`), agent B spawned at Fertile Fields (`recovery_modifier: 900`); same starting fatigue and metabolism. Agent A wakes at fewer ticks than agent B because place quality differs. Asserts the recovery-rate path independent of site selection.
+- **Test 3 — place-quality recovery differentiation.** Two agents, agent A spawned at Riverside Camp (`recovery_modifier: 900`), agent B spawned at Fertile Fields (`recovery_modifier: 700`); same starting fatigue and metabolism. Agent A wakes at fewer ticks than agent B because place quality differs. Asserts the recovery-rate path independent of site selection.
 - **Test 4 — interrupted-sleep partial recovery.** Wake at tick `T < intended_max_ticks`; confirm `accumulated_recovery` reflects integrated curve up to T and `HomeostaticNeeds.fatigue` is reduced by exactly `accumulated_recovery`.
-- **Test 5 — site preference via candidate ranking.** Agent with belief of two reachable sleep sites (Hillside Shelter `1300`, Riverside Camp `1100`) and no other distinguishing factors (same fatigue, same metabolism, same travel cost). Confirm the agent commits to a Sleep goal anchored at Hillside Shelter — exercises D8's per-place emission and `motive_score` integration.
+- **Test 5 — site preference via candidate ranking.** Agent with belief of two reachable sleep sites (Hillside Shelter `1000`, Riverside Camp `900`) and no other distinguishing factors (same fatigue, same metabolism, same travel cost). Confirm the agent commits to a Sleep goal anchored at Hillside Shelter — exercises D8's per-place emission and `motive_score` integration.
 - **Test 6 — decision-trace integration.** Confirm `SleepEpisodeStarted` and `SleepEpisodeEnded` events appear in the event log at the expected ticks, payload fields populated, and renderable through the observer's decision-history surface.
 
 ## SystemFn Integration

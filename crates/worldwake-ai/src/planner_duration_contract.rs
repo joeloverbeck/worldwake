@@ -71,7 +71,7 @@ impl PlannerDurationDependency {
                 Some(Self::ActorInvestigationDisposition)
             }
             DurationExpr::ActorWitnessQueryDisposition => Some(Self::ActorWitnessQueryDisposition),
-            DurationExpr::Fixed(_) => None,
+            DurationExpr::Fixed(_) | DurationExpr::Variable { .. } => None,
             DurationExpr::BanditCampEstablishmentProfile => {
                 Some(Self::BanditCampEstablishmentProfile)
             }

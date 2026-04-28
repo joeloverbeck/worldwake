@@ -27,8 +27,8 @@ archive/tickets/S128SLEEPIPLA-001.md added the `SleepQualityProfile` core type, 
    This is conditional. The new pattern for `sleep_quality` is unconditional: always call `set_component_sleep_quality_profile` with `unwrap_or_default()`-resolved value.
 3. Shared boundary under audit: the scenario load contract for places. The existing `if let Some(...)` pattern allows components to be absent; the new universal pattern guarantees presence. This is the first universal-on-Place wiring in the codebase — establishes a new precedent (per S128 spec D12 and `references/worldwake-validation-patterns.md` "New Component on EntityKind::Place" pattern).
 4. No existing scenario authors `sleep_quality` (`grep "sleep_quality" scenarios/*.ron` returns zero matches per reassessment Step 2 sub-check). All existing scenarios load unchanged: places without `sleep_quality` get `SleepQualityProfile::default()` automatically via the new spawn loop.
-5. `SleepQualityProfileDef` mirrors `SleepQualityProfile` but uses `u16` for `recovery_modifier` (permille value, RON-friendly) instead of `Permille`. `From<SleepQualityProfileDef> for SleepQualityProfile` (or equivalent `into()` conversion) handles the value wrapping. This pattern matches existing scenario `*Def` types.
-6. Information-path refactor (Rule 16): adds the `sleep_quality` authoring path. No old path exists. Canonical path is `PlaceDef.sleep_quality` → `SleepQualityProfileDef::into()` → `set_component_sleep_quality_profile`. No alias path.
+5. `SleepQualityProfileDef` mirrors `SleepQualityProfile` but uses `u16` for `recovery_modifier` (permille value, RON-friendly) instead of `Permille`. Conversion must validate the value with `Permille::new(...)` and return a scenario-load error for values above `1000`; the corrected S128 spec no longer permits recovery amplification above the `Permille` range.
+6. Information-path refactor (Rule 16): adds the `sleep_quality` authoring path. No old path exists. Canonical path is `PlaceDef.sleep_quality` → validated conversion to `SleepQualityProfile` → `set_component_sleep_quality_profile`. No alias path.
 
 ## Architecture Check
 
@@ -55,13 +55,14 @@ pub struct SleepQualityProfileDef {
     pub recovery_modifier: u16, // permille value
 }
 
-impl From<SleepQualityProfileDef> for SleepQualityProfile {
-    fn from(def: SleepQualityProfileDef) -> Self {
-        Self {
-            shelter: def.shelter,
-            ground_comfort: def.ground_comfort,
-            recovery_modifier: Permille::new_unchecked(def.recovery_modifier),
-        }
+impl SleepQualityProfileDef {
+    fn into_profile(self) -> Result<SleepQualityProfile, String> {
+        Ok(SleepQualityProfile {
+            shelter: self.shelter,
+            ground_comfort: self.ground_comfort,
+            recovery_modifier: Permille::new(self.recovery_modifier)
+                .ok_or_else(|| format!("sleep_quality.recovery_modifier {} exceeds 1000", self.recovery_modifier))?,
+        })
     }
 }
 ```
@@ -93,7 +94,8 @@ for place_def in &def.places {
         .sleep_quality
         .as_ref()
         .cloned()
-        .map(Into::into)
+        .map(SleepQualityProfileDef::into_profile)
+        .transpose()?
         .unwrap_or_default();
     txn.set_component_sleep_quality_profile(place_id, profile)?;
 }
@@ -105,16 +107,16 @@ Place this immediately after the existing `visibility_profile` loop. The result:
 
 S128 Motivating Evidence calls out Hillside Shelter, Riverside Camp, Forest Clearing, Fertile Fields. The spec D3 example numbers are:
 
-- Hillside Shelter: `(Shelter, Soft, 1300)` — best
-- Riverside Camp: `(Roofed, Earth, 1100)`
-- Forest Clearing: `(PartialCover, Earth, 1000)`
-- Fertile Fields: `(Open, Earth, 900)` — worst
+- Hillside Shelter: `(Shelter, Soft, 1000)` — best / unpenalized
+- Riverside Camp: `(Roofed, Earth, 900)`
+- Forest Clearing: `(PartialCover, Earth, 800)`
+- Fertile Fields: `(Open, Earth, 700)` — worst
 
 Authoring these is technically out of scope per spec D12 ("Survival-baseline rebalance is a follow-up ticket"), but this ticket may include the four-place authoring as a courtesy update if the implementer determines it does not block other in-flight work. If authored, S128SLEEPIPLA-007's golden test 5 (site preference) becomes directly executable. **Recommendation**: author the four places in this ticket, since the work is mechanical and unblocks downstream test coverage. Flag clearly in the implementation summary if deferred.
 
 ## Files to Touch
 
-- `crates/worldwake-cli/src/scenario/types.rs` (modify — add `SleepQualityProfileDef` type with `From` impl, add `sleep_quality` field to `PlaceDef`)
+- `crates/worldwake-cli/src/scenario/types.rs` (modify — add `SleepQualityProfileDef` type with checked conversion helper, add `sleep_quality` field to `PlaceDef`)
 - `crates/worldwake-cli/src/scenario/mod.rs` (modify — add unconditional `spawn_place` loop for `SleepQualityProfile`)
 - `Likely: scenarios/survival-baseline.ron` (modify if authoring the four-place rebalance per Section 4 above)
 
@@ -131,23 +133,24 @@ Authoring these is technically out of scope per spec D12 ("Survival-baseline reb
 
 1. `cargo test -p worldwake-cli scenario sleep_quality_authored` (new) — minimal scenario with `sleep_quality: Some(...)` → place carries the authored profile.
 2. `cargo test -p worldwake-cli scenario sleep_quality_default_when_omitted` (new) — minimal scenario without `sleep_quality` → place carries `SleepQualityProfile::default()`.
-3. `cargo test -p worldwake-cli` — existing scenario tests pass; specifically scenarios loading `survival-baseline.ron` succeed.
-4. `cargo test -p worldwake-systems` — existing tests pass (sleep behavior unchanged at this ticket; consumers land in -004 / -005).
-5. Existing suite: `cargo test --workspace`.
+3. `cargo test -p worldwake-cli scenario sleep_quality_rejects_out_of_range_recovery_modifier` (new) — authored `recovery_modifier > 1000` fails scenario loading with a clear error.
+4. `cargo test -p worldwake-cli` — existing scenario tests pass; specifically scenarios loading `survival-baseline.ron` succeed.
+5. `cargo test -p worldwake-systems` — existing tests pass (sleep behavior unchanged at this ticket; consumers land in -004 / -005).
+6. Existing suite: `cargo test --workspace`.
 
 ### Invariants
 
 1. Every place created via `spawn_place` (or the equivalent scenario loader) carries a `SleepQualityProfile` component.
-2. `txn.get_component_sleep_quality_profile(place)` returns the authored profile when `sleep_quality: Some(...)` is present, and `SleepQualityProfile::default()` otherwise.
+2. `txn.get_component_sleep_quality_profile(place)` returns the authored profile when `sleep_quality: Some(...)` is present with a valid `recovery_modifier`, and `SleepQualityProfile::default()` otherwise.
 3. Existing scenarios in `scenarios/*.ron` load without modification — none currently use `sleep_quality`, and the deserializer's `#[serde(default)]` makes it optional.
-4. `SleepQualityProfileDef.recovery_modifier: u16` round-trips to `SleepQualityProfile.recovery_modifier: Permille` via `Permille::new_unchecked` — values above `1000` are accepted (recovery amplification per spec D3 examples) without truncation.
+4. `SleepQualityProfileDef.recovery_modifier: u16` converts to `SleepQualityProfile.recovery_modifier: Permille` via checked `Permille::new`; values above `1000` fail scenario loading with a clear error instead of silently creating an invalid profile.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-cli/src/scenario/mod.rs` test module (modify — add `sleep_quality_authored_place_carries_profile` and `sleep_quality_omitted_place_carries_default`).
-2. `crates/worldwake-cli/src/scenario/types.rs` test module (modify if a test module exists, otherwise skip — add a focused round-trip test for `SleepQualityProfileDef → SleepQualityProfile` `From` impl).
+1. `crates/worldwake-cli/src/scenario/mod.rs` test module (modify — add `sleep_quality_authored_place_carries_profile`, `sleep_quality_omitted_place_carries_default`, and `sleep_quality_rejects_out_of_range_recovery_modifier`).
+2. `crates/worldwake-cli/src/scenario/types.rs` test module (modify if a test module exists, otherwise skip — add a focused conversion test for `SleepQualityProfileDef → SleepQualityProfile`, including rejection of `recovery_modifier > 1000`).
 
 ### Commands
 
