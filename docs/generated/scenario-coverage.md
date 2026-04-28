@@ -121,6 +121,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: Eldergrove Forest
+- sleep_quality places: none
 - facilities: 9
 - resource sources: 2
 - known_recipes union: Bake Bread, Harvest Apples, Harvest Grain, Harvest Water
@@ -180,6 +181,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: enabled
 - visibility_profile places: Village Clinic
+- sleep_quality places: none
 - facilities: 3
 - resource sources: 6
 - known_recipes union: Bake Bread, Harvest Apples, Harvest Water
@@ -238,6 +240,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 3
 - resource sources: 2
 - known_recipes union: Harvest Apples, Harvest Water
@@ -296,6 +299,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: Riverside Camp, Fertile Fields, Forest Clearing, Hillside Shelter
 - facilities: 5
 - resource sources: 3
 - known_recipes union: Harvest Apples, Harvest Water
@@ -354,6 +358,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 2
 - resource sources: 6
 - known_recipes union: Harvest Apples, Harvest Water
@@ -412,6 +417,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 5
 - resource sources: 4
 - known_recipes union: Harvest Apples, Harvest Grain, Harvest Water
@@ -470,6 +476,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 3
 - resource sources: 2
 - known_recipes union: Harvest Apples, Harvest Water
@@ -528,6 +535,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 2
 - resource sources: 6
 - known_recipes union: Harvest Apples, Harvest Water
@@ -586,6 +594,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: enabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 4
 - resource sources: 2
 - known_recipes union: Harvest Apples, Harvest Water
@@ -644,6 +653,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 3
 - resource sources: 1
 - known_recipes union: none
@@ -702,6 +712,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 1
 - resource sources: 1
 - known_recipes union: Harvest Apples
@@ -760,6 +771,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 3
 - resource sources: 2
 - known_recipes union: Harvest Apples, Harvest Water
@@ -818,6 +830,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 2
 - resource sources: 6
 - known_recipes union: Harvest Apples, Harvest Water
@@ -876,6 +889,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 4
 - resource sources: 3
 - known_recipes union: Harvest Apples, Harvest Water
@@ -934,6 +948,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 3
 - resource sources: 1
 - known_recipes union: Bake Bread, Harvest Water
@@ -992,6 +1007,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 5
 - resource sources: 4
 - known_recipes union: Harvest Apples, Harvest Grain, Harvest Water
@@ -1050,6 +1066,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 3
 - resource sources: 2
 - known_recipes union: Harvest Apples, Harvest Water
@@ -1108,6 +1125,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: Shaded Market
+- sleep_quality places: none
 - facilities: 3
 - resource sources: 1
 - known_recipes union: Harvest Water
@@ -1166,6 +1184,7 @@ Legend: `✅` active, `⚠` structurally present but gated inactive, `—` absen
 **World features**
 - commodity_decay: disabled
 - visibility_profile places: none
+- sleep_quality places: none
 - facilities: 4
 - resource sources: 2
 - known_recipes union: Harvest Apples, Harvest Water

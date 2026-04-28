@@ -189,16 +189,19 @@ mod tests {
                     name: "Market Square".into(),
                     tags: vec![PlaceTag::Village, PlaceTag::Store],
                     visibility_profile: None,
+                    sleep_quality: None,
                 },
                 PlaceDef {
                     name: "Forest Clearing".into(),
                     tags: vec![PlaceTag::Forest],
                     visibility_profile: None,
+                    sleep_quality: None,
                 },
                 PlaceDef {
                     name: "Mountain Pass".into(),
                     tags: vec![PlaceTag::Road],
                     visibility_profile: None,
+                    sleep_quality: None,
                 },
             ],
             edges: vec![
@@ -384,6 +387,7 @@ mod tests {
                 name: "Void".into(),
                 tags: vec![],
                 visibility_profile: None,
+                sleep_quality: None,
             }],
             edges: vec![],
             agents: vec![],

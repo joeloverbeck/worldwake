@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: No — adds new golden E2E test file `crates/worldwake-ai/tests/golden_sleep_episode.rs` with 6 tests covering episode lifecycle, projected-need wake, place-quality recovery differentiation, partial recovery aftermath, site preference via candidate ranking, and decision-trace integration.
-**Deps**: archive/tickets/S128SLEEPIPLA-004.md, archive/tickets/S128SLEEPIPLA-005.md, S128SLEEPIPLA-006
+**Deps**: archive/tickets/S128SLEEPIPLA-004.md, archive/tickets/S128SLEEPIPLA-005.md, archive/tickets/S128SLEEPIPLA-006.md
 
 ## Problem
 
@@ -26,7 +26,7 @@ After S128SLEEPIPLA-004 lands the episode-based handler, S128SLEEPIPLA-005 lands
 4. Authoring fidelity (rule 3.3B Scenario Content Validation): each test fixture references concrete `PlaceTag`, `WorkstationTag`, agent profiles, and commodity names. Reuse fixtures from `crates/worldwake-ai/tests/golden_harness/soak_world.rs` where possible; otherwise author minimal in-test scenarios. Verify `SleepQualityProfile` authored values match spec D3 examples (Hillside Shelter `1000`, Riverside Camp `900`, Forest Clearing `800`, Fertile Fields `700`).
 5. S126 dependency: Test 2 requires `FrameAssumption::NeedSafeUntilTick` to be populated for the test agent. S126 is `✅ COMPLETED` per `archive/specs/S126-need-projection-time-budget.md:9`; the assumption-population path is exercised in `crates/worldwake-ai/tests/golden_need_projection.rs`. Reuse the population pattern from there.
 6. Coverage gap classification (Rule 3): missing golden/E2E coverage. Focused unit coverage exists from -004 and -005 for action handler and candidate emission respectively. Golden coverage proves the integration: planner adopts a Sleep candidate at a specific place → action handler runs the episode through wake → event log and decision trace record the full causal chain. This is the strongest end-to-end proof surface for the spec's behavioral guarantees.
-7. Test 5 prerequisite: `survival-baseline.ron` must have authored `SleepQualityProfile` for at least two named places, OR the test must construct a minimal scenario with two authored places. Per S128SLEEPIPLA-006's optional Section 4, the four named places may already carry authored profiles. If not, the test fixture seeds them inline.
+7. Test 5 prerequisite: `survival-baseline.ron` has authored `SleepQualityProfile` for the four S128 example places after archive/tickets/S128SLEEPIPLA-006.md. The golden may use those authored profiles directly or construct a smaller inline fixture if that gives tighter isolation.
 8. Determinism (CLAUDE.md Critical Invariants): all tests use deterministic seeds (`ChaCha8Rng`-seeded), `BTreeMap`/`BTreeSet` only, no floats, no wall-clock. Existing golden harness conventions enforce this.
 
 ## Architecture Check
@@ -106,7 +106,7 @@ Per `tickets/README.md`: regenerate `docs/generated/golden-e2e-inventory.md`, `d
 
 - Modifying existing golden tests beyond regeneration of inventory docs
 - Adding scenario `.ron` files for sleep — fixtures are inline per existing golden patterns
-- Authoring `sleep_quality` in `survival-baseline.ron` — handled by S128SLEEPIPLA-006 (or deferred to follow-up scenario-tuning ticket per that ticket's Section 4)
+- Authoring `sleep_quality` in `survival-baseline.ron` — handled by archive/tickets/S128SLEEPIPLA-006.md
 - Performance/regression-guard tests for sleep — not a P12 concern; sleep is a behavioral refactor, not a perf optimization
 
 ## Acceptance Criteria

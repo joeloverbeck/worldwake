@@ -36,14 +36,20 @@ preserving a drafted repo-wide literal-migration story.
 ## Authored Scenario And Generator Surfaces
 
 When the shared type is an authored scenario/test-facing definition such as
-`AgentDef`, pre-sweep same-crate helpers, handlers, lints, and `#[cfg(test)]`
-modules that build it explicitly before trusting a narrow focused test.
+`AgentDef` or `PlaceDef`, pre-sweep same-crate helpers, handlers, lints,
+destructuring/report helpers, and `#[cfg(test)]` modules that build it
+explicitly before trusting a narrow focused test.
 
 When that authored scenario/test-facing type is also used across crate
 boundaries or downstream generators, extend that pre-sweep before the first
 broadened proof run. Search for explicit literals, destructuring patterns, and
 helper constructors in those downstream surfaces up front instead of letting
 generator or integration-test fallout appear only at the end.
+
+Apply constructor fallout with precise patches or syntax-aware edits. Do not use
+broad text rewrites that can match type definitions, snippets, or unrelated
+same-shaped blocks; after each mechanical pass, re-scan the touched files for
+accidental insertions before compiling.
 
 When adding a new authored scenario/schema field, also search live
 coverage/catalog/report generators for the new field name before finalizing

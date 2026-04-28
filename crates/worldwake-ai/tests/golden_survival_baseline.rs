@@ -474,6 +474,7 @@ fn survival_contract_guard_rejects_missing_authored_contract() {
             name: "Village".into(),
             tags: vec![],
             visibility_profile: None,
+            sleep_quality: None,
         }],
         edges: vec![],
         agents: vec![],

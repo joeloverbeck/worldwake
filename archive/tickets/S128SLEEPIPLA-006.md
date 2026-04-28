@@ -1,6 +1,6 @@
 # S128SLEEPIPLA-006: Scenario authoring for SleepQualityProfile
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: No — scenario authoring layer only. Adds `PlaceDef.sleep_quality: Option<SleepQualityProfileDef>` and a new `SleepQualityProfileDef` type in the scenario module; modifies `spawn_place` to always apply `SleepQualityProfile` (universal-on-Place precedent).
@@ -131,9 +131,9 @@ Authoring these is technically out of scope per spec D12 ("Survival-baseline reb
 
 ### Tests That Must Pass
 
-1. `cargo test -p worldwake-cli scenario sleep_quality_authored` (new) — minimal scenario with `sleep_quality: Some(...)` → place carries the authored profile.
-2. `cargo test -p worldwake-cli scenario sleep_quality_default_when_omitted` (new) — minimal scenario without `sleep_quality` → place carries `SleepQualityProfile::default()`.
-3. `cargo test -p worldwake-cli scenario sleep_quality_rejects_out_of_range_recovery_modifier` (new) — authored `recovery_modifier > 1000` fails scenario loading with a clear error.
+1. `cargo test -p worldwake-cli --lib sleep_quality` — minimal scenario with `sleep_quality: Some(...)` carries the authored profile, omission carries `SleepQualityProfile::default()`, and authored `recovery_modifier > 1000` fails scenario loading with a clear error.
+2. `cargo test -p worldwake-cli --test integration survival_baseline_spawns_sleep_quality_for_every_place -- --exact` — `survival-baseline.ron` loads and every spawned place has a queryable `SleepQualityProfile`.
+3. `cargo run -p worldwake-cli --bin scenario-coverage -- --check` — generated scenario coverage stays in sync with the new authored place field.
 4. `cargo test -p worldwake-cli` — existing scenario tests pass; specifically scenarios loading `survival-baseline.ron` succeed.
 5. `cargo test -p worldwake-systems` — existing tests pass (sleep behavior unchanged at this ticket; consumers land in -004 / -005).
 6. Existing suite: `cargo test --workspace`.
@@ -151,10 +151,41 @@ Authoring these is technically out of scope per spec D12 ("Survival-baseline reb
 
 1. `crates/worldwake-cli/src/scenario/mod.rs` test module (modify — add `sleep_quality_authored_place_carries_profile`, `sleep_quality_omitted_place_carries_default`, and `sleep_quality_rejects_out_of_range_recovery_modifier`).
 2. `crates/worldwake-cli/src/scenario/types.rs` test module (modify if a test module exists, otherwise skip — add a focused conversion test for `SleepQualityProfileDef → SleepQualityProfile`, including rejection of `recovery_modifier > 1000`).
+3. `crates/worldwake-cli/tests/integration.rs` (modify — add `survival_baseline_spawns_sleep_quality_for_every_place`).
 
 ### Commands
 
-1. `cargo test -p worldwake-cli scenario`
-2. `cargo test -p worldwake-cli` (full crate)
-3. `cargo clippy --workspace --all-targets -- -D warnings`
-4. `./scripts/verify.sh`
+1. `cargo test -p worldwake-cli --lib sleep_quality`
+2. `cargo test -p worldwake-cli --test integration survival_baseline_spawns_sleep_quality_for_every_place -- --exact`
+3. `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
+4. `cargo test -p worldwake-cli` (full crate)
+5. `cargo test -p worldwake-systems`
+6. `cargo test --workspace`
+7. `cargo clippy --workspace --all-targets -- -D warnings`
+8. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-04-28.
+
+- Added `SleepQualityProfileDef` and `PlaceDef.sleep_quality` in the scenario schema, with checked conversion from authored `u16` permille values into `SleepQualityProfile`.
+- Updated scenario spawning so every scenario-created place receives a `SleepQualityProfile`, using the authored profile when present and `SleepQualityProfile::default()` when omitted.
+- Authored the four `survival-baseline.ron` sleep-quality profiles from the S128 examples: Riverside Camp `900`, Fertile Fields `700`, Forest Clearing `800`, and Hillside Shelter `1000` with shelter/comfort tags.
+- Updated `scenario_coverage` to treat `sleep_quality` as a Sleep feature place field and regenerated `docs/generated/scenario-coverage.md`.
+- Updated existing `PlaceDef` test/helper literals across CLI and the AI survival baseline golden helper to include the new optional field.
+
+## Deviations
+
+- Included the ticket's optional `survival-baseline.ron` authoring because it was mechanical and unblocks S128SLEEPIPLA-007's site-preference proof.
+- The drafted focused command shape `cargo test -p worldwake-cli scenario sleep_quality_*` was corrected to the truthful lib `sleep_quality` selector plus an exact integration test for `survival-baseline.ron`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --lib sleep_quality`.
+- Passed `cargo test -p worldwake-cli --test integration survival_baseline_spawns_sleep_quality_for_every_place -- --exact`.
+- Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
+- Passed `cargo test -p worldwake-cli`.
+- Passed `cargo test -p worldwake-systems`.
+- Passed `cargo test --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh`, whose live gate set is `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
