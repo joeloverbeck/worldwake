@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 55;
+pub const SAVE_FORMAT_VERSION: u32 = 56;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -206,14 +206,14 @@ mod tests {
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
         GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, MaterializationTag, MetabolismProfile, PendingEvent, PerceptionSource,
-        PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
-        PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary, RepairAppliedPayload,
-        RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId, RewardEncumbrance, Seed,
-        ShelterTag, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SleepQualityProfile, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
-        VisibilitySpec, WakeCondition, WakeReason, WitnessData, WorkstationTag, World, WorldTxn,
-        build_prototype_world,
+        LastSeenRecord, LatrineFullness, MaterializationTag, MetabolismProfile, PendingEvent,
+        PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanInvalidatedPayload,
+        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary,
+        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
+        RewardEncumbrance, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepQualityProfile, StateHash, SuspensionReason, Tick,
+        TickRange, UniqueItemKind, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -373,6 +373,43 @@ mod tests {
                     shelter: ShelterTag::Shelter,
                     ground_comfort: GroundComfortTag::Soft,
                     recovery_modifier: worldwake_core::Permille::new(875).unwrap(),
+                },
+            )
+            .unwrap();
+        sleep_txn
+            .set_component_place_dirtiness(
+                belief_place,
+                PlaceDirtiness {
+                    value: worldwake_core::Permille::new(500).unwrap(),
+                    decay_per_tick: worldwake_core::Permille::new(3).unwrap(),
+                    dirtiness_per_use: worldwake_core::Permille::new(90).unwrap(),
+                },
+            )
+            .unwrap();
+        sleep_txn
+            .set_component_latrine_fullness(
+                belief_place,
+                LatrineFullness {
+                    fill: worldwake_core::Permille::new(650).unwrap(),
+                    fill_per_use: worldwake_core::Permille::new(70).unwrap(),
+                    critical_threshold: worldwake_core::Permille::new(850).unwrap(),
+                },
+            )
+            .unwrap();
+        let basin = sleep_txn.create_entity(worldwake_core::EntityKind::Facility);
+        sleep_txn
+            .set_component_workstation_marker(basin, WorkstationMarker(WorkstationTag::WashBasin))
+            .unwrap();
+        sleep_txn
+            .set_component_wash_basin_state(
+                basin,
+                WashBasinState {
+                    clean_water_units: 4,
+                    max_clean_water: 12,
+                    refill_per_tick: 2,
+                    units_per_full_wash: 3,
+                    dirtiness_level: worldwake_core::Permille::new(250).unwrap(),
+                    dirtiness_per_use: worldwake_core::Permille::new(60).unwrap(),
                 },
             )
             .unwrap();
@@ -950,7 +987,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 55);
+        assert_eq!(SAVE_FORMAT_VERSION, 56);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -990,6 +1027,31 @@ mod tests {
             state
                 .world()
                 .get_component_sleep_quality_profile(restored_sleep_place)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_place_dirtiness(restored_sleep_place),
+            state
+                .world()
+                .get_component_place_dirtiness(restored_sleep_place)
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_latrine_fullness(restored_sleep_place),
+            state
+                .world()
+                .get_component_latrine_fullness(restored_sleep_place)
+        );
+        let restored_basins: Vec<_> = restored.world().entities_with_wash_basin_state().collect();
+        assert_eq!(restored_basins.len(), 1);
+        let restored_basin = restored_basins[0];
+        assert_eq!(
+            restored
+                .world()
+                .get_component_wash_basin_state(restored_basin),
+            state.world().get_component_wash_basin_state(restored_basin)
         );
         assert!(!restored.world().reservations_for(reserved_item).is_empty());
         let restored_belief = restored
