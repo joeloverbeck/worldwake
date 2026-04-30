@@ -22,7 +22,8 @@ use worldwake_core::{
     RewardEncumbrance, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
     StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick,
     TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-    WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
+    WashBasinState, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
+    load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -1874,6 +1875,14 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
 
         self.believed_entity(entity)
             .and_then(|state| state.resource_source.clone())
+    }
+
+    fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
+            return self.world.get_component_wash_basin_state(entity).copied();
+        }
+
+        None
     }
 
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {

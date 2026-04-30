@@ -3,12 +3,12 @@
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Small
-**Engine Changes**: Yes — three new accessors on `ProfileBeliefView` in `worldwake-sim`; auto-forwarded to `GoalBeliefView` via existing blanket impl
-**Deps**: archive/tickets/S129PLADIRFAC-001.md (provides the three components the accessors read)
+**Engine Changes**: Yes — three new agent/profile-facing accessors on `ProfileBeliefView` in `worldwake-sim`; auto-forwarded to `GoalBeliefView` via existing blanket impl
+**Deps**: archive/tickets/S129PLADIRFAC-001.md (provides the three components the accessors read), archive/tickets/S129PLADIRFAC-003.md (provides the runtime-only `FacilityBeliefView::wash_basin_state` precondition read)
 
 ## Problem
 
-S129's AI ranking integration (D10, ticket 010) reads `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` from co-located places/facilities to score Sleep, Wash, Relieve, and ExploreLocation candidates. Today there is no belief-view accessor for these states — the AI crate cannot reach them through the same surface as `place_sleep_quality_profile` (the precedent at `belief_view.rs:770`). Without this ticket, ticket 009 (candidate emission) and ticket 010 (ranking) cannot read the components without bypassing the belief-view abstraction (FND-26 — systems interact through state, not direct accessor leakage).
+S129's AI ranking integration (D10, ticket 010) reads `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` from co-located places/facilities to score Sleep, Wash, Relieve, and ExploreLocation candidates. Ticket 003 added only the runtime-only `FacilityBeliefView::wash_basin_state(entity) -> Option<WashBasinState>` accessor needed for precondition/affordance filtering. The agent/profile-facing accessors still do not exist, so the AI crate cannot reach all three hygiene states through the same `GoalBeliefView` surface as `place_sleep_quality_profile` (the precedent at `belief_view.rs:770`). Without this ticket, ticket 009 (candidate emission) and ticket 010 (ranking) cannot read the components without bypassing the belief-view abstraction (FND-26 — systems interact through state, not direct accessor leakage).
 
 ## Assumption Reassessment (2026-04-29)
 
@@ -19,11 +19,13 @@ S129's AI ranking integration (D10, ticket 010) reads `PlaceDirtiness`, `Latrine
 3. `RuntimeBeliefView` at `belief_view.rs:1289` is the production-runtime impl; its forwarding-method block at line 1763 (`fn place_sleep_quality_profile(&self, ...) -> SleepQualityProfile { ProfileBeliefView::place_sleep_quality_profile(self, agent, place) }`) is the parallel for each new accessor.
 4. The shared abstraction boundary under audit is the FND-14A surface — co-located agents read place/facility properties directly from authoritative state. The accessors call `world.get_component_*(entity).copied().unwrap_or_default()` (mirroring the sleep-quality default-on-missing pattern); for role-specific components (`LatrineFullness`, `WashBasinState`), the `unwrap_or_default()` is correct because callers should already be filtering by tag (the AI candidate emitter checks `PlaceTag::Latrine` / `WorkstationTag::WashBasin` before invoking the accessor).
 5. Existing focused/unit coverage: `belief_view.rs`'s inline test module (locate during implementation; likely after the trait definitions) covers `place_sleep_quality_profile` round-trip; new tests follow the same pattern. No golden-level coverage today — that lands in ticket 012.
+6. 2026-04-30 live correction from ticket 003: `FacilityBeliefView::wash_basin_state(entity) -> Option<WashBasinState>` now exists for runtime precondition filtering. This ticket must not duplicate that one-argument facility method; it still owns the three `ProfileBeliefView`/`GoalBeliefView` accessors with the explicit `agent` parameter used by AI ranking/candidate-generation code.
 
 ## Architecture Check
 
 1. Three accessors as default-method extensions of `ProfileBeliefView` keep the hygiene domain on the same trait surface as the sleep-quality precedent. Splitting into a new `HygieneBeliefView` trait would force ticket 010's ranking code to require both traits and fragment the belief-view surface without architectural benefit. The trait already covers "place/facility profile reads", so hygiene state fits naturally.
 2. Default-method implementation (rather than required) means no breaking change to types that already implement `ProfileBeliefView` — they auto-inherit the new methods and override only if they need bespoke behavior. No backward-compat shim: net-new methods on a trait that already accommodates this pattern.
+3. The existing `FacilityBeliefView::wash_basin_state` is intentionally narrower than this ticket's planned `ProfileBeliefView::wash_basin_state(agent, basin)`: the former is a runtime precondition helper, while the latter is the AI-facing actor-scoped hygiene read. If Rust method-name ambiguity appears during implementation, use explicit trait qualification rather than renaming or removing the ticket-003 method.
 
 ## Verification Layers
 

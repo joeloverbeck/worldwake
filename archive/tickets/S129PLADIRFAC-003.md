@@ -1,9 +1,9 @@
 # S129PLADIRFAC-003: TargetHasWashBasinClean precondition variant
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
-**Engine Changes**: Yes — new variant on the cross-crate `Precondition` enum and matching arms in affordance/validation paths
+**Engine Changes**: Yes — new variant on the cross-crate `Precondition` enum, matching arms in affordance/validation paths, and the minimal runtime facility read needed by affordance filtering
 **Deps**: archive/tickets/S129PLADIRFAC-001.md (provides `WashBasinState` for the precondition arm to read)
 
 ## Problem
@@ -19,18 +19,20 @@ S129's wash refactor (D7, owned by ticket 007) replaces today's `Precondition::T
 3. The shared abstraction boundary under audit is the `Precondition` enum's three downstream consumer surfaces — `action_semantics.rs` defines the variant; `action_validation.rs` validates a planned action against current world state; `affordance_query.rs` enumerates affordances during candidate generation. All three must gain matching arms in this ticket, otherwise the workspace fails to compile.
 4. The new arm reads `WashBasinState.clean_water_units` from the target entity; per ticket 001, the `get_component_wash_basin_state` accessor exists. The arm returns "pass" when `clean_water_units >= min` and "fail" otherwise; missing component (basin facility somehow lacking the role-specific state) returns "fail" so candidates over un-stated basins are pruned.
 5. Heuristic Removal Discipline (precision-rules §12): this ticket does **not** remove `TargetHasResourceSource` — that variant remains because other actions (e.g., `harvest`) still use it. It only adds a sibling variant. Ticket 007 swaps wash's specific use from one variant to the other.
+6. 2026-04-30 live correction: `affordance_query.rs` evaluates preconditions through `RuntimeBeliefView`, not directly through `World`. The current branch did not yet expose `WashBasinState` on that runtime facility surface, so this ticket owns the narrow read-only `FacilityBeliefView::wash_basin_state(entity) -> Option<WashBasinState>` method and `PerAgentBeliefView` implementation required for affordance filtering. The broader agent/profile-facing hygiene accessors remain ticket 004 scope.
 
 ## Architecture Check
 
 1. Declaring the new variant as part of the cross-crate `Precondition` enum (rather than as a wash-private check inside `needs_actions.rs`) preserves the symmetry that all action preconditions are declared on a single surface. AI affordance discovery, plan validation, and authoritative validation all read the same enum — splitting wash into a private gate would create an information-locality leak (FND-26: systems interact through state, not direct calls into wash internals).
 2. The variant carries `target_index: u8` rather than embedding the basin's `EntityId` because preconditions are declared statically at action-definition time before targets are resolved. `target_index` indexes into the resolved-targets array at validation/discovery time. Mirrors the existing `TargetHasWorkstationTag { target_index, tag }` precedent. No backward-compat shim: net-new variant.
+3. `FacilityBeliefView::wash_basin_state` follows the same FND-14A locality boundary as `resource_source`: co-located actors may read physical facility state through the runtime belief surface; remote propagation remains out of scope.
 
 ## Verification Layers
 
 1. The new variant is exhaustively matched in all three consumer files → `cargo build --workspace` failure if any arm is missing.
 2. Affordance discovery prunes wash candidates when the basin is empty → focused unit test in `affordance_query.rs`'s test module: seed a basin with `WashBasinState { clean_water_units: 0, ... }`, declare a precondition `TargetHasWashBasinClean { target_index: 0, min: 1 }`, assert `get_affordances` for an action with that precondition returns no candidate over the empty basin.
-3. Validation accepts wash on basins with sufficient water → focused unit test in `action_validation.rs`'s test module: same seed but with `clean_water_units: 5, min: 2` — assert validation returns `Ok(())`.
-4. Validation rejects wash on basins with insufficient water → focused unit test: `clean_water_units: 1, min: 2` — assert validation returns the appropriate `Err` (mirror the `TargetHasResourceSource` failure type).
+3. Validation accepts wash on basins with sufficient water → focused unit test in `action_validation.rs`'s test module: same seed but with `clean_water_units: 5, min: 2` — assert the authoritative precondition evaluates true.
+4. Validation rejects wash on basins with insufficient water → focused unit test: `clean_water_units: 1, min: 2` — assert the authoritative precondition evaluates false, matching the boolean contract used by existing `TargetHasResourceSource` validation.
 
 ## What to Change
 
@@ -45,7 +47,7 @@ TargetHasWashBasinClean {
 },
 ```
 
-Position the variant adjacent to `TargetHasResourceSource` (line 68) for grouping by domain. Add a matching arm to the semantic-formatter or display impl at lines 465–469 (mirroring `TargetHasResourceSource`).
+Position the variant adjacent to `TargetHasResourceSource` (line 68) for grouping by domain. Update the live semantic inventory test constant (`ALL_PRECONDITIONS`); the current branch has no separate `Precondition` display/formatter arm.
 
 ### 2. `crates/worldwake-sim/src/action_validation.rs`
 
@@ -69,11 +71,17 @@ Match the exact error type used by `TargetHasResourceSource`'s rejection path; t
 
 Add affordance-discovery arms at lines 322 and 460 (the two exhaustive-match sites). The discovery arm mirrors validation but is called during candidate enumeration; it returns whether the affordance is reachable for a given target.
 
+### 4. `crates/worldwake-sim/src/belief_view.rs` and `crates/worldwake-sim/src/per_agent_belief_view.rs`
+
+Add the minimal `FacilityBeliefView::wash_basin_state(entity) -> Option<WashBasinState>` runtime read and implement it for `PerAgentBeliefView` so `affordance_query.rs` can evaluate the new precondition without bypassing the existing runtime belief boundary.
+
 ## Files to Touch
 
-- `crates/worldwake-sim/src/action_semantics.rs` (modify — new variant + display/format arm)
+- `crates/worldwake-sim/src/action_semantics.rs` (modify — new variant + serialization inventory coverage)
 - `crates/worldwake-sim/src/action_validation.rs` (modify — validation arms at all exhaustive-match sites)
 - `crates/worldwake-sim/src/affordance_query.rs` (modify — discovery arms at all exhaustive-match sites)
+- `crates/worldwake-sim/src/belief_view.rs` (modify — minimal `FacilityBeliefView` runtime accessor)
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — FND-14A local authoritative implementation)
 
 ## Out of Scope
 
@@ -94,8 +102,9 @@ Add affordance-discovery arms at lines 322 and 460 (the two exhaustive-match sit
 ### Invariants
 
 1. `Precondition::TargetHasWashBasinClean` is a sibling variant alongside `TargetHasResourceSource`; both remain on the enum. Removing either is a separate refactor.
-2. Validation, affordance discovery, and the semantic formatter all match the new variant exhaustively — `cargo build --workspace` succeeds with no missing-arm warnings.
+2. Validation, affordance discovery, and the semantic inventory all cover the new variant — `cargo build --workspace` succeeds with no missing-arm warnings.
 3. The validation arm reads `WashBasinState` via the read-only accessor (`get_component_wash_basin_state`) — no mutation in validation/discovery paths (preserves the read/write separation that affordance discovery is side-effect-free).
+4. The affordance arm reads `WashBasinState` through the runtime belief surface, not a direct world read.
 
 ## Test Plan
 
@@ -103,11 +112,48 @@ Add affordance-discovery arms at lines 322 and 460 (the two exhaustive-match sit
 
 1. `crates/worldwake-sim/src/action_validation.rs` — two new focused tests on the validation arm's pass/fail semantics.
 2. `crates/worldwake-sim/src/affordance_query.rs` — two new focused tests on the discovery arm's prune/admit semantics.
+3. `crates/worldwake-sim/src/action_semantics.rs` — existing bincode roundtrip inventory updated to include the new precondition variant.
 
 ### Commands
 
-1. `cargo test -p worldwake-sim action_validation`
-2. `cargo test -p worldwake-sim affordance_query`
-3. `cargo build --workspace`
-4. `cargo test --workspace`
-5. `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-sim --lib -- --list`
+2. `cargo test -p worldwake-sim --lib action_validation::tests::target_has_wash_basin_clean_passes_when_units_meet_min -- --exact`
+3. `cargo test -p worldwake-sim --lib action_validation::tests::target_has_wash_basin_clean_rejects_when_units_below_min -- --exact`
+4. `cargo test -p worldwake-sim --lib affordance_query::tests::wash_basin_clean_precondition_prunes_empty_basin_candidates -- --exact`
+5. `cargo test -p worldwake-sim --lib affordance_query::tests::wash_basin_clean_precondition_passes_through_filled_basin_candidates -- --exact`
+6. `cargo test -p worldwake-sim --lib action_semantics::tests::precondition_bincode_roundtrip_covers_every_variant -- --exact`
+7. `cargo fmt --all`
+8. `cargo test -p worldwake-sim`
+9. `cargo build --workspace`
+10. `cargo test --workspace`
+11. `cargo test -p worldwake-ai`
+12. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-30.
+
+- Added `Precondition::TargetHasWashBasinClean { target_index, min }` as a sibling to `TargetHasResourceSource`.
+- Wired authoritative validation and affordance discovery to pass only when the target basin has `WashBasinState.clean_water_units >= min`; missing basin state evaluates false.
+- Added the minimal runtime facility belief read required by affordance discovery and implemented it for `PerAgentBeliefView` using the existing local-authoritative FND-14A pattern.
+- Added focused validation, affordance prune/admit, and serialization-inventory coverage.
+
+## Deviations
+
+- The drafted `action_semantics.rs` display/formatter arm did not exist on the live branch; the actual semantic-side exhaustive surface was the bincode inventory constant.
+- The drafted file list omitted `belief_view.rs` and `per_agent_belief_view.rs`; live affordance filtering required a runtime belief accessor for `WashBasinState`. Ticket 004 still owns the broader `ProfileBeliefView`/`GoalBeliefView` hygiene accessors used by AI ranking and candidate generation.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-sim --lib -- --list`.
+- Passed `cargo test -p worldwake-sim --lib action_validation::tests::target_has_wash_basin_clean_passes_when_units_meet_min -- --exact`.
+- Passed `cargo test -p worldwake-sim --lib action_validation::tests::target_has_wash_basin_clean_rejects_when_units_below_min -- --exact`.
+- Passed `cargo test -p worldwake-sim --lib affordance_query::tests::wash_basin_clean_precondition_prunes_empty_basin_candidates -- --exact`.
+- Passed `cargo test -p worldwake-sim --lib affordance_query::tests::wash_basin_clean_precondition_passes_through_filled_basin_candidates -- --exact`.
+- Passed `cargo test -p worldwake-sim --lib action_semantics::tests::precondition_bincode_roundtrip_covers_every_variant -- --exact`.
+- Passed `cargo fmt --all`.
+- Passed `cargo test -p worldwake-sim`.
+- Passed `cargo build --workspace` (with existing `ashpd v0.8.1` future-incompatibility warning).
+- Passed `cargo test --workspace`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings` (with existing `ashpd v0.8.1` future-incompatibility warning).

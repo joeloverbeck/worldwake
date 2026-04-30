@@ -23,7 +23,7 @@ use worldwake_core::{
     RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
     SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
     ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
+    ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1267,6 +1267,10 @@ pub trait FacilityBeliefView {
         None
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+        let _ = entity;
+        None
+    }
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         let _ = entity;
         None

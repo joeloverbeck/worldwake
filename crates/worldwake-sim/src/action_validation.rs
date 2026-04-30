@@ -106,6 +106,10 @@ pub(crate) fn evaluate_precondition_authoritatively(
             .is_some_and(|source| {
                 source.commodity == commodity && source.available_quantity >= min_available
             }),
+        Precondition::TargetHasWashBasinClean { target_index, min } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| world.get_component_wash_basin_state(*target))
+            .is_some_and(|state| state.clean_water_units >= min),
         Precondition::TargetNotInContainer(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| world.direct_container(*target).is_none()),
@@ -187,9 +191,9 @@ mod tests {
     use crate::{Constraint, ConsumableEffect, Precondition};
     use worldwake_core::{
         BodyPart, CauseRef, CommodityKind, ControlSource, EntityKind, EventLog, Permille, Quantity,
-        RecipeId, ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
-        build_prototype_world,
+        RecipeId, ResourceSource, Tick, UniqueItemKind, VisibilitySpec, WashBasinState,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
+        WoundId, WoundList, build_prototype_world,
     };
 
     fn new_txn(world: &mut World, tick: u64) -> WorldTxn<'_> {
@@ -670,6 +674,72 @@ mod tests {
             Precondition::TargetAtActorPlace(0),
             actor,
             &[target],
+        ));
+    }
+
+    #[test]
+    fn target_has_wash_basin_clean_passes_when_units_meet_min() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, basin) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let basin = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(basin, place).unwrap();
+            txn.set_component_wash_basin_state(
+                basin,
+                WashBasinState {
+                    clean_water_units: 5,
+                    ..WashBasinState::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, basin)
+        };
+
+        assert!(evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasWashBasinClean {
+                target_index: 0,
+                min: 2,
+            },
+            actor,
+            &[basin],
+        ));
+    }
+
+    #[test]
+    fn target_has_wash_basin_clean_rejects_when_units_below_min() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, basin) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            let basin = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(basin, place).unwrap();
+            txn.set_component_wash_basin_state(
+                basin,
+                WashBasinState {
+                    clean_water_units: 1,
+                    ..WashBasinState::default()
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+            (actor, basin)
+        };
+
+        assert!(!evaluate_precondition_authoritatively(
+            &world,
+            Precondition::TargetHasWashBasinClean {
+                target_index: 0,
+                min: 2,
+            },
+            actor,
+            &[basin],
         ));
     }
 
