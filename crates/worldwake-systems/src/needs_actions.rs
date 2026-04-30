@@ -636,6 +636,37 @@ fn commit_toilet(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_ground_location(waste, place)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    let mut latrine = txn
+        .get_component_latrine_fullness(place)
+        .copied()
+        .unwrap_or_default();
+    latrine.fill = latrine.fill.saturating_add(latrine.fill_per_use);
+    txn.set_component_latrine_fullness(place, latrine)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+    if latrine.fill >= latrine.critical_threshold {
+        let mut place_dirtiness = txn
+            .get_component_place_dirtiness(place)
+            .copied()
+            .unwrap_or_default();
+        let previous_value = place_dirtiness.value;
+        place_dirtiness.value = place_dirtiness
+            .value
+            .saturating_add(place_dirtiness.dirtiness_per_use);
+        let place_dirtiness_delta = place_dirtiness.value.saturating_sub(previous_value);
+        txn.set_component_place_dirtiness(place, place_dirtiness)
+            .map_err(|err| ActionError::InternalError(err.to_string()))?;
+
+        txn.add_tag(EventTag::WasteCreated).set_decision_payload(
+            DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+                creator: instance.actor,
+                place,
+                waste_lot: waste,
+                source: WasteSource::OvercapacityLatrine,
+                place_dirtiness_delta,
+            }),
+        );
+    }
     set_actor_needs(
         txn,
         instance.actor,
@@ -701,8 +732,7 @@ fn commit_relieve_wilderness(
     place_dirtiness.value = place_dirtiness
         .value
         .saturating_add(place_dirtiness.dirtiness_per_use);
-    let place_dirtiness_delta =
-        Permille::new_unchecked(place_dirtiness.value.value() - previous_value.value());
+    let place_dirtiness_delta = place_dirtiness.value.saturating_sub(previous_value);
     txn.set_component_place_dirtiness(place, place_dirtiness)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_tag(EventTag::WasteCreated)
@@ -772,10 +802,11 @@ mod tests {
         DecisionEventPayload, DeprivationExposure, DisturbanceKind, DriveThresholds, EntityId,
         EntityKind, EventLog, EventTag, EventView, EvidenceKind, FrameAssumption, FrameState,
         GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame,
-        MetabolismProfile, PerceptionSource, Permille, PlaceDirtiness, PrototypePlace, Quantity,
-        ResourceSource, Seed, SleepEpisode, Tick, VisibilitySpec, WakeCondition, WakeReason,
-        WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        build_believed_entity_state, build_prototype_world, prototype_place_entity,
+        LatrineFullness, MetabolismProfile, PerceptionSource, Permille, PlaceDirtiness,
+        PrototypePlace, Quantity, ResourceSource, Seed, SleepEpisode, Tick, VisibilitySpec,
+        WakeCondition, WakeReason, WasteSource, WitnessData, WorkstationMarker, WorkstationTag,
+        World, WorldTxn, build_believed_entity_state, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
@@ -1365,15 +1396,20 @@ mod tests {
             ),
         )
         .unwrap();
+        txn.set_component_latrine_fullness(
+            place,
+            LatrineFullness {
+                fill: pm(0),
+                fill_per_use: pm(80),
+                critical_threshold: pm(800),
+            },
+        )
+        .unwrap();
         commit_txn(txn);
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
-        let affordances = affordances_for(&world, actor, &defs, &handlers);
-        let toilet_index = affordances
-            .iter()
-            .position(|affordance| affordance.def_id == ActionDefId(3))
-            .unwrap();
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
         run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
 
         assert_eq!(
@@ -1393,6 +1429,178 @@ mod tests {
             })
             .count();
         assert_eq!(waste_count, 1);
+        assert_eq!(
+            world.get_component_latrine_fullness(place).unwrap().fill,
+            pm(80)
+        );
+        assert!(
+            log.events_by_tag(EventTag::WasteCreated).is_empty(),
+            "under-threshold toilet use should not emit WasteCreated"
+        );
+    }
+
+    #[test]
+    fn toilet_overflow_emits_waste_created_with_overcapacity_source() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_latrine_fullness(
+            place,
+            LatrineFullness {
+                fill: pm(750),
+                fill_per_use: pm(80),
+                critical_threshold: pm(800),
+            },
+        )
+        .unwrap();
+        txn.set_component_place_dirtiness(
+            place,
+            PlaceDirtiness {
+                value: pm(40),
+                dirtiness_per_use: pm(80),
+                ..PlaceDirtiness::default()
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
+        run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
+
+        assert_eq!(
+            world.get_component_latrine_fullness(place).unwrap().fill,
+            pm(830)
+        );
+        assert_eq!(
+            world.get_component_place_dirtiness(place).unwrap().value,
+            pm(120)
+        );
+        let waste_created = log.events_by_tag(EventTag::WasteCreated);
+        assert_eq!(waste_created.len(), 1);
+        let DecisionEventPayload::WasteCreated(payload) = log
+            .get(waste_created[0])
+            .and_then(|record| record.decision_payload())
+            .expect("overflowing toilet should emit WasteCreated payload")
+        else {
+            panic!("overflowing toilet should emit WasteCreated payload");
+        };
+        assert_eq!(payload.creator, actor);
+        assert_eq!(payload.place, place);
+        assert_eq!(payload.source, WasteSource::OvercapacityLatrine);
+        assert_eq!(payload.place_dirtiness_delta, pm(80));
+        assert!(
+            world
+                .get_component_item_lot(payload.waste_lot)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste),
+            "WasteCreated payload should reference the created waste lot"
+        );
+    }
+
+    #[test]
+    fn toilet_under_threshold_does_not_emit_waste_created() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_latrine_fullness(
+            place,
+            LatrineFullness {
+                fill: pm(0),
+                fill_per_use: pm(80),
+                critical_threshold: pm(800),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
+        run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
+
+        assert_eq!(
+            world.get_component_latrine_fullness(place).unwrap().fill,
+            pm(80)
+        );
+        assert!(log.events_by_tag(EventTag::WasteCreated).is_empty());
+    }
+
+    #[test]
+    fn toilet_already_over_threshold_emits_waste_created_each_tick() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_latrine_fullness(
+            place,
+            LatrineFullness {
+                fill: pm(900),
+                fill_per_use: pm(80),
+                critical_threshold: pm(800),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
+        run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
+        run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
+
+        assert_eq!(
+            world.get_component_latrine_fullness(place).unwrap().fill,
+            pm(1000)
+        );
+        assert_eq!(
+            world.get_component_place_dirtiness(place).unwrap().value,
+            pm(160)
+        );
+        let waste_created = log.events_by_tag(EventTag::WasteCreated);
+        assert_eq!(waste_created.len(), 2);
+        for event in waste_created {
+            let DecisionEventPayload::WasteCreated(payload) = log
+                .get(*event)
+                .and_then(|record| record.decision_payload())
+                .expect("over-threshold toilet should emit WasteCreated payload")
+            else {
+                panic!("over-threshold toilet should emit WasteCreated payload");
+            };
+            assert_eq!(payload.source, WasteSource::OvercapacityLatrine);
+            assert_eq!(payload.place_dirtiness_delta, pm(80));
+        }
+    }
+
+    #[test]
+    fn toilet_latrine_fullness_saturates_at_max() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let actor = setup_actor_at_place(&mut world, place);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_latrine_fullness(
+            place,
+            LatrineFullness {
+                fill: pm(950),
+                fill_per_use: pm(80),
+                critical_threshold: pm(800),
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let toilet_index = toilet_affordance_index(&world, actor, &defs, &handlers);
+        run_action_to_completion(actor, toilet_index, &mut world, &mut log, &defs, &handlers);
+
+        assert_eq!(
+            world.get_component_latrine_fullness(place).unwrap().fill,
+            pm(1000)
+        );
     }
 
     #[test]
@@ -1616,6 +1824,18 @@ mod tests {
 
     fn relieve_wilderness_def_id() -> ActionDefId {
         ActionDefId(5)
+    }
+
+    fn toilet_affordance_index(
+        world: &World,
+        actor: EntityId,
+        defs: &ActionDefRegistry,
+        handlers: &ActionHandlerRegistry,
+    ) -> usize {
+        affordances_for(world, actor, defs, handlers)
+            .iter()
+            .position(|affordance| affordance.def_id == ActionDefId(3))
+            .expect("toilet affordance should exist at a latrine")
     }
 
     fn setup_actor_at_place(world: &mut World, place: EntityId) -> EntityId {

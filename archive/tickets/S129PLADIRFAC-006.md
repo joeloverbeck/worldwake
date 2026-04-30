@@ -1,6 +1,6 @@
 # S129PLADIRFAC-006: toilet writes LatrineFullness with overflow handling
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `toilet` commit handler reads/writes per-place `LatrineFullness` and emits `WasteCreated` with `WasteSource::OvercapacityLatrine` on overflow
@@ -123,3 +123,26 @@ The under-threshold branch does NOT emit `WasteCreated` — per spec D6's explic
 2. `cargo test -p worldwake-systems`
 3. `cargo build --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-30.
+
+- Extended `commit_toilet` so every toilet commit increments per-place `LatrineFullness.fill` with `saturating_add`.
+- Added the overflow branch: when the post-use fill is at or above `critical_threshold`, the handler increments the latrine place's `PlaceDirtiness.value` by that place's `dirtiness_per_use` and attaches a `WasteCreated` decision payload with `WasteSource::OvercapacityLatrine`.
+- Preserved the under-threshold event contract: ordinary under-capacity toilet use still creates the Waste lot and zeros bladder, but does not emit `WasteCreated`.
+- Extended the focused toilet coverage for under-threshold, first-crossing, repeated over-threshold, and saturation behavior.
+
+## Deviations
+
+- The landed handler uses the live post-increment predicate `latrine.fill >= latrine.critical_threshold` rather than carrying explicit `crossed_threshold_now` / `was_already_over` booleans; this is equivalent to the final invariant after `LatrineFullness.fill` is monotonically updated by `saturating_add`.
+- `EventTag::WasteCreated` was not added to the `toilet` action definition's unconditional `causal_event_tags`, because under-threshold toilet commits must not emit that tag. The commit handler attaches it only on overflow events.
+- The existing `relieve_wilderness` place-dirtiness delta calculation was locally simplified to the same `Permille::saturating_sub` shape used by the new overflow branch; this is behavior-preserving for the existing monotonic increment path.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib toilet -- --list` (resolved 6 intended toilet tests).
+- Passed `cargo test -p worldwake-systems --lib toilet`.
+- Passed `cargo test -p worldwake-systems`.
+- Passed `cargo build --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
