@@ -5,7 +5,8 @@ use worldwake_core::{
     ActionDefId, CommodityKind, DecisionEventPayload, EntityId, EventTag, FrameAssumption,
     HomeostaticNeedId, HomeostaticNeeds, ItemLot, MetabolismProfile, OUTDOOR_RELIEF_TAGS, Permille,
     PlaceTag, Quantity, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, Tick,
-    VisibilitySpec, WakeCondition, WakeReason, WorkstationTag, WorldTxn,
+    VisibilitySpec, WakeCondition, WakeReason, WasteCreatedPayload, WasteSource, WorkstationTag,
+    WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -121,7 +122,11 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         interruptibility: Interruptibility::InterruptibleWithPenalty,
         commit_conditions: vec![Precondition::ActorAlive],
         visibility: VisibilitySpec::SamePlace,
-        causal_event_tags: BTreeSet::from([EventTag::WorldMutation, EventTag::WildernessRelief]),
+        causal_event_tags: BTreeSet::from([
+            EventTag::WorldMutation,
+            EventTag::WildernessRelief,
+            EventTag::WasteCreated,
+        ]),
         payload: ActionPayload::None,
         handler: relieve_wilderness_handler,
         binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
@@ -688,6 +693,26 @@ fn commit_relieve_wilderness(
                 .saturating_add(profile.wilderness_relief_dirtiness_penalty),
         ),
     )?;
+    let mut place_dirtiness = txn
+        .get_component_place_dirtiness(place)
+        .copied()
+        .unwrap_or_default();
+    let previous_value = place_dirtiness.value;
+    place_dirtiness.value = place_dirtiness
+        .value
+        .saturating_add(place_dirtiness.dirtiness_per_use);
+    let place_dirtiness_delta =
+        Permille::new_unchecked(place_dirtiness.value.value() - previous_value.value());
+    txn.set_component_place_dirtiness(place, place_dirtiness)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    txn.add_tag(EventTag::WasteCreated)
+        .set_decision_payload(DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+            creator: instance.actor,
+            place,
+            waste_lot: waste,
+            source: WasteSource::WildernessRelief,
+            place_dirtiness_delta,
+        }));
     Ok(CommitOutcome::empty())
 }
 
@@ -747,10 +772,10 @@ mod tests {
         DecisionEventPayload, DeprivationExposure, DisturbanceKind, DriveThresholds, EntityId,
         EntityKind, EventLog, EventTag, EventView, EvidenceKind, FrameAssumption, FrameState,
         GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame,
-        MetabolismProfile, PerceptionSource, Permille, PrototypePlace, Quantity, ResourceSource,
-        Seed, SleepEpisode, Tick, VisibilitySpec, WakeCondition, WakeReason, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_believed_entity_state,
-        build_prototype_world, prototype_place_entity,
+        MetabolismProfile, PerceptionSource, Permille, PlaceDirtiness, PrototypePlace, Quantity,
+        ResourceSource, Seed, SleepEpisode, Tick, VisibilitySpec, WakeCondition, WakeReason,
+        WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
@@ -1775,6 +1800,17 @@ mod tests {
         let mut world = World::new(build_prototype_world()).unwrap();
         let forest_path = prototype_place_entity(PrototypePlace::ForestPath);
         let actor = setup_actor_at_place(&mut world, forest_path);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_place_dirtiness(
+            forest_path,
+            PlaceDirtiness {
+                value: pm(0),
+                dirtiness_per_use: pm(80),
+                ..PlaceDirtiness::default()
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
         let (defs, handlers) = setup_registries();
         let mut log = EventLog::new();
 
@@ -1802,6 +1838,29 @@ mod tests {
             })
             .count();
         assert_eq!(waste_count, 1);
+
+        let place_dirtiness = world.get_component_place_dirtiness(forest_path).unwrap();
+        assert_eq!(place_dirtiness.value, pm(80));
+
+        let waste_created = log.events_by_tag(EventTag::WasteCreated);
+        assert_eq!(waste_created.len(), 1);
+        let DecisionEventPayload::WasteCreated(payload) = log
+            .get(waste_created[0])
+            .and_then(|record| record.decision_payload())
+            .expect("relieve_wilderness should emit WasteCreated payload")
+        else {
+            panic!("relieve_wilderness should emit WasteCreated payload");
+        };
+        assert_eq!(payload.creator, actor);
+        assert_eq!(payload.place, forest_path);
+        assert_eq!(payload.source, WasteSource::WildernessRelief);
+        assert_eq!(payload.place_dirtiness_delta, pm(80));
+        assert!(
+            world
+                .get_component_item_lot(payload.waste_lot)
+                .is_some_and(|lot| lot.commodity == CommodityKind::Waste),
+            "WasteCreated payload should reference the created waste lot"
+        );
     }
 
     #[test]
@@ -1819,6 +1878,52 @@ mod tests {
             def.causal_event_tags.contains(&EventTag::WildernessRelief),
             "relieve_wilderness should have WildernessRelief event tag"
         );
+        assert!(
+            def.causal_event_tags.contains(&EventTag::WasteCreated),
+            "relieve_wilderness should have WasteCreated event tag"
+        );
+    }
+
+    #[test]
+    fn relieve_wilderness_place_dirtiness_saturates() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let forest_path = prototype_place_entity(PrototypePlace::ForestPath);
+        let actor = setup_actor_at_place(&mut world, forest_path);
+        let mut txn = new_txn(&mut world, 2);
+        txn.set_component_place_dirtiness(
+            forest_path,
+            PlaceDirtiness {
+                value: pm(950),
+                dirtiness_per_use: pm(80),
+                ..PlaceDirtiness::default()
+            },
+        )
+        .unwrap();
+        commit_txn(txn);
+        let (defs, handlers) = setup_registries();
+        let mut log = EventLog::new();
+
+        let affordances = affordances_for(&world, actor, &defs, &handlers);
+        let rw_index = affordances
+            .iter()
+            .position(|a| a.def_id == relieve_wilderness_def_id())
+            .expect("relieve_wilderness affordance should exist at ForestPath");
+        run_action_to_completion(actor, rw_index, &mut world, &mut log, &defs, &handlers);
+
+        let place_dirtiness = world.get_component_place_dirtiness(forest_path).unwrap();
+        assert_eq!(place_dirtiness.value, pm(1000));
+
+        let waste_created = log.events_by_tag(EventTag::WasteCreated);
+        assert_eq!(waste_created.len(), 1);
+        let DecisionEventPayload::WasteCreated(payload) = log
+            .get(waste_created[0])
+            .and_then(|record| record.decision_payload())
+            .expect("relieve_wilderness should emit WasteCreated payload")
+        else {
+            panic!("relieve_wilderness should emit WasteCreated payload");
+        };
+        assert_eq!(payload.source, WasteSource::WildernessRelief);
+        assert_eq!(payload.place_dirtiness_delta, pm(50));
     }
 
     #[test]

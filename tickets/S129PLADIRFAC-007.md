@@ -105,20 +105,21 @@ fn commit_wash(...) -> Result<(), ActionError> {
 
     set_actor_needs(txn, instance.actor, HomeostaticNeeds { dirtiness: new_dirtiness, ..actor_needs })?;
 
-    txn.emit_decision_event(EventTag::WashFacilityUsed, DecisionEventPayload::WashFacilityUsed(WashFacilityUsedPayload {
+    txn.add_tag(EventTag::WashFacilityUsed)
+        .set_decision_payload(DecisionEventPayload::WashFacilityUsed(WashFacilityUsedPayload {
         user: instance.actor,
         basin: *basin,
         water_consumed,
         agent_dirtiness_delta,
         basin_dirtiness_delta,
         partial,
-    }))?;
+    }));
 
     Ok(())
 }
 ```
 
-Verify the helper APIs (`set_actor_needs`, `txn.emit_decision_event`, etc.) match the codebase conventions during implementation.
+Verify the helper APIs (`set_actor_needs`, etc.) match the codebase conventions during implementation.
 
 ### 4. Rewrite existing tests in `needs_actions.rs`
 

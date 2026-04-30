@@ -1,6 +1,6 @@
 # S129PLADIRFAC-005: relieve_wilderness writes PlaceDirtiness
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `relieve_wilderness` commit handler additionally mutates per-place `PlaceDirtiness` and emits `EventTag::WasteCreated` with `WasteSource::WildernessRelief`
@@ -48,16 +48,17 @@ place_dirt.value = place_dirt.value.saturating_add(place_dirt.dirtiness_per_use)
 let delta = Permille::new_unchecked(place_dirt.value.value().saturating_sub(prev_value.value()));
 txn.set_component_place_dirtiness(place, place_dirt)?;
 
-txn.emit_decision_event(EventTag::WasteCreated, DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+txn.add_tag(EventTag::WasteCreated)
+    .set_decision_payload(DecisionEventPayload::WasteCreated(WasteCreatedPayload {
     creator: instance.actor,
     place,
     waste_lot,           // already in scope from the existing Waste creation block
     source: WasteSource::WildernessRelief,
     place_dirtiness_delta: delta,
-}))?;
+}));
 ```
 
-Verify the exact `txn.emit_decision_event` API name during implementation (confirm against ticket 002's event-emission usage if 002 lands first, or grep `emit_decision_event` in `needs_actions.rs` for the existing pattern).
+The live event API is transaction-tag based: add the tag and decision payload on the committed action transaction with `txn.add_tag(...).set_decision_payload(...)`.
 
 ### 2. Update existing tests
 
@@ -109,3 +110,28 @@ Add `relieve_wilderness_place_dirtiness_saturates` to the same test module — s
 2. `cargo test -p worldwake-systems`
 3. `cargo build --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-30.
+
+- Extended `commit_relieve_wilderness` so each completed wilderness relief reads the actor's current place, increments that place's `PlaceDirtiness.value` by the place-authored `dirtiness_per_use`, and saturates at `pm(1000)`.
+- Preserved the existing per-agent dirtiness increment, Waste `ItemLot` creation, and `DisturbanceMarker` scene evidence path.
+- Added `EventTag::WasteCreated` to the `relieve_wilderness` action definition and attached a `DecisionEventPayload::WasteCreated` payload with `WasteSource::WildernessRelief`, the created waste lot id, and the actual saturated place-dirtiness delta.
+- Extended focused `relieve_wilderness` tests to prove place dirtiness mutation, payload contents, causal tag registration, and saturation.
+
+## Deviations
+
+- The live event API is `txn.add_tag(...).set_decision_payload(...)`, so the implementation emits the `WasteCreated` payload on the committed action transaction rather than through the drafted `txn.emit_decision_event(...)` helper.
+- Sibling tickets `S129PLADIRFAC-006` and `S129PLADIRFAC-007` had their drafted event-emission snippets retargeted to the same live transaction-tag API.
+- No active spec or implementation-order truthing was required; S129 already lists this handler extension as an active deliverable and the ticket dependencies already point to archived prerequisites.
+
+## Verification Result
+
+Passed:
+
+1. `cargo test -p worldwake-systems relieve_wilderness`
+2. `cargo fmt --all`
+3. `cargo test -p worldwake-systems`
+4. `cargo build --workspace`
+5. `cargo clippy --workspace --all-targets -- -D warnings`

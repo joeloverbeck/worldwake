@@ -57,13 +57,14 @@ if crossed_threshold_now || was_already_over {
     let delta = Permille::new_unchecked(place_dirt.value.value().saturating_sub(prev_value.value()));
     txn.set_component_place_dirtiness(place, place_dirt)?;
 
-    txn.emit_decision_event(EventTag::WasteCreated, DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+    txn.add_tag(EventTag::WasteCreated)
+        .set_decision_payload(DecisionEventPayload::WasteCreated(WasteCreatedPayload {
         creator: instance.actor,
         place,
         waste_lot,
         source: WasteSource::OvercapacityLatrine,
         place_dirtiness_delta: delta,
-    }))?;
+    }));
 }
 ```
 
