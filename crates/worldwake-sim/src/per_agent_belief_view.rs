@@ -15,15 +15,15 @@ use worldwake_core::{
     DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
     ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-    OfficeData, PerceptionSource, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
-    StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-    WashBasinState, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
-    load_of_entity,
+    LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance,
+    LatrineFullness, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
+    ObligationSatiationProfile, OfficeData, PerceptionSource, Permille, PlaceDirtiness, PlaceTag,
+    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
+    ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RouteExperience,
+    SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
+    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState,
+    WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -568,6 +568,47 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
 
         self.world
             .get_component_sleep_quality_profile(place)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn place_dirtiness(&self, agent: EntityId, place: EntityId) -> PlaceDirtiness {
+        if agent != self.agent {
+            return PlaceDirtiness::default();
+        }
+
+        if self.world.effective_place(agent) != Some(place) {
+            return PlaceDirtiness::default();
+        }
+
+        self.world
+            .get_component_place_dirtiness(place)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn latrine_fullness(&self, agent: EntityId, place: EntityId) -> LatrineFullness {
+        if agent != self.agent {
+            return LatrineFullness::default();
+        }
+
+        if self.world.effective_place(agent) != Some(place) {
+            return LatrineFullness::default();
+        }
+
+        self.world
+            .get_component_latrine_fullness(place)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn wash_basin_state(&self, agent: EntityId, basin: EntityId) -> WashBasinState {
+        if agent != self.agent || !self.has_authoritative_local_visibility(basin) {
+            return WashBasinState::default();
+        }
+
+        self.world
+            .get_component_wash_basin_state(basin)
             .copied()
             .unwrap_or_default()
     }

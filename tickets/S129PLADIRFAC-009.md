@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — refactors `emit_wash_goal` and `emit_relieve_goal` to produce per-facility / per-place anchored candidates instead of single bundled candidates
-**Deps**: archive/tickets/S129PLADIRFAC-001.md, S129PLADIRFAC-004
+**Deps**: archive/tickets/S129PLADIRFAC-001.md, archive/tickets/S129PLADIRFAC-004.md
 
 ## Problem
 

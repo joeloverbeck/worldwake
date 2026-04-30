@@ -1,6 +1,7 @@
 use crate::{
     ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
-    BindingStrictness, Constraint, ConsumableEffect, Precondition, RuntimeBeliefView, TargetSpec,
+    BindingStrictness, Constraint, ConsumableEffect, FacilityBeliefView, Precondition,
+    RuntimeBeliefView, TargetSpec,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{ActionDefId, ContentionStatus, EntityId, EntityKind};
@@ -334,7 +335,7 @@ pub fn evaluate_precondition(
             }),
         Precondition::TargetHasWashBasinClean { target_index, min } => targets
             .get(usize::from(target_index))
-            .and_then(|target| view.wash_basin_state(*target))
+            .and_then(|target| FacilityBeliefView::wash_basin_state(view, *target))
             .is_some_and(|state| state.clean_water_units >= min),
         Precondition::TargetNotInContainer(target_index) => targets
             .get(usize::from(target_index))

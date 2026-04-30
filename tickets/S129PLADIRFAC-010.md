@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — extends `motive_score` / candidate ranking in `crates/worldwake-ai/src/ranking.rs` for Sleep, ExploreLocation, Wash, Relieve goals
-**Deps**: archive/tickets/S129PLADIRFAC-001.md, S129PLADIRFAC-004, S129PLADIRFAC-009
+**Deps**: archive/tickets/S129PLADIRFAC-001.md, archive/tickets/S129PLADIRFAC-004.md, S129PLADIRFAC-009
 
 ## Problem
 

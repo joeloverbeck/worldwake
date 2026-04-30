@@ -167,6 +167,10 @@ When a theft, custody, or facility-stock ticket is motivated by “missing” or
 
 When a ticket or spec includes a function sketch that reads through `GoalBeliefView` or another actor-facing belief trait, verify whether any required methods are actor-scoped before accepting an actor-free signature. If the live trait requires an explicit actor or another carrier the sketch omitted, correct the ticket/spec and helper signature before implementation instead of smuggling the missing context in later.
 
+When adding actor-scoped belief-view accessors for physical state, separate stable authored profiles from dynamic current state. Stable authored profiles may follow a broader known-entity precedent only when live code proves that contract. Dynamic state such as dirtiness, fullness, stock, occupancy, or current capacity must default for remote or merely known targets unless the live belief store has an explicit propagated carrier; a known remote entity is not an authoritative current-state read.
+
+When adding a method to a trait or read surface, search sibling traits in the same consumer bound set for the same method name, even when the arity differs. If another lawful provider exists, sweep dot-call sites and use explicit trait qualification at sites that must continue to call the older provider.
+
 When a ticket is primarily about categorization, slotting, family membership, or another classifier boundary, compare the drafted category members and exclusions against the live grouping surfaces already used by ranking, policy, dispatch, suppression, or other same-domain classifiers. If the ticket/spec omits a currently live member, includes a stale one, or splits a family differently from those surfaces, correct the ticket before coding instead of hard-coding a new local taxonomy by default.
 
 When a ticket introduces a local ordering, ranking, slot-selection, or weighted-score rule, explicitly check whether a stronger live global priority contract already gates that branch (for example `GoalPriorityClass`, priority bands, interrupt policy, or another higher-tier carrier). If the drafted local ordering would bypass or weaken that existing contract, rewrite the ticket/spec before coding instead of letting the new score path silently outrank the real global priority boundary.
@@ -276,6 +280,8 @@ Load `references/verification.md`.
 #### Cargo execution discipline
 
 Resolve focused Cargo test selectors before using `--exact`, normally with `cargo test -p <crate> --lib -- --list` for crate unit tests. If a module or prefix matches multiple tests, either run it without `--exact` and confirm the intended nonzero test count, or run each concrete listed test separately with `--exact`. See `references/verification.md` for detailed selector patterns and examples.
+
+When adding several new tests whose names do not share a prefix, do not use one filtered `-- --list` query as proof that the whole set exists. Use an unfiltered list plus a focused text search, or run separate list queries for every intended exact selector before relying on exact test runs or writing closeout verification.
 
 If a drafted Cargo command names multiple positional test filters before `--` (for example `cargo test -p crate foo:: bar::`), treat the command as invalid draft syntax. Rebind it to valid focused proof by splitting it into separate Cargo invocations or replacing it with one exact/module-qualified selector, then update the ticket's command list and closeout instead of preserving the impossible command.
 
