@@ -511,7 +511,7 @@ All cross-spec dependencies among S126–S131 are **soft** (benefit but not bloc
 - **S130**: Survey Records and Frontier Disconfirmation — `SurveyMemory` per-agent component; `HypothesisKind` on `ExploreLocation`; perception-time arrival evaluation; ranking damps re-exploration of confirmed-empty places. Folds in PR-7's narrow arrival-diff piece. S128's `SleepQualityProfile` dependency for `MayContainSleepSite` is now satisfied.
 
 **Wave 3** (after Wave 2; soft deps consumable):
-- **S129**: Place Dirtiness and Facility Wear — `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` components; `WasteCreated`/`WashFacilityUsed`/`LatrineMaintained` event tags; relieve/toilet/wash handler extensions; partial-wash outcome (PR-11 fold-in). Soft consumes completed S128 (sleep ranking reads dirtiness as quality modifier). Folds in PR-9 hygiene topology, PR-11 partial-wash, PR-12 waste/wash events.
+- **S129**: Place Dirtiness and Facility Wear — `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` components; `WasteCreated`/`WashFacilityUsed` event tags; relieve/toilet/wash handler extensions; partial-wash outcome (PR-11 fold-in). Soft consumes completed S128 (sleep ranking reads dirtiness as quality modifier). Folds in PR-9 hygiene topology, PR-11 partial-wash, PR-12 waste/wash events. `LatrineMaintained` is deferred until a `clean_latrine` action exists.
 
 ### Follow-up Tickets (not specs)
 

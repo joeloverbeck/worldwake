@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `wash` action's precondition list, target arity, and commit handler all change. Authoritative-to-AI precondition surface is modified.
-**Deps**: archive/tickets/S129PLADIRFAC-001.md, S129PLADIRFAC-002, S129PLADIRFAC-003
+**Deps**: archive/tickets/S129PLADIRFAC-001.md, archive/tickets/S129PLADIRFAC-002.md, S129PLADIRFAC-003
 
 ## Problem
 

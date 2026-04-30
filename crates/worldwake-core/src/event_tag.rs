@@ -46,6 +46,8 @@ pub enum EventTag {
     RepairApplied,
     ReplanTriggered,
     BlockerRecorded,
+    WasteCreated,
+    WashFacilityUsed,
 }
 
 #[cfg(test)]
@@ -58,7 +60,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 41] = [
+    const ALL_EVENT_TAGS: [EventTag; 43] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -100,6 +102,8 @@ mod tests {
         EventTag::RepairApplied,
         EventTag::ReplanTriggered,
         EventTag::BlockerRecorded,
+        EventTag::WasteCreated,
+        EventTag::WashFacilityUsed,
     ];
 
     #[test]
@@ -109,7 +113,9 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 41);
+        assert_eq!(ALL_EVENT_TAGS.len(), 43);
+        assert!(ALL_EVENT_TAGS.contains(&EventTag::WasteCreated));
+        assert!(ALL_EVENT_TAGS.contains(&EventTag::WashFacilityUsed));
     }
 
     #[test]

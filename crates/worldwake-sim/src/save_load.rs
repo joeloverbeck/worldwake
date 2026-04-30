@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 56;
+pub const SAVE_FORMAT_VERSION: u32 = 57;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -213,7 +213,8 @@ mod tests {
         RewardEncumbrance, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
         SleepEpisodeStartedPayload, SleepQualityProfile, StateHash, SuspensionReason, Tick,
         TickRange, UniqueItemKind, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -898,6 +899,27 @@ mod tests {
                 }),
             ),
             (
+                EventTag::WasteCreated,
+                DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+                    creator: actor,
+                    place,
+                    waste_lot: decision_test_entity(303),
+                    source: WasteSource::WildernessRelief,
+                    place_dirtiness_delta: worldwake_core::Permille::new(80).unwrap(),
+                }),
+            ),
+            (
+                EventTag::WashFacilityUsed,
+                DecisionEventPayload::WashFacilityUsed(WashFacilityUsedPayload {
+                    user: actor,
+                    basin: decision_test_entity(304),
+                    water_consumed: 1,
+                    agent_dirtiness_delta: worldwake_core::Permille::new(500).unwrap(),
+                    basin_dirtiness_delta: worldwake_core::Permille::new(25).unwrap(),
+                    partial: true,
+                }),
+            ),
+            (
                 EventTag::PlanAdopted,
                 DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                     agent: actor,
@@ -987,7 +1009,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 56);
+        assert_eq!(SAVE_FORMAT_VERSION, 57);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1197,6 +1219,8 @@ mod tests {
                     .events_by_tag(EventTag::SleepEpisodeStarted),
             )
             .chain(state.event_log().events_by_tag(EventTag::SleepEpisodeEnded))
+            .chain(state.event_log().events_by_tag(EventTag::WasteCreated))
+            .chain(state.event_log().events_by_tag(EventTag::WashFacilityUsed))
             .chain(state.event_log().events_by_tag(EventTag::PlanAdopted))
             .chain(state.event_log().events_by_tag(EventTag::PlanInvalidated))
             .chain(
@@ -1234,6 +1258,12 @@ mod tests {
                 restored
                     .event_log()
                     .events_by_tag(EventTag::SleepEpisodeEnded),
+            )
+            .chain(restored.event_log().events_by_tag(EventTag::WasteCreated))
+            .chain(
+                restored
+                    .event_log()
+                    .events_by_tag(EventTag::WashFacilityUsed),
             )
             .chain(restored.event_log().events_by_tag(EventTag::PlanAdopted))
             .chain(

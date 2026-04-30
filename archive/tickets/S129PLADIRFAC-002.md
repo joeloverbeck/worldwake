@@ -1,6 +1,6 @@
 # S129PLADIRFAC-002: Hygiene event tags and payloads
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new variants on `EventTag` and `DecisionEventPayload`
@@ -14,8 +14,8 @@ S129's causal chain ("wilderness relief → place dirtier → bad sleep there �
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `EventTag` enum at `crates/worldwake-core/src/event_tag.rs:7–49` lists 41 current variants. None is hygiene-related. The enum derives `Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize`; new variants must remain unit-style to satisfy the existing `Copy` bound.
-2. `DecisionEventPayload` enum at `crates/worldwake-core/src/decision_event_payload.rs:12–27` carries 11 variants today. Payload struct precedent: `SleepEpisodeStartedPayload` at lines 38–46 (named struct with `pub` fields including `EntityId`, `Tick`, `Permille`); `SleepEpisodeEndedPayload` at lines 49–57. The convention is `{VariantName}Payload` named struct with `derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)` — confirm during implementation; widen derives to match the existing precedent.
+1. `EventTag` enum at `crates/worldwake-core/src/event_tag.rs` listed 41 current variants at intake. This ticket expanded it to 43 variants with `WasteCreated` and `WashFacilityUsed`. The enum derives `Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize`; new variants remain unit-style to satisfy the existing `Copy` bound.
+2. `DecisionEventPayload` enum at `crates/worldwake-core/src/decision_event_payload.rs` carried 14 variants at intake. This ticket expanded it to 16 variants with `WasteCreated(WasteCreatedPayload)` and `WashFacilityUsed(WashFacilityUsedPayload)`. Payload struct precedent: `SleepEpisodeStartedPayload` and `SleepEpisodeEndedPayload` use named structs with `pub` fields including `EntityId`, `Tick`, and `Permille`. The new payload structs follow that precedent.
 3. The shared abstraction boundary under audit is the `EventTag` ↔ `DecisionEventPayload` pairing — every routable event tag has at most one payload variant on the payload enum. New variants must be added to both surfaces in lockstep.
 4. The deferred `LatrineMaintained` variant is intentionally not added (per spec Non-Goals + FND-28 row): no `clean_latrine` action exists today, so the variant would have no emitter. Adding a dead variant would violate FND-28.
 5. Existing focused/unit coverage: grep `event_tag.rs`'s inline tests (if any) for the canonical variant list (at line 61 of the spec's earlier grep, an array of all variants is asserted). That array must be extended with the two new variants to satisfy the existing exhaustiveness test.
@@ -87,7 +87,7 @@ If any cross-crate `match` block exhaustively destructures `EventTag` or `Decisi
 
 ### 4. `SAVE_FORMAT_VERSION` impact
 
-If the event log is part of the persisted save state, this ticket also bumps `SAVE_FORMAT_VERSION`. Confirm during implementation by reading `crates/worldwake-sim/src/save_load.rs` to see whether event-log payloads are included in `save()`/`load()`. If yes: bump 56→57 (assuming ticket 001 already landed and bumped to 56). If no: skip the bump.
+The event log is part of the persisted save state, so this ticket bumped `SAVE_FORMAT_VERSION` from 56 to 57.
 
 ## Files to Touch
 
@@ -101,7 +101,7 @@ If the event log is part of the persisted save state, this ticket also bumps `SA
 
 - Emitting the new event tags from any handler (deferred to tickets 005/006/007).
 - `LatrineMaintained` variant — explicitly deferred per spec Non-Goals and FND-28 row.
-- Observer rendering of the new events (per the spec's "automatic" framing — observer will render them once the variants exist via existing exhaustive-match coverage; no observer-side code change needed beyond the exhaustiveness arm if one is required).
+- New observer feature design beyond rendering the added payload fields. The live exhaustive consumer sweep required updating the existing observer decision-history renderer and fixture coverage for the two new variants.
 
 ## Acceptance Criteria
 
@@ -132,3 +132,39 @@ If the event log is part of the persisted save state, this ticket also bumps `SA
 3. `cargo build --workspace` (catches missing exhaustiveness arms)
 4. `cargo test --workspace`
 5. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-04-30.
+
+- Added `EventTag::WasteCreated` and `EventTag::WashFacilityUsed`.
+- Added typed `DecisionEventPayload` variants and payload structs for waste creation and wash-facility use.
+- Re-exported the new payload types from `worldwake-core`.
+- Updated observer decision-history rendering and coverage for both hygiene payloads.
+- Bumped `SAVE_FORMAT_VERSION` from 56 to 57 and extended save/load decision-event roundtrip coverage.
+- Corrected `specs/IMPLEMENTATION-ORDER.md` so S129 no longer claims `LatrineMaintained` lands before a `clean_latrine` action exists.
+
+## Deviations
+
+- The live exhaustive consumer sweep found observer rendering and save/load fixtures as current-ticket fallout; both were updated in scope.
+- `LatrineMaintained` remains deferred and absent from `crates/`.
+
+## Verification Result
+
+Passed:
+
+1. `cargo test -p worldwake-core --lib event_tag::tests::event_tag_includes_all_required_variants -- --exact`
+2. `cargo test -p worldwake-core --lib decision_event_payload::tests::hygiene_decision_payloads_roundtrip_through_bincode -- --exact`
+3. `cargo test -p worldwake-core --lib event_tag`
+4. `cargo test -p worldwake-core --lib decision_event_payload`
+5. `cargo build --workspace`
+6. `cargo test -p worldwake-sim --lib save_load::tests::save_to_bytes_roundtrip_preserves_decision_event_payloads -- --exact`
+7. `cargo test -p worldwake-core`
+8. `cargo test -p worldwake-cli --bin observer tests::render_decision_history_section_covers_all_variants -- --exact`
+9. `cargo test -p worldwake-sim --lib save_load`
+10. `cargo test --workspace`
+11. `cargo clippy --workspace --all-targets -- -D warnings`
+12. `git diff --check`
+13. `rg -n LatrineMaintained crates` returned no matches.
+
+`cargo test --workspace` initially exposed owned fallout in the observer row-count fixture and save-format assertion; both were corrected and the command was rerun successfully.

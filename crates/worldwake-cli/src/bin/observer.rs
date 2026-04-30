@@ -378,6 +378,8 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::RepairApplied(inner) => inner.agent,
         DecisionEventPayload::ReplanTriggered(inner) => inner.agent,
         DecisionEventPayload::BlockerRecorded(inner) => inner.agent,
+        DecisionEventPayload::WasteCreated(inner) => inner.creator,
+        DecisionEventPayload::WashFacilityUsed(inner) => inner.user,
     }
 }
 
@@ -397,6 +399,8 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::RepairApplied(_) => "RepairApplied",
         DecisionEventPayload::ReplanTriggered(_) => "ReplanTriggered",
         DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
+        DecisionEventPayload::WasteCreated(_) => "WasteCreated",
+        DecisionEventPayload::WashFacilityUsed(_) => "WashFacilityUsed",
     }
 }
 
@@ -504,6 +508,21 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
                 inner.blocker_key, class, inner.expires_tick.0
             )
         }
+        DecisionEventPayload::WasteCreated(inner) => format!(
+            "place={} waste_lot={} source={:?} place_dirtiness_delta={}",
+            inner.place,
+            inner.waste_lot,
+            inner.source,
+            inner.place_dirtiness_delta.value()
+        ),
+        DecisionEventPayload::WashFacilityUsed(inner) => format!(
+            "basin={} water={} agent_dirtiness_delta={} basin_dirtiness_delta={} partial={}",
+            inner.basin,
+            inner.water_consumed,
+            inner.agent_dirtiness_delta.value(),
+            inner.basin_dirtiness_delta.value(),
+            inner.partial
+        ),
     }
 }
 
@@ -4116,8 +4135,9 @@ mod tests {
         GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, OpportunityAnchor,
         PendingEvent, Permille, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
         PrototypePlace, Quantity, RecipeId, ResourceSource, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, Tick, VisibilitySpec, WakeCondition, WakeReason, WitnessData,
-        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
+        SleepEpisodeStartedPayload, Tick, VisibilitySpec, WakeCondition, WakeReason,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationTag,
+        World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -4465,6 +4485,33 @@ mod tests {
                 },
                 accumulated_recovery: Permille::new(225).unwrap(),
                 final_fatigue: Permille::new(525).unwrap(),
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            14,
+            agent,
+            EventTag::WasteCreated,
+            DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+                creator: agent,
+                place: entity(24),
+                waste_lot: entity(25),
+                source: WasteSource::WildernessRelief,
+                place_dirtiness_delta: Permille::new(80).unwrap(),
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            15,
+            agent,
+            EventTag::WashFacilityUsed,
+            DecisionEventPayload::WashFacilityUsed(WashFacilityUsedPayload {
+                user: agent,
+                basin: entity(26),
+                water_consumed: 1,
+                agent_dirtiness_delta: Permille::new(500).unwrap(),
+                basin_dirtiness_delta: Permille::new(25).unwrap(),
+                partial: true,
             }),
         );
 
@@ -5348,7 +5395,7 @@ mod tests {
         assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
         assert_eq!(
             out.lines().filter(|line| line.starts_with("| ")).count(),
-            14
+            16
         );
         for event_name in [
             "GoalOffered",
@@ -5364,6 +5411,8 @@ mod tests {
             "BlockerRecorded",
             "SleepEpisodeStarted",
             "SleepEpisodeEnded",
+            "WasteCreated",
+            "WashFacilityUsed",
         ] {
             assert!(
                 out.contains(event_name),
@@ -5374,6 +5423,10 @@ mod tests {
         assert!(out.contains("goal=ProduceCommodity { recipe_id: RecipeId(3) } motive=420 alts=1"));
         assert!(out.contains("min=4 max=40 target=750 modifier=875"));
         assert!(out.contains("ticks=12->24 reason=ProjectedNeedBreach"));
+        assert!(out.contains("source=WildernessRelief place_dirtiness_delta=80"));
+        assert!(
+            out.contains("water=1 agent_dirtiness_delta=500 basin_dirtiness_delta=25 partial=true")
+        );
     }
 
     #[test]

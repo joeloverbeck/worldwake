@@ -162,6 +162,7 @@ pub use decision_event_payload::{
     PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
     ReplanReason, ReplanTriggeredPayload, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
     SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload, WakeReason,
+    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,

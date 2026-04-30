@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `toilet` commit handler reads/writes per-place `LatrineFullness` and emits `WasteCreated` with `WasteSource::OvercapacityLatrine` on overflow
-**Deps**: archive/tickets/S129PLADIRFAC-001.md, S129PLADIRFAC-002
+**Deps**: archive/tickets/S129PLADIRFAC-001.md, archive/tickets/S129PLADIRFAC-002.md
 
 ## Problem
 

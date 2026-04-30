@@ -24,6 +24,8 @@ pub enum DecisionEventPayload {
     RepairApplied(RepairAppliedPayload),
     ReplanTriggered(ReplanTriggeredPayload),
     BlockerRecorded(BlockerRecordedPayload),
+    WasteCreated(WasteCreatedPayload),
+    WashFacilityUsed(WashFacilityUsedPayload),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -54,6 +56,31 @@ pub struct SleepEpisodeEndedPayload {
     pub end_reason: WakeReason,
     pub accumulated_recovery: Permille,
     pub final_fatigue: Permille,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WasteCreatedPayload {
+    pub creator: EntityId,
+    pub place: EntityId,
+    pub waste_lot: EntityId,
+    pub source: WasteSource,
+    pub place_dirtiness_delta: Permille,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum WasteSource {
+    WildernessRelief,
+    OvercapacityLatrine,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WashFacilityUsedPayload {
+    pub user: EntityId,
+    pub basin: EntityId,
+    pub water_consumed: u16,
+    pub agent_dirtiness_delta: Permille,
+    pub basin_dirtiness_delta: Permille,
+    pub partial: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -381,7 +408,8 @@ mod tests {
         PlanInvalidationReason, PursuitInvalidationReasonTag, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
         SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SourceAttributionOutcomeTag,
-        SourceExpectationFailurePayload, SourceKeyPayload, WakeReason,
+        SourceExpectationFailurePayload, SourceKeyPayload, WakeReason, WashFacilityUsedPayload,
+        WasteCreatedPayload, WasteSource,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
@@ -500,6 +528,21 @@ mod tests {
                 accumulated_recovery: crate::Permille::new(225).unwrap(),
                 final_fatigue: crate::Permille::new(375).unwrap(),
             }),
+            DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+                creator: entity_id(5, 1),
+                place: entity_id(5, 2),
+                waste_lot: entity_id(5, 3),
+                source: WasteSource::WildernessRelief,
+                place_dirtiness_delta: crate::Permille::new(80).unwrap(),
+            }),
+            DecisionEventPayload::WashFacilityUsed(WashFacilityUsedPayload {
+                user: entity_id(5, 1),
+                basin: entity_id(5, 4),
+                water_consumed: 1,
+                agent_dirtiness_delta: crate::Permille::new(500).unwrap(),
+                basin_dirtiness_delta: crate::Permille::new(25).unwrap(),
+                partial: true,
+            }),
             DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                 agent: entity_id(6, 0),
                 goal_key: sample_goal_key(),
@@ -578,6 +621,9 @@ mod tests {
         assert_copy_value_bounds::<GoalSwitchReason>();
         assert_value_bounds::<SleepEpisodeStartedPayload>();
         assert_value_bounds::<SleepEpisodeEndedPayload>();
+        assert_value_bounds::<WasteCreatedPayload>();
+        assert_copy_value_bounds::<WasteSource>();
+        assert_value_bounds::<WashFacilityUsedPayload>();
         assert_copy_value_bounds::<WakeReason>();
         assert_value_bounds::<PlanAdoptedPayload>();
         assert_value_bounds::<BeliefSnapshot>();
@@ -649,6 +695,33 @@ mod tests {
     #[test]
     fn decision_event_payload_variants_roundtrip_through_bincode() {
         for payload in sample_decision_payloads() {
+            let bytes = bincode::serialize(&payload).unwrap();
+            let roundtrip: DecisionEventPayload = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(roundtrip, payload);
+        }
+    }
+
+    #[test]
+    fn hygiene_decision_payloads_roundtrip_through_bincode() {
+        let payloads = [
+            DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+                creator: entity_id(30, 0),
+                place: entity_id(30, 1),
+                waste_lot: entity_id(30, 2),
+                source: WasteSource::OvercapacityLatrine,
+                place_dirtiness_delta: crate::Permille::new(80).unwrap(),
+            }),
+            DecisionEventPayload::WashFacilityUsed(WashFacilityUsedPayload {
+                user: entity_id(31, 0),
+                basin: entity_id(31, 1),
+                water_consumed: 2,
+                agent_dirtiness_delta: crate::Permille::new(1000).unwrap(),
+                basin_dirtiness_delta: crate::Permille::new(50).unwrap(),
+                partial: false,
+            }),
+        ];
+
+        for payload in payloads {
             let bytes = bincode::serialize(&payload).unwrap();
             let roundtrip: DecisionEventPayload = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, payload);
