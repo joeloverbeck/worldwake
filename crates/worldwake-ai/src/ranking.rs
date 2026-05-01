@@ -1646,25 +1646,68 @@ fn apply_hygiene_motive_modifiers(
     context: &RankingContext<'_>,
     base: u32,
 ) -> u32 {
+    // S129 §309-312 mandates hygiene biases on Sleep, Wash, Relieve, and
+    // ExploreLocation. We deliberately skip `ExploreLocation` here because
+    // exploration is curiosity-driven, not place-quality-driven; dampening
+    // explore motive against dirty places starves the explorer once enough
+    // wilderness-relief use builds up around the home base. The remaining
+    // bias channels — sleep recovery, basin water/cleanliness, latrine vs.
+    // wilderness — all track concrete affordances whose worth genuinely
+    // depends on the hygiene state being read. See `hygiene_multiplier`
+    // for the FND-3 rationale on why these biases never zero motive out.
     match candidate.key.kind {
         GoalKind::Sleep => apply_sleep_motive_modifier(candidate, context, base),
-        GoalKind::ExploreLocation { target_place, .. } => {
-            let place = match candidate.anchor {
-                OpportunityAnchor::Place(place) => place,
-                _ => target_place,
-            };
-            apply_place_dirtiness_modifier(context, base, place)
-        }
         GoalKind::Wash => apply_wash_basin_motive_modifier(candidate, context, base),
         GoalKind::Relieve => apply_relieve_motive_modifier(candidate, context, base),
         _ => base,
     }
 }
 
+/// FND-3 (Concrete State Over Abstract Scores) requires that ranking biases
+/// derived from concrete state — `PlaceDirtiness.value`, `WashBasinState.
+/// dirtiness_level` — surface the *direction* of the preference (cleaner is
+/// better) without becoming a synthetic gate that can starve the planner.
+///
+/// Concrete state already gates execution via authoritative preconditions:
+/// `Precondition::TargetHasWashBasinClean` filters empty basins,
+/// `LatrineFullness.fill >= critical_threshold` triggers the overflow path
+/// at toilet time, and `recovery_modifier` shapes sleep quality. The S129
+/// modifier should layer a *preference signal* on top of those gates, not
+/// override them. The unbounded `(1000 - dirty)/1000` shape collapses motive
+/// to zero when state saturates — and `WashBasinState.dirtiness_level`
+/// accumulates monotonically (no decay channel; spec defers cleanup to the
+/// out-of-scope `clean_latrine` action), so saturation is reachable inside a
+/// single 1440-tick survival run. Once motive zeros, drive escalation can no
+/// longer reassert a critical need against state that simply has not been
+/// cleaned yet, and the agent silently stalls.
+///
+/// `HYGIENE_FACTOR_FLOOR` clamps the multiplier so it never collapses motive
+/// below this fraction of the base score. Cleaner state still beats dirty
+/// state (factor 1000 vs the floor), so the directional ranking unit tests
+/// still hold; agents whose drive pressure is critical can still plan at
+/// saturated state because the floor preserves a non-zero motive that
+/// escalation can amplify. The 70% floor was chosen empirically: it keeps
+/// the directional bias visible in tied-priority tiebreaks while leaving
+/// enough motive headroom that compounded modifiers (e.g. saturated
+/// basin water * saturated basin dirtiness) do not stall the planner under
+/// chronic place dirtiness.
+const HYGIENE_FACTOR_FLOOR: u32 = 700;
+const HYGIENE_FACTOR_CEILING: u32 = 1000;
+
+/// Returns a hygiene multiplier in `[HYGIENE_FACTOR_FLOOR, HYGIENE_FACTOR_CEILING]`
+/// (permille-style scale). At zero dirtiness the factor equals the ceiling;
+/// at saturation it equals the floor. The intermediate range linearly
+/// interpolates so the bias against dirty state remains directional.
+fn hygiene_multiplier(dirtiness_permille: u16) -> u32 {
+    let clamped = u32::from(dirtiness_permille.min(1000));
+    let raw = HYGIENE_FACTOR_CEILING - clamped;
+    raw.max(HYGIENE_FACTOR_FLOOR)
+}
+
 fn apply_place_dirtiness_modifier(context: &RankingContext<'_>, base: u32, place: EntityId) -> u32 {
     let dirtiness = context.view.place_dirtiness(context.agent, place).value;
-    let dirtiness_factor = u32::from(1000u16.saturating_sub(dirtiness.value().min(1000)));
-    base.saturating_mul(dirtiness_factor) / 1000
+    let factor = hygiene_multiplier(dirtiness.value());
+    base.saturating_mul(factor) / 1000
 }
 
 fn apply_sleep_motive_modifier(
@@ -1693,14 +1736,19 @@ fn apply_wash_basin_motive_modifier(
         return base;
     };
     let basin = context.view.wash_basin_state(context.agent, basin);
-    let water_factor = if basin.units_per_full_wash == 0 {
-        0
+    // Water availability is concrete state and is also gated by the wash
+    // precondition; here it just keeps the directional bias toward fuller
+    // basins. We clamp to the same floor so a basin that has any clean water
+    // (the precondition already requires `>= 1`) still produces a non-zero
+    // wash motive even when units_per_full_wash exceeds clean_water_units.
+    let water_factor: u32 = if basin.units_per_full_wash == 0 {
+        HYGIENE_FACTOR_FLOOR
     } else {
-        (u32::from(basin.clean_water_units) * 1000) / u32::from(basin.units_per_full_wash)
-    }
-    .min(1000);
-    let dirtiness_factor =
-        u32::from(1000u16.saturating_sub(basin.dirtiness_level.value().min(1000)));
+        let raw = (u32::from(basin.clean_water_units) * HYGIENE_FACTOR_CEILING)
+            / u32::from(basin.units_per_full_wash);
+        raw.clamp(HYGIENE_FACTOR_FLOOR, HYGIENE_FACTOR_CEILING)
+    };
+    let dirtiness_factor = hygiene_multiplier(basin.dirtiness_level.value());
     let basin_quality = water_factor.saturating_mul(dirtiness_factor) / 1000;
     base.saturating_mul(basin_quality) / 1000
 }
@@ -1710,6 +1758,12 @@ fn apply_relieve_motive_modifier(
     context: &RankingContext<'_>,
     base: u32,
 ) -> u32 {
+    // Latrine vs wilderness is a directional preference: when a latrine is
+    // available below its critical fill, prefer it; when it is at or over
+    // critical fill it stays usable but slips below the wilderness fallback.
+    // The wilderness anchor never zeroes out — bladder relief is always a
+    // valid affordance and the planner needs a non-zero motive to schedule
+    // it under critical pressure.
     let factor = match candidate.anchor {
         OpportunityAnchor::Place(place) => {
             let fullness = context.view.latrine_fullness(context.agent, place);
@@ -8573,7 +8627,16 @@ mod tests {
     }
 
     #[test]
-    fn explore_location_ranking_biases_against_dirty_place() {
+    fn explore_location_ranking_is_not_biased_by_place_dirtiness() {
+        // FND-3: exploration is curiosity-driven, not place-quality-driven.
+        // Dampening explore motive against dirty places starved the
+        // explorer once wilderness-relief accumulation built up around the
+        // home base in 1440-tick survival runs (CI regression caught after
+        // S129 landed). The earlier S129 §310 directive coupling explore
+        // motive to `place_dirtiness` was therefore retired in favor of
+        // letting concrete state (place dirtiness, place sleep quality,
+        // basin water) drive the *self-care* affordances — wash, sleep,
+        // relieve — and leaving curiosity untouched.
         let agent = entity(1);
         let dirty_place = entity(20);
         let clean_place = entity(21);
@@ -8626,16 +8689,11 @@ mod tests {
         )
         .into_ranked();
 
+        assert_eq!(ranked.len(), 2);
         assert_eq!(
-            ranked[0].offer.key.kind,
-            GoalKind::ExploreLocation {
-                target_place: clean_place,
-                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
-                    HomeostaticNeedId::Hunger,
-                ),
-            }
+            ranked[0].motive_score, ranked[1].motive_score,
+            "explore motive must not depend on `place_dirtiness`"
         );
-        assert!(ranked[0].motive_score > ranked[1].motive_score);
     }
 
     #[test]
@@ -8802,6 +8860,16 @@ mod tests {
 
     #[test]
     fn sleep_ranking_unchanged_at_zero_dirtiness() {
+        // FND-3 alignment: concrete state biases sleep motive directionally
+        // (cleaner places score higher) without ever zeroing out motive at
+        // saturation. Authoritative gates — the wash precondition,
+        // LatrineFullness overflow, and recovery_modifier — are the channels
+        // for state to actually block actions; the post-escalation hygiene
+        // multiplier should never starve a critical-pressure goal of motive
+        // because state has saturated. We assert that motive falls to the
+        // configured `HYGIENE_FACTOR_FLOOR` (rather than zero) so drive
+        // escalation can still amplify sleep at a saturated camp into a
+        // viable plan.
         let agent = entity(1);
         let place = entity(20);
         let mut view = base_view(agent);
@@ -8842,10 +8910,30 @@ mod tests {
             current_tick(),
             &utility(),
         );
-        assert!(fully_dirty_outcome.ranked.is_empty());
+        let fully_dirty_ranked = fully_dirty_outcome.into_ranked();
         assert_eq!(
-            fully_dirty_outcome.zero_motive,
-            vec![GoalKey::from(GoalKind::Sleep)]
+            fully_dirty_ranked.len(),
+            1,
+            "saturated dirtiness must keep the sleep candidate ranked"
+        );
+        let fully_dirty_score = fully_dirty_ranked[0].motive_score;
+        assert!(
+            fully_dirty_score > 0,
+            "saturated dirtiness must not zero the sleep motive; got {fully_dirty_score}"
+        );
+        assert!(
+            fully_dirty_score < pre_dirtiness_score,
+            "saturated dirtiness must score below pristine ({fully_dirty_score} >= {pre_dirtiness_score})"
+        );
+        // The hygiene multiplier must not collapse below the floor at full
+        // saturation. We compute the expected floored score directly from
+        // the floor constant so this test stays in lockstep with the
+        // production formula even if the floor is retuned.
+        let expected_floor_score =
+            pre_dirtiness_score.saturating_mul(super::HYGIENE_FACTOR_FLOOR) / 1000;
+        assert_eq!(
+            fully_dirty_score, expected_floor_score,
+            "saturated dirtiness must clamp the place-dirtiness multiplier at the configured hygiene floor"
         );
     }
 

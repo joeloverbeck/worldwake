@@ -705,6 +705,7 @@ mod tests {
                     last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(2))]),
                     workstation_tag: None,
                     resource_source: None,
+                    wash_basin_state: None,
                     alive: true,
                     wounds: Vec::new(),
                     courage: None,

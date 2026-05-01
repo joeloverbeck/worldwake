@@ -1934,6 +1934,10 @@ fn places_with_wash_access(state: &PlanningState<'_>) -> Vec<EntityId> {
                 .matching_workstations_at(*place, WorkstationTag::WashBasin)
                 .iter()
                 .any(|basin| {
+                    // FND-14A: the planner stages wash plans only when the
+                    // agent has observed the basin's state — directly via
+                    // co-location or via `BelievedEntityState::wash_basin_state`
+                    // surfaced by `FacilityBeliefView::wash_basin_state`.
                     FacilityBeliefView::wash_basin_state(state, *basin)
                         .is_some_and(|basin_state| basin_state.clean_water_units > 0)
                 })
@@ -7488,6 +7492,12 @@ mod tests {
 
     #[test]
     fn wash_ignores_remote_basin_without_state_carrier() {
+        // FND-14A: physical basin state is co-located perception only.
+        // The planner stages a wash plan only when the agent has observed
+        // the basin's state — directly (co-located) or via
+        // `BelievedEntityState::wash_basin_state` — so a basin without a
+        // stored state snapshot is invisible to wash planning until the
+        // agent visits it.
         let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
         let basin = entity(50);
         let well = entity(51);

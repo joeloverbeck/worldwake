@@ -941,7 +941,9 @@ fn build_snapshot_entity(
     let resource_source = belief_backed
         .and_then(|belief| belief.resource_source.clone())
         .or_else(|| view.resource_source(entity));
-    let wash_basin_state = worldwake_sim::FacilityBeliefView::wash_basin_state(view, entity);
+    let wash_basin_state = belief_backed
+        .and_then(|belief| belief.wash_basin_state)
+        .or_else(|| worldwake_sim::FacilityBeliefView::wash_basin_state(view, entity));
     let has_production_job = view.has_production_job(entity);
     let controllable_by_actor = view.can_control(actor, entity);
     let has_control = view.has_control(entity);

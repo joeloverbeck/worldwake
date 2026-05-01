@@ -5,7 +5,7 @@ use crate::{
     Component, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind,
     HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
-    WorkstationTag, World, Wound,
+    WashBasinState, WorkstationTag, World, Wound,
     institutional::MissingPersonReportStatus,
     social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
@@ -1469,6 +1469,15 @@ pub struct ObservedEntitySnapshot {
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
     pub workstation_tag: Option<WorkstationTag>,
     pub resource_source: Option<ResourceSource>,
+    /// Last observed `WashBasinState` for a `WashBasin` facility. FND-14A:
+    /// physical state is co-located perception only — agents observe the
+    /// basin's current state when at its place and store it here. Off-place
+    /// planning consults this remembered snapshot so the agent can route
+    /// travel-then-wash plans to remote believed basins; the authoritative
+    /// wash precondition re-validates the live state at action time so
+    /// stale beliefs trigger replan rather than commit-against-stale-state.
+    #[serde(default)]
+    pub wash_basin_state: Option<WashBasinState>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
     pub courage: Option<Permille>,
@@ -1493,6 +1502,7 @@ impl ObservedEntitySnapshot {
             last_known_inventory: self.last_known_inventory.clone(),
             workstation_tag: self.workstation_tag,
             resource_source: self.resource_source.clone(),
+            wash_basin_state: self.wash_basin_state,
             alive: self.alive,
             wounds: self.wounds.clone(),
             last_known_courage: self.courage,
@@ -1558,6 +1568,10 @@ pub struct BelievedEntityState {
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
     pub workstation_tag: Option<WorkstationTag>,
     pub resource_source: Option<ResourceSource>,
+    /// Last observed `WashBasinState` for a `WashBasin` facility. See
+    /// `ObservedEntitySnapshot::wash_basin_state` for the FND-14A rationale.
+    #[serde(default)]
+    pub wash_basin_state: Option<WashBasinState>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
     pub last_known_courage: Option<Permille>,
@@ -1584,6 +1598,7 @@ impl BelievedEntityState {
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
             resource_source: None,
+            wash_basin_state: None,
             alive: true,
             wounds: Vec::new(),
             last_known_courage: None,
@@ -2046,6 +2061,7 @@ pub fn build_observed_entity_snapshot(
             .get_component_workstation_marker(entity)
             .map(|marker| marker.0),
         resource_source: world.get_component_resource_source(entity).cloned(),
+        wash_basin_state: world.get_component_wash_basin_state(entity).copied(),
         alive: world.get_component_dead_at(entity).is_none(),
         wounds: world
             .get_component_wound_list(entity)
@@ -5680,6 +5696,7 @@ mod tests {
             last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
             workstation_tag: None,
             resource_source: None,
+            wash_basin_state: None,
             alive: true,
             wounds: vec![sample_wound(1, 4)],
             courage: None,

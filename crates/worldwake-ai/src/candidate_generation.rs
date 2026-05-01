@@ -3405,6 +3405,12 @@ fn wash_access_opportunities(
             .into_iter()
             .filter(|workstation| !ctx.view.has_production_job(*workstation))
             .filter(|workstation| {
+                // FND-14A: physical state (`clean_water_units`) is co-located
+                // perception only. The agent must have observed the basin's
+                // state — directly via co-location or stored in
+                // `BelievedEntityState::wash_basin_state` from an earlier
+                // visit — before the planner can stage a wash plan. Basins
+                // the agent has never seen produce no candidate.
                 ctx.view
                     .facility_wash_basin_state(*workstation)
                     .is_some_and(|state| state.clean_water_units > 0)
@@ -9914,6 +9920,12 @@ mod tests {
 
     #[test]
     fn emit_wash_goal_skips_known_remote_basin_without_state_carrier() {
+        // FND-14A: agents must have observed the basin's state — either
+        // directly (co-located) or stored on the entity belief
+        // (`BelievedEntityState::wash_basin_state`) — before the planner can
+        // stage a wash plan. A basin entity that exists in the world but
+        // whose state the agent has never observed should not emit a wash
+        // candidate.
         let agent = entity(1);
         let origin = entity(10);
         let bathhouse = entity(11);
