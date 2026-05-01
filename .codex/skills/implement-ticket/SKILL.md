@@ -317,6 +317,8 @@ When a migrated output surface is fed by multiple lawful producers (for example 
 
 When a broadened golden starts looking truthful only over a longer window than the draft implied, explicitly classify the contract before closeout: immediate post-return behavior, action-lifecycle ordering, or eventual completion over a cooldown/retention horizon. Rewrite the ticket and golden assertions to that exact temporal boundary instead of leaving “completes” ambiguous.
 
+When a need/drive golden or authored scenario requires retuning pressure weights, rates, thresholds, or escalation parameters, enumerate all lawful relief paths for the target pressure before editing profile numbers. Check whether another candidate already relieves the same need as a side effect, such as food relieving thirst, rest affecting multiple pressures, or a wash/relief action resetting exposure. Bind the scenario edit to the intended causal branch first, then retune authored state so the proof exercises that branch rather than hiding it behind a competing relief path.
+
 #### AI runtime, planner, and golden verification
 
 For detailed AI runtime, planner-boundary, hybrid golden, scenario-metadata, fixture-refresh, and generated-doc fallout guidance, use `references/verification.md` and the relevant reassessment references instead of expanding the case logic here. Keep the top-level decision simple:

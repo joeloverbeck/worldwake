@@ -1963,15 +1963,14 @@ fn ranked_drive_motive_input(
     relief_per_unit: Permille,
     recovery_relevant: bool,
 ) -> RankedDriveMotiveInput {
+    let escalation_multiplier =
+        drive_escalation_multiplier(context, homeostatic_need_id_for_drive(drive));
     RankedDriveMotiveInput {
         drive,
         pressure,
         weight,
-        score: score_product(weight, pressure),
-        escalation_multiplier: drive_escalation_multiplier(
-            context,
-            homeostatic_need_id_for_drive(drive),
-        ),
+        score: effective_motive_score(score_product(weight, pressure), escalation_multiplier),
+        escalation_multiplier,
         relief_per_unit,
         recovery_relevant,
     }
@@ -3628,6 +3627,54 @@ mod tests {
             hunger_factor.escalation_multiplier,
             MultiplierPermille::new(1500).unwrap()
         );
+    }
+
+    #[test]
+    fn ranked_drive_provenance_score_applies_escalation_multiplier() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(900)),
+        );
+        view.exposures.insert(
+            agent,
+            DeprivationExposure {
+                dirtiness_critical_ticks: 150,
+                ..DeprivationExposure::default()
+            },
+        );
+        view.escalation_profiles
+            .insert(agent, escalation_profile(100, 10, 3000));
+        let utility = utility();
+
+        let ranked = rank(
+            &[goal(GoalKind::Wash)],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+        )
+        .into_ranked();
+
+        let expected = u32::from(utility.dirtiness_weight.value()) * 900 * 1500 / 1000;
+        assert_eq!(ranked[0].motive_score, expected);
+        match ranked[0]
+            .provenance
+            .as_ref()
+            .expect("wash candidate should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(
+                    provenance.motive_inputs[0].escalation_multiplier,
+                    MultiplierPermille::new(1500).unwrap()
+                );
+                assert_eq!(provenance.motive_inputs[0].score, expected);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("wash candidate should not use danger provenance")
+            }
+        }
     }
 
     fn seed_directly_possessed_waste_lot(

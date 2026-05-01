@@ -343,7 +343,7 @@ The golden proves a specific contention-era causal branch: both north-side and s
 - Seed: `116006`
 - Agents: `3`
 - Places: `3`
-- Survival health contract: `max_authored_critical_run_ticks = 250`, `max_idle_window_ticks_with_elevated_need = 60`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.dirtiness = 1300`
+- Survival health contract: `max_authored_critical_run_ticks = 250`, `max_idle_window_ticks_with_elevated_need = 60`, required self-care families `Eat`, `Drink`, `Sleep`, `Relieve`, `Wash`, with `critical_run_limits.hunger = 800`, `critical_run_limits.thirst = 800`, and `critical_run_limits.dirtiness = 1300`
 
 **New landed feature row**
 - Drive escalation

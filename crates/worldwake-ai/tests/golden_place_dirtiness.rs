@@ -4,12 +4,12 @@ mod golden_harness;
 
 use golden_harness::*;
 use std::num::{NonZeroU8, NonZeroU32};
-use worldwake_ai::{DecisionOutcome, GoalKey, GoalKind};
+use worldwake_ai::{DecisionOutcome, GoalKey, GoalKind, PlanSearchOutcome};
 use worldwake_core::{
-    AgentData, CommodityKind, ControlSource, DecisionEventPayload, EntityId, EventTag, EventView,
-    HomeostaticNeeds, LatrineFullness, MetabolismProfile, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, PlaceDirtiness, Quantity, ResourceSource, Seed, SleepQualityProfile, Tick,
-    UtilityProfile, WashBasinState, WorkstationTag,
+    AgentData, CommodityKind, ControlSource, DecisionEventPayload, DeprivationExposure, EntityId,
+    EventTag, EventView, HomeostaticNeedId, HomeostaticNeeds, LatrineFullness, MetabolismProfile,
+    OpportunityAnchor, OpportunityKey, PerceptionSource, PlaceDirtiness, Quantity, ResourceSource,
+    Seed, SleepQualityProfile, Tick, UtilityProfile, WashBasinState, WorkstationTag,
 };
 use worldwake_sim::{ActionRequestMode, ActionTraceKind, InputKind, RequestProvenance};
 
@@ -551,6 +551,105 @@ fn wash_ai_selects_non_empty_basin_when_other_basin_is_empty() {
             .iter()
             .any(|event| matches!(event.kind, ActionTraceKind::StartFailed { .. })),
         "stale empty-basin request should fail before the replanned usable basin is selected: {wash_events:?}"
+    );
+}
+
+// Scenario 367A: Wash Re-emerges After First Cycle Relief
+// Setup: A dirty AI agent washes at a stocked local basin, then its dirtiness
+// is driven back above critical with an active exposure counter.
+// Proves: The second-cycle Wash candidate is generated and planner search
+// finds a Wash plan rather than losing the branch after relief reset.
+// Chain: first wash commit -> dirtiness re-critical -> wash candidate emission
+// -> planner search found for the same local basin.
+#[test]
+fn wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical() {
+    let mut h = GoldenHarness::new(Seed([
+        0x8c, 0x51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0,
+    ]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+    let basin = place_wash_basin(&mut h, VILLAGE_SQUARE, WashBasinState::default());
+    let _well = place_workstation_with_source(
+        &mut h.world,
+        &mut h.event_log,
+        VILLAGE_SQUARE,
+        WorkstationTag::Well,
+        ResourceSource {
+            commodity: CommodityKind::Water,
+            available_quantity: Quantity(20),
+            max_quantity: Quantity(20),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+            extraction_slots: NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+        },
+        ProductionOutputOwner::Actor,
+    );
+    let agent = seed_agent(
+        &mut h.world,
+        &mut h.event_log,
+        "SecondCycleWasher",
+        VILLAGE_SQUARE,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(950)),
+        quiet_metabolism(),
+        hygiene_utility(),
+    );
+    seed_actor_local_beliefs(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    run_until_commits(&mut h, agent, "wash", 1, 8);
+    assert!(
+        h.agent_dirtiness(agent)
+            < h.world
+                .get_component_drive_thresholds(agent)
+                .unwrap()
+                .dirtiness
+                .critical(),
+        "first wash should drop dirtiness below critical"
+    );
+
+    let params = h
+        .world
+        .get_component_drive_escalation_profile(agent)
+        .unwrap()
+        .params_for(HomeostaticNeedId::Dirtiness);
+    let mut txn = new_txn(&mut h.world, h.scheduler.current_tick().0);
+    txn.set_component_homeostatic_needs(
+        agent,
+        HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(950)),
+    )
+    .unwrap();
+    txn.set_component_deprivation_exposure(
+        agent,
+        DeprivationExposure {
+            dirtiness_critical_ticks: params.start_after_ticks + 1,
+            ..DeprivationExposure::default()
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
+
+    let decision_tick = h.scheduler.current_tick();
+    h.step_once();
+    let planning = planning_trace_at(&h, agent, decision_tick);
+    let wash_key = OpportunityKey {
+        goal_key: GoalKey::from(GoalKind::Wash),
+        anchor: OpportunityAnchor::Entity(basin),
+    };
+    assert!(planning.candidates.generated_contains_opportunity(wash_key));
+    assert!(
+        planning.planning.attempts.iter().any(|attempt| {
+            attempt.goal.kind == GoalKind::Wash
+                && matches!(attempt.outcome, PlanSearchOutcome::Found { .. })
+        }),
+        "second-cycle wash should have a found plan: {:?}",
+        planning.planning.attempts
     );
 }
 

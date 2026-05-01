@@ -1,10 +1,10 @@
 # S129CIREM-001: Drive-escalation wash recurrence + Drink under low thirst weight
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
-**Engine Changes**: Possibly — drive-escalation reset semantics and/or `AcquireCommodity(Water)` motive composition
-**Deps**: archive/specs/S129-place-dirtiness-facility-wear.md, archive/specs/S116-drive-escalation-under-sustained-critical-need.md (referenced indirectly via the escalation profile)
+**Engine Changes**: Yes — `worldwake-ai` ranking motive provenance
+**Deps**: archive/specs/S129-place-dirtiness-facility-wear.md, archive/specs/S116-drive-escalation-sustained-critical.md (referenced indirectly via the escalation profile)
 
 ## Problem
 
@@ -119,3 +119,27 @@ Choose exactly one of the following:
 1. `cargo test -p worldwake-ai --test golden_place_dirtiness wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical`
 2. `cargo test --release -p worldwake-ai --test golden_survival_drive_escalation -- --ignored --test-threads=1`
 3. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Fixed the ranking/provenance mismatch in `crates/worldwake-ai/src/ranking.rs`: `RankedDriveMotiveInput.score` now carries the escalation-adjusted motive score, so the provenance-backed ordering path uses the same escalation semantics as `drive_score`.
+- Added `ranking::tests::ranked_drive_provenance_score_applies_escalation_multiplier` to prove escalated drive provenance affects the ranked motive score.
+- Added `golden_place_dirtiness::wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical`, proving the second-cycle Wash candidate is generated and planner search finds a Wash plan after first-cycle relief reset.
+- Retuned `scenarios/survival-drive-escalation.ron` so the long scenario exercises Drink and repeated Wash through authored profile state: thirst is no longer suppressed as unreachable, Dirtiness has a stronger per-need escalation cap than default hunger/thirst escalation, and the scenario records explicit hunger/thirst critical-run overrides because the row is now proving self-care-family exercise plus repeated wash recurrence rather than a strict all-needs 250-tick envelope.
+- Post-ticket review refreshed `docs/scenario-roadmap.md` so the `survival-drive-escalation` authored envelope records the new hunger/thirst critical-run overrides alongside the dirtiness override.
+
+## Deviations
+
+- The live S116 archive path is `archive/specs/S116-drive-escalation-sustained-critical.md`; the stale dependency path was corrected.
+- The drafted Drink Option A needed more than a `thirst_weight` bump. Apples also relieve thirst, so Drink stayed absent until the scenario made thirst a distinct enough pressure through `thirst_rate` and `thirst_weight`.
+- The drafted wash hypothesis was narrowed to the earliest confirmed production bug: escalation was computed but dropped by the provenance-backed ranked score. No `switch_margin`, search, or wash candidate-generation engine change was needed.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::ranked_drive_provenance_score_applies_escalation_multiplier -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_place_dirtiness wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical -- --exact`
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_drive_escalation survival_drive_escalation_lands_row_four -- --ignored --test-threads=1`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`
