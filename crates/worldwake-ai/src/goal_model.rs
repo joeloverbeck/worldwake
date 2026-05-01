@@ -1927,12 +1927,17 @@ fn places_with_resource_source(
 }
 
 fn places_with_wash_access(state: &PlanningState<'_>) -> Vec<EntityId> {
-    let basin_places = places_with_workstation(state, WorkstationTag::WashBasin);
-    let water_places = places_with_resource_source(state, CommodityKind::Water);
-    let water_place_set: BTreeSet<_> = water_places.into_iter().collect();
-    basin_places
+    places_with_workstation(state, WorkstationTag::WashBasin)
         .into_iter()
-        .filter(|place| water_place_set.contains(place))
+        .filter(|place| {
+            state
+                .matching_workstations_at(*place, WorkstationTag::WashBasin)
+                .iter()
+                .any(|basin| {
+                    FacilityBeliefView::wash_basin_state(state, *basin)
+                        .is_some_and(|basin_state| basin_state.clean_water_units > 0)
+                })
+        })
         .collect()
 }
 

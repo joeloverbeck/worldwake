@@ -33,8 +33,8 @@ use worldwake_core::{
     PrototypePlace, Quantity, RecipeId, RecordedViolation, ResourceSource, RewardSource,
     TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
     TravelEdgeId, UniqueItemKind, ViolationDispositionProfile, ViolationId, ViolationKind,
-    VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-    WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
+    VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
     prototype_place_entity, test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
@@ -4285,6 +4285,8 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
             WorkstationMarker(WorkstationTag::WashBasin),
         )
         .unwrap();
+        txn.set_component_wash_basin_state(wash_basin, WashBasinState::default())
+            .unwrap();
         txn.set_component_workstation_marker(well, WorkstationMarker(WorkstationTag::Well))
             .unwrap();
         txn.set_component_resource_source(
@@ -4356,7 +4358,7 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
                     .any(|candidate| candidate.op_kind == Some(PlannerOpKind::Wash))
             });
             panic!(
-                "wash should find a lawful travel-then-wash plan at a believed basin/source place; result={other:?}; root={root:?}; saw_wash={saw_wash}"
+                "wash should find a lawful travel-then-wash plan at a believed basin place; result={other:?}; root={root:?}; saw_wash={saw_wash}"
             );
         }
     };
@@ -4380,7 +4382,7 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
 }
 
 #[test]
-fn search_local_wash_candidates_require_basin_and_water_source() {
+fn search_local_wash_candidates_require_clean_basin() {
     let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
     let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
     let mut world = World::new(build_prototype_world()).unwrap();
@@ -4420,6 +4422,8 @@ fn search_local_wash_candidates_require_basin_and_water_source() {
             WorkstationMarker(WorkstationTag::WashBasin),
         )
         .unwrap();
+        txn.set_component_wash_basin_state(wash_basin, WashBasinState::default())
+            .unwrap();
         txn.set_component_workstation_marker(well, WorkstationMarker(WorkstationTag::Well))
             .unwrap();
         txn.set_component_resource_source(
@@ -4498,13 +4502,10 @@ fn search_local_wash_candidates_require_basin_and_water_source() {
                 .is_some_and(|semantics| semantics.op_kind == PlannerOpKind::Wash)
                 && matches!(
                     candidate.planning_targets.as_slice(),
-                    [
-                        PlanningEntityRef::Authoritative(target0),
-                        PlanningEntityRef::Authoritative(target1)
-                    ] if *target0 == wash_basin && *target1 == well
+                    [PlanningEntityRef::Authoritative(target0)] if *target0 == wash_basin
                 )
         }),
-        "local wash candidates should directly target the basin and local water source"
+        "local wash candidates should directly target the clean basin"
     );
 }
 

@@ -19,7 +19,7 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Keep Cargo sequential, confirm ambiguous or pre-existing exact selectors with `-- --list`, and record only truthful verification boundaries.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
 
-Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here.
+Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here. Do not include a Cargo command inside any `multi_tool_use.parallel` bundle, even when the other bundled commands are read-only; run the Cargo command separately.
 
 ## Quick Routing
 
@@ -40,7 +40,7 @@ Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in
 - If the ticket family is already partially landed on the live branch, identify the remaining live delta before adopting the drafted `What to Change`, `Files to Touch`, or proof plan sections.
 - If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
 
-Cargo commands are an explicit exception to the repo's general parallel-read/tool-call habit: run Cargo sequentially throughout this workflow, including `cargo test ... -- --list`, focused tests, compile-only passes, broad crate/workspace tests, and clippy runs. In Codex, do not use `multi_tool_use.parallel` for any Cargo command, including `-- --list` probes. Do not launch multiple Cargo commands in parallel unless the user explicitly asks for that tradeoff.
+Cargo commands are an explicit exception to the repo's general parallel-read/tool-call habit: run Cargo sequentially throughout this workflow, including `cargo test ... -- --list`, focused tests, compile-only passes, broad crate/workspace tests, and clippy runs. In Codex, do not use `multi_tool_use.parallel` for any Cargo command, including `-- --list` probes. Do not launch multiple Cargo commands in parallel unless the user explicitly asks for that tradeoff. After a resume or context compaction, check for and poll any known in-flight Cargo session before rerunning the same command.
 When the ticket's proof plan names a specific script, bin target, workflow entry, or test file, verify the exact live entrypoint name before treating the drafted command as authoritative. If the ticket spells the target differently from the live repo, correct the proof lane to the honest current entrypoint before closeout instead of preserving the stale command.
 When the proof lane depends on a repo script such as `./scripts/verify.sh`, treat the script's live contents and observed output as authoritative over surrounding prose summaries. If the ticket's Test Plan names the script, inspect it during context loading or reassessment before coding so repo-specific gates can shape naming, cleanup, and implementation constraints. Inspect or summarize the actual gate set before closeout, especially when the script has gained extra checks beyond the documented high-level command list. If the script exits successfully but its streamed output has no explicit final success marker, read the script or run a cheap `sed`/`rg` over it before recording the exact gate list.
 If a ticket lists `./scripts/verify.sh` but the session is not preparing a PR, inspect the script and either run the wrapper or run all live gates it currently wraps directly. Record any substitution explicitly in ticket closeout, including which wrapper gate set was covered and that the wrapper itself was not run.
@@ -377,6 +377,8 @@ When a shared serialized-surface ticket widens a schema, payload, enum, or savea
 ### 7. Close out the ticket honestly
 
 Load `references/closeout.md`.
+
+If final edits happen after broad verification, classify the freshness boundary before reporting completion: code, generated artifact, scenario, or executable-proof edits require rerunning the relevant broad or targeted executable checks; non-generated ticket/spec Markdown edits normally require `git diff --check` plus any targeted stale-claim scans. Record which broad gates were pre-final-edit and which post-edit checks prove the final diff.
 
 For documentation-only roadmap/report tickets, use this compact closeout checklist before marking completion:
 - restate the authoritative-source order that won during reassessment (for example generated companion, live code/generator rule, authored scenario/test, then draft design doc)

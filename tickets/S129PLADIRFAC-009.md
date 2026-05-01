@@ -25,6 +25,7 @@ This ticket exercises Authoritative-to-AI Impact Rule checklist point 2 (`genera
 5. The agent's reachability surface (which places/facilities are "known" to the agent for emission purposes) is provided through the existing belief-view layer — emit_wash_goal and emit_relieve_goal already use this. The new accessors from ticket 004 (`place_dirtiness`, `latrine_fullness`, `wash_basin_state`) are read by ticket 010 ranking; emission itself only needs to enumerate the facilities/places that exist, not their state values.
 6. Existing focused/unit coverage: grep `candidate_generation.rs`'s test module for tests exercising `emit_wash_goal` and `emit_relieve_goal`. Tests will need updating because the candidate count changes — instead of one wash candidate per reachable place, multiple wash candidates per reachable basin; instead of one un-anchored relieve candidate, one candidate per reachable latrine-tagged place plus one wilderness candidate.
 7. Phase distinction (precision-rules §1): this ticket lives in candidate generation. Ranking is ticket 010. Authoritative outcome is ticket 007. The action surface is ticket 003 + 007. Treating these as one merged ticket would muddle the four-phase boundary.
+8. Post-007 review correction (2026-05-01): ticket 007 added planning-snapshot `WashBasinState` carriage and `goal_model::places_with_wash_access` now checks basin clean water instead of co-located `ResourceSource`. During this ticket, reassess whether `PlanningState`'s default `WashBasinState` fallback for known wash-basin facilities is an intentional neutral planner assumption or an FND-14 dynamic-state leak for remote/merely known basins. The per-basin emission contract must not silently treat unknown remote basin water as confirmed clean water unless the live belief carrier explicitly supports that state.
 
 ## Architecture Check
 
@@ -39,6 +40,7 @@ This ticket exercises Authoritative-to-AI Impact Rule checklist point 2 (`genera
 3. `emit_relieve_goal` produces only wilderness when no latrines reachable → focused unit test seeding zero latrines. Assert one candidate with `OpportunityAnchor::None`.
 4. `emit_wash_goal` produces no candidates when no basins reachable → focused unit test seeding zero basins. Assert empty candidate set.
 5. `emit_wash_goal` filters basins gated by ticket 003's precondition (basin has `clean_water_units > 0`) → assertion deferred to ticket 003's affordance test (already covered there); this ticket's emission does not need to re-implement gating because affordance discovery prunes empty-basin candidates downstream.
+6. Remote/merely known basin state does not overclaim clean-water availability → focused planner/candidate-generation test for a known remote wash basin that has a workstation-tag belief but no explicit `WashBasinState` carrier. The assertion should match the reassessed contract: either no clean-water-gated wash candidate/relevant place is emitted, or the ticket adds an explicit belief carrier and proves it is populated before emission.
 
 ## What to Change
 
@@ -102,6 +104,7 @@ If `candidate_generation.rs`'s test module has tests asserting the bundled wash-
 ## Files to Touch
 
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — `emit_wash_goal` rewrite at 3313, `emit_relieve_goal` rewrite at 3282; possible helper additions for reachable-places-with-tag and matching-workstations-at if not already present)
+- Likely: `crates/worldwake-ai/src/goal_model.rs` / `crates/worldwake-ai/src/planning_state.rs` (modify — if reassessment shows the post-007 clean-water relevant-place fallback overclaims unknown remote basin state)
 - Likely: `crates/worldwake-ai/src/affordance_query.rs` (modify — only if `wash_access_opportunities` needs to expose per-basin ids; confirm during implementation)
 
 ## Out of Scope
@@ -119,8 +122,9 @@ If `candidate_generation.rs`'s test module has tests asserting the bundled wash-
 2. New focused test `emit_wash_goal_produces_zero_candidates_when_no_basins_reachable` — emission is bounded by reachability.
 3. New focused test `emit_relieve_goal_produces_per_place_latrine_candidates_plus_wilderness` — multiple latrine-tagged places + wilderness fallback.
 4. New focused test `emit_relieve_goal_produces_only_wilderness_when_no_latrines_reachable` — wilderness fallback is always present.
-5. Updated existing tests in `candidate_generation.rs` (rename to reflect per-anchor expectations).
-6. Existing suite: `cargo test -p worldwake-ai`.
+5. New or updated focused test covering the post-007 remote/unknown basin-state boundary for wash candidate or relevant-place emission.
+6. Updated existing tests in `candidate_generation.rs` (rename to reflect per-anchor expectations).
+7. Existing suite: `cargo test -p worldwake-ai`.
 
 ### Invariants
 
@@ -133,7 +137,7 @@ If `candidate_generation.rs`'s test module has tests asserting the bundled wash-
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/candidate_generation.rs` test module — four new focused tests; existing wash/relieve emission tests rewritten.
+1. `crates/worldwake-ai/src/candidate_generation.rs` / `goal_model.rs` test modules — five focused tests; existing wash/relieve emission tests rewritten.
 
 ### Commands
 

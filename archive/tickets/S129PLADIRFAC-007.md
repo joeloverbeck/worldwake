@@ -1,6 +1,6 @@
 # S129PLADIRFAC-007: wash basin-state refactor with partial success
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `wash` action's precondition list, target arity, and commit handler all change. Authoritative-to-AI precondition surface is modified.
@@ -10,7 +10,7 @@
 
 Today's `wash` action consumes water directly from the well's `ResourceSource` at commit time (`needs_actions.rs:702–721`) and zeros the actor's dirtiness in one binary step. The well-vs-basin asymmetry means: (a) basins carry no per-facility state, so multiple basins at one place are indistinguishable to the agent; (b) wash either succeeds fully or fails the start, with no partial outcome (PR-11's gap); (c) well depletion happens per individual wash event rather than per supply-chain demand. S129's D7 redesigns the action: the basin becomes the consumed water buffer, the well's only role is per-tick refill (ticket 008), and partial success is a first-class outcome when basin water is below `units_per_full_wash`.
 
-This ticket performs the action-level refactor and exercises the Authoritative-to-AI Impact Rule's checklist points 4 (`BestEffort` action start), 5 (`handle_plan_failure`), and 6 (payload revalidation — N/A for wash). Checklist points 1 (`get_affordances`) and 2 (`generate_candidates`) are covered by tickets 003 and 009; checklist point 3 (`search_plan`) emerges from those; point 7 (golden tests) is ticket 012.
+This ticket performs the action-level refactor and exercises the Authoritative-to-AI Impact Rule's checklist point 4 (`BestEffort` action start) at the wash start boundary, plus the generic point-5 handoff that existing `handle_plan_failure` already performs for `PreconditionFailed` start failures. Checklist points 1 (`get_affordances`) and 2 (`generate_candidates`) are covered by tickets 003 and 009; checklist point 3 (`search_plan`) emerges from those; point 6 (payload revalidation) is N/A for wash; point 7 (golden tests) is ticket 012.
 
 ## Assumption Reassessment (2026-04-29)
 
@@ -23,6 +23,7 @@ This ticket performs the action-level refactor and exercises the Authoritative-t
 5. The `forensic_wash_vs_water_competition.rs` golden at `crates/worldwake-ai/tests/forensic_wash_vs_water_competition.rs` — verify during implementation whether its narrative depends on the two-target shape or on basin/water-source contention; the per-basin candidate split (ticket 009) plus this ticket's basin-as-water-buffer change may require golden revision. Classify the divergence per precision-rules §13: if reassessment reveals the golden's actual contract is well-water contention (not basin contention), the golden may need to be rewritten in ticket 012 alongside the new place-dirtiness coverage, with this ticket's scope updated accordingly.
 6. Authoritative-to-AI Impact Rule per CLAUDE.md: this ticket is the action-level half of the wash refactor. Checklist points 4 (`BestEffort` start) and 5 (`handle_plan_failure`) are addressed in this ticket. Specifically: when `clean_water_units` drops between affordance discovery and action start (e.g., another agent washed first), `BestEffort` start fails with `ActionError::PreconditionFailed` (driving replan via existing `handle_plan_failure` machinery — no new code there). The fail-then-replan path preserves the candidate-emission gate (ticket 003) as authoritative. Heuristic Removal Discipline (precision-rules §12): this ticket does **not** weaken any existing heuristic — it replaces a precondition with a different precondition that is strictly more accurate (basin-state-aware rather than well-state-aware).
 7. Mismatch + correction: the spec's D7 reads `target[0]` for the basin (per spec text); current code reads `target[1]` for the water source. The change is a clean swap of which target is read, plus removal of the second target. Confirm during implementation that no other call site assumes the two-target wash shape.
+8. Mismatch + correction (2026-05-01): the original verification layer and acceptance criteria asked this ticket to prove replan onto a different basin after start failure. Live sibling ticket `S129PLADIRFAC-009` still owns per-basin candidate emission, so basin-specific replan selection is not a lawful 007 proof. This ticket keeps point 4 as a direct stale-affordance start-failure proof and relies on the existing generic `handle_plan_failure` mapping for point 5; basin-specific replan/golden proof remains with 009/012.
 
 ## Architecture Check
 
@@ -36,7 +37,7 @@ This ticket performs the action-level refactor and exercises the Authoritative-t
 2. Full-success commit consumes `units_per_full_wash` from basin and zeros agent dirtiness → focused unit test seeding `WashBasinState { clean_water_units: 5, units_per_full_wash: 2, dirtiness_per_use: pm(50) }`, agent dirtiness `pm(800)`, run commit, assert `clean_water_units == 3`, agent dirtiness `pm(0)`, basin `dirtiness_level` incremented by `pm(50)`, `WashFacilityUsed { partial: false }` event emitted.
 3. Partial-success commit reduces dirtiness proportionally → focused unit test with `clean_water_units: 1, units_per_full_wash: 2`, agent dirtiness `pm(800)`. Assert post-commit: `clean_water_units == 0`, agent dirtiness `pm(400)` (proportional half-reduction), basin `dirtiness_level` incremented by half of `dirtiness_per_use` (`pm(25)`), `WashFacilityUsed { partial: true, water_consumed: 1 }`.
 4. Race-condition path (basin emptied between affordance and start) → focused integration test seeding two basins; run wash on basin A; immediately drain basin A's water externally; attempt second wash; assert `BestEffort` start fails with `ActionError::PreconditionFailed`. (This exercises Auth-to-AI checklist point 4.)
-5. Authoritative-to-AI checklist point 5 — `handle_plan_failure` replans on basin emptiness → focused decision-trace test asserting that after a wash start fails, the agent re-runs candidate generation; the new candidate (over basin B) is selected.
+5. Authoritative-to-AI checklist point 5 — existing `handle_plan_failure` already maps `ActionStartFailureReason::PreconditionFailed` into blocker/discrepancy classification. Basin-specific replanning onto another wash basin is deferred to ticket 009's per-basin candidate emission and ticket 012's golden proof.
 
 ## What to Change
 
@@ -132,7 +133,7 @@ Verify the helper APIs (`set_actor_needs`, etc.) match the codebase conventions 
 
 - `wash_partial_success_when_basin_water_below_full_wash` — partial-outcome assertions per spec D7.
 - `wash_emits_wash_facility_used_event_with_partial_flag` — payload-flag assertion.
-- `wash_race_condition_basin_emptied_between_affordance_and_start_returns_precondition_failed` — Auth-to-AI checklist point 4.
+- `wash_race_condition_basin_emptied_between_affordance_and_start_returns_precondition_failed` — stale-affordance start revalidation for Auth-to-AI checklist point 4.
 
 ## Files to Touch
 
@@ -155,7 +156,7 @@ Verify the helper APIs (`set_actor_needs`, etc.) match the codebase conventions 
 2. Rewritten `wash_rejects_basin_with_zero_clean_water` — affordance/precondition rejects the wash candidate (verify via affordance test, since commit shouldn't be reachable with empty basin).
 3. New focused test `wash_partial_success_when_basin_water_below_full_wash` — proportional reduction.
 4. New focused test `wash_emits_wash_facility_used_event_with_partial_flag` — payload contents.
-5. New focused test `wash_race_condition_basin_emptied_between_affordance_and_start_returns_precondition_failed` — race path.
+5. New focused test `wash_race_condition_basin_emptied_between_affordance_and_start_returns_precondition_failed` — stale-affordance start revalidation path.
 6. `forensic_wash_vs_water_competition.rs` either continues to pass or is updated in-scope per Assumption Reassessment §5; if rewrite is substantial, the rewrite is deferred to ticket 012 with explicit scope handoff.
 7. Existing suite: `cargo test -p worldwake-systems` and `cargo test -p worldwake-ai`.
 
@@ -184,3 +185,39 @@ Verify the helper APIs (`set_actor_needs`, etc.) match the codebase conventions 
 4. `cargo build --workspace`
 5. `cargo test --workspace`
 6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+Implemented the wash action refactor against the live S129 substrate.
+
+- `crates/worldwake-systems/src/needs_actions.rs`: `wash` now has one basin target, gates on `TargetHasWashBasinClean`, consumes `WashBasinState.clean_water_units`, supports proportional partial success, mutates basin dirtiness, preserves co-located `ResourceSource` water, and emits `WashFacilityUsed`.
+- `crates/worldwake-ai/src/planning_snapshot.rs` and `crates/worldwake-ai/src/planning_state.rs`: planning snapshots now carry facility-side `WashBasinState`, with the same default-basin convention used by authoritative wash-basin fixtures.
+- `crates/worldwake-ai/src/goal_model.rs`, `crates/worldwake-ai/src/search/tests.rs`, `crates/worldwake-ai/tests/golden_ai_decisions.rs`, and `crates/worldwake-ai/tests/planner_conformance.rs`: AI/search/golden/conformance surfaces now use the basin-buffer contract and one-target wash shape.
+
+`crates/worldwake-ai/tests/forensic_wash_vs_water_competition.rs` did not need an in-scope rewrite; the focused `forensic_wash` lane still passes.
+
+## Deviations / Scope Corrections
+
+- The original ticket expected basin-specific replan proof after a stale-affordance failure. Live sibling ticket `S129PLADIRFAC-009` still owns per-basin candidate emission, so this ticket proves stale-affordance start revalidation and leaves basin-specific replan/golden proof with 009/012.
+- The full `worldwake-ai` lane exposed real follow-on surfaces beyond `needs_actions.rs`: planning snapshots/state, relevant-place search, golden wash assertions, and planner conformance all needed basin-state awareness to keep the authoritative-to-AI boundary truthful.
+
+## Verification Result
+
+Focused checks passed:
+
+1. `cargo test -p worldwake-systems --lib wash`
+2. `cargo test -p worldwake-systems`
+3. `cargo test -p worldwake-ai forensic_wash`
+4. `cargo test -p worldwake-ai --lib search::tests::search_local_wash_candidates_require_clean_basin`
+5. `cargo test -p worldwake-ai --lib search::tests::search_wash_finds_travel_then_wash_plan_at_believed_access_place`
+6. `cargo test -p worldwake-ai --test golden_ai_decisions golden_wash_action`
+7. `cargo test -p worldwake-ai --test planner_conformance conformance_wash`
+8. `cargo test -p worldwake-ai`
+
+Broad workspace checks passed:
+
+1. `cargo build --workspace`
+2. `cargo test --workspace`
+3. `cargo clippy --workspace --all-targets -- -D warnings`

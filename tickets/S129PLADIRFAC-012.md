@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — new golden test file exercising the full S129 stack
-**Deps**: archive/tickets/S129PLADIRFAC-005.md, archive/tickets/S129PLADIRFAC-006.md, S129PLADIRFAC-007, S129PLADIRFAC-008, S129PLADIRFAC-010, S129PLADIRFAC-011
+**Deps**: archive/tickets/S129PLADIRFAC-005.md, archive/tickets/S129PLADIRFAC-006.md, archive/tickets/S129PLADIRFAC-007.md, S129PLADIRFAC-008, S129PLADIRFAC-010, S129PLADIRFAC-011
 
 ## Problem
 
@@ -18,7 +18,7 @@ Without golden coverage, S129's emergent chains ("dirty place → bad sleep → 
 2. The shared abstraction boundary under audit is the full S129 emergent contract — wilderness relief writes `PlaceDirtiness`, place dirtiness biases sleep ranking, sleep ranking drives travel candidacy, travel changes the agent's location, location changes which place's dirtiness accumulates next. The goldens prove the chain end-to-end, not any single slice.
 3. Each golden scenario must declare its target pattern (FND-31 + spec D12 § Target Patterns): the intended invariant under test, the lawful competing affordances the architecture would otherwise allow (per precision-rules §8 scenario isolation), and what the test must never produce.
 4. The adversarial sweeps (zero `decay_per_tick` saturation, zero `refill_per_tick` plateau, zero `critical_threshold` immediate overflow) are listed in spec D12 as "must support" but not necessarily "must exercise this ticket". This ticket exercises the saturation and plateau cases; the immediate-overflow case is exercised in ticket 006's focused tests already.
-5. The `forensic_wash_vs_water_competition.rs` existing golden may need rewriting if ticket 007's basin-state refactor invalidates its assumptions (the original golden assumed two-target wash with direct well consumption). If reassessment during 007's implementation deferred the rewrite to 012, that rewrite belongs here. Confirm during this ticket's reassessment phase whether 007's implementation already updated it or whether the golden currently fails — if the latter, include the rewrite in scope.
+5. Ticket 007's basin-state refactor left `forensic_wash_vs_water_competition.rs` passing without an in-scope rewrite. Reconfirm during this ticket's reassessment phase, but do not assume a rewrite is required solely because the wash action target shape changed.
 6. Scenario isolation choices (precision-rules §8): each golden uses minimal scenarios that isolate one specific S129 behavior. Competing affordances (e.g., the agent could also harvest food, drink water) are intentionally limited so the place-dirtiness or basin-state behavior dominates ranking. Document the isolation explicitly per the rule.
 7. Per CLAUDE.md "Golden production tests require `PerceptionProfile` on agents that need to observe post-production output" — agents in goldens 1, 2, 4, 6 must carry `PerceptionProfile` so they can perceive the new `PlaceDirtiness` / `LatrineFullness` / `WashBasinState` state at their place/facility.
 

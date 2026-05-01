@@ -11,7 +11,8 @@ use worldwake_core::{
     PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecordData, RecordedViolation,
     ResourceSource, SocialObservation, StockStoragePolicy, SuccessionLaw, TellMemoryKey,
     TellProfile, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
-    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
+    TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WashBasinState,
+    WorkstationTag, Wound,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -195,6 +196,7 @@ pub(crate) struct SnapshotFacility {
     pub(crate) workstation_tag: Option<WorkstationTag>,
     pub(crate) stock_storage_policy: Option<StockStoragePolicy>,
     pub(crate) resource_source: Option<ResourceSource>,
+    pub(crate) wash_basin_state: Option<WashBasinState>,
     pub(crate) has_production_job: bool,
 }
 
@@ -287,6 +289,7 @@ impl Default for SnapshotEntity {
                 workstation_tag: None,
                 stock_storage_policy: None,
                 resource_source: None,
+                wash_basin_state: None,
                 has_production_job: false,
             },
             control: SnapshotControl {
@@ -938,6 +941,7 @@ fn build_snapshot_entity(
     let resource_source = belief_backed
         .and_then(|belief| belief.resource_source.clone())
         .or_else(|| view.resource_source(entity));
+    let wash_basin_state = worldwake_sim::FacilityBeliefView::wash_basin_state(view, entity);
     let has_production_job = view.has_production_job(entity);
     let controllable_by_actor = view.can_control(actor, entity);
     let has_control = view.has_control(entity);
@@ -1033,6 +1037,7 @@ fn build_snapshot_entity(
             workstation_tag,
             stock_storage_policy,
             resource_source,
+            wash_basin_state,
             has_production_job,
         },
         control: SnapshotControl {
