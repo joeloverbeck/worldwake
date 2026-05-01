@@ -37,6 +37,15 @@ For this shape, sweep the drafted `New/Modified Tests`, `Files to Touch`, and `A
 3. Prefer tightening that existing seam over creating duplicate coverage.
 4. When the truthful replay/save-load seam lives in a different file than the draft claimed, rewrite the ticket to the real owner before coding.
 
+For validation-suite tickets whose remaining gap is golden or observer coverage:
+
+1. Reassess the live substrate first: confirm the production behavior already landed or identify the exact lower-layer production gap before adding a golden.
+2. Search existing `golden_*.rs` suites and generated golden docs for the same invariant, named scenario, or cross-system chain.
+3. Reuse or tighten the strongest existing owning golden when it already covers the same layer; create a new golden file only when no existing suite owns the domain cleanly.
+4. Add or adjust the executable proof, keeping scripted/hybrid harness legs explicit when a purely autonomous golden cannot hold the live boundary stable.
+5. Regenerate golden inventory/docs when scenario metadata changes, then review the full generated footprint rather than only the new scenario-detail page.
+6. Close out the active ticket/spec with the real proof seam, any drafted-vs-live deviations, the generated-doc surface, and the exact focused plus broad verification commands that passed.
+
 ## Schema-only / staged substrate
 
 When the ticket primarily introduces a shared schema, payload, enum, save-format bump, or other substrate that sibling tickets will populate or render later, classify it as `schema-only / staged substrate` during intake.

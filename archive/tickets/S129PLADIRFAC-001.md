@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new ECS components on `EntityKind::Place` and `EntityKind::Facility`; bumps `SAVE_FORMAT_VERSION`
-**Deps**: specs/S129-place-dirtiness-facility-wear.md (D1, D2, D3)
+**Deps**: archive/specs/S129-place-dirtiness-facility-wear.md (D1, D2, D3)
 
 ## Problem
 

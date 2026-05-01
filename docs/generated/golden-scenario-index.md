@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 116
-- Contributing golden test files: 30
-- Associated tests: 147
+- Scenario blocks: 124
+- Contributing golden test files: 31
+- Associated tests: 155
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -129,7 +129,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario S02b: Utility Weight Diversity in Need Selection (Principle 20)
 
-- Source: `golden_ai_decisions.rs:1353`
+- Source: `golden_ai_decisions.rs:1386`
 - Systems: Needs, AI
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: Needs
@@ -738,6 +738,86 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: Reduced-budget passive perception still retains the other agent and both facilities for each observer while deterministic truncation keeps retained waste beliefs bounded to the same low-priority subset instead of all forty lots.
 
 **Cross-system chain**: same-place passive perception -> priority sort by entity kind -> budget truncation -> belief-store retention of agents/facilities with bounded waste subset.
+
+### Scenario 362: Place Dirtiness Accumulates From Wilderness Relief
+
+- Source: `golden_place_dirtiness.rs:169`
+
+**Setup**: Three human-controlled agents at an outdoor farm each relieve twice.
+
+**Proves**: Wilderness relief creates WasteCreated payloads backed by Waste lots and monotonically raises PlaceDirtiness despite decay.
+
+**Cross-system chain**: relieve_wilderness -> Waste lot + WasteCreated -> PlaceDirtiness -> event-log conservation proof.
+
+### Scenario 363: Sleep Ranking Prefers Clean Place
+
+- Source: `golden_place_dirtiness.rs:226`
+
+**Setup**: A fatigued AI agent knows an equally comfortable dirty current camp and clean reachable farm.
+
+**Proves**: PlaceDirtiness is read through the sleep ranking path and the cleaner place is selected.
+
+**Cross-system chain**: PlaceDirtiness belief -> per-place Sleep candidate -> ranking multiplier -> selected OpportunityKey.
+
+### Scenario 364: Wash Partial Success Uses Basin State
+
+- Source: `golden_place_dirtiness.rs:291`
+
+**Setup**: A dirty human-controlled agent washes at a one-unit basin requiring two units for full success.
+
+**Proves**: WashFacilityUsed records partial success and authoritative needs/basin state change proportionally.
+
+**Cross-system chain**: WashBasinState -> TargetHasWashBasinClean -> wash commit -> WashFacilityUsed + HomeostaticNeeds.
+
+### Scenario 365: Latrine Overflow Creates Waste And Place Dirtiness
+
+- Source: `golden_place_dirtiness.rs:344`
+
+**Setup**: A human-controlled agent uses an already-critical latrine.
+
+**Proves**: Overcapacity toilet use emits WasteCreated and increments PlaceDirtiness without reducing LatrineFullness.
+
+**Cross-system chain**: LatrineFullness -> toilet commit -> WasteCreated(OvercapacityLatrine) -> PlaceDirtiness.
+
+### Scenario 366: Basin Natural Refill Draws From Co-Located Water
+
+- Source: `golden_place_dirtiness.rs:411`
+
+**Setup**: An empty basin shares a place with a finite water ResourceSource and no agent actions.
+
+**Proves**: The maintenance pass refills only up to max_clean_water and consumes the source quantity.
+
+**Cross-system chain**: item_decay_system -> ResourceSource transfer -> WashBasinState refill.
+
+### Scenario 367: AI Selects Non-Empty Basin After Empty Basin Is Unusable
+
+- Source: `golden_place_dirtiness.rs:467`
+
+**Setup**: A dirty AI agent knows two local basins; one is empty and the other has water.
+
+**Proves**: Candidate generation/ranking exposes the clean basin and does not select the empty basin.
+
+**Cross-system chain**: WashBasinState -> wash candidate emission -> ranking modifier -> selected basin anchor.
+
+### Scenario 368: Place Dirtiness Saturates With Zero Decay
+
+- Source: `golden_place_dirtiness.rs:557`
+
+**Setup**: Repeated wilderness relief occurs at a zero-decay outdoor place.
+
+**Proves**: PlaceDirtiness saturates at 1000 and does not overflow or decrease.
+
+**Cross-system chain**: repeated relief -> saturating Permille addition -> durable place state.
+
+### Scenario 369: Wash Basin Plateaus At Zero With Zero Refill
+
+- Source: `golden_place_dirtiness.rs:602`
+
+**Setup**: One partial wash drains a zero-refill basin, then maintenance advances.
+
+**Proves**: WashBasinState stays at zero without hidden refill or negative water.
+
+**Cross-system chain**: wash commit -> clean_water_units reaches zero -> item_decay_system zero-refill plateau.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 

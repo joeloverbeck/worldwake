@@ -494,7 +494,7 @@ S127 ✅ archived
 S128 ✅ archived
 S131 (independent; existing SourceReliability extension)
 S130 (hard dep on S128 ✅; soft dep on S122 ✅)
-S129 (soft dep on S128 ✅; hard deps on S106 ✅, S110 ✅)
+S129 ✅ archived (soft dep on S128 ✅; hard deps on S106 ✅, S110 ✅)
 ```
 
 All cross-spec dependencies among S126–S131 are **soft** (benefit but not blocking). Hard dependencies on S106, S110, S122 are already satisfied (those specs are completed).
@@ -511,7 +511,7 @@ All cross-spec dependencies among S126–S131 are **soft** (benefit but not bloc
 - **S130**: Survey Records and Frontier Disconfirmation — `SurveyMemory` per-agent component; `HypothesisKind` on `ExploreLocation`; perception-time arrival evaluation; ranking damps re-exploration of confirmed-empty places. Folds in PR-7's narrow arrival-diff piece. S128's `SleepQualityProfile` dependency for `MayContainSleepSite` is now satisfied.
 
 **Wave 3** (after Wave 2; soft deps consumable):
-- **S129**: Place Dirtiness and Facility Wear — `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` components; `WasteCreated`/`WashFacilityUsed` event tags; relieve/toilet/wash handler extensions; partial-wash outcome (PR-11 fold-in). Soft consumes completed S128 (sleep ranking reads dirtiness as quality modifier). Folds in PR-9 hygiene topology, PR-11 partial-wash, PR-12 waste/wash events. `LatrineMaintained` is deferred until a `clean_latrine` action exists.
+- **S129**: ✅ COMPLETED — Place Dirtiness and Facility Wear — archived at [archive/specs/S129-place-dirtiness-facility-wear.md](/home/joeloverbeck/projects/worldwake/archive/specs/S129-place-dirtiness-facility-wear.md). Landed `PlaceDirtiness`, `LatrineFullness`, and `WashBasinState` components; `WasteCreated`/`WashFacilityUsed` event tags; relieve/toilet/wash handler extensions; basin refill and place dirtiness maintenance; partial-wash outcome; wash basin candidate/ranking integration; and eight-scenario golden coverage in `golden_place_dirtiness.rs`. `LatrineMaintained` remains deferred until a `clean_latrine` action exists.
 
 ### Follow-up Tickets (not specs)
 

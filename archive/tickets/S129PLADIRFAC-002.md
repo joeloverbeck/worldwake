@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — new variants on `EventTag` and `DecisionEventPayload`
-**Deps**: specs/S129-place-dirtiness-facility-wear.md (D4)
+**Deps**: archive/specs/S129-place-dirtiness-facility-wear.md (D4)
 
 ## Problem
 

@@ -6,7 +6,7 @@ Make hygiene a property of the place and the facility, not just the agent. Today
 
 ## Phase and Status
 
-Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft.
+Phase 10: Survival Mechanic Depth (Adjunct). Status: COMPLETED.
 
 ## Crates
 
@@ -386,7 +386,7 @@ Add `crates/worldwake-ai/tests/golden_place_dirtiness.rs`:
 3. **Wash partial success**: Basin authored with `clean_water_units = 1`, `units_per_full_wash = 2`, agent dirtiness = 1000. Assert wash commits as partial-success: agent dirtiness reduced to 500 (proportional 1/2), basin `clean_water_units = 0`, `WashFacilityUsed.partial == true`. **Must never produce**: full success when water insufficient, or basin going negative.
 4. **Latrine overcapacity**: Latrine-tagged place authored with `fill_per_use = 100`, `critical_threshold = 800`. Run nine `toilet` actions (fill = 900 — over critical), then a tenth. Assert the tenth invocation creates a Waste lot at the place and increments `PlaceDirtiness`. **Must never produce**: `LatrineFullness.fill` decreasing without a maintenance action, or overcapacity not creating Waste.
 5. **Basin natural refill from co-located source**: Basin at place hosting a Water `ResourceSource`. Run wash actions until `clean_water_units = 0`, then advance ticks with no wash. Assert `clean_water_units` recovers per `refill_per_tick` until reaching `max_clean_water`, and `ResourceSource.available_quantity` decrements correspondingly (conservation of water transfers). **Must never produce**: basin refilling without consuming source quantity, or refilling above `max_clean_water`.
-6. **Auth-to-AI replan on basin emptiness**: Two basins at one place; one drained mid-plan. Assert wash candidate emission ranks the non-empty basin first; assert that if the chosen basin is drained between affordance and start, the agent replans onto the second basin (Authoritative-to-AI checklist points 4–5). **Must never produce**: agent attempting wash at a known-empty basin without `PreconditionFailed` and replan.
+6. **Auth-to-AI replan on basin emptiness**: Two basins at one place; one is no longer usable when the agent acts. Assert a stale empty-basin `BestEffort` request records `PreconditionFailed` / `StartFailed`, and assert wash candidate emission excludes the empty basin while selecting the non-empty basin (Authoritative-to-AI checklist points 4–5). **Must never produce**: agent attempting or selecting a known-empty basin without `PreconditionFailed` and replan.
 
 Adversarial sweeps the architecture must support (not necessarily exercised in S129's goldens, but reachable):
 
@@ -430,3 +430,28 @@ Per-place: `PlaceDirtiness.{value, decay_per_tick, dirtiness_per_use}` and `Latr
 Per-facility: `WashBasinState.{clean_water_units, max_clean_water, refill_per_tick, units_per_full_wash, dirtiness_level, dirtiness_per_use}` authored in scenario.
 
 No magic numbers in agent-side or system-side code; all numerics flow through component fields populated from scenario authoring with documented defaults. All [0,1000] values use `Permille`.
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Landed `PlaceDirtiness`, `LatrineFullness`, and `WashBasinState` as concrete hygiene state carriers across core/schema, scenario authoring, perception/belief, systems, AI candidate/ranking, and event-log surfaces.
+- Landed `WasteCreated` and `WashFacilityUsed` causal payload coverage plus wash/latrine/wilderness-relief behavior updates, basin natural refill, place dirtiness decay, partial wash, and basin-aware wash candidate selection.
+- Added S129 golden coverage in `crates/worldwake-ai/tests/golden_place_dirtiness.rs` and refreshed generated golden inventory/docs, including `docs/generated/golden-scenario-details/place-dirtiness.md`.
+
+Verification:
+
+- Passed `cargo test -p worldwake-ai --test golden_place_dirtiness`
+- Passed `cargo test -p worldwake-ai --test forensic_wash_vs_water_competition`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace`
+- Passed `cargo fmt --all -- --check`
+- Passed `bash scripts/check_active_goal_removed.sh`
+- Passed `cargo clippy --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
+
+Deviation:
+
+- The final S129 goldens use harness-authored in-process fixtures rather than separate RON scenario files. This is the strongest live seam for the small target patterns while still exercising the full action registry, scheduler, event log, AI decision trace, maintenance pass, and authoritative state mutations.
