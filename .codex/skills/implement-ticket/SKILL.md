@@ -17,6 +17,7 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - If a narrow production fix lands but the drafted broader golden/E2E story is still false, follow `Mixed outcome: narrow fix landed, broader golden still false` below.
 - Prefer the strongest existing honest proof seam. Extend an existing focused unit/runtime/golden test instead of creating the drafted new file mechanically.
 - Keep Cargo sequential, confirm ambiguous or pre-existing exact selectors with `-- --list`, and record only truthful verification boundaries.
+- Before the first Cargo command you will count as proof, load `references/verification.md` unless the ticket is already classified as a small/local fast path whose focused selector and proof boundary are unambiguous.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
 - Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.
 
@@ -104,6 +105,8 @@ When a ticket/spec touches `Permille` or another bounded numeric wrapper, valida
 Load `references/reassessment-checks.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md` and `references/reassessment-golden-observer-report.md`.
 
 For AI candidate-generation tickets whose acceptance criteria mention diagnostics, name the full visibility chain before coding: the local diagnostic carrier, any exported decision-trace carrier, the omission/reason taxonomy, and the focused test that proves the externally visible trace path. Do not treat a local diagnostic record as sufficient evidence when the ticket's proof surface is a public trace, report, or debugging view.
+
+For idle-window or stuck-window goldens where an agent remains idle while needs or pressures rise, classify the first failing boundary before tuning scenarios or weakening assertions. Check, in order, whether the AI tick ran; whether candidate generation produced candidates; whether ranking filtered them into `zero_motive` or suppression; whether discrepancy memory blocked the relevant goal, place, target, or action; whether search attempted a plan; whether a plan was selected; whether an action was active or queued; and whether the authoritative scheduler/action trace shows a lifecycle failure.
 
 When a trace, report, or UI ticket names multiple carriers, columns, panes, or externally visible surfaces, prove each named surface independently before closeout. Avoid aggregate assertions such as "decision OR action exists" or membership-only checks when the acceptance criteria require distinct carriers to be populated or rendered.
 

@@ -289,7 +289,7 @@ Completed on 2026-05-01.
   same failure reproduces in a clean `HEAD` worktree at commit
   `564ddcea`. That makes it a pre-existing contested-golden blocker,
   not fallout from this refactor. Follow-up:
-  `tickets/CONTESTIDLE-001-pre-existing-survival-contested-stuck-idle.md`.
+  `archive/tickets/CONTESTIDLE-001-pre-existing-survival-contested-stuck-idle.md`.
 
 ## Verification Result
 
