@@ -519,6 +519,26 @@ All cross-spec dependencies among S126–S131 are **soft** (benefit but not bloc
 - **Additional sleep-quality rebalance** (post-S128): `scenarios/survival-baseline.ron` now has the S128 four-place `SleepQualityProfile` authoring. Extend the bounded `0..=1000` sleep-quality profiles to other survival scenarios when those scenarios need place-specific sleep-site differentiation.
 - **Place dirtiness authoring** (post-S129): author `PlaceDirtiness.decay_per_tick` per place to differentiate accumulation/recovery rates per topology character.
 
+### Adjunct Wave: S129 Post-Remediation Architectural Audit
+
+Derived from the 2026-05-01 `/brainstorm` triage of the four CIREM tickets (`S129CIREM-001..004`) that remediated post-S129 CI failures. The triage examined whether those fixes were workarounds masking deeper architectural issues. Verdict: the four tickets fixed real root causes (no weight-knob hacks, no contract relaxations, no force-X-when-Y carve-outs), but three of them revealed deeper substrate patterns the per-ticket scope did not generalize. This wave addresses those patterns. Source: `docs/triage/2026-05-01-s129cirem-followup-triage.md`.
+
+```text
+S132 (independent — frontier-exhaustion strategy as goal-kind property)
+BELASPCOV-001 ticket (independent — claim-aspect coverage audit)
+INFRARET-001 ticket (soft dep on BELASPCOV-001 findings)
+RELIEFACT-001 ticket (independent — per-need relief-actionability predicate)
+LOCROOT-001 ticket (independent — direct-root synthesis locality audit)
+```
+
+**Wave** (parallel):
+
+- **S132**: Frontier-Exhaustion Strategy as Goal-Kind Property — replace the per-`GoalKind` allow-list in `frontier_exhaustion_entry` with a goal-kind-property dispatch (`PermanentUntilInvalidator | CooldownRetry`). Closes the pattern of S129CIREM-002 / S129CIREM-004 each adding a one-off variant to the switch. FND-21 / FND-22A alignment.
+- **BELASPCOV-001** (ticket): `BelievedEntityState ↔ EntityBeliefAspect` claim-aspect coverage audit — produced `docs/audits/2026-05-01-believed-entity-state-claim-coverage.md` and per-gap secondary tickets. CIREM-003's `WashBasinState` claim-aspect addition was ad hoc; this ticket finds remaining gaps before the next chronic-stall failure mode.
+- **INFRARET-001** (ticket): Generalize `state_salience_boost` from two hardcoded shape pairs to a need-relevance map over opportunity aspects. Soft depends on BELASPCOV-001.
+- **RELIEFACT-001** (ticket): Extract per-need relief-actionability predicate from `emit_exploration_candidates` (replaces the inline dirtiness `if` branch added by CIREM-002 with a per-need dispatch).
+- **LOCROOT-001** (ticket): Audit direct-root synthesis (`GoalOffer::synthesized_root_candidate_targets`) for arms whose action precondition is `EntityAtActorPlace` / `ActorPlace`, mirroring CIREM-003's local-only Wash gate to the rest of the dispatch.
+
 ### Phase 10 Gate
 
 - [ ] All 6 specs reassessed (`/reassess-spec`) and ticket-decomposed
