@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `evidence_decay_system` extended with an agent-iteration pass for `SurveyMemory::enforce_limits`
-**Deps**: `archive/tickets/S130SURRECFRO-001.md`, 002, 004, spec `specs/S130-survey-records-frontier-disconfirmation.md` SystemFn Integration
+**Deps**: `archive/tickets/S130SURRECFRO-001.md`, `archive/tickets/S130SURRECFRO-002.md`, 004, spec `specs/S130-survey-records-frontier-disconfirmation.md` SystemFn Integration
 
 ## Problem
 
@@ -14,7 +14,7 @@
 
 1. `evidence_decay_system` lives at `crates/worldwake-systems/src/evidence_decay.rs:7` and currently iterates places via `world.query_scene_evidence()` (line 36), pruning stale `EvidenceEntry` items. The existing function is the per-tick decay pass — no new SystemFn is introduced.
 2. `RouteExperience::enforce_limits` and `SourceReliability::enforce_limits` (the spec's prior reference points) live at `crates/worldwake-core/src/experience.rs:22, 91` and are called from action-context paths (`travel_actions.rs:145`, `experience_recording.rs:27`, `agent_tick/mod.rs:2121`) — not from a unified per-tick maintenance system. Survey decay is the *first* per-tick agent-iteration decay path; consolidating the others is explicitly out of scope per spec.
-3. `SurveyMemory::enforce_limits(&mut self, current_tick: Tick, profile: &CognitiveProfile)` (defined in ticket 002) reads `profile.survey_memory_retention_ticks` (added in ticket 001).
+3. `SurveyMemory::enforce_limits(&mut self, current_tick: Tick, profile: &CognitiveProfile)` (defined in `archive/tickets/S130SURRECFRO-002.md`) reads `profile.survey_memory_retention_ticks` (added in ticket 001).
 4. Macro-generated `entities_with_survey_memory` helper (from ticket 004's `with_component_schema_entries!` registration) exposes the agent-iteration surface.
 5. Existing `evidence_decay.rs` tests at lines 198-310 exercise the place-iteration path: `evidence_decay_system_keeps_unexpired_entries:198`, `evidence_decay_system_removes_only_expired_entries:232`, `evidence_decay_system_clears_component_when_last_entry_expires:269`. They construct test fixtures with `SceneEvidence` only — adding the agent-iteration pass does not alter their fixtures or assertions (no agents have `SurveyMemory` entries in those fixtures, so the new pass is a no-op for them). This ticket adds two new tests covering the agent-iteration path.
 6. No goal-kind, candidate-emission, validation, or affordance-generation surface is touched — this is a maintenance-pass extension only.

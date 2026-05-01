@@ -128,7 +128,7 @@ For `motivating_need = ExplorationMotivation::Proactive`, `hypothesis = Hypothes
 
 The mapping is implemented as a `const fn need_hypothesis(need: HomeostaticNeedId) -> HypothesisKind` in `crates/worldwake-ai/src/candidate_generation.rs` (the file that owns `emit_*_goal` for needs). Per-agent dietary variation (e.g., one agent prefers Bread, another prefers Apple) is a non-goal — the mapping is uniform across agents in this spec.
 
-**Goal-key identity note**: Adding `hypothesis` to `GoalKind::ExploreLocation` changes `GoalKind`'s `Hash` output. Two `ExploreLocation` goals with the same `(target_place, motivating_need)` but different `hypothesis` therefore have different `GoalKey`s and are distinct goals for commitment, blocker memory, and discrepancy memory purposes. This is intentional: a Hunger-driven and a Thirst-driven exploration of the same place produce orthogonal surveys and should not collide. Binding identity (`matches_binding`) continues to use `target_place` only and is unchanged — Travel ops bind on place, not on hypothesis.
+**Goal-key identity note**: Adding `hypothesis` to `GoalKind::ExploreLocation` changes `GoalKind` equality/ordering through the stored payload. Two `ExploreLocation` goals with the same `(target_place, motivating_need)` but different `hypothesis` therefore have different `GoalKey`s and are distinct goals for commitment, blocker memory, and discrepancy memory purposes. This is intentional: a Hunger-driven and a Thirst-driven exploration of the same place produce orthogonal surveys and should not collide. Binding identity (`matches_binding`) continues to use `target_place` only and is unchanged — Travel ops bind on place, not on hypothesis.
 
 ### D3: `SurveyRecord` and `SurveyMemory`
 
@@ -229,7 +229,7 @@ pub struct SurveyRecordedPayload {
 }
 ```
 
-`EventTag` is consumed by tag-add APIs (`txn.add_tag(...)`) and tag-membership tests, not by exhaustive matches in downstream crates (verified: `grep -rn "match.*EventTag::"` returns 0 exhaustive sites in ai/systems/cli), so adding a variant has no downstream blast radius beyond the new emission.
+`EventTag` is consumed by tag-add APIs (`txn.add_tag(...)`) and tag-membership tests, not by exhaustive matches in downstream crates. `DecisionEventPayload` does have exhaustive observer-rendering consumers in `crates/worldwake-cli/src/bin/observer.rs`, so the D5 foundation pass also updates that renderer to route `SurveyRecorded` to the surveyor, label it as `SurveyRecorded`, and summarize `(place, hypothesis, found, confidence)`. The runtime emission site still lands in D6.
 
 ### D6: Perception-time hypothesis evaluation
 

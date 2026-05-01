@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `CandidateDampingReason` enum, `CandidateDampingEntry` struct, new `damped` field on `CandidateTrace`
-**Deps**: 002, spec `specs/S130-survey-records-frontier-disconfirmation.md` D11
+**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D11
 
 ## Problem
 
@@ -17,7 +17,7 @@
 3. Trace renderer for `CandidateTrace.suppressed` lives in `decision_trace.rs` itself (no external consumer). The new damping format is rendered alongside.
 4. `CandidateDampingReason::SurveyMemoryNegative { place, hypothesis, recorded_tick, confidence }` is the only damping reason for this spec — future damping reasons (e.g., commitment-bias damping) would extend the enum non-exhaustively.
 5. No existing focused/unit, runtime, or golden test specifically exercises `CandidateTrace.suppressed` for `ExploreLocation` damping — coverage of the new `damped` field is added in this ticket and expanded by tickets 006 (ranking populates it) and 009 (golden test asserts trace contents).
-6. `HypothesisKind` (added in ticket 002) is required for the damping payload — this ticket's compile depends on 002.
+6. `HypothesisKind` (added in `archive/tickets/S130SURRECFRO-002.md`) is required for the damping payload — this ticket's compile depends on the archived 002 foundation types.
 
 ## Architecture Check
 

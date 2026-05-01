@@ -89,6 +89,7 @@ pub mod reward_encumbrance;
 pub mod rights;
 pub mod sleep_episode;
 pub mod social_artifact;
+pub mod survey_memory;
 pub mod test_utils;
 pub mod topology;
 pub mod trade;
@@ -161,8 +162,8 @@ pub use decision_event_payload::{
     PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
     PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
     ReplanReason, ReplanTriggeredPayload, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload, WakeReason,
-    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+    SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
+    SurveyRecordedPayload, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
@@ -197,7 +198,7 @@ pub use exploration::{AcquisitionExhaustionTracker, ExplorationProfile};
 pub use factions::{FactionData, FactionPurpose};
 pub use goal::{
     AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
-    OpportunityAnchor, OpportunityKey,
+    HypothesisKind, OpportunityAnchor, OpportunityKey,
 };
 pub use ids::{ActionDefId, EntityId, EventId, ReservationId, Seed, Tick, TickRange, TravelEdgeId};
 pub use institutional::{
@@ -254,6 +255,7 @@ pub use social_artifact::{
     ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile, ArtifactState,
     BountyTarget, BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
 };
+pub use survey_memory::{SurveyMemory, SurveyRecord};
 pub use topology::{
     OUTDOOR_RELIEF_TAGS, Place, PlaceTag, PlaceTagSet, PrototypePlace, Route, Topology, TravelEdge,
     build_prototype_world, prototype_place_entity,

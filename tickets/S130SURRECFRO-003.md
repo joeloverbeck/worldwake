@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `GoalKind::ExploreLocation` payload widening across `worldwake-core`, `worldwake-ai`, and any consumers (test fixtures included)
-**Deps**: 002, spec `specs/S130-survey-records-frontier-disconfirmation.md` D2
+**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D2
 
 ## Problem
 
@@ -16,14 +16,14 @@ S130's surveying behavior requires the agent's exploration intent to carry a hyp
 2. `ExplorationMotivation` at `crates/worldwake-core/src/goal.rs:18-22` has variants `NeedDriven(HomeostaticNeedId)` and `Proactive`; `HomeostaticNeedId` at `crates/worldwake-core/src/needs.rs:19-25` has variants `Hunger, Thirst, Fatigue, Bladder, Dirtiness`. The need→hypothesis mapping in spec D2 covers all five.
 3. `GoalKindPlannerExt` impl arms for `ExploreLocation` use `..` or `target_place, ..` patterns (verified: `goal_model.rs:597, 646, 1448, 1624, 1785`), so they tolerate the new field without per-arm updates. The `is_satisfied` arm at `goal_model.rs:1448` and `matches_binding` at `goal_model.rs:1785` continue to bind on `target_place` only — adding `hypothesis` does not break Travel binding.
 4. Need-driven emission site is `crates/worldwake-ai/src/candidate_generation.rs:2810`; proactive emission site is `crates/worldwake-ai/src/candidate_generation.rs:3030`. Both currently populate `target_place` and `motivating_need` only.
-5. `GoalKey` derivation at `goal.rs:200-277` hashes the full `GoalKind` payload — adding `hypothesis` produces distinct `GoalKey`s for `ExploreLocation` goals with the same place but different hypothesis (e.g., Hunger vs Thirst). Commitment, blocker memory, and discrepancy memory naturally separate these as distinct goals; no collision handling needed.
+5. `GoalKey` derivation at `goal.rs:200-277` stores the full `GoalKind` payload and derives equality/ordering over it — adding `hypothesis` produces distinct `GoalKey`s for `ExploreLocation` goals with the same place but different hypothesis (e.g., Hunger vs Thirst). Commitment, blocker memory, and discrepancy memory naturally separate these as distinct goals; no collision handling needed.
 6. Ranking-arm destructure at `crates/worldwake-ai/src/ranking.rs:1129` (`} => exploration_motive(context, motivating_need)`) needs `..` or explicit field handling to compile — ticket 006 will add hypothesis-aware damping; this ticket adds `..` to keep the workspace building until 006 lands.
 7. Exhaustive match sites use `..` extensively, so the variant payload widening is mostly a mechanical pass: existing match arms with `..` need no change; arms that destructure all named fields need `hypothesis` added; construction sites need `hypothesis: …` populated.
 8. Existing tests touching `GoalKind::ExploreLocation` construction: ranking tests (`explore_location_ranking_is_not_biased_by_place_dirtiness:8677`, `explore_location_need_driven_priority_tracks_underlying_need_band:9139`, `explore_location_motive_uses_need_utility_scaled_by_curiosity:9180`, `explore_location_proactive_motive_uses_curiosity_buildup_and_need_slack:9272`), candidate-generation tests, goal_model tests at lines 8664/8761/8797/8813. Each test fixture's construction site receives an explicit `hypothesis:` value matching the test's intent (need-driven → `need_hypothesis(need)`; proactive → `HypothesisKind::Proactive`).
 
 ## Architecture Check
 
-1. Adding `hypothesis` to the variant rather than introducing a sibling goal kind preserves `ExploreLocation`'s identity — the agent's intent is still "explore this place under this motivation," now with the additional question "what do I expect to find?". Distinct GoalKeys per (place, hypothesis) combination flow naturally from the existing `GoalKind` hash without bespoke key derivation.
+1. Adding `hypothesis` to the variant rather than introducing a sibling goal kind preserves `ExploreLocation`'s identity — the agent's intent is still "explore this place under this motivation," now with the additional question "what do I expect to find?". Distinct GoalKeys per (place, hypothesis) combination flow naturally from the existing `GoalKind` payload equality/ordering without bespoke key derivation.
 2. The need-to-hypothesis mapping `need_hypothesis(need: HomeostaticNeedId) -> HypothesisKind` is a `const fn` in `candidate_generation.rs`, the file that already owns need-driven emission. Per-agent dietary preference for `MayContainCommodity` is non-goal (uniform mapping in this spec); a follow-on can introduce per-agent food preference state when consumption diversity matters.
 3. No backward-compatibility shim — FND-28 mandate. The existing 2-field shape is retired; the new 3-field shape is the only authoritative form.
 4. Travel binding continues to bind on `target_place` only (`matches_binding` at `goal_model.rs:1785`) — Travel ops are hypothesis-agnostic, which is correct: the agent's path doesn't change based on what they hope to find.

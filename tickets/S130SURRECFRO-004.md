@@ -4,11 +4,11 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `SurveyMemory` ECS registration, `create_agent`/`spawn_agent` default insertion, `GoalBeliefView::survey_memory()` accessor, `SAVE_FORMAT_VERSION` bump
-**Deps**: 002, spec `specs/S130-survey-records-frontier-disconfirmation.md` D4, D8
+**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D4, D8
 
 ## Problem
 
-`SurveyMemory` (defined in ticket 002) needs to be wired through the ECS storage stack and the AI-layer belief-view read surface so downstream tickets (006 ranking, 007 perception, 008 decay) can read and write it. This ticket registers the component with the schema macro, seeds defaults at agent creation, and adds the `GoalBeliefView::survey_memory()` accessor in `worldwake-sim`. It also bumps `SAVE_FORMAT_VERSION` again since `SurveyMemory` joins the saved-agent-state surface.
+`SurveyMemory` (defined in `archive/tickets/S130SURRECFRO-002.md`) needs to be wired through the ECS storage stack and the AI-layer belief-view read surface so downstream tickets (006 ranking, 007 perception, 008 decay) can read and write it. This ticket registers the component with the schema macro, seeds defaults at agent creation, and adds the `GoalBeliefView::survey_memory()` accessor in `worldwake-sim`. It also bumps `SAVE_FORMAT_VERSION` again since `SurveyMemory` joins the saved-agent-state surface.
 
 ## Assumption Reassessment (2026-05-02)
 
@@ -109,7 +109,7 @@ In `crates/worldwake-sim/src/save_load.rs`, change `pub const SAVE_FORMAT_VERSIO
 ### Invariants
 
 1. Every agent created via `World::create_agent` or `spawn_agent` has `SurveyMemory` present (default empty) — ranking and perception code can `expect()` the component on known agents.
-2. `SAVE_FORMAT_VERSION` increments for this registration from the ticket-001 baseline (`59→60`) — ticket 002 deliberately did not bump because the type definitions alone do not change save shape until registration lands.
+2. `SAVE_FORMAT_VERSION` increments for this registration from the ticket-001 baseline (`59→60`) — `archive/tickets/S130SURRECFRO-002.md` deliberately did not bump because the type definitions alone do not change save shape until registration lands.
 3. `GoalBeliefView::survey_memory()` is the only AI-layer read path for `SurveyMemory` — perception writes go through `world.get_component_survey_memory_mut` / `txn.set_component_survey_memory` directly (no AI-layer write path).
 
 ## Test Plan

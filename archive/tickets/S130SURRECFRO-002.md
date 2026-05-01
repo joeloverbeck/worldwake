@@ -1,6 +1,6 @@
 # S130SURRECFRO-002: Core types — HypothesisKind, SurveyMemory, SurveyRecorded event
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `HypothesisKind` enum, `SurveyRecord`/`SurveyMemory` module, `EventTag::SurveyRecorded`, `SurveyRecordedPayload`
@@ -12,9 +12,9 @@ S130 introduces three tightly co-resident core types: `HypothesisKind` (an enum 
 
 ## Assumption Reassessment (2026-05-02)
 
-1. `GoalKind` lives at `crates/worldwake-core/src/goal.rs:11` with derives `Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize`; new `HypothesisKind` enum must satisfy these (specifically `Copy`).
+1. `GoalKind` lives at `crates/worldwake-core/src/goal.rs:11` with derives `Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize`; new `HypothesisKind` enum must satisfy the same by-value goal constraints (specifically `Copy`) when ticket 003 embeds it.
 2. `CommodityKind` at `crates/worldwake-core/src/items.rs:10-21` derives `Copy + Eq + Ord + Hash`; embedding it in `HypothesisKind::MayContainCommodity { commodity }` satisfies `GoalKind`'s `Copy` derive.
-3. `EventTag` at `crates/worldwake-core/src/event_tag.rs:7-51` has 43 existing variants and is consumed via `txn.add_tag(...)` and tag-membership tests — no exhaustive matches in `worldwake-ai`/`worldwake-systems`/`worldwake-cli`. Adding `SurveyRecorded` (44th variant) has no downstream blast radius beyond the new emission site (added in ticket 007).
+3. `EventTag` at `crates/worldwake-core/src/event_tag.rs:7-51` had 43 existing variants and is consumed via `txn.add_tag(...)` and tag-membership tests. `DecisionEventPayload`, however, has exhaustive observer-rendering consumers in `crates/worldwake-cli/src/bin/observer.rs`, so adding `SurveyRecordedPayload` requires narrow observer routing/rendering fallout even though the event emission site remains later-owned by ticket 007.
 4. `decision_event_payload` module at `crates/worldwake-core/src/decision_event_payload.rs` is the existing home for analog `*Payload` structs (`GoalCommittedPayload`, `SleepEpisodeStartedPayload`).
 5. Component-residence constraint: `with_component_schema_entries!` macro at `crates/worldwake-core/src/component_schema.rs:3` references types via `crate::TypeName`, so `SurveyMemory` must live in `worldwake-core` for ticket 004's registration to compile.
 6. `SurveyMemory::enforce_limits` body reads `profile.survey_memory_retention_ticks` (added in ticket 001) — 001 must land first.
@@ -26,6 +26,7 @@ S130 introduces three tightly co-resident core types: `HypothesisKind` (an enum 
 2. `HypothesisKind` is a value type embedded in `GoalKind` (FND-3 — concrete state, not abstract score). `SurveyMemory` is a per-agent ECS component (FND-22A — concrete learned state with explicit acquisition, decay, replacement). `SurveyRecorded` is an authoritative causal event tag (FND-29A — append-only history).
 3. No backward-compatibility shims — net-new types with no prior surface to alias.
 4. `Vec<SurveyRecord>` storage matches existing project convention for bounded learned-state collections (`WoundList.wounds: Vec<Wound>`, `DemandMemory.observations: Vec<DemandObservation>`); iteration order is insertion-order; determinism preserved via `find()`'s `max_by_key`.
+5. Observer rendering is state/report surface fallout from the new payload variant only: the observer can label and summarize `SurveyRecorded` events once ticket 007 emits them, but this ticket does not create any runtime survey events.
 
 ## Verification Layers
 
@@ -90,6 +91,7 @@ Re-export `SurveyRecordedPayload` from `lib.rs` if other `*Payload` types follow
 - `crates/worldwake-core/src/lib.rs` (modify — `pub mod` + re-exports)
 - `crates/worldwake-core/src/event_tag.rs` (modify — add `SurveyRecorded` variant)
 - `crates/worldwake-core/src/decision_event_payload.rs` (modify — add `SurveyRecordedPayload`)
+- `crates/worldwake-cli/src/bin/observer.rs` (modify — exhaustive `DecisionEventPayload` routing/rendering for the staged payload variant)
 
 ## Out of Scope
 
@@ -114,9 +116,9 @@ Re-export `SurveyRecordedPayload` from `lib.rs` if other `*Payload` types follow
 
 ### Invariants
 
-1. `HypothesisKind` derives `Copy + Hash + Eq + Ord` so `GoalKind`'s existing trait bounds are preserved when ticket 003 embeds it as a field.
+1. `HypothesisKind` derives `Copy + Hash + Eq + Ord`; the `Copy + Eq + Ord` surface preserves `GoalKind`'s existing by-value and ordering bounds when ticket 003 embeds it as a field, while `Hash` keeps the hypothesis value ready for hash-keyed consumers.
 2. `SurveyMemory.entries` traversal is insertion-order; `find()` returns deterministic freshest record under equal `recorded_tick` (uses `max_by_key`, which is stable for tied keys with insertion-order traversal).
-3. `EventTag::SurveyRecorded` is consumed only via `txn.add_tag(...)` and tag-membership tests — no exhaustive match site needs updating.
+3. `EventTag::SurveyRecorded` is consumed only via `txn.add_tag(...)` and tag-membership tests. `DecisionEventPayload::SurveyRecorded` is consumed by exhaustive observer-rendering matches, which now route to `surveyor`, label as `SurveyRecorded`, and summarize `(place, hypothesis, found, confidence)`.
 
 ## Test Plan
 
@@ -129,3 +131,27 @@ Re-export `SurveyRecordedPayload` from `lib.rs` if other `*Payload` types follow
 1. `cargo test -p worldwake-core survey_memory`
 2. `cargo test -p worldwake-core`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-02.
+
+- Added `HypothesisKind` to `worldwake-core::goal` with the S130 D1 variants and bincode coverage.
+- Added `SurveyRecord` / `SurveyMemory` in `worldwake-core::survey_memory`, including component bounds and focused tests for replace, append, capacity eviction, freshest lookup, retention pruning, and bincode round-trip.
+- Added `EventTag::SurveyRecorded`, `DecisionEventPayload::SurveyRecorded`, and `SurveyRecordedPayload`, with event-tag and decision-payload inventory round-trip coverage.
+- Re-exported the new core types and payloads from `worldwake-core`.
+- Updated the observer binary's exhaustive decision-payload routing/rendering so the staged payload compiles and has a truthful report summary once ticket 007 emits it.
+- Truth-synced the active S130 spec and ticket 003 handoff text where live reassessment corrected stale `GoalKind` hash-output wording to the actual equality/ordering-based `GoalKey` identity surface.
+
+## Deviations
+
+- The draft claimed no downstream exhaustive consumer update was needed. Live clippy showed `crates/worldwake-cli/src/bin/observer.rs` exhaustively matches `DecisionEventPayload`, so the observer update landed as current-ticket shared-payload fallout.
+- No `SAVE_FORMAT_VERSION` bump landed here. `SurveyMemory` is defined but not registered as an ECS component until ticket 004, so the saved world/component shape remains unchanged in this ticket.
+- The S130 D2 handoff and ticket 003 described `GoalKind` hash output, but live `GoalKind` / `GoalKey` derive equality and ordering, not `Hash`; those active handoff claims were corrected while preserving the intended distinct-goal identity contract.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib survey_memory -- --list` (resolved 8 intended `survey_memory` unit tests).
+- Passed `cargo test -p worldwake-core --lib survey_memory`.
+- Passed `cargo test -p worldwake-core`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.

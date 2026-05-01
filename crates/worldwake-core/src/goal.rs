@@ -21,6 +21,17 @@ pub enum ExplorationMotivation {
     Proactive,
 }
 
+/// What an exploring agent expects to find at the target place.
+/// Drives both ranking input and arrival-time hypothesis evaluation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum HypothesisKind {
+    MayContainCommodity { commodity: CommodityKind },
+    MayContainLatrine,
+    MayContainWashBasin,
+    MayContainSleepSite,
+    Proactive,
+}
+
 /// Quantity intent on an `AcquireCommodity` goal. The goal is satisfied
 /// when the agent has obtained at least `desired_min` units; the planner
 /// prefers plans projected to deliver `desired_target`. `horizon_ticks`
@@ -296,7 +307,7 @@ impl From<&GoalKind> for GoalKey {
 mod tests {
     use super::{
         AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
-        OpportunityAnchor, OpportunityKey, TellTopic, ViolationId,
+        HypothesisKind, OpportunityAnchor, OpportunityKey, TellTopic, ViolationId,
     };
     use crate::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
@@ -892,6 +903,26 @@ mod tests {
             ExplorationMotivation::Proactive,
             ExplorationMotivation::Proactive
         );
+    }
+
+    #[test]
+    fn hypothesis_kind_roundtrips_through_bincode() {
+        let hypotheses = [
+            HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+            HypothesisKind::MayContainLatrine,
+            HypothesisKind::MayContainWashBasin,
+            HypothesisKind::MayContainSleepSite,
+            HypothesisKind::Proactive,
+        ];
+
+        for hypothesis in hypotheses {
+            let bytes = bincode::serialize(&hypothesis).unwrap();
+            let roundtrip: HypothesisKind = bincode::deserialize(&bytes).unwrap();
+
+            assert_eq!(roundtrip, hypothesis);
+        }
     }
 
     #[test]

@@ -380,6 +380,7 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::BlockerRecorded(inner) => inner.agent,
         DecisionEventPayload::WasteCreated(inner) => inner.creator,
         DecisionEventPayload::WashFacilityUsed(inner) => inner.user,
+        DecisionEventPayload::SurveyRecorded(inner) => inner.surveyor,
     }
 }
 
@@ -401,6 +402,7 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
         DecisionEventPayload::WasteCreated(_) => "WasteCreated",
         DecisionEventPayload::WashFacilityUsed(_) => "WashFacilityUsed",
+        DecisionEventPayload::SurveyRecorded(_) => "SurveyRecorded",
     }
 }
 
@@ -522,6 +524,13 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
             inner.agent_dirtiness_delta.value(),
             inner.basin_dirtiness_delta.value(),
             inner.partial
+        ),
+        DecisionEventPayload::SurveyRecorded(inner) => format!(
+            "place={} hypothesis={:?} found={} confidence={}",
+            inner.place,
+            inner.hypothesis,
+            inner.found,
+            inner.confidence.value()
         ),
     }
 }
