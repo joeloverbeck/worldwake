@@ -616,19 +616,9 @@ fn spawn_agent(
     if let Some(profile) = agent_def.disposal_profile {
         txn.set_component_disposal_profile(agent_id, profile)?;
     }
-    let exploration =
-        agent_def
-            .exploration_profile
-            .map_or_else(ExplorationProfile::default, |profile| ExplorationProfile {
-                curiosity_weight: profile.curiosity_weight,
-                need_activation_threshold: profile.need_activation_threshold,
-                frontier_depth: profile.frontier_depth,
-                acquisition_failure_threshold: profile.acquisition_failure_threshold,
-                exploration_arrival_boost: profile.exploration_arrival_boost,
-                max_consecutive_explorations: profile.max_consecutive_explorations,
-                visit_lookback_ticks: profile.visit_lookback_ticks,
-                consecutive_exploration_count: 0,
-            });
+    let exploration = agent_def
+        .exploration_profile
+        .map_or_else(ExplorationProfile::default, ExplorationProfile::from);
     txn.set_component_exploration_profile(agent_id, exploration)?;
     if let Some(profile) = agent_def.diversification_profile {
         txn.set_component_diversification_profile(agent_id, profile)?;
@@ -3414,6 +3404,8 @@ mod tests {
             exploration_arrival_boost: Permille::new(650).unwrap(),
             max_consecutive_explorations: 5,
             visit_lookback_ticks: 17,
+            negative_survey_damping_window: 123,
+            negative_survey_damping_strength: Permille::new(625).unwrap(),
         };
         let custom_thresholds = DriveThresholds::new(
             ThresholdBand::new(
@@ -3524,6 +3516,8 @@ mod tests {
                 exploration_arrival_boost: Permille::new(650).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
+                negative_survey_damping_window: 123,
+                negative_survey_damping_strength: Permille::new(625).unwrap(),
                 consecutive_exploration_count: 0,
             })
         );

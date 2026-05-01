@@ -14,14 +14,14 @@ Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft. S128 has landed and 
 - `worldwake-sim` — new `survey_memory()` accessor on `GoalBeliefView`; `RuntimeBeliefView` impl forwarding to the underlying component read.
 - `worldwake-systems` — perception system extension: when the agent arrives at a place with an active `ExploreLocation` intent targeting that place, evaluate hypothesis vs. perceived entities and write `SurveyMemory` entry. Decay rule piggybacks on the existing belief decay pass.
 - `worldwake-ai` — `ExploreLocation` candidate generation populates `hypothesis` from the motivating need via a hardcoded need→hypothesis mapping; ranking damps `ExploreLocation` for (place, hypothesis) pairs with a fresh negative survey; decision-trace surfaces the damping reason.
-- `worldwake-cli` — no `AgentDef` field for `SurveyMemory` (runtime-generated state, exempt from FND-22 scenario authoring); `spawn_agent` inserts `SurveyMemory::default()` for every agent. New profile fields land on existing `CognitiveProfileDef` and `ExplorationProfileDef`.
+- `worldwake-cli` — no `AgentDef` field for `SurveyMemory` (runtime-generated state, exempt from FND-22 scenario authoring); `spawn_agent` inserts `SurveyMemory::default()` for every agent. New `CognitiveProfile` fields land directly on the core type (consumed via `AgentDef.cognitive_profile: Option<CognitiveProfile>`); new `ExplorationProfile` fields land on the existing `ExplorationProfileDef` mirror.
 
 ## Dependencies
 
 - **S80 (Exploration Drive)** — completed. `ExploreLocation` substrate exists; this spec extends it.
 - **S102 (Frontier-Aware Exploration)** — completed. Frontier selection feeds into the candidate generator that populates the new hypothesis.
 - **S107 (Proactive Diversification)** — completed. `ExplorationMotivation::Proactive` exists; proactive exploration uses `HypothesisKind::Proactive`.
-- **S128 (Sleep Episodes and Place-Quality Recovery)** — **hard, satisfied**. `MayContainSleepSite` evaluation in D5 requires `SleepQualityProfile.recovery_modifier`; S128 is completed and archived at `archive/specs/S128-sleep-episode-place-quality.md`.
+- **S128 (Sleep Episodes and Place-Quality Recovery)** — **hard, satisfied**. `MayContainSleepSite` evaluation in D6 requires `SleepQualityProfile.recovery_modifier`; S128 is completed and archived at `archive/specs/S128-sleep-episode-place-quality.md`.
 - **S122 (Frame Assumption — Commodity Availability)** — soft. Arrival-time mismatch on `CommodityAvailableAt` already surfaces through S109 discrepancy memory; this spec piggybacks the existing `ExpectationMismatch` event for the resource-not-found case rather than introducing a new event type for the same concern.
 - **S101 (Activation-Based Belief Decay)** — soft. Survey records decay via the same per-tick maintenance pass that calls `enforce_limits` on other learned-state components.
 - **S110 (Decision History Events)** — soft. `SurveyRecorded` event lands in the same `EventTag` / `decision_event_payload` infrastructure S110 already established.
@@ -180,9 +180,14 @@ impl SurveyMemory {
     }
 
     /// Drop entries older than `profile.survey_memory_retention_ticks`.
-    /// Called from the per-tick belief maintenance pass alongside the
-    /// existing `RouteExperience::enforce_limits` and
-    /// `SourceReliability::enforce_limits` calls.
+    /// Called from the agent-iteration pass added to `evidence_decay_system`
+    /// (see SystemFn Integration). `CognitiveProfile` is the correct host
+    /// for the retention parameter because survey memory is exploration-
+    /// cognition state co-located with the existing `cognitive.*` retention
+    /// fields (e.g., `repair_memory_ticks`, `learned_opportunity_memory_ticks`).
+    /// `RouteExperience::enforce_limits` and `SourceReliability::enforce_limits`
+    /// take `&PreferenceProfile` because they govern trade/route preference
+    /// state; that profile is not the right home for cognitive retention.
     pub fn enforce_limits(&mut self, current_tick: Tick, profile: &CognitiveProfile) {
         let retention = profile.survey_memory_retention_ticks;
         self.entries.retain(|r| {
@@ -206,7 +211,7 @@ In `crates/worldwake-core/src/event_tag.rs`, add a new variant to `EventTag`:
 
 ```rust
 pub enum EventTag {
-    // ... existing 39 variants ...
+    // ... existing 43 variants ...
     SurveyRecorded,
 }
 ```
@@ -228,23 +233,23 @@ pub struct SurveyRecordedPayload {
 
 ### D6: Perception-time hypothesis evaluation
 
-In `crates/worldwake-systems/src/perception.rs`, after the arrival-perception path (the existing "agent enters new place → record observations" code) and **before** any per-tick goal-satisfaction sweep that might clear the agent's `IntentionFrame`, check the agent's `IntentionFrame.goal` for an active `ExploreLocation` goal targeting the just-entered place. The lifecycle ordering matters because `is_satisfied(ExploreLocation)` returns true on arrival (`effective_place == target_place`) — survey evaluation must run while the goal is still the active intent.
+In `crates/worldwake-systems/src/perception.rs`, after the arrival-perception path (`observe_passive_local_entities`, the existing "agent enters new place → record observations" code), check the agent's `IntentionFrame.goal` for an active `ExploreLocation` goal targeting the just-entered place. Lifecycle ordering: `perception_system` runs at dispatch position 8 (`crates/worldwake-systems/src/lib.rs:104`); the AI agent tick runs after perception in the same simulation step. `is_satisfied(GoalKind::ExploreLocation { target_place, .. })` at `crates/worldwake-ai/src/goal_model.rs:1448` returns `effective_place(actor) == Some(*target_place)` and is consulted only during the AI agent tick, so the agent's `IntentionFrame.goal` is still the active `ExploreLocation` when perception evaluates the hypothesis. There is no separate goal-satisfaction sweep between perception and the agent tick — the dispatch order alone establishes the read window.
 
 If found, evaluate `hypothesis` against the agent's freshly-perceived entities at the place (FND-14A: same-tick co-located reads of physical properties of `ResourceSource`, `ItemLot`, `PlaceTag`, `WorkstationTag`, `SleepQualityProfile` are belief-equivalent):
 
-- `MayContainCommodity { commodity }` → any perceived `ResourceSource` with `commodity == hypothesis.commodity && available_quantity > Quantity::zero()`, OR any `ItemLot` of that commodity at the place.
+- `MayContainCommodity { commodity }` → any perceived `ResourceSource` with `commodity == hypothesis.commodity && available_quantity > Quantity(0)`, OR any `ItemLot` of that commodity at the place.
 - `MayContainLatrine` → place carries `PlaceTag::Latrine` (verified: `PlaceTag` enum at `crates/worldwake-core/src/topology.rs:11–26`; `Latrine` is a place-level tag, not a workstation tag).
-- `MayContainWashBasin` → place hosts a workstation tagged `WorkstationTag::WashBasin` (verified: `WorkstationTag` enum at `crates/worldwake-core/src/production.rs:10–34`; `WashBasin` is a facility-level tag).
+- `MayContainWashBasin` → place hosts a workstation tagged `WorkstationTag::WashBasin` (verified: `WorkstationTag` enum body at `crates/worldwake-core/src/production.rs:10–20`; `WashBasin` is a facility-level tag).
 - `MayContainSleepSite` → place carries `SleepQualityProfile` with `recovery_modifier > Permille::new(1000)` (better-than-universal-default; per S128 — hard dependency).
 - `Proactive` → always `found = true` (the act of arriving satisfies proactive intent).
 
-Write the `SurveyMemory` entry via `record(...)` with `confidence = profile.observation_fidelity` (the existing `PerceptionProfile.observation_fidelity` field at `crates/worldwake-core/src/belief.rs:2516`; the field is named `observation_fidelity`, not `fidelity`). Capacity is read from `cognitive.survey_memory_capacity`.
+Write the `SurveyMemory` entry via `record(...)` with `confidence = profile.observation_fidelity` (the existing `PerceptionProfile.observation_fidelity` field at `crates/worldwake-core/src/belief.rs:2556`; the field is named `observation_fidelity`, not `fidelity`). Capacity is read from `cognitive.survey_memory_capacity`.
 
 Emit `EventTag::SurveyRecorded` with `SurveyRecordedPayload`.
 
 ### D7: AI ranking integration
 
-In `crates/worldwake-ai/src/ranking.rs`, the `ExploreLocation` ranking arm (current call site at `ranking.rs:1096` → `exploration_motive(context, motivating_need) -> u32`) is wrapped with a damping step.
+In `crates/worldwake-ai/src/ranking.rs`, the `ExploreLocation` ranking arm (invocation site at `ranking.rs:1127` calling `exploration_motive(context, motivating_need) -> u32`, defined at `ranking.rs:1146`) is wrapped with a damping step.
 
 Read the agent's survey memory through `GoalBeliefView::survey_memory()` (new accessor — see D8) for `(target_place, hypothesis)`. Compute the damping factor using **integer/Permille arithmetic** (CLAUDE.md determinism: no floats):
 
@@ -290,7 +295,7 @@ This is the standard pattern used by sibling memory accessors (`discrepancy_memo
 
 ### D9: Profile field additions
 
-Extend two existing per-agent profile components in `worldwake-core` and their scenario `*Def` mirrors in `worldwake-cli`:
+Extend two existing per-agent profile components in `worldwake-core`:
 
 **`CognitiveProfile`** (`crates/worldwake-core/src/cognitive_profile.rs`):
 
@@ -299,6 +304,8 @@ Extend two existing per-agent profile components in `worldwake-core` and their s
 | `survey_memory_capacity` | `usize` | `24` |
 | `survey_memory_retention_ticks` | `u64` | `300` |
 
+Add `#[serde(default = "...")]` annotations on both new fields. `AgentDef.cognitive_profile` is `Option<CognitiveProfile>` at `crates/worldwake-cli/src/scenario/types.rs:457` (uses the core `CognitiveProfile` type directly with no `*Def` mirror), so existing scenarios with `cognitive_profile:` blocks deserialize unchanged once the serde defaults are in place. Update the `Default` impl on `CognitiveProfile` and any unit tests asserting field counts.
+
 **`ExplorationProfile`** (`crates/worldwake-core/src/exploration.rs`):
 
 | Field | Type | Default |
@@ -306,7 +313,11 @@ Extend two existing per-agent profile components in `worldwake-core` and their s
 | `negative_survey_damping_window` | `u32` | `200` (ticks) |
 | `negative_survey_damping_strength` | `Permille` | `Permille::new_unchecked(800)` |
 
-Mirror updates in `crates/worldwake-cli/src/scenario/types.rs` `CognitiveProfileDef` and `ExplorationProfileDef`, with serde defaults so existing scenarios deserialize unchanged. Update the corresponding `Default` impls and any unit tests asserting field counts.
+Mirror updates in `crates/worldwake-cli/src/scenario/types.rs` `ExplorationProfileDef` (which DOES exist at `types.rs:543–554`), with serde defaults so existing scenarios deserialize unchanged. Update the `Default` impl on `ExplorationProfile` and the `Default`/`From` impls on `ExplorationProfileDef`, plus any unit tests asserting field counts.
+
+The asymmetric handling — direct `CognitiveProfile` use vs. `ExplorationProfileDef` mirror — reflects the existing scenario-types layout: `CognitiveProfile` has no `EntityId` references requiring `*Def` indirection and is consumed directly; `ExplorationProfile` already has a mirror. This spec preserves both conventions rather than imposing a workspace-wide migration.
+
+These profile components are persisted component payloads. The D9 implementation therefore bumps `SAVE_FORMAT_VERSION` from `58` to `59`; D4's later `SurveyMemory` registration starts from that baseline and owns the next saved-component-shape bump.
 
 ### D10: Resource-arrival mismatch reuse
 
@@ -316,7 +327,7 @@ The S130 survey adds the "I checked here and found nothing" record even when no 
 
 ### D11: Decision-trace surfacing
 
-In `crates/worldwake-ai/src/decision_trace.rs`, extend the candidate diagnostics to carry an optional damping reason. Add:
+In `crates/worldwake-ai/src/decision_trace.rs`, extend `CandidateTrace` (`decision_trace.rs:320`) to carry damping diagnostics in a new field parallel to the existing `pub suppressed: Vec<GoalKey>` (`decision_trace.rs:338`):
 
 ```rust
 pub enum CandidateDampingReason {
@@ -327,9 +338,16 @@ pub enum CandidateDampingReason {
         confidence: Permille,
     },
 }
+
+pub struct CandidateDampingEntry {
+    pub goal_key: GoalKey,
+    pub reason: CandidateDampingReason,
+}
 ```
 
-Attach as `damping: Option<CandidateDampingReason>` on the existing per-candidate diagnostic (alongside `CandidateSuppressionDiagnostic`). The trace renderer formats it as: `ExploreLocation { target: Hillside Shelter, hypothesis: MayContainCommodity { Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850.`
+Add `pub damped: Vec<CandidateDampingEntry>` as a new field on `CandidateTrace` alongside `suppressed`. The two collections preserve a lifecycle distinction: `suppressed` lists candidates that were not emitted to ranking at all (hard suppression — gates, vetoes, cooldowns); `damped` lists candidates that were emitted but had their `motive_score` reduced by a per-candidate factor (soft damping — survey memory, future damping reasons). Update every existing `CandidateTrace { suppressed: vec![], … }` construction site (~20 sites in `decision_trace.rs`, all in test scaffolding) to include `damped: vec![]`.
+
+The trace renderer formats damping entries as: `ExploreLocation { target: Hillside Shelter, hypothesis: MayContainCommodity { Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850.`
 
 ### D12: Golden coverage
 
@@ -342,7 +360,11 @@ Add `crates/worldwake-ai/tests/golden_survey_records.rs`:
 
 ## SystemFn Integration
 
-No new SystemFn. Survey writes happen inside the existing perception system's arrival-perception path. Survey decay piggybacks on the existing per-tick belief maintenance that calls `RouteExperience::enforce_limits` and `SourceReliability::enforce_limits` (`crates/worldwake-core/src/experience.rs:22, 91`); add an analogous `SurveyMemory::enforce_limits(current_tick, &cognitive_profile)` call in the same pass. Per-agent capacity and retention come from `cognitive.survey_memory_capacity` and `cognitive.survey_memory_retention_ticks`.
+No new SystemFn. Two existing hosts are extended:
+
+1. **Survey writes** happen inside `perception_system` (`crates/worldwake-systems/src/perception.rs:35`), after `observe_passive_local_entities` and within the same `WorldTxn` flow that commits perception updates. See D6.
+
+2. **Survey decay** is hosted by `evidence_decay_system` (`crates/worldwake-systems/src/evidence_decay.rs:7`). That SystemFn currently runs a per-tick decay pass that iterates places via `query_scene_evidence` and prunes expired `SceneEvidence` entries. Extend it with an additional agent-iteration pass that iterates agents holding a `SurveyMemory` component and calls `SurveyMemory::enforce_limits(current_tick, &cognitive_profile)` for each. Per-agent capacity and retention come from `cognitive.survey_memory_capacity` and `cognitive.survey_memory_retention_ticks`. The existing scattered `RouteExperience::enforce_limits` (called from `crates/worldwake-systems/src/travel_actions.rs:145` on travel commit) and `SourceReliability::enforce_limits` (called from `crates/worldwake-systems/src/experience_recording.rs:27` and `crates/worldwake-ai/src/agent_tick/mod.rs:2121`) are NOT consolidated into this pass — they remain action/event-context-driven because their decay semantics depend on the agent having just produced a relevant action or expectation failure. Survey decay is the first per-tick agent-iteration decay path; consolidating the others is out of scope for this spec.
 
 ## Component Registration
 
@@ -354,7 +376,7 @@ No new SystemFn. Survey writes happen inside the existing perception system's ar
 
 `HypothesisKind` is a value type embedded in the goal variant; not a component.
 
-`CognitiveProfile` and `ExplorationProfile` field additions (D9) extend existing universal components and are scenario-authorable through the existing `CognitiveProfileDef` / `ExplorationProfileDef` mirrors.
+`CognitiveProfile` and `ExplorationProfile` field additions (D9) extend existing universal components and are scenario-authorable: `CognitiveProfile` directly through `AgentDef.cognitive_profile` (no `*Def` mirror exists or is added), and `ExplorationProfile` through the existing `ExplorationProfileDef` mirror.
 
 ## Cross-System Interactions
 

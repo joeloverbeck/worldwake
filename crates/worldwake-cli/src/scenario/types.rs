@@ -12,13 +12,14 @@ use worldwake_core::{
     CommodityDecayMap, CommodityValuationProfile, CommunicationProfile, Container,
     ContentionDispositionProfile, ContentionPolicy, ControlSource, DisposalProfile,
     DiversificationProfile, DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile,
-    ExecutionBudget, GroundComfortTag, HomeostaticNeeds, IntentionDispositionProfile,
-    JusticeDispositionProfile, LatrineFullness, LoadUnits, MetabolismProfile,
-    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, PerceptionSource, Permille,
-    PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
-    ShelterTag, SleepQualityProfile, SubstitutePreferences, SuccessionLaw, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
-    WashBasinState, WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    ExecutionBudget, ExplorationProfile, GroundComfortTag, HomeostaticNeeds,
+    IntentionDispositionProfile, JusticeDispositionProfile, LatrineFullness, LoadUnits,
+    MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
+    PerceptionSource, Permille, PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile,
+    PursuitProfile, Quantity, ShelterTag, SleepQualityProfile, SubstitutePreferences,
+    SuccessionLaw, TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
+    ViolationDispositionProfile, WashBasinState, WorkstationTag, items::CommodityKind,
+    topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -551,6 +552,10 @@ pub struct ExplorationProfileDef {
     pub exploration_arrival_boost: Permille,
     pub max_consecutive_explorations: u8,
     pub visit_lookback_ticks: u32,
+    #[serde(default = "default_negative_survey_damping_window")]
+    pub negative_survey_damping_window: u32,
+    #[serde(default = "default_negative_survey_damping_strength")]
+    pub negative_survey_damping_strength: Permille,
 }
 
 const fn default_exploration_frontier_depth() -> u16 {
@@ -563,6 +568,54 @@ const fn default_exploration_acquisition_failure_threshold() -> u8 {
 
 fn default_exploration_arrival_boost() -> Permille {
     Permille::new_unchecked(500)
+}
+
+const fn default_negative_survey_damping_window() -> u32 {
+    200
+}
+
+fn default_negative_survey_damping_strength() -> Permille {
+    Permille::new_unchecked(800)
+}
+
+impl Default for ExplorationProfileDef {
+    fn default() -> Self {
+        let profile = ExplorationProfile::default();
+        Self::from(profile)
+    }
+}
+
+impl From<ExplorationProfileDef> for ExplorationProfile {
+    fn from(profile: ExplorationProfileDef) -> Self {
+        Self {
+            curiosity_weight: profile.curiosity_weight,
+            need_activation_threshold: profile.need_activation_threshold,
+            frontier_depth: profile.frontier_depth,
+            acquisition_failure_threshold: profile.acquisition_failure_threshold,
+            exploration_arrival_boost: profile.exploration_arrival_boost,
+            max_consecutive_explorations: profile.max_consecutive_explorations,
+            visit_lookback_ticks: profile.visit_lookback_ticks,
+            negative_survey_damping_window: profile.negative_survey_damping_window,
+            negative_survey_damping_strength: profile.negative_survey_damping_strength,
+            consecutive_exploration_count: 0,
+        }
+    }
+}
+
+impl From<ExplorationProfile> for ExplorationProfileDef {
+    fn from(profile: ExplorationProfile) -> Self {
+        Self {
+            curiosity_weight: profile.curiosity_weight,
+            need_activation_threshold: profile.need_activation_threshold,
+            frontier_depth: profile.frontier_depth,
+            acquisition_failure_threshold: profile.acquisition_failure_threshold,
+            exploration_arrival_boost: profile.exploration_arrival_boost,
+            max_consecutive_explorations: profile.max_consecutive_explorations,
+            visit_lookback_ticks: profile.visit_lookback_ticks,
+            negative_survey_damping_window: profile.negative_survey_damping_window,
+            negative_survey_damping_strength: profile.negative_survey_damping_strength,
+        }
+    }
 }
 
 /// An item lot to place in the world.
@@ -887,6 +940,47 @@ mod tests {
     }
 
     #[test]
+    fn exploration_profile_def_defaults_negative_survey_damping_fields_when_omitted() {
+        let ron_str = r"(
+            curiosity_weight: 275,
+            need_activation_threshold: 350,
+            max_consecutive_explorations: 5,
+            visit_lookback_ticks: 17,
+        )";
+
+        let profile: ExplorationProfileDef = from_ron_str(ron_str);
+
+        assert_eq!(profile.negative_survey_damping_window, 200);
+        assert_eq!(
+            profile.negative_survey_damping_strength,
+            Permille::new(800).unwrap()
+        );
+    }
+
+    #[test]
+    fn exploration_profile_def_round_trips_negative_survey_damping_fields() {
+        let def = ExplorationProfileDef {
+            curiosity_weight: Permille::new(275).unwrap(),
+            need_activation_threshold: Permille::new(350).unwrap(),
+            frontier_depth: 4,
+            acquisition_failure_threshold: 6,
+            exploration_arrival_boost: Permille::new(650).unwrap(),
+            max_consecutive_explorations: 5,
+            visit_lookback_ticks: 17,
+            negative_survey_damping_window: 123,
+            negative_survey_damping_strength: Permille::new(625).unwrap(),
+        };
+
+        let profile = ExplorationProfile::from(def);
+        assert_eq!(profile.negative_survey_damping_window, 123);
+        assert_eq!(
+            profile.negative_survey_damping_strength,
+            Permille::new(625).unwrap()
+        );
+        assert_eq!(ExplorationProfileDef::from(profile), def);
+    }
+
+    #[test]
     fn test_scenario_def_perception_profile_defaults_observation_budget_when_omitted() {
         let ron_str = r#"(
             seed: 42,
@@ -1176,6 +1270,8 @@ mod tests {
                 exploration_arrival_boost: Permille::new(500).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
+                negative_survey_damping_window: 200,
+                negative_survey_damping_strength: Permille::new(800).unwrap(),
             })
         );
         assert_eq!(
@@ -1353,6 +1449,11 @@ mod tests {
             exploration.exploration_arrival_boost,
             Permille::new(500).unwrap()
         );
+        assert_eq!(exploration.negative_survey_damping_window, 200);
+        assert_eq!(
+            exploration.negative_survey_damping_strength,
+            Permille::new(800).unwrap()
+        );
     }
 
     #[test]
@@ -1465,6 +1566,8 @@ mod tests {
         assert_eq!(cognitive.max_plan_depth, 10);
         assert_eq!(cognitive.max_travel_candidates_per_expansion, None);
         assert_eq!(cognitive.landmark_extraction_depth, 3);
+        assert_eq!(cognitive.survey_memory_capacity, 24);
+        assert_eq!(cognitive.survey_memory_retention_ticks, 300);
         assert_eq!(
             def.agents[0].agenda_profile,
             Some(AgendaProfile {

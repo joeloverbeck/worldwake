@@ -3165,6 +3165,8 @@ mod tests {
             exploration_arrival_boost: Permille::new(650).unwrap(),
             max_consecutive_explorations: 5,
             visit_lookback_ticks: 17,
+            negative_survey_damping_window: 123,
+            negative_survey_damping_strength: Permille::new(625).unwrap(),
             consecutive_exploration_count: 1,
         };
         let agent = {

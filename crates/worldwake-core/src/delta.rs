@@ -603,6 +603,8 @@ mod tests {
                 guard_min_confidence_ceiling: Permille::new(875).unwrap(),
                 repair_memory_ticks: 144,
                 learned_opportunity_memory_ticks: 72,
+                survey_memory_capacity: 18,
+                survey_memory_retention_ticks: 360,
                 initial_cooldown_ticks: 7,
                 max_cooldown_ticks: 90,
                 max_snapshot_entities_per_place: 60,
@@ -624,6 +626,8 @@ mod tests {
                 exploration_arrival_boost: Permille::new(550).unwrap(),
                 max_consecutive_explorations: 4,
                 visit_lookback_ticks: 240,
+                negative_survey_damping_window: 160,
+                negative_survey_damping_strength: Permille::new(700).unwrap(),
                 consecutive_exploration_count: 1,
             }),
             ComponentValue::DiversificationProfile(DiversificationProfile {

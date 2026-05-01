@@ -317,6 +317,8 @@ mod tests {
             exploration_arrival_boost: Permille::new_unchecked(500),
             max_consecutive_explorations: 2,
             visit_lookback_ticks: 10,
+            negative_survey_damping_window: 200,
+            negative_survey_damping_strength: Permille::new_unchecked(800),
         }
     }
 
