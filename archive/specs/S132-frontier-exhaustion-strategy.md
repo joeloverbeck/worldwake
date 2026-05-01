@@ -1,5 +1,7 @@
 # S132: Frontier-Exhaustion Strategy as Goal-Kind Property
 
+**Status**: COMPLETED
+
 ## Summary
 
 Replace the per-`GoalKind` enumeration in `frontier_exhaustion_entry`
@@ -24,7 +26,7 @@ declaring the strategy, not patching a switch.
 
 ## Phase and Status
 
-Phase 10 adjunct (post-S129 architectural audit). Status: PENDING.
+Phase 10 adjunct (post-S129 architectural audit). Completed on 2026-05-01.
 
 ## Crates
 
@@ -269,3 +271,27 @@ is refactored.
    `GoalDispatchDeclaration`, the substrate S69 introduced. S69's
    declaration already centralizes goal-kind metadata, so placing the
    strategy there keeps goal-kind metadata co-located.
+
+## Outcome
+
+Completed: 2026-05-01.
+
+S132 landed as the two-ticket `S132FROEXHSTR` slice in `worldwake-ai`.
+`FrontierExhaustionStrategy` now lives on `GoalDispatchDeclaration`, and
+the runtime `frontier_exhaustion_entry` helper reads that declaration
+instead of maintaining a local `GoalKind` allow-list. The preserved
+runtime behavior is explicit: `Sleep`, self-consume `AcquireCommodity`,
+and `Patrol` use `CooldownRetry`; existing default-suppression goals use
+`PermanentUntilInvalidator`.
+
+Deviations from the original plan were limited to placement: the
+strategy type lives with goal-dispatch declarations rather than in
+`exhaustion.rs`, keeping the goal metadata boundary co-located with S69's
+dispatch substrate. No save-format, component, SystemFn, action
+validation, or golden scenario changes were required.
+
+Verification:
+
+- `cargo test -p worldwake-ai --lib goal_dispatch_decl::tests::`
+- `cargo test -p worldwake-ai agent_tick::planning::tests::frontier_exhaustion_entry_uses_strategy_dispatch`
+- `cargo test -p worldwake-ai agent_tick::planning::tests::record_exhausted_goals_records_`

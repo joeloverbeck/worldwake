@@ -12,6 +12,8 @@ use crate::decision_trace::{
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::feasibility_probe;
+use crate::goal_dispatch_decl::FrontierExhaustionStrategy;
+use crate::goal_dispatch_key::GoalDispatchKey;
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::plan_step_expectations::{
@@ -877,22 +879,19 @@ fn frontier_exhaustion_entry(
     tick: Tick,
     cognitive: &CognitiveProfile,
 ) -> ExhaustionEntry {
-    match goal_kind {
-        // Sleep is a direct local self-care action. If a single search pass
-        // exhausts its frontier, suppressing it until a band/position change
-        // can strand the agent inside one authored critical band.
-        GoalKind::Sleep
-        | GoalKind::AcquireCommodity {
-            purpose: worldwake_core::CommodityPurpose::SelfConsume,
-            ..
-        }
-        | GoalKind::Patrol { .. } => ExhaustionEntry::budget_retry_pending(
+    match GoalDispatchKey::from_goal_kind(goal_kind)
+        .declaration()
+        .frontier_exhaustion_strategy
+    {
+        FrontierExhaustionStrategy::CooldownRetry => ExhaustionEntry::budget_retry_pending(
             invalidation_conditions,
             baseline,
             tick,
             cognitive,
         ),
-        _ => ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline),
+        FrontierExhaustionStrategy::PermanentUntilInvalidator => {
+            ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline)
+        }
     }
 }
 
@@ -2293,8 +2292,8 @@ fn goal_target_entity(goal: GoalKind) -> Option<EntityId> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidatePlanSearch, found_plan_blocks_later_goals, has_pending_budget_retry,
-        plan_completion_tick_for_adoption, plan_search_result_to_trace,
+        CandidatePlanSearch, found_plan_blocks_later_goals, frontier_exhaustion_entry,
+        has_pending_budget_retry, plan_completion_tick_for_adoption, plan_search_result_to_trace,
         planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
         summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
     };
@@ -2312,6 +2311,8 @@ mod tests {
             TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
+        goal_dispatch_decl::FrontierExhaustionStrategy,
+        goal_dispatch_key::GoalDispatchKey,
         plan_selection::SelectionCandidatePlan,
         search::SearchTraceMetadata,
     };
@@ -5712,6 +5713,51 @@ mod tests {
         let entry = runtime.exhaustion_cache.get(&goal).unwrap();
         assert_eq!(entry.retry_state, ExhaustionRetryState::FrontierExhausted);
         assert!(entry.suppresses_planning());
+    }
+
+    #[test]
+    fn frontier_exhaustion_entry_uses_strategy_dispatch() {
+        let cognitive = cognitive(&ProfileFixture::default());
+
+        let cooldown = frontier_exhaustion_entry(
+            &GoalKind::Sleep,
+            Vec::new(),
+            crate::ExhaustionBaseline::default(),
+            Tick(9),
+            &cognitive,
+        );
+        assert_eq!(
+            GoalDispatchKey::from_goal_kind(&GoalKind::Sleep)
+                .declaration()
+                .frontier_exhaustion_strategy,
+            FrontierExhaustionStrategy::CooldownRetry
+        );
+        assert_eq!(
+            cooldown.retry_state,
+            ExhaustionRetryState::BudgetRetryPending
+        );
+        assert!(cooldown.next_retry_tick.is_some());
+        assert!(!cooldown.suppresses_planning());
+
+        let permanent = frontier_exhaustion_entry(
+            &GoalKind::Wash,
+            Vec::new(),
+            crate::ExhaustionBaseline::default(),
+            Tick(9),
+            &cognitive,
+        );
+        assert_eq!(
+            GoalDispatchKey::from_goal_kind(&GoalKind::Wash)
+                .declaration()
+                .frontier_exhaustion_strategy,
+            FrontierExhaustionStrategy::PermanentUntilInvalidator
+        );
+        assert_eq!(
+            permanent.retry_state,
+            ExhaustionRetryState::FrontierExhausted
+        );
+        assert_eq!(permanent.next_retry_tick, None);
+        assert!(permanent.suppresses_planning());
     }
 
     #[test]

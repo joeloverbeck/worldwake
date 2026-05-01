@@ -1,10 +1,10 @@
 # S132FROEXHSTR-002: Route frontier exhaustion recording through strategy dispatch
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes - `worldwake-ai` planner exhaustion recording
-**Deps**: `archive/tickets/S132FROEXHSTR-001.md`, `specs/S132-frontier-exhaustion-strategy.md`
+**Deps**: `archive/tickets/S132FROEXHSTR-001.md`, `archive/specs/S132-frontier-exhaustion-strategy.md`
 
 ## Problem
 
@@ -104,3 +104,27 @@ Add or adjust focused tests so one assertion proves the runtime helper uses the 
 1. `cargo test -p worldwake-ai agent_tick::planning::tests::frontier_exhaustion`
 2. `cargo test -p worldwake-ai agent_tick::planning::tests::record_exhausted_goals_records_`
 3. `cargo test -p worldwake-ai`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Updated `frontier_exhaustion_entry` to read `GoalDispatchKey::from_goal_kind(goal_kind).declaration().frontier_exhaustion_strategy`.
+- Deleted the local `GoalKind` frontier-exhaustion retry allow-list from the runtime helper.
+- Preserved the existing constructor behavior: declared `CooldownRetry` goals produce `BudgetRetryPending`, and declared `PermanentUntilInvalidator` goals produce `FrontierExhausted`.
+- Added focused helper-level coverage for both declared strategy arms while preserving the existing `record_exhausted_goals` regressions for sleep, self-consume acquisition, patrol, and permanent suppression.
+- No save-format bump was required because no serialized runtime state, save carrier, or `ExhaustionEntry` shape changed.
+
+## Deviations
+
+- The focused helper test asserts that cooldown retry populates a retry tick rather than pinning the exact tick value; cooldown arithmetic remains owned by `ExhaustionEntry::budget_retry_pending`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning::tests::frontier_exhaustion -- --list`.
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning::tests::record_exhausted_goals_records_ -- --list`.
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning::tests::frontier_exhaustion`.
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning::tests::record_exhausted_goals_records_`.
+- Passed `cargo fmt --all`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.

@@ -21,7 +21,7 @@ producing one-off CIREM-style fixes if not addressed.
 ## Accepted (deliverables created)
 
 - **S132** — Frontier-Exhaustion Strategy as Goal-Kind Property →
-  `specs/S132-frontier-exhaustion-strategy.md`. Smell: CIREM-002 added
+  `archive/specs/S132-frontier-exhaustion-strategy.md`. Smell: CIREM-002 added
   self-consume `AcquireCommodity` to a hand-maintained allow-list in
   `frontier_exhaustion_entry`; CIREM-004 added `Patrol`. Default is
   permanent suppression. Substrate should be a goal-kind property,

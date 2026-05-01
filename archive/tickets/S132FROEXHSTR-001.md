@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes - `worldwake-ai` goal dispatch metadata and exhaustion strategy types
-**Deps**: `specs/S132-frontier-exhaustion-strategy.md`
+**Deps**: `archive/specs/S132-frontier-exhaustion-strategy.md`
 
 ## Problem
 
@@ -59,7 +59,7 @@ Add focused tests proving all dispatch declarations expose the field and the thr
 
 - `crates/worldwake-ai/src/goal_dispatch_decl.rs` (modify)
 - `crates/worldwake-ai/src/lib.rs` (modify)
-- `specs/S132-frontier-exhaustion-strategy.md` (truth-sync declaration boundary)
+- `archive/specs/S132-frontier-exhaustion-strategy.md` (truth-sync declaration boundary)
 
 ## Out of Scope
 
@@ -97,6 +97,7 @@ Add focused tests proving all dispatch declarations expose the field and the thr
 ## Outcome
 
 Completed on 2026-05-01.
+Outcome amended: 2026-05-01.
 
 - Added `FrontierExhaustionStrategy` to the goal dispatch declaration metadata surface and re-exported it from `worldwake-ai`.
 - Added an explicit `frontier_exhaustion_strategy` field to every `GoalDispatchDeclaration`.
@@ -107,7 +108,7 @@ Completed on 2026-05-01.
 
 ## Deviations
 
-- The enum lives in `goal_dispatch_decl.rs`, not `exhaustion.rs`, because this ticket's landed boundary is declaration metadata. Runtime routing remains out of scope for `S132FROEXHSTR-001` and is still owned by `S132FROEXHSTR-002`.
+- The enum lives in `goal_dispatch_decl.rs`, not `exhaustion.rs`, because this ticket's landed boundary is declaration metadata. Runtime routing remained out of scope for `S132FROEXHSTR-001` and later landed in `archive/tickets/S132FROEXHSTR-002.md`.
 
 ## Verification Result
 

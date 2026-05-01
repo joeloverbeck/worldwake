@@ -524,7 +524,7 @@ All cross-spec dependencies among S126–S131 are **soft** (benefit but not bloc
 Derived from the 2026-05-01 `/brainstorm` triage of the four CIREM tickets (`S129CIREM-001..004`) that remediated post-S129 CI failures. The triage examined whether those fixes were workarounds masking deeper architectural issues. Verdict: the four tickets fixed real root causes (no weight-knob hacks, no contract relaxations, no force-X-when-Y carve-outs), but three of them revealed deeper substrate patterns the per-ticket scope did not generalize. This wave addresses those patterns. Source: `docs/triage/2026-05-01-s129cirem-followup-triage.md`.
 
 ```text
-S132 (independent — frontier-exhaustion strategy as goal-kind property)
+S132 ✅ archived
 BELASPCOV-001 ticket (completed — claim-aspect coverage audit)
 INFRARET-001 ticket (completed — infrastructure retention generalized)
 RELIEFACT-001 ticket (completed — per-need relief-actionability predicate)
@@ -533,7 +533,7 @@ LOCROOT-001 ticket (completed — direct-root synthesis locality audit)
 
 **Wave** (parallel):
 
-- **S132**: Frontier-Exhaustion Strategy as Goal-Kind Property — replace the per-`GoalKind` allow-list in `frontier_exhaustion_entry` with a goal-kind-property dispatch (`PermanentUntilInvalidator | CooldownRetry`). Closes the pattern of S129CIREM-002 / S129CIREM-004 each adding a one-off variant to the switch. FND-21 / FND-22A alignment.
+- **S132**: ✅ COMPLETED — Frontier-Exhaustion Strategy as Goal-Kind Property — archived at [archive/specs/S132-frontier-exhaustion-strategy.md](/home/joeloverbeck/projects/worldwake/archive/specs/S132-frontier-exhaustion-strategy.md). Replaced the per-`GoalKind` allow-list in `frontier_exhaustion_entry` with a goal-kind-property dispatch (`PermanentUntilInvalidator | CooldownRetry`). Closes the pattern of S129CIREM-002 / S129CIREM-004 each adding a one-off variant to the switch. FND-21 / FND-22A alignment.
 - **BELASPCOV-001** (ticket): `BelievedEntityState ↔ EntityBeliefAspect` claim-aspect coverage audit — produced `docs/audits/2026-05-01-believed-entity-state-claim-coverage.md`, found no mutable belief-content gaps, and created no per-gap secondary tickets. CIREM-003's `WashBasinState` claim-aspect addition was ad hoc; this ticket verified the current summary fields before the next chronic-stall failure mode.
 - **INFRARET-001** (ticket): COMPLETED — generalized `state_salience_boost` from two hardcoded shape pairs to a direct-observation plus need-pressure predicate over current opportunity aspects. Soft dependency on BELASPCOV-001 was satisfied; the completed audit found no additional aspects to fold in.
 - **RELIEFACT-001** (ticket): COMPLETED — extracted per-need relief-actionability predicate from `emit_exploration_candidates` (replaced the inline dirtiness `if` branch added by CIREM-002 with a per-need dispatch).
