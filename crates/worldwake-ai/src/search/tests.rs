@@ -14238,6 +14238,9 @@ fn explore_location_search_finds_travel_plan_to_target_place() {
             motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                 HomeostaticNeedId::Hunger,
             ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([target_place]),

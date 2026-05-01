@@ -8721,12 +8721,18 @@ mod tests {
                     motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                         HomeostaticNeedId::Hunger,
                     ),
+                    hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                        commodity: CommodityKind::Apple,
+                    },
                 }),
                 goal(GoalKind::ExploreLocation {
                     target_place: clean_place,
                     motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                         HomeostaticNeedId::Hunger,
                     ),
+                    hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                        commodity: CommodityKind::Apple,
+                    },
                 }),
             ],
             &view,
@@ -9164,6 +9170,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     worldwake_core::HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: CommodityKind::Apple,
+                },
             })],
             &view,
             agent,
@@ -9205,6 +9214,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     worldwake_core::HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: CommodityKind::Apple,
+                },
             })],
             &view,
             agent,
@@ -9248,6 +9260,9 @@ mod tests {
                     motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                         worldwake_core::HomeostaticNeedId::Hunger,
                     ),
+                    hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                        commodity: CommodityKind::Apple,
+                    },
                 }),
             ],
             &view,
@@ -9264,6 +9279,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     worldwake_core::HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: CommodityKind::Apple,
+                },
             }
         );
     }
@@ -9303,6 +9321,7 @@ mod tests {
             &[goal(GoalKind::ExploreLocation {
                 target_place,
                 motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+                hypothesis: worldwake_core::HypothesisKind::Proactive,
             })],
             &view,
             agent,

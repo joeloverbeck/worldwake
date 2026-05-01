@@ -431,6 +431,7 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
         GoalKind::ExploreLocation {
             target_place,
             motivating_need,
+            ..
         } => {
             format!(
                 "ExploreLocation({:?} at {})",

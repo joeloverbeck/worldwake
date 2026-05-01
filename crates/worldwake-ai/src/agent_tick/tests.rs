@@ -8416,6 +8416,9 @@ fn exploration_counter_increments_when_explore_goal_is_adopted() {
             motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                 HomeostaticNeedId::Hunger,
             ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
         }),
         Tick(5),
     );
@@ -8462,6 +8465,7 @@ fn proactive_exploration_commit_updates_last_proactive_tick() {
         GoalKey::from(GoalKind::ExploreLocation {
             target_place: entity(99),
             motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+            hypothesis: worldwake_core::HypothesisKind::Proactive,
         }),
         Tick(5),
     );

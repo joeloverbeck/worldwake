@@ -66,7 +66,7 @@ The motivating proposal lists five hypothesis values co-equally: `may_contain_fo
 | FND-22A (Learning, Habits, and Preference Shifts Are Concrete State) | Survey records are exactly the kind of concrete learned state FND-22A asks for: explicit acquisition (arrival event), explicit decay (freshness-based pruning), explicit replacement (re-survey on return). |
 | FND-26 (Systems Interact Through State, Not Through Each Other) | Perception writes `SurveyMemory`; AI reads `SurveyMemory` (via `GoalBeliefView::survey_memory()`) for ranking damping. No imperative cross-system call. |
 | FND-27 (Derived Summaries Are Caches, Never Truth) | `SurveyMemory` is authoritative per-agent state. The ranking damping factor is derived per-tick from freshness; not stored. |
-| FND-28 (No Backward Compatibility in Live Authority Paths) | The existing `ExploreLocation` shape (without `hypothesis`) is removed in favor of the new shape; all 60 destructuring/construction sites updated, no shim. |
+| FND-28 (No Backward Compatibility in Live Authority Paths) | The existing `ExploreLocation` shape (without `hypothesis`) is removed in favor of the new shape; all workspace destructuring/construction sites updated, no shim. |
 | FND-29 (Debuggability Is a Product Feature) | `SurveyRecorded` event records the (place, hypothesis, found, confidence) tuple. Decision-trace surfaces the suppression reason as "ExploreLocation suppressed: SurveyMemory has fresh negative for (Hillside Shelter, MayContainCommodity { Apple })." |
 | FND-29A (Causal History Is Authoritative, Append-Only, Queryable) | One new `EventTag::SurveyRecorded` lands in the event log; survey records themselves persist in `SurveyMemory` until decayed. |
 | FND-30 (Every New System Spec Must Declare Its Causal Hooks) | Section H below covers the four required analyses (information-path, positive-feedback, dampeners, stored-vs-derived) per `docs/spec-drafting-rules.md`. |
@@ -112,7 +112,7 @@ GoalKind::ExploreLocation {
 }
 ```
 
-`ExplorationMotivation` is preserved (it captures the *why*); `HypothesisKind` adds the *what*. All ~60 existing destructuring/construction sites of `ExploreLocation` (search: `grep -rn "GoalKind::ExploreLocation {" crates/`) are updated to populate the new field — no shim, per FND-28.
+`ExplorationMotivation` is preserved (it captures the *why*); `HypothesisKind` adds the *what*. All existing destructuring/construction sites of `ExploreLocation` (search: `grep -rn "GoalKind::ExploreLocation {" crates/`) are updated to populate the new field — no shim, per FND-28.
 
 **Hardcoded need-to-hypothesis mapping** (for `motivating_need = ExplorationMotivation::NeedDriven(need_id)`):
 
@@ -129,6 +129,8 @@ For `motivating_need = ExplorationMotivation::Proactive`, `hypothesis = Hypothes
 The mapping is implemented as a `const fn need_hypothesis(need: HomeostaticNeedId) -> HypothesisKind` in `crates/worldwake-ai/src/candidate_generation.rs` (the file that owns `emit_*_goal` for needs). Per-agent dietary variation (e.g., one agent prefers Bread, another prefers Apple) is a non-goal — the mapping is uniform across agents in this spec.
 
 **Goal-key identity note**: Adding `hypothesis` to `GoalKind::ExploreLocation` changes `GoalKind` equality/ordering through the stored payload. Two `ExploreLocation` goals with the same `(target_place, motivating_need)` but different `hypothesis` therefore have different `GoalKey`s and are distinct goals for commitment, blocker memory, and discrepancy memory purposes. This is intentional: a Hunger-driven and a Thirst-driven exploration of the same place produce orthogonal surveys and should not collide. Binding identity (`matches_binding`) continues to use `target_place` only and is unchanged — Travel ops bind on place, not on hypothesis.
+
+Because `GoalKind` is embedded in save-bound runtime/planning state, the D2 implementation bumps `SAVE_FORMAT_VERSION` from `59` to `60`. D4's later `SurveyMemory` registration starts from that baseline and owns the next saved-component-shape bump.
 
 ### D3: `SurveyRecord` and `SurveyMemory`
 
@@ -317,7 +319,7 @@ Mirror updates in `crates/worldwake-cli/src/scenario/types.rs` `ExplorationProfi
 
 The asymmetric handling — direct `CognitiveProfile` use vs. `ExplorationProfileDef` mirror — reflects the existing scenario-types layout: `CognitiveProfile` has no `EntityId` references requiring `*Def` indirection and is consumed directly; `ExplorationProfile` already has a mirror. This spec preserves both conventions rather than imposing a workspace-wide migration.
 
-These profile components are persisted component payloads. The D9 implementation therefore bumps `SAVE_FORMAT_VERSION` from `58` to `59`; D4's later `SurveyMemory` registration starts from that baseline and owns the next saved-component-shape bump.
+These profile components are persisted component payloads. The D9 implementation therefore bumps `SAVE_FORMAT_VERSION` from `58` to `59`; D2 then bumps `59` to `60` for the persisted `GoalKind::ExploreLocation` payload widening; D4's later `SurveyMemory` registration starts from that baseline and owns the next saved-component-shape bump.
 
 ### D10: Resource-arrival mismatch reuse
 

@@ -9,10 +9,10 @@ use worldwake_ai::{
 };
 use worldwake_core::{
     AcquisitionQuantity, CommodityKind, DiversificationProfile, EntityId, EventLog,
-    ExplorationMotivation, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, Place, PlaceTag, Quantity,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile, WorkstationTag,
-    World,
+    ExplorationMotivation, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
+    KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, Place, PlaceTag,
+    Quantity, ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile,
+    WorkstationTag, World,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
 
@@ -421,6 +421,17 @@ fn exploration_goal(target_place: EntityId, motivating_need: HomeostaticNeedId) 
     GoalKey::from(GoalKind::ExploreLocation {
         target_place,
         motivating_need: ExplorationMotivation::NeedDriven(motivating_need),
+        hypothesis: match motivating_need {
+            HomeostaticNeedId::Hunger => HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+            HomeostaticNeedId::Thirst => HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            },
+            HomeostaticNeedId::Fatigue => HypothesisKind::MayContainSleepSite,
+            HomeostaticNeedId::Bladder => HypothesisKind::MayContainLatrine,
+            HomeostaticNeedId::Dirtiness => HypothesisKind::MayContainWashBasin,
+        },
     })
 }
 
@@ -573,6 +584,7 @@ fn selected_proactive_exploration_goals(
                 let GoalKind::ExploreLocation {
                     target_place,
                     motivating_need: ExplorationMotivation::Proactive,
+                    ..
                 } = planning.selection.selected_goal()?.kind
                 else {
                     return None;
@@ -703,6 +715,9 @@ fn golden_exploration_triggers_on_need_and_ignorance() {
     let exploration_goal = GoalKey::from(GoalKind::ExploreLocation {
         target_place: PLACE_FRONTIER,
         motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+        hypothesis: HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        },
     });
 
     assert!(
@@ -898,6 +913,9 @@ fn golden_exploration_arrival_unlocks_beliefs_and_concrete_relief() {
     let exploration_goal = GoalKey::from(GoalKind::ExploreLocation {
         target_place: PLACE_FRONTIER,
         motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+        hypothesis: HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        },
     });
 
     let mut travel_committed = false;
@@ -1504,6 +1522,9 @@ fn golden_s102_counter_reset_on_need_satisfaction() {
     let explore_village_kind = GoalKind::ExploreLocation {
         target_place: PLACE_VILLAGE,
         motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+        hypothesis: HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        },
     };
     let mut saw_nonzero_tracker = false;
     let mut reset_tick = None;

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `survey_damping_factor` helper, ranking-arm wrapping for `ExploreLocation`, decision-trace damping entries
-**Deps**: `archive/tickets/S130SURRECFRO-001.md`, 003, 004, 005, spec `specs/S130-survey-records-frontier-disconfirmation.md` D7
+**Deps**: `archive/tickets/S130SURRECFRO-001.md`, `archive/tickets/S130SURRECFRO-003.md`, 004, 005, spec `specs/S130-survey-records-frontier-disconfirmation.md` D7
 
 ## Problem
 

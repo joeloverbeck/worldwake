@@ -160,6 +160,7 @@ pub enum GoalKind {
     ExploreLocation {
         target_place: EntityId,
         motivating_need: ExplorationMotivation,
+        hypothesis: HypothesisKind,
     },
     StealItem {
         target_item: EntityId,
@@ -871,6 +872,9 @@ mod tests {
         let key = GoalKey::from(GoalKind::ExploreLocation {
             target_place,
             motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Thirst),
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            },
         });
 
         assert_eq!(key.commodity, None);
@@ -883,6 +887,9 @@ mod tests {
         let goal = GoalKind::ExploreLocation {
             target_place: entity_id(23, 4),
             motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
         };
 
         let bytes = bincode::serialize(&goal).unwrap();
@@ -923,6 +930,29 @@ mod tests {
 
             assert_eq!(roundtrip, hypothesis);
         }
+    }
+
+    #[test]
+    fn goal_key_distinguishes_explore_location_by_hypothesis() {
+        let target_place = entity_id(23, 5);
+        let food_key = GoalKey::from(GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+        });
+        let water_key = GoalKey::from(GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            },
+        });
+
+        assert_ne!(food_key, water_key);
+        assert_eq!(food_key.place, Some(target_place));
+        assert_eq!(water_key.place, Some(target_place));
     }
 
     #[test]

@@ -188,6 +188,7 @@ fn run_survival_preferences() -> SurvivalPreferencesObservation {
                                 worldwake_core::GoalKind::ExploreLocation {
                                     target_place,
                                     motivating_need: ExplorationMotivation::Proactive,
+                                    ..
                                 } if target_place == novel_grove_place
                             )
                         }) =>

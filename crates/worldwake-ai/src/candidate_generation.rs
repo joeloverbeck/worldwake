@@ -32,13 +32,13 @@ use worldwake_core::{
     EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
     ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation,
     ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
-    PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
-    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordEntryId, RecordKind,
-    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
-    TradeCategory, UtilityProfile, ViolationId, ViolationKind, ViolationMemory, WorkstationTag,
-    classify_communication, current_institutional_belief_topics, load_per_unit,
+    HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
+    OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement,
+    PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData,
+    RecordEntryId, RecordKind, RightKind, SocialObservation, SocialObservationDetail, TellTopic,
+    TheftFacts, Tick, TradeCategory, UtilityProfile, ViolationId, ViolationKind, ViolationMemory,
+    WorkstationTag, classify_communication, current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -2810,6 +2810,7 @@ fn emit_exploration_candidates(
             GoalKind::ExploreLocation {
                 target_place,
                 motivating_need: ExplorationMotivation::NeedDriven(need_id),
+                hypothesis: need_hypothesis(need_id),
             },
             OpportunityAnchor::Place(target_place),
             Evidence::with_place(target_place),
@@ -2916,6 +2917,7 @@ fn emit_exploration_candidates_for_blocked_self_care(
                 GoalKind::ExploreLocation {
                     target_place: existing_target,
                     motivating_need: ExplorationMotivation::NeedDriven(existing_need),
+                    ..
                 } if existing_target == target_place && existing_need == need_id
             )
         }) {
@@ -2930,6 +2932,7 @@ fn emit_exploration_candidates_for_blocked_self_care(
             GoalKind::ExploreLocation {
                 target_place,
                 motivating_need: ExplorationMotivation::NeedDriven(need_id),
+                hypothesis: need_hypothesis(need_id),
             },
             OpportunityAnchor::Place(target_place),
             Evidence::with_place(target_place),
@@ -2958,6 +2961,20 @@ fn homeostatic_need_pressure(needs: &HomeostaticNeeds, need_id: HomeostaticNeedI
         HomeostaticNeedId::Fatigue => needs.fatigue,
         HomeostaticNeedId::Bladder => needs.bladder,
         HomeostaticNeedId::Dirtiness => needs.dirtiness,
+    }
+}
+
+const fn need_hypothesis(need: HomeostaticNeedId) -> HypothesisKind {
+    match need {
+        HomeostaticNeedId::Hunger => HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        },
+        HomeostaticNeedId::Thirst => HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Water,
+        },
+        HomeostaticNeedId::Fatigue => HypothesisKind::MayContainSleepSite,
+        HomeostaticNeedId::Bladder => HypothesisKind::MayContainLatrine,
+        HomeostaticNeedId::Dirtiness => HypothesisKind::MayContainWashBasin,
     }
 }
 
@@ -3030,6 +3047,7 @@ fn emit_proactive_exploration_candidates(
         GoalKind::ExploreLocation {
             target_place,
             motivating_need: ExplorationMotivation::Proactive,
+            hypothesis: HypothesisKind::Proactive,
         },
         OpportunityAnchor::Place(target_place),
         Evidence::with_place(target_place),
@@ -6281,7 +6299,7 @@ mod tests {
         belief_gated_places, combined_evidence, deliverable_quantity,
         emit_expectation_violation_candidates, emit_produce_goals, emit_restock_goals,
         filter_suppressed_candidates, generate_candidates, generate_candidates_with_travel_horizon,
-        proactive_curiosity_pressure, proactive_familiarity, proactive_novelty,
+        need_hypothesis, proactive_curiosity_pressure, proactive_familiarity, proactive_novelty,
     };
     use crate::{
         BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
@@ -6308,24 +6326,52 @@ mod tests {
         EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis, ExpectationId,
         ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
         ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, GroundComfortTag,
-        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
-        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, LastSeenMemory,
-        LastSeenProvenance, LastSeenRecord, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, PlaceVisitRecord, PreferenceProfile, ProofRequirement,
-        PunishmentFineSelectionTrace, PunishmentFineTraceFacts, Quantity, RecipeId,
-        RecipientKnowledgeStatus, RecordData, RecordEntryId, RecordKind, ResourceSource,
-        RewardSource, RightKind, SharedTellState, ShelterTag, SleepQualityProfile,
-        SocialObservation, SocialObservationDetail, SubstitutePreferences, TellMemoryKey,
-        TellProfile, TellTopic, TheftFacts, Tick, TickRange, ToldBeliefMemory,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationKind, ViolationMemory,
-        WashBasinState, WorkstationTag, Wound, WoundCause, WoundId,
+        HomeostaticNeedId, HomeostaticNeeds, HypothesisKind, InTransitOnEdge,
+        InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+        InstitutionalKnowledgeSource, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        LoadUnits, MerchandiseProfile, MetabolismProfile, NoticeTopic, OfficeData,
+        OpportunityAnchor, OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        PlaceVisitRecord, PreferenceProfile, ProofRequirement, PunishmentFineSelectionTrace,
+        PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
+        RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
+        ShelterTag, SleepQualityProfile, SocialObservation, SocialObservationDetail,
+        SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick, TickRange,
+        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationKind,
+        ViolationMemory, WashBasinState, WorkstationTag, Wound, WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
         ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SpatialBeliefView,
         TellTopicOmissionReason, TemporalBeliefView,
     };
+
+    #[test]
+    fn need_hypothesis_maps_each_homeostatic_need_to_expected_hypothesis() {
+        assert_eq!(
+            need_hypothesis(HomeostaticNeedId::Hunger),
+            HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            }
+        );
+        assert_eq!(
+            need_hypothesis(HomeostaticNeedId::Thirst),
+            HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            }
+        );
+        assert_eq!(
+            need_hypothesis(HomeostaticNeedId::Fatigue),
+            HypothesisKind::MayContainSleepSite
+        );
+        assert_eq!(
+            need_hypothesis(HomeostaticNeedId::Bladder),
+            HypothesisKind::MayContainLatrine
+        );
+        assert_eq!(
+            need_hypothesis(HomeostaticNeedId::Dirtiness),
+            HypothesisKind::MayContainWashBasin
+        );
+    }
 
     struct TestBeliefView {
         current_tick: Tick,
@@ -19331,6 +19377,7 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: need_hypothesis(HomeostaticNeedId::Hunger),
             }
         ));
     }
@@ -19518,6 +19565,7 @@ mod tests {
             GoalKind::ExploreLocation {
                 target_place: frontier_place,
                 motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+                hypothesis: HypothesisKind::Proactive,
             }
         ));
     }
@@ -19849,6 +19897,7 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: need_hypothesis(HomeostaticNeedId::Hunger),
             }
         ));
     }
@@ -19987,6 +20036,7 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Dirtiness,
                 ),
+                hypothesis: need_hypothesis(HomeostaticNeedId::Dirtiness),
             }
         ));
     }
