@@ -17,12 +17,13 @@ use worldwake_core::{
     DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis,
     ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
-    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord, LoadUnits,
-    MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile,
-    OfficeForceState, PatrolRoute, Place, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-    RecordData, RecordKind, ResourceExtractionQueues, ResourceSource, Seed, SleepQualityProfile,
-    SocialObservation, SocialObservationDetail, Tick, Topology, TravelEdge, TravelEdgeId,
-    VisibilitySpec, WitnessData, WorkstationMarker, World, WorldTxn, default_commodity_decay_map,
+    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+    LatrineFullness, LoadUnits, MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData,
+    OfficeForceProfile, OfficeForceState, PatrolRoute, Place, PlaceDirtiness,
+    ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind,
+    ResourceExtractionQueues, ResourceSource, Seed, SleepQualityProfile, SocialObservation,
+    SocialObservationDetail, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
+    WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn, default_commodity_decay_map,
     hash_world, load_per_unit,
 };
 use worldwake_sim::{
@@ -288,6 +289,23 @@ fn spawn_entities(
             .map_err(ScenarioError::Validation)?
             .unwrap_or_default();
         txn.set_component_sleep_quality_profile(place_id, profile)?;
+
+        let dirtiness: PlaceDirtiness = place_def
+            .place_dirtiness
+            .map(Into::into)
+            .unwrap_or_default();
+        txn.set_component_place_dirtiness(place_id, dirtiness)?;
+
+        if place_def
+            .tags
+            .contains(&worldwake_core::topology::PlaceTag::Latrine)
+        {
+            let fullness: LatrineFullness = place_def
+                .latrine_fullness
+                .map(Into::into)
+                .unwrap_or_default();
+            txn.set_component_latrine_fullness(place_id, fullness)?;
+        }
     }
 
     for agent_def in &def.agents {
@@ -356,6 +374,13 @@ fn spawn_entities(
         if let Some(policy) = &facility_def.contention_policy {
             txn.set_component_contention_policy(facility_id, policy.clone())?;
             txn.set_component_contention_queue(facility_id, ContentionQueue::default())?;
+        }
+        if facility_def.workstation == worldwake_core::WorkstationTag::WashBasin {
+            let basin_state: WashBasinState = facility_def
+                .wash_basin_state
+                .map(Into::into)
+                .unwrap_or_default();
+            txn.set_component_wash_basin_state(facility_id, basin_state)?;
         }
         if let Some(name) = &facility_def.name {
             txn.set_component_name(facility_id, worldwake_core::Name(name.clone()))?;
@@ -1276,12 +1301,12 @@ mod tests {
         DisposalProfile, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
         DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
         GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, IntentionDispositionProfile,
-        JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LoadUnits,
-        MultiplierPermille, ObligationSatiationProfile, PatrolProfile, PatrolRoute,
-        PerceptionProfile, Permille, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile,
-        Quantity, ShelterTag, SleepQualityProfile, SubstitutePreferences, TellProfile,
-        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
-        WorkstationTag, default_commodity_decay_map,
+        JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LatrineFullness,
+        LoadUnits, MultiplierPermille, ObligationSatiationProfile, PatrolProfile, PatrolRoute,
+        PerceptionProfile, Permille, PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile,
+        PursuitProfile, Quantity, ShelterTag, SleepQualityProfile, SubstitutePreferences,
+        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        ViolationDispositionProfile, WashBasinState, WorkstationTag, default_commodity_decay_map,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -1337,6 +1362,8 @@ mod tests {
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Village", ControlSource::Human)],
@@ -1353,6 +1380,31 @@ mod tests {
             scenario_lint_overrides: BTreeMap::new(),
             harvest_trace_retention_ticks: None,
         }
+    }
+
+    fn def_from_ron_str(ron_str: &str) -> ScenarioDef {
+        ron_options()
+            .from_str(ron_str)
+            .expect("scenario RON should parse")
+    }
+
+    fn place_by_name(world: &World, name: &str) -> EntityId {
+        world
+            .topology()
+            .place_ids()
+            .find(|place_id| world.topology().place(*place_id).unwrap().name == name)
+            .expect("place should exist")
+    }
+
+    fn named_entity(world: &World, name: &str) -> EntityId {
+        world
+            .entities_with_name()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|n| n.0 == name)
+            })
+            .expect("named entity should exist")
     }
 
     #[test]
@@ -1441,6 +1493,177 @@ mod tests {
     }
 
     #[test]
+    fn place_def_loads_with_default_when_dirtiness_field_absent() {
+        let def = def_from_ron_str(
+            r#"(
+                seed: 42,
+                places: [
+                    (name: "Village", tags: [Village]),
+                    (name: "Latrine", tags: [Latrine]),
+                ],
+                agents: [],
+            )"#,
+        );
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let village = place_by_name(world, "Village");
+        let latrine = place_by_name(world, "Latrine");
+
+        assert_eq!(
+            world.get_component_place_dirtiness(village),
+            Some(&PlaceDirtiness::default())
+        );
+        assert_eq!(
+            world.get_component_place_dirtiness(latrine),
+            Some(&PlaceDirtiness::default())
+        );
+        assert_eq!(
+            world.get_component_latrine_fullness(latrine),
+            Some(&LatrineFullness::default())
+        );
+        assert!(world.get_component_latrine_fullness(village).is_none());
+    }
+
+    #[test]
+    fn place_def_loads_explicit_dirtiness_values() {
+        let def = def_from_ron_str(
+            r#"(
+                seed: 42,
+                places: [
+                    (
+                        name: "Yard",
+                        tags: [],
+                        place_dirtiness: (
+                            value: 500,
+                            decay_per_tick: 5,
+                            dirtiness_per_use: 100,
+                        ),
+                    ),
+                ],
+                agents: [],
+            )"#,
+        );
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let yard = place_by_name(world, "Yard");
+
+        assert_eq!(
+            world.get_component_place_dirtiness(yard),
+            Some(&PlaceDirtiness {
+                value: Permille::new(500).unwrap(),
+                decay_per_tick: Permille::new(5).unwrap(),
+                dirtiness_per_use: Permille::new(100).unwrap(),
+            })
+        );
+    }
+
+    #[test]
+    fn latrine_fullness_only_set_on_latrine_tagged_places() {
+        let def = def_from_ron_str(
+            r#"(
+                seed: 42,
+                places: [
+                    (
+                        name: "Yard",
+                        tags: [],
+                        latrine_fullness: (
+                            fill: 700,
+                            fill_per_use: 90,
+                            critical_threshold: 850,
+                        ),
+                    ),
+                    (
+                        name: "Outhouse",
+                        tags: [Latrine],
+                        latrine_fullness: (
+                            fill: 700,
+                            fill_per_use: 90,
+                            critical_threshold: 850,
+                        ),
+                    ),
+                ],
+                agents: [],
+            )"#,
+        );
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let yard = place_by_name(world, "Yard");
+        let outhouse = place_by_name(world, "Outhouse");
+
+        assert!(world.get_component_latrine_fullness(yard).is_none());
+        assert_eq!(
+            world.get_component_latrine_fullness(outhouse),
+            Some(&LatrineFullness {
+                fill: Permille::new(700).unwrap(),
+                fill_per_use: Permille::new(90).unwrap(),
+                critical_threshold: Permille::new(850).unwrap(),
+            })
+        );
+    }
+
+    #[test]
+    fn wash_basin_state_only_set_on_wash_basin_facilities() {
+        let def = def_from_ron_str(
+            r#"(
+                seed: 42,
+                places: [
+                    (name: "Village", tags: [Village]),
+                ],
+                agents: [],
+                facilities: [
+                    (
+                        name: "Bench",
+                        workstation: Forge,
+                        location: "Village",
+                        wash_basin_state: (
+                            clean_water_units: 3,
+                            max_clean_water: 7,
+                            refill_per_tick: 2,
+                            units_per_full_wash: 3,
+                            dirtiness_level: 250,
+                            dirtiness_per_use: 75,
+                        ),
+                    ),
+                    (
+                        name: "Basin",
+                        workstation: WashBasin,
+                        location: "Village",
+                        wash_basin_state: (
+                            clean_water_units: 3,
+                            max_clean_water: 7,
+                            refill_per_tick: 2,
+                            units_per_full_wash: 3,
+                            dirtiness_level: 250,
+                            dirtiness_per_use: 75,
+                        ),
+                    ),
+                ],
+            )"#,
+        );
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let bench = named_entity(world, "Bench");
+        let basin = named_entity(world, "Basin");
+
+        assert!(world.get_component_wash_basin_state(bench).is_none());
+        assert_eq!(
+            world.get_component_wash_basin_state(basin),
+            Some(&WashBasinState {
+                clean_water_units: 3,
+                max_clean_water: 7,
+                refill_per_tick: 2,
+                units_per_full_wash: 3,
+                dirtiness_level: Permille::new(250).unwrap(),
+                dirtiness_per_use: Permille::new(75).unwrap(),
+            })
+        );
+    }
+
+    #[test]
     fn test_spawn_scenario_applies_authored_hostility() {
         let mut def = minimal_def();
         def.agents
@@ -1474,6 +1697,8 @@ mod tests {
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Herald", "Square", ControlSource::Human)],
@@ -1549,6 +1774,8 @@ mod tests {
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![
@@ -1703,12 +1930,16 @@ mod tests {
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
                 PlaceDef {
                     name: "Forest".into(),
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
             ],
             edges: vec![],
@@ -1763,6 +1994,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
@@ -1802,6 +2035,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
@@ -1841,6 +2076,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -1889,6 +2126,8 @@ mod tests {
                     base_concealment: Permille::new(400).unwrap(),
                 }),
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Scout", "Forest", ControlSource::Ai)],
@@ -2001,6 +2240,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Trader", "Market", ControlSource::Ai)],
@@ -2057,6 +2298,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Warrior", "Camp", ControlSource::Human)],
@@ -2107,12 +2350,16 @@ mod tests {
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
                 PlaceDef {
                     name: "B".into(),
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
             ],
             edges: vec![EdgeDef {
@@ -2169,12 +2416,16 @@ mod tests {
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
                 PlaceDef {
                     name: "Y".into(),
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
             ],
             edges: vec![EdgeDef {
@@ -2244,6 +2495,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Lost", "Nowhere", ControlSource::Ai)],
@@ -2286,12 +2539,16 @@ mod tests {
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
                 PlaceDef {
                     name: "Orchard".into(),
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
             ],
             edges: vec![],
@@ -2306,6 +2563,7 @@ mod tests {
                 location: "Smithy".into(),
                 merchant_storage: None,
                 contention_policy: None,
+                wash_basin_state: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Apple,
@@ -2371,6 +2629,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -2429,6 +2689,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![],
@@ -2442,6 +2704,7 @@ mod tests {
                 location: "Orchard".into(),
                 merchant_storage: None,
                 contention_policy: None,
+                wash_basin_state: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Apple,
@@ -2495,6 +2758,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -2514,6 +2779,7 @@ mod tests {
                 location: "Village".into(),
                 merchant_storage: None,
                 contention_policy: None,
+                wash_basin_state: None,
             }],
             resource_sources: vec![ResourceSourceDef {
                 commodity: CommodityKind::Water,
@@ -2591,6 +2857,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Merchant", "Market", ControlSource::Ai)],
@@ -2608,6 +2876,7 @@ mod tests {
                     display_capacity: Some(LoadUnits(100)),
                 }),
                 contention_policy: None,
+                wash_basin_state: None,
             }],
             resource_sources: vec![],
             hostilities: vec![],
@@ -2671,6 +2940,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![],
@@ -2684,6 +2955,7 @@ mod tests {
                 location: "Village".into(),
                 merchant_storage: None,
                 contention_policy: Some(policy.clone()),
+                wash_basin_state: None,
             }],
             resource_sources: vec![],
             hostilities: vec![],
@@ -2733,6 +3005,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Bot", "Void", ControlSource::Ai)],
@@ -2775,6 +3049,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -2896,6 +3172,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -2947,6 +3225,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -2997,6 +3277,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![
@@ -3074,6 +3356,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -3190,6 +3474,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -3258,6 +3544,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -3315,6 +3603,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -3399,12 +3689,16 @@ mod tests {
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
                 PlaceDef {
                     name: "Market".into(),
                     tags: vec![],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
             ],
             edges: vec![],
@@ -3529,6 +3823,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![AgentDef {
@@ -3569,6 +3865,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![minimal_agent("Holder", "Square", ControlSource::Ai)],
@@ -3653,6 +3951,8 @@ mod tests {
                 tags: vec![],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![],

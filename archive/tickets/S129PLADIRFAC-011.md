@@ -1,6 +1,6 @@
 # S129PLADIRFAC-011: Scenario authoring — hygiene Defs and spawn integration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — adds three new `*Def` wrapper types in `worldwake-cli`; extends `PlaceDef` and `FacilityDef`; updates 57 PlaceDef and ~6 FacilityDef construction sites
@@ -202,3 +202,33 @@ No update needed — `#[serde(default)]` handles missing fields. Optionally, upd
 3. `cargo build --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Added scenario-authored `PlaceDirtinessDef`, `LatrineFullnessDef`, and `WashBasinStateDef` wrappers with field-level fallback to the runtime component defaults.
+- Extended `PlaceDef` and `FacilityDef` with defaulted optional hygiene authoring fields.
+- Wired scenario spawn so every place receives `PlaceDirtiness`, only latrine-tagged places receive `LatrineFullness`, and only `WashBasin` facilities receive `WashBasinState`.
+- Updated all 57 live `PlaceDef` Rust literals and all 6 live `FacilityDef` Rust literals, including downstream CLI handlers and `golden_survival_baseline`.
+- Updated `scenario_coverage` to classify authored `place_dirtiness` and `latrine_fullness` fields instead of reporting them as unmapped authored input.
+
+## Deviations
+
+- The live implementation uses `Copy`/`Into` for the three lightweight `*Def` wrappers instead of the ticket sketch's `.as_ref().map(|def| def.clone().into())` shape.
+- No `.ron` scenario files were changed; omitted-field compatibility is handled by `#[serde(default)]` and is covered by focused spawn tests.
+
+## Verification Result
+
+- Passed `cargo test --workspace --no-run`.
+- Passed `cargo test -p worldwake-cli --lib scenario::tests:: -- --list` and confirmed the four new focused test selectors exist.
+- Passed `cargo test -p worldwake-cli --lib scenario::tests::place_def_loads_with_default_when_dirtiness_field_absent -- --exact`.
+- Passed `cargo test -p worldwake-cli --lib scenario::tests::place_def_loads_explicit_dirtiness_values -- --exact`.
+- Passed `cargo test -p worldwake-cli --lib scenario::tests::latrine_fullness_only_set_on_latrine_tagged_places -- --exact`.
+- Passed `cargo test -p worldwake-cli --lib scenario::tests::wash_basin_state_only_set_on_wash_basin_facilities -- --exact`.
+- Passed `cargo test -p worldwake-cli scenario`.
+- Passed `cargo build --workspace`.
+- Passed `cargo test --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh`, whose live gates are `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
+- After the final `scenario_coverage` feature-mapping correction, passed `cargo test -p worldwake-cli --bin scenario-coverage`, `cargo run -p worldwake-cli --bin scenario-coverage -- --check`, and `cargo clippy -p worldwake-cli --bin scenario-coverage -- -D warnings`.

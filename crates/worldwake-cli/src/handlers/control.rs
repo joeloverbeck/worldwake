@@ -159,6 +159,8 @@ mod tests {
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![
@@ -442,6 +444,8 @@ mod tests {
                 tags: vec![PlaceTag::Village],
                 visibility_profile: None,
                 sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
             }],
             edges: vec![],
             agents: vec![

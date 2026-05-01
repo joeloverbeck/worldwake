@@ -13,12 +13,12 @@ use worldwake_core::{
     ContentionDispositionProfile, ContentionPolicy, ControlSource, DisposalProfile,
     DiversificationProfile, DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile,
     ExecutionBudget, GroundComfortTag, HomeostaticNeeds, IntentionDispositionProfile,
-    JusticeDispositionProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile,
-    PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
-    PreferenceProfile, PursuitProfile, Quantity, ShelterTag, SleepQualityProfile,
-    SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WorkstationTag,
-    items::CommodityKind, topology::PlaceTag,
+    JusticeDispositionProfile, LatrineFullness, LoadUnits, MetabolismProfile,
+    ObligationSatiationProfile, PatrolProfile, PerceptionProfile, PerceptionSource, Permille,
+    PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity,
+    ShelterTag, SleepQualityProfile, SubstitutePreferences, SuccessionLaw, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WashBasinState, WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -324,6 +324,10 @@ pub struct PlaceDef {
     pub visibility_profile: Option<PlaceVisibilityProfile>,
     #[serde(default)]
     pub sleep_quality: Option<SleepQualityProfileDef>,
+    #[serde(default)]
+    pub place_dirtiness: Option<PlaceDirtinessDef>,
+    #[serde(default)]
+    pub latrine_fullness: Option<LatrineFullnessDef>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -347,6 +351,73 @@ impl SleepQualityProfileDef {
             ground_comfort: self.ground_comfort,
             recovery_modifier,
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct PlaceDirtinessDef {
+    pub value: Option<Permille>,
+    pub decay_per_tick: Option<Permille>,
+    pub dirtiness_per_use: Option<Permille>,
+}
+
+impl From<PlaceDirtinessDef> for PlaceDirtiness {
+    fn from(def: PlaceDirtinessDef) -> Self {
+        let defaults = PlaceDirtiness::default();
+        Self {
+            value: def.value.unwrap_or(defaults.value),
+            decay_per_tick: def.decay_per_tick.unwrap_or(defaults.decay_per_tick),
+            dirtiness_per_use: def.dirtiness_per_use.unwrap_or(defaults.dirtiness_per_use),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct LatrineFullnessDef {
+    pub fill: Option<Permille>,
+    pub fill_per_use: Option<Permille>,
+    pub critical_threshold: Option<Permille>,
+}
+
+impl From<LatrineFullnessDef> for LatrineFullness {
+    fn from(def: LatrineFullnessDef) -> Self {
+        let defaults = LatrineFullness::default();
+        Self {
+            fill: def.fill.unwrap_or(defaults.fill),
+            fill_per_use: def.fill_per_use.unwrap_or(defaults.fill_per_use),
+            critical_threshold: def
+                .critical_threshold
+                .unwrap_or(defaults.critical_threshold),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct WashBasinStateDef {
+    pub clean_water_units: Option<u16>,
+    pub max_clean_water: Option<u16>,
+    pub refill_per_tick: Option<u16>,
+    pub units_per_full_wash: Option<u16>,
+    pub dirtiness_level: Option<Permille>,
+    pub dirtiness_per_use: Option<Permille>,
+}
+
+impl From<WashBasinStateDef> for WashBasinState {
+    fn from(def: WashBasinStateDef) -> Self {
+        let defaults = WashBasinState::default();
+        Self {
+            clean_water_units: def.clean_water_units.unwrap_or(defaults.clean_water_units),
+            max_clean_water: def.max_clean_water.unwrap_or(defaults.max_clean_water),
+            refill_per_tick: def.refill_per_tick.unwrap_or(defaults.refill_per_tick),
+            units_per_full_wash: def
+                .units_per_full_wash
+                .unwrap_or(defaults.units_per_full_wash),
+            dirtiness_level: def.dirtiness_level.unwrap_or(defaults.dirtiness_level),
+            dirtiness_per_use: def.dirtiness_per_use.unwrap_or(defaults.dirtiness_per_use),
+        }
     }
 }
 
@@ -515,6 +586,8 @@ pub struct FacilityDef {
     pub merchant_storage: Option<MerchantStorageDef>,
     #[serde(default)]
     pub contention_policy: Option<ContentionPolicy>,
+    #[serde(default)]
+    pub wash_basin_state: Option<WashBasinStateDef>,
 }
 
 /// Optional merchant stock-storage substrate for a facility.
