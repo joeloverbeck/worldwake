@@ -1,6 +1,6 @@
 # RELIEFACT-001: Extract per-need relief-actionability predicate from emit_exploration_candidates
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` candidate generation (refactor of `emit_exploration_candidates`)
@@ -161,7 +161,7 @@ Move existing logic into per-need bodies:
 - `relief_path_actionable_dirtiness(ctx)`:
   `!wash_access_opportunities(ctx).is_empty()`
 - `relief_path_actionable_consumable(ctx, profile, need_id, matches_need)`:
-  `path_reliable && (any_local_need_relief || need_has_known_acquisition_path)`
+  `any_local_need_relief || (path_reliable && need_has_known_acquisition_path)`
   — handles Hunger, Thirst, and any other consumable-need pattern.
 - `relief_path_actionable_sleep(ctx)`: known sleep-quality place
   reachable. (If S128 coverage already encodes this, wrap the
@@ -254,3 +254,59 @@ not-actionable-when-it-doesn't.
 5. `cargo test --release -p worldwake-ai --test golden_survival_contested no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`
 6. `cargo test --release -p worldwake-ai --test golden_survival_scattered no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`
 7. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Replaced the inline dirtiness `if`/generic consumable `else` branch
+  in `emit_exploration_candidates` with a private exhaustive
+  `relief_path_actionable(...)` dispatch over `HomeostaticNeedId`.
+- Preserved the existing exploration fallback emission set as
+  Hunger/Thirst/Dirtiness only. Fatigue and Bladder are still declared
+  in the actionability dispatch for exhaustiveness, but
+  `emit_exploration_candidates` does not iterate them, so this refactor
+  does not start resetting non-acquisition exhaustion counters or
+  emitting new fatigue/bladder exploration candidates.
+- Preserved the live consumable semantics exactly: local relief is
+  actionable regardless of acquisition-exhaustion reliability, while a
+  known acquisition path is gated by
+  `profile.acquisition_failure_threshold`.
+- Added focused predicate coverage for Dirtiness, consumables, Sleep,
+  and Relieve, plus a regression assertion that fatigue acquisition
+  exhaustion is not reset by the exploration fallback loop.
+
+## Deviations
+
+- The ticket's consumable sketch originally grouped local relief under
+  `path_reliable`. Live code did not: local relief already bypassed the
+  acquisition-failure threshold. The implementation and ticket text now
+  preserve the live `local || (path_reliable && known_path)` contract.
+- The ticket listed
+  `golden_survival_contested::no_stuck_idle_windows_with_elevated_needs`
+  as a must-pass command. The command fails with
+  `Agent B` stuck idle from tick 349 to 389 with max need 799, and the
+  same failure reproduces in a clean `HEAD` worktree at commit
+  `564ddcea`. That makes it a pre-existing contested-golden blocker,
+  not fallout from this refactor. Follow-up:
+  `tickets/CONTESTIDLE-001-pre-existing-survival-contested-stuck-idle.md`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib relief_path_actionable`.
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_keeps_dirtiness_exploration_when_only_water_path_is_known -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::dirtiness_emits_water_acquisition_when_no_clean_wash_basin_is_known -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::fully_blocked_self_care_source_emits_exploration_fallback -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib candidate_generation::tests::generate_candidates_records_pending_reset_when_need_pressure_drops_below_threshold -- --exact`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_baseline no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`.
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_scattered no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`.
+- Passed `cargo test --release -p worldwake-ai --test golden_place_dirtiness -- --test-threads=1`.
+- Passed `cargo test --release -p worldwake-ai --test golden_sleep_episode -- --test-threads=1`.
+- Passed `./scripts/verify.sh`, whose live gate set is
+  `cargo fmt --all -- --check`, `cargo test --workspace`,
+  `bash scripts/check_active_goal_removed.sh`,
+  `cargo clippy --workspace`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
+- Failed, pre-existing: `cargo test --release -p worldwake-ai --test golden_survival_contested no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`. The same command failed in a clean temporary `HEAD` worktree with the same Agent B tick-349..389 stuck-idle window.

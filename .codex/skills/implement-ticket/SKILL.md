@@ -9,7 +9,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 
 When several reassessment branches seem applicable at once, use this priority order before coding: prove the live branch first; if the drafted premise is false, rewrite the ticket/spec immediately; if the live branch still supports a narrower complete slice inside the ticket's stated domain, finish that slice and create/update a follow-up ticket for the disproved remainder; use 1-3-1 only when the remaining boundary change is architecturally ambiguous, materially expands scope, or needs a user decision. Follow the canonical mixed-outcome branch in `Mixed outcome: narrow fix landed, broader golden still false` below. `references/mismatch-handling.md` is supplemental guidance for that flow and does not override the explicit mixed-outcome and narrowing rules in this skill.
 
-An implement-ticket invocation authorizes narrow truthing edits to the active ticket and directly cited active spec files when those edits are required to make the implemented seam, acceptance criteria, or verification record truthful. It does not authorize broader repo-policy, process, or architectural-doc rewrites; for those, propose the doc update or use 1-3-1 when the decision is blocking.
+An implement-ticket invocation authorizes narrow truthing edits to the active ticket and directly cited active spec files when those edits are required to make the implemented seam, acceptance criteria, or verification record truthful. It also authorizes narrow status/dependency truth-sync edits to `specs/IMPLEMENTATION-ORDER.md` when Step 1 or closeout checks find text that is now false about the current ticket/spec boundary. It does not authorize broader repo-policy, process, or architectural-doc rewrites; for those, propose the doc update or use 1-3-1 when the decision is blocking.
 
 ## Top Rules
 
@@ -310,6 +310,7 @@ When a tooling or CI-script ticket needs a deliberate negative probe and the own
 #### Focused vs. broadened scope isolation
 
 If focused proof passes and broadened verification fails in an unrelated existing test/fixture family, isolate that failure immediately. Create or update the owning ticket, record the blocker in the current ticket closeout, and keep the current ticket scoped to the invariant that was actually proved instead of absorbing the unrelated fallout by default.
+When a required broad or ignored golden fails but the focused proof, source diff, and other broad gates suggest the current ticket is not causal, prove pre-existence before labeling it unrelated. Prefer a clean baseline worktree at `HEAD` or another explicit clean baseline run of the same command; record the compared commit, command, and matching failure signature in the active ticket closeout and create/update the owning follow-up ticket.
 
 When broadened verification fails on a mechanical, semantics-preserving lint in code outside the ticket's behavioral owner, first confirm it is not a hidden contract change. If it is trivial verification hygiene such as a Clippy-suggested `map_or` rewrite, the current ticket may absorb the narrow cleanup so the CI-matching gate can pass; record the touched files and no-semantic-change nature in closeout, then rerun the full wrapper or equivalent live gate set after the lint cleanup. If the lint requires judgment, changes public API shape, or affects behavior, hand it off as unrelated fallout instead of absorbing it silently.
 
@@ -343,6 +344,7 @@ For detailed AI runtime, planner-boundary, hybrid golden, scenario-metadata, fix
 #### Manual probes and temporary scaffolding
 
 Use `references/verification.md` for cleanup-safe manual-probe details. Before broadened verification, remove temporary diagnostic tests, trace prints, probe assertions, and marker strings unless the ticket explicitly owns keeping that instrumentation; when marker names were used, run a targeted `rg` cleanup check and then rerun the narrowest affected proof.
+Temporary diagnostic worktrees are acceptable for clean-baseline reproduction when a failure may be pre-existing. Put them outside the repository checkout, use them only for isolated proof, then remove them before closeout or explicitly report any remaining path and why it was left behind.
 
 #### Save-format and serialized-surface verification
 

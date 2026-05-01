@@ -527,7 +527,7 @@ Derived from the 2026-05-01 `/brainstorm` triage of the four CIREM tickets (`S12
 S132 (independent — frontier-exhaustion strategy as goal-kind property)
 BELASPCOV-001 ticket (completed — claim-aspect coverage audit)
 INFRARET-001 ticket (completed — infrastructure retention generalized)
-RELIEFACT-001 ticket (independent — per-need relief-actionability predicate)
+RELIEFACT-001 ticket (completed — per-need relief-actionability predicate)
 LOCROOT-001 ticket (completed — direct-root synthesis locality audit)
 ```
 
@@ -536,7 +536,7 @@ LOCROOT-001 ticket (completed — direct-root synthesis locality audit)
 - **S132**: Frontier-Exhaustion Strategy as Goal-Kind Property — replace the per-`GoalKind` allow-list in `frontier_exhaustion_entry` with a goal-kind-property dispatch (`PermanentUntilInvalidator | CooldownRetry`). Closes the pattern of S129CIREM-002 / S129CIREM-004 each adding a one-off variant to the switch. FND-21 / FND-22A alignment.
 - **BELASPCOV-001** (ticket): `BelievedEntityState ↔ EntityBeliefAspect` claim-aspect coverage audit — produced `docs/audits/2026-05-01-believed-entity-state-claim-coverage.md`, found no mutable belief-content gaps, and created no per-gap secondary tickets. CIREM-003's `WashBasinState` claim-aspect addition was ad hoc; this ticket verified the current summary fields before the next chronic-stall failure mode.
 - **INFRARET-001** (ticket): COMPLETED — generalized `state_salience_boost` from two hardcoded shape pairs to a direct-observation plus need-pressure predicate over current opportunity aspects. Soft dependency on BELASPCOV-001 was satisfied; the completed audit found no additional aspects to fold in.
-- **RELIEFACT-001** (ticket): Extract per-need relief-actionability predicate from `emit_exploration_candidates` (replaces the inline dirtiness `if` branch added by CIREM-002 with a per-need dispatch).
+- **RELIEFACT-001** (ticket): COMPLETED — extracted per-need relief-actionability predicate from `emit_exploration_candidates` (replaced the inline dirtiness `if` branch added by CIREM-002 with a per-need dispatch).
 - **LOCROOT-001** (ticket): COMPLETED — audited direct-root synthesis (`GoalOffer::synthesized_root_candidate_targets`) for arms whose action precondition is `EntityAtActorPlace` / `ActorPlace`, produced `docs/audits/2026-05-01-direct-root-synthesis-locality.md`, and gated co-location-bearing synthesized direct roots so remote targets compose through travel before local action.
 
 ### Phase 10 Gate

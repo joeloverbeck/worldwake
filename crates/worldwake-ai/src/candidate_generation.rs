@@ -30,15 +30,15 @@ use worldwake_core::{
     BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
     CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
     EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation, GoalKey,
-    GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-    OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
-    ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
-    Quantity, RecordData, RecordEntryId, RecordKind, RightKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, TradeCategory, UtilityProfile,
-    ViolationId, ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
-    current_institutional_belief_topics, load_per_unit,
+    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation,
+    ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId,
+    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
+    PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
+    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordEntryId, RecordKind,
+    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
+    TradeCategory, UtilityProfile, ViolationId, ViolationKind, ViolationMemory, WorkstationTag,
+    classify_communication, current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -2789,23 +2789,8 @@ fn emit_exploration_candidates(
         return;
     };
 
-    for (need_id, pressure, matches_need) in [
-        (
-            HomeostaticNeedId::Hunger,
-            needs.hunger,
-            relieves_hunger as fn(CommodityKind) -> bool,
-        ),
-        (
-            HomeostaticNeedId::Thirst,
-            needs.thirst,
-            relieves_thirst as fn(CommodityKind) -> bool,
-        ),
-        (
-            HomeostaticNeedId::Dirtiness,
-            needs.dirtiness,
-            relieves_dirtiness as fn(CommodityKind) -> bool,
-        ),
-    ] {
+    for need_id in EXPLORATION_FALLBACK_NEEDS {
+        let pressure = homeostatic_need_pressure(&needs, need_id);
         if pressure < profile.need_activation_threshold {
             if ctx.view.acquisition_exhaustion_count(ctx.agent, need_id) > 0 {
                 pending_acquisition_exhaustion_resets.insert(need_id);
@@ -2813,19 +2798,8 @@ fn emit_exploration_candidates(
             continue;
         }
 
-        if need_id == HomeostaticNeedId::Dirtiness {
-            let wash_access_known = !wash_access_opportunities(ctx).is_empty();
-            if wash_access_known {
-                continue;
-            }
-        } else {
-            let path_reliable = ctx.view.acquisition_exhaustion_count(ctx.agent, need_id)
-                < profile.acquisition_failure_threshold;
-            if any_local_need_relief(ctx.view, ctx.agent, ctx.place, matches_need)
-                || (path_reliable && need_has_known_acquisition_path(ctx, matches_need))
-            {
-                continue;
-            }
+        if relief_path_actionable(ctx, &profile, need_id) {
+            continue;
         }
 
         emit_candidate_with_trace(
@@ -2842,6 +2816,57 @@ fn emit_exploration_candidates(
             EvidenceTrace::default(),
         );
     }
+}
+
+const EXPLORATION_FALLBACK_NEEDS: [HomeostaticNeedId; 3] = [
+    HomeostaticNeedId::Hunger,
+    HomeostaticNeedId::Thirst,
+    HomeostaticNeedId::Dirtiness,
+];
+
+fn relief_path_actionable(
+    ctx: &GenerationContext<'_>,
+    profile: &ExplorationProfile,
+    need_id: HomeostaticNeedId,
+) -> bool {
+    match need_id {
+        HomeostaticNeedId::Hunger => {
+            relief_path_actionable_consumable(ctx, profile, need_id, relieves_hunger)
+        }
+        HomeostaticNeedId::Thirst => {
+            relief_path_actionable_consumable(ctx, profile, need_id, relieves_thirst)
+        }
+        HomeostaticNeedId::Fatigue => relief_path_actionable_sleep(ctx),
+        HomeostaticNeedId::Bladder => relief_path_actionable_relieve(),
+        HomeostaticNeedId::Dirtiness => relief_path_actionable_dirtiness(ctx),
+    }
+}
+
+fn relief_path_actionable_consumable(
+    ctx: &GenerationContext<'_>,
+    profile: &ExplorationProfile,
+    need_id: HomeostaticNeedId,
+    matches_need: fn(CommodityKind) -> bool,
+) -> bool {
+    if any_local_need_relief(ctx.view, ctx.agent, ctx.place, matches_need) {
+        return true;
+    }
+
+    let path_reliable = ctx.view.acquisition_exhaustion_count(ctx.agent, need_id)
+        < profile.acquisition_failure_threshold;
+    path_reliable && need_has_known_acquisition_path(ctx, matches_need)
+}
+
+fn relief_path_actionable_sleep(ctx: &GenerationContext<'_>) -> bool {
+    !sleep_candidate_places(ctx).is_empty()
+}
+
+fn relief_path_actionable_relieve() -> bool {
+    true
+}
+
+fn relief_path_actionable_dirtiness(ctx: &GenerationContext<'_>) -> bool {
+    !wash_access_opportunities(ctx).is_empty()
 }
 
 fn emit_exploration_candidates_for_blocked_self_care(
@@ -7434,6 +7459,31 @@ mod tests {
             .any(|candidate| candidate.key.kind == goal)
     }
 
+    fn test_generation_context<'a>(
+        view: &'a TestBeliefView,
+        agent: EntityId,
+        place: EntityId,
+        blocked: &'a BlockerMemory,
+        discrepancies: &'a DiscrepancyMemory,
+        violation_memory: &'a ViolationMemory,
+        recipes: &'a RecipeRegistry,
+    ) -> GenerationContext<'a> {
+        GenerationContext {
+            view,
+            agent,
+            place: Some(place),
+            travel_horizon: 6,
+            enterprise: EnterpriseSignals::default(),
+            blocked,
+            discrepancies,
+            violation_memory,
+            recipes,
+            current_tick: view.current_tick,
+            tracing_enabled: false,
+            current_plan: None,
+        }
+    }
+
     fn sleep_profile(recovery_modifier: u16) -> SleepQualityProfile {
         SleepQualityProfile {
             shelter: ShelterTag::Shelter,
@@ -9934,6 +9984,247 @@ mod tests {
                 purpose: CommodityPurpose::SelfConsume,
                 quantity: AcquisitionQuantity::single(),
             }
+        ));
+    }
+
+    #[test]
+    fn relief_path_actionable_dirtiness_returns_true_when_clean_basin_known() {
+        let agent = entity(1);
+        let home = entity(10);
+        let basin = entity(20);
+        let profile = ExplorationProfile::default();
+        let blocked = BlockerMemory::default();
+        let discrepancies = DiscrepancyMemory::default();
+        let violation_memory = ViolationMemory::default();
+        let recipes = RecipeRegistry::new();
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, basin]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(basin, EntityKind::Facility);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(basin, home);
+        view.entities_at.insert(home, vec![agent, basin]);
+        view.workstations
+            .insert((home, WorkstationTag::WashBasin), vec![basin]);
+        view.wash_basin_states
+            .insert(basin, WashBasinState::default());
+        let ctx = test_generation_context(
+            &view,
+            agent,
+            home,
+            &blocked,
+            &discrepancies,
+            &violation_memory,
+            &recipes,
+        );
+
+        assert!(super::relief_path_actionable(
+            &ctx,
+            &profile,
+            HomeostaticNeedId::Dirtiness
+        ));
+
+        view.wash_basin_states.insert(
+            basin,
+            WashBasinState {
+                clean_water_units: 0,
+                ..WashBasinState::default()
+            },
+        );
+        let ctx = test_generation_context(
+            &view,
+            agent,
+            home,
+            &blocked,
+            &discrepancies,
+            &violation_memory,
+            &recipes,
+        );
+
+        assert!(!super::relief_path_actionable(
+            &ctx,
+            &profile,
+            HomeostaticNeedId::Dirtiness
+        ));
+    }
+
+    #[test]
+    fn relief_path_actionable_consumable_returns_true_when_local_or_path_reliable() {
+        let agent = entity(1);
+        let home = entity(10);
+        let pantry = entity(11);
+        let bread_lot = entity(20);
+        let remote_source = entity(21);
+        let mut profile = ExplorationProfile {
+            acquisition_failure_threshold: 1,
+            ..ExplorationProfile::default()
+        };
+        let blocked = BlockerMemory::default();
+        let discrepancies = DiscrepancyMemory::default();
+        let violation_memory = ViolationMemory::default();
+        let recipes = RecipeRegistry::new();
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, bread_lot, remote_source]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(bread_lot, EntityKind::ItemLot);
+        view.entity_kinds
+            .insert(remote_source, EntityKind::Facility);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(bread_lot, home);
+        view.effective_places.insert(remote_source, pantry);
+        view.entities_at.insert(home, vec![agent, bread_lot]);
+        view.entities_at.insert(pantry, vec![remote_source]);
+        view.adjacent_places.insert(home, vec![pantry]);
+        view.adjacent_places.insert(pantry, vec![home]);
+        view.lot_commodities.insert(bread_lot, CommodityKind::Bread);
+        view.acquisition_exhaustion_counts
+            .insert((agent, HomeostaticNeedId::Hunger), 3);
+        let ctx = test_generation_context(
+            &view,
+            agent,
+            home,
+            &blocked,
+            &discrepancies,
+            &violation_memory,
+            &recipes,
+        );
+
+        assert!(super::relief_path_actionable(
+            &ctx,
+            &profile,
+            HomeostaticNeedId::Hunger
+        ));
+
+        view.entities_at.insert(home, vec![agent]);
+        view.effective_places.remove(&bread_lot);
+        view.sources_at
+            .insert((pantry, CommodityKind::Bread), vec![remote_source]);
+        view.resource_sources.insert(
+            remote_source,
+            ResourceSource {
+                commodity: CommodityKind::Bread,
+                available_quantity: Quantity(4),
+                max_quantity: Quantity(4),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+        view.acquisition_exhaustion_counts
+            .insert((agent, HomeostaticNeedId::Hunger), 0);
+        let ctx = test_generation_context(
+            &view,
+            agent,
+            home,
+            &blocked,
+            &discrepancies,
+            &violation_memory,
+            &recipes,
+        );
+
+        assert!(super::relief_path_actionable(
+            &ctx,
+            &profile,
+            HomeostaticNeedId::Hunger
+        ));
+
+        profile.acquisition_failure_threshold = 1;
+        view.acquisition_exhaustion_counts
+            .insert((agent, HomeostaticNeedId::Hunger), 1);
+        let ctx = test_generation_context(
+            &view,
+            agent,
+            home,
+            &blocked,
+            &discrepancies,
+            &violation_memory,
+            &recipes,
+        );
+
+        assert!(!super::relief_path_actionable(
+            &ctx,
+            &profile,
+            HomeostaticNeedId::Hunger
+        ));
+    }
+
+    #[test]
+    fn relief_path_actionable_sleep_returns_true_when_sleep_site_known() {
+        let agent = entity(1);
+        let camp = entity(10);
+        let profile = ExplorationProfile::default();
+        let blocked = BlockerMemory::default();
+        let discrepancies = DiscrepancyMemory::default();
+        let violation_memory = ViolationMemory::default();
+        let recipes = RecipeRegistry::new();
+        let mut view = TestBeliefView::default();
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, camp);
+        view.sleep_quality_profiles.insert(camp, sleep_profile(900));
+        let ctx = test_generation_context(
+            &view,
+            agent,
+            camp,
+            &blocked,
+            &discrepancies,
+            &violation_memory,
+            &recipes,
+        );
+
+        assert!(super::relief_path_actionable(
+            &ctx,
+            &profile,
+            HomeostaticNeedId::Fatigue
+        ));
+
+        let ctx = GenerationContext {
+            view: &view,
+            agent,
+            place: None,
+            travel_horizon: 6,
+            enterprise: EnterpriseSignals::default(),
+            blocked: &blocked,
+            discrepancies: &discrepancies,
+            violation_memory: &violation_memory,
+            recipes: &recipes,
+            current_tick: Tick(0),
+            tracing_enabled: false,
+            current_plan: None,
+        };
+
+        assert!(!super::relief_path_actionable(
+            &ctx,
+            &profile,
+            HomeostaticNeedId::Fatigue
+        ));
+    }
+
+    #[test]
+    fn relief_path_actionable_relieve_returns_true_for_wilderness_path() {
+        let agent = entity(1);
+        let camp = entity(10);
+        let profile = ExplorationProfile::default();
+        let blocked = BlockerMemory::default();
+        let discrepancies = DiscrepancyMemory::default();
+        let violation_memory = ViolationMemory::default();
+        let recipes = RecipeRegistry::new();
+        let view = TestBeliefView::default();
+        let ctx = test_generation_context(
+            &view,
+            agent,
+            camp,
+            &blocked,
+            &discrepancies,
+            &violation_memory,
+            &recipes,
+        );
+
+        assert!(super::relief_path_actionable(
+            &ctx,
+            &profile,
+            HomeostaticNeedId::Bladder
         ));
     }
 
@@ -19896,6 +20187,8 @@ mod tests {
         );
         view.acquisition_exhaustion_counts
             .insert((agent, HomeostaticNeedId::Hunger), 2);
+        view.acquisition_exhaustion_counts
+            .insert((agent, HomeostaticNeedId::Fatigue), 2);
         view.beliefs.insert(
             agent,
             vec![(

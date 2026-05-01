@@ -44,7 +44,7 @@ producing one-off CIREM-style fixes if not addressed.
   to the switch. Soft depends on BELASPCOV-001.
 
 - **RELIEFACT-001** — Extract per-need relief-actionability predicate
-  → `tickets/RELIEFACT-001-per-need-relief-actionability-predicate.md`.
+  → `archive/tickets/RELIEFACT-001-per-need-relief-actionability-predicate.md`.
   Smell: CIREM-002 added `if need_id == HomeostaticNeedId::Dirtiness`
   branch in `emit_exploration_candidates`. Per-need relief substrate
   should be declarative, not enumerated.
