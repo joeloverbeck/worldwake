@@ -37,7 +37,7 @@ producing one-off CIREM-style fixes if not addressed.
 
 - **INFRARET-001** — Generalize direct-observed concrete-opportunity
   retention →
-  `tickets/INFRARET-001-generalize-direct-observed-infrastructure-retention.md`.
+  `archive/tickets/INFRARET-001-generalize-direct-observed-infrastructure-retention.md`.
   Smell: CIREM-003's `state_salience_boost` hardcodes two shape pairs
   (wash-basin-with-state, resource-source-with-workstation-tag).
   Future opportunity infrastructure inherits no retention until added

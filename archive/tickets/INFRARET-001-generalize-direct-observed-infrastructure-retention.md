@@ -1,6 +1,6 @@
 # INFRARET-001: Generalize direct-observed concrete-opportunity retention
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core` belief retention helper (`state_salience_boost`)
@@ -58,12 +58,15 @@ debt and is brittle against new aspect variants.
    opportunity aspects and read:
    *for each aspect the agent currently has a need for, if the entity
    carries that aspect via a direct-observation claim, return boost*.
-4. **Mismatch + correction**: today's hardcoded matches are correct
-   for the wash-basin and resource-source cases. The risk is silent
-   regression: when a future spec adds a new opportunity infrastructure
-   class, the retention shape match will not include it, and the next
-   chronic-stall failure mode will be hidden until a golden surfaces
-   it. This ticket eliminates that fragility.
+4. **Mismatch + correction**: today's hardcoded matches were correct
+   for the wash-basin and resource-source cases but fired
+   unconditionally once the shape matched. The live `HomeostaticNeedId`
+   variants are `Hunger`, `Thirst`, `Fatigue`, `Bladder`, and
+   `Dirtiness`; the drafted `Eat` / `Drink` wording was stale. This
+   ticket eliminates the hardcoded shape switch and gates the
+   infrastructure boost on a direct-observation source plus a
+   need-relevant opportunity for a need at or above the salience
+   urgency threshold.
 5. **Heuristic Removal Discipline (precision-rules §12)**: the boost
    value remains the same; the substrate change is *what gets
    boosted*, not *how much*. Replacing two shape checks with a
@@ -71,12 +74,11 @@ debt and is brittle against new aspect variants.
    contract.
 6. **Coverage gap (precision-rules §3)**: existing focused coverage at
    `test_prune_salience_boost_preserves_observed_wash_basin_infrastructure`
-   and the resource-source companion test must continue to pass after
-   refactor. New focused coverage for the general predicate (a fake
-   aspect that exercises the predicate without coupling to the two
-   live shapes) closes the false-confidence gap that the existing
-   tests validate the live shapes specifically rather than the
-   underlying contract.
+   and the resource-source companion test now preserves the same live
+   opportunity classes under relevant pressure instead of a sated need
+   profile. New focused coverage for the generalized predicate covers
+   the two current live opportunity aspects and the no-boost negative
+   paths.
 7. **Coordination with BELASPCOV-001**: BELASPCOV-001 completed as an
    audit-only ticket and created no per-gap secondary tickets. This
    ticket no longer needs to wait for new aspect findings; it should
@@ -104,7 +106,7 @@ debt and is brittle against new aspect variants.
    continues to pass.
 2. **Resource-source retention** (existing CIREM-003 contract) ->
    focused unit test
-   `test_prune_salience_boost_preserves_observed_resource_source_infrastructure`
+   `test_prune_salience_boost_preserves_claim_backed_resource_infrastructure`
    continues to pass.
 3. **Generalized predicate** -> new focused unit test verifies the
    predicate fires for a synthetic state carrying a need-relevant
@@ -130,12 +132,12 @@ population (matching today's behavior + closing the natural gap):
 | Need | Opportunity aspects |
 |---|---|
 | `Dirtiness` | `WashBasinState` |
-| `Eat`, `Drink`, `Hunger`, `Thirst` | `ResourceAvailable(commodity)` (gated on `WorkstationPresent` like the current resource-source check) |
-| Other needs | (empty until a future spec declares an opportunity aspect) |
+| `Hunger`, `Thirst` | `ResourceAvailable(commodity)` when the commodity's consumable profile relieves that need (gated on `WorkstationPresent` like the current resource-source check) |
+| `Fatigue`, `Bladder` | (empty until a future spec declares an opportunity aspect) |
 
-The map is a `match` over `HomeostaticNeedId` returning a small
-`&'static [EntityBeliefAspect]`-style iterator. No allocation per
-call.
+The map is a private `match` over `HomeostaticNeedId` plus the current
+summary fields that hydrate from `EntityBeliefAspect`. No allocation
+per call.
 
 ### 2. Refactor `state_salience_boost`
 
@@ -172,14 +174,18 @@ predicate above includes the
 
 ### 4. Update / extend focused unit tests
 
-- Keep the wash-basin and resource-source tests as-is — they remain
-  the live contract for the two known opportunity classes.
+- Keep the wash-basin and resource-source tests, but seed relevant
+  pressure explicitly — they remain the live contract for the two
+  known opportunity classes.
 - Add `state_salience_boost_returns_boost_for_each_pressuring_need_with_opportunity_aspect`
   that drives the predicate against a synthetic entity carrying a
   need-relevant aspect for a per-test-parameterized need.
 - Add `state_salience_boost_does_not_boost_unrelated_facility_under_pressure`
   asserting that an entity without any opportunity aspect does not
   receive the boost.
+- Add `state_salience_boost_does_not_boost_resource_that_does_not_relieve_pressuring_need`
+  asserting that a resource source for a commodity that does not
+  relieve the pressuring need does not receive the boost.
 - Add `state_salience_boost_does_not_boost_indirect_observation_claim_even_with_aspect`
   to lock the direct-observation gate.
 
@@ -210,12 +216,14 @@ predicate above includes the
    (new)
 5. `state_salience_boost_does_not_boost_unrelated_facility_under_pressure`
    (new)
-6. `state_salience_boost_does_not_boost_indirect_observation_claim_even_with_aspect`
+6. `state_salience_boost_does_not_boost_resource_that_does_not_relieve_pressuring_need`
    (new)
-7. `cargo test -p worldwake-core`
-8. `cargo test -p worldwake-ai --test golden_activation_decay`
-9. `cargo test --release -p worldwake-ai --test golden_survival_tell -- --ignored --test-threads=1`
-10. `./scripts/verify.sh`
+7. `state_salience_boost_does_not_boost_indirect_observation_claim_even_with_aspect`
+   (new)
+8. `cargo test -p worldwake-core`
+9. `cargo test -p worldwake-ai --test golden_activation_decay`
+10. `cargo test --release -p worldwake-ai --test golden_survival_tell -- --ignored --test-threads=1`
+11. `./scripts/verify.sh`
 
 ### Invariants
 
@@ -238,7 +246,9 @@ predicate above includes the
    — new
 2. `crates/worldwake-core/src/belief.rs::tests::state_salience_boost_does_not_boost_unrelated_facility_under_pressure`
    — new
-3. `crates/worldwake-core/src/belief.rs::tests::state_salience_boost_does_not_boost_indirect_observation_claim_even_with_aspect`
+3. `crates/worldwake-core/src/belief.rs::tests::state_salience_boost_does_not_boost_resource_that_does_not_relieve_pressuring_need`
+   — new
+4. `crates/worldwake-core/src/belief.rs::tests::state_salience_boost_does_not_boost_indirect_observation_claim_even_with_aspect`
    — new
 
 ### Commands
@@ -248,3 +258,50 @@ predicate above includes the
 3. `cargo test -p worldwake-ai --test golden_activation_decay`
 4. `cargo test --release -p worldwake-ai --test golden_survival_tell -- --ignored --test-threads=1`
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Replaced the two hardcoded infrastructure shape checks in
+  `state_salience_boost` with a private pressure-aware opportunity
+  predicate.
+- Preserved the existing item-lot fallback salience behavior.
+- Updated existing wash-basin and resource-source retention tests to
+  prove retention under the relevant pressuring need rather than a
+  sated profile.
+- Added focused tests for the generalized predicate, unrelated
+  facilities, commodity-irrelevant resource sources, and indirect-source
+  non-retention.
+
+## Deviations
+
+- Corrected stale `Eat` / `Drink` wording to the live
+  `HomeostaticNeedId` variants: `Hunger`, `Thirst`, `Fatigue`,
+  `Bladder`, and `Dirtiness`.
+- The landed helper does not allocate or return a literal
+  `&'static [EntityBeliefAspect]`; `ResourceAvailable(commodity)` is a
+  parameterized aspect, so the live implementation uses a private
+  need-to-state predicate over the current hydrated summary fields and
+  the commodity's concrete consumable profile.
+- The existing infrastructure retention tests were not kept
+  byte-for-byte as-is because the ticket's invariant requires a
+  pressuring need.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib state_salience_boost -- --list`
+- Passed `cargo test -p worldwake-core --lib state_salience_boost`
+- Passed `cargo test -p worldwake-core --lib test_prune_salience_boost_preserves`
+- Passed `cargo test -p worldwake-core`
+- Passed `cargo test -p worldwake-ai --test golden_activation_decay`
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_tell -- --ignored --test-threads=1`
+- Passed `cargo test -p worldwake-ai --test golden_place_dirtiness`
+- Passed `./scripts/verify.sh`, whose live gates are:
+  `cargo fmt --all -- --check`, `cargo test --workspace`,
+  `bash scripts/check_active_goal_removed.sh`,
+  `cargo clippy --workspace`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
+- Post-verification Markdown closeout edits were checked with
+  `git diff --check`.
