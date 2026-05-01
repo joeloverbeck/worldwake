@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 34
 - Files contributing `golden_*` tests: 34
-- Total `golden_*` tests: 160
+- Total `golden_*` tests: 162
 
 ## Per-File Inventory
 
@@ -24,7 +24,7 @@ Do not hand-edit it.
 | `golden_need_projection.rs` | 1 |
 | `golden_offices.rs` | 12 |
 | `golden_perception_exposure.rs` | 7 |
-| `golden_place_dirtiness.rs` | 8 |
+| `golden_place_dirtiness.rs` | 9 |
 | `golden_planner_pathology.rs` | 3 |
 | `golden_portfolio_planning.rs` | 1 |
 | `golden_quantity_aware_acquisition.rs` | 5 |
@@ -43,7 +43,7 @@ Do not hand-edit it.
 | `golden_survival_preferences.rs` | 2 |
 | `golden_survival_production.rs` | 2 |
 | `golden_survival_scattered.rs` | 6 |
-| `golden_survival_tell.rs` | 1 |
+| `golden_survival_tell.rs` | 2 |
 | `golden_survival_theft.rs` | 2 |
 | `golden_survival_trade.rs` | 2 |
 | `golden_travel_physiology.rs` | 12 |
@@ -161,6 +161,7 @@ Do not hand-edit it.
 - `latrine_overflow_creates_waste_at_place_and_increments_place_dirtiness`
 - `basin_natural_refill_from_colocated_water_source`
 - `wash_ai_selects_non_empty_basin_when_other_basin_is_empty`
+- `wash_re_emerges_after_first_cycle_drops_dirtiness_below_critical`
 - `place_dirtiness_saturates_with_zero_decay`
 - `wash_basin_plateaus_at_zero_with_zero_refill`
 
@@ -284,6 +285,7 @@ Do not hand-edit it.
 ### `golden_survival_tell.rs`
 
 - `survival_tell_lands_row_five`
+- `listener_with_critical_dirtiness_breaks_off_tell_to_wash`
 
 ### `golden_survival_theft.rs`
 

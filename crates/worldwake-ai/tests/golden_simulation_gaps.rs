@@ -395,6 +395,7 @@ fn run_max_idle_under_remote_resource_scarcity(
 //   plan -> OrchardFarm arrival -> remote acquisition -> consumption.
 
 #[test]
+#[ignore = "CI-only: scenario-style simulation-gap golden; run via golden-simulation-gaps workflow"]
 fn golden_remote_travel_when_local_supply_exhausted() {
     let _ = run_remote_travel_when_local_supply_exhausted(Seed([176; 32]));
 }
@@ -421,6 +422,7 @@ fn golden_remote_travel_when_local_supply_exhausted() {
 //   plus local self-care -> planner fallback/execution -> bounded idle streak.
 
 #[test]
+#[ignore = "CI-only: scenario-style simulation-gap golden; run via golden-simulation-gaps workflow"]
 fn golden_max_idle_under_remote_resource_scarcity() {
     let _ = run_max_idle_under_remote_resource_scarcity(Seed([177; 32]));
 }
@@ -669,6 +671,7 @@ fn run_multi_agent_convergence(
 //   across multiple agents -> lawful travel start -> OrchardFarm arrival.
 
 #[test]
+#[ignore = "CI-only: scenario-style simulation-gap golden; run via golden-simulation-gaps workflow"]
 fn golden_multi_agent_convergence() {
     let _ = run_multi_agent_convergence(Seed([178; 32]));
 }
@@ -1039,6 +1042,7 @@ fn run_harvest_to_consume(seed: Seed) -> (HarvestToConsumeObservation, StateHash
 //   load -> DeadAt with cause plus EventTag::Death -> DecisionOutcome::Dead.
 
 #[test]
+#[ignore = "CI-only: scenario-style simulation-gap golden; run via golden-simulation-gaps workflow"]
 fn golden_death_traceability() {
     let _ = run_death_traceability(Seed([179; 32]));
 }
@@ -1067,6 +1071,7 @@ fn golden_death_traceability() {
 //   committed harvest action -> committed consume action -> lower thirst/hunger.
 
 #[test]
+#[ignore = "CI-only: scenario-style simulation-gap golden; run via golden-simulation-gaps workflow"]
 fn golden_harvest_to_consume() {
     let _ = run_harvest_to_consume(Seed([180; 32]));
 }

@@ -22,7 +22,7 @@ Scenarios: 3
 
 **Cross-system chain**: seeded direct belief -> no re-observation refresh -> threshold-edge retention -> first
 
-### Scenario 146: Need Salience Extends Item Retention But Not Facility Retention
+### Scenario 146: Need Salience Extends Concrete Opportunity Retention
 
 - Source: `golden_activation_decay.rs:360`
 - Systems: Perception
@@ -35,7 +35,7 @@ Scenarios: 3
 
 **Setup**: An urgently hungry inert observer at `VillageSquare` starts with two remote
 
-**Proves**: The live salience boost extends retention only for the item belief. The facility belief
+**Proves**: The live salience boost extends retention for concrete opportunity beliefs: portable
 
 **Cross-system chain**: seeded stale item + facility beliefs -> urgent hunger retained in agent state ->
 

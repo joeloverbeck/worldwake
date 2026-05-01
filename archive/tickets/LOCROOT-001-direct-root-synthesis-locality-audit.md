@@ -1,9 +1,9 @@
 # LOCROOT-001: Audit direct-root synthesis for `EntityAtActorPlace` / `ActorPlace`-precondition actions
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: LOW
 **Effort**: Small
-**Engine Changes**: Possibly — depending on audit findings, may add locality gates to additional `synthesized_root_candidate_targets` arms
+**Engine Changes**: Yes — added synthesis-side locality gates to co-location-bearing direct-root arms
 **Deps**: archive/specs/S129-place-dirtiness-facility-wear.md, archive/tickets/S129CIREM-003-tell-session-vs-self-care.md
 
 ## Problem
@@ -44,10 +44,9 @@ actor's place, or is correctness presumed from upstream filters?
 
 1. **Live `synthesized_root_candidate_targets`** at
    `crates/worldwake-ai/src/goal_model.rs:2373+`. Arms verified to
-   exist: Trade, Harvest, Wash, PressForceClaim, Investigate, plus
-   the post-2459 arms not read in detail (Tell, Accuse, ClaimBounty,
-   PostNotice, PostBounty, EstablishCamp, etc., per the test names
-   visible in the file).
+   exist: Trade, Harvest, Wash, PressForceClaim, Investigate,
+   SearchPlace, ReportMissing, EstablishCamp, Tell, Accuse, Fine,
+   Exile, ClaimBounty, PostNotice, PostBounty, and EscortToSafety.
 2. **Live target-spec referent**: `worldwake_sim::TargetSpec::EntityAtActorPlace`
    and `worldwake_sim::TargetSpec::ActorPlace` are the locality-bearing
    specs. Verify by `grep -rn 'TargetSpec::EntityAtActorPlace\|TargetSpec::ActorPlace' crates/worldwake-systems/`
@@ -78,7 +77,7 @@ actor's place, or is correctness presumed from upstream filters?
    per-arm comment naming the upstream guarantee).
 8. **Coverage gap (precision-rules §3)**: existing focused tests at
    `goal_model.rs::tests` (e.g.
-   `grounded_goal_synthesizes_trade_root_targets_from_single_evidence_entity`)
+   `grounded_goal_synthesizes_trade_root_targets_from_local_single_evidence_entity`)
    exercise the Trade arm. Add a test asserting the Trade arm
    *refuses* to synthesize when the evidence entity is not at the
    actor's place, mirroring the Wash arm's contract. Same for
@@ -95,6 +94,25 @@ actor's place, or is correctness presumed from upstream filters?
     matches an existing upstream guarantee (preserving canonical
     path) or surfaces a redundancy that should be removed instead
     of adding a parallel guard. The audit decides per-arm.
+11. **Second-pass live audit correction**: the initial ticket text
+    named Trade and Harvest as the likely gaps, but the live arm
+    inventory also had ungated direct synthesis for Tell,
+    EstablishCamp, PunishAccused Fine/Exile, and EscortToSafety.
+    Those arms all use `EntityAtActorPlace` or `ActorPlace` action
+    target specs and therefore required the same synthesis-layer
+    locality rule.
+12. **Upstream guarantee classification**: `worldwake_sim` affordance
+    enumeration is local for `ActorPlace` and `EntityAtActorPlace`,
+    but synthesized roots bypass that enumeration when no candidate
+    for the same action definition exists. The canonical live fix is
+    therefore a synthesis-side gate: direct local roots require
+    `actor_place` to match the synthesized place, or for
+    entity-at-actor-place roots, `actor_place ∈ evidence_places`.
+13. **Trace fixture correction**: the existing
+    `search_trace_records_trade_omission_when_goal_side_target_derivation_fails`
+    test was updated to keep local evidence while proving ambiguous
+    target derivation. Without local evidence, the new locality gate
+    correctly stops earlier with `NoAffordanceOrSynthesisPath`.
 
 ## Architecture Check
 
@@ -179,8 +197,10 @@ For `covered` rows: no code change.
 ## Files to Touch
 
 - `docs/audits/2026-05-01-direct-root-synthesis-locality.md` (new)
-- `crates/worldwake-ai/src/goal_model.rs` (modify — only for `gap`
-  rows; possibly no change if all rows are `covered`)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — locality gates and
+  focused root-synthesis tests)
+- `crates/worldwake-ai/src/search/tests.rs` (modify — trace fixture
+  kept local so it still proves target-derivation failure)
 
 ## Out of Scope
 
@@ -217,14 +237,73 @@ For `covered` rows: no code change.
 
 ### New/Modified Tests
 
-1. (Per `gap` row) `crates/worldwake-ai/src/goal_model.rs::tests::synthesized_root_<arm>_refuses_non_local_evidence`
-   — new
-2. None — documentation-only ticket if all rows audit as `covered`.
+1. `crates/worldwake-ai/src/goal_model.rs::tests::grounded_goal_synthesizes_tell_root_targets_only_when_colocated`
+   — modified to assert local success and remote/unknown refusal.
+2. `crates/worldwake-ai/src/goal_model.rs::tests::grounded_goal_synthesizes_establish_camp_root_targets_only_when_colocated`
+   — modified to assert local success and remote/unknown refusal.
+3. `crates/worldwake-ai/src/goal_model.rs::tests::grounded_goal_synthesizes_trade_root_targets_from_local_single_evidence_entity`
+   — modified to require local evidence for the positive case.
+4. `crates/worldwake-ai/src/goal_model.rs::tests::grounded_goal_does_not_synthesize_trade_root_targets_from_remote_evidence`
+   — new.
+5. `crates/worldwake-ai/src/goal_model.rs::tests::grounded_goal_does_not_synthesize_harvest_root_targets_from_remote_evidence`
+   — new.
+6. `crates/worldwake-ai/src/search/tests.rs::search_trace_records_trade_omission_when_goal_side_target_derivation_fails`
+   — modified to keep local evidence while proving target derivation.
+7. `crates/worldwake-ai/src/goal_model.rs::tests::grounded_goal_does_not_synthesize_fine_root_targets_from_remote_evidence`
+   — new.
+8. `crates/worldwake-ai/src/goal_model.rs::tests::grounded_goal_does_not_synthesize_exile_root_targets_from_remote_evidence`
+   — new.
+9. `crates/worldwake-ai/src/goal_model.rs::tests::grounded_goal_does_not_synthesize_escort_root_targets_from_remote_evidence`
+   — new.
 
 ### Commands
 
 1. `grep -rn 'TargetSpec::EntityAtActorPlace\|TargetSpec::ActorPlace' crates/worldwake-systems/`
    — sanity check the audit walked every action.
-2. `cargo test -p worldwake-ai goal_model::tests::synthesized`
+2. `cargo test -p worldwake-ai --lib goal_model::tests::grounded_goal -- --nocapture`
 3. `cargo test -p worldwake-ai`
 4. `./scripts/verify.sh` (only if engine changes land)
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Added synthesis-side locality helpers in
+  `GoalOffer::synthesized_root_candidate_targets`.
+- Gated every synthesized direct root whose action target spec is
+  `ActorPlace` or `EntityAtActorPlace` and can otherwise name a
+  remote target directly: Trade, Harvest, EstablishCamp, Tell,
+  PunishAccused Fine/Exile, and EscortToSafety. Existing Wash,
+  Investigate, PostBounty, PostNotice, SearchPlace, and ReportMissing
+  locality behavior remains covered.
+- Added the requested audit artifact at
+  `docs/audits/2026-05-01-direct-root-synthesis-locality.md`.
+- Updated focused root-synthesis tests for local/remote Tell,
+  EstablishCamp, Trade, Harvest, PunishAccused Fine/Exile, and
+  EscortToSafety behavior, and corrected one search trace fixture so
+  it still proves target derivation rather than the new earlier
+  locality rejection.
+
+## Deviations
+
+- The live audit found more gap rows than the ticket's initial
+  Trade/Harvest examples. The current ticket absorbed those same-boundary
+  locality gates instead of creating separate follow-up tickets.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib goal_model::tests:: -- --list`
+- Passed `cargo test -p worldwake-ai --lib goal_model::tests::grounded_goal -- --nocapture`
+- Passed `cargo test -p worldwake-ai --lib search::tests::search_trace_records_trade_omission_when_goal_side_target_derivation_fails -- --exact --nocapture`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`
+
+## Post-ticket Review Blocker Resolution (2026-05-01)
+
+Resolved the archival blocker by adding focused non-local refusal
+coverage for `PunishAccused` Fine, `PunishAccused` Exile, and
+`EscortToSafety`.
+
+- Passed `cargo test -p worldwake-ai --lib goal_model::tests::grounded_goal -- --nocapture`
+- Passed `cargo test -p worldwake-ai`
+- Passed `./scripts/verify.sh`

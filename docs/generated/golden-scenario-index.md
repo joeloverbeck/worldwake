@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 124
+- Scenario blocks: 125
 - Contributing golden test files: 31
-- Associated tests: 155
+- Associated tests: 157
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -27,7 +27,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: seeded direct belief -> no re-observation refresh -> threshold-edge retention -> first
 
-### Scenario 146: Need Salience Extends Item Retention But Not Facility Retention
+### Scenario 146: Need Salience Extends Concrete Opportunity Retention
 
 - Source: `golden_activation_decay.rs:360`
 - Systems: Perception
@@ -37,7 +37,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Setup**: An urgently hungry inert observer at `VillageSquare` starts with two remote
 
-**Proves**: The live salience boost extends retention only for the item belief. The facility belief
+**Proves**: The live salience boost extends retention for concrete opportunity beliefs: portable
 
 **Cross-system chain**: seeded stale item + facility beliefs -> urgent hunger retained in agent state ->
 
@@ -799,9 +799,19 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: WashBasinState -> wash candidate emission -> ranking modifier -> selected basin anchor.
 
-### Scenario 368: Place Dirtiness Saturates With Zero Decay
+### Scenario 367A: Wash Re-emerges After First Cycle Relief
 
 - Source: `golden_place_dirtiness.rs:557`
+
+**Setup**: A dirty AI agent washes at a stocked local basin, then its dirtiness
+
+**Proves**: The second-cycle Wash candidate is generated and planner search
+
+**Cross-system chain**: first wash commit -> dirtiness re-critical -> wash candidate emission
+
+### Scenario 368: Place Dirtiness Saturates With Zero Decay
+
+- Source: `golden_place_dirtiness.rs:656`
 
 **Setup**: Repeated wilderness relief occurs at a zero-decay outdoor place.
 
@@ -811,7 +821,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 369: Wash Basin Plateaus At Zero With Zero Refill
 
-- Source: `golden_place_dirtiness.rs:602`
+- Source: `golden_place_dirtiness.rs:701`
 
 **Setup**: One partial wash drains a zero-refill basin, then maintenance advances.
 
@@ -971,7 +981,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 127: Idle Cap Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:403`
+- Source: `golden_simulation_gaps.rs:404`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: Sleep, Relieve, AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Travel, Needs, Production
@@ -986,7 +996,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 130: Multi-Agent Convergence Under Remote Resource Scarcity
 
-- Source: `golden_simulation_gaps.rs:650`
+- Source: `golden_simulation_gaps.rs:652`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Travel, Production, Needs
@@ -1001,7 +1011,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 131: Death Traceability Under Unmet Needs
 
-- Source: `golden_simulation_gaps.rs:1020`
+- Source: `golden_simulation_gaps.rs:1023`
 - Systems: Needs, Wounds, AI
 - GoalKinds: ConsumeOwnedCommodity, Sleep, Relieve
 - ActionDomains: Needs
@@ -1016,7 +1026,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 132: Harvest-To-Consume Chain At Resource Source Locations
 
-- Source: `golden_simulation_gaps.rs:1047`
+- Source: `golden_simulation_gaps.rs:1051`
 - Systems: Production, Needs, AI
 - GoalKinds: AcquireCommodity, ConsumeOwnedCommodity
 - ActionDomains: Production, Needs

@@ -13,9 +13,9 @@ Scenarios: 1
 - ActionDomains: Needs, Travel, Production, Social
 - Places: Rill Camp, North Orchard
 - Principles: 6, 7, 14, 15, 20
-- Primary tests: `survival_tell_lands_row_five`
+- Primary tests: `survival_tell_lands_row_five`, `listener_with_critical_dirtiness_breaks_off_tell_to_wash`
 - Replay tests: None
-- All tests: `survival_tell_lands_row_five`
+- All tests: `survival_tell_lands_row_five`, `listener_with_critical_dirtiness_breaks_off_tell_to_wash`
 
 **Setup**: Run the authored survival tell scenario for 1440 ticks. The scout
 

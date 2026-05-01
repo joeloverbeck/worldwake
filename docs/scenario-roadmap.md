@@ -661,6 +661,29 @@ Why it is not a roadmap landing:
 
 It is the canonical proof surface for spec [`S126-need-projection-time-budget.md`](../specs/S126-need-projection-time-budget.md) D8 and is owned by ticket `S126NEEPROTIM-004`. The broader survival-coexistence proof for horizon-aware planning under real workloads remains the responsibility of survival-row goldens (`golden_survival_*.rs`) — the discrepancy-recording substep is already exercised inside the prototype-world `golden_goal_switching_during_multi_leg_travel` regression in [`golden_ai_decisions.rs`](../crates/worldwake-ai/tests/golden_ai_decisions.rs).
 
+#### `golden_simulation_gaps.rs`
+
+- Source scenario: none; these are harness-authored golden scenarios
+- Backing golden: [`golden_simulation_gaps.rs`](../crates/worldwake-ai/tests/golden_simulation_gaps.rs)
+- Status in this roadmap: auxiliary simulation-gap coverage only
+- CI workflow: [`golden-simulation-gaps.yml`](../.github/workflows/golden-simulation-gaps.yml)
+
+Why it is not a roadmap landing:
+
+- It has no authored `scenarios/*.ron` source and therefore no generated structural-activation row in `scenario-coverage`.
+- It does not own a new gameplay-feature landing beyond the already-landed survival/travel/production/needs rows.
+- It intentionally stress-tests pathological planner and simulation edges that are too slow for the default `scripts/verify.sh` `cargo test --workspace` lane.
+
+The suite is still scenario-like and should remain formalized as auxiliary coverage. Its generated golden inventory currently records five focused scenarios:
+
+- Scenario 126: remote travel to a resource under local scarcity.
+- Scenario 127: idle-cap behavior under remote resource scarcity.
+- Scenario 130: multi-agent convergence under remote resource scarcity.
+- Scenario 131: death traceability under unmet needs.
+- Scenario 132: harvest-to-consume chains at resource-source locations.
+
+Scenario 130 is the comprehensive slow witness: three agents share elevated hunger/thirst pressure, no local food or water, and explicit remote beliefs about Orchard Farm resources. It proves the planner still produces bounded behavioral progress under multi-agent scarcity by starting lawful travel and reaching the remote resource place. Because it is long-running and not `.ron`-authored, it runs through the dedicated `golden-simulation-gaps` CI workflow and is ignored by default local/workspace test runs.
+
 ## 6. Maintenance Workflow
 
 ### 6.1 Adding a New Roadmap Entry

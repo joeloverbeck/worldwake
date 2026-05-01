@@ -1,0 +1,44 @@
+# Family-per-matrix-workflow convention: add scenarios to the matrix below; create a
+# new golden-<family>.yml when a new scenario family lands (combat, trade, exploration, ...).
+# See docs/plans/2026-04-17-per-family-golden-scenario-workflows-design.md.
+name: Golden Simulation Gaps
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+concurrency:
+  group: golden-simulation-gaps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenario:
+    name: golden-simulation-gaps / ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: simulation_gaps
+            test_target: golden_simulation_gaps
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: golden-simulation-gaps-${{ matrix.scenario }}
+
+      - name: Run ${{ matrix.test_target }}
+        run: cargo test --release -p worldwake-ai --test ${{ matrix.test_target }} -- --ignored --test-threads=1

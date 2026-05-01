@@ -51,7 +51,7 @@ producing one-off CIREM-style fixes if not addressed.
 
 - **LOCROOT-001** — Audit direct-root synthesis for `EntityAtActorPlace` /
   `ActorPlace`-precondition arms →
-  `tickets/LOCROOT-001-direct-root-synthesis-locality-audit.md`.
+  `archive/tickets/LOCROOT-001-direct-root-synthesis-locality-audit.md`.
   Smell: CIREM-003 found that `PlannerOpKind::Wash` synthesis emitted
   non-local roots; fixed with an explicit locality gate. Trade and
   Harvest arms have the same target-spec but no synthesizer-side

@@ -13310,7 +13310,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
             quantity: AcquisitionQuantity::single(),
         }),
         evidence_entities: BTreeSet::from([seller_a, seller_b]),
-        evidence_places: BTreeSet::new(),
+        evidence_places: BTreeSet::from([town]),
         obligation_source: None,
         commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
         required_information_gaps: Vec::new(),
@@ -13322,7 +13322,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
         &view,
         actor,
         &BTreeSet::from([seller_a, seller_b]),
-        &BTreeSet::new(),
+        &BTreeSet::from([town]),
         0,
     );
     let mut expansions = Vec::new();
