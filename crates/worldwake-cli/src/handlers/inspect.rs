@@ -652,12 +652,16 @@ mod tests {
                     tags: vec![PlaceTag::Village, PlaceTag::Store],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
                 PlaceDef {
                     name: "Dark Forest".into(),
                     tags: vec![PlaceTag::Forest],
                     visibility_profile: None,
                     sleep_quality: None,
+                    place_dirtiness: None,
+                    latrine_fullness: None,
                 },
             ],
             edges: vec![EdgeDef {

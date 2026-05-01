@@ -14,7 +14,7 @@ use worldwake_cli::scenario::{
 use worldwake_core::{
     AgentBeliefStore, CommodityKind, DriveThresholds, EntityId, EventTag, EventView,
     ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile, PerceptionSource,
-    Quantity, ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag,
+    Quantity, ResourceSource, Seed, Tick, UtilityProfile, WashBasinState, WorkstationTag,
 };
 use worldwake_sim::ActionTraceKind;
 
@@ -428,13 +428,21 @@ fn build_escalation_relief_harness() -> (GoldenHarness, EntityId) {
     .expect("relief harness should keep needs writable");
     commit_txn(txn, &mut h.event_log);
 
-    let _wash_basin = place_workstation(
+    let wash_basin = place_workstation(
         &mut h.world,
         &mut h.event_log,
         VILLAGE_SQUARE,
         WorkstationTag::WashBasin,
         ProductionOutputOwner::Actor,
     );
+    // Mirror the scenario loader: WashBasin facilities carry default WashBasinState
+    // so the candidate filter and authoritative wash precondition can both observe
+    // a stocked basin co-located with the well below.
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_wash_basin_state(wash_basin, WashBasinState::default())
+        .expect("relief harness should keep wash basin state writable");
+    commit_txn(txn, &mut h.event_log);
+
     let _water_source = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,

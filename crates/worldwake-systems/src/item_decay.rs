@@ -1,6 +1,6 @@
 use worldwake_core::{
-    CauseRef, EntityId, EventLog, EventTag, LastHarvestTrace, Tick, VisibilitySpec, WitnessData,
-    World, WorldTxn,
+    CauseRef, CommodityKind, EntityId, EventLog, EventTag, LastHarvestTrace, PlaceDirtiness,
+    Quantity, ResourceSource, Tick, VisibilitySpec, WashBasinState, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -27,6 +27,16 @@ pub fn item_decay_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         apply_harvest_trace_pruning(world, event_log, tick, entity, pruned);
     }
 
+    let dirtiness_updates = collect_place_dirtiness_decay(world);
+    for (entity, next) in dirtiness_updates {
+        apply_place_dirtiness_decay(world, event_log, tick, entity, next);
+    }
+
+    let basin_refill_targets = collect_wash_basin_refill_targets(world);
+    for basin in basin_refill_targets {
+        apply_wash_basin_refill(world, event_log, tick, basin);
+    }
+
     Ok(())
 }
 
@@ -38,6 +48,33 @@ fn collect_decay_targets(world: &World, tick: Tick) -> Vec<worldwake_core::Entit
             let decay_ticks = world.commodity_decay().get(&item_lot.commodity)?;
             let elapsed = tick.0.saturating_sub(ground_since.0.0);
             (elapsed >= u64::from(decay_ticks.get())).then_some(entity)
+        })
+        .collect()
+}
+
+fn collect_place_dirtiness_decay(world: &World) -> Vec<(EntityId, PlaceDirtiness)> {
+    world
+        .query_place_dirtiness()
+        .filter_map(|(entity, dirtiness)| {
+            if dirtiness.value == worldwake_core::Permille::ZERO {
+                return None;
+            }
+
+            let mut next = *dirtiness;
+            next.value = next.value.saturating_sub(next.decay_per_tick);
+            (next.value != dirtiness.value).then_some((entity, next))
+        })
+        .collect()
+}
+
+fn collect_wash_basin_refill_targets(world: &World) -> Vec<EntityId> {
+    world
+        .query_wash_basin_state()
+        .filter_map(|(basin, state)| {
+            (state.clean_water_units < state.max_clean_water
+                && state.refill_per_tick > 0
+                && world.effective_place(basin).is_some())
+            .then_some(basin)
         })
         .collect()
 }
@@ -98,6 +135,113 @@ fn apply_harvest_trace_pruning(
     let _ = txn.commit(event_log);
 }
 
+fn apply_place_dirtiness_decay(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+    entity: EntityId,
+    next: PlaceDirtiness,
+) {
+    let mut txn = maintenance_txn(world, tick);
+    txn.add_target(entity);
+
+    if txn.set_component_place_dirtiness(entity, next).is_err() {
+        return;
+    }
+
+    let _ = txn.commit(event_log);
+}
+
+fn apply_wash_basin_refill(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+    basin: EntityId,
+) {
+    let Some((next_basin, source, next_source)) = next_wash_basin_refill(world, basin) else {
+        return;
+    };
+
+    let mut txn = maintenance_txn(world, tick);
+    txn.add_target(basin).add_target(source);
+
+    if txn
+        .set_component_wash_basin_state(basin, next_basin)
+        .is_err()
+    {
+        return;
+    }
+    if txn
+        .set_component_resource_source(source, next_source)
+        .is_err()
+    {
+        return;
+    }
+
+    let _ = txn.commit(event_log);
+}
+
+fn next_wash_basin_refill(
+    world: &World,
+    basin: EntityId,
+) -> Option<(WashBasinState, EntityId, ResourceSource)> {
+    let state = *world.get_component_wash_basin_state(basin)?;
+    if state.clean_water_units >= state.max_clean_water || state.refill_per_tick == 0 {
+        return None;
+    }
+
+    let place = world.effective_place(basin)?;
+    let (source, source_state) = first_colocated_water_source(world, place)?;
+    let missing = state.max_clean_water - state.clean_water_units;
+    let transfer = u32::from(state.refill_per_tick)
+        .min(u32::from(missing))
+        .min(source_state.available_quantity.0);
+    if transfer == 0 {
+        return None;
+    }
+
+    let mut next_basin = state;
+    next_basin.clean_water_units = next_basin
+        .clean_water_units
+        .saturating_add(u16::try_from(transfer).ok()?);
+
+    let mut next_source = source_state.clone();
+    next_source.available_quantity = Quantity(next_source.available_quantity.0 - transfer);
+
+    Some((next_basin, source, next_source))
+}
+
+fn first_colocated_water_source(
+    world: &World,
+    place: EntityId,
+) -> Option<(EntityId, &ResourceSource)> {
+    world.query_resource_source().find(|(source, state)| {
+        state.commodity == CommodityKind::Water
+            && state.available_quantity.0 > 0
+            && resource_place(world, *source) == Some(place)
+    })
+}
+
+fn resource_place(world: &World, entity: EntityId) -> Option<EntityId> {
+    if world.topology().place(entity).is_some() {
+        Some(entity)
+    } else {
+        world.effective_place(entity)
+    }
+}
+
+fn maintenance_txn(world: &mut World, tick: Tick) -> WorldTxn<'_> {
+    WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        None,
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    )
+}
+
 fn apply_decay(
     world: &mut World,
     event_log: &mut EventLog,
@@ -132,9 +276,10 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         CauseRef, CommodityKind, EntityId, EntityKind, EventLog, EventTag, EventView,
-        HARVEST_TRACE_RETENTION_TICKS, HarvestTraceEntry, LastHarvestTrace, PrototypePlace,
-        Quantity, ResourceSource, Seed, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
+        HARVEST_TRACE_RETENTION_TICKS, HarvestTraceEntry, LastHarvestTrace, Permille,
+        PlaceDirtiness, PrototypePlace, Quantity, ResourceSource, Seed, Tick, VisibilitySpec,
+        WashBasinState, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -423,6 +568,48 @@ mod tests {
         source
     }
 
+    fn resource_source(commodity: CommodityKind, quantity: u32) -> ResourceSource {
+        ResourceSource {
+            commodity,
+            available_quantity: Quantity(quantity),
+            max_quantity: Quantity(quantity),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+        }
+    }
+
+    fn seed_water_source(world: &mut World, tick: u64, place: EntityId, quantity: u32) -> EntityId {
+        let mut txn = new_txn(world, tick);
+        let source = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(source, place).unwrap();
+        txn.set_component_workstation_marker(source, WorkstationMarker(WorkstationTag::Well))
+            .unwrap();
+        txn.set_component_resource_source(source, resource_source(CommodityKind::Water, quantity))
+            .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+        source
+    }
+
+    fn seed_wash_basin(
+        world: &mut World,
+        tick: u64,
+        place: EntityId,
+        state: WashBasinState,
+    ) -> EntityId {
+        let mut txn = new_txn(world, tick);
+        let basin = txn.create_entity(EntityKind::Facility);
+        txn.set_ground_location(basin, place).unwrap();
+        txn.set_component_workstation_marker(basin, WorkstationMarker(WorkstationTag::WashBasin))
+            .unwrap();
+        txn.set_component_wash_basin_state(basin, state).unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+        basin
+    }
+
     fn entry(slot: u32, tick: u64) -> HarvestTraceEntry {
         HarvestTraceEntry {
             harvester: EntityId {
@@ -569,5 +756,266 @@ mod tests {
             .expect("trace remains");
         assert_eq!(pruned.entries.len(), 1);
         assert_eq!(pruned.entries[0].tick, Tick(50));
+    }
+
+    #[test]
+    fn place_dirtiness_decays_per_tick() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let mut txn = new_txn(&mut world, 1);
+        txn.set_component_place_dirtiness(
+            place,
+            PlaceDirtiness {
+                value: Permille::new_unchecked(500),
+                decay_per_tick: Permille::new_unchecked(2),
+                dirtiness_per_use: Permille::new_unchecked(80),
+            },
+        )
+        .unwrap();
+        let mut bootstrap_log = EventLog::new();
+        let _ = txn.commit(&mut bootstrap_log);
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([9; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        item_decay_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            2,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world.get_component_place_dirtiness(place).map(|d| d.value),
+            Some(Permille::new_unchecked(498))
+        );
+    }
+
+    #[test]
+    fn place_dirtiness_decay_saturates_at_zero() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let mut txn = new_txn(&mut world, 1);
+        txn.set_component_place_dirtiness(
+            place,
+            PlaceDirtiness {
+                value: Permille::new_unchecked(1),
+                decay_per_tick: Permille::new_unchecked(2),
+                dirtiness_per_use: Permille::new_unchecked(80),
+            },
+        )
+        .unwrap();
+        let mut bootstrap_log = EventLog::new();
+        let _ = txn.commit(&mut bootstrap_log);
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([10; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        item_decay_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            2,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world.get_component_place_dirtiness(place).map(|d| d.value),
+            Some(Permille::ZERO)
+        );
+    }
+
+    #[test]
+    fn wash_basin_refills_from_colocated_water_source() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let basin = seed_wash_basin(
+            &mut world,
+            1,
+            place,
+            WashBasinState {
+                clean_water_units: 0,
+                max_clean_water: 10,
+                refill_per_tick: 1,
+                ..WashBasinState::default()
+            },
+        );
+        let source = seed_water_source(&mut world, 1, place, 100);
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([11; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        item_decay_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            2,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world
+                .get_component_wash_basin_state(basin)
+                .map(|state| state.clean_water_units),
+            Some(1)
+        );
+        assert_eq!(
+            world
+                .get_component_resource_source(source)
+                .map(|state| state.available_quantity),
+            Some(Quantity(99))
+        );
+    }
+
+    #[test]
+    fn wash_basin_refill_capped_at_max_clean_water() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let basin = seed_wash_basin(
+            &mut world,
+            1,
+            place,
+            WashBasinState {
+                clean_water_units: 10,
+                max_clean_water: 10,
+                refill_per_tick: 1,
+                ..WashBasinState::default()
+            },
+        );
+        let source = seed_water_source(&mut world, 1, place, 100);
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([12; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        item_decay_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            2,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world
+                .get_component_wash_basin_state(basin)
+                .map(|state| state.clean_water_units),
+            Some(10)
+        );
+        assert_eq!(
+            world
+                .get_component_resource_source(source)
+                .map(|state| state.available_quantity),
+            Some(Quantity(100))
+        );
+    }
+
+    #[test]
+    fn wash_basin_refill_capped_at_source_available_quantity() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let basin = seed_wash_basin(
+            &mut world,
+            1,
+            place,
+            WashBasinState {
+                clean_water_units: 5,
+                max_clean_water: 10,
+                refill_per_tick: 5,
+                ..WashBasinState::default()
+            },
+        );
+        let source = seed_water_source(&mut world, 1, place, 2);
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([13; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        item_decay_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            2,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world
+                .get_component_wash_basin_state(basin)
+                .map(|state| state.clean_water_units),
+            Some(7)
+        );
+        assert_eq!(
+            world
+                .get_component_resource_source(source)
+                .map(|state| state.available_quantity),
+            Some(Quantity(0))
+        );
+    }
+
+    #[test]
+    fn wash_basin_without_colocated_water_source_does_not_refill() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let basin_place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let source_place = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let basin = seed_wash_basin(
+            &mut world,
+            1,
+            basin_place,
+            WashBasinState {
+                clean_water_units: 0,
+                max_clean_water: 10,
+                refill_per_tick: 1,
+                ..WashBasinState::default()
+            },
+        );
+        let source = seed_water_source(&mut world, 1, source_place, 100);
+
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([14; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        item_decay_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            2,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world
+                .get_component_wash_basin_state(basin)
+                .map(|state| state.clean_water_units),
+            Some(0)
+        );
+        assert_eq!(
+            world
+                .get_component_resource_source(source)
+                .map(|state| state.available_quantity),
+            Some(Quantity(100))
+        );
     }
 }

@@ -79,6 +79,7 @@ pub mod obligation;
 pub mod observation_context;
 pub mod offices;
 pub mod patrol;
+pub mod place_dirtiness;
 pub mod plan_step_guards;
 pub mod production;
 pub mod pursuit;
@@ -161,6 +162,7 @@ pub use decision_event_payload::{
     PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
     ReplanReason, ReplanTriggeredPayload, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
     SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload, WakeReason,
+    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
 };
 pub use delta::{
     ComponentDelta, ComponentDiff, ComponentKind, ComponentValue, EntityDelta, QuantityDelta,
@@ -231,6 +233,7 @@ pub use offices::{
     EligibilityRule, OfficeData, OfficeForceProfile, OfficeForceState, SuccessionLaw,
 };
 pub use patrol::{PatrolProfile, PatrolRoute};
+pub use place_dirtiness::{LatrineFullness, PlaceDirtiness, WashBasinState};
 pub use plan_step_guards::{
     ExpectationKindTag, InvalidatorTag, MismatchDetail, ObservationPredicate, StatePredicate,
 };

@@ -1,5 +1,5 @@
 use crate::{
-    CommodityKind, EntityId, Permille, Quantity, Tick, WorkstationTag, Wound,
+    CommodityKind, EntityId, Permille, Quantity, Tick, WashBasinState, WorkstationTag, Wound,
     belief::{
         BelievedActivity, BelievedArtifactState, BelievedContentionState, BelievedEvidenceState,
         PerceptionSource,
@@ -23,6 +23,7 @@ pub enum EntityBeliefAspect {
     WorkstationPresent,
     ResourceAvailable(CommodityKind),
     ContentionState,
+    WashBasinState,
     ArtifactState,
     Courage,
     Evidence,
@@ -37,6 +38,7 @@ pub enum ClaimValue {
     WorkstationTag(Option<WorkstationTag>),
     ResourceSource(Option<ResourceSource>),
     ContentionState(Option<BelievedContentionState>),
+    WashBasinState(Option<WashBasinState>),
     ArtifactState(Option<BelievedArtifactState>),
     Courage(Option<Permille>),
     WoundSnapshot(Vec<Wound>),

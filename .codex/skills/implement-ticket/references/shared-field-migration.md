@@ -56,7 +56,11 @@ coverage/catalog/report generators for the new field name before finalizing
 scope, such as `scenario_coverage`, golden inventory, or feature catalogs.
 Decide whether the new field is `mapped now`, `intentionally unmapped until
 authored`, or `follow-up required`, and record that decision in ticket closeout
-when the generator boundary is relevant.
+when the generator boundary is relevant. If the decision is `mapped now`, prove
+that mapping with a focused generator/report test or a cleanup-safe synthetic
+authored fixture that sets the new field; a broad `--check` over existing
+committed scenarios is not sufficient when no current scenario authors that
+field.
 
 ## Derives, Views, And Wrappers
 

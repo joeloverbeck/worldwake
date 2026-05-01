@@ -5,7 +5,9 @@ use crate::goal_model::{
 use crate::planner_ops::{PlannerOpKind, planner_only_candidates};
 use crate::{GoalKindPlannerExt, GoalOffer, PlannerOpSemantics, PlanningEntityRef, PlanningState};
 use std::collections::{BTreeMap, BTreeSet};
-use worldwake_core::{ActionDefId, BlockerMemory, ContentionStatus, EntityId, GoalKind, Tick};
+use worldwake_core::{
+    ActionDefId, BlockerMemory, ContentionStatus, EntityId, GoalKind, OpportunityAnchor, Tick,
+};
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, EconomicBeliefView,
     FacilityBeliefView, InventoryBeliefView, QueueForFacilityUsePayload, RecipeRegistry,
@@ -356,8 +358,15 @@ pub(super) fn search_candidates_with_expansion_trace(
             .key
             .kind
             .matches_binding(&candidate.authoritative_targets, semantics.op_kind);
-        if !passes_binding {
-            let required_target = goal.key.entity.or(goal.key.place);
+        let passes_opportunity_anchor =
+            candidate_matches_opportunity_anchor(goal, &candidate, semantics.op_kind);
+        if !passes_binding || !passes_opportunity_anchor {
+            let required_target = goal.key.entity.or(goal.key.place).or(match goal.anchor {
+                OpportunityAnchor::Entity(entity) | OpportunityAnchor::Place(entity) => {
+                    Some(entity)
+                }
+                OpportunityAnchor::None => None,
+            });
             if let Some(rejections) = binding_rejections.as_deref_mut() {
                 rejections.push(crate::decision_trace::BindingRejection {
                     def_id: candidate.def_id,
@@ -450,6 +459,23 @@ pub(super) fn search_candidates_with_expansion_trace(
         filtered.push(candidate);
     }
     filtered
+}
+
+fn candidate_matches_opportunity_anchor(
+    goal: &GoalOffer,
+    candidate: &SearchCandidate,
+    op_kind: PlannerOpKind,
+) -> bool {
+    if goal.key.kind != GoalKind::Wash || op_kind != PlannerOpKind::Wash {
+        return true;
+    }
+
+    match goal.anchor {
+        OpportunityAnchor::Entity(anchor) => {
+            candidate.authoritative_targets.first() == Some(&anchor)
+        }
+        OpportunityAnchor::Place(_) | OpportunityAnchor::None => true,
+    }
 }
 
 fn move_cargo_unavailable_for_seller_backed_sale_lot(

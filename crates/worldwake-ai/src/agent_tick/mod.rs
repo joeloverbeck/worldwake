@@ -2155,7 +2155,13 @@ pub(super) fn invalidate_committed_source_after_reliability_failure(
     }
 
     if let Some(frame) = frame {
-        record_source_invalidation(frame, discrepancy_memory, tick, structural_block_ticks);
+        record_source_invalidation(
+            frame,
+            source,
+            discrepancy_memory,
+            tick,
+            structural_block_ticks,
+        );
     }
     runtime.current_plan = None;
     runtime.current_step_index = 0;

@@ -1311,6 +1311,7 @@ mod tests {
             last_known_inventory: inventory,
             workstation_tag: None,
             resource_source: None,
+            wash_basin_state: None,
             alive: true,
             wounds: Vec::new(),
             courage: None,

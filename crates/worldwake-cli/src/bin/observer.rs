@@ -378,6 +378,8 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::RepairApplied(inner) => inner.agent,
         DecisionEventPayload::ReplanTriggered(inner) => inner.agent,
         DecisionEventPayload::BlockerRecorded(inner) => inner.agent,
+        DecisionEventPayload::WasteCreated(inner) => inner.creator,
+        DecisionEventPayload::WashFacilityUsed(inner) => inner.user,
     }
 }
 
@@ -397,6 +399,8 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::RepairApplied(_) => "RepairApplied",
         DecisionEventPayload::ReplanTriggered(_) => "ReplanTriggered",
         DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
+        DecisionEventPayload::WasteCreated(_) => "WasteCreated",
+        DecisionEventPayload::WashFacilityUsed(_) => "WashFacilityUsed",
     }
 }
 
@@ -504,6 +508,21 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
                 inner.blocker_key, class, inner.expires_tick.0
             )
         }
+        DecisionEventPayload::WasteCreated(inner) => format!(
+            "place={} waste_lot={} source={:?} place_dirtiness_delta={}",
+            inner.place,
+            inner.waste_lot,
+            inner.source,
+            inner.place_dirtiness_delta.value()
+        ),
+        DecisionEventPayload::WashFacilityUsed(inner) => format!(
+            "basin={} water={} agent_dirtiness_delta={} basin_dirtiness_delta={} partial={}",
+            inner.basin,
+            inner.water_consumed,
+            inner.agent_dirtiness_delta.value(),
+            inner.basin_dirtiness_delta.value(),
+            inner.partial
+        ),
     }
 }
 
@@ -1276,16 +1295,14 @@ fn is_lawful_split_support_convergence_place(
     place: EntityId,
 ) -> bool {
     let summary = place_survival_state_summary(world, place);
-    let support_count = [
+    let supports = [
         summary.water_source_present,
         summary.wash_basin_present,
         summary.sleep_affordance_present,
         summary.food_source_present,
-    ]
-    .into_iter()
-    .filter(|present| *present)
-    .count();
-    if support_count != 1 {
+    ];
+    let support_count = supports.into_iter().filter(|present| *present).count();
+    if support_count == 0 || support_count == supports.len() {
         return false;
     }
 
@@ -4116,7 +4133,8 @@ mod tests {
         GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, OpportunityAnchor,
         PendingEvent, Permille, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
         PrototypePlace, Quantity, RecipeId, ResourceSource, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, Tick, VisibilitySpec, WakeCondition, WakeReason, WitnessData,
+        SleepEpisodeStartedPayload, Tick, VisibilitySpec, WakeCondition, WakeReason,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
@@ -4467,6 +4485,33 @@ mod tests {
                 final_fatigue: Permille::new(525).unwrap(),
             }),
         );
+        emit_decision_event(
+            &mut log,
+            14,
+            agent,
+            EventTag::WasteCreated,
+            DecisionEventPayload::WasteCreated(WasteCreatedPayload {
+                creator: agent,
+                place: entity(24),
+                waste_lot: entity(25),
+                source: WasteSource::WildernessRelief,
+                place_dirtiness_delta: Permille::new(80).unwrap(),
+            }),
+        );
+        emit_decision_event(
+            &mut log,
+            15,
+            agent,
+            EventTag::WashFacilityUsed,
+            DecisionEventPayload::WashFacilityUsed(WashFacilityUsedPayload {
+                user: agent,
+                basin: entity(26),
+                water_consumed: 1,
+                agent_dirtiness_delta: Permille::new(500).unwrap(),
+                basin_dirtiness_delta: Permille::new(25).unwrap(),
+                partial: true,
+            }),
+        );
 
         log
     }
@@ -4774,6 +4819,24 @@ mod tests {
             None,
         )
         .expect("camp food lot");
+        commit_txn(txn);
+        world
+    }
+
+    fn build_multi_support_split_convergence_world() -> World {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let camp = prototype_place_entity(PrototypePlace::BanditCamp);
+        let orchard = prototype_place_entity(PrototypePlace::OrchardFarm);
+        let mut txn = new_txn(&mut world, 1);
+        let basin = txn.create_entity(EntityKind::Facility);
+        txn.set_component_workstation_marker(basin, WorkstationMarker(WorkstationTag::WashBasin))
+            .expect("wash basin marker");
+        txn.set_ground_location(basin, camp)
+            .expect("basin location");
+        txn.set_component_resource_source(camp, support_resource_source(CommodityKind::Water))
+            .expect("camp water source");
+        txn.create_item_lot_with_owner(CommodityKind::Apple, Quantity(4), orchard, None)
+            .expect("orchard food lot");
         commit_txn(txn);
         world
     }
@@ -5348,7 +5411,7 @@ mod tests {
         assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
         assert_eq!(
             out.lines().filter(|line| line.starts_with("| ")).count(),
-            14
+            16
         );
         for event_name in [
             "GoalOffered",
@@ -5364,6 +5427,8 @@ mod tests {
             "BlockerRecorded",
             "SleepEpisodeStarted",
             "SleepEpisodeEnded",
+            "WasteCreated",
+            "WashFacilityUsed",
         ] {
             assert!(
                 out.contains(event_name),
@@ -5374,6 +5439,10 @@ mod tests {
         assert!(out.contains("goal=ProduceCommodity { recipe_id: RecipeId(3) } motive=420 alts=1"));
         assert!(out.contains("min=4 max=40 target=750 modifier=875"));
         assert!(out.contains("ticks=12->24 reason=ProjectedNeedBreach"));
+        assert!(out.contains("source=WildernessRelief place_dirtiness_delta=80"));
+        assert!(
+            out.contains("water=1 agent_dirtiness_delta=500 basin_dirtiness_delta=25 partial=true")
+        );
     }
 
     #[test]
@@ -5916,6 +5985,31 @@ mod tests {
             (
                 entity(3),
                 agent_stats_with_locations("Carol", &vec![orchard; 250]),
+            ),
+        ]);
+        let mut anomalies = Vec::new();
+
+        detect_geographic_convergence(&stats, &world, &mut anomalies);
+
+        assert!(anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_geographic_convergence_suppresses_multi_support_split_node() {
+        let camp = prototype_place_entity(PrototypePlace::BanditCamp);
+        let world = build_multi_support_split_convergence_world();
+        let stats = BTreeMap::from([
+            (
+                entity(1),
+                agent_stats_with_locations("Alice", &vec![camp; 250]),
+            ),
+            (
+                entity(2),
+                agent_stats_with_locations("Bob", &vec![camp; 250]),
+            ),
+            (
+                entity(3),
+                agent_stats_with_locations("Carol", &vec![camp; 250]),
             ),
         ]);
         let mut anomalies = Vec::new();

@@ -12,6 +12,8 @@ use crate::decision_trace::{
 };
 use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goals};
 use crate::feasibility_probe;
+use crate::goal_dispatch_decl::FrontierExhaustionStrategy;
+use crate::goal_dispatch_key::GoalDispatchKey;
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::plan_step_expectations::{
@@ -815,13 +817,11 @@ fn record_exhausted_goals(
         match &plan.result {
             crate::PlanSearchResult::BudgetExhausted { .. }
             | crate::PlanSearchResult::FrontierExhausted { .. } => {
-                if matches!(plan.result, crate::PlanSearchResult::BudgetExhausted { .. })
-                    && let Some(commodity) = plan
-                        .opportunity
-                        .goal_key
-                        .kind
-                        .target_commodity(recipe_registry)
-                {
+                if let Some(commodity) = acquisition_exhaustion_signal_commodity(
+                    &plan.opportunity.goal_key.kind,
+                    &plan.result,
+                    recipe_registry,
+                ) {
                     pending_tracker_increments.extend(relieved_needs_for_commodity(commodity));
                 }
                 let (invalidation_conditions, baseline) = derive_invalidation_conditions(
@@ -879,17 +879,40 @@ fn frontier_exhaustion_entry(
     tick: Tick,
     cognitive: &CognitiveProfile,
 ) -> ExhaustionEntry {
-    match goal_kind {
-        // Sleep is a direct local self-care action. If a single search pass
-        // exhausts its frontier, suppressing it until a band/position change
-        // can strand the agent inside one authored critical band.
-        GoalKind::Sleep => ExhaustionEntry::budget_retry_pending(
+    match GoalDispatchKey::from_goal_kind(goal_kind)
+        .declaration()
+        .frontier_exhaustion_strategy
+    {
+        FrontierExhaustionStrategy::CooldownRetry => ExhaustionEntry::budget_retry_pending(
             invalidation_conditions,
             baseline,
             tick,
             cognitive,
         ),
-        _ => ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline),
+        FrontierExhaustionStrategy::PermanentUntilInvalidator => {
+            ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline)
+        }
+    }
+}
+
+fn acquisition_exhaustion_signal_commodity(
+    goal_kind: &GoalKind,
+    result: &crate::PlanSearchResult,
+    recipe_registry: &RecipeRegistry,
+) -> Option<worldwake_core::CommodityKind> {
+    match result {
+        crate::PlanSearchResult::BudgetExhausted { .. } => {
+            goal_kind.target_commodity(recipe_registry)
+        }
+        crate::PlanSearchResult::FrontierExhausted { .. } => match goal_kind {
+            GoalKind::AcquireCommodity {
+                commodity,
+                purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                ..
+            } => Some(*commodity),
+            _ => None,
+        },
+        crate::PlanSearchResult::Found(_) | crate::PlanSearchResult::Unsupported => None,
     }
 }
 
@@ -2269,8 +2292,8 @@ fn goal_target_entity(goal: GoalKind) -> Option<EntityId> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CandidatePlanSearch, found_plan_blocks_later_goals, has_pending_budget_retry,
-        plan_completion_tick_for_adoption, plan_search_result_to_trace,
+        CandidatePlanSearch, found_plan_blocks_later_goals, frontier_exhaustion_entry,
+        has_pending_budget_retry, plan_completion_tick_for_adoption, plan_search_result_to_trace,
         planning_time_target_belief_presence, record_exhausted_goals, selected_plan_value,
         summarize_ranked_goal, summarize_selected_plan, summarize_snapshot_continuation,
     };
@@ -2288,6 +2311,8 @@ mod tests {
             TargetBeliefPresence,
         },
         feasibility::FeasibilityHint,
+        goal_dispatch_decl::FrontierExhaustionStrategy,
+        goal_dispatch_key::GoalDispatchKey,
         plan_selection::SelectionCandidatePlan,
         search::SearchTraceMetadata,
     };
@@ -5691,6 +5716,51 @@ mod tests {
     }
 
     #[test]
+    fn frontier_exhaustion_entry_uses_strategy_dispatch() {
+        let cognitive = cognitive(&ProfileFixture::default());
+
+        let cooldown = frontier_exhaustion_entry(
+            &GoalKind::Sleep,
+            Vec::new(),
+            crate::ExhaustionBaseline::default(),
+            Tick(9),
+            &cognitive,
+        );
+        assert_eq!(
+            GoalDispatchKey::from_goal_kind(&GoalKind::Sleep)
+                .declaration()
+                .frontier_exhaustion_strategy,
+            FrontierExhaustionStrategy::CooldownRetry
+        );
+        assert_eq!(
+            cooldown.retry_state,
+            ExhaustionRetryState::BudgetRetryPending
+        );
+        assert!(cooldown.next_retry_tick.is_some());
+        assert!(!cooldown.suppresses_planning());
+
+        let permanent = frontier_exhaustion_entry(
+            &GoalKind::Wash,
+            Vec::new(),
+            crate::ExhaustionBaseline::default(),
+            Tick(9),
+            &cognitive,
+        );
+        assert_eq!(
+            GoalDispatchKey::from_goal_kind(&GoalKind::Wash)
+                .declaration()
+                .frontier_exhaustion_strategy,
+            FrontierExhaustionStrategy::PermanentUntilInvalidator
+        );
+        assert_eq!(
+            permanent.retry_state,
+            ExhaustionRetryState::FrontierExhausted
+        );
+        assert_eq!(permanent.next_retry_tick, None);
+        assert!(permanent.suppresses_planning());
+    }
+
+    #[test]
     fn record_exhausted_goals_records_sleep_frontier_exhaustion_as_budget_retry() {
         let goal = opportunity(GoalKey::from(GoalKind::Sleep));
         let mut runtime = AgentDecisionRuntime::default();
@@ -5721,6 +5791,88 @@ mod tests {
         assert!(
             entry.next_retry_tick.is_some(),
             "sleep frontier exhaustion should retry on cooldown instead of suppressing indefinitely"
+        );
+    }
+
+    #[test]
+    fn record_exhausted_goals_records_patrol_frontier_exhaustion_as_budget_retry() {
+        let place = entity(11);
+        let goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Patrol { place }),
+            anchor: OpportunityAnchor::Place(place),
+        };
+        let mut runtime = AgentDecisionRuntime::default();
+        let plans = vec![searched_plan(
+            goal,
+            PlanSearchResult::FrontierExhausted {
+                expansions_used: 12,
+            },
+        )];
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let cognitive = cognitive(&ProfileFixture::default());
+
+        let tracker_increments = record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
+            &cognitive,
+        );
+        assert!(tracker_increments.is_empty());
+
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
+        assert!(!entry.suppresses_planning());
+        assert!(entry.next_retry_tick.is_some());
+    }
+
+    #[test]
+    fn record_exhausted_goals_records_self_consume_acquire_frontier_exhaustion_as_retry() {
+        let goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }),
+            anchor: OpportunityAnchor::Place(place_entity(3)),
+        };
+        let mut runtime = AgentDecisionRuntime::default();
+        let plans = vec![searched_plan(
+            goal,
+            PlanSearchResult::FrontierExhausted {
+                expansions_used: 12,
+            },
+        )];
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let cognitive = cognitive(&ProfileFixture::default());
+
+        let tracker_increments = record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
+            &cognitive,
+        );
+
+        assert_eq!(
+            tracker_increments,
+            BTreeSet::from([
+                worldwake_core::HomeostaticNeedId::Thirst,
+                worldwake_core::HomeostaticNeedId::Dirtiness,
+            ])
+        );
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
+        assert!(!entry.suppresses_planning());
+        assert!(
+            entry.next_retry_tick.is_some(),
+            "self-consume acquisition frontier exhaustion should retry and feed exploration fallback"
         );
     }
 

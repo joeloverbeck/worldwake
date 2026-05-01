@@ -2252,6 +2252,11 @@ impl FacilityBeliefView for PlanningState<'_> {
         Some(source)
     }
 
+    fn wash_basin_state(&self, entity: EntityId) -> Option<worldwake_core::WashBasinState> {
+        let snapshot = self.snapshot.entities.get(&entity)?;
+        snapshot.facility.wash_basin_state
+    }
+
     fn has_production_job(&self, entity: EntityId) -> bool {
         self.snapshot
             .entities

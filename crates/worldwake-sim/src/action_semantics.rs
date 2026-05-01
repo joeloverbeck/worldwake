@@ -70,6 +70,10 @@ pub enum Precondition {
         commodity: CommodityKind,
         min_available: Quantity,
     },
+    TargetHasWashBasinClean {
+        target_index: u8,
+        min: u16,
+    },
     TargetNotInContainer(u8),
     TargetUnpossessed(u8),
     TargetDirectlyPossessedByActor(u8),
@@ -445,7 +449,7 @@ mod tests {
         TargetSpec::AdjacentPlace,
     ];
 
-    const ALL_PRECONDITIONS: [Precondition; 18] = [
+    const ALL_PRECONDITIONS: [Precondition; 19] = [
         Precondition::ActorAlive,
         Precondition::ActorCanControlTarget(6),
         Precondition::TargetExists(0),
@@ -470,6 +474,10 @@ mod tests {
             target_index: 2,
             commodity: CommodityKind::Apple,
             min_available: Quantity(2),
+        },
+        Precondition::TargetHasWashBasinClean {
+            target_index: 3,
+            min: 2,
         },
         Precondition::TargetNotInContainer(4),
         Precondition::TargetUnpossessed(5),

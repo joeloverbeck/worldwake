@@ -15,15 +15,15 @@ use worldwake_core::{
     DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
     ExpectationStore, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LoadUnits, MerchandiseProfile,
-    MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
-    PatrolProfile, PatrolRoute, Permille, PlaceTag, PlaceTagSet, PreferenceProfile, Quantity,
-    RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation,
-    ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource, RightKind,
-    RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
-    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, WorkstationTag, Wound, effective_claim_confidence,
+    JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LatrineFullness, LoadUnits,
+    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
+    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceDirtiness, PlaceTag, PlaceTagSet,
+    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
+    RecordedViolation, ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource,
+    RightKind, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
+    StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick,
+    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+    ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -231,6 +231,10 @@ pub trait GoalSpatialBeliefView {
         let _ = agent;
         None
     }
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        let _ = (place, tag);
+        false
+    }
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
 }
 
@@ -416,6 +420,10 @@ pub trait GoalBeliefView {
         None
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn facility_wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+        let _ = entity;
+        None
+    }
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         let _ = entity;
         None
@@ -426,6 +434,10 @@ pub trait GoalBeliefView {
     }
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        let _ = (place, tag);
+        false
+    }
     fn has_production_job(&self, entity: EntityId) -> bool;
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
@@ -441,6 +453,18 @@ pub trait GoalBeliefView {
     fn place_sleep_quality_profile(&self, agent: EntityId, place: EntityId) -> SleepQualityProfile {
         let _ = (agent, place);
         SleepQualityProfile::default()
+    }
+    fn place_dirtiness(&self, agent: EntityId, place: EntityId) -> PlaceDirtiness {
+        let _ = (agent, place);
+        PlaceDirtiness::default()
+    }
+    fn latrine_fullness(&self, agent: EntityId, place: EntityId) -> LatrineFullness {
+        let _ = (agent, place);
+        LatrineFullness::default()
+    }
+    fn wash_basin_state(&self, agent: EntityId, basin: EntityId) -> WashBasinState {
+        let _ = (agent, basin);
+        WashBasinState::default()
     }
     fn deprivation_exposure(&self, agent: EntityId) -> Option<DeprivationExposure> {
         let _ = agent;
@@ -770,6 +794,18 @@ pub trait ProfileBeliefView {
     fn place_sleep_quality_profile(&self, agent: EntityId, place: EntityId) -> SleepQualityProfile {
         let _ = (agent, place);
         SleepQualityProfile::default()
+    }
+    fn place_dirtiness(&self, agent: EntityId, place: EntityId) -> PlaceDirtiness {
+        let _ = (agent, place);
+        PlaceDirtiness::default()
+    }
+    fn latrine_fullness(&self, agent: EntityId, place: EntityId) -> LatrineFullness {
+        let _ = (agent, place);
+        LatrineFullness::default()
+    }
+    fn wash_basin_state(&self, agent: EntityId, basin: EntityId) -> WashBasinState {
+        let _ = (agent, basin);
+        WashBasinState::default()
     }
     fn disposal_profile(&self, agent: EntityId) -> Option<DisposalProfile> {
         let _ = agent;
@@ -1267,6 +1303,10 @@ pub trait FacilityBeliefView {
         None
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+        let _ = entity;
+        None
+    }
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         let _ = entity;
         None
@@ -1329,6 +1369,10 @@ impl<T: SpatialBeliefView + ?Sized> GoalSpatialBeliefView for T {
 
     fn patrol_route(&self, agent: EntityId) -> Option<PatrolRoute> {
         SpatialBeliefView::patrol_route(self, agent)
+    }
+
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        SpatialBeliefView::place_has_tag(self, place, tag)
     }
 
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
@@ -1668,6 +1712,13 @@ where
         FacilityBeliefView::resource_source(self, entity)
     }
 
+    fn facility_wash_basin_state(
+        &self,
+        entity: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::WashBasinState> {
+        FacilityBeliefView::wash_basin_state(self, entity)
+    }
+
     fn last_harvest_trace(
         &self,
         entity: worldwake_core::EntityId,
@@ -1696,6 +1747,14 @@ where
         tag: worldwake_core::WorkstationTag,
     ) -> Vec<worldwake_core::EntityId> {
         FacilityBeliefView::matching_workstations_at(self, place, tag)
+    }
+
+    fn place_has_tag(
+        &self,
+        place: worldwake_core::EntityId,
+        tag: worldwake_core::PlaceTag,
+    ) -> bool {
+        GoalSpatialBeliefView::place_has_tag(self, place, tag)
     }
 
     fn has_production_job(&self, entity: worldwake_core::EntityId) -> bool {
@@ -1766,6 +1825,30 @@ where
         place: worldwake_core::EntityId,
     ) -> worldwake_core::SleepQualityProfile {
         ProfileBeliefView::place_sleep_quality_profile(self, agent, place)
+    }
+
+    fn place_dirtiness(
+        &self,
+        agent: worldwake_core::EntityId,
+        place: worldwake_core::EntityId,
+    ) -> worldwake_core::PlaceDirtiness {
+        ProfileBeliefView::place_dirtiness(self, agent, place)
+    }
+
+    fn latrine_fullness(
+        &self,
+        agent: worldwake_core::EntityId,
+        place: worldwake_core::EntityId,
+    ) -> worldwake_core::LatrineFullness {
+        ProfileBeliefView::latrine_fullness(self, agent, place)
+    }
+
+    fn wash_basin_state(
+        &self,
+        agent: worldwake_core::EntityId,
+        basin: worldwake_core::EntityId,
+    ) -> worldwake_core::WashBasinState {
+        ProfileBeliefView::wash_basin_state(self, agent, basin)
     }
 
     fn deprivation_exposure(
@@ -2427,11 +2510,12 @@ mod tests {
         DriveEscalationProfile, DriveThresholds, EntityBeliefAspect, EntityBeliefClaim, EntityId,
         EntityKind, EventLog, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds,
         InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-        LastProactiveExplorationTick, LoadUnits, OfficeData, PatrolProfile, PerceptionProfile,
-        PerceptionSource, Permille, Quantity, RecordData, RecordEntryId, RecordKind,
-        ResourceSource, RewardEncumbrance, RewardReservation, RewardSource, ShelterTag,
-        SleepQualityProfile, SuccessionLaw, TheftFacts, Tick, UniqueItemKind, ViolationId,
-        VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
+        LastProactiveExplorationTick, LatrineFullness, LoadUnits, OfficeData, PatrolProfile,
+        PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, Quantity, RecordData,
+        RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance, RewardReservation,
+        RewardSource, ShelterTag, SleepQualityProfile, SuccessionLaw, TheftFacts, Tick,
+        UniqueItemKind, ViolationId, VisibilitySpec, WashBasinState, WitnessData, WorkstationTag,
+        World, WorldTxn, build_prototype_world,
     };
 
     fn sample_claim(
@@ -2738,6 +2822,20 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn assert_goal_hygiene_reads<V: GoalBeliefView>(
+        view: &V,
+        actor: EntityId,
+        place: EntityId,
+        basin: EntityId,
+        dirtiness: PlaceDirtiness,
+        fullness: LatrineFullness,
+        basin_state: WashBasinState,
+    ) {
+        assert_eq!(view.place_dirtiness(actor, place), dirtiness);
+        assert_eq!(view.latrine_fullness(actor, place), fullness);
+        assert_eq!(view.wash_basin_state(actor, basin), basin_state);
     }
 
     fn observed_entity(
@@ -3100,6 +3198,154 @@ mod tests {
             GoalBeliefView::place_sleep_quality_profile(&view, actor, unknown_place),
             SleepQualityProfile::default()
         );
+    }
+
+    #[test]
+    fn place_dirtiness_accessor_returns_authoritative_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let dirtiness = PlaceDirtiness {
+            value: Permille::new(500).unwrap(),
+            decay_per_tick: Permille::new(3).unwrap(),
+            dirtiness_per_use: Permille::new(90).unwrap(),
+        };
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_place_dirtiness(place, dirtiness).unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            GoalBeliefView::place_dirtiness(&view, actor, place),
+            dirtiness
+        );
+    }
+
+    #[test]
+    fn place_hygiene_accessors_do_not_reveal_known_remote_dynamic_state() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let places = world.topology().place_ids().collect::<Vec<_>>();
+        let home = places[0];
+        let remote = places[1];
+        let remote_dirtiness = PlaceDirtiness {
+            value: Permille::new(700).unwrap(),
+            ..PlaceDirtiness::default()
+        };
+        let remote_fullness = LatrineFullness {
+            fill: Permille::new(900).unwrap(),
+            ..LatrineFullness::default()
+        };
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, home).unwrap();
+            txn.set_component_place_dirtiness(remote, remote_dirtiness)
+                .unwrap();
+            txn.set_component_latrine_fullness(remote, remote_fullness)
+                .unwrap();
+
+            let mut beliefs = AgentBeliefStore::default();
+            let mut remote_state = BelievedEntityState::single_observation_defaults(
+                Tick(1),
+                PerceptionSource::DirectObservation,
+            );
+            remote_state.believed_kind = Some(EntityKind::Place);
+            remote_state.last_known_place = Some(remote);
+            beliefs.update_entity(remote, remote_state);
+            txn.set_component_agent_belief_store(actor, beliefs)
+                .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            GoalBeliefView::place_dirtiness(&view, actor, remote),
+            PlaceDirtiness::default()
+        );
+        assert_eq!(
+            GoalBeliefView::latrine_fullness(&view, actor, remote),
+            LatrineFullness::default()
+        );
+    }
+
+    #[test]
+    fn latrine_fullness_accessor_returns_default_for_unauthored_place() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            GoalBeliefView::latrine_fullness(&view, actor, place),
+            LatrineFullness::default()
+        );
+    }
+
+    #[test]
+    fn wash_basin_state_accessor_returns_default_for_non_basin_facility() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (actor, facility) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            let facility = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(facility, place).unwrap();
+            commit_txn(txn);
+            (actor, facility)
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            GoalBeliefView::wash_basin_state(&view, actor, facility),
+            WashBasinState::default()
+        );
+    }
+
+    #[test]
+    fn goal_belief_view_forwards_hygiene_accessors() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let dirtiness = PlaceDirtiness {
+            value: Permille::new(420).unwrap(),
+            ..PlaceDirtiness::default()
+        };
+        let fullness = LatrineFullness {
+            fill: Permille::new(640).unwrap(),
+            ..LatrineFullness::default()
+        };
+        let basin_state = WashBasinState {
+            clean_water_units: 4,
+            max_clean_water: 12,
+            ..WashBasinState::default()
+        };
+        let (actor, basin) = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_place_dirtiness(place, dirtiness).unwrap();
+            txn.set_component_latrine_fullness(place, fullness).unwrap();
+            let basin = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(basin, place).unwrap();
+            txn.set_component_wash_basin_state(basin, basin_state)
+                .unwrap();
+            commit_txn(txn);
+            (actor, basin)
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_goal_hygiene_reads(&view, actor, place, basin, dirtiness, fullness, basin_state);
     }
 
     #[test]

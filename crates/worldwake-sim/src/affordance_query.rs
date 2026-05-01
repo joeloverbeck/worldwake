@@ -1,6 +1,7 @@
 use crate::{
     ActionDef, ActionDefRegistry, ActionHandler, ActionHandlerRegistry, ActionPayload, Affordance,
-    BindingStrictness, Constraint, ConsumableEffect, Precondition, RuntimeBeliefView, TargetSpec,
+    BindingStrictness, Constraint, ConsumableEffect, FacilityBeliefView, Precondition,
+    RuntimeBeliefView, TargetSpec,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{ActionDefId, ContentionStatus, EntityId, EntityKind};
@@ -332,6 +333,10 @@ pub fn evaluate_precondition(
             .is_some_and(|source| {
                 source.commodity == commodity && source.available_quantity >= min_available
             }),
+        Precondition::TargetHasWashBasinClean { target_index, min } => targets
+            .get(usize::from(target_index))
+            .and_then(|target| FacilityBeliefView::wash_basin_state(view, *target))
+            .is_some_and(|state| state.clean_water_units >= min),
         Precondition::TargetNotInContainer(target_index) => targets
             .get(usize::from(target_index))
             .is_some_and(|target| view.direct_container(*target).is_none()),
@@ -459,6 +464,7 @@ fn precondition_target_index(precondition: Precondition) -> Option<usize> {
         | Precondition::TargetCommodity { target_index, .. }
         | Precondition::TargetHasWorkstationTag { target_index, .. }
         | Precondition::TargetHasResourceSource { target_index, .. }
+        | Precondition::TargetHasWashBasinClean { target_index, .. }
         | Precondition::TargetHasConsumableEffect { target_index, .. } => {
             Some(usize::from(target_index))
         }
@@ -638,8 +644,8 @@ mod tests {
         ContentionStatus, ControlSource, DemandObservation, DriveThresholds, EntityId, EntityKind,
         EventLog, HomeostaticNeeds, InTransitOnEdge, LoadUnits, MerchandiseProfile,
         MetabolismProfile, Quantity, RecipeId, ResourceSource, TellProfile, Tick,
-        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WitnessData, WorkstationTag,
-        World, WorldTxn, Wound, build_prototype_world,
+        TradeDispositionProfile, UniqueItemKind, VisibilitySpec, WashBasinState, WitnessData,
+        WorkstationTag, World, WorldTxn, Wound, build_prototype_world,
     };
 
     #[derive(Default)]
@@ -661,6 +667,7 @@ mod tests {
         direct_possessors: BTreeMap<EntityId, EntityId>,
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
+        wash_basin_states: BTreeMap<EntityId, WashBasinState>,
         production_jobs: BTreeMap<EntityId, bool>,
         wounds: BTreeMap<EntityId, bool>,
         controllable: BTreeMap<(EntityId, EntityId), bool>,
@@ -993,6 +1000,10 @@ mod tests {
 
         fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
             self.resource_sources.get(&entity).cloned()
+        }
+
+        fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+            self.wash_basin_states.get(&entity).copied()
         }
 
         fn has_production_job(&self, entity: EntityId) -> bool {
@@ -2070,6 +2081,77 @@ mod tests {
         let affordances = get_affordances(&view, actor, &registry, &handlers);
 
         assert!(affordances.is_empty());
+    }
+
+    #[test]
+    fn wash_basin_clean_precondition_prunes_empty_basin_candidates() {
+        let actor = entity(1);
+        let basin = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(basin, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.wash_basin_states.insert(
+            basin,
+            WashBasinState {
+                clean_water_units: 0,
+                ..WashBasinState::default()
+            },
+        );
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(basin)],
+            vec![Precondition::TargetHasWashBasinClean {
+                target_index: 0,
+                min: 1,
+            }],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+
+        assert!(affordances.is_empty());
+    }
+
+    #[test]
+    fn wash_basin_clean_precondition_passes_through_filled_basin_candidates() {
+        let actor = entity(1);
+        let basin = entity(20);
+
+        let mut view = StubBeliefView::default();
+        view.alive.insert(actor, true);
+        view.alive.insert(basin, true);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.wash_basin_states.insert(
+            basin,
+            WashBasinState {
+                clean_water_units: 2,
+                ..WashBasinState::default()
+            },
+        );
+
+        let mut registry = ActionDefRegistry::new();
+        registry.register(sample_action_def(
+            ActionDefId(0),
+            vec![Constraint::ActorAlive],
+            vec![TargetSpec::SpecificEntity(basin)],
+            vec![Precondition::TargetHasWashBasinClean {
+                target_index: 0,
+                min: 1,
+            }],
+        ));
+        let handlers = handler_registry(registry.len());
+
+        let affordances = get_affordances(&view, actor, &registry, &handlers);
+
+        assert_eq!(affordances.len(), 1);
+        assert_eq!(affordances[0].bound_targets, vec![basin]);
     }
 
     #[test]

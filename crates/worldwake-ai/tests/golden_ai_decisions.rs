@@ -16,8 +16,8 @@ use worldwake_core::{
     AcquisitionQuantity, AgentData, BeliefConfidencePolicy, BlockingFact, CognitiveProfile,
     CommodityKind, ControlSource, DeadAt, DeathCause, EntityId, FrameState, HomeostaticNeeds,
     IntentionDispositionProfile, MetabolismProfile, PerceptionProfile, PrototypePlace, Quantity,
-    ResourceSource, Seed, Tick, UtilityProfile, WorkstationTag, prototype_place_entity,
-    total_live_lot_quantity,
+    ResourceSource, Seed, Tick, UtilityProfile, WashBasinState, WorkstationTag,
+    prototype_place_entity, total_live_lot_quantity,
 };
 use worldwake_sim::{
     ActionRequestMode, ActionTraceKind, BindingStrictness, InputKind, RequestBindingKind,
@@ -755,13 +755,27 @@ fn golden_wash_action() {
         },
     );
 
-    let _wash_basin = place_workstation(
+    let wash_basin = place_workstation(
         &mut h.world,
         &mut h.event_log,
         VILLAGE_SQUARE,
         WorkstationTag::WashBasin,
         ProductionOutputOwner::Actor,
     );
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_wash_basin_state(
+        wash_basin,
+        WashBasinState {
+            clean_water_units: 2,
+            max_clean_water: 2,
+            refill_per_tick: 0,
+            units_per_full_wash: 2,
+            dirtiness_level: pm(0),
+            dirtiness_per_use: pm(50),
+        },
+    )
+    .unwrap();
+    commit_txn(txn, &mut h.event_log);
     let water_source = place_workstation_with_source(
         &mut h.world,
         &mut h.event_log,
@@ -785,6 +799,11 @@ fn golden_wash_action() {
         .get_component_resource_source(water_source)
         .expect("wash scenario should have a local water source")
         .available_quantity;
+    let initial_basin_units = h
+        .world
+        .get_component_wash_basin_state(wash_basin)
+        .expect("wash scenario should have a local basin state")
+        .clean_water_units;
     let mut washed = false;
 
     for _tick in 0..80 {
@@ -801,7 +820,17 @@ fn golden_wash_action() {
             "Local wash water should not increase during washing: initial={initial_source}, now={current_source}"
         );
 
-        if current_source < initial_source && h.agent_dirtiness(agent) < initial_dirtiness {
+        let current_basin_units = h
+            .world
+            .get_component_wash_basin_state(wash_basin)
+            .expect("wash scenario should retain its local basin state")
+            .clean_water_units;
+        if current_basin_units < initial_basin_units && h.agent_dirtiness(agent) < initial_dirtiness
+        {
+            assert_eq!(
+                current_source, initial_source,
+                "wash should consume basin water, not the co-located source directly"
+            );
             washed = true;
             break;
         }
@@ -809,8 +838,12 @@ fn golden_wash_action() {
 
     assert!(
         washed,
-        "Agent should wash when dirtiness is high and a local basin plus water source are available; initial_dirtiness={initial_dirtiness}, final_dirtiness={}, initial_source={initial_source}, final_source={}",
+        "Agent should wash when dirtiness is high and a local basin has clean water; initial_dirtiness={initial_dirtiness}, final_dirtiness={}, initial_basin_units={initial_basin_units}, final_basin_units={}, initial_source={initial_source}, final_source={}",
         h.agent_dirtiness(agent),
+        h.world
+            .get_component_wash_basin_state(wash_basin)
+            .expect("wash scenario should retain its local basin state")
+            .clean_water_units,
         h.world
             .get_component_resource_source(water_source)
             .expect("wash scenario should retain its local water source")

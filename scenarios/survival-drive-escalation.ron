@@ -11,12 +11,13 @@
 // - no combat, trade, or social branches
 // - no second food hub or long-distance water route
 // - no second camp or alternate local food source
-// - thirst and fatigue pressure are downweighted so the scenario stays focused
-//   on hunger-versus-dirtiness priority under repeated wilderness relief
+// - fatigue pressure is downweighted, while thirst remains secondary but
+//   reachable so the survival contract can still exercise Drink
 //
 // This keeps the scenario focused on the motive-priority branch:
-// hunger_weight=750 still beats dirtiness_weight=625 until sustained critical
-// exposure raises Wash high enough to win.
+// hunger_weight=1000 still beats dirtiness_weight=625 until sustained critical
+// exposure raises Wash high enough to win, while the thirst rate keeps Drink
+// reachable as its own water lifecycle instead of being hidden by apples.
 (
     seed: 116006,
     survival_health_contract: (
@@ -25,6 +26,8 @@
         elevated_need_floor: 300,
         required_self_care_families: [Eat, Drink, Sleep, Relieve, Wash],
         critical_run_limits: (
+            hunger: 800,
+            thirst: 800,
             dirtiness: 1300,
         ),
     ),
@@ -51,8 +54,8 @@
                 dirtiness: 760,
             ),
             utility_profile: (
-                hunger_weight: 750,
-                thirst_weight: 100,
+                hunger_weight: 1000,
+                thirst_weight: 1000,
                 fatigue_weight: 100,
                 bladder_weight: 650,
                 dirtiness_weight: 625,
@@ -81,7 +84,7 @@
                     Dirtiness: (
                         start_after_ticks: 20,
                         growth_per_tick: 40,
-                        max_multiplier: 3000,
+                        max_multiplier: 9000,
                     ),
                 },
                 default_per_need: (
@@ -91,8 +94,8 @@
                 ),
             ),
             metabolism_profile: (
-                hunger_rate: 2,
-                thirst_rate: 2,
+                hunger_rate: 1,
+                thirst_rate: 5,
                 fatigue_rate: 1,
                 bladder_rate: 5,
                 dirtiness_rate: 1,
@@ -131,8 +134,8 @@
                 dirtiness: 760,
             ),
             utility_profile: (
-                hunger_weight: 750,
-                thirst_weight: 100,
+                hunger_weight: 1000,
+                thirst_weight: 1000,
                 fatigue_weight: 100,
                 bladder_weight: 650,
                 dirtiness_weight: 625,
@@ -161,7 +164,7 @@
                     Dirtiness: (
                         start_after_ticks: 20,
                         growth_per_tick: 40,
-                        max_multiplier: 3000,
+                        max_multiplier: 9000,
                     ),
                 },
                 default_per_need: (
@@ -171,8 +174,8 @@
                 ),
             ),
             metabolism_profile: (
-                hunger_rate: 2,
-                thirst_rate: 2,
+                hunger_rate: 1,
+                thirst_rate: 5,
                 fatigue_rate: 1,
                 bladder_rate: 5,
                 dirtiness_rate: 1,

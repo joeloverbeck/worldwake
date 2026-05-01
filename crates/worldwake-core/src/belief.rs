@@ -3,9 +3,9 @@
 use crate::{
     ActionDomain, BeliefClaimKey, BelievedInstitutionalClaim, ClaimId, ClaimValue, CommodityKind,
     Component, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind, EvidenceKind,
-    HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
-    InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource, TheftFacts, Tick,
-    WorkstationTag, World, Wound,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
+    InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource,
+    TheftFacts, Tick, WashBasinState, WorkstationTag, World, Wound,
     institutional::MissingPersonReportStatus,
     social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
@@ -323,13 +323,27 @@ impl AgentBeliefStore {
         let claim_confidence_threshold = profile.claim_confidence_threshold.value();
         let mut changed_entities = Vec::new();
         for entity in &affected_entities {
+            let retention_boost = self.known_entities.get(entity).map_or(0, |state| {
+                state_salience_boost(
+                    agent_needs,
+                    state,
+                    profile.need_salience_urgency_threshold,
+                    profile.need_salience_boost,
+                )
+            });
             let Some(claims) = self.entity_claims.get_mut(entity) else {
                 continue;
             };
             let len_before = claims.len();
             claims.retain(|claim| {
+                let source_boost = if source_kind(&claim.source) == SourceKind::Direct {
+                    retention_boost
+                } else {
+                    0
+                };
                 claim_is_refuted(claim)
                     || effective_claim_confidence(claim, current_tick, &profile.confidence_policy)
+                        .saturating_add(source_boost)
                         >= claim_confidence_threshold
             });
             if claims.len() != len_before {
@@ -355,16 +369,15 @@ impl AgentBeliefStore {
             }
         }
 
-        let max_need = agent_needs.max_value();
         self.known_entities.retain(|_, state| {
             let base = compute_activation(
                 current_tick,
                 &state.presentation_ticks,
                 state.presentation_tick_count,
             );
-            let boost = salience_boost(
-                max_need,
-                state.believed_kind,
+            let boost = state_salience_boost(
+                agent_needs,
+                state,
                 profile.need_salience_urgency_threshold,
                 profile.need_salience_boost,
             );
@@ -1015,6 +1028,14 @@ fn entity_claims_for_snapshot(
             ClaimValue::ContentionState(snapshot.believed_contention),
         ));
     }
+    if snapshot.wash_basin_state.is_some()
+        || prior_summary.is_some_and(|prior| prior.wash_basin_state.is_some())
+    {
+        claims.push((
+            EntityBeliefAspect::WashBasinState,
+            ClaimValue::WashBasinState(snapshot.wash_basin_state),
+        ));
+    }
     if snapshot.believed_artifact.is_some()
         || prior_summary.is_some_and(|prior| prior.believed_artifact.is_some())
     {
@@ -1469,6 +1490,15 @@ pub struct ObservedEntitySnapshot {
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
     pub workstation_tag: Option<WorkstationTag>,
     pub resource_source: Option<ResourceSource>,
+    /// Last observed `WashBasinState` for a `WashBasin` facility. FND-14A:
+    /// physical state is co-located perception only — agents observe the
+    /// basin's current state when at its place and store it here. Off-place
+    /// planning consults this remembered snapshot so the agent can route
+    /// travel-then-wash plans to remote believed basins; the authoritative
+    /// wash precondition re-validates the live state at action time so
+    /// stale beliefs trigger replan rather than commit-against-stale-state.
+    #[serde(default)]
+    pub wash_basin_state: Option<WashBasinState>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
     pub courage: Option<Permille>,
@@ -1493,6 +1523,7 @@ impl ObservedEntitySnapshot {
             last_known_inventory: self.last_known_inventory.clone(),
             workstation_tag: self.workstation_tag,
             resource_source: self.resource_source.clone(),
+            wash_basin_state: self.wash_basin_state,
             alive: self.alive,
             wounds: self.wounds.clone(),
             last_known_courage: self.courage,
@@ -1558,6 +1589,10 @@ pub struct BelievedEntityState {
     pub last_known_inventory: BTreeMap<CommodityKind, Quantity>,
     pub workstation_tag: Option<WorkstationTag>,
     pub resource_source: Option<ResourceSource>,
+    /// Last observed `WashBasinState` for a `WashBasin` facility. See
+    /// `ObservedEntitySnapshot::wash_basin_state` for the FND-14A rationale.
+    #[serde(default)]
+    pub wash_basin_state: Option<WashBasinState>,
     pub alive: bool,
     pub wounds: Vec<Wound>,
     pub last_known_courage: Option<Permille>,
@@ -1584,6 +1619,7 @@ impl BelievedEntityState {
             last_known_inventory: BTreeMap::new(),
             workstation_tag: None,
             resource_source: None,
+            wash_basin_state: None,
             alive: true,
             wounds: Vec::new(),
             last_known_courage: None,
@@ -2046,6 +2082,7 @@ pub fn build_observed_entity_snapshot(
             .get_component_workstation_marker(entity)
             .map(|marker| marker.0),
         resource_source: world.get_component_resource_source(entity).cloned(),
+        wash_basin_state: world.get_component_wash_basin_state(entity).copied(),
         alive: world.get_component_dead_at(entity).is_none(),
         wounds: world
             .get_component_wound_list(entity)
@@ -2224,6 +2261,9 @@ pub fn derive_entity_summary(
             }
             (EntityBeliefAspect::ContentionState, ClaimValue::ContentionState(contention)) => {
                 summary.believed_contention = *contention;
+            }
+            (EntityBeliefAspect::WashBasinState, ClaimValue::WashBasinState(state)) => {
+                summary.wash_basin_state = *state;
             }
             (EntityBeliefAspect::ArtifactState, ClaimValue::ArtifactState(artifact)) => {
                 summary.believed_artifact.clone_from(artifact);
@@ -2650,6 +2690,72 @@ pub fn salience_boost(
     (u32::from(max_need) * u32::from(boost.value()) / 1000) as u16
 }
 
+#[must_use]
+fn carries_pressuring_opportunity(
+    needs: &HomeostaticNeeds,
+    state: &BelievedEntityState,
+    urgency_threshold: Permille,
+) -> bool {
+    HomeostaticNeedId::ALL
+        .iter()
+        .copied()
+        .filter(|need| needs.value(*need).value() >= urgency_threshold.value())
+        .any(|need| carries_opportunity_for_need(need, state))
+}
+
+#[must_use]
+fn carries_opportunity_for_need(need: HomeostaticNeedId, state: &BelievedEntityState) -> bool {
+    match need {
+        HomeostaticNeedId::Hunger | HomeostaticNeedId::Thirst => {
+            state.workstation_tag.is_some() && resource_source_relieves_need(need, state)
+        }
+        HomeostaticNeedId::Dirtiness => {
+            state.wash_basin_state.is_some()
+                && state.workstation_tag == Some(WorkstationTag::WashBasin)
+        }
+        HomeostaticNeedId::Fatigue | HomeostaticNeedId::Bladder => false,
+    }
+}
+
+#[must_use]
+fn resource_source_relieves_need(need: HomeostaticNeedId, state: &BelievedEntityState) -> bool {
+    let Some(source) = state.resource_source.as_ref() else {
+        return false;
+    };
+    let Some(profile) = source.commodity.spec().consumable_profile else {
+        return false;
+    };
+
+    match need {
+        HomeostaticNeedId::Hunger => profile.hunger_relief_per_unit.value() > 0,
+        HomeostaticNeedId::Thirst => profile.thirst_relief_per_unit.value() > 0,
+        HomeostaticNeedId::Fatigue | HomeostaticNeedId::Bladder | HomeostaticNeedId::Dirtiness => {
+            false
+        }
+    }
+}
+
+#[must_use]
+fn state_salience_boost(
+    needs: &HomeostaticNeeds,
+    state: &BelievedEntityState,
+    urgency_threshold: Permille,
+    boost: Permille,
+) -> u16 {
+    if state.source == PerceptionSource::DirectObservation
+        && carries_pressuring_opportunity(needs, state, urgency_threshold)
+    {
+        return boost.value();
+    }
+
+    salience_boost(
+        needs.max_value(),
+        state.believed_kind,
+        urgency_threshold,
+        boost,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2661,17 +2767,19 @@ mod tests {
         SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
         ToldBeliefMemory, belief_confidence, build_believed_entity_state,
         build_observed_entity_snapshot, compute_activation, derive_entity_summary,
-        recipient_knowledge_status, salience_boost, share_equivalent, to_shared_belief_snapshot,
+        recipient_knowledge_status, salience_boost, share_equivalent, state_salience_boost,
+        to_shared_belief_snapshot,
     };
     use crate::{
         ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
         BelievedInstitutionalClaim, BodyPart, ClaimId, ClaimValue, CommodityKind, ControlSource,
         DeadAt, DisturbanceKind, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
-        EvidenceKind, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalBeliefRead,
-        InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, Permille, Quantity,
-        ResourceSource, SceneEvidence, TheftFacts, Tick, WorkstationTag, World, Wound, WoundCause,
-        WoundId, WoundList, build_prototype_world, current_institutional_belief_topics,
-        institutional_claim_same_memory_lane, traits::Component,
+        EvidenceKind, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+        Permille, Quantity, ResourceSource, SceneEvidence, TheftFacts, Tick, WashBasinState,
+        WorkstationTag, World, Wound, WoundCause, WoundId, WoundList, build_prototype_world,
+        current_institutional_belief_topics, institutional_claim_same_memory_lane,
+        traits::Component,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeMap;
@@ -2779,6 +2887,30 @@ mod tests {
             claimed_event_tick: None,
             confidence: Permille::new(confidence).unwrap(),
             refuted_at_tick: None,
+        }
+    }
+
+    fn needs_with_pressure(need: HomeostaticNeedId) -> HomeostaticNeeds {
+        let mut needs = HomeostaticNeeds::new_sated();
+        match need {
+            HomeostaticNeedId::Hunger => needs.hunger = Permille::new(1000).unwrap(),
+            HomeostaticNeedId::Thirst => needs.thirst = Permille::new(1000).unwrap(),
+            HomeostaticNeedId::Fatigue => needs.fatigue = Permille::new(1000).unwrap(),
+            HomeostaticNeedId::Bladder => needs.bladder = Permille::new(1000).unwrap(),
+            HomeostaticNeedId::Dirtiness => needs.dirtiness = Permille::new(1000).unwrap(),
+        }
+        needs
+    }
+
+    fn resource_source(commodity: CommodityKind) -> ResourceSource {
+        ResourceSource {
+            commodity,
+            available_quantity: Quantity(4),
+            max_quantity: Quantity(8),
+            regeneration_ticks_per_unit: None,
+            last_regeneration_tick: None,
+            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
         }
     }
 
@@ -3239,6 +3371,20 @@ mod tests {
                 7,
                 950,
             ),
+            sample_claim(
+                7,
+                40,
+                EntityBeliefAspect::WashBasinState,
+                ClaimValue::WashBasinState(Some(WashBasinState {
+                    clean_water_units: 8,
+                    units_per_full_wash: 2,
+                    dirtiness_level: Permille::new(300).unwrap(),
+                    ..WashBasinState::default()
+                })),
+                PerceptionSource::DirectObservation,
+                7,
+                950,
+            ),
         ];
 
         let summary = derive_entity_summary(&claims, Tick(10), &policy()).unwrap();
@@ -3263,8 +3409,62 @@ mod tests {
                 extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
             })
         );
+        assert_eq!(
+            summary.wash_basin_state,
+            Some(WashBasinState {
+                clean_water_units: 8,
+                units_per_full_wash: 2,
+                dirtiness_level: Permille::new(300).unwrap(),
+                ..WashBasinState::default()
+            })
+        );
         assert_eq!(summary.last_observed_tick(), Some(Tick(7)));
         assert_eq!(summary.source, PerceptionSource::DirectObservation);
+    }
+
+    #[test]
+    fn record_entity_snapshot_claims_preserves_wash_basin_state_in_summary() {
+        let subject = entity(40);
+        let basin_state = WashBasinState {
+            clean_water_units: 7,
+            units_per_full_wash: 3,
+            dirtiness_level: Permille::new(250).unwrap(),
+            ..WashBasinState::default()
+        };
+        let snapshot = BelievedEntityState {
+            believed_kind: Some(EntityKind::Facility),
+            last_known_place: Some(entity(10)),
+            workstation_tag: Some(WorkstationTag::WashBasin),
+            wash_basin_state: Some(basin_state),
+            ..BelievedEntityState::single_observation_defaults(
+                Tick(12),
+                PerceptionSource::DirectObservation,
+            )
+        };
+        let mut store = AgentBeliefStore::new();
+
+        store.record_entity_snapshot_claims(
+            subject,
+            &snapshot,
+            None,
+            Tick(12),
+            Some(Tick(12)),
+            8,
+            &policy(),
+        );
+
+        let summary = store
+            .get_entity(&subject)
+            .expect("claim-backed summary should exist");
+        assert_eq!(summary.wash_basin_state, Some(basin_state));
+        assert!(
+            store
+                .get_entity_claims(&subject)
+                .expect("claims should exist")
+                .iter()
+                .any(|claim| claim.aspect == EntityBeliefAspect::WashBasinState
+                    && claim.value == ClaimValue::WashBasinState(Some(basin_state)))
+        );
     }
 
     #[test]
@@ -5167,6 +5367,201 @@ mod tests {
     }
 
     #[test]
+    fn test_prune_salience_boost_preserves_observed_wash_basin_infrastructure() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut basin = sample_state(0, 1);
+        basin.believed_kind = Some(EntityKind::Facility);
+        basin.workstation_tag = Some(WorkstationTag::WashBasin);
+        basin.wash_basin_state = Some(WashBasinState::default());
+        let mut other_facility = sample_state(0, 1);
+        other_facility.believed_kind = Some(EntityKind::Facility);
+
+        store.update_entity(entity(82), basin);
+        store.update_entity(entity(83), other_facility);
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(400),
+            &needs_with_pressure(HomeostaticNeedId::Dirtiness),
+        );
+
+        assert!(store.known_entities.contains_key(&entity(82)));
+        assert!(!store.known_entities.contains_key(&entity(83)));
+    }
+
+    #[test]
+    fn test_prune_salience_boost_preserves_claim_backed_wash_basin_infrastructure() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut basin = sample_state(0, 1);
+        basin.believed_kind = Some(EntityKind::Facility);
+        basin.workstation_tag = Some(WorkstationTag::WashBasin);
+        basin.wash_basin_state = Some(WashBasinState::default());
+
+        store.record_entity_snapshot_claims(
+            entity(84),
+            &basin,
+            None,
+            Tick(0),
+            Some(Tick(0)),
+            5,
+            &BeliefConfidencePolicy::default(),
+        );
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(400),
+            &needs_with_pressure(HomeostaticNeedId::Dirtiness),
+        );
+
+        assert!(store.known_entities.contains_key(&entity(84)));
+        assert!(
+            store
+                .get_entity_claims(&entity(84))
+                .is_some_and(|claims| !claims.is_empty())
+        );
+    }
+
+    #[test]
+    fn test_prune_salience_boost_preserves_claim_backed_resource_infrastructure() {
+        let mut store = AgentBeliefStore::new();
+
+        let mut orchard = sample_state(0, 1);
+        orchard.believed_kind = Some(EntityKind::Facility);
+        orchard.workstation_tag = Some(WorkstationTag::OrchardRow);
+        orchard.resource_source = Some(resource_source(CommodityKind::Apple));
+
+        store.record_entity_snapshot_claims(
+            entity(85),
+            &orchard,
+            None,
+            Tick(0),
+            Some(Tick(0)),
+            5,
+            &BeliefConfidencePolicy::default(),
+        );
+
+        store.prune_decayed_beliefs(
+            &profile(100, 50, 5),
+            Tick(400),
+            &needs_with_pressure(HomeostaticNeedId::Hunger),
+        );
+
+        assert!(store.known_entities.contains_key(&entity(85)));
+        assert!(
+            store
+                .get_entity_claims(&entity(85))
+                .is_some_and(|claims| !claims.is_empty())
+        );
+    }
+
+    #[test]
+    fn state_salience_boost_returns_boost_for_each_pressuring_need_with_opportunity_aspect() {
+        let urgency_threshold = Permille::new(500).unwrap();
+        let boost = Permille::new(500).unwrap();
+
+        let mut basin = sample_state(0, 1);
+        basin.believed_kind = Some(EntityKind::Facility);
+        basin.workstation_tag = Some(WorkstationTag::WashBasin);
+        basin.wash_basin_state = Some(WashBasinState::default());
+        assert_eq!(
+            state_salience_boost(
+                &needs_with_pressure(HomeostaticNeedId::Dirtiness),
+                &basin,
+                urgency_threshold,
+                boost,
+            ),
+            boost.value()
+        );
+
+        let mut orchard = sample_state(0, 1);
+        orchard.believed_kind = Some(EntityKind::Facility);
+        orchard.workstation_tag = Some(WorkstationTag::OrchardRow);
+        orchard.resource_source = Some(resource_source(CommodityKind::Apple));
+        assert_eq!(
+            state_salience_boost(
+                &needs_with_pressure(HomeostaticNeedId::Hunger),
+                &orchard,
+                urgency_threshold,
+                boost,
+            ),
+            boost.value()
+        );
+
+        let mut well = sample_state(0, 1);
+        well.believed_kind = Some(EntityKind::Facility);
+        well.workstation_tag = Some(WorkstationTag::Well);
+        well.resource_source = Some(resource_source(CommodityKind::Water));
+        assert_eq!(
+            state_salience_boost(
+                &needs_with_pressure(HomeostaticNeedId::Thirst),
+                &well,
+                urgency_threshold,
+                boost,
+            ),
+            boost.value()
+        );
+    }
+
+    #[test]
+    fn state_salience_boost_does_not_boost_unrelated_facility_under_pressure() {
+        let mut facility = sample_state(0, 1);
+        facility.believed_kind = Some(EntityKind::Facility);
+        facility.workstation_tag = Some(WorkstationTag::Mill);
+
+        assert_eq!(
+            state_salience_boost(
+                &needs_with_pressure(HomeostaticNeedId::Hunger),
+                &facility,
+                Permille::new(500).unwrap(),
+                Permille::new(500).unwrap(),
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn state_salience_boost_does_not_boost_resource_that_does_not_relieve_pressuring_need() {
+        let mut grain_source = sample_state(0, 1);
+        grain_source.believed_kind = Some(EntityKind::Facility);
+        grain_source.workstation_tag = Some(WorkstationTag::FieldPlot);
+        grain_source.resource_source = Some(resource_source(CommodityKind::Grain));
+
+        assert_eq!(
+            state_salience_boost(
+                &needs_with_pressure(HomeostaticNeedId::Thirst),
+                &grain_source,
+                Permille::new(500).unwrap(),
+                Permille::new(500).unwrap(),
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn state_salience_boost_does_not_boost_indirect_observation_claim_even_with_aspect() {
+        let mut basin = sample_state(0, 1);
+        basin.believed_kind = Some(EntityKind::Facility);
+        basin.workstation_tag = Some(WorkstationTag::WashBasin);
+        basin.wash_basin_state = Some(WashBasinState::default());
+        basin.source = PerceptionSource::Report {
+            from: entity(200),
+            chain_len: 1,
+        };
+
+        assert_eq!(
+            state_salience_boost(
+                &needs_with_pressure(HomeostaticNeedId::Dirtiness),
+                &basin,
+                Permille::new(500).unwrap(),
+                Permille::new(500).unwrap(),
+            ),
+            0
+        );
+    }
+
+    #[test]
     fn test_refresh_entity_summary_from_claims_preserves_presentation_history() {
         let mut store = claim_backed_store(
             81,
@@ -5680,6 +6075,7 @@ mod tests {
             last_known_inventory: BTreeMap::from([(CommodityKind::Bread, Quantity(3))]),
             workstation_tag: None,
             resource_source: None,
+            wash_basin_state: None,
             alive: true,
             wounds: vec![sample_wound(1, 4)],
             courage: None,
@@ -5942,17 +6338,12 @@ mod tests {
         let claim = sample_claim(
             8,
             77,
-            EntityBeliefAspect::Evidence,
-            ClaimValue::EvidenceState(Some(BelievedEvidenceState {
-                entries: vec![BelievedEvidenceEntry {
-                    kind: EvidenceKind::DisturbanceMarker {
-                        place: entity(78),
-                        kind: DisturbanceKind::ForcedEntry,
-                        created_at: Tick(6),
-                    },
-                    freshness: Tick(6),
-                }],
-                observed_tick: Tick(8),
+            EntityBeliefAspect::WashBasinState,
+            ClaimValue::WashBasinState(Some(WashBasinState {
+                clean_water_units: 9,
+                units_per_full_wash: 2,
+                dirtiness_level: Permille::new(125).unwrap(),
+                ..WashBasinState::default()
             })),
             PerceptionSource::Report {
                 from: entity(55),

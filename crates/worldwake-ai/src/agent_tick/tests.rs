@@ -7728,7 +7728,7 @@ fn committed_source_invalidation_records_source_invalidated_and_forces_replan() 
     assert_eq!(entry.discrepancy, Discrepancy::SourceInvalidated);
     assert_eq!(entry.blocker_key.goal_key, goal);
     assert_eq!(entry.blocker_key.place, None);
-    assert_eq!(entry.blocker_key.target, None);
+    assert_eq!(entry.blocker_key.target, Some(source.entity));
 }
 
 #[test]

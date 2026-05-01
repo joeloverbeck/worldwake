@@ -7,7 +7,7 @@ use worldwake_core::{
     Blocker, BlockerKey, BlockerMemory, BlockingFact, CognitiveProfile, CommodityKind,
     ContentionIntents, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
     EntityId, FrameAssumption, FrameClearReason, FrameState, HomeostaticNeedId, IntentionDomain,
-    IntentionFrame, Permille, Quantity, SuspensionReason, Tick,
+    IntentionFrame, Permille, Quantity, SourceKey, SuspensionReason, Tick,
 };
 use worldwake_sim::RuntimeBeliefView;
 
@@ -643,6 +643,7 @@ pub(super) fn record_assumption_failure(
 
 pub(super) fn record_source_invalidation(
     frame: &IntentionFrame,
+    source: SourceKey,
     discrepancy_memory: &mut DiscrepancyMemory,
     tick: Tick,
     structural_block_ticks: u32,
@@ -651,7 +652,7 @@ pub(super) fn record_source_invalidation(
         blocker_key: BlockerKey {
             goal_key: frame.goal,
             place: None,
-            target: None,
+            target: Some(source.entity),
             action_def: None,
         },
         discrepancy: Discrepancy::SourceInvalidated,
@@ -2327,12 +2328,16 @@ mod tests {
     }
 
     #[test]
-    fn record_source_invalidation_uses_structural_block_ticks_without_target() {
+    fn record_source_invalidation_scopes_suppression_to_committed_source_target() {
         let goal = GoalKey::from(GoalKind::AcquireCommodity {
             commodity: CommodityKind::Apple,
             purpose: CommodityPurpose::SelfConsume,
             quantity: AcquisitionQuantity::single(),
         });
+        let source = SourceKey {
+            entity: make_entity(41),
+            commodity: CommodityKind::Apple,
+        };
         let frame = IntentionFrame {
             goal,
             domain: IntentionDomain::Errand {
@@ -2352,13 +2357,13 @@ mod tests {
         let tick = Tick(12);
         let ttl = 17;
 
-        record_source_invalidation(&frame, &mut memory, tick, ttl);
+        record_source_invalidation(&frame, source, &mut memory, tick, ttl);
 
         let entry = memory.entries.values().next().unwrap();
         assert_eq!(entry.discrepancy, Discrepancy::SourceInvalidated);
         assert_eq!(entry.blocker_key.goal_key, goal);
         assert_eq!(entry.blocker_key.place, None);
-        assert_eq!(entry.blocker_key.target, None);
+        assert_eq!(entry.blocker_key.target, Some(source.entity));
         assert_eq!(entry.observed_tick, tick);
         assert_eq!(entry.expires_tick, Tick(12 + u64::from(ttl)));
         assert_eq!(entry.clearing_condition, DiscrepancyClearing::TtlExpiry);

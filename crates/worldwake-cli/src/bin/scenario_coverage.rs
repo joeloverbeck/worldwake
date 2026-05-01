@@ -142,7 +142,7 @@ const FEATURES: &[FeatureDef] = &[
             "metabolism_profile",
             "drive_thresholds",
         ],
-        covered_place_fields: &["sleep_quality"],
+        covered_place_fields: &["sleep_quality", "place_dirtiness"],
         covered_scenario_fields: &[],
     },
     FeatureDef {
@@ -154,7 +154,7 @@ const FEATURES: &[FeatureDef] = &[
             "metabolism_profile",
             "drive_thresholds",
         ],
-        covered_place_fields: &[],
+        covered_place_fields: &["latrine_fullness"],
         covered_scenario_fields: &[],
     },
     FeatureDef {
@@ -1251,12 +1251,20 @@ fn authored_place_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str> {
             tags: _,
             visibility_profile,
             sleep_quality,
+            place_dirtiness,
+            latrine_fullness,
         } = place;
         if visibility_profile.is_some() {
             fields.insert("visibility_profile");
         }
         if sleep_quality.is_some() {
             fields.insert("sleep_quality");
+        }
+        if place_dirtiness.is_some() {
+            fields.insert("place_dirtiness");
+        }
+        if latrine_fullness.is_some() {
+            fields.insert("latrine_fullness");
         }
     }
     fields

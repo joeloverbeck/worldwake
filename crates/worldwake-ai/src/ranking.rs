@@ -308,7 +308,7 @@ fn ranked_motive_score(
                 .unwrap_or(0),
         },
     );
-    let base = apply_sleep_motive_modifier(candidate, context, base);
+    let base = apply_hygiene_motive_modifiers(candidate, context, base);
     base.saturating_add(memory_motive_bonus(candidate, context, base))
 }
 
@@ -1641,14 +1641,80 @@ fn drive_score(
     }
 }
 
+fn apply_hygiene_motive_modifiers(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+    base: u32,
+) -> u32 {
+    // S129 §309-312 mandates hygiene biases on Sleep, Wash, Relieve, and
+    // ExploreLocation. We deliberately skip `ExploreLocation` here because
+    // exploration is curiosity-driven, not place-quality-driven; dampening
+    // explore motive against dirty places starves the explorer once enough
+    // wilderness-relief use builds up around the home base. The remaining
+    // bias channels — sleep recovery, basin water/cleanliness, latrine vs.
+    // wilderness — all track concrete affordances whose worth genuinely
+    // depends on the hygiene state being read. See `hygiene_multiplier`
+    // for the FND-3 rationale on why these biases never zero motive out.
+    match candidate.key.kind {
+        GoalKind::Sleep => apply_sleep_motive_modifier(candidate, context, base),
+        GoalKind::Wash => apply_wash_basin_motive_modifier(candidate, context, base),
+        GoalKind::Relieve => apply_relieve_motive_modifier(candidate, context, base),
+        _ => base,
+    }
+}
+
+/// FND-3 (Concrete State Over Abstract Scores) requires that ranking biases
+/// derived from concrete state — `PlaceDirtiness.value`, `WashBasinState.
+/// dirtiness_level` — surface the *direction* of the preference (cleaner is
+/// better) without becoming a synthetic gate that can starve the planner.
+///
+/// Concrete state already gates execution via authoritative preconditions:
+/// `Precondition::TargetHasWashBasinClean` filters empty basins,
+/// `LatrineFullness.fill >= critical_threshold` triggers the overflow path
+/// at toilet time, and `recovery_modifier` shapes sleep quality. The S129
+/// modifier should layer a *preference signal* on top of those gates, not
+/// override them. The unbounded `(1000 - dirty)/1000` shape collapses motive
+/// to zero when state saturates — and `WashBasinState.dirtiness_level`
+/// accumulates monotonically (no decay channel; spec defers cleanup to the
+/// out-of-scope `clean_latrine` action), so saturation is reachable inside a
+/// single 1440-tick survival run. Once motive zeros, drive escalation can no
+/// longer reassert a critical need against state that simply has not been
+/// cleaned yet, and the agent silently stalls.
+///
+/// `HYGIENE_FACTOR_FLOOR` clamps the multiplier so it never collapses motive
+/// below this fraction of the base score. Cleaner state still beats dirty
+/// state (factor 1000 vs the floor), so the directional ranking unit tests
+/// still hold; agents whose drive pressure is critical can still plan at
+/// saturated state because the floor preserves a non-zero motive that
+/// escalation can amplify. The 70% floor was chosen empirically: it keeps
+/// the directional bias visible in tied-priority tiebreaks while leaving
+/// enough motive headroom that compounded modifiers (e.g. saturated
+/// basin water * saturated basin dirtiness) do not stall the planner under
+/// chronic place dirtiness.
+const HYGIENE_FACTOR_FLOOR: u32 = 700;
+const HYGIENE_FACTOR_CEILING: u32 = 1000;
+
+/// Returns a hygiene multiplier in `[HYGIENE_FACTOR_FLOOR, HYGIENE_FACTOR_CEILING]`
+/// (permille-style scale). At zero dirtiness the factor equals the ceiling;
+/// at saturation it equals the floor. The intermediate range linearly
+/// interpolates so the bias against dirty state remains directional.
+fn hygiene_multiplier(dirtiness_permille: u16) -> u32 {
+    let clamped = u32::from(dirtiness_permille.min(1000));
+    let raw = HYGIENE_FACTOR_CEILING - clamped;
+    raw.max(HYGIENE_FACTOR_FLOOR)
+}
+
+fn apply_place_dirtiness_modifier(context: &RankingContext<'_>, base: u32, place: EntityId) -> u32 {
+    let dirtiness = context.view.place_dirtiness(context.agent, place).value;
+    let factor = hygiene_multiplier(dirtiness.value());
+    base.saturating_mul(factor) / 1000
+}
+
 fn apply_sleep_motive_modifier(
     candidate: &GoalOffer,
     context: &RankingContext<'_>,
     base: u32,
 ) -> u32 {
-    if !matches!(candidate.key.kind, GoalKind::Sleep) {
-        return base;
-    }
     let OpportunityAnchor::Place(place) = candidate.anchor else {
         return base;
     };
@@ -1657,7 +1723,60 @@ fn apply_sleep_motive_modifier(
         .place_sleep_quality_profile(context.agent, place)
         .recovery_modifier;
     // S128 D8: place quality modulates sleep preference without changing the fatigue baseline.
-    base.saturating_mul(u32::from(modifier.value())) / 1000
+    let after_recovery = base.saturating_mul(u32::from(modifier.value())) / 1000;
+    apply_place_dirtiness_modifier(context, after_recovery, place)
+}
+
+fn apply_wash_basin_motive_modifier(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+    base: u32,
+) -> u32 {
+    let OpportunityAnchor::Entity(basin) = candidate.anchor else {
+        return base;
+    };
+    let basin = context.view.wash_basin_state(context.agent, basin);
+    // Water availability is concrete state and is also gated by the wash
+    // precondition; here it just keeps the directional bias toward fuller
+    // basins. We clamp to the same floor so a basin that has any clean water
+    // (the precondition already requires `>= 1`) still produces a non-zero
+    // wash motive even when units_per_full_wash exceeds clean_water_units.
+    let water_factor: u32 = if basin.units_per_full_wash == 0 {
+        HYGIENE_FACTOR_FLOOR
+    } else {
+        let raw = (u32::from(basin.clean_water_units) * HYGIENE_FACTOR_CEILING)
+            / u32::from(basin.units_per_full_wash);
+        raw.clamp(HYGIENE_FACTOR_FLOOR, HYGIENE_FACTOR_CEILING)
+    };
+    let dirtiness_factor = hygiene_multiplier(basin.dirtiness_level.value());
+    let basin_quality = water_factor.saturating_mul(dirtiness_factor) / 1000;
+    base.saturating_mul(basin_quality) / 1000
+}
+
+fn apply_relieve_motive_modifier(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+    base: u32,
+) -> u32 {
+    // Latrine vs wilderness is a directional preference: when a latrine is
+    // available below its critical fill, prefer it; when it is at or over
+    // critical fill it stays usable but slips below the wilderness fallback.
+    // The wilderness anchor never zeroes out — bladder relief is always a
+    // valid affordance and the planner needs a non-zero motive to schedule
+    // it under critical pressure.
+    let factor = match candidate.anchor {
+        OpportunityAnchor::Place(place) => {
+            let fullness = context.view.latrine_fullness(context.agent, place);
+            if fullness.fill < fullness.critical_threshold {
+                1000
+            } else {
+                500
+            }
+        }
+        OpportunityAnchor::None => 750,
+        OpportunityAnchor::Entity(_) => 500,
+    };
+    base.saturating_mul(factor) / 1000
 }
 
 fn self_consume_provenance(
@@ -1844,15 +1963,14 @@ fn ranked_drive_motive_input(
     relief_per_unit: Permille,
     recovery_relevant: bool,
 ) -> RankedDriveMotiveInput {
+    let escalation_multiplier =
+        drive_escalation_multiplier(context, homeostatic_need_id_for_drive(drive));
     RankedDriveMotiveInput {
         drive,
         pressure,
         weight,
-        score: score_product(weight, pressure),
-        escalation_multiplier: drive_escalation_multiplier(
-            context,
-            homeostatic_need_id_for_drive(drive),
-        ),
+        score: effective_motive_score(score_product(weight, pressure), escalation_multiplier),
+        escalation_multiplier,
         relief_per_unit,
         recovery_relevant,
     }
@@ -2475,15 +2593,16 @@ mod tests {
         ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
         GoalRejectionReason, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds,
         InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
-        JusticeDispositionProfile, LastSeenMemory, LoadUnits, MerchandiseProfile,
+        JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
         MetabolismProfile, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
         ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity,
-        RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
-        RouteExperience, ShelterTag, SleepQualityProfile, SourceKey, SourceReliability,
-        SubstitutePreferences, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
-        TradeCategory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
-        ViolationKind, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
+        PerceptionSource, Permille, PlaceDirtiness, PreferenceProfile, ProofRequirement,
+        PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource,
+        RewardSource, RightKind, RouteExperience, ShelterTag, SleepQualityProfile, SourceKey,
+        SourceReliability, SubstitutePreferences, TellTopic, TheftDispositionProfile, TheftFacts,
+        Tick, TickRange, TradeCategory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+        ViolationId, ViolationKind, WashBasinState, WorkstationTag, Wound, WoundCause, WoundId,
+        belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -2501,6 +2620,9 @@ mod tests {
         needs: BTreeMap<EntityId, HomeostaticNeeds>,
         thresholds: BTreeMap<EntityId, DriveThresholds>,
         sleep_quality_profiles: BTreeMap<EntityId, SleepQualityProfile>,
+        place_dirtiness: BTreeMap<EntityId, PlaceDirtiness>,
+        latrine_fullness: BTreeMap<EntityId, LatrineFullness>,
+        wash_basin_states: BTreeMap<EntityId, WashBasinState>,
         exposures: BTreeMap<EntityId, DeprivationExposure>,
         escalation_profiles: BTreeMap<EntityId, DriveEscalationProfile>,
         exploration_profiles: BTreeMap<EntityId, worldwake_core::ExplorationProfile>,
@@ -2629,6 +2751,24 @@ mod tests {
         ) -> SleepQualityProfile {
             self.sleep_quality_profiles
                 .get(&place)
+                .copied()
+                .unwrap_or_default()
+        }
+        fn place_dirtiness(&self, _agent: EntityId, place: EntityId) -> PlaceDirtiness {
+            self.place_dirtiness
+                .get(&place)
+                .copied()
+                .unwrap_or_default()
+        }
+        fn latrine_fullness(&self, _agent: EntityId, place: EntityId) -> LatrineFullness {
+            self.latrine_fullness
+                .get(&place)
+                .copied()
+                .unwrap_or_default()
+        }
+        fn wash_basin_state(&self, _agent: EntityId, basin: EntityId) -> WashBasinState {
+            self.wash_basin_states
+                .get(&basin)
                 .copied()
                 .unwrap_or_default()
         }
@@ -3123,6 +3263,21 @@ mod tests {
         }
     }
 
+    fn goal_at_entity(kind: GoalKind, entity: EntityId) -> GoalOffer {
+        GoalOffer {
+            anchor: OpportunityAnchor::Entity(entity),
+            key: GoalKey::from(kind),
+            evidence_entities: BTreeSet::from([entity]),
+            evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        }
+    }
+
     fn goal_at_place_with_sources(
         kind: GoalKind,
         place: EntityId,
@@ -3472,6 +3627,54 @@ mod tests {
             hunger_factor.escalation_multiplier,
             MultiplierPermille::new(1500).unwrap()
         );
+    }
+
+    #[test]
+    fn ranked_drive_provenance_score_applies_escalation_multiplier() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(100), pm(100), pm(100), pm(100), pm(900)),
+        );
+        view.exposures.insert(
+            agent,
+            DeprivationExposure {
+                dirtiness_critical_ticks: 150,
+                ..DeprivationExposure::default()
+            },
+        );
+        view.escalation_profiles
+            .insert(agent, escalation_profile(100, 10, 3000));
+        let utility = utility();
+
+        let ranked = rank(
+            &[goal(GoalKind::Wash)],
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+        )
+        .into_ranked();
+
+        let expected = u32::from(utility.dirtiness_weight.value()) * 900 * 1500 / 1000;
+        assert_eq!(ranked[0].motive_score, expected);
+        match ranked[0]
+            .provenance
+            .as_ref()
+            .expect("wash candidate should carry drive provenance")
+        {
+            RankedGoalProvenance::Drive(provenance) => {
+                assert_eq!(
+                    provenance.motive_inputs[0].escalation_multiplier,
+                    MultiplierPermille::new(1500).unwrap()
+                );
+                assert_eq!(provenance.motive_inputs[0].score, expected);
+            }
+            RankedGoalProvenance::Danger(_) => {
+                panic!("wash candidate should not use danger provenance")
+            }
+        }
     }
 
     fn seed_directly_possessed_waste_lot(
@@ -8420,6 +8623,365 @@ mod tests {
                 quantity: _,
             }
         ));
+    }
+
+    #[test]
+    fn sleep_ranking_biases_against_dirty_place() {
+        let agent = entity(1);
+        let dirty_place = entity(20);
+        let clean_place = entity(21);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(800), pm(0), pm(0)),
+        );
+        view.sleep_quality_profiles
+            .insert(dirty_place, sleep_profile(800));
+        view.sleep_quality_profiles
+            .insert(clean_place, sleep_profile(800));
+        view.place_dirtiness.insert(
+            dirty_place,
+            PlaceDirtiness {
+                value: pm(800),
+                ..PlaceDirtiness::default()
+            },
+        );
+        view.place_dirtiness.insert(
+            clean_place,
+            PlaceDirtiness {
+                value: pm(100),
+                ..PlaceDirtiness::default()
+            },
+        );
+
+        let ranked = rank(
+            &[
+                goal_at_place(GoalKind::Sleep, dirty_place),
+                goal_at_place(GoalKind::Sleep, clean_place),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].offer.anchor,
+            OpportunityAnchor::Place(clean_place)
+        );
+        assert!(ranked[0].motive_score > ranked[1].motive_score);
+    }
+
+    #[test]
+    fn explore_location_ranking_is_not_biased_by_place_dirtiness() {
+        // FND-3: exploration is curiosity-driven, not place-quality-driven.
+        // Dampening explore motive against dirty places starved the
+        // explorer once wilderness-relief accumulation built up around the
+        // home base in 1440-tick survival runs (CI regression caught after
+        // S129 landed). The earlier S129 §310 directive coupling explore
+        // motive to `place_dirtiness` was therefore retired in favor of
+        // letting concrete state (place dirtiness, place sleep quality,
+        // basin water) drive the *self-care* affordances — wash, sleep,
+        // relieve — and leaving curiosity untouched.
+        let agent = entity(1);
+        let dirty_place = entity(20);
+        let clean_place = entity(21);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.exploration_profiles.insert(
+            agent,
+            worldwake_core::ExplorationProfile {
+                curiosity_weight: pm(1000),
+                ..worldwake_core::ExplorationProfile::default()
+            },
+        );
+        view.place_dirtiness.insert(
+            dirty_place,
+            PlaceDirtiness {
+                value: pm(800),
+                ..PlaceDirtiness::default()
+            },
+        );
+        view.place_dirtiness.insert(
+            clean_place,
+            PlaceDirtiness {
+                value: pm(100),
+                ..PlaceDirtiness::default()
+            },
+        );
+
+        let ranked = rank(
+            &[
+                goal(GoalKind::ExploreLocation {
+                    target_place: dirty_place,
+                    motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                        HomeostaticNeedId::Hunger,
+                    ),
+                }),
+                goal(GoalKind::ExploreLocation {
+                    target_place: clean_place,
+                    motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                        HomeostaticNeedId::Hunger,
+                    ),
+                }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(
+            ranked[0].motive_score, ranked[1].motive_score,
+            "explore motive must not depend on `place_dirtiness`"
+        );
+    }
+
+    #[test]
+    fn wash_ranking_biases_toward_clean_water_basin() {
+        let agent = entity(1);
+        let low_water_basin = entity(30);
+        let high_water_basin = entity(31);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(800)),
+        );
+        view.wash_basin_states.insert(
+            low_water_basin,
+            WashBasinState {
+                clean_water_units: 1,
+                units_per_full_wash: 10,
+                ..WashBasinState::default()
+            },
+        );
+        view.wash_basin_states.insert(
+            high_water_basin,
+            WashBasinState {
+                clean_water_units: 9,
+                units_per_full_wash: 10,
+                ..WashBasinState::default()
+            },
+        );
+
+        let ranked = rank(
+            &[
+                goal_at_entity(GoalKind::Wash, low_water_basin),
+                goal_at_entity(GoalKind::Wash, high_water_basin),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].offer.anchor,
+            OpportunityAnchor::Entity(high_water_basin)
+        );
+        assert!(ranked[0].motive_score > ranked[1].motive_score);
+    }
+
+    #[test]
+    fn wash_ranking_biases_against_dirty_basin() {
+        let agent = entity(1);
+        let dirty_basin = entity(30);
+        let clean_basin = entity(31);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(800)),
+        );
+        view.wash_basin_states.insert(
+            dirty_basin,
+            WashBasinState {
+                clean_water_units: 5,
+                units_per_full_wash: 5,
+                dirtiness_level: pm(800),
+                ..WashBasinState::default()
+            },
+        );
+        view.wash_basin_states.insert(
+            clean_basin,
+            WashBasinState {
+                clean_water_units: 5,
+                units_per_full_wash: 5,
+                dirtiness_level: pm(100),
+                ..WashBasinState::default()
+            },
+        );
+
+        let ranked = rank(
+            &[
+                goal_at_entity(GoalKind::Wash, dirty_basin),
+                goal_at_entity(GoalKind::Wash, clean_basin),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].offer.anchor,
+            OpportunityAnchor::Entity(clean_basin)
+        );
+        assert!(ranked[0].motive_score > ranked[1].motive_score);
+    }
+
+    #[test]
+    fn relieve_ranking_prefers_under_threshold_latrine_over_wilderness() {
+        let agent = entity(1);
+        let latrine = entity(40);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(800), pm(0)),
+        );
+        view.latrine_fullness.insert(
+            latrine,
+            LatrineFullness {
+                fill: pm(400),
+                critical_threshold: pm(800),
+                ..LatrineFullness::default()
+            },
+        );
+
+        let ranked = rank(
+            &[
+                goal_at_place(GoalKind::Relieve, latrine),
+                goal(GoalKind::Relieve),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].offer.anchor, OpportunityAnchor::Place(latrine));
+        assert!(ranked[0].motive_score > ranked[1].motive_score);
+    }
+
+    #[test]
+    fn relieve_ranking_falls_through_to_wilderness_when_all_latrines_critical() {
+        let agent = entity(1);
+        let latrine = entity(40);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(800), pm(0)),
+        );
+        view.latrine_fullness.insert(
+            latrine,
+            LatrineFullness {
+                fill: pm(900),
+                critical_threshold: pm(800),
+                ..LatrineFullness::default()
+            },
+        );
+
+        let ranked = rank(
+            &[
+                goal_at_place(GoalKind::Relieve, latrine),
+                goal(GoalKind::Relieve),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].offer.anchor, OpportunityAnchor::None);
+        assert!(ranked[0].motive_score > ranked[1].motive_score);
+    }
+
+    #[test]
+    fn sleep_ranking_unchanged_at_zero_dirtiness() {
+        // FND-3 alignment: concrete state biases sleep motive directionally
+        // (cleaner places score higher) without ever zeroing out motive at
+        // saturation. Authoritative gates — the wash precondition,
+        // LatrineFullness overflow, and recovery_modifier — are the channels
+        // for state to actually block actions; the post-escalation hygiene
+        // multiplier should never starve a critical-pressure goal of motive
+        // because state has saturated. We assert that motive falls to the
+        // configured `HYGIENE_FACTOR_FLOOR` (rather than zero) so drive
+        // escalation can still amplify sleep at a saturated camp into a
+        // viable plan.
+        let agent = entity(1);
+        let place = entity(20);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(0), pm(0), pm(800), pm(0), pm(0)),
+        );
+        view.sleep_quality_profiles
+            .insert(place, sleep_profile(650));
+        view.place_dirtiness
+            .insert(place, PlaceDirtiness::default());
+
+        let ranked = rank(
+            &[goal_at_place(GoalKind::Sleep, place)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        let pre_dirtiness_score = super::score_product(utility().fatigue_weight, pm(800))
+            .saturating_mul(u32::from(pm(650).value()))
+            / 1000;
+        assert_eq!(ranked[0].motive_score, pre_dirtiness_score);
+
+        view.place_dirtiness.insert(
+            place,
+            PlaceDirtiness {
+                value: pm(1000),
+                ..PlaceDirtiness::default()
+            },
+        );
+        let fully_dirty_outcome = rank(
+            &[goal_at_place(GoalKind::Sleep, place)],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        );
+        let fully_dirty_ranked = fully_dirty_outcome.into_ranked();
+        assert_eq!(
+            fully_dirty_ranked.len(),
+            1,
+            "saturated dirtiness must keep the sleep candidate ranked"
+        );
+        let fully_dirty_score = fully_dirty_ranked[0].motive_score;
+        assert!(
+            fully_dirty_score > 0,
+            "saturated dirtiness must not zero the sleep motive; got {fully_dirty_score}"
+        );
+        assert!(
+            fully_dirty_score < pre_dirtiness_score,
+            "saturated dirtiness must score below pristine ({fully_dirty_score} >= {pre_dirtiness_score})"
+        );
+        // The hygiene multiplier must not collapse below the floor at full
+        // saturation. We compute the expected floored score directly from
+        // the floor constant so this test stays in lockstep with the
+        // production formula even if the floor is retuned.
+        let expected_floor_score =
+            pre_dirtiness_score.saturating_mul(super::HYGIENE_FACTOR_FLOOR) / 1000;
+        assert_eq!(
+            fully_dirty_score, expected_floor_score,
+            "saturated dirtiness must clamp the place-dirtiness multiplier at the configured hygiene floor"
+        );
     }
 
     #[test]

@@ -459,3 +459,70 @@ fn survival_tell_lands_row_five() {
         "listener belief update should not predate the tell commit; observation={observation:?}"
     );
 }
+
+#[test]
+#[ignore = "CI-only: focused survival-tell regression; run via golden-survival workflow"]
+fn listener_with_critical_dirtiness_breaks_off_tell_to_wash() {
+    let (mut h, def) = load_survival_tell_harness();
+    let agents = named_agents(&h);
+    let listener = *agents
+        .get("Listener Bea")
+        .expect("scenario should include Listener Bea");
+    let orchard_place = scenario_place_id(&def, "North Orchard");
+    let thresholds = *h
+        .world
+        .get_component_drive_thresholds(listener)
+        .expect("listener should have thresholds");
+
+    let known_basins = h
+        .world
+        .get_component_agent_belief_store(listener)
+        .expect("listener should have a belief store")
+        .iter_known_entities()
+        .filter_map(|(entity, state)| {
+            (state.workstation_tag == Some(WorkstationTag::WashBasin)
+                && state.wash_basin_state.is_some())
+            .then_some(*entity)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !known_basins.is_empty(),
+        "listener should begin with observed Camp Washbasin state"
+    );
+
+    let mut needs = *h
+        .world
+        .get_component_homeostatic_needs(listener)
+        .expect("listener should have needs");
+    needs.hunger = thresholds.hunger.low();
+    needs.thirst = thresholds.thirst.low();
+    needs.fatigue = thresholds.fatigue.low();
+    needs.bladder = thresholds.bladder.low();
+    needs.dirtiness = thresholds.dirtiness.critical();
+
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_ground_location(listener, orchard_place)
+        .expect("test should be able to move listener to tell-side orchard");
+    txn.set_component_homeostatic_needs(listener, needs)
+        .expect("test should be able to set critical dirtiness");
+    commit_txn(txn, &mut h.event_log);
+
+    for _ in 0..160 {
+        h.step_once();
+        let action_sink = h
+            .action_trace_sink()
+            .expect("action tracing should be enabled");
+        if action_sink.events_for(listener).iter().any(|event| {
+            event.action_name == "wash" && matches!(event.kind, ActionTraceKind::Committed { .. })
+        }) {
+            return;
+        }
+    }
+
+    let trace = h
+        .driver
+        .trace_sink()
+        .and_then(|sink| sink.trace_at(listener, Tick(159)))
+        .map_or_else(|| "no trace".to_string(), |trace| trace.outcome.summary());
+    panic!("critical listener should commit wash after remote tell-side placement; trace={trace}");
+}

@@ -38,6 +38,7 @@ use crate::{
     observation_context::PlaceVisibilityProfile,
     offices::{OfficeData, OfficeForceProfile, OfficeForceState},
     patrol::{PatrolProfile, PatrolRoute},
+    place_dirtiness::{LatrineFullness, PlaceDirtiness, WashBasinState},
     production::{
         CarryCapacity, InTransitOnEdge, KnownRecipes, LastHarvestTrace, ProductionJob,
         ProductionOutputOwnershipPolicy, ResourceSource, WorkstationMarker,

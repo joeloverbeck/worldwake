@@ -15,13 +15,14 @@ use worldwake_core::{
     DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId, EntityKind,
     ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
-    LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-    OfficeData, PerceptionSource, Permille, PlaceTag, PreferenceProfile, Quantity, RecipeId,
-    RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
-    StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+    LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance,
+    LatrineFullness, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
+    ObligationSatiationProfile, OfficeData, PerceptionSource, Permille, PlaceDirtiness, PlaceTag,
+    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
+    ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RouteExperience,
+    SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
+    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState,
     WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
@@ -568,6 +569,56 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
         self.world
             .get_component_sleep_quality_profile(place)
             .copied()
+            .unwrap_or_default()
+    }
+
+    fn place_dirtiness(&self, agent: EntityId, place: EntityId) -> PlaceDirtiness {
+        if agent != self.agent {
+            return PlaceDirtiness::default();
+        }
+
+        if self.world.effective_place(agent) != Some(place) {
+            return PlaceDirtiness::default();
+        }
+
+        self.world
+            .get_component_place_dirtiness(place)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn latrine_fullness(&self, agent: EntityId, place: EntityId) -> LatrineFullness {
+        if agent != self.agent {
+            return LatrineFullness::default();
+        }
+
+        if self.world.effective_place(agent) != Some(place) {
+            return LatrineFullness::default();
+        }
+
+        self.world
+            .get_component_latrine_fullness(place)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn wash_basin_state(&self, agent: EntityId, basin: EntityId) -> WashBasinState {
+        if agent != self.agent {
+            return WashBasinState::default();
+        }
+        if self.has_authoritative_local_visibility(basin) {
+            return self
+                .world
+                .get_component_wash_basin_state(basin)
+                .copied()
+                .unwrap_or_default();
+        }
+        // FND-14A: physical state requires co-location to observe; off-place
+        // ranking falls through to the agent's most recent stored belief
+        // (`BelievedEntityState::wash_basin_state`) rather than reading
+        // authoritative state for a non-co-located entity.
+        self.believed_entity(basin)
+            .and_then(|state| state.wash_basin_state)
             .unwrap_or_default()
     }
 
@@ -1874,6 +1925,18 @@ impl FacilityBeliefView for PerAgentBeliefView<'_> {
 
         self.believed_entity(entity)
             .and_then(|state| state.resource_source.clone())
+    }
+
+    fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+        if entity == self.agent || self.has_authoritative_local_visibility(entity) {
+            return self.world.get_component_wash_basin_state(entity).copied();
+        }
+        // FND-14A: off-place reads consult the most recent stored belief
+        // about the basin's state. The authoritative wash precondition
+        // re-validates live state at action time, so stale beliefs trigger
+        // replan rather than commit-against-stale-state.
+        self.believed_entity(entity)
+            .and_then(|state| state.wash_basin_state)
     }
 
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {

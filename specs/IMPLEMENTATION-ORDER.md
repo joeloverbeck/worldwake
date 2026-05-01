@@ -494,7 +494,7 @@ S127 ✅ archived
 S128 ✅ archived
 S131 (independent; existing SourceReliability extension)
 S130 (hard dep on S128 ✅; soft dep on S122 ✅)
-S129 (soft dep on S128 ✅; hard deps on S106 ✅, S110 ✅)
+S129 ✅ archived (soft dep on S128 ✅; hard deps on S106 ✅, S110 ✅)
 ```
 
 All cross-spec dependencies among S126–S131 are **soft** (benefit but not blocking). Hard dependencies on S106, S110, S122 are already satisfied (those specs are completed).
@@ -511,13 +511,33 @@ All cross-spec dependencies among S126–S131 are **soft** (benefit but not bloc
 - **S130**: Survey Records and Frontier Disconfirmation — `SurveyMemory` per-agent component; `HypothesisKind` on `ExploreLocation`; perception-time arrival evaluation; ranking damps re-exploration of confirmed-empty places. Folds in PR-7's narrow arrival-diff piece. S128's `SleepQualityProfile` dependency for `MayContainSleepSite` is now satisfied.
 
 **Wave 3** (after Wave 2; soft deps consumable):
-- **S129**: Place Dirtiness and Facility Wear — `PlaceDirtiness`, `LatrineFullness`, `WashBasinState` components; `WasteCreated`/`WashFacilityUsed`/`LatrineMaintained` event tags; relieve/toilet/wash handler extensions; partial-wash outcome (PR-11 fold-in). Soft consumes completed S128 (sleep ranking reads dirtiness as quality modifier). Folds in PR-9 hygiene topology, PR-11 partial-wash, PR-12 waste/wash events.
+- **S129**: ✅ COMPLETED — Place Dirtiness and Facility Wear — archived at [archive/specs/S129-place-dirtiness-facility-wear.md](/home/joeloverbeck/projects/worldwake/archive/specs/S129-place-dirtiness-facility-wear.md). Landed `PlaceDirtiness`, `LatrineFullness`, and `WashBasinState` components; `WasteCreated`/`WashFacilityUsed` event tags; relieve/toilet/wash handler extensions; basin refill and place dirtiness maintenance; partial-wash outcome; wash basin candidate/ranking integration; and eight-scenario golden coverage in `golden_place_dirtiness.rs`. `LatrineMaintained` remains deferred until a `clean_latrine` action exists.
 
 ### Follow-up Tickets (not specs)
 
 - **Survival-baseline contention authoring** (post-S127/S131): enable `ContentionPolicy::FirstArrival` on the wells/orchard in `scenarios/survival-baseline.ron` so the existing `queue_for_facility_use` substrate is exercised under realistic pressure. Authoring task, not a spec.
 - **Additional sleep-quality rebalance** (post-S128): `scenarios/survival-baseline.ron` now has the S128 four-place `SleepQualityProfile` authoring. Extend the bounded `0..=1000` sleep-quality profiles to other survival scenarios when those scenarios need place-specific sleep-site differentiation.
 - **Place dirtiness authoring** (post-S129): author `PlaceDirtiness.decay_per_tick` per place to differentiate accumulation/recovery rates per topology character.
+
+### Adjunct Wave: S129 Post-Remediation Architectural Audit
+
+Derived from the 2026-05-01 `/brainstorm` triage of the four CIREM tickets (`S129CIREM-001..004`) that remediated post-S129 CI failures. The triage examined whether those fixes were workarounds masking deeper architectural issues. Verdict: the four tickets fixed real root causes (no weight-knob hacks, no contract relaxations, no force-X-when-Y carve-outs), but three of them revealed deeper substrate patterns the per-ticket scope did not generalize. This wave addresses those patterns. Source: `docs/triage/2026-05-01-s129cirem-followup-triage.md`.
+
+```text
+S132 ✅ archived
+BELASPCOV-001 ticket (completed — claim-aspect coverage audit)
+INFRARET-001 ticket (completed — infrastructure retention generalized)
+RELIEFACT-001 ticket (completed — per-need relief-actionability predicate)
+LOCROOT-001 ticket (completed — direct-root synthesis locality audit)
+```
+
+**Wave** (parallel):
+
+- **S132**: ✅ COMPLETED — Frontier-Exhaustion Strategy as Goal-Kind Property — archived at [archive/specs/S132-frontier-exhaustion-strategy.md](/home/joeloverbeck/projects/worldwake/archive/specs/S132-frontier-exhaustion-strategy.md). Replaced the per-`GoalKind` allow-list in `frontier_exhaustion_entry` with a goal-kind-property dispatch (`PermanentUntilInvalidator | CooldownRetry`). Closes the pattern of S129CIREM-002 / S129CIREM-004 each adding a one-off variant to the switch. FND-21 / FND-22A alignment.
+- **BELASPCOV-001** (ticket): `BelievedEntityState ↔ EntityBeliefAspect` claim-aspect coverage audit — produced `docs/audits/2026-05-01-believed-entity-state-claim-coverage.md`, found no mutable belief-content gaps, and created no per-gap secondary tickets. CIREM-003's `WashBasinState` claim-aspect addition was ad hoc; this ticket verified the current summary fields before the next chronic-stall failure mode.
+- **INFRARET-001** (ticket): COMPLETED — generalized `state_salience_boost` from two hardcoded shape pairs to a direct-observation plus need-pressure predicate over current opportunity aspects. Soft dependency on BELASPCOV-001 was satisfied; the completed audit found no additional aspects to fold in.
+- **RELIEFACT-001** (ticket): COMPLETED — extracted per-need relief-actionability predicate from `emit_exploration_candidates` (replaced the inline dirtiness `if` branch added by CIREM-002 with a per-need dispatch).
+- **LOCROOT-001** (ticket): COMPLETED — audited direct-root synthesis (`GoalOffer::synthesized_root_candidate_targets`) for arms whose action precondition is `EntityAtActorPlace` / `ActorPlace`, produced `docs/audits/2026-05-01-direct-root-synthesis-locality.md`, and gated co-location-bearing synthesized direct roots so remote targets compose through travel before local action.
 
 ### Phase 10 Gate
 

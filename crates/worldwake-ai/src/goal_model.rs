@@ -1927,12 +1927,21 @@ fn places_with_resource_source(
 }
 
 fn places_with_wash_access(state: &PlanningState<'_>) -> Vec<EntityId> {
-    let basin_places = places_with_workstation(state, WorkstationTag::WashBasin);
-    let water_places = places_with_resource_source(state, CommodityKind::Water);
-    let water_place_set: BTreeSet<_> = water_places.into_iter().collect();
-    basin_places
+    places_with_workstation(state, WorkstationTag::WashBasin)
         .into_iter()
-        .filter(|place| water_place_set.contains(place))
+        .filter(|place| {
+            state
+                .matching_workstations_at(*place, WorkstationTag::WashBasin)
+                .iter()
+                .any(|basin| {
+                    // FND-14A: the planner stages wash plans only when the
+                    // agent has observed the basin's state — directly via
+                    // co-location or via `BelievedEntityState::wash_basin_state`
+                    // surfaced by `FacilityBeliefView::wash_basin_state`.
+                    FacilityBeliefView::wash_basin_state(state, *basin)
+                        .is_some_and(|basin_state| basin_state.clean_water_units > 0)
+                })
+        })
         .collect()
 }
 
@@ -2361,6 +2370,14 @@ pub(crate) enum RootCandidateSynthesis {
 }
 
 impl GoalOffer {
+    fn can_synthesize_actor_place_root(actor_place: Option<EntityId>, place: EntityId) -> bool {
+        actor_place == Some(place)
+    }
+
+    fn can_synthesize_entity_at_actor_place_root(&self, actor_place: Option<EntityId>) -> bool {
+        actor_place.is_some_and(|place| self.evidence_places.contains(&place))
+    }
+
     pub(crate) fn synthesized_root_candidate_targets(
         &self,
         def: &ActionDef,
@@ -2377,6 +2394,9 @@ impl GoalOffer {
                         def.targets.as_slice(),
                         [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
                     ) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
+                    if !self.can_synthesize_entity_at_actor_place_root(actor_place) {
                         return RootCandidateSynthesis::NoSynthesisPath;
                     }
                     if self.evidence_entities.len() != 1 {
@@ -2396,6 +2416,9 @@ impl GoalOffer {
                     ) {
                         return RootCandidateSynthesis::NoSynthesisPath;
                     }
+                    if !self.can_synthesize_entity_at_actor_place_root(actor_place) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
                     if self.evidence_entities.len() != 1 {
                         return RootCandidateSynthesis::TargetDerivationFailed;
                     }
@@ -2403,6 +2426,29 @@ impl GoalOffer {
                         self.evidence_entities.iter().copied().collect(),
                     )
                 }
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
+            PlannerOpKind::Wash => match &self.key.kind {
+                GoalKind::Wash
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) =>
+                {
+                    if actor_place.is_none_or(|place| !self.evidence_places.contains(&place)) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
+                    if let worldwake_core::OpportunityAnchor::Entity(basin) = self.anchor {
+                        RootCandidateSynthesis::Targets(vec![basin])
+                    } else if self.evidence_entities.len() == 1 {
+                        RootCandidateSynthesis::Targets(
+                            self.evidence_entities.iter().copied().collect(),
+                        )
+                    } else {
+                        RootCandidateSynthesis::TargetDerivationFailed
+                    }
+                }
+                GoalKind::Wash => RootCandidateSynthesis::NoSynthesisPath,
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
             PlannerOpKind::PressForceClaim => match &self.key.kind {
@@ -2466,6 +2512,9 @@ impl GoalOffer {
                     }) else {
                         return RootCandidateSynthesis::TargetDerivationFailed;
                     };
+                    if !Self::can_synthesize_actor_place_root(actor_place, place) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
                     RootCandidateSynthesis::Targets(vec![place])
                 }
                 GoalKind::EstablishBanditCamp { .. } => RootCandidateSynthesis::NoSynthesisPath,
@@ -2484,6 +2533,9 @@ impl GoalOffer {
                         [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
                     ) =>
                 {
+                    if !self.can_synthesize_entity_at_actor_place_root(actor_place) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
                     RootCandidateSynthesis::Targets(vec![*listener])
                 }
                 GoalKind::ShareBelief { .. } => RootCandidateSynthesis::NoSynthesisPath,
@@ -2508,6 +2560,9 @@ impl GoalOffer {
                         [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
                     ) =>
                 {
+                    if !self.can_synthesize_entity_at_actor_place_root(actor_place) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
                     RootCandidateSynthesis::Targets(vec![*accused])
                 }
                 GoalKind::PunishAccused { .. } => RootCandidateSynthesis::NoSynthesisPath,
@@ -2556,6 +2611,9 @@ impl GoalOffer {
                         [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
                     ) =>
                 {
+                    if !self.can_synthesize_entity_at_actor_place_root(actor_place) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
                     RootCandidateSynthesis::Targets(vec![*subject])
                 }
                 GoalKind::EscortToSafety { .. } => RootCandidateSynthesis::NoSynthesisPath,
@@ -2599,7 +2657,7 @@ mod tests {
         NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind, Quantity, RecipeId,
         RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw, TellTopic, Tick,
         TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
-        WorkstationTag, Wound,
+        WashBasinState, WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
     use worldwake_sim::PressForceClaimActionPayload;
@@ -3618,6 +3676,7 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
+        wash_basin_states: BTreeMap<EntityId, WashBasinState>,
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
         courage_values: BTreeMap<EntityId, Permille>,
@@ -3670,6 +3729,7 @@ mod tests {
                 wounds: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
                 resource_sources: BTreeMap::new(),
+                wash_basin_states: BTreeMap::new(),
                 workstation_tags: BTreeMap::new(),
                 place_tags: BTreeMap::new(),
                 courage_values: BTreeMap::new(),
@@ -4103,6 +4163,10 @@ mod tests {
 
         fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
             self.resource_sources.get(&entity).cloned()
+        }
+
+        fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+            self.wash_basin_states.get(&entity).copied()
         }
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
@@ -5104,7 +5168,8 @@ mod tests {
     }
 
     #[test]
-    fn grounded_goal_synthesizes_tell_root_targets_from_goal_identity() {
+    fn grounded_goal_synthesizes_tell_root_targets_only_when_colocated() {
+        let place = entity(7);
         let listener = entity(8);
         let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
@@ -5116,7 +5181,7 @@ mod tests {
                 communication_class: worldwake_core::CommunicationClass::Gossip,
             }),
             evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
+            evidence_places: BTreeSet::from([place]),
             obligation_source: None,
             commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
             required_information_gaps: Vec::new(),
@@ -5155,8 +5220,16 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(place)),
             RootCandidateSynthesis::Targets(vec![listener])
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(entity(99))),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            RootCandidateSynthesis::NoSynthesisPath
         );
     }
 
@@ -5259,6 +5332,183 @@ mod tests {
         assert_eq!(
             goal.synthesized_root_candidate_targets(&def, semantics, None),
             RootCandidateSynthesis::Targets(vec![bounty])
+        );
+    }
+
+    #[test]
+    fn grounded_goal_does_not_synthesize_fine_root_targets_from_remote_evidence() {
+        let actor_place = entity(10);
+        let remote_place = entity(11);
+        let accused = entity(12);
+        let goal = GoalOffer {
+            anchor: worldwake_core::OpportunityAnchor::None,
+            key: GoalKey::from(GoalKind::PunishAccused {
+                office: entity(13),
+                accused,
+                accusation_entry: RecordEntryId(14),
+                punishment: PunishmentKind::Fine {
+                    commodity: CommodityKind::Coin,
+                    amount: Quantity(3),
+                },
+            }),
+            evidence_entities: BTreeSet::from([accused]),
+            evidence_places: BTreeSet::from([remote_place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "fine".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Fine,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(actor_place)),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_does_not_synthesize_exile_root_targets_from_remote_evidence() {
+        let actor_place = entity(10);
+        let remote_place = entity(11);
+        let accused = entity(12);
+        let goal = GoalOffer {
+            anchor: worldwake_core::OpportunityAnchor::None,
+            key: GoalKey::from(GoalKind::PunishAccused {
+                office: entity(13),
+                accused,
+                accusation_entry: RecordEntryId(14),
+                punishment: PunishmentKind::Exile {
+                    from_faction: entity(15),
+                },
+            }),
+            evidence_entities: BTreeSet::from([accused]),
+            evidence_places: BTreeSet::from([remote_place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "exile".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Exile,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(actor_place)),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_does_not_synthesize_escort_root_targets_from_remote_evidence() {
+        let actor_place = entity(10);
+        let remote_place = entity(11);
+        let subject = entity(12);
+        let goal = GoalOffer {
+            anchor: worldwake_core::OpportunityAnchor::None,
+            key: GoalKey::from(GoalKind::EscortToSafety {
+                subject,
+                destination: entity(13),
+            }),
+            evidence_entities: BTreeSet::from([subject]),
+            evidence_places: BTreeSet::from([remote_place]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "escort_to_safety".to_string(),
+            domain: ActionDomain::Social,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::EscortToSafety,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: false,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(actor_place)),
+            RootCandidateSynthesis::NoSynthesisPath
         );
     }
 
@@ -5395,7 +5645,7 @@ mod tests {
     }
 
     #[test]
-    fn grounded_goal_synthesizes_establish_camp_root_targets_from_goal_place() {
+    fn grounded_goal_synthesizes_establish_camp_root_targets_only_when_colocated() {
         let rally_place = entity(14);
         let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::Place(rally_place),
@@ -5440,13 +5690,22 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(rally_place)),
             RootCandidateSynthesis::Targets(vec![rally_place])
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(entity(99))),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            RootCandidateSynthesis::NoSynthesisPath
         );
     }
 
     #[test]
-    fn grounded_goal_synthesizes_trade_root_targets_from_single_evidence_entity() {
+    fn grounded_goal_synthesizes_trade_root_targets_from_local_single_evidence_entity() {
+        let market = entity(10);
         let seller = entity(11);
         let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
@@ -5456,7 +5715,7 @@ mod tests {
                 quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::from([seller]),
-            evidence_places: BTreeSet::new(),
+            evidence_places: BTreeSet::from([market]),
             obligation_source: None,
             commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
             required_information_gaps: Vec::new(),
@@ -5495,13 +5754,128 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(market)),
             RootCandidateSynthesis::Targets(vec![seller])
         );
     }
 
     #[test]
+    fn grounded_goal_does_not_synthesize_trade_root_targets_from_remote_evidence() {
+        let actor_place = entity(10);
+        let remote_market = entity(12);
+        let seller = entity(11);
+        let goal = GoalOffer {
+            anchor: worldwake_core::OpportunityAnchor::None,
+            key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }),
+            evidence_entities: BTreeSet::from([seller]),
+            evidence_places: BTreeSet::from([remote_market]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        };
+        let def = ActionDef {
+            id: ActionDefId(12),
+            name: "trade".to_string(),
+            domain: ActionDomain::Trade,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Agent,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Trade,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: true,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(actor_place)),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
+    fn grounded_goal_does_not_synthesize_harvest_root_targets_from_remote_evidence() {
+        let actor_place = entity(10);
+        let remote_orchard = entity(12);
+        let orchard_row = entity(11);
+        let goal = GoalOffer {
+            anchor: worldwake_core::OpportunityAnchor::None,
+            key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Apple,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }),
+            evidence_entities: BTreeSet::from([orchard_row]),
+            evidence_places: BTreeSet::from([remote_orchard]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        };
+        let def = ActionDef {
+            id: ActionDefId(13),
+            name: "harvest:apple".to_string(),
+            domain: ActionDomain::Production,
+            actor_constraints: Vec::new(),
+            targets: vec![worldwake_sim::TargetSpec::EntityAtActorPlace {
+                kind: EntityKind::Facility,
+            }],
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: worldwake_core::Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::SamePlace,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: vec![],
+        };
+        let semantics = PlannerOpSemantics {
+            op_kind: PlannerOpKind::Harvest,
+            may_appear_mid_plan: false,
+            is_materialization_barrier: true,
+            transition_kind: PlannerTransitionKind::GoalModelFallback,
+        };
+
+        assert_eq!(
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(actor_place)),
+            RootCandidateSynthesis::NoSynthesisPath
+        );
+    }
+
+    #[test]
     fn grounded_goal_does_not_synthesize_trade_root_targets_from_ambiguous_evidence() {
+        let market = entity(10);
         let goal = GoalOffer {
             anchor: worldwake_core::OpportunityAnchor::None,
             key: GoalKey::from(GoalKind::AcquireCommodity {
@@ -5510,7 +5884,7 @@ mod tests {
                 quantity: AcquisitionQuantity::single(),
             }),
             evidence_entities: BTreeSet::from([entity(11), entity(12)]),
-            evidence_places: BTreeSet::new(),
+            evidence_places: BTreeSet::from([market]),
             obligation_source: None,
             commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
             required_information_gaps: Vec::new(),
@@ -5549,7 +5923,7 @@ mod tests {
         };
 
         assert_eq!(
-            goal.synthesized_root_candidate_targets(&def, semantics, None),
+            goal.synthesized_root_candidate_targets(&def, semantics, Some(market)),
             RootCandidateSynthesis::TargetDerivationFailed
         );
     }
@@ -7456,7 +7830,13 @@ mod tests {
     }
 
     #[test]
-    fn wash_returns_places_with_basin_and_water_source_belief() {
+    fn wash_ignores_remote_basin_without_state_carrier() {
+        // FND-14A: physical basin state is co-located perception only.
+        // The planner stages a wash plan only when the agent has observed
+        // the basin's state — directly (co-located) or via
+        // `BelievedEntityState::wash_basin_state` — so a basin without a
+        // stored state snapshot is invisible to wash planning until the
+        // agent visits it.
         let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
         let basin = entity(50);
         let well = entity(51);
@@ -7527,8 +7907,32 @@ mod tests {
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_c]);
+        assert!(places.is_empty());
         assert!(!places.contains(&place_a));
+    }
+
+    #[test]
+    fn wash_returns_local_place_with_clean_basin_state() {
+        let (mut view, actor, place_a, _place_b, _place_c) = spatial_view();
+        let basin = entity(50);
+        view.alive.insert(basin);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.effective_places.insert(basin, place_a);
+        view.entities_at.entry(place_a).or_default().push(basin);
+        view.workstation_tags
+            .insert(basin, WorkstationTag::WashBasin);
+        view.wash_basin_states.insert(
+            basin,
+            WashBasinState {
+                clean_water_units: 2,
+                ..WashBasinState::default()
+            },
+        );
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_a]);
     }
 
     #[test]
