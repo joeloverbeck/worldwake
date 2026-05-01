@@ -2421,6 +2421,9 @@ impl GoalOffer {
                         [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
                     ) =>
                 {
+                    if actor_place.is_none_or(|place| !self.evidence_places.contains(&place)) {
+                        return RootCandidateSynthesis::NoSynthesisPath;
+                    }
                     if let worldwake_core::OpportunityAnchor::Entity(basin) = self.anchor {
                         RootCandidateSynthesis::Targets(vec![basin])
                     } else if self.evidence_entities.len() == 1 {

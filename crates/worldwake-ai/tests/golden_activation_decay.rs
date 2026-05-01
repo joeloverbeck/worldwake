@@ -357,7 +357,7 @@ fn golden_activation_decay_prunes_stale_entities_replays_deterministically() {
     assert_eq!(first, second);
 }
 
-// Scenario 146: Need Salience Extends Item Retention But Not Facility Retention
+// Scenario 146: Need Salience Extends Concrete Opportunity Retention
 //
 // Systems: Perception
 // ActionDomains: N/A
@@ -368,11 +368,11 @@ fn golden_activation_decay_prunes_stale_entities_replays_deterministically() {
 // direct-observation beliefs from the same tick at `OrchardFarm`: one Apple `ItemLot` and one
 // apple-source facility.
 //
-// Proves: The live salience boost extends retention only for the item belief. The facility belief
-// receives no salience extension and decays away on the normal activation schedule.
+// Proves: The live salience boost extends retention for concrete opportunity beliefs: portable
+// item lots and directly observed resource-source facilities.
 //
 // Chain: seeded stale item + facility beliefs -> urgent hunger retained in agent state ->
-// item-only salience boost during prune -> item remains while facility is forgotten.
+// opportunity salience boost during prune -> both food opportunity carriers remain.
 #[test]
 fn golden_need_salience_retains_hungry_item_belief() {
     let observation = run_need_salience_scenario(Seed([146; 32]));
@@ -382,8 +382,8 @@ fn golden_need_salience_retains_hungry_item_belief() {
         "urgent need should retain the stale item belief beyond the normal activation window; observation={observation:?}"
     );
     assert!(
-        !observation.facility_retained,
-        "need salience must not retain stale non-item beliefs; observation={observation:?}"
+        observation.facility_retained,
+        "need salience must retain directly observed resource-source facilities; observation={observation:?}"
     );
 }
 

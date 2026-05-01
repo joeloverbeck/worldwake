@@ -11,13 +11,14 @@ When several reassessment branches seem applicable at once, use this priority or
 
 An implement-ticket invocation authorizes narrow truthing edits to the active ticket and directly cited active spec files when those edits are required to make the implemented seam, acceptance criteria, or verification record truthful. It does not authorize broader repo-policy, process, or architectural-doc rewrites; for those, propose the doc update or use 1-3-1 when the decision is blocking.
 
-## Top 5 Rules
+## Top Rules
 
 - Reassess against the live branch first. Do not implement the draft literally until the ticket/spec matches current code.
 - If a narrow production fix lands but the drafted broader golden/E2E story is still false, follow `Mixed outcome: narrow fix landed, broader golden still false` below.
 - Prefer the strongest existing honest proof seam. Extend an existing focused unit/runtime/golden test instead of creating the drafted new file mechanically.
 - Keep Cargo sequential, confirm ambiguous or pre-existing exact selectors with `-- --list`, and record only truthful verification boundaries.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
+- Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.
 
 Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail.
 
@@ -48,6 +49,7 @@ When the proof lane depends on a repo script such as `./scripts/verify.sh`, trea
 If a ticket lists `./scripts/verify.sh` but the session is not preparing a PR, inspect the script and either run the wrapper or run all live gates it currently wraps directly. Record any substitution explicitly in ticket closeout, including which wrapper gate set was covered and that the wrapper itself was not run.
 When the live gate set includes repo-specific cleanup, removal, or drift-detection scripts, inspect their searched symbols or invariants early enough that new code does not reintroduce banned names or stale surfaces. If a script exists to prove an old concept is gone, treat its patterns as naming constraints during implementation, not only as final verification fallout.
 For Worldwake Rust tickets, default to `cargo fmt --all` after significant Rust edits so local formatting matches the repo's `verify.sh` gate. In dirty worktrees, immediately inspect `git status --short` after formatting and classify any unrelated formatter spillover before proceeding.
+When a patch changes a serde/bincode-persisted enum, struct, or carrier, check `SAVE_FORMAT_VERSION` even if the ticket was not classified as serialization or save/load work. Save/load is a representation boundary; record any required version bump or intentional no-bump in closeout.
 
 For long diagnostic implementations likely to hit interruption or context compaction, keep a compact checkpoint after major pivots: current hypothesis, temporary probes still present, commands already passed, and remaining verification gates. Use the active ticket when the notes are durable closeout facts; otherwise use a disposable local note or the conversation, and fold only final truths into ticket closeout.
 
@@ -345,6 +347,7 @@ When a shared serialized-surface ticket widens a schema, payload, enum, or savea
 Load `references/closeout.md`.
 
 If final edits happen after broad verification, classify the freshness boundary before reporting completion: code, generated artifact, scenario, or executable-proof edits require rerunning the relevant broad or targeted executable checks; non-generated ticket/spec Markdown edits normally require `git diff --check` plus any targeted stale-claim scans. Record which broad gates were pre-final-edit and which post-edit checks prove the final diff.
+After final ticket/spec Markdown edits made after executable verification, run `git diff --check` or explicitly record why it was not run before reporting completion.
 
 Do not set an active ticket's `Status` to `COMPLETED` until the required executable verification gates for that ticket have passed. If a status field must be touched earlier during a closeout rewrite, pair it immediately with a provisional verification note that names the remaining gates, and do not report completion until the final ticket text reflects the observed completed verification.
 
