@@ -45,12 +45,19 @@ pub enum FeasibilityStrategy {
     PlaceMatch,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum FrontierExhaustionStrategy {
+    PermanentUntilInvalidator,
+    CooldownRetry,
+}
+
 pub struct GoalDispatchDeclaration {
     pub trace_label: &'static str,
     pub provenance_family: Option<RankedGoalProvenanceFamily>,
     pub relevant_ops: &'static [PlannerOpKind],
     pub invalidation_strategy: InvalidationStrategy,
     pub feasibility_strategy: FeasibilityStrategy,
+    pub frontier_exhaustion_strategy: FrontierExhaustionStrategy,
     pub family_policy: GoalFamilyPolicy,
     /// `PlannerOpKind` values that constitute a direct progress barrier for this goal.
     /// Does not include `QueueForFacilityUse` (goal-family membership check),
@@ -260,6 +267,7 @@ static DECL_CONSUME_OWNED_COMMODITY: GoalDispatchDeclaration = GoalDispatchDecla
     relevant_ops: CONSUME_OPS,
     invalidation_strategy: InvalidationStrategy::CommodityOnly,
     feasibility_strategy: FeasibilityStrategy::OwnedCommodityCheck,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -269,6 +277,7 @@ static DECL_ACQUIRE_SELF_CONSUME: GoalDispatchDeclaration = GoalDispatchDeclarat
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireCommodity,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::CooldownRetry,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -278,6 +287,7 @@ static DECL_ACQUIRE_RECIPE_INPUT: GoalDispatchDeclaration = GoalDispatchDeclarat
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireCommodity,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -287,6 +297,7 @@ static DECL_ACQUIRE_RESTOCK: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: ACQUIRE_OPS,
     invalidation_strategy: InvalidationStrategy::AcquireRestock,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -296,6 +307,7 @@ static DECL_SLEEP: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: SLEEP_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Fatigue),
     feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::CooldownRetry,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: SLEEP_OPS,
 };
@@ -305,6 +317,7 @@ static DECL_RELIEVE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: RELIEVE_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithPosition(HomeostaticNeedId::Bladder),
     feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -314,6 +327,7 @@ static DECL_WASH: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: WASH_OPS,
     invalidation_strategy: InvalidationStrategy::NeedWithFacilities(HomeostaticNeedId::Dirtiness),
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -323,6 +337,7 @@ static DECL_FREE_CARRY_CAPACITY: GoalDispatchDeclaration = GoalDispatchDeclarati
     relevant_ops: FREE_CARRY_CAPACITY_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::AlwaysLikely,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: FREE_CARRY_CAPACITY_OPS,
 };
@@ -332,6 +347,7 @@ static DECL_ENGAGE_HOSTILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: ENGAGE_HOSTILE_OPS,
     invalidation_strategy: InvalidationStrategy::CombatTarget,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -341,6 +357,7 @@ static DECL_RAID_TARGET: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: RAID_TARGET_OPS,
     invalidation_strategy: InvalidationStrategy::CombatTarget,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -350,6 +367,7 @@ static DECL_REDUCE_DANGER: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: REDUCE_DANGER_OPS,
     invalidation_strategy: InvalidationStrategy::DangerReduction,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: DANGER_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -359,6 +377,7 @@ static DECL_REGROUP_WITH_FACTION: GoalDispatchDeclaration = GoalDispatchDeclarat
     relevant_ops: REGROUP_WITH_FACTION_OPS,
     invalidation_strategy: InvalidationStrategy::FactionRegroup,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -368,6 +387,7 @@ static DECL_ESTABLISH_BANDIT_CAMP: GoalDispatchDeclaration = GoalDispatchDeclara
     relevant_ops: ESTABLISH_BANDIT_CAMP_OPS,
     invalidation_strategy: InvalidationStrategy::FactionRegroup,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -377,6 +397,7 @@ static DECL_TREAT_WOUNDS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: TREAT_WOUNDS_OPS,
     invalidation_strategy: InvalidationStrategy::TreatWounds,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -386,6 +407,7 @@ static DECL_SEARCH_FOR_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaratio
     relevant_ops: SEARCH_FOR_MISSING_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: SEARCH_PLACE_BARRIER,
 };
@@ -395,6 +417,7 @@ static DECL_REPORT_MISSING: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: REPORT_MISSING_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: REPORT_MISSING_BARRIER,
 };
@@ -404,6 +427,7 @@ static DECL_REPORT_FOUND: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: REPORT_FOUND_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: REPORT_FOUND_BARRIER,
 };
@@ -413,6 +437,7 @@ static DECL_ESCORT_TO_SAFETY: GoalDispatchDeclaration = GoalDispatchDeclaration 
     relevant_ops: ESCORT_TO_SAFETY_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: ESCORT_BARRIER,
 };
@@ -422,6 +447,7 @@ static DECL_PRODUCE_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration
     relevant_ops: PRODUCE_OPS,
     invalidation_strategy: InvalidationStrategy::ProduceCommodity,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -431,6 +457,7 @@ static DECL_SELL_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: SELL_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndCommodity,
     feasibility_strategy: FeasibilityStrategy::SellCheck,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: STAFF_MARKET_BARRIER,
 };
@@ -440,6 +467,7 @@ static DECL_RESTOCK_COMMODITY: GoalDispatchDeclaration = GoalDispatchDeclaration
     relevant_ops: RESTOCK_OPS,
     invalidation_strategy: InvalidationStrategy::PositionCommodityAndCoin,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -449,6 +477,7 @@ static DECL_MOVE_CARGO: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: MOVE_CARGO_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndCommodity,
     feasibility_strategy: FeasibilityStrategy::CargoDestinationCheck,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -458,6 +487,7 @@ static DECL_LOOT_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: LOOT_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: OPPORTUNISTIC_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -467,6 +497,7 @@ static DECL_BURY_CORPSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: BURY_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::CorpseBurialCheck,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -476,6 +507,7 @@ static DECL_FULFILL_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: FULFILL_BOUNTY_OPS,
     invalidation_strategy: InvalidationStrategy::BountyActive,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: CLAIM_BOUNTY_BARRIER,
 };
@@ -485,6 +517,7 @@ static DECL_POST_BOUNTY: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: POST_BOUNTY_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: POST_BOUNTY_BARRIER,
 };
@@ -494,6 +527,7 @@ static DECL_POST_NOTICE_WARNING: GoalDispatchDeclaration = GoalDispatchDeclarati
     relevant_ops: POST_NOTICE_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: ENTERPRISE_POLICY,
     progress_barrier_ops: POST_NOTICE_BARRIER,
 };
@@ -503,6 +537,7 @@ static DECL_POST_NOTICE_OTHER: GoalDispatchDeclaration = GoalDispatchDeclaration
     relevant_ops: POST_NOTICE_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: POST_NOTICE_BARRIER,
 };
@@ -512,6 +547,7 @@ static DECL_SHARE_BELIEF_ALARM: GoalDispatchDeclaration = GoalDispatchDeclaratio
     relevant_ops: SHARE_BELIEF_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SHARE_BELIEF_ALARM_POLICY,
     progress_barrier_ops: TELL_BARRIER,
 };
@@ -521,6 +557,7 @@ static DECL_SHARE_BELIEF_TESTIMONY: GoalDispatchDeclaration = GoalDispatchDeclar
     relevant_ops: SHARE_BELIEF_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SHARE_BELIEF_TESTIMONY_POLICY,
     progress_barrier_ops: TELL_BARRIER,
 };
@@ -530,6 +567,7 @@ static DECL_SHARE_BELIEF_GOSSIP: GoalDispatchDeclaration = GoalDispatchDeclarati
     relevant_ops: SHARE_BELIEF_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SHARE_BELIEF_GOSSIP_POLICY,
     progress_barrier_ops: TELL_BARRIER,
 };
@@ -539,6 +577,7 @@ static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: CLAIM_OFFICE_OPS,
     invalidation_strategy: InvalidationStrategy::ClaimOffice,
     feasibility_strategy: FeasibilityStrategy::EvidencePlaceLocal,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: OFFICE_CLAIM_BARRIER,
 };
@@ -548,6 +587,7 @@ static DECL_SUPPORT_CANDIDATE_FOR_OFFICE: GoalDispatchDeclaration = GoalDispatch
     relevant_ops: SUPPORT_OFFICE_OPS,
     invalidation_strategy: InvalidationStrategy::SupportCandidateForOffice,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: OFFICE_CLAIM_BARRIER,
 };
@@ -557,6 +597,7 @@ static DECL_INVESTIGATE_VIOLATION: GoalDispatchDeclaration = GoalDispatchDeclara
     relevant_ops: INVESTIGATE_OPS,
     invalidation_strategy: InvalidationStrategy::InvestigateViolation,
     feasibility_strategy: FeasibilityStrategy::PlaceMatch,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: INVESTIGATE_BARRIER,
 };
@@ -566,6 +607,7 @@ static DECL_PATROL: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: PATROL_OPS,
     invalidation_strategy: InvalidationStrategy::Patrol,
     feasibility_strategy: FeasibilityStrategy::PlaceMatch,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::CooldownRetry,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: PATROL_BARRIER,
 };
@@ -575,6 +617,7 @@ static DECL_EXPLORE_LOCATION: GoalDispatchDeclaration = GoalDispatchDeclaration 
     relevant_ops: EXPLORE_OPS,
     invalidation_strategy: InvalidationStrategy::NoOpinion,
     feasibility_strategy: FeasibilityStrategy::PlaceMatch,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SELF_CARE_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -584,6 +627,7 @@ static DECL_STEAL_ITEM: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: MOVE_CARGO_OPS,
     invalidation_strategy: InvalidationStrategy::StealTargetState,
     feasibility_strategy: FeasibilityStrategy::NoOpinion,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: THEFT_POLICY,
     progress_barrier_ops: NO_BARRIER,
 };
@@ -593,6 +637,7 @@ static DECL_ACCUSE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: ACCUSE_OPS,
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: ACCUSE_BARRIER,
 };
@@ -602,6 +647,7 @@ static DECL_PUNISH_FINE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: FINE_OPS,
     invalidation_strategy: InvalidationStrategy::PunishAccused,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: FINE_BARRIER,
 };
@@ -611,6 +657,7 @@ static DECL_PUNISH_EXILE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     relevant_ops: EXILE_OPS,
     invalidation_strategy: InvalidationStrategy::PunishAccused,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: SOCIAL_POLICY,
     progress_barrier_ops: EXILE_BARRIER,
 };
@@ -666,7 +713,8 @@ impl GoalDispatchKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        FeasibilityStrategy, GoalDispatchDeclaration, InvalidationStrategy, SELF_CARE_POLICY,
+        FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchDeclaration,
+        InvalidationStrategy, SELF_CARE_POLICY,
     };
     use crate::goal_policy::SuppressionRule;
     use crate::{GoalDispatchKey, GoalKindPlannerExt, PlannerOpKind};
@@ -1099,6 +1147,56 @@ mod tests {
                 .declaration()
                 .invalidation_strategy
         );
+    }
+
+    #[test]
+    fn frontier_exhaustion_strategy_covers_all_dispatch_declarations() {
+        assert_eq!(GoalDispatchKey::all().len(), ALL_KEYS.len());
+
+        for key in GoalDispatchKey::all() {
+            match key.declaration().frontier_exhaustion_strategy {
+                FrontierExhaustionStrategy::PermanentUntilInvalidator
+                | FrontierExhaustionStrategy::CooldownRetry => {}
+            }
+        }
+    }
+
+    #[test]
+    fn frontier_exhaustion_strategy_marks_recurring_retry_goals() {
+        assert_eq!(
+            GoalDispatchKey::Sleep
+                .declaration()
+                .frontier_exhaustion_strategy,
+            FrontierExhaustionStrategy::CooldownRetry
+        );
+        assert_eq!(
+            GoalDispatchKey::AcquireSelfConsume
+                .declaration()
+                .frontier_exhaustion_strategy,
+            FrontierExhaustionStrategy::CooldownRetry
+        );
+        assert_eq!(
+            GoalDispatchKey::Patrol
+                .declaration()
+                .frontier_exhaustion_strategy,
+            FrontierExhaustionStrategy::CooldownRetry
+        );
+    }
+
+    #[test]
+    fn frontier_exhaustion_strategy_preserves_default_suppression_goals() {
+        for key in [
+            GoalDispatchKey::Wash,
+            GoalDispatchKey::Relieve,
+            GoalDispatchKey::AcquireRestock,
+            GoalDispatchKey::ProduceCommodity,
+        ] {
+            assert_eq!(
+                key.declaration().frontier_exhaustion_strategy,
+                FrontierExhaustionStrategy::PermanentUntilInvalidator,
+                "{key:?}"
+            );
+        }
     }
 
     #[test]

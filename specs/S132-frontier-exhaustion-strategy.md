@@ -118,31 +118,35 @@ pub enum FrontierExhaustionStrategy {
 }
 ```
 
-### D2: Goal-kind property accessor
+### D2: Goal dispatch declaration property
 
-Add a free function or method on `GoalKind`:
+Add a field to `GoalDispatchDeclaration`:
 
 ```rust
-fn frontier_exhaustion_strategy(kind: &GoalKind) -> FrontierExhaustionStrategy
+pub frontier_exhaustion_strategy: FrontierExhaustionStrategy,
 ```
 
-The accessor must use a `match` over the closed `GoalKind` variants
-without a `_ => ...` arm, so adding a new variant fails to compile
-until the strategy is declared. Declarations:
+The strategy is read through
+`GoalDispatchKey::from_goal_kind(goal).declaration().frontier_exhaustion_strategy`.
+`GoalDispatchKey::from_goal_kind` already uses an exhaustive match over the
+closed `GoalKind` variants without a `_ => ...` arm, and
+`GoalDispatchKey::declaration()` already exhaustively maps every dispatch key
+to a declaration. Adding a new variant or payload split must therefore add the
+dispatch key and its declaration before the code compiles cleanly. Declarations:
 
 | `GoalKind` variant | Strategy | Rationale |
 |---|---|---|
 | `Sleep` | `CooldownRetry` | Direct local self-care; permanent suppression strands inside authored critical band (existing decision per `frontier_exhaustion_entry` comment). |
 | `AcquireCommodity { purpose: SelfConsume, .. }` | `CooldownRetry` | Recurring self-care substrate; CIREM-002 finding — self-consume frontier exhaustion stranded scattered Agent A at saturated thirst. |
-| `AcquireCommodity { purpose: Stockpile/Trade/.., .. }` | `PermanentUntilInvalidator` (preserve current default) | Non-self-care acquisitions retry on concrete invalidation (e.g. new source observation) rather than time decay. |
+| `AcquireCommodity { purpose: RecipeInput/Restock, .. }` | `PermanentUntilInvalidator` (preserve current default) | Non-self-care acquisitions retry on concrete invalidation (e.g. new source observation) rather than time decay. |
 | `Patrol { .. }` | `CooldownRetry` | Recurring route duty; CIREM-004 finding — position-only invalidation stranded the guard at Watch Post. |
 | `Wash` | (declare; preserve current default `PermanentUntilInvalidator`) | Wash exhaustion is corrected by belief currency on basin state (S129 substrate, CIREM-003 retention work); cooldown retry would mask stale-belief gaps. |
 | `Eat`, `Drink`, `Relieve` | (declare per existing default) | Existing default is `PermanentUntilInvalidator`; preserve unless validation against goldens shows otherwise. |
 | All other variants | (declare per existing default) | Existing default is `PermanentUntilInvalidator`; preserve. |
 
-The exhaustive match guarantees that future variant authors must
-either justify and declare `PermanentUntilInvalidator` or pick
-`CooldownRetry`.
+The exhaustive dispatch key match and declaration mapping guarantee that
+future variant authors must either justify and declare
+`PermanentUntilInvalidator` or pick `CooldownRetry`.
 
 ### D3: Refactor `frontier_exhaustion_entry`
 
@@ -156,7 +160,10 @@ fn frontier_exhaustion_entry(
     tick: Tick,
     cognitive: &CognitiveProfile,
 ) -> ExhaustionEntry {
-    match frontier_exhaustion_strategy(goal_kind) {
+    match GoalDispatchKey::from_goal_kind(goal_kind)
+        .declaration()
+        .frontier_exhaustion_strategy
+    {
         FrontierExhaustionStrategy::CooldownRetry => ExhaustionEntry::budget_retry_pending(
             invalidation_conditions, baseline, tick, cognitive,
         ),
@@ -172,21 +179,22 @@ arm is deleted.
 
 ### D4: Coverage test
 
-Add a unit test in the same module that asserts the closed match: it
-constructs a representative `GoalKind` for every active variant and
-calls `frontier_exhaustion_strategy(..)`, ensuring no variant panics
-or returns a default. The compile-time exhaustiveness of the `match`
-is the primary guard; this test is a runtime backstop.
+Add unit tests on the declaration module that assert every
+`GoalDispatchKey::all()` entry exposes a strategy and that the three recurring
+retry declarations are `CooldownRetry` while representative preserved-default
+declarations remain `PermanentUntilInvalidator`. The compile-time
+exhaustiveness of `GoalDispatchKey::from_goal_kind` and
+`GoalDispatchKey::declaration()` is the primary guard; these tests are runtime
+backstops for the table.
 
 ## Validation and Falsification
 
 ### Unit tests
 
-1. `frontier_exhaustion_strategy_classifies_self_consume_acquire_as_cooldown_retry`
-2. `frontier_exhaustion_strategy_classifies_patrol_as_cooldown_retry`
-3. `frontier_exhaustion_strategy_classifies_sleep_as_cooldown_retry`
-4. `frontier_exhaustion_strategy_classifies_stockpile_acquire_as_permanent`
-5. `frontier_exhaustion_entry_uses_strategy_dispatch` — drives
+1. `frontier_exhaustion_strategy_marks_recurring_retry_goals`
+2. `frontier_exhaustion_strategy_preserves_default_suppression_goals`
+3. `frontier_exhaustion_strategy_covers_all_dispatch_declarations`
+4. `frontier_exhaustion_entry_uses_strategy_dispatch` — drives
    `frontier_exhaustion_entry` through both arms with synthetic inputs
    and asserts the resulting `ExhaustionEntry` shape matches the
    strategy.
@@ -257,9 +265,7 @@ is refactored.
    belief currency (CIREM-003 retention work). Cooldown retry would
    mask stale-belief gaps; permanent suppression forces the agent to
    wait for new perception. Default is preserve.
-2. Should the strategy live on `GoalKind` directly or on a parallel
-   `GoalDispatchDeclaration` (the substrate S69 introduced)? S69's
-   declaration already centralizes goal-kind metadata; placing the
-   strategy there keeps goal-kind metadata co-located. Implementation
-   ticket should pick one based on which surface adding new variants
-   touches today.
+2. Resolved by S132FROEXHSTR-001: the strategy lives on
+   `GoalDispatchDeclaration`, the substrate S69 introduced. S69's
+   declaration already centralizes goal-kind metadata, so placing the
+   strategy there keeps goal-kind metadata co-located.
