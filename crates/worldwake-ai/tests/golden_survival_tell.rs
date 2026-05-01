@@ -523,7 +523,6 @@ fn listener_with_critical_dirtiness_breaks_off_tell_to_wash() {
         .driver
         .trace_sink()
         .and_then(|sink| sink.trace_at(listener, Tick(159)))
-        .map(|trace| trace.outcome.summary())
-        .unwrap_or_else(|| "no trace".to_string());
+        .map_or_else(|| "no trace".to_string(), |trace| trace.outcome.summary());
     panic!("critical listener should commit wash after remote tell-side placement; trace={trace}");
 }

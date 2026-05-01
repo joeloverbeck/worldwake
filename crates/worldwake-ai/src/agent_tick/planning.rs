@@ -885,7 +885,8 @@ fn frontier_exhaustion_entry(
         | GoalKind::AcquireCommodity {
             purpose: worldwake_core::CommodityPurpose::SelfConsume,
             ..
-        } => ExhaustionEntry::budget_retry_pending(
+        }
+        | GoalKind::Patrol { .. } => ExhaustionEntry::budget_retry_pending(
             invalidation_conditions,
             baseline,
             tick,
@@ -5745,6 +5746,41 @@ mod tests {
             entry.next_retry_tick.is_some(),
             "sleep frontier exhaustion should retry on cooldown instead of suppressing indefinitely"
         );
+    }
+
+    #[test]
+    fn record_exhausted_goals_records_patrol_frontier_exhaustion_as_budget_retry() {
+        let place = entity(11);
+        let goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::Patrol { place }),
+            anchor: OpportunityAnchor::Place(place),
+        };
+        let mut runtime = AgentDecisionRuntime::default();
+        let plans = vec![searched_plan(
+            goal,
+            PlanSearchResult::FrontierExhausted {
+                expansions_used: 12,
+            },
+        )];
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let cognitive = cognitive(&ProfileFixture::default());
+
+        let tracker_increments = record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
+            &cognitive,
+        );
+        assert!(tracker_increments.is_empty());
+
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
+        assert!(!entry.suppresses_planning());
+        assert!(entry.next_retry_tick.is_some());
     }
 
     #[test]

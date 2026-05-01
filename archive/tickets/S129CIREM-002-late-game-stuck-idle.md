@@ -85,7 +85,7 @@ The two sub-shapes likely have different causes and the ticket must investigate 
 - Hygiene-modifier ranking arithmetic — already fixed by parent S129 CI commit.
 - Drive-escalation wash recurrence — separate ticket S129CIREM-001.
 - Tell-session vs self-care — completed in `archive/tickets/S129CIREM-003-tell-session-vs-self-care.md`.
-- Patrol vs self-care — separate ticket S129CIREM-004.
+- Patrol vs self-care — completed in `archive/tickets/S129CIREM-004-patrol-vs-self-care-priority.md`.
 - Survival contract value tuning (`max_idle_window_ticks_with_elevated_need`) — should not be touched without first naming the architectural substrate the relaxation rests on.
 
 ## Acceptance Criteria

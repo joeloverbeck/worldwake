@@ -323,18 +323,14 @@ impl AgentBeliefStore {
         let claim_confidence_threshold = profile.claim_confidence_threshold.value();
         let mut changed_entities = Vec::new();
         for entity in &affected_entities {
-            let retention_boost = self
-                .known_entities
-                .get(entity)
-                .map(|state| {
-                    state_salience_boost(
-                        agent_needs,
-                        state,
-                        profile.need_salience_urgency_threshold,
-                        profile.need_salience_boost,
-                    )
-                })
-                .unwrap_or(0);
+            let retention_boost = self.known_entities.get(entity).map_or(0, |state| {
+                state_salience_boost(
+                    agent_needs,
+                    state,
+                    profile.need_salience_urgency_threshold,
+                    profile.need_salience_boost,
+                )
+            });
             let Some(claims) = self.entity_claims.get_mut(entity) else {
                 continue;
             };

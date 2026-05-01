@@ -1,18 +1,21 @@
-# S129CIREM-004: Guard never patrols Market Road waypoint under post-S129 ranking
+# S129CIREM-004: Patrol frontier exhaustion strands guard until self-care
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Likely — patrol motive arithmetic vs. self-care goals at waypoint places
+**Engine Changes**: Yes — patrol exhaustion retry policy in AI planning
 **Deps**: archive/specs/S129-place-dirtiness-facility-wear.md, prior patrol spec (search archive for `patrol_route` originator)
 
 ## Problem
 
-`golden_survival_patrol::survival_patrol_proves_patrol_and_remote_pursuit_execution` and `golden_survival_patrol::survival_patrol_replay_is_deterministic` both fail at `crates/worldwake-ai/tests/golden_survival_patrol.rs:257` with `guard should commit patrol at Market Road`. The companion expectation `first_watch_post_patrol_tick.expect("guard should commit patrol at Watch Post")` (line 254) succeeds, so the guard *does* commit patrol at the starting waypoint — but never reaches the second waypoint and never commits patrol there.
+Original draft premise: `golden_survival_patrol::survival_patrol_proves_patrol_and_remote_pursuit_execution` and `golden_survival_patrol::survival_patrol_replay_is_deterministic` both failed at `crates/worldwake-ai/tests/golden_survival_patrol.rs:257` with `guard should commit patrol at Market Road`. Live reassessment on 2026-05-01 disproved that exact failure: both waypoint assertions now pass. The remaining live failure was later in the proof test:
 
-`Guard Mira`'s patrol route is `assigned_places: ["Watch Post", "Market Road"]` (`scenarios/survival-patrol.ron:197–199`). Market Road is `[Field, Farm, Latrine]`-tagged with co-located water (`Water` resource source), apples, and a `WashBasin` (`scenarios/survival-patrol.ron:23, 209–216`). The 3-tick travel from Watch Post to Market Road is bidirectional (`scenarios/survival-patrol.ron:27`).
+```text
+survival patrol should have no idle windows >= 40 ticks with needs > 300 permille:
+[StuckIdleWindow { agent_name: "Guard Mira", start_tick: 1044, end_tick: 1084, max_need_at_start: 309 }]
+```
 
-`Guard Mira`'s `patrol_profile.patrol_motive_weight: 100` is modest (`scenarios/survival-patrol.ron:195`). Per `crates/worldwake-ai/src/ranking.rs::patrol_motive` (~line 1553), patrol motive multiplies the base weight by `1 + unresolved_thefts + believed_vacancies + believed_contests`. With no unresolved thefts and no office vacancies in the scenario, patrol motive stays at the base `100` — modest enough that any moderate-pressure self-care goal at Market Road would outrank it on arrival.
+Diagnostic trace showed `Guard Mira` completed the Watch Post patrol, traveled to Market Road, committed patrol there, returned to Watch Post, and then carried a `GoalKind::Patrol { place: Watch Post }` opportunity in `AgentDecisionRuntime.exhaustion_cache` as `ExhaustionRetryState::FrontierExhausted`. Because patrol's invalidation strategy was position-only, the agent stayed at Watch Post with the patrol opportunity permanently suppressed until a later self-care candidate crossed its emission threshold. The live bug was therefore not patrol motive arithmetic, route advancement, or Market Road self-care dominance; it was permanent frontier suppression for a recurring route duty.
 
 ## Assumption Reassessment (2026-05-01)
 
@@ -29,6 +32,7 @@
 9. **Heuristic Removal Discipline (precision-rules §12)**: a tempting fix is to bump `patrol_motive_weight: 100` to `1000`. This substitutes a weight knob for the actually missing substrate (likely a "patrol takes precedence over routine self-care while a route segment is in progress" semantic, or a route-progression-driven priority class). Do not adopt the weight bump without naming the substrate.
 10. **Cumulative arithmetic (precision-rules §15)**: `Guard Mira`'s drive thresholds and metabolism rates are not visible in the truncated read above; verify them in the full scenario. If Mira's needs accumulate fast enough that she is critical at Watch Post by the time the patrol cycle should fire, the test's narrative about "patrol commits at both waypoints" needs different framing. The reassessment must compute when Mira's first need crosses critical and compare against expected patrol cadence.
 11. **Mismatch + correction**: the `survival_patrol` test was authored against pre-S129 ranking, where Latrine-tagged places had no `Relieve` Place-anchored candidate (only the wilderness `None` candidate). Adding the Latrine candidate per S129 §312 changed the motive landscape at every Latrine-tagged place. The patrol motive arithmetic was not adjusted to compensate. Either the patrol motive needs a route-aware boost when the agent is mid-route, or the spec's promise that patrol commits at both waypoints during a 1440-tick run needs to be rebuilt on a different substrate.
+12. **Final live reassessment**: after rerunning `cargo test --release -p worldwake-ai --test golden_survival_patrol -- --ignored --test-threads=1`, the stale Market Road failure no longer reproduced. The proof failed instead on the survival-health idle-window assertion. A temporary diagnostic confirmed the patrol route advanced, both waypoint patrol commits occurred, and the post-return Watch Post patrol candidate was skipped because `FrontierExhausted` suppresses planning indefinitely until a concrete invalidation condition fires.
 
 ## Architecture Check
 
@@ -45,36 +49,15 @@
 
 ## What to Change
 
-### 1. Investigation: dump Mira's decision and action traces
-
-Add a one-shot diagnostic test that runs `survival_patrol` and prints, for Mira:
-
-- Per-tick decision trace from her first patrol commit at Watch Post through tick 200 (well past the expected first-Market-Road-arrival tick under base_dwell + travel).
-- Per-tick action trace for the same range (look for `travel`, `patrol`, self-care commits).
-- The `patrol_route` component snapshot at each commit point — confirm `current_index` advancement.
-
-### 2. Fix (driven by trace findings)
-
-Choose exactly one based on the trace:
-
-- **If the patrol route never advances after the first commit**: route-advancement bug. Fix: ensure `commit_patrol` (or whichever handler advances the route) writes `current_index = (current_index + 1) % assigned_places.len()` consistently.
-- **If the route advances but Mira does not start travel toward Market Road**: candidate generation or planning bug. The `Patrol` goal at the next-index waypoint should generate a travel-to-waypoint plan; verify the planner is composing it.
-- **If Mira reaches Market Road but never commits `patrol` there**: on-arrival ranking dominated by self-care. Fix: introduce route-aware patrol priority. When the agent is mid-route and the next waypoint is `current place`, patrol motive should rise — concrete state input is `time_since_last_patrol_at_current_index` (if such state exists; introduce it if not). Do not just bump the static `patrol_motive_weight`.
-- **If Mira's hunger/thirst/fatigue/bladder dominates self-care for the entire 1440-tick window**: the scenario tuning may be too tight and the ticket scope expands to include scenario rebalance. Verify against Mira's metabolism rates.
-
-### 3. Targeted golden coverage
-
-After the fix, add focused goldens:
-
-- `patrol_route_advances_after_dwell_at_waypoint` — single-agent patrol route, assert `current_index` rotates correctly across waypoints.
-- `patrol_takes_priority_over_routine_self_care_at_waypoint` — single-agent fixture, agent at next waypoint with moderate (sub-critical) need, assert patrol commits before agent diverts to self-care.
+Treat `GoalKind::Patrol` frontier exhaustion as a cooldown-backed retry rather than a permanent suppression. This keeps the concrete invalidation baseline and cooldown behavior, but prevents a recurring route duty from being stranded at a waypoint until position changes. Add a focused unit regression for `record_exhausted_goals` proving patrol frontier exhaustion becomes `BudgetRetryPending`.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/tests/` (new diagnostic + new focused golden)
-- `crates/worldwake-ai/src/ranking.rs::patrol_motive` (only if route-aware boost is the fix)
-- `crates/worldwake-systems/src/` (only if route-advancement is the fix; search for the patrol commit handler)
-- `crates/worldwake-core/src/` (only if a new `last_patrolled_at` per-waypoint state is needed; this would be a new component)
+- `crates/worldwake-ai/src/agent_tick/planning.rs`
+- No change to `crates/worldwake-ai/src/ranking.rs::patrol_motive`.
+- No change to `crates/worldwake-systems/src/patrol_actions.rs`; `commit_patrol` already advances `current_index`.
+- No new `PatrolRoute` state or save-format change.
+- Verification cleanup also touched `crates/worldwake-core/src/belief.rs` and `crates/worldwake-ai/tests/golden_survival_tell.rs` with Clippy-suggested `map_or` / `map_or_else` rewrites required by the current `./scripts/verify.sh` lint gate.
 
 ## Out of Scope
 
@@ -90,7 +73,7 @@ After the fix, add focused goldens:
 
 1. `golden_survival_patrol::survival_patrol_proves_patrol_and_remote_pursuit_execution` — `first_market_road_patrol_tick` is `Some`.
 2. `golden_survival_patrol::survival_patrol_replay_is_deterministic` — same outcome as the proof test under the same seed.
-3. New focused goldens (one per sub-shape identified by the trace).
+3. Focused retry-state regression for patrol frontier exhaustion.
 4. Existing suite: `cargo test --workspace`, `./scripts/verify.sh`.
 
 ### Invariants
@@ -103,12 +86,39 @@ After the fix, add focused goldens:
 
 ### New/Modified Tests
 
-1. New diagnostic test (one-shot) — dumps Mira's decision/action/patrol-route traces. Disposable.
-2. `patrol_route_advances_after_dwell_at_waypoint` (focused).
-3. `patrol_takes_priority_over_routine_self_care_at_waypoint` (focused) — only needed if the trace shows on-arrival ranking is the bug.
+1. `agent_tick::planning::tests::record_exhausted_goals_records_patrol_frontier_exhaustion_as_budget_retry`.
+2. Existing `golden_survival_patrol` ignored golden proves the full survival-patrol route and self-care contract.
 
 ### Commands
 
+1. `cargo test -p worldwake-ai --lib agent_tick::planning::tests::record_exhausted_goals_records_patrol_frontier_exhaustion_as_budget_retry -- --exact`
+2. `cargo test --release -p worldwake-ai --test golden_survival_patrol -- --ignored --test-threads=1`
+3. `cargo test -p worldwake-ai`
+4. `cargo test --workspace`
+5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Reassessed the stale Market Road failure against the live branch. Both waypoint patrol assertions now pass; the remaining live failure was the later survival-health idle-window assertion.
+- Changed `frontier_exhaustion_entry` so `GoalKind::Patrol` uses `BudgetRetryPending` instead of permanent `FrontierExhausted` suppression.
+- Added focused unit coverage for the patrol retry-state contract.
+- Fixed two existing current-toolchain Clippy `map_unwrap_or` violations exposed by `./scripts/verify.sh`; these were mechanical rewrites with no semantic change.
+- Left patrol route advancement, patrol motive arithmetic, scenario authoring, and save format unchanged.
+
+## Deviations
+
+- The drafted route-aware motive boost was not the live fix. The concrete state seam was `AgentDecisionRuntime.exhaustion_cache`: recurring patrol duties need cooldown retry after frontier exhaustion.
+- The drafted focused goldens were replaced with a lower-layer unit regression plus the existing scenario-backed golden, because live diagnostics showed route advancement and Market Road patrol already worked.
+- A temporary diagnostic test was used during reassessment and removed before final verification.
+
+## Verification Result
+
+Passed:
+
+1. `cargo test -p worldwake-ai --lib agent_tick::planning::tests::record_exhausted_goals_records_patrol_frontier_exhaustion_as_budget_retry -- --exact`
 1. `cargo test --release -p worldwake-ai --test golden_survival_patrol -- --ignored --test-threads=1`
-2. `cargo test --workspace`
-3. `./scripts/verify.sh`
+1. `cargo test -p worldwake-ai`
+1. `cargo test --workspace`
+1. `./scripts/verify.sh`
