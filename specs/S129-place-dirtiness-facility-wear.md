@@ -306,7 +306,7 @@ In the same maintenance pass: for each entity with `PlaceDirtiness`, decrement `
 
 **Ranking integration** (`crates/worldwake-ai/src/ranking.rs`):
 
-- `Sleep` candidate ranking: extend the existing `recovery_modifier` integration at lines 1649–1665. After applying `recovery_modifier`, multiply by `(1000 - place_dirtiness.value) / 1000` (saturating arithmetic to avoid overflow). A pristine place keeps full quality; a fully-dirty place halves.
+- `Sleep` candidate ranking: extend the existing `recovery_modifier` integration at lines 1649–1665. After applying `recovery_modifier`, multiply by `(1000 - place_dirtiness.value) / 1000` (saturating arithmetic to avoid overflow). A pristine place keeps full quality; a fully-dirty place contributes zero sleep motive.
 - `ExploreLocation` candidate ranking: when scoring a candidate place, apply the same `(1000 - place_dirtiness.value) / 1000` multiplier on the existing place-quality input.
 - `Wash` candidate ranking: each per-basin candidate scored by `clean_water_units` (positive contribution) and `dirtiness_level` (negative contribution). Existing ranking already considers facility presence; this adds the second-order axes.
 - `Relieve` candidate ranking: each per-place-latrine candidate scored against its `latrine_fullness.fill`; latrines below `critical_threshold` rank above the wilderness fallback. If all known latrines are at or over `critical_threshold`, the wilderness candidate ranks highest by default.

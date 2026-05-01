@@ -1,6 +1,6 @@
 # S129PLADIRFAC-010: Hygiene ranking integration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — extends `motive_score` / candidate ranking in `crates/worldwake-ai/src/ranking.rs` for Sleep, ExploreLocation, Wash, Relieve goals
@@ -146,3 +146,30 @@ Existing Sleep/Wash/Relieve/ExploreLocation `motive_score` tests — extend asse
 2. `cargo test -p worldwake-ai`
 3. `cargo build --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- `ranking.rs` now applies hygiene-aware motive modifiers after the base motive/provenance score and before memory bonuses.
+- Sleep and ExploreLocation candidates multiply by `(1000 - PlaceDirtiness.value) / 1000`.
+- Wash candidates anchored on `OpportunityAnchor::Entity(basin_id)` multiply by clean-water availability capped at 1.0 and by basin cleanliness.
+- Relieve candidates anchored on `OpportunityAnchor::Place(latrine_place_id)` outrank wilderness when below `critical_threshold`; wilderness outranks latrines at or over `critical_threshold`.
+- The inline ranking test harness now carries explicit hygiene-state maps so the focused tests prove the `GoalBeliefView` read surface rather than test-only constants.
+
+## Deviations
+
+- The active S129 spec had stale prose saying a fully dirty place "halves" sleep preference, while the formula and this ticket's invariant require zero motive contribution at `PlaceDirtiness.value = 1000`. The spec was corrected to match the implemented multiplier.
+- Fully dirty sleep candidates are filtered into `RankingOutcome.zero_motive`, which is the live ranking contract for zero-score candidates; the focused regression asserts that path instead of expecting a ranked entry with score `0`.
+
+## Verification Result
+
+Executable verification was run before the final ticket/spec Markdown closeout edits; the post-closeout Markdown edits were covered separately by diff hygiene.
+
+- Passed `cargo test -p worldwake-ai --lib -- --list` (confirmed the new `ranking::tests::*` selectors exist)
+- Passed `cargo test -p worldwake-ai ranking`
+- Passed `cargo fmt --all` followed by `git status --short` (formatter touched only `crates/worldwake-ai/src/ranking.rs`)
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo build --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `git diff --check` after final ticket/spec Markdown closeout edits
