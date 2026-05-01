@@ -2410,6 +2410,26 @@ impl GoalOffer {
                 }
                 _ => RootCandidateSynthesis::UnsupportedGoalOp,
             },
+            PlannerOpKind::Wash => match &self.key.kind {
+                GoalKind::Wash
+                    if matches!(
+                        def.targets.as_slice(),
+                        [worldwake_sim::TargetSpec::EntityAtActorPlace { .. }]
+                    ) =>
+                {
+                    if let worldwake_core::OpportunityAnchor::Entity(basin) = self.anchor {
+                        RootCandidateSynthesis::Targets(vec![basin])
+                    } else if self.evidence_entities.len() == 1 {
+                        RootCandidateSynthesis::Targets(
+                            self.evidence_entities.iter().copied().collect(),
+                        )
+                    } else {
+                        RootCandidateSynthesis::TargetDerivationFailed
+                    }
+                }
+                GoalKind::Wash => RootCandidateSynthesis::NoSynthesisPath,
+                _ => RootCandidateSynthesis::UnsupportedGoalOp,
+            },
             PlannerOpKind::PressForceClaim => match &self.key.kind {
                 GoalKind::ClaimOffice { .. } if def.targets.is_empty() => {
                     RootCandidateSynthesis::Targets(Vec::new())
@@ -2604,7 +2624,7 @@ mod tests {
         NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind, Quantity, RecipeId,
         RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw, TellTopic, Tick,
         TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
-        WorkstationTag, Wound,
+        WashBasinState, WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
     use worldwake_sim::PressForceClaimActionPayload;
@@ -3623,6 +3643,7 @@ mod tests {
         wounds: BTreeMap<EntityId, Vec<Wound>>,
         hostiles: BTreeMap<EntityId, Vec<EntityId>>,
         resource_sources: BTreeMap<EntityId, ResourceSource>,
+        wash_basin_states: BTreeMap<EntityId, WashBasinState>,
         workstation_tags: BTreeMap<EntityId, WorkstationTag>,
         place_tags: BTreeMap<EntityId, BTreeSet<worldwake_core::PlaceTag>>,
         courage_values: BTreeMap<EntityId, Permille>,
@@ -3675,6 +3696,7 @@ mod tests {
                 wounds: BTreeMap::new(),
                 hostiles: BTreeMap::new(),
                 resource_sources: BTreeMap::new(),
+                wash_basin_states: BTreeMap::new(),
                 workstation_tags: BTreeMap::new(),
                 place_tags: BTreeMap::new(),
                 courage_values: BTreeMap::new(),
@@ -4108,6 +4130,10 @@ mod tests {
 
         fn resource_source(&self, entity: EntityId) -> Option<ResourceSource> {
             self.resource_sources.get(&entity).cloned()
+        }
+
+        fn wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+            self.wash_basin_states.get(&entity).copied()
         }
 
         fn has_production_job(&self, _entity: EntityId) -> bool {
@@ -7461,7 +7487,7 @@ mod tests {
     }
 
     #[test]
-    fn wash_returns_places_with_basin_and_water_source_belief() {
+    fn wash_ignores_remote_basin_without_state_carrier() {
         let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
         let basin = entity(50);
         let well = entity(51);
@@ -7532,8 +7558,32 @@ mod tests {
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
         let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_c]);
+        assert!(places.is_empty());
         assert!(!places.contains(&place_a));
+    }
+
+    #[test]
+    fn wash_returns_local_place_with_clean_basin_state() {
+        let (mut view, actor, place_a, _place_b, _place_c) = spatial_view();
+        let basin = entity(50);
+        view.alive.insert(basin);
+        view.kinds.insert(basin, EntityKind::Facility);
+        view.effective_places.insert(basin, place_a);
+        view.entities_at.entry(place_a).or_default().push(basin);
+        view.workstation_tags
+            .insert(basin, WorkstationTag::WashBasin);
+        view.wash_basin_states.insert(
+            basin,
+            WashBasinState {
+                clean_water_units: 2,
+                ..WashBasinState::default()
+            },
+        );
+        let recipes = worldwake_sim::RecipeRegistry::new();
+        let snapshot = snapshot_and_state(&view, actor);
+        let state = PlanningState::new(&snapshot);
+        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
+        assert_eq!(places, vec![place_a]);
     }
 
     #[test]

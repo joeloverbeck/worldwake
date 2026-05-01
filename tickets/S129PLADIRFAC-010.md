@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — extends `motive_score` / candidate ranking in `crates/worldwake-ai/src/ranking.rs` for Sleep, ExploreLocation, Wash, Relieve goals
-**Deps**: archive/tickets/S129PLADIRFAC-001.md, archive/tickets/S129PLADIRFAC-004.md, S129PLADIRFAC-009
+**Deps**: archive/tickets/S129PLADIRFAC-001.md, archive/tickets/S129PLADIRFAC-004.md, archive/tickets/S129PLADIRFAC-009.md
 
 ## Problem
 
@@ -67,7 +67,7 @@ Locate the ExploreLocation arm in the `motive_score` match (search for the `Expl
 
 ### 3. Wash ranking — score per-basin candidate by basin state
 
-Locate the Wash arm of `motive_score`. Today it scores via `drive_score` against `HomeostaticNeedId::Dirtiness`. Extend to read the candidate's anchor (`OpportunityAnchor::Facility(basin_id)`) and compute:
+Locate the Wash arm of `motive_score`. Today it scores via `drive_score` against `HomeostaticNeedId::Dirtiness`. Extend to read the candidate's anchor (`OpportunityAnchor::Entity(basin_id)`) and compute:
 
 ```rust
 let basin_state = view.wash_basin_state(agent, basin_id);

@@ -4245,11 +4245,10 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
 }
 
 #[test]
-fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
-    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
+fn search_wash_finds_direct_plan_at_current_clean_basin() {
     let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
     let mut world = World::new(build_prototype_world()).unwrap();
-    let (actor, wash_basin, well) = {
+    let (actor, wash_basin) = {
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -4261,10 +4260,8 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
         );
         let actor = txn.create_agent("Washer", ControlSource::Ai).unwrap();
         let wash_basin = txn.create_entity(EntityKind::Facility);
-        let well = txn.create_entity(EntityKind::Facility);
-        txn.set_ground_location(actor, village_square).unwrap();
+        txn.set_ground_location(actor, orchard_farm).unwrap();
         txn.set_ground_location(wash_basin, orchard_farm).unwrap();
-        txn.set_ground_location(well, orchard_farm).unwrap();
         txn.set_component_homeostatic_needs(
             actor,
             HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(700)),
@@ -4287,24 +4284,9 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
         .unwrap();
         txn.set_component_wash_basin_state(wash_basin, WashBasinState::default())
             .unwrap();
-        txn.set_component_workstation_marker(well, WorkstationMarker(WorkstationTag::Well))
-            .unwrap();
-        txn.set_component_resource_source(
-            well,
-            ResourceSource {
-                commodity: CommodityKind::Water,
-                available_quantity: Quantity(10),
-                max_quantity: Quantity(10),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        )
-        .unwrap();
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
-        (actor, wash_basin, well)
+        (actor, wash_basin)
     };
 
     let recipes = RecipeRegistry::new();
@@ -4313,9 +4295,9 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
     let (registry, handlers) = build_registry_with_recipes(&recipes);
     let semantics = build_semantics_table(&registry);
     let goal = GoalOffer {
-        anchor: worldwake_core::OpportunityAnchor::None,
+        anchor: worldwake_core::OpportunityAnchor::Entity(wash_basin),
         key: GoalKey::from(GoalKind::Wash),
-        evidence_entities: BTreeSet::from([wash_basin, well]),
+        evidence_entities: BTreeSet::from([wash_basin]),
         evidence_places: BTreeSet::from([orchard_farm]),
         obligation_source: None,
         commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
@@ -4358,7 +4340,7 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
                     .any(|candidate| candidate.op_kind == Some(PlannerOpKind::Wash))
             });
             panic!(
-                "wash should find a lawful travel-then-wash plan at a believed basin place; result={other:?}; root={root:?}; saw_wash={saw_wash}"
+                "wash should find a lawful direct wash plan at the current clean basin; result={other:?}; root={root:?}; saw_wash={saw_wash}"
             );
         }
     };
@@ -4383,10 +4365,9 @@ fn search_wash_finds_travel_then_wash_plan_at_believed_access_place() {
 
 #[test]
 fn search_local_wash_candidates_require_clean_basin() {
-    let village_square = prototype_place_entity(PrototypePlace::VillageSquare);
     let orchard_farm = prototype_place_entity(PrototypePlace::OrchardFarm);
     let mut world = World::new(build_prototype_world()).unwrap();
-    let (actor, wash_basin, well) = {
+    let (actor, wash_basin) = {
         let mut txn = WorldTxn::new(
             &mut world,
             Tick(1),
@@ -4398,10 +4379,8 @@ fn search_local_wash_candidates_require_clean_basin() {
         );
         let actor = txn.create_agent("Washer", ControlSource::Ai).unwrap();
         let wash_basin = txn.create_entity(EntityKind::Facility);
-        let well = txn.create_entity(EntityKind::Facility);
-        txn.set_ground_location(actor, village_square).unwrap();
+        txn.set_ground_location(actor, orchard_farm).unwrap();
         txn.set_ground_location(wash_basin, orchard_farm).unwrap();
-        txn.set_ground_location(well, orchard_farm).unwrap();
         txn.set_component_homeostatic_needs(
             actor,
             HomeostaticNeeds::new(pm(0), pm(0), pm(0), pm(0), pm(700)),
@@ -4424,24 +4403,9 @@ fn search_local_wash_candidates_require_clean_basin() {
         .unwrap();
         txn.set_component_wash_basin_state(wash_basin, WashBasinState::default())
             .unwrap();
-        txn.set_component_workstation_marker(well, WorkstationMarker(WorkstationTag::Well))
-            .unwrap();
-        txn.set_component_resource_source(
-            well,
-            ResourceSource {
-                commodity: CommodityKind::Water,
-                available_quantity: Quantity(10),
-                max_quantity: Quantity(10),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        )
-        .unwrap();
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
-        (actor, wash_basin, well)
+        (actor, wash_basin)
     };
 
     let recipes = RecipeRegistry::new();
@@ -4450,9 +4414,9 @@ fn search_local_wash_candidates_require_clean_basin() {
     let (registry, handlers) = build_registry_with_recipes(&recipes);
     let semantics_table = build_semantics_table(&registry);
     let goal = GoalOffer {
-        anchor: worldwake_core::OpportunityAnchor::None,
+        anchor: worldwake_core::OpportunityAnchor::Entity(wash_basin),
         key: GoalKey::from(GoalKind::Wash),
-        evidence_entities: BTreeSet::from([wash_basin, well]),
+        evidence_entities: BTreeSet::from([wash_basin]),
         evidence_places: BTreeSet::from([orchard_farm]),
         obligation_source: None,
         commitment_impact_if_ignored: worldwake_core::Permille::ZERO,

@@ -231,6 +231,10 @@ pub trait GoalSpatialBeliefView {
         let _ = agent;
         None
     }
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        let _ = (place, tag);
+        false
+    }
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)>;
 }
 
@@ -416,6 +420,10 @@ pub trait GoalBeliefView {
         None
     }
     fn resource_source(&self, entity: EntityId) -> Option<ResourceSource>;
+    fn facility_wash_basin_state(&self, entity: EntityId) -> Option<WashBasinState> {
+        let _ = entity;
+        None
+    }
     fn last_harvest_trace(&self, entity: EntityId) -> Option<LastHarvestTrace> {
         let _ = entity;
         None
@@ -426,6 +434,10 @@ pub trait GoalBeliefView {
     }
     fn resource_sources_at(&self, place: EntityId, commodity: CommodityKind) -> Vec<EntityId>;
     fn matching_workstations_at(&self, place: EntityId, tag: WorkstationTag) -> Vec<EntityId>;
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        let _ = (place, tag);
+        false
+    }
     fn has_production_job(&self, entity: EntityId) -> bool;
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool;
     fn carry_capacity(&self, entity: EntityId) -> Option<LoadUnits>;
@@ -1359,6 +1371,10 @@ impl<T: SpatialBeliefView + ?Sized> GoalSpatialBeliefView for T {
         SpatialBeliefView::patrol_route(self, agent)
     }
 
+    fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
+        SpatialBeliefView::place_has_tag(self, place, tag)
+    }
+
     fn adjacent_places_with_travel_ticks(&self, place: EntityId) -> Vec<(EntityId, NonZeroU32)> {
         SpatialBeliefView::adjacent_places_with_travel_ticks(self, place)
     }
@@ -1696,6 +1712,13 @@ where
         FacilityBeliefView::resource_source(self, entity)
     }
 
+    fn facility_wash_basin_state(
+        &self,
+        entity: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::WashBasinState> {
+        FacilityBeliefView::wash_basin_state(self, entity)
+    }
+
     fn last_harvest_trace(
         &self,
         entity: worldwake_core::EntityId,
@@ -1724,6 +1747,14 @@ where
         tag: worldwake_core::WorkstationTag,
     ) -> Vec<worldwake_core::EntityId> {
         FacilityBeliefView::matching_workstations_at(self, place, tag)
+    }
+
+    fn place_has_tag(
+        &self,
+        place: worldwake_core::EntityId,
+        tag: worldwake_core::PlaceTag,
+    ) -> bool {
+        GoalSpatialBeliefView::place_has_tag(self, place, tag)
     }
 
     fn has_production_job(&self, entity: worldwake_core::EntityId) -> bool {
