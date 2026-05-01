@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — new golden test file exercising the full S129 stack
-**Deps**: archive/tickets/S129PLADIRFAC-005.md, archive/tickets/S129PLADIRFAC-006.md, archive/tickets/S129PLADIRFAC-007.md, S129PLADIRFAC-008, S129PLADIRFAC-010, S129PLADIRFAC-011
+**Deps**: archive/tickets/S129PLADIRFAC-005.md, archive/tickets/S129PLADIRFAC-006.md, archive/tickets/S129PLADIRFAC-007.md, archive/tickets/S129PLADIRFAC-008.md, S129PLADIRFAC-010, S129PLADIRFAC-011
 
 ## Problem
 
