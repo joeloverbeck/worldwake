@@ -28,7 +28,7 @@ producing one-off CIREM-style fixes if not addressed.
   not an enumerated switch. FND-21 / FND-22A.
 
 - **BELASPCOV-001** — `BelievedEntityState` ↔ `EntityBeliefAspect`
-  coverage audit → `tickets/BELASPCOV-001-believed-entity-state-claim-aspect-coverage.md`.
+  coverage audit → `archive/tickets/BELASPCOV-001-believed-entity-state-claim-aspect-coverage.md`.
   Smell: CIREM-003 had to add `WashBasinState` as a missing
   `EntityBeliefAspect` and bump save-format to 58 because the field
   existed on the summary without claim backing, causing chronic

@@ -525,8 +525,8 @@ Derived from the 2026-05-01 `/brainstorm` triage of the four CIREM tickets (`S12
 
 ```text
 S132 (independent — frontier-exhaustion strategy as goal-kind property)
-BELASPCOV-001 ticket (independent — claim-aspect coverage audit)
-INFRARET-001 ticket (soft dep on BELASPCOV-001 findings)
+BELASPCOV-001 ticket (completed — claim-aspect coverage audit)
+INFRARET-001 ticket (soft dep satisfied by BELASPCOV-001 findings)
 RELIEFACT-001 ticket (independent — per-need relief-actionability predicate)
 LOCROOT-001 ticket (independent — direct-root synthesis locality audit)
 ```
@@ -534,8 +534,8 @@ LOCROOT-001 ticket (independent — direct-root synthesis locality audit)
 **Wave** (parallel):
 
 - **S132**: Frontier-Exhaustion Strategy as Goal-Kind Property — replace the per-`GoalKind` allow-list in `frontier_exhaustion_entry` with a goal-kind-property dispatch (`PermanentUntilInvalidator | CooldownRetry`). Closes the pattern of S129CIREM-002 / S129CIREM-004 each adding a one-off variant to the switch. FND-21 / FND-22A alignment.
-- **BELASPCOV-001** (ticket): `BelievedEntityState ↔ EntityBeliefAspect` claim-aspect coverage audit — produced `docs/audits/2026-05-01-believed-entity-state-claim-coverage.md` and per-gap secondary tickets. CIREM-003's `WashBasinState` claim-aspect addition was ad hoc; this ticket finds remaining gaps before the next chronic-stall failure mode.
-- **INFRARET-001** (ticket): Generalize `state_salience_boost` from two hardcoded shape pairs to a need-relevance map over opportunity aspects. Soft depends on BELASPCOV-001.
+- **BELASPCOV-001** (ticket): `BelievedEntityState ↔ EntityBeliefAspect` claim-aspect coverage audit — produced `docs/audits/2026-05-01-believed-entity-state-claim-coverage.md`, found no mutable belief-content gaps, and created no per-gap secondary tickets. CIREM-003's `WashBasinState` claim-aspect addition was ad hoc; this ticket verified the current summary fields before the next chronic-stall failure mode.
+- **INFRARET-001** (ticket): Generalize `state_salience_boost` from two hardcoded shape pairs to a need-relevance map over opportunity aspects. Soft dependency on BELASPCOV-001 is satisfied; the completed audit found no additional aspects to fold in.
 - **RELIEFACT-001** (ticket): Extract per-need relief-actionability predicate from `emit_exploration_candidates` (replaces the inline dirtiness `if` branch added by CIREM-002 with a per-need dispatch).
 - **LOCROOT-001** (ticket): Audit direct-root synthesis (`GoalOffer::synthesized_root_candidate_targets`) for arms whose action precondition is `EntityAtActorPlace` / `ActorPlace`, mirroring CIREM-003's local-only Wash gate to the rest of the dispatch.
 

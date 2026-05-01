@@ -1,9 +1,9 @@
 # BELASPCOV-001: BelievedEntityState ↔ EntityBeliefAspect claim-aspect coverage audit
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Possibly — depending on audit findings, may add new `EntityBeliefAspect` variants and bump save format
+**Engine Changes**: None — audit-only; no claim-aspect gaps found
 **Deps**: archive/specs/S129-place-dirtiness-facility-wear.md, archive/tickets/S129CIREM-003-tell-session-vs-self-care.md
 
 ## Problem
@@ -83,6 +83,15 @@ tickets per discovered gap.
    claim hydration is the canonical path and that the snapshot
    pathway is preserved as the only direct mutator (matching CIREM-003's
    pattern).
+8. **Audit result (2026-05-01)**: The live audit found no mutable
+   `BelievedEntityState` field that follows the pre-CIREM-003
+   wash-basin failure mode. `resource_source` is fully claim-backed by
+   `EntityBeliefAspect::ResourceAvailable(CommodityKind)` plus
+   `ClaimValue::ResourceSource`. `believed_kind` is not claim-backed,
+   but is intentionally preserved as stable entity identity /
+   presentation metadata by `record_entity_snapshot_claims` and
+   `preserve_believed_kind`; it is not a mutable claim-aspect gap.
+   Therefore no `BELASPCOV-002` follow-up ticket was filed.
 
 ## Architecture Check
 
@@ -95,7 +104,8 @@ tickets per discovered gap.
    add a roundtrip test, matching CIREM-003's pattern at
    `crates/worldwake-sim/src/save_load.rs`.
 3. **Audit-only scope**: this ticket does not modify engine code.
-   Findings drive secondary tickets.
+   Findings drive secondary tickets only when a `gap` row exists; the
+   completed audit found none.
 
 ## Verification Layers
 
@@ -153,7 +163,8 @@ links to each secondary ticket.
 ## Files to Touch
 
 - `docs/audits/2026-05-01-believed-entity-state-claim-coverage.md` (new)
-- `tickets/BELASPCOV-NNN-*.md` (one per discovered gap, new)
+- No `tickets/BELASPCOV-NNN-*.md` follow-up was created because the
+  audit found no `gap` verdicts.
 
 No engine files are touched in this ticket.
 
@@ -191,13 +202,47 @@ No engine files are touched in this ticket.
 ### New/Modified Tests
 
 1. None — documentation-only ticket; verification is the audit doc
-   plus the per-gap secondary tickets that follow.
+   and the existing claim-carrier roundtrip test. No per-gap
+   secondary tickets were created.
 
 ### Commands
 
 1. `grep -n 'EntityBeliefAspect::' crates/worldwake-core/src/belief.rs | sort -u`
    — sanity check that the audit walked every projection.
-2. `cargo test -p worldwake-core --test entity_belief_claim_roundtrips_through_bincode`
-   — confirm baseline serde coverage of every aspect today.
+2. `cargo test -p worldwake-core entity_belief_claim_roundtrips_through_bincode -- --list`
+   — confirm the live bincode roundtrip selector exists. The drafted
+   `--test entity_belief_claim_roundtrips_through_bincode` form is
+   stale because the proof is a `worldwake-core` library unit test, not
+   an integration-test binary.
 3. `./scripts/verify.sh` — only required if any per-gap secondary
    ticket lands in the same PR; not required for the audit doc alone.
+
+## Closeout Evidence (2026-05-01)
+
+Passed:
+
+1. `grep -n 'EntityBeliefAspect::' crates/worldwake-core/src/belief.rs | sort -u`
+2. `cargo test -p worldwake-core entity_belief_claim_roundtrips_through_bincode -- --list`
+3. `cargo test -p worldwake-core entity_belief_claim_roundtrips_through_bincode`
+4. `cargo test --workspace`
+
+Not run:
+
+1. `./scripts/verify.sh` — not required by the ticket unless a per-gap
+   secondary implementation ticket lands in the same PR; no per-gap
+   ticket was created.
+
+## Outcome
+
+Completed on 2026-05-01.
+
+- Added `docs/audits/2026-05-01-believed-entity-state-claim-coverage.md`.
+- Audited every non-metadata `BelievedEntityState` field against
+  `EntityBeliefAspect`, `ClaimValue`, `entity_claims_for_snapshot`,
+  `derive_entity_summary`, and stale-claim pruning behavior.
+- Found no missing claim-aspect coverage gaps for mutable belief
+  content.
+- Classified `believed_kind` as intentionally preserved identity /
+  presentation metadata, not a claim aspect.
+- Created no secondary `BELASPCOV-002` ticket because there were no
+  `gap` rows.

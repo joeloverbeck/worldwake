@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core` belief retention helper (`state_salience_boost`)
-**Deps**: archive/specs/S129-place-dirtiness-facility-wear.md, archive/tickets/S129CIREM-003-tell-session-vs-self-care.md, tickets/BELASPCOV-001-believed-entity-state-claim-aspect-coverage.md (soft — findings may add aspects worth retaining)
+**Deps**: archive/specs/S129-place-dirtiness-facility-wear.md, archive/tickets/S129CIREM-003-tell-session-vs-self-care.md, archive/tickets/BELASPCOV-001-believed-entity-state-claim-aspect-coverage.md (soft — completed audit found no additional missing aspects)
 
 ## Problem
 
@@ -51,8 +51,11 @@ debt and is brittle against new aspect variants.
 3. **Generalization candidate**: the underlying contract is "if a
    directly-observed entity carries actionable opportunity claims for
    any of the agent's pressuring needs, retain it." The audit
-   surfaced by BELASPCOV-001 will name the full set of opportunity
-   claim aspects. After that audit, the retention rule can read:
+   completed by BELASPCOV-001 found no additional missing
+   `BelievedEntityState` claim-aspect lanes beyond the live
+   `WashBasinState` and `ResourceAvailable` opportunity carriers.
+   The retention rule can therefore start from the current live
+   opportunity aspects and read:
    *for each aspect the agent currently has a need for, if the entity
    carries that aspect via a direct-observation claim, return boost*.
 4. **Mismatch + correction**: today's hardcoded matches are correct
@@ -74,12 +77,12 @@ debt and is brittle against new aspect variants.
    live shapes) closes the false-confidence gap that the existing
    tests validate the live shapes specifically rather than the
    underlying contract.
-7. **Coordination with BELASPCOV-001**: BELASPCOV-001 may surface
-   additional opportunity aspects worth adding to the retention
-   predicate. This ticket can land before BELASPCOV-001 (with the
-   current two cases mapped through the new predicate) or after
-   (with newly-discovered aspects added in the same change). Soft
-   dependency, not hard.
+7. **Coordination with BELASPCOV-001**: BELASPCOV-001 completed as an
+   audit-only ticket and created no per-gap secondary tickets. This
+   ticket no longer needs to wait for new aspect findings; it should
+   generalize the current live wash-basin and resource-source
+   retention cases and remain extensible for future opportunity
+   aspects.
 
 ## Architecture Check
 
@@ -187,8 +190,9 @@ predicate above includes the
 
 ## Out of Scope
 
-- Adding new `EntityBeliefAspect` variants. Those are BELASPCOV-001's
-  domain.
+- Adding new `EntityBeliefAspect` variants. BELASPCOV-001 found no
+  missing variants in the current `BelievedEntityState` surface; future
+  variants belong to their own implementation tickets.
 - Changing the boost magnitude (`Permille` value). This refactor is
   about *what* gets boosted, not *how much*.
 - Changing claim-confidence decay arithmetic. Stale-report decay
