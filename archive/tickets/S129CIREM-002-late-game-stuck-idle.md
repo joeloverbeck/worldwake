@@ -1,9 +1,9 @@
 # S129CIREM-002: Late-game stuck-idle windows in survival baseline / contested / scattered
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: Likely — exploration cooldown vs. low-pressure idle, or planner replan cadence under chronic critical state
+**Engine Changes**: Yes — candidate generation self-care fallback / dirtiness exploration, and agent planning acquisition-exhaustion retry handling
 **Deps**: archive/specs/S129-place-dirtiness-facility-wear.md
 
 ## Problem
@@ -45,6 +45,13 @@ The two sub-shapes likely have different causes and the ticket must investigate 
 10. **Cumulative arithmetic (precision-rules §15)**: scattered Agent A reaches `max_need = 1000` at tick 978 and stays idle until 1033 (55 ticks). With `dehydration_tolerance_ticks = 240` and `bladder_accident_tolerance_ticks = 40`, a 55-tick stall at full saturation creates real wound aftermath. The `assert_authored_critical_runs_with_overrides` companion assertion in scattered already passes (3 of 6 contested-survival assertions failed, `all_agents_survive_1440_ticks` now passes after parent S129 commit) — so the agent does survive — but the *stuck-idle* contract is the canary. Investigate whether the agent is in a wound-driven cooldown loop.
 11. **Mismatch + correction**: the original S129 spec's golden coverage requirements (S129PLADIRFAC-012) did not anticipate that the new ranking modifiers would alter agent timing enough to expose pre-existing edge cases in exploration cooldown / stale-plan handling. Either the spec under-specified the goldens or the ranking arithmetic interacts with cooldown systems in a way the spec did not analyze. This is a *required consequence* of S129's ranking changes, not a separate bug.
 
+## Implementation Reassessment (2026-05-01)
+
+1. **Baseline sub-shape A was a candidate-generation gap, not an exploration-cooldown tuning issue.** Agent B selected `AcquireCommodity(Apple)` at tick 1079, `Harvest Apples` failed to start with `PreconditionFailed("extraction_slots_full")`, and subsequent ticks had `candidates=0`, `plans_found=0`, and a discrepancy trace while hunger/dirtiness rose. The fix records fully blocked self-care desires after blocker/discrepancy filtering and emits a need-driven exploration fallback when all known self-care opportunities for that need were filtered.
+2. **Scattered sub-shape B included self-consume acquisition frontier exhaustion.** Agent A had saturated thirst/dirtiness, a selected self-consume water acquisition candidate, and repeated `plans_found=0` without start failures. The fix treats self-consume `AcquireCommodity` frontier exhaustion as an acquisition-exhaustion signal and gives it bounded budget-retry state instead of suppressing it indefinitely.
+3. **Contested exposed a dirtiness-specific candidate gap.** Dirty agents with no clean wash basin could treat known or local water as if dirtiness relief were already actionable, even though `Wash` requires clean wash-basin access. The fix no longer lets a water path alone suppress dirtiness exploration, emits water acquisition only when no clean wash basin is known and no local owned water already exists, and seeds exploration from the agent's current place as self-location knowledge.
+4. **Focused coverage is lower-layer, not new golden files.** The invariant was proven by focused candidate-generation and planning unit tests plus the three existing ignored release goldens. New standalone goldens would duplicate the end-to-end witnesses without isolating the actual failure boundaries.
+
 ## Architecture Check
 
 1. **Investigation precedes fix**: the two sub-shapes need separate decision-trace dumps before any code change. Without traces, any "obvious" fix (e.g. `max_consecutive_explorations + 1`) is heuristic-tuning that may regress other goldens.
@@ -59,45 +66,12 @@ The two sub-shapes likely have different causes and the ticket must investigate 
 4. **Belief currency** -> if remote basins, latrines, or food sources have stale beliefs that fail their preconditions during search, the surface is `planning_snapshot.rs` and the new wash-state belief storage from the parent S129 commit (`crates/worldwake-core/src/belief.rs::BelievedEntityState::wash_basin_state`).
 5. **No need projection regression** -> S126's need-projection time-budget should not silently turn off late in the run. Verify `NeedProjectionPolicy` and related thresholds.
 
-## What to Change
+## What Changed
 
-### 1. Investigation: dump traces for both sub-shapes
-
-Add a one-shot diagnostic test in `crates/worldwake-ai/tests/` that runs each scenario for the relevant tick range and prints, per affected agent per tick:
-
-- Decision trace: candidates emitted, candidates ranked, selected candidate, rejection reasons.
-- Action trace: action lifecycle events (`Started`, `Committed`, `StartFailed`, `Aborted`).
-- `DeprivationExposure`, `HomeostaticNeeds`, current place, current active action.
-
-Only after the trace data is in hand should the ticket be split into the actual fix tickets (this ticket may decompose into S129CIREM-002a, -002b on the basis of trace evidence).
-
-### 2. Sub-shape A fix: low-pressure exploration substrate
-
-If the trace shows Agent B is stuck because exploration is on cooldown and other goals are below their activation thresholds, the fix is to give the agent a real low-pressure affordance — e.g.:
-
-- `Wash` candidate at moderate (sub-critical) dirtiness when basin is co-located, not only at critical pressure.
-- `Sleep` candidate when fatigue is moderate and a high-quality bed is co-located.
-- `Drink` / `Eat` opportunistically when the agent is co-located with a stocked source and the need is non-trivial.
-
-These are *opportunistic self-care* candidates, not a new ranking class. The substrate exists today (the candidate emitter already handles low/medium thresholds for some needs); this ticket may re-tune the activation thresholds rather than adding a new mechanism.
-
-### 3. Sub-shape B fix: critical-need stall
-
-If the trace shows agents at saturated needs failing to commit actions, the fix lives at one of:
-
-- **Candidate generation** — if no candidate is emitted for the critical need, fix the emitter.
-- **Ranking** — if the candidate is filtered to `zero_motive`, fix the motive arithmetic.
-- **Search** — if the candidate is selected but search fails, fix the operator/precondition that rejects.
-- **Start path** — if the plan is found but `start_action` rejects (binding, precondition, contention), fix the boundary that rejects.
-
-Choose exactly one based on trace evidence.
-
-### 4. Targeted golden coverage
-
-After the fix, add focused goldens that isolate each invariant:
-
-- `agent_at_low_pressure_with_co_located_affordance_does_not_stuck_idle` — single-agent, single-place, no critical needs but moderate pressure; assert no idle window > 40 ticks.
-- `agent_at_saturated_need_does_not_stuck_idle_under_chronic_state` — single-agent fixture pinned at saturated dirtiness/bladder/etc., assert action committed within the saturation tolerance window.
+1. Added post-filter fully blocked self-care exploration fallback in `crates/worldwake-ai/src/candidate_generation.rs`.
+2. Added dirtiness-specific water acquisition/exploration handling so water paths do not masquerade as clean wash access.
+3. Seeded exploration candidate places from the agent's current place so an agent with self-location but no stored place observation can still explore adjacent places.
+4. Recorded self-consume acquisition frontier exhaustion as an acquisition-exhaustion signal and bounded retry state in `crates/worldwake-ai/src/agent_tick/planning.rs`.
 
 ## Files to Touch
 
@@ -121,8 +95,8 @@ After the fix, add focused goldens that isolate each invariant:
 1. `golden_survival_baseline::no_stuck_idle_windows_with_elevated_needs` — zero stuck idle windows.
 2. `golden_survival_contested::no_stuck_idle_windows_with_elevated_needs` — zero stuck idle windows.
 3. `golden_survival_scattered::no_stuck_idle_windows_with_elevated_needs` — zero stuck idle windows.
-4. New focused goldens (one per sub-shape) — pass.
-5. Existing suite: `cargo test --workspace`, `./scripts/verify.sh`.
+4. Focused lower-layer tests for candidate-generation and planning seams — pass.
+5. Existing suite: `cargo test -p worldwake-ai` and broader workspace verification as feasible.
 
 ### Invariants
 
@@ -134,14 +108,42 @@ After the fix, add focused goldens that isolate each invariant:
 
 ### New/Modified Tests
 
-1. New diagnostic test (one-shot) — dumps traces for the failure windows. May be deleted after the fix lands; lives in `crates/worldwake-ai/tests/diagnostics_*` or inline as `#[ignore]`.
-2. New focused golden for sub-shape A — opportunistic low-pressure self-care.
-3. New focused golden for sub-shape B — saturated-need start-path correctness.
+1. One-shot inline diagnostics were used during implementation and removed before closeout.
+2. Focused candidate-generation tests cover fully blocked self-care fallback, dirtiness water acquisition, and dirtiness exploration when only water path knowledge exists.
+3. Focused planning test covers self-consume acquisition frontier exhaustion entering bounded retry state and incrementing the acquisition-exhaustion tracker.
 
 ### Commands
 
-1. `cargo test --release -p worldwake-ai --test golden_survival_baseline -- --ignored --test-threads=1`
-2. `cargo test --release -p worldwake-ai --test golden_survival_contested -- --ignored --test-threads=1`
-3. `cargo test --release -p worldwake-ai --test golden_survival_scattered -- --ignored --test-threads=1`
-4. `cargo test --workspace`
-5. `./scripts/verify.sh`
+1. `cargo test -p worldwake-ai candidate_generation::tests::dirtiness_emits_water_acquisition_when_no_clean_wash_basin_is_known -- --exact`
+2. `cargo test -p worldwake-ai candidate_generation::tests::fully_blocked_self_care_source_emits_exploration_fallback -- --exact`
+3. `cargo test -p worldwake-ai candidate_generation::tests::generate_candidates_keeps_dirtiness_exploration_when_only_water_path_is_known -- --exact`
+4. `cargo test -p worldwake-ai agent_tick::planning::tests::record_exhausted_goals_records_self_consume_acquire_frontier_exhaustion_as_retry -- --exact`
+5. `cargo test --release -p worldwake-ai --test golden_survival_baseline no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`
+6. `cargo test --release -p worldwake-ai --test golden_survival_contested no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`
+7. `cargo test --release -p worldwake-ai --test golden_survival_scattered no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`
+
+## Outcome
+
+Completed on 2026-05-01.
+
+What changed:
+- `crates/worldwake-ai/src/candidate_generation.rs` now emits post-filter exploration fallback for fully blocked self-care needs, keeps dirtiness exploration live when only water access is known, emits bounded dirtiness-driven water acquisition when no clean wash basin is known, and seeds exploration from current self-location.
+- `crates/worldwake-ai/src/agent_tick/planning.rs` now records self-consume acquisition frontier exhaustion as acquisition exhaustion and uses bounded retry state instead of indefinite suppression.
+- `crates/worldwake-cli/tests/fixtures/observer_decision_history/survival_baseline_5_ticks.md` was refreshed for the legitimate early decision-history shift caused by current-place exploration.
+
+Deviations:
+- The landed proof is lower-layer unit coverage plus the three existing ignored release goldens, not new standalone focused golden files. One-shot inline diagnostics were removed before final verification.
+
+Verification result:
+- Passed `cargo test -p worldwake-ai candidate_generation::tests::dirtiness_emits_water_acquisition_when_no_clean_wash_basin_is_known -- --exact`
+- Passed `cargo test -p worldwake-ai candidate_generation::tests::fully_blocked_self_care_source_emits_exploration_fallback -- --exact`
+- Passed `cargo test -p worldwake-ai candidate_generation::tests::generate_candidates_keeps_dirtiness_exploration_when_only_water_path_is_known -- --exact`
+- Passed `cargo test -p worldwake-ai agent_tick::planning::tests::record_exhausted_goals_records_self_consume_acquire_frontier_exhaustion_as_retry -- --exact`
+- Passed `cargo test -p worldwake-cli --test observer_decision_history`
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_baseline no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_contested no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`
+- Passed `cargo test --release -p worldwake-ai --test golden_survival_scattered no_stuck_idle_windows_with_elevated_needs -- --ignored --test-threads=1`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo test --workspace`
+- Passed `./scripts/verify.sh`
+- Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --check`

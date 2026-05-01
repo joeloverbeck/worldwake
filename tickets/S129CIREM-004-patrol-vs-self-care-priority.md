@@ -79,7 +79,7 @@ After the fix, add focused goldens:
 ## Out of Scope
 
 - Drive-escalation wash recurrence — separate ticket S129CIREM-001.
-- Late-game stuck idle in baseline / contested / scattered — separate ticket S129CIREM-002.
+- Late-game stuck idle in baseline / contested / scattered — completed in `archive/tickets/S129CIREM-002-late-game-stuck-idle.md`.
 - Tell-session vs self-care — separate ticket S129CIREM-003.
 - Patrol motive arithmetic redesign for non-route-aware patrol — out of scope unless the trace shows it is needed.
 - Pursuit / hostility behavior — already covered by the same scenario but tested via different assertions (`first_remote_pursuit_candidate_tick`, `attack_committed`); those are not failing.

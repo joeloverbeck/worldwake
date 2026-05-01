@@ -815,13 +815,11 @@ fn record_exhausted_goals(
         match &plan.result {
             crate::PlanSearchResult::BudgetExhausted { .. }
             | crate::PlanSearchResult::FrontierExhausted { .. } => {
-                if matches!(plan.result, crate::PlanSearchResult::BudgetExhausted { .. })
-                    && let Some(commodity) = plan
-                        .opportunity
-                        .goal_key
-                        .kind
-                        .target_commodity(recipe_registry)
-                {
+                if let Some(commodity) = acquisition_exhaustion_signal_commodity(
+                    &plan.opportunity.goal_key.kind,
+                    &plan.result,
+                    recipe_registry,
+                ) {
                     pending_tracker_increments.extend(relieved_needs_for_commodity(commodity));
                 }
                 let (invalidation_conditions, baseline) = derive_invalidation_conditions(
@@ -883,13 +881,38 @@ fn frontier_exhaustion_entry(
         // Sleep is a direct local self-care action. If a single search pass
         // exhausts its frontier, suppressing it until a band/position change
         // can strand the agent inside one authored critical band.
-        GoalKind::Sleep => ExhaustionEntry::budget_retry_pending(
+        GoalKind::Sleep
+        | GoalKind::AcquireCommodity {
+            purpose: worldwake_core::CommodityPurpose::SelfConsume,
+            ..
+        } => ExhaustionEntry::budget_retry_pending(
             invalidation_conditions,
             baseline,
             tick,
             cognitive,
         ),
         _ => ExhaustionEntry::frontier_exhausted(invalidation_conditions, baseline),
+    }
+}
+
+fn acquisition_exhaustion_signal_commodity(
+    goal_kind: &GoalKind,
+    result: &crate::PlanSearchResult,
+    recipe_registry: &RecipeRegistry,
+) -> Option<worldwake_core::CommodityKind> {
+    match result {
+        crate::PlanSearchResult::BudgetExhausted { .. } => {
+            goal_kind.target_commodity(recipe_registry)
+        }
+        crate::PlanSearchResult::FrontierExhausted { .. } => match goal_kind {
+            GoalKind::AcquireCommodity {
+                commodity,
+                purpose: worldwake_core::CommodityPurpose::SelfConsume,
+                ..
+            } => Some(*commodity),
+            _ => None,
+        },
+        crate::PlanSearchResult::Found(_) | crate::PlanSearchResult::Unsupported => None,
     }
 }
 
@@ -5721,6 +5744,53 @@ mod tests {
         assert!(
             entry.next_retry_tick.is_some(),
             "sleep frontier exhaustion should retry on cooldown instead of suppressing indefinitely"
+        );
+    }
+
+    #[test]
+    fn record_exhausted_goals_records_self_consume_acquire_frontier_exhaustion_as_retry() {
+        let goal = OpportunityKey {
+            goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }),
+            anchor: OpportunityAnchor::Place(place_entity(3)),
+        };
+        let mut runtime = AgentDecisionRuntime::default();
+        let plans = vec![searched_plan(
+            goal,
+            PlanSearchResult::FrontierExhausted {
+                expansions_used: 12,
+            },
+        )];
+        let (world, agent, _) = setup_agent_world();
+        let view = PerAgentBeliefView::from_world(agent, &world);
+        let cognitive = cognitive(&ProfileFixture::default());
+
+        let tracker_increments = record_exhausted_goals(
+            &mut runtime,
+            &view,
+            agent,
+            &RecipeRegistry::new(),
+            &plans,
+            Tick(9),
+            &cognitive,
+        );
+
+        assert_eq!(
+            tracker_increments,
+            BTreeSet::from([
+                worldwake_core::HomeostaticNeedId::Thirst,
+                worldwake_core::HomeostaticNeedId::Dirtiness,
+            ])
+        );
+        let entry = runtime.exhaustion_cache.get(&goal).unwrap();
+        assert_eq!(entry.retry_state, ExhaustionRetryState::BudgetRetryPending);
+        assert!(!entry.suppresses_planning());
+        assert!(
+            entry.next_retry_tick.is_some(),
+            "self-consume acquisition frontier exhaustion should retry and feed exploration fallback"
         );
     }
 

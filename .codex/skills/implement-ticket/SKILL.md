@@ -19,6 +19,8 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Keep Cargo sequential, confirm ambiguous or pre-existing exact selectors with `-- --list`, and record only truthful verification boundaries.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
 
+Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail.
+
 Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here. Do not include a Cargo command inside any `multi_tool_use.parallel` bundle, even when the other bundled commands are read-only; run the Cargo command separately.
 
 ## Quick Routing
@@ -40,12 +42,14 @@ Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in
 - If the ticket family is already partially landed on the live branch, identify the remaining live delta before adopting the drafted `What to Change`, `Files to Touch`, or proof plan sections.
 - If the ticket lives under `.claude/worktrees/<name>/`, treat that worktree root as the repository root for all operations.
 
-Cargo commands are an explicit exception to the repo's general parallel-read/tool-call habit: run Cargo sequentially throughout this workflow, including `cargo test ... -- --list`, focused tests, compile-only passes, broad crate/workspace tests, and clippy runs. In Codex, do not use `multi_tool_use.parallel` for any Cargo command, including `-- --list` probes. Do not launch multiple Cargo commands in parallel unless the user explicitly asks for that tradeoff. After a resume or context compaction, check for and poll any known in-flight Cargo session before rerunning the same command. If the saved process handle is unavailable, cannot be polled, or no longer proves a completed exit status, treat the prior run as untrusted: rerun the command and record only the observed completed run as verification.
+Apply the Cargo hard stop above throughout the workflow. After a resume or context compaction, check for and poll any known in-flight Cargo session before rerunning the same command. If the saved process handle is unavailable, cannot be polled, or no longer proves a completed exit status, treat the prior run as untrusted: rerun the command and record only the observed completed run as verification.
 When the ticket's proof plan names a specific script, bin target, workflow entry, or test file, verify the exact live entrypoint name before treating the drafted command as authoritative. If the ticket spells the target differently from the live repo, correct the proof lane to the honest current entrypoint before closeout instead of preserving the stale command.
 When the proof lane depends on a repo script such as `./scripts/verify.sh`, treat the script's live contents and observed output as authoritative over surrounding prose summaries. If the ticket's Test Plan names the script, inspect it during context loading or reassessment before coding so repo-specific gates can shape naming, cleanup, and implementation constraints. Inspect or summarize the actual gate set before closeout, especially when the script has gained extra checks beyond the documented high-level command list. If the script exits successfully but its streamed output has no explicit final success marker, read the script or run a cheap `sed`/`rg` over it before recording the exact gate list.
 If a ticket lists `./scripts/verify.sh` but the session is not preparing a PR, inspect the script and either run the wrapper or run all live gates it currently wraps directly. Record any substitution explicitly in ticket closeout, including which wrapper gate set was covered and that the wrapper itself was not run.
 When the live gate set includes repo-specific cleanup, removal, or drift-detection scripts, inspect their searched symbols or invariants early enough that new code does not reintroduce banned names or stale surfaces. If a script exists to prove an old concept is gone, treat its patterns as naming constraints during implementation, not only as final verification fallout.
 For Worldwake Rust tickets, default to `cargo fmt --all` after significant Rust edits so local formatting matches the repo's `verify.sh` gate. In dirty worktrees, immediately inspect `git status --short` after formatting and classify any unrelated formatter spillover before proceeding.
+
+For long diagnostic implementations likely to hit interruption or context compaction, keep a compact checkpoint after major pivots: current hypothesis, temporary probes still present, commands already passed, and remaining verification gates. Use the active ticket when the notes are durable closeout facts; otherwise use a disposable local note or the conversation, and fold only final truths into ticket closeout.
 
 ## Mixed outcome: narrow fix landed, broader golden still false
 
@@ -328,11 +332,7 @@ For detailed AI runtime, planner-boundary, hybrid golden, scenario-metadata, fix
 
 #### Manual probes and temporary scaffolding
 
-When a ticket's manual smoke needs synthetic authored input, prefer a disposable repo-local temp file or another cleanup-safe local fixture path over ad hoc external temp locations. Record the exact command/output honestly in the ticket closeout, then remove the temporary file before finalizing the session.
-
-When a ticket requires an interactive GUI or other manual smoke that cannot be honestly run in the current environment, do not mark it as passed. Run the strongest automated seam available instead, record the skipped manual command and environment reason in `Deviations` or `Verification Result`, and make sure any README/manual-QA checklist still tells a human how to perform the deferred check.
-
-When a manual probe temporarily dirties a tracked file to prove a generator, report, or drift-check failure mode, prefer a temp backup/restore or another non-destructive restoration path over drafted cleanup like `git checkout -- ...` unless the worktree has first been confirmed clean and that destructive restore is itself the honest contract under test.
+Use `references/verification.md` for cleanup-safe manual-probe details. Before broadened verification, remove temporary diagnostic tests, trace prints, probe assertions, and marker strings unless the ticket explicitly owns keeping that instrumentation; when marker names were used, run a targeted `rg` cleanup check and then rerun the narrowest affected proof.
 
 #### Save-format and serialized-surface verification
 

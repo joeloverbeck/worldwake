@@ -75,7 +75,7 @@ After the fix, add `listener_with_critical_dirtiness_breaks_off_tell_to_wash`: f
 ## Out of Scope
 
 - Drive-escalation wash recurrence — separate ticket S129CIREM-001.
-- Late-game stuck idle in baseline / contested / scattered — separate ticket S129CIREM-002.
+- Late-game stuck idle in baseline / contested / scattered — completed in `archive/tickets/S129CIREM-002-late-game-stuck-idle.md`.
 - Patrol vs self-care — separate ticket S129CIREM-004.
 - Tell mechanics rebalancing for non-listener agents — out of scope unless trace shows a shared root cause.
 - Survival contract tuning (`max_authored_critical_run_ticks` / `critical_run_limits.dirtiness`) — should not be touched without first naming the architectural substrate the relaxation rests on.

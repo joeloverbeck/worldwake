@@ -401,13 +401,33 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     let (pending_violations, pending_source_reliability_failures) =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
 
-    let candidates = filter_suppressed_candidates(
+    let mut candidates = filter_suppressed_candidates(
         candidates,
         blocked,
         discrepancies,
         current_tick,
         &mut diagnostics,
     );
+    let fully_blocked_desires = diagnostics.fully_blocked_desires.clone();
+    let mut blocked_fallback_candidates = Vec::new();
+    emit_exploration_candidates_for_blocked_self_care(
+        &mut blocked_fallback_candidates,
+        &mut diagnostics,
+        &ctx,
+        needs,
+        &fully_blocked_desires,
+    );
+    let mut fallback_diagnostics = CandidateGenerationDiagnostics::default();
+    candidates.extend(filter_suppressed_candidates(
+        blocked_fallback_candidates,
+        blocked,
+        discrepancies,
+        current_tick,
+        &mut fallback_diagnostics,
+    ));
+    diagnostics
+        .suppressed
+        .extend(fallback_diagnostics.suppressed);
 
     CandidateGenerationResult {
         candidates,
@@ -589,6 +609,7 @@ fn emit_need_candidates(
     emit_sleep_goal(candidates, diagnostics, ctx, needs, thresholds);
     emit_relieve_goal(candidates, diagnostics, ctx, needs, thresholds);
     emit_wash_goal(candidates, diagnostics, ctx, needs, thresholds);
+    emit_dirtiness_water_acquisition_candidates(candidates, diagnostics, ctx, needs, thresholds);
 }
 
 fn emit_production_candidates(
@@ -2792,11 +2813,87 @@ fn emit_exploration_candidates(
             continue;
         }
 
-        let path_reliable = ctx.view.acquisition_exhaustion_count(ctx.agent, need_id)
-            < profile.acquisition_failure_threshold;
-        if any_local_need_relief(ctx.view, ctx.agent, ctx.place, matches_need)
-            || (path_reliable && need_has_known_acquisition_path(ctx, matches_need))
-        {
+        if need_id == HomeostaticNeedId::Dirtiness {
+            let wash_access_known = !wash_access_opportunities(ctx).is_empty();
+            if wash_access_known {
+                continue;
+            }
+        } else {
+            let path_reliable = ctx.view.acquisition_exhaustion_count(ctx.agent, need_id)
+                < profile.acquisition_failure_threshold;
+            if any_local_need_relief(ctx.view, ctx.agent, ctx.place, matches_need)
+                || (path_reliable && need_has_known_acquisition_path(ctx, matches_need))
+            {
+                continue;
+            }
+        }
+
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            EmitterTag::Exploration,
+            single_evidence(EvidenceKindTag::ExplorationPressure),
+            GoalKind::ExploreLocation {
+                target_place,
+                motivating_need: ExplorationMotivation::NeedDriven(need_id),
+            },
+            OpportunityAnchor::Place(target_place),
+            Evidence::with_place(target_place),
+            EvidenceTrace::default(),
+        );
+    }
+}
+
+fn emit_exploration_candidates_for_blocked_self_care(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+    needs: Option<HomeostaticNeeds>,
+    fully_blocked_desires: &[DesireFullyBlocked],
+) {
+    if candidates
+        .iter()
+        .any(|candidate| !goal_is_self_care_fallback(candidate.key.kind))
+    {
+        return;
+    }
+    let Some(needs) = needs else {
+        return;
+    };
+    let Some(profile) = ctx.view.exploration_profile(ctx.agent) else {
+        return;
+    };
+    if profile.curiosity_weight.value() == 0 {
+        return;
+    }
+    if profile.max_consecutive_explorations > 0
+        && profile.consecutive_exploration_count >= profile.max_consecutive_explorations
+    {
+        return;
+    }
+    let Some(target_place) = select_exploration_target(ctx, profile) else {
+        return;
+    };
+
+    let mut blocked_needs = BTreeSet::new();
+    for blocked in fully_blocked_desires {
+        blocked_needs.extend(blocked_self_care_needs(blocked.goal_key.kind));
+    }
+
+    for need_id in blocked_needs {
+        let pressure = homeostatic_need_pressure(&needs, need_id);
+        if pressure < profile.need_activation_threshold {
+            continue;
+        }
+        if candidates.iter().any(|candidate| {
+            matches!(
+                candidate.key.kind,
+                GoalKind::ExploreLocation {
+                    target_place: existing_target,
+                    motivating_need: ExplorationMotivation::NeedDriven(existing_need),
+                } if existing_target == target_place && existing_need == need_id
+            )
+        }) {
             continue;
         }
 
@@ -2813,6 +2910,29 @@ fn emit_exploration_candidates(
             Evidence::with_place(target_place),
             EvidenceTrace::default(),
         );
+    }
+}
+
+fn blocked_self_care_needs(goal_kind: GoalKind) -> BTreeSet<HomeostaticNeedId> {
+    match goal_kind {
+        GoalKind::ConsumeOwnedCommodity { commodity }
+        | GoalKind::AcquireCommodity {
+            commodity,
+            purpose: CommodityPurpose::SelfConsume,
+            ..
+        } => relieved_needs_for_commodity(commodity),
+        GoalKind::Wash => BTreeSet::from([HomeostaticNeedId::Dirtiness]),
+        _ => BTreeSet::new(),
+    }
+}
+
+fn homeostatic_need_pressure(needs: &HomeostaticNeeds, need_id: HomeostaticNeedId) -> Permille {
+    match need_id {
+        HomeostaticNeedId::Hunger => needs.hunger,
+        HomeostaticNeedId::Thirst => needs.thirst,
+        HomeostaticNeedId::Fatigue => needs.fatigue,
+        HomeostaticNeedId::Bladder => needs.bladder,
+        HomeostaticNeedId::Dirtiness => needs.dirtiness,
     }
 }
 
@@ -3386,6 +3506,97 @@ fn emit_wash_goal(
             OpportunityAnchor::Entity(basin),
             evidence,
             trace,
+        );
+    }
+}
+
+fn emit_dirtiness_water_acquisition_candidates(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+    needs: HomeostaticNeeds,
+    thresholds: DriveThresholds,
+) {
+    if needs.dirtiness < thresholds.dirtiness.low() || !wash_access_opportunities(ctx).is_empty() {
+        return;
+    }
+
+    let commodity = CommodityKind::Water;
+    if local_owned_commodity_evidence(ctx.view, ctx.agent, ctx.place, commodity).is_some() {
+        return;
+    }
+    let search = acquisition_path_search_inner(
+        ctx.view,
+        ctx.agent,
+        ctx.place,
+        commodity,
+        ctx.recipes,
+        ctx.travel_horizon,
+        AcquisitionSearchOptions {
+            include_recipes: false,
+            visited_commodities: &BTreeSet::new(),
+        },
+    );
+    diagnostics.places_reachable = diagnostics
+        .places_reachable
+        .saturating_add(search.reachable_places);
+    diagnostics.places_after_belief_filter = diagnostics
+        .places_after_belief_filter
+        .saturating_add(search.places_after_belief_filter);
+
+    let Some(quantity) =
+        derive_acquire_commodity_quantity(ctx, HomeostaticNeedId::Dirtiness, commodity)
+    else {
+        return;
+    };
+    let goal = GoalKind::AcquireCommodity {
+        commodity,
+        purpose: CommodityPurpose::SelfConsume,
+        quantity,
+    };
+
+    for (candidate_place, evidence, mut evidence_trace) in search.opportunities {
+        if candidates.iter().any(|candidate| {
+            matches!(
+                candidate.key.kind,
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Water,
+                    purpose: CommodityPurpose::SelfConsume,
+                    ..
+                }
+            ) && candidate.anchor == OpportunityAnchor::Place(candidate_place)
+        }) {
+            continue;
+        }
+        if ctx.tracing_enabled {
+            evidence_trace
+                .knowledge_path
+                .self_knowledge
+                .push(SelfKnowledgeProvenance::NeedLevel {
+                    need: HomeostaticNeedId::Dirtiness,
+                    permille: needs.dirtiness,
+                });
+            evidence_trace.knowledge_path.entity_beliefs.extend(
+                belief_provenance_for_contributors(
+                    ctx.view,
+                    ctx.agent,
+                    &evidence_trace.contributors,
+                    commodity,
+                ),
+            );
+        }
+        emit_candidate_with_trace(
+            candidates,
+            diagnostics,
+            EmitterTag::HomeostaticNeeds,
+            combined_evidence(
+                EvidenceKindTag::HomeostaticPressure,
+                EvidenceKindTag::PerceptionObservation,
+            ),
+            goal,
+            OpportunityAnchor::Place(candidate_place),
+            evidence,
+            evidence_trace,
         );
     }
 }
@@ -5302,6 +5513,12 @@ fn exploration_candidate_places(
     for (place, observed_tick) in known_places {
         candidates.insert(place, Some(observed_tick));
         frontier.push_back(place);
+    }
+    if let Some(current_place) = view.effective_place(agent)
+        && let std::collections::btree_map::Entry::Vacant(entry) = candidates.entry(current_place)
+    {
+        entry.insert(None);
+        frontier.push_back(current_place);
     }
 
     for _ in 0..frontier_depth {
@@ -8200,7 +8417,7 @@ mod tests {
         view.entity_kinds.insert(bread, EntityKind::ItemLot);
         view.effective_places.insert(agent, place);
         view.effective_places.insert(bread, place);
-        view.homeostatic_needs.insert(agent, hunger(250));
+        view.homeostatic_needs.insert(agent, hunger(1000));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
         view.direct_possessions.insert(agent, vec![bread]);
@@ -8242,7 +8459,7 @@ mod tests {
         view.entity_kinds.insert(apple, EntityKind::ItemLot);
         view.effective_places.insert(agent, place);
         view.effective_places.insert(apple, place);
-        view.homeostatic_needs.insert(agent, hunger(250));
+        view.homeostatic_needs.insert(agent, hunger(500));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
         view.direct_possessions.insert(agent, vec![apple]);
@@ -9094,7 +9311,7 @@ mod tests {
         view.effective_places.insert(agent, home);
         view.effective_places.insert(orchard_seller, orchard);
         view.effective_places.insert(market_seller, market);
-        view.homeostatic_needs.insert(agent, hunger(250));
+        view.homeostatic_needs.insert(agent, hunger(1000));
         view.drive_thresholds
             .insert(agent, DriveThresholds::default());
         view.adjacent_places.insert(home, vec![orchard, market]);
@@ -9282,6 +9499,116 @@ mod tests {
                     anchor: worldwake_core::OpportunityAnchor::Place(market),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn fully_blocked_self_care_source_emits_exploration_fallback() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let frontier = entity(12);
+        let seller = entity(2);
+        let goal = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        };
+        let key = GoalKey::from(goal);
+        let mut view = TestBeliefView {
+            current_tick: Tick(500),
+            ..TestBeliefView::default()
+        };
+        view.alive.extend([agent, seller]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, orchard);
+        view.entities_at.insert(home, vec![agent]);
+        view.homeostatic_needs.insert(agent, hunger(500));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.exploration_profiles.insert(
+            agent,
+            ExplorationProfile {
+                curiosity_weight: Permille::new(500).unwrap(),
+                need_activation_threshold: Permille::new(400).unwrap(),
+                frontier_depth: 2,
+                visit_lookback_ticks: 50,
+                ..ExplorationProfile::default()
+            },
+        );
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home, frontier]);
+        view.adjacent_places.insert(frontier, vec![orchard]);
+        view.beliefs.insert(
+            agent,
+            vec![
+                (
+                    orchard,
+                    BelievedEntityState {
+                        believed_kind: Some(EntityKind::Place),
+                        last_known_place: None,
+                        ..believed_state(1, PerceptionSource::DirectObservation)
+                    },
+                ),
+                (
+                    frontier,
+                    BelievedEntityState {
+                        believed_kind: Some(EntityKind::Place),
+                        last_known_place: None,
+                        ..believed_state(1, PerceptionSource::DirectObservation)
+                    },
+                ),
+            ],
+        );
+        view.sync_belief_store(agent);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(orchard),
+                target: None,
+                action_def: None,
+            },
+            blocking_fact: BlockingFact::NoKnownSeller,
+            diagnostic_context: None,
+            observed_tick: Tick(490),
+            expires_tick: Tick(600),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let result = generate_candidates_with_travel_horizon(
+            &view,
+            agent,
+            &blocked,
+            &ViolationMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(500),
+            6,
+            false,
+        );
+
+        assert!(
+            goals_for(&result.candidates, &goal).is_empty(),
+            "blocked bread acquisition should not survive as a candidate"
+        );
+        assert!(
+            result.candidates.iter().any(|candidate| {
+                matches!(
+                    candidate.key.kind,
+                    GoalKind::ExploreLocation {
+                        motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                            HomeostaticNeedId::Hunger,
+                        ),
+                        ..
+                    }
+                )
+            }),
+            "blocked self-care should emit a hunger-driven exploration fallback: {:?}",
+            result.candidates
         );
     }
 
@@ -9552,6 +9879,58 @@ mod tests {
             &candidates,
             GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            }
+        ));
+    }
+
+    #[test]
+    fn dirtiness_emits_water_acquisition_when_no_clean_wash_basin_is_known() {
+        let agent = entity(1);
+        let home = entity(10);
+        let well_place = entity(11);
+        let water_source = entity(20);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, water_source]);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.entity_kinds.insert(water_source, EntityKind::Facility);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(water_source, well_place);
+        view.entities_at.insert(home, vec![agent]);
+        view.entities_at.insert(well_place, vec![water_source]);
+        view.adjacent_places.insert(home, vec![well_place]);
+        view.adjacent_places.insert(well_place, vec![home]);
+        view.homeostatic_needs.insert(agent, dirtiness(850));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.sources_at
+            .insert((well_place, CommodityKind::Water), vec![water_source]);
+        view.resource_sources.insert(
+            water_source,
+            ResourceSource {
+                commodity: CommodityKind::Water,
+                available_quantity: Quantity(5),
+                max_quantity: Quantity(5),
+                regeneration_ticks_per_unit: None,
+                last_regeneration_tick: None,
+                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
+                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
+            },
+        );
+
+        let candidates = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+
+        assert!(contains_goal(
+            &candidates,
+            GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
                 quantity: AcquisitionQuantity::single(),
             }
@@ -19322,7 +19701,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_candidates_skips_dirtiness_exploration_when_water_available() {
+    fn generate_candidates_explores_for_wash_access_when_only_local_water_is_available() {
         let agent = entity(1);
         let current_place = entity(10);
         let known_place = entity(11);
@@ -19338,6 +19717,8 @@ mod tests {
         view.entity_kinds.insert(water, EntityKind::ItemLot);
         view.effective_places.insert(agent, current_place);
         view.entities_at.insert(current_place, vec![agent, water]);
+        view.direct_possessions.insert(agent, vec![water]);
+        view.direct_possessors.insert(water, agent);
         view.adjacent_places
             .insert(current_place, vec![known_place]);
         view.adjacent_places
@@ -19380,7 +19761,7 @@ mod tests {
         );
 
         assert!(
-            !candidates.iter().any(|candidate| {
+            candidates.iter().any(|candidate| {
                 matches!(
                     candidate.key.kind,
                     GoalKind::ExploreLocation {
@@ -19391,12 +19772,12 @@ mod tests {
                     }
                 )
             }),
-            "local water should suppress dirtiness-driven exploration"
+            "local water without known wash access should not strand dirtiness relief"
         );
     }
 
     #[test]
-    fn generate_candidates_skips_dirtiness_exploration_when_water_path_is_known() {
+    fn generate_candidates_keeps_dirtiness_exploration_when_only_water_path_is_known() {
         let agent = entity(1);
         let current_place = entity(10);
         let known_place = entity(11);
@@ -19465,7 +19846,7 @@ mod tests {
         );
 
         assert!(
-            !candidates.iter().any(|candidate| {
+            candidates.iter().any(|candidate| {
                 matches!(
                     candidate.key.kind,
                     GoalKind::ExploreLocation {
@@ -19476,7 +19857,7 @@ mod tests {
                     }
                 )
             }),
-            "known water path should suppress dirtiness-driven exploration"
+            "a water path alone is not wash access and should not strand dirtiness relief"
         );
     }
 
