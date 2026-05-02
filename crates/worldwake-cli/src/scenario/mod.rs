@@ -22,9 +22,9 @@ use worldwake_core::{
     OfficeForceProfile, OfficeForceState, PatrolRoute, Place, PlaceDirtiness,
     ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind,
     ResourceExtractionQueues, ResourceSource, Seed, SleepQualityProfile, SocialObservation,
-    SocialObservationDetail, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-    WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn, default_commodity_decay_map,
-    hash_world, load_per_unit,
+    SocialObservationDetail, SurveyMemory, Tick, Topology, TravelEdge, TravelEdgeId,
+    VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
+    default_commodity_decay_map, hash_world, load_per_unit,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -600,6 +600,7 @@ fn spawn_agent(
 
     let agent_id = txn.create_agent(&agent_def.name, agent_def.control)?;
     names.insert(agent_def.name.clone(), agent_id);
+    txn.set_component_survey_memory(agent_id, SurveyMemory::default())?;
 
     let needs = agent_def.needs.unwrap_or_default();
     txn.set_component_homeostatic_needs(agent_id, needs)?;
@@ -1479,6 +1480,10 @@ mod tests {
                 .unwrap()
                 .min_sleep_ticks,
             NonZeroU32::new(8).unwrap()
+        );
+        assert_eq!(
+            world.get_component_survey_memory(agent_id),
+            Some(&SurveyMemory::default())
         );
     }
 

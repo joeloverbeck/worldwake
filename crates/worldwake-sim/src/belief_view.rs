@@ -317,6 +317,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn survey_memory(&self, agent: EntityId) -> Option<&worldwake_core::SurveyMemory> {
+        let _ = agent;
+        None
+    }
     fn known_institutional_beliefs(&self, agent: EntityId) -> Vec<BelievedInstitutionalClaim> {
         let _ = agent;
         Vec::new()
@@ -1100,6 +1104,10 @@ pub trait SocialBeliefView {
         let _ = agent;
         None
     }
+    fn survey_memory(&self, agent: EntityId) -> Option<&worldwake_core::SurveyMemory> {
+        let _ = agent;
+        None
+    }
     fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
         let _ = entity;
         None
@@ -1522,6 +1530,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<&worldwake_core::LearnedOpportunityMemory> {
         SocialBeliefView::learned_opportunity_memory(self, agent)
+    }
+
+    fn survey_memory(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<&worldwake_core::SurveyMemory> {
+        SocialBeliefView::survey_memory(self, agent)
     }
 
     fn known_institutional_beliefs(
@@ -2513,9 +2528,9 @@ mod tests {
         LastProactiveExplorationTick, LatrineFullness, LoadUnits, OfficeData, PatrolProfile,
         PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, Quantity, RecordData,
         RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance, RewardReservation,
-        RewardSource, ShelterTag, SleepQualityProfile, SuccessionLaw, TheftFacts, Tick,
-        UniqueItemKind, ViolationId, VisibilitySpec, WashBasinState, WitnessData, WorkstationTag,
-        World, WorldTxn, build_prototype_world,
+        RewardSource, ShelterTag, SleepQualityProfile, SuccessionLaw, SurveyMemory, TheftFacts,
+        Tick, UniqueItemKind, ViolationId, VisibilitySpec, WashBasinState, WitnessData,
+        WorkstationTag, World, WorldTxn, build_prototype_world,
     };
 
     fn sample_claim(
@@ -3377,6 +3392,24 @@ mod tests {
         assert_eq!(
             GoalBeliefView::learned_opportunity_memory(&view, agent),
             None
+        );
+        assert_eq!(GoalBeliefView::survey_memory(&view, agent), None);
+    }
+
+    #[test]
+    fn runtime_belief_view_survey_memory_returns_component() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            agent
+        };
+        let view = PerAgentBeliefView::from_world(agent, &world);
+
+        assert_eq!(
+            GoalBeliefView::survey_memory(&view, agent),
+            Some(&SurveyMemory::default())
         );
     }
 

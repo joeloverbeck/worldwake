@@ -11,7 +11,7 @@ Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft. S128 has landed and 
 ## Crates
 
 - `worldwake-core` — `SurveyRecord` and `SurveyMemory` components, `HypothesisKind` enum on `ExploreLocation`, `SurveyRecorded` event tag with payload struct, new fields on `CognitiveProfile` and `ExplorationProfile`.
-- `worldwake-sim` — new `survey_memory()` accessor on `GoalBeliefView`; `RuntimeBeliefView` impl forwarding to the underlying component read.
+- `worldwake-sim` — new `survey_memory()` accessor on `GoalBeliefView`, forwarded through the live `SocialBeliefView` blanket path and implemented by `PerAgentBeliefView` for the owning agent's component read.
 - `worldwake-systems` — perception system extension: when the agent arrives at a place with an active `ExploreLocation` intent targeting that place, evaluate hypothesis vs. perceived entities and write `SurveyMemory` entry. Decay rule piggybacks on the existing belief decay pass.
 - `worldwake-ai` — `ExploreLocation` candidate generation populates `hypothesis` from the motivating need via a hardcoded need→hypothesis mapping; ranking damps `ExploreLocation` for (place, hypothesis) pairs with a fresh negative survey; decision-trace surfaces the damping reason.
 - `worldwake-cli` — no `AgentDef` field for `SurveyMemory` (runtime-generated state, exempt from FND-22 scenario authoring); `spawn_agent` inserts `SurveyMemory::default()` for every agent. New `CognitiveProfile` fields land directly on the core type (consumed via `AgentDef.cognitive_profile: Option<CognitiveProfile>`); new `ExplorationProfile` fields land on the existing `ExplorationProfileDef` mirror.
@@ -291,7 +291,7 @@ fn survey_memory(&self, agent: EntityId) -> Option<&SurveyMemory> {
 }
 ```
 
-Add a backing implementation on `RuntimeBeliefView` that forwards to `world.get_component_survey_memory(agent)`. Update the `impl_goal_belief_view!` macro / blanket impl forwarding to include the new method.
+Add the live backing implementation on the concrete runtime view path: `SocialBeliefView::survey_memory()` defaults to `None`, `GoalBeliefView` forwards through the blanket `SocialBeliefView` bridge, and `PerAgentBeliefView` returns the owning agent's `world.get_component_survey_memory(agent)` value. This preserves the `GoalBeliefView` facade while keeping the read local to the agent represented by the runtime view.
 
 This is the standard pattern used by sibling memory accessors (`discrepancy_memory`, `blocker_memory`, `repair_memory`, `learned_opportunity_memory`) and is required because the AI ranking layer reads beliefs through `GoalBeliefView`, never directly from world components.
 

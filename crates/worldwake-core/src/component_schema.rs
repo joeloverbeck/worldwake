@@ -105,6 +105,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                survey_memories,
+                SurveyMemory,
+                insert_survey_memory,
+                get_survey_memory,
+                get_survey_memory_mut,
+                remove_survey_memory,
+                has_survey_memory,
+                iter_survey_memories,
+                insert_component_survey_memory,
+                get_component_survey_memory,
+                get_component_survey_memory_mut,
+                remove_component_survey_memory,
+                has_component_survey_memory,
+                entities_with_survey_memory,
+                query_survey_memory,
+                count_with_survey_memory,
+                "SurveyMemory",
+                |kind| kind == EntityKind::Agent,
+                SurveyMemory,
+                crate::SurveyMemory,
+                set_component_survey_memory,
+                clear_component_survey_memory,
+                txn_simple_set
+            }
+            {
                 combat_profiles,
                 CombatProfile,
                 insert_combat_profile,

@@ -48,6 +48,7 @@ use crate::{
     reward_encumbrance::RewardEncumbrance,
     sleep_episode::{SleepEpisode, SleepQualityProfile},
     social_artifact::{ArtifactHeader, ArtifactPostingProfile, BountyTerms, NoticeContent},
+    survey_memory::SurveyMemory,
     trade::{
         DemandMemory, MerchandiseProfile, SaleListing, StockAssignment, StockStoragePolicy,
         SubstitutePreferences, TradeDispositionProfile,

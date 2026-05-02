@@ -1,6 +1,6 @@
 # S130SURRECFRO-004: SurveyMemory registration + GoalBeliefView accessor
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `SurveyMemory` ECS registration, `create_agent`/`spawn_agent` default insertion, `GoalBeliefView::survey_memory()` accessor, `SAVE_FORMAT_VERSION` bump
@@ -131,3 +131,40 @@ In `crates/worldwake-sim/src/save_load.rs`, change `pub const SAVE_FORMAT_VERSIO
 6. `cargo clippy --workspace --all-targets -- -D warnings`
 
 Merge note: ticket 001 already bumped `SAVE_FORMAT_VERSION 58→59` for persisted profile-field additions; ticket 003 bumped `59→60` for the persisted `GoalKind::ExploreLocation` payload widening. This ticket bumps `60→61` for `SurveyMemory` registration. Sibling runtime mutations from ticket 007 and `enforce_limits` calls from ticket 008 are changes to an already-registered component, not new schema changes.
+
+## Outcome
+
+Implemented the S130 D4/D8 substrate:
+
+1. Registered `SurveyMemory` as an Agent-only ECS component through `with_component_schema_entries!`, including generated world accessors, transaction setters, query helpers, `ComponentKind`, and `ComponentValue` coverage.
+2. Seeded `SurveyMemory::default()` for agents created through `World::create_agent` and the scenario `spawn_agent` path.
+3. Added `GoalBeliefView::survey_memory()` as an AI-layer read surface, forwarded through the live `SocialBeliefView` blanket path and implemented by `PerAgentBeliefView` for the owning agent only.
+4. Bumped `SAVE_FORMAT_VERSION` from `60` to `61` because `SurveyMemory` is now part of persisted agent component state.
+5. Updated focused tests and delta fixtures to prove the new component is present in agent creation, scenario spawn, belief-view access, schema inventories, transaction deltas, save-version checks, and component-value kind matching.
+
+## Deviations
+
+The drafted file list was too narrow for macro-generated schema fallout. In addition to the named files, the implementation needed:
+
+- `crates/worldwake-core/src/component_tables.rs` for the macro-emitted bare `SurveyMemory` table type.
+- `crates/worldwake-core/src/delta.rs` for `ComponentValue::SurveyMemory`, `ComponentKind::SurveyMemory`, and component sample coverage.
+- `crates/worldwake-core/src/world_txn.rs` because `WorldTxn::create_agent` now records the default `SurveyMemory` component delta.
+- `crates/worldwake-sim/src/per_agent_belief_view.rs` because this is the live runtime belief-view carrier; the accessor is surfaced through the `SocialBeliefView`/`GoalBeliefView` forwarding path rather than a standalone `RuntimeBeliefView` impl.
+
+The first broad `cargo test --workspace` run exposed the missing `WorldTxn` expected-delta update. After adding the `SurveyMemory` delta expectation, the focused regression and the full workspace test suite passed.
+
+## Verification Result
+
+Passed:
+
+1. `cargo test -p worldwake-core --lib world::tests::create_agent_attaches_belief_store_perception_profile_and_tell_profile -- --exact`
+2. `cargo test -p worldwake-core --lib delta::tests::component_kind_variants_match_authoritative_components -- --exact`
+3. `cargo test -p worldwake-core --lib delta::tests::component_value_reports_matching_component_kind -- --exact`
+4. `cargo test -p worldwake-core --lib world_txn::tests::create_agent_records_entity_component_and_in_transit_deltas_and_supports_read_through -- --exact`
+5. `cargo test -p worldwake-cli --lib scenario::tests::test_spawn_minimal_scenario -- --exact`
+6. `cargo test -p worldwake-sim --lib belief_view::tests::goal_belief_view_memory_accessors_default_to_none -- --exact`
+7. `cargo test -p worldwake-sim --lib belief_view::tests::runtime_belief_view_survey_memory_returns_component -- --exact`
+8. `cargo test -p worldwake-sim --lib save_load::tests::save_to_bytes_roundtrip_preserves_full_nondefault_state -- --exact`
+9. `cargo test -p worldwake-sim --lib save_load::tests::load_rejects_wrong_version -- --exact`
+10. `cargo test --workspace`
+11. `cargo clippy --workspace --all-targets -- -D warnings`

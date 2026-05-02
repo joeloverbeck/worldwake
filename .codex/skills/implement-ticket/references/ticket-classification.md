@@ -58,6 +58,15 @@ For this shape:
 4. If the staged ticket also claims a real action, authored template, or downstream runtime exercise path, identify at least one truthful production consumer that carries the new substrate into live runtime state and prove that seam with focused verification.
 5. If the new substrate is intentionally still test-only or helper-only, say so explicitly in closeout instead of marking the runtime path as landed.
 
+Compact preflight for component-schema or shared-substrate tickets:
+
+1. Identify the authoritative registration site and every generated or hand-maintained inventory it feeds: schema entries, `ComponentKind`, `ComponentValue`, sample builders, manifest-style tests, query helpers, and crate-root or table imports.
+2. Classify macro-expansion fallout before editing. Some generated tables and delta/world helpers need bare type imports at the expansion site; other macros already use crate-qualified paths. Let the live macro body or compiler output decide no-change sites.
+3. Check every default/bootstrap path that should make the substrate present: `World::create_agent`, scenario spawn/bootstrap, transaction helpers, and exact create-entity/create-agent delta assertions. Verify whether expected delta ordering follows schema/macro projection order rather than nearby insertion-call order.
+4. Decide the persisted-shape boundary up front. If the substrate enters saveable world or simulation state, check `SAVE_FORMAT_VERSION`, plan the focused save/load proof, and confirm the bump exactly once after final focused proof is green.
+5. For read-surface substrate, identify whether the named facade trait is blanket-forwarded from a narrower subtrait or runtime view. Patch the real owner, forwarding impl, and focused test seam rather than only the drafted facade type.
+6. Before closeout, record the staged state and any macro-generated fallout as landed surface, including files the draft did not name but broad verification proved were owned.
+
 ## Shared enum/payload variant migration
 
 When the ticket primarily adds a new variant to an existing shared enum or payload family, classify it as `shared enum/payload variant migration` during intake.

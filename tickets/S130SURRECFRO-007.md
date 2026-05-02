@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — perception-system extension that writes `SurveyMemory` entries and emits `EventTag::SurveyRecorded`
-**Deps**: `archive/tickets/S130SURRECFRO-001.md`, `archive/tickets/S130SURRECFRO-002.md`, `archive/tickets/S130SURRECFRO-003.md`, 004, spec `specs/S130-survey-records-frontier-disconfirmation.md` D6, D10 (automatic)
+**Deps**: `archive/tickets/S130SURRECFRO-001.md`, `archive/tickets/S130SURRECFRO-002.md`, `archive/tickets/S130SURRECFRO-003.md`, `archive/tickets/S130SURRECFRO-004.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D6, D10 (automatic)
 
 ## Problem
 
