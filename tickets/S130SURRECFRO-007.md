@@ -106,7 +106,7 @@ D10: no extra code is needed for the `CommodityAvailableAt` assumption-failure s
 ## Out of Scope
 
 - Per-tick decay of `SurveyMemory` (ticket 008)
-- Ranking damping consumption of survey records (ticket 006 — already complete by this point)
+- Ranking damping consumption of survey records (`archive/tickets/S130SURRECFRO-006.md` — already complete by this point)
 - Golden coverage of the end-to-end behavioral chain (ticket 009)
 - D10 explicit code — automatic via existing S122 path (`record_assumption_failure` at `agent_tick/frame.rs:596`); no new code needed
 - Cross-agent survey propagation — explicitly non-goal per spec; surveys are per-agent in this spec

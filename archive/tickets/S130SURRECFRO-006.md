@@ -1,6 +1,6 @@
 # S130SURRECFRO-006: AI ranking damping with survey memory
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `survey_damping_factor` helper, ranking-arm wrapping for `ExploreLocation`, decision-trace damping entries
@@ -17,7 +17,7 @@ When an agent has a fresh negative survey for `(target_place, hypothesis)` — i
 3. `GoalBeliefView::survey_memory(agent)` (added in ticket 004) returns `Option<&SurveyMemory>`; reading the freshest matching record uses `SurveyMemory::find(place, hypothesis)` (added in `archive/tickets/S130SURRECFRO-002.md`).
 4. `ExplorationProfile.negative_survey_damping_window: u32` and `ExplorationProfile.negative_survey_damping_strength: Permille` are added in ticket 001 and accessible through `context.exploration_profile` (existing accessor at `ranking.rs:1152` analog).
 5. Existing tests exercising the `exploration_motive` path: `explore_location_ranking_is_not_biased_by_place_dirtiness:8677`, `explore_location_need_driven_priority_tracks_underlying_need_band:9139`, `explore_location_motive_uses_need_utility_scaled_by_curiosity:9180`, `explore_location_proactive_motive_uses_curiosity_buildup_and_need_slack:9272`. After ticket 003's fixture updates, each test fixture has a hypothesis but no survey memory record — so damping factor is 1000/1000 (full score), and existing assertions hold unchanged. This ticket adds new tests for the damping-active path.
-6. `CandidateDampingEntry` and `CandidateDampingReason::SurveyMemoryNegative` (added in ticket 005) are the trace-payload shape; the ranking arm pushes `CandidateDampingEntry { goal_key, reason: SurveyMemoryNegative { … } }` onto the active `CandidateTrace.damped` vec when damping is applied (factor < 1000).
+6. `CandidateDampingEntry` and `CandidateDampingReason::SurveyMemoryNegative` (added in ticket 005) are the trace-payload shape. Live ranking does not own a mutable `CandidateTrace`; it returns `RankingOutcome`, and `agent_tick::observation::ReadPhaseResult` carries ranking diagnostics into the production `CandidateTrace` constructor. This ticket therefore routes `CandidateDampingEntry { goal_key, reason: SurveyMemoryNegative { … } }` through `RankingOutcome.damped` and `ReadPhaseResult.damped`, then copies it into `CandidateTrace.damped` when the trace is built.
 7. **AI regression layer** (Assumption Reassessment item 6): intended layer is candidate ranking — runtime `agent_tick` decision-trace coverage is the proof surface; the local needs-only harness is sufficient because survey damping involves only `ExplorationProfile` reads and `SurveyMemory` reads, not non-needs affordances or political/system actions.
 
 ## Architecture Check
@@ -77,33 +77,20 @@ GoalKind::ExploreLocation {
     hypothesis,
 } => {
     let raw = exploration_motive(context, motivating_need);
-    let survey = context
-        .belief_view
-        .survey_memory(agent)
-        .and_then(|m| m.find(target_place, hypothesis));
-    let factor = survey_damping_factor(survey, context.tick, &context.exploration_profile);
-    if factor.value() < 1000 {
-        if let Some(record) = survey {
-            context.trace.candidates.damped.push(CandidateDampingEntry {
-                goal_key: candidate_goal_key,
-                reason: CandidateDampingReason::SurveyMemoryNegative {
-                    place: target_place,
-                    hypothesis,
-                    recorded_tick: record.recorded_tick,
-                    confidence: record.confidence,
-                },
-            });
-        }
-    }
+    let survey = matching_survey_record(context, target_place, hypothesis);
+    let factor =
+        survey_damping_factor(survey, context.current_tick, context.exploration_profile.as_ref());
     raw.saturating_mul(u32::from(factor.value())) / 1000
 }
 ```
 
-(Variable names — `agent`, `candidate_goal_key`, `context.belief_view`, `context.trace.candidates`, `context.exploration_profile`, `context.tick` — bind to the ranking-context surface available at the call site; reassessment confirmed these are accessible at line 1127's scope. The exact names may differ slightly from the surrounding ranking arms — match the existing local style.)
+Add a sibling `survey_damping_entry(candidate, context)` helper that emits `CandidateDampingEntry` when `factor < 1000`; `rank_candidates_with_memories` collects those entries into `RankingOutcome.damped`. Live routing note: `ranking.rs` has no mutable `context.trace`; the implemented trace path is `RankingOutcome.damped` -> `agent_tick::observation::ReadPhaseResult.damped` -> `CandidateTrace.damped`.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/ranking.rs` (modify — `survey_damping_factor`, `ExploreLocation` arm wrap, new tests)
+- `crates/worldwake-ai/src/ranking.rs` (modify — `survey_damping_factor`, `ExploreLocation` arm wrap, `RankingOutcome.damped`, new tests)
+- `crates/worldwake-ai/src/agent_tick/observation.rs` (modify — carry ranking damping entries through `ReadPhaseResult`)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — copy `ReadPhaseResult.damped` into `CandidateTrace.damped`)
 
 ## Out of Scope
 
@@ -121,11 +108,12 @@ GoalKind::ExploreLocation {
 3. New: `survey_damping_factor_returns_unity_when_record_is_stale_past_window`.
 4. New: `survey_damping_factor_attenuates_with_fresh_negative_record` — multiple confidence/strength values per spec formula.
 5. New: `ranking_pushes_damping_entry_when_explore_location_is_damped` — focused unit test on the ranking arm.
-6. Existing: `explore_location_ranking_is_not_biased_by_place_dirtiness` — passes unchanged (no survey record in fixture → factor = 1000).
-7. Existing: `explore_location_need_driven_priority_tracks_underlying_need_band` — passes unchanged.
-8. Existing: `explore_location_motive_uses_need_utility_scaled_by_curiosity` — passes unchanged.
-9. Existing: `explore_location_proactive_motive_uses_curiosity_buildup_and_need_slack` — passes unchanged.
-10. Existing suite: `cargo test -p worldwake-ai`.
+6. New: `survey_damping_records_candidate_trace_entry` — focused traced AI tick asserting `CandidateTrace.damped` carries the expected `CandidateDampingEntry`.
+7. Existing: `explore_location_ranking_is_not_biased_by_place_dirtiness` — passes unchanged (no survey record in fixture → factor = 1000).
+8. Existing: `explore_location_need_driven_priority_tracks_underlying_need_band` — passes unchanged.
+9. Existing: `explore_location_motive_uses_need_utility_scaled_by_curiosity` — passes unchanged.
+10. Existing: `explore_location_proactive_motive_uses_curiosity_buildup_and_need_slack` — passes unchanged.
+11. Existing suite: `cargo test -p worldwake-ai`.
 
 ### Invariants
 
@@ -137,12 +125,38 @@ GoalKind::ExploreLocation {
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/ranking.rs` (`#[cfg(test)]` block) — 5 new focused unit tests covering `survey_damping_factor` and the ranking-arm trace-push behavior (per Acceptance Criteria 1–5).
+1. `crates/worldwake-ai/src/ranking.rs` (`#[cfg(test)]` block) — 5 new focused unit tests covering `survey_damping_factor` and the ranking-arm damping-entry behavior (per Acceptance Criteria 1–5).
+2. `crates/worldwake-ai/tests/golden_exploration.rs` — focused traced AI tick covering the production `CandidateTrace.damped` carrier (per Acceptance Criteria 6); this is not the ticket 009 end-to-end re-exploration-suppression golden.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai ranking::tests::survey_damping`
-2. `cargo test -p worldwake-ai ranking::tests::ranking_pushes_damping`
-3. `cargo test -p worldwake-ai explore_location`
-4. `cargo test -p worldwake-ai`
-5. `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-ai --lib survey_damping`
+2. `cargo test -p worldwake-ai --lib ranking_pushes_damping`
+3. `cargo test -p worldwake-ai --test golden_exploration survey_damping_records_candidate_trace_entry -- --exact`
+4. `cargo test -p worldwake-ai --lib explore_location`
+5. `cargo test -p worldwake-ai`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-02.
+
+- Added `survey_damping_factor` and wired `ExploreLocation` motive scoring to damp fresh negative surveys for the same `(target_place, hypothesis)`.
+- Added `RankingOutcome.damped` and carried ranking damping diagnostics through `ReadPhaseResult` into production `CandidateTrace.damped`.
+- Re-exported `CandidateDampingEntry` and `CandidateDampingReason` from `worldwake-ai` so external trace consumers can inspect the public `CandidateTrace.damped` payload.
+- Added focused ranking tests for unity factors, fresh-negative attenuation, emitted `CandidateDampingReason::SurveyMemoryNegative` entries, and production `CandidateTrace.damped` preservation.
+
+## Deviations
+
+- The drafted trace-write sketch referenced a mutable `context.trace` in `ranking.rs`; live ranking has no such handle. The landed trace path is `RankingOutcome.damped` -> `ReadPhaseResult.damped` -> `CandidateTrace.damped`.
+- The focused helper signature accepts `Option<&ExplorationProfile>` so the live missing-profile path remains a unity factor instead of inventing a damping profile.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib survey_damping`.
+- Passed `cargo test -p worldwake-ai --lib ranking_pushes_damping`.
+- Passed `cargo test -p worldwake-ai --test golden_exploration survey_damping_records_candidate_trace_entry -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib explore_location`.
+- Passed `cargo fmt --all`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.

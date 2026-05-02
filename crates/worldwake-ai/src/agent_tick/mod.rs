@@ -1548,7 +1548,7 @@ fn process_agent(
                     .iter()
                     .map(|suppression| suppression.opportunity.goal_key)
                     .collect(),
-                damped: Vec::new(),
+                damped: read_result.damped,
                 zero_motive: read_result.zero_motive,
                 omitted_political: read_result.omitted_political,
                 omitted_bandit: read_result.omitted_bandit,

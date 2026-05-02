@@ -24,7 +24,10 @@ use crate::{
     GoalPriorityClass, OpportunityExpectationFailureIncident, RankedDriveGoalProvenance,
     RankedDriveKind, RankedDriveMotiveInput, RankedGoalProvenance, RankedGoalProvenanceFamily,
     RankedPriorityAdjustment, assess_danger, classify_band,
-    decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
+    decision_trace::{
+        CandidateDampingEntry, CandidateDampingReason, CompetitionDiscount,
+        SourceReliabilityDiscount,
+    },
     derive_danger_pressure, derive_pain_pressure,
     enterprise::{market_signal_for_place, opportunity_signal},
     evaluate_suppression,
@@ -47,8 +50,8 @@ use worldwake_core::{
     InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille,
     NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor,
     OpportunityKey, PerceptionSource, Permille, Quantity, ReliabilityRecord, RepairKey,
-    RepairMemory, RightKind, SourceKey, SubstitutePreferences, TellTopic, ThresholdBand, Tick,
-    UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
+    RepairMemory, RightKind, SourceKey, SubstitutePreferences, SurveyRecord, TellTopic,
+    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
     failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
@@ -60,6 +63,8 @@ pub struct RankingOutcome {
     pub(crate) ranked: Vec<AgendaEntry>,
     /// Goals that were suppressed by situational conditions (danger/self-care pressure).
     pub(crate) suppressed: Vec<crate::candidate_generation::CandidateSuppressionDiagnostic>,
+    /// Emitted goals whose ranking score was reduced by soft damping.
+    pub(crate) damped: Vec<CandidateDampingEntry>,
     /// Goals that passed suppression but had zero motive score.
     pub zero_motive: Vec<GoalKey>,
 }
@@ -209,6 +214,7 @@ pub(crate) fn rank_candidates_with_memories(
     );
 
     let mut suppressed = Vec::new();
+    let mut damped = Vec::new();
     let mut zero_motive = Vec::new();
 
     let mut ranked = Vec::new();
@@ -252,6 +258,9 @@ pub(crate) fn rank_candidates_with_memories(
             competition_discount,
             crate::feasibility::FeasibilityHint::Uncertain,
         );
+        if let Some(entry) = survey_damping_entry(candidate, &context) {
+            damped.push(entry);
+        }
         if scored.motive_score == 0 {
             zero_motive.push(candidate.key);
         } else {
@@ -263,6 +272,7 @@ pub(crate) fn rank_candidates_with_memories(
     RankingOutcome {
         ranked,
         suppressed,
+        damped,
         zero_motive,
     }
 }
@@ -1125,8 +1135,18 @@ fn motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
         }
         GoalKind::Patrol { .. } => patrol_motive(context),
         GoalKind::ExploreLocation {
-            motivating_need, ..
-        } => exploration_motive(context, motivating_need),
+            target_place,
+            motivating_need,
+            hypothesis,
+        } => {
+            let raw = exploration_motive(context, motivating_need);
+            let factor = survey_damping_factor(
+                matching_survey_record(context, target_place, hypothesis),
+                context.current_tick,
+                context.exploration_profile.as_ref(),
+            );
+            raw.saturating_mul(u32::from(factor.value())) / 1000
+        }
         GoalKind::StealItem { target_item } => steal_item_assessment(target_item, context)
             .map_or_else(
                 || theft_motive(context),
@@ -1141,6 +1161,68 @@ fn motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
                 score_product(context.utility.social_weight, loyalty)
             }),
     }
+}
+
+fn matching_survey_record<'a>(
+    context: &'a RankingContext<'_>,
+    target_place: EntityId,
+    hypothesis: worldwake_core::HypothesisKind,
+) -> Option<&'a SurveyRecord> {
+    context
+        .view
+        .survey_memory(context.agent)
+        .and_then(|memory| memory.find(target_place, hypothesis))
+}
+
+fn survey_damping_factor(
+    survey: Option<&SurveyRecord>,
+    current_tick: Tick,
+    profile: Option<&ExplorationProfile>,
+) -> Permille {
+    let (Some(record), Some(profile)) = (survey, profile) else {
+        return Permille::new_unchecked(1000);
+    };
+    if record.found {
+        return Permille::new_unchecked(1000);
+    }
+    let age = current_tick.0.saturating_sub(record.recorded_tick.0);
+    if age >= u64::from(profile.negative_survey_damping_window) {
+        return Permille::new_unchecked(1000);
+    }
+
+    let confidence = u32::from(record.confidence.value());
+    let strength = u32::from(profile.negative_survey_damping_strength.value());
+    let attenuation = confidence.saturating_mul(strength) / 1000;
+    Permille::new_unchecked(1000u32.saturating_sub(attenuation).min(1000) as u16)
+}
+
+fn survey_damping_entry(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+) -> Option<CandidateDampingEntry> {
+    let GoalKind::ExploreLocation {
+        target_place,
+        hypothesis,
+        ..
+    } = candidate.key.kind
+    else {
+        return None;
+    };
+    let record = matching_survey_record(context, target_place, hypothesis)?;
+    let factor = survey_damping_factor(
+        Some(record),
+        context.current_tick,
+        context.exploration_profile.as_ref(),
+    );
+    (factor.value() < 1000).then_some(CandidateDampingEntry {
+        goal_key: candidate.key,
+        reason: CandidateDampingReason::SurveyMemoryNegative {
+            place: target_place,
+            hypothesis,
+            recorded_tick: record.recorded_tick,
+            confidence: record.confidence,
+        },
+    })
 }
 
 fn exploration_motive(context: &RankingContext<'_>, motivating_need: ExplorationMotivation) -> u32 {
@@ -2578,7 +2660,7 @@ mod tests {
         GoalOffer, GoalPriorityClass, OpportunityExpectationFailureIncident,
         OpportunityExpectationKind, RankedDriveGoalProvenance, RankedDriveKind,
         RankedDriveMotiveInput, RankedGoalProvenance, RankedPriorityAdjustment,
-        decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
+        decision_trace::{CandidateDampingReason, CompetitionDiscount, SourceReliabilityDiscount},
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
@@ -2591,7 +2673,7 @@ mod tests {
         DeprivationKind, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
         DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
         ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        GoalRejectionReason, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds,
+        GoalRejectionReason, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
         InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
         MetabolismProfile, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
@@ -2599,10 +2681,10 @@ mod tests {
         PerceptionSource, Permille, PlaceDirtiness, PreferenceProfile, ProofRequirement,
         PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource,
         RewardSource, RightKind, RouteExperience, ShelterTag, SleepQualityProfile, SourceKey,
-        SourceReliability, SubstitutePreferences, TellTopic, TheftDispositionProfile, TheftFacts,
-        Tick, TickRange, TradeCategory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-        ViolationId, ViolationKind, WashBasinState, WorkstationTag, Wound, WoundCause, WoundId,
-        belief_confidence,
+        SourceReliability, SubstitutePreferences, SurveyMemory, SurveyRecord, TellTopic,
+        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
+        WashBasinState, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -2673,6 +2755,7 @@ mod tests {
         expectation_stores: BTreeMap<EntityId, ExpectationStore>,
         last_seen_memories: BTreeMap<EntityId, LastSeenMemory>,
         believed_target_locations: BTreeMap<(EntityId, EntityId), BeliefValue<Option<EntityId>>>,
+        survey_memories: BTreeMap<EntityId, SurveyMemory>,
     }
 
     impl ControlBeliefView for TestBeliefView {
@@ -2929,6 +3012,9 @@ mod tests {
             _agent: EntityId,
         ) -> Option<worldwake_core::IntentionDispositionProfile> {
             None
+        }
+        fn survey_memory(&self, agent: EntityId) -> Option<&SurveyMemory> {
+            self.survey_memories.get(&agent)
         }
     }
 
@@ -3468,6 +3554,22 @@ mod tests {
         view.confidence_policies
             .insert(agent, BeliefConfidencePolicy::default());
         view
+    }
+
+    fn survey_record(
+        place: EntityId,
+        hypothesis: HypothesisKind,
+        found: bool,
+        confidence: u16,
+        recorded_tick: u64,
+    ) -> SurveyRecord {
+        SurveyRecord {
+            place,
+            hypothesis,
+            found,
+            confidence: pm(confidence),
+            recorded_tick: Tick(recorded_tick),
+        }
     }
 
     fn target_location_belief(place: EntityId, confidence: u16) -> BeliefValue<Option<EntityId>> {
@@ -8746,6 +8848,153 @@ mod tests {
         assert_eq!(
             ranked[0].motive_score, ranked[1].motive_score,
             "explore motive must not depend on `place_dirtiness`"
+        );
+    }
+
+    #[test]
+    fn survey_damping_factor_returns_unity_when_record_is_none() {
+        let profile = worldwake_core::ExplorationProfile::default();
+
+        let factor = super::survey_damping_factor(None, Tick(12), Some(&profile));
+
+        assert_eq!(factor, pm(1000));
+    }
+
+    #[test]
+    fn survey_damping_factor_returns_unity_when_record_is_positive() {
+        let place = entity(20);
+        let profile = worldwake_core::ExplorationProfile {
+            negative_survey_damping_window: 200,
+            negative_survey_damping_strength: pm(800),
+            ..worldwake_core::ExplorationProfile::default()
+        };
+        let record = survey_record(
+            place,
+            HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+            true,
+            1000,
+            10,
+        );
+
+        let factor = super::survey_damping_factor(Some(&record), Tick(20), Some(&profile));
+
+        assert_eq!(factor, pm(1000));
+    }
+
+    #[test]
+    fn survey_damping_factor_returns_unity_when_record_is_stale_past_window() {
+        let place = entity(20);
+        let profile = worldwake_core::ExplorationProfile {
+            negative_survey_damping_window: 10,
+            negative_survey_damping_strength: pm(800),
+            ..worldwake_core::ExplorationProfile::default()
+        };
+        let record = survey_record(
+            place,
+            HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+            false,
+            1000,
+            10,
+        );
+
+        let factor = super::survey_damping_factor(Some(&record), Tick(20), Some(&profile));
+
+        assert_eq!(factor, pm(1000));
+    }
+
+    #[test]
+    fn survey_damping_factor_attenuates_with_fresh_negative_record() {
+        let place = entity(20);
+        let hypothesis = HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        };
+        let record = survey_record(place, hypothesis, false, 500, 10);
+        let profile = worldwake_core::ExplorationProfile {
+            negative_survey_damping_window: 200,
+            negative_survey_damping_strength: pm(800),
+            ..worldwake_core::ExplorationProfile::default()
+        };
+
+        let factor = super::survey_damping_factor(Some(&record), Tick(20), Some(&profile));
+
+        assert_eq!(factor, pm(600));
+
+        let record = survey_record(place, hypothesis, false, 1000, 10);
+        let profile = worldwake_core::ExplorationProfile {
+            negative_survey_damping_window: 200,
+            negative_survey_damping_strength: pm(250),
+            ..worldwake_core::ExplorationProfile::default()
+        };
+
+        let factor = super::survey_damping_factor(Some(&record), Tick(20), Some(&profile));
+
+        assert_eq!(factor, pm(750));
+    }
+
+    #[test]
+    fn ranking_pushes_damping_entry_when_explore_location_is_damped() {
+        let agent = entity(1);
+        let target_place = entity(10);
+        let hypothesis = HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        };
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(
+                Permille::new(700).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+                Permille::new(0).unwrap(),
+            ),
+        );
+        view.exploration_profiles.insert(
+            agent,
+            worldwake_core::ExplorationProfile {
+                curiosity_weight: Permille::new(600).unwrap(),
+                negative_survey_damping_window: 200,
+                negative_survey_damping_strength: pm(800),
+                ..worldwake_core::ExplorationProfile::default()
+            },
+        );
+        view.survey_memories.insert(
+            agent,
+            SurveyMemory {
+                entries: vec![survey_record(target_place, hypothesis, false, 1000, 100)],
+            },
+        );
+
+        let outcome = rank(
+            &[goal(GoalKind::ExploreLocation {
+                target_place,
+                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                    worldwake_core::HomeostaticNeedId::Hunger,
+                ),
+                hypothesis,
+            })],
+            &view,
+            agent,
+            Tick(120),
+            &utility(),
+        );
+
+        assert_eq!(outcome.ranked.len(), 1);
+        assert_eq!(outcome.ranked[0].motive_score, 75_600);
+        assert_eq!(outcome.damped.len(), 1);
+        assert_eq!(outcome.damped[0].goal_key, outcome.ranked[0].offer.key);
+        assert_eq!(
+            outcome.damped[0].reason,
+            CandidateDampingReason::SurveyMemoryNegative {
+                place: target_place,
+                hypothesis,
+                recorded_tick: Tick(100),
+                confidence: pm(1000),
+            }
         );
     }
 

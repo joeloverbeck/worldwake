@@ -4,15 +4,15 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_ai::{
-    CognitiveProfile, CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, GoalTraceStatus,
-    PlanSearchOutcome, PlannerOpKind, PlanningPipelineTrace,
+    CandidateDampingReason, CognitiveProfile, CommodityPurpose, DecisionOutcome, GoalKey, GoalKind,
+    GoalTraceStatus, PlanSearchOutcome, PlannerOpKind, PlanningPipelineTrace,
 };
 use worldwake_core::{
     AcquisitionQuantity, CommodityKind, DiversificationProfile, EntityId, EventLog,
     ExplorationMotivation, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
     KnownRecipes, MetabolismProfile, PerceptionProfile, PerceptionSource, Place, PlaceTag,
-    Quantity, ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile,
-    WorkstationTag, World,
+    Quantity, ResourceSource, Seed, SurveyMemory, SurveyRecord, Tick, Topology, TravelEdge,
+    TravelEdgeId, UtilityProfile, WorkstationTag, World,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
 
@@ -743,6 +743,91 @@ fn golden_exploration_triggers_on_need_and_ignorance() {
             .trace_sink()
             .expect("decision tracing should be enabled")
             .traces_for(agent)
+    );
+}
+
+#[test]
+fn survey_damping_records_candidate_trace_entry() {
+    let mut h = build_exploration_harness(Seed([222; 32]));
+    h.driver.enable_tracing();
+
+    let agent = exploration_agent(&mut h, "Survey-Wary Scout");
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_START,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    set_agent_exploration_profile(
+        &mut h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            visit_lookback_ticks: 200,
+            negative_survey_damping_window: 200,
+            negative_survey_damping_strength: pm(800),
+            ..ExplorationProfile::default()
+        },
+    );
+    let hypothesis = HypothesisKind::MayContainCommodity {
+        commodity: CommodityKind::Apple,
+    };
+    let expected_goal = GoalKey::from(GoalKind::ExploreLocation {
+        target_place: PLACE_FRONTIER,
+        motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+        hypothesis,
+    });
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_survey_memory(
+            agent,
+            SurveyMemory {
+                entries: vec![SurveyRecord {
+                    place: PLACE_FRONTIER,
+                    hypothesis,
+                    found: false,
+                    confidence: pm(1000),
+                    recorded_tick: Tick(0),
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.step_once();
+
+    let trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(agent, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+    assert!(
+        planning
+            .candidates
+            .generated
+            .iter()
+            .any(|candidate| candidate.goal_key == expected_goal),
+        "survey damping proof requires the exploration candidate to reach planning"
+    );
+    assert_eq!(planning.candidates.damped.len(), 1);
+    assert_eq!(planning.candidates.damped[0].goal_key, expected_goal);
+    assert_eq!(
+        planning.candidates.damped[0].reason,
+        CandidateDampingReason::SurveyMemoryNegative {
+            place: PLACE_FRONTIER,
+            hypothesis,
+            recorded_tick: Tick(0),
+            confidence: pm(1000),
+        }
     );
 }
 

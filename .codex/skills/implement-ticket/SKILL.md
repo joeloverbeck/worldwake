@@ -145,19 +145,7 @@ For component-schema and staged-substrate details, use the `schema-only / staged
 
 #### Event, trace, and payload carrier tickets
 
-When a system ticket claims a new event-log, trace, or transition carrier, verify first whether the live canonical carrier is already ordinary `WorldTxn` event payload fields (`action_name`, tags, targets, visibility, witness data) before planning a new structured event path.
-
-When a spec or ticket says a maintenance mutation, recovery step, or passive reconciliation is silent, distinguish "no domain-specific event tag" from "no causal record at all." Do not add domain-specific or generic event tags unless the live system contract already requires them; prefer ordinary hidden `WorldTxn` component deltas when that is the strongest honest append-only record.
-
-When an event tag or payload should fire only for a runtime sub-branch, verify whether the action definition's static `causal_event_tags` are applied unconditionally by the scheduler before adding the tag there. Prefer handler-local `txn.add_tag(...)` / payload writes for conditional emissions, and add focused proof for both the emitting branch and the non-emitting branch so the event log does not claim a causal record that did not occur.
-
-When a ticket drafts an event family, trace family, or other grouped forensic surface and reassessment shows only some variants have authoritative live provenance, do not treat that as all-or-nothing. Narrow the current ticket to the subset whose payload causes are already concrete at honest write seams, rewrite acceptance criteria and out-of-scope sections before coding, and create explicit follow-up tickets for the deferred variants instead of emitting inferred placeholders or quietly dropping them.
-
-When the event or trace itself is still correct but only a subset of its payload enum, reason taxonomy, or subtype family is authoritatively provable on the live branch, do not discard the whole event as unsupported. Narrow the current ticket to that payload subset, rewrite acceptance criteria / invariants / spec references before coding, and create a follow-up ticket for the deferred payload variants instead of widening the live claim beyond what the runtime actually records.
-
-When a ticket's event, trace, or report family is still conceptually correct but the current shared/core payload contract cannot represent the live authoritative causes without lossy mapping, treat widening that contract as current-ticket scope before transport or emission work. Rewrite the ticket's `Engine Changes`, `Files to Touch`, acceptance criteria, and proof plan first so the implementation lands as “widen the shared contract, then wire the live causes” rather than a silent schema expansion discovered mid-stream.
-
-When a ticket adds a new authoritative event/trace/runtime carrier in a domain that already has an older memory, learning, ranking, or report substrate, audit those adjacent substrates separately before broadening scope. If the older substrate is narrower but still honest for its current consumers, record that intentional asymmetry in the ticket and leave it narrow rather than widening it automatically as incidental fallout from the new carrier.
+For event, trace, and payload carrier tickets, use the detailed carrier checks in `references/reassessment-checks.md`: verify the live canonical carrier, conditional emission path, representability of payload causes, subset provenance, and adjacent substrates before broadening scope.
 
 #### Action definition metadata changes
 
@@ -250,6 +238,8 @@ If implementation or focused test setup later disproves a remaining ticket/spec 
 ### 3. Handle mismatches explicitly
 
 Load `references/mismatch-handling.md` when reassessment exposes a contradiction, risky ticket/code divergence, or a user decision that requires 1-3-1.
+
+When reassessment corrects a code-like sketch in the active ticket itself — helper signature, match arm, payload construction, event emission, or trace-routing snippet — update that local code block in the same pass as the surrounding prose. Do not wait until final closeout to remove a snippet that now describes an impossible implementation shape.
 
 If reassessment changes a shared API, type contract, schema shape, or cross-ticket assumption, update any still-active dependent tickets/spec references in the same family before implementing or closing out the current ticket. If the current ticket completes but remains active and a sibling's dependency reference is still truthful, no sibling edit is required; update siblings when their wording now falsely says the blocker is unresolved, when the dependency path changed through archival, or when the landed contract differs from the sibling assumption.
 When a ticket family has multiple planned save-shape changes, keep the sibling version chain truthful as each ticket lands. If the current ticket takes a `SAVE_FORMAT_VERSION` bump earlier than the draft expected, update later active siblings and active specs to treat the new version as their baseline and to own the next bump, instead of leaving stale `old -> new` wording in place.
