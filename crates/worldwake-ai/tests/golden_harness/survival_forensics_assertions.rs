@@ -215,6 +215,7 @@ pub fn synthetic_planning_trace(
                 ranked,
                 top_ranked_comparison: None,
                 suppressed: Vec::new(),
+                damped: Vec::new(),
                 zero_motive: Vec::new(),
                 omitted_political: Vec::new(),
                 omitted_bandit: Vec::new(),

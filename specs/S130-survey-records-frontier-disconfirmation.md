@@ -67,7 +67,7 @@ The motivating proposal lists five hypothesis values co-equally: `may_contain_fo
 | FND-26 (Systems Interact Through State, Not Through Each Other) | Perception writes `SurveyMemory`; AI reads `SurveyMemory` (via `GoalBeliefView::survey_memory()`) for ranking damping. No imperative cross-system call. |
 | FND-27 (Derived Summaries Are Caches, Never Truth) | `SurveyMemory` is authoritative per-agent state. The ranking damping factor is derived per-tick from freshness; not stored. |
 | FND-28 (No Backward Compatibility in Live Authority Paths) | The existing `ExploreLocation` shape (without `hypothesis`) is removed in favor of the new shape; all workspace destructuring/construction sites updated, no shim. |
-| FND-29 (Debuggability Is a Product Feature) | `SurveyRecorded` event records the (place, hypothesis, found, confidence) tuple. Decision-trace surfaces the suppression reason as "ExploreLocation suppressed: SurveyMemory has fresh negative for (Hillside Shelter, MayContainCommodity { Apple })." |
+| FND-29 (Debuggability Is a Product Feature) | `SurveyRecorded` event records the (place, hypothesis, found, confidence) tuple. Decision-trace surfaces the damping reason as "ExploreLocation { target: <place-id>, hypothesis: MayContainCommodity { commodity: Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850." |
 | FND-29A (Causal History Is Authoritative, Append-Only, Queryable) | One new `EventTag::SurveyRecorded` lands in the event log; survey records themselves persist in `SurveyMemory` until decayed. |
 | FND-30 (Every New System Spec Must Declare Its Causal Hooks) | Section H below covers the four required analyses (information-path, positive-feedback, dampeners, stored-vs-derived) per `docs/spec-drafting-rules.md`. |
 
@@ -347,9 +347,9 @@ pub struct CandidateDampingEntry {
 }
 ```
 
-Add `pub damped: Vec<CandidateDampingEntry>` as a new field on `CandidateTrace` alongside `suppressed`. The two collections preserve a lifecycle distinction: `suppressed` lists candidates that were not emitted to ranking at all (hard suppression — gates, vetoes, cooldowns); `damped` lists candidates that were emitted but had their `motive_score` reduced by a per-candidate factor (soft damping — survey memory, future damping reasons). Update every existing `CandidateTrace { suppressed: vec![], … }` construction site (~20 sites in `decision_trace.rs`, all in test scaffolding) to include `damped: vec![]`.
+Add `pub damped: Vec<CandidateDampingEntry>` as a new field on `CandidateTrace` alongside `suppressed`. The two collections preserve a lifecycle distinction: `suppressed` lists candidates that were not emitted to ranking at all (hard suppression — gates, vetoes, cooldowns); `damped` lists candidates that were emitted but had their `motive_score` reduced by a per-candidate factor (soft damping — survey memory, future damping reasons). Update every existing `CandidateTrace { ... }` construction site across the workspace to include an empty `damped` vector until D12/D13 population lands.
 
-The trace renderer formats damping entries as: `ExploreLocation { target: Hillside Shelter, hypothesis: MayContainCommodity { Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850.`
+The trace renderer formats damping entries as: `ExploreLocation { target: <place-id>, hypothesis: MayContainCommodity { commodity: Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850.`
 
 ### D12: Golden coverage
 

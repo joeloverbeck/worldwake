@@ -1,6 +1,6 @@
 # S130SURRECFRO-005: Decision-trace damping infrastructure
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `CandidateDampingReason` enum, `CandidateDampingEntry` struct, new `damped` field on `CandidateTrace`
@@ -8,13 +8,13 @@
 
 ## Problem
 
-`CandidateTrace` currently exposes hard suppression as `pub suppressed: Vec<GoalKey>` (decision_trace.rs:338) — a flat list of goals that were not emitted to ranking. S130 introduces *soft damping* — candidates emitted to ranking but with reduced `motive_score` due to per-(place, hypothesis) negative survey records. This is a different lifecycle: emitted-but-down-weighted vs. not-emitted-at-all. Mixing the two in a single collection conflates audit paths in the trace renderer. This ticket adds a parallel `damped: Vec<CandidateDampingEntry>` collection alongside `suppressed` and updates all 24 construction sites.
+`CandidateTrace` currently exposes hard suppression as `pub suppressed: Vec<GoalKey>` (decision_trace.rs:338) — a flat list of goals that were not emitted to ranking. S130 introduces *soft damping* — candidates emitted to ranking but with reduced `motive_score` due to per-(place, hypothesis) negative survey records. This is a different lifecycle: emitted-but-down-weighted vs. not-emitted-at-all. Mixing the two in a single collection conflates audit paths in the trace renderer. This ticket adds a parallel `damped: Vec<CandidateDampingEntry>` collection alongside `suppressed` and updates all live construction sites.
 
 ## Assumption Reassessment (2026-05-02)
 
-1. `CandidateTrace` lives at `crates/worldwake-ai/src/decision_trace.rs:320` with `pub suppressed: Vec<GoalKey>` at line 338. There are 24 `CandidateTrace { ... }` construction sites in the same file — all in test scaffolding (`#[cfg(test)]` blocks and trace-builder helpers).
-2. The 24 sites use explicit field listing (no spread syntax). Each one currently writes `suppressed: vec![],` (or similar) — adding a new mandatory field requires touching every site to add `damped: vec![],`.
-3. Trace renderer for `CandidateTrace.suppressed` lives in `decision_trace.rs` itself (no external consumer). The new damping format is rendered alongside.
+1. `CandidateTrace` lives in `crates/worldwake-ai/src/decision_trace.rs`; the new field lands beside `pub suppressed: Vec<GoalKey>`.
+2. Live reassessment found constructor fallout beyond the drafted single-file count: `CandidateTrace { ... }` literals exist in `decision_trace.rs`, the production trace builder in `agent_tick/mod.rs`, `survival_forensics.rs`, the golden harness helper, the CLI observer test helper, and the visualizer trace-buffer test helper.
+3. Trace rendering is owned by `decision_trace.rs`; the new damping format is rendered alongside existing planning diagnostics.
 4. `CandidateDampingReason::SurveyMemoryNegative { place, hypothesis, recorded_tick, confidence }` is the only damping reason for this spec — future damping reasons (e.g., commitment-bias damping) would extend the enum non-exhaustively.
 5. No existing focused/unit, runtime, or golden test specifically exercises `CandidateTrace.suppressed` for `ExploreLocation` damping — coverage of the new `damped` field is added in this ticket and expanded by tickets 006 (ranking populates it) and 009 (golden test asserts trace contents).
 6. `HypothesisKind` (added in `archive/tickets/S130SURRECFRO-002.md`) is required for the damping payload — this ticket's compile depends on the archived 002 foundation types.
@@ -29,7 +29,7 @@
 ## Verification Layers
 
 1. `CandidateTrace::default()` produces an empty `damped` vec → focused unit test.
-2. `CandidateDampingEntry` round-trips through trace rendering → focused unit test (renderer output contains place, hypothesis, recorded_tick, confidence in the expected format).
+2. `CandidateDampingEntry` renders through the local trace formatter → focused unit test (renderer output contains place, hypothesis, recorded_tick, confidence in the expected format).
 3. `CandidateDampingReason::SurveyMemoryNegative` exhaustive-match completeness — the renderer match arm covers all current variants → compile-time gate via exhaustive match (no `_` catch-all in the renderer).
 4. Single-layer ticket — pure decision-trace surface; no SystemFn integration, no event-log emission, no world-state mutation. Ranking population (ticket 006) is the consumer.
 
@@ -69,23 +69,29 @@ pub struct CandidateTrace {
 }
 ```
 
-### 3. Update all 24 `CandidateTrace { ... }` construction sites
+### 3. Update all live `CandidateTrace { ... }` construction sites
 
-Sweep `crates/worldwake-ai/src/decision_trace.rs` for `CandidateTrace {` (24 sites). Add `damped: vec![],` to each. Discovery: `grep -n "CandidateTrace {" crates/worldwake-ai/src/decision_trace.rs`. All 24 sites are in `#[cfg(test)]` blocks or test-fixture helpers; no production-runtime construction sites exist (population is via ranking-arm calls in ticket 006).
+Sweep the workspace for `CandidateTrace {` and add an empty `damped` vector to every live constructor. Population is still deferred to ticket 006; this ticket only makes the carrier and renderer available.
 
 ### 4. Trace renderer extension
 
 Extend the existing trace renderer (or formatter) to print damping entries in the format specified by spec D11:
 
 ```
-ExploreLocation { target: Hillside Shelter, hypothesis: MayContainCommodity { Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850.
+ExploreLocation { target: <place-id>, hypothesis: MayContainCommodity { commodity: Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850.
 ```
 
 The renderer must use exhaustive matching on `CandidateDampingReason` so future variants are caught at compile time.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/decision_trace.rs` (modify — new types, `CandidateTrace` field, 24 construction site updates, renderer extension)
+- `crates/worldwake-ai/src/decision_trace.rs` (modify — new types, `CandidateTrace` field/default, renderer extension, focused tests, local construction sites)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — production trace constructor initializes `damped` empty until ticket 006)
+- `crates/worldwake-ai/src/survival_forensics.rs` (modify — test helper constructor fallout)
+- `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` (modify — test helper constructor fallout)
+- `crates/worldwake-cli/src/bin/observer.rs` (modify — all-target test helper constructor fallout)
+- `crates/worldwake-visualizer/src/trace_buffers.rs` (modify — all-target test helper constructor fallout)
+- `specs/S130-survey-records-frontier-disconfirmation.md` (truth-sync D11 constructor/format wording)
 
 ## Out of Scope
 
@@ -117,3 +123,25 @@ The renderer must use exhaustive matching on `CandidateDampingReason` so future 
 1. `cargo test -p worldwake-ai decision_trace`
 2. `cargo test -p worldwake-ai`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-02.
+
+- Added `CandidateDampingReason::SurveyMemoryNegative`, `CandidateDampingEntry`, and `CandidateTrace.damped`.
+- Derived `Default` for `CandidateTrace`; `CandidateTrace::default()` now produces an empty `damped` vector.
+- Extended the decision trace renderer with an exhaustive `CandidateDampingReason` match and a focused formatter for survey-memory damping.
+- Updated all live `CandidateTrace` constructors to initialize `damped` empty until ranking population lands in ticket 006.
+
+## Deviations
+
+- Reassessment disproved the drafted "24 sites in `decision_trace.rs` only" constructor scope. The live shared trace struct also has constructors in `agent_tick`, `survival_forensics`, golden harness helpers, CLI observer tests, and visualizer trace-buffer tests.
+- The renderer formats the place as the live `EntityId`; `decision_trace.rs` does not have a place-name registry, so the ticket/spec example was truth-synced from a named place to a place id.
+- This ticket remains staged infrastructure only: ranking still does not populate `damped`; ticket 006 owns that runtime write.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib decision_trace -- --list` (resolved the focused selector; 60 matching tests listed).
+- Passed `cargo test -p worldwake-ai --lib decision_trace`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
