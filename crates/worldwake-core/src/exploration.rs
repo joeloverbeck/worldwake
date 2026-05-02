@@ -18,6 +18,12 @@ pub struct ExplorationProfile {
     pub max_consecutive_explorations: u8,
     /// How far back in ticks the agent looks when evaluating recently visited places.
     pub visit_lookback_ticks: u32,
+    /// Tick window over which fresh negative surveys damp repeated exploration.
+    #[serde(default = "default_negative_survey_damping_window")]
+    pub negative_survey_damping_window: u32,
+    /// Maximum damping applied to fresh negative survey matches.
+    #[serde(default = "default_negative_survey_damping_strength")]
+    pub negative_survey_damping_strength: Permille,
     /// Runtime counter tracking consecutive explorations (not a tuning parameter).
     pub consecutive_exploration_count: u8,
 }
@@ -32,12 +38,22 @@ impl Default for ExplorationProfile {
             exploration_arrival_boost: Permille::new_unchecked(500),
             max_consecutive_explorations: 3,
             visit_lookback_ticks: 200,
+            negative_survey_damping_window: default_negative_survey_damping_window(),
+            negative_survey_damping_strength: default_negative_survey_damping_strength(),
             consecutive_exploration_count: 0,
         }
     }
 }
 
 impl Component for ExplorationProfile {}
+
+const fn default_negative_survey_damping_window() -> u32 {
+    200
+}
+
+const fn default_negative_survey_damping_strength() -> Permille {
+    Permille::new_unchecked(800)
+}
 
 /// Tracks per-need budget exhaustion counts for exploration fallback gating.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -105,6 +121,11 @@ mod tests {
         );
         assert_eq!(profile.max_consecutive_explorations, 3);
         assert_eq!(profile.visit_lookback_ticks, 200);
+        assert_eq!(profile.negative_survey_damping_window, 200);
+        assert_eq!(
+            profile.negative_survey_damping_strength,
+            crate::Permille::new(800).unwrap()
+        );
         assert_eq!(profile.consecutive_exploration_count, 0);
     }
 
@@ -118,6 +139,8 @@ mod tests {
             exploration_arrival_boost: crate::Permille::new(625).unwrap(),
             max_consecutive_explorations: 4,
             visit_lookback_ticks: 320,
+            negative_survey_damping_window: 180,
+            negative_survey_damping_strength: crate::Permille::new(725).unwrap(),
             consecutive_exploration_count: 2,
         };
 
@@ -135,6 +158,8 @@ mod tests {
             .unwrap();
         let profile = ExplorationProfile {
             max_consecutive_explorations: 5,
+            negative_survey_damping_window: 120,
+            negative_survey_damping_strength: crate::Permille::new(600).unwrap(),
             ..ExplorationProfile::default()
         };
 

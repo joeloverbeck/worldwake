@@ -105,6 +105,31 @@ macro_rules! with_component_schema_entries {
                 txn_simple_set
             }
             {
+                survey_memories,
+                SurveyMemory,
+                insert_survey_memory,
+                get_survey_memory,
+                get_survey_memory_mut,
+                remove_survey_memory,
+                has_survey_memory,
+                iter_survey_memories,
+                insert_component_survey_memory,
+                get_component_survey_memory,
+                get_component_survey_memory_mut,
+                remove_component_survey_memory,
+                has_component_survey_memory,
+                entities_with_survey_memory,
+                query_survey_memory,
+                count_with_survey_memory,
+                "SurveyMemory",
+                |kind| kind == EntityKind::Agent,
+                SurveyMemory,
+                crate::SurveyMemory,
+                set_component_survey_memory,
+                clear_component_survey_memory,
+                txn_simple_set
+            }
+            {
                 combat_profiles,
                 CombatProfile,
                 insert_combat_profile,
@@ -2382,8 +2407,8 @@ pub(crate) use with_component_schema_entries;
 mod tests {
     use crate::{
         CommodityKind, EntityKind, GroundComfortTag, Permille, PlaceVisibilityProfile, Quantity,
-        RewardEncumbrance, SceneEvidence, ShelterTag, SleepEpisode, SleepQualityProfile, Tick,
-        Topology, WakeCondition, World, WorldError,
+        RewardEncumbrance, SceneEvidence, ShelterTag, SleepEpisode, SleepQualityProfile,
+        SleepRecoveryModifier, Tick, Topology, WakeCondition, World, WorldError,
     };
     use std::num::NonZeroU32;
 
@@ -2438,7 +2463,7 @@ mod tests {
         let profile = SleepQualityProfile {
             shelter: ShelterTag::Shelter,
             ground_comfort: GroundComfortTag::Soft,
-            recovery_modifier: Permille::new(850).unwrap(),
+            recovery_modifier: SleepRecoveryModifier::new(850),
         };
 
         world
@@ -2471,7 +2496,7 @@ mod tests {
             intended_max_ticks: NonZeroU32::new(30).unwrap(),
             target_recovery: Permille::new(600).unwrap(),
             accumulated_recovery: Permille::new(100).unwrap(),
-            recovery_modifier: Permille::new(950).unwrap(),
+            recovery_modifier: SleepRecoveryModifier::new(950),
             wake_conditions: vec![WakeCondition::IntendedDurationReached],
         };
 

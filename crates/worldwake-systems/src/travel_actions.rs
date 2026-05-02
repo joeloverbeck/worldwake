@@ -942,6 +942,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: worldwake_core::CommodityKind::Apple,
+                },
             },
         );
         set_exploration_profile(
@@ -1077,6 +1080,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: worldwake_core::CommodityKind::Apple,
+                },
             },
         );
         set_exploration_profile(
@@ -1146,6 +1152,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: worldwake_core::CommodityKind::Apple,
+                },
             },
         );
         set_exploration_profile(

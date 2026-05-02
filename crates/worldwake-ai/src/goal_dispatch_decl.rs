@@ -913,6 +913,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: worldwake_core::CommodityKind::Apple,
+                },
             },
             GoalDispatchKey::StealItem => GoalKind::StealItem {
                 target_item: target,

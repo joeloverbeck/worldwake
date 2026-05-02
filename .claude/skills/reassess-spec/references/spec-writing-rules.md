@@ -1,5 +1,7 @@
 # Writing the Updated Spec (Step 7)
 
+**Scope**: Pre-apply verification format and tier rules (recommendation-changing / evidence-refining / scope-extending mismatches, finding-key conventions, the verification table example) live in `SKILL.md` Step 7. This file extends those with apply-changes mechanics (when to use Edit vs. Write, deliverable insertion/removal handling, late-discovered findings, retroactive branch detail) and the post-apply confirmation grep checklist.
+
 After all findings are resolved and approved:
 
 ## Pre-Apply Verification

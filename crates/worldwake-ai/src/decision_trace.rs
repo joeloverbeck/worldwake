@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameAssumption,
-    FrameClearReason, GoalKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    FrameClearReason, GoalKey, HypothesisKind, InstitutionalClaim, InstitutionalKnowledgeSource,
     IntentionDomainTag, OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
     PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
@@ -315,8 +315,26 @@ pub struct ExhaustionTraceEntry {
 
 // ── Stage 1: Candidate Generation + Ranking ─────────────────────
 
+/// Why an emitted candidate's score was reduced before ranking.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum CandidateDampingReason {
+    SurveyMemoryNegative {
+        place: EntityId,
+        hypothesis: HypothesisKind,
+        recorded_tick: Tick,
+        confidence: Permille,
+    },
+}
+
+/// Diagnostic entry for a candidate that reached ranking with a reduced score.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CandidateDampingEntry {
+    pub goal_key: GoalKey,
+    pub reason: CandidateDampingReason,
+}
+
 /// Trace of candidate generation and ranking.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CandidateTrace {
     /// All grounded goal keys generated (before suppression/zero-motive filter).
     pub generated: Vec<OpportunityKey>,
@@ -336,6 +354,8 @@ pub struct CandidateTrace {
     pub top_ranked_comparison: Option<RankedGoalComparison>,
     /// Goals suppressed by situational conditions.
     pub suppressed: Vec<GoalKey>,
+    /// Emitted goals whose ranking score was reduced by a soft damping reason.
+    pub damped: Vec<CandidateDampingEntry>,
     /// Goals filtered by zero motive score.
     pub zero_motive: Vec<GoalKey>,
     /// Political goals omitted before generation due to hard gates.
@@ -1376,6 +1396,9 @@ impl DecisionTraceSink {
                 for omission in &planning.candidates.omitted_violation_detection {
                     eprintln!("  Violation detection skipped: {:?}", omission.reason);
                 }
+                for damping in &planning.candidates.damped {
+                    eprintln!("  {}", format_candidate_damping_entry(damping));
+                }
                 if let Some(reason) = planning.pursuit_invalidation {
                     eprintln!("  Pursuit invalidated: {reason:?}");
                 }
@@ -1812,6 +1835,31 @@ fn format_goal_kind(goal: &crate::GoalKind) -> String {
 
 fn format_goal_key(goal: &GoalKey) -> String {
     format_goal_kind(&goal.kind)
+}
+
+fn format_candidate_damping_entry(entry: &CandidateDampingEntry) -> String {
+    match &entry.reason {
+        CandidateDampingReason::SurveyMemoryNegative {
+            place,
+            hypothesis,
+            recorded_tick,
+            confidence,
+        } => format!(
+            "{} damped by SurveyMemory: found=false at tick {}, confidence={}.",
+            format_damped_goal_key(&entry.goal_key, *place, *hypothesis),
+            recorded_tick.0,
+            confidence.value()
+        ),
+    }
+}
+
+fn format_damped_goal_key(goal: &GoalKey, place: EntityId, hypothesis: HypothesisKind) -> String {
+    match goal.kind {
+        crate::GoalKind::ExploreLocation { .. } => {
+            format!("ExploreLocation {{ target: {place}, hypothesis: {hypothesis:?} }}")
+        }
+        _ => format_goal_key(goal),
+    }
 }
 
 fn format_opportunity_key(opportunity: OpportunityKey) -> String {
@@ -2289,7 +2337,8 @@ fn format_knowledge_path(kp: &KnowledgePath) -> Vec<String> {
 mod tests {
     use super::*;
     use worldwake_core::{
-        AcquisitionQuantity, CommodityPurpose, GoalKind, OpportunityAnchor, Tick,
+        AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKind, HypothesisKind,
+        OpportunityAnchor, Tick,
     };
 
     #[test]
@@ -2330,6 +2379,48 @@ mod tests {
             slot,
             generation: 0,
         }
+    }
+
+    #[test]
+    fn candidate_trace_default_has_empty_damped_vec() {
+        let trace = CandidateTrace::default();
+
+        assert!(trace.damped.is_empty());
+    }
+
+    #[test]
+    fn candidate_damping_entry_renders_survey_memory_negative_with_full_provenance() {
+        let place = entity(42);
+        let hypothesis = HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        };
+        let goal_key = GoalKey::new(GoalKind::ExploreLocation {
+            target_place: place,
+            motivating_need: ExplorationMotivation::NeedDriven(
+                worldwake_core::HomeostaticNeedId::Hunger,
+            ),
+            hypothesis,
+        });
+        let entry = CandidateDampingEntry {
+            goal_key,
+            reason: CandidateDampingReason::SurveyMemoryNegative {
+                place,
+                hypothesis,
+                recorded_tick: Tick(312),
+                confidence: Permille::new(850).unwrap(),
+            },
+        };
+
+        let rendered = format_candidate_damping_entry(&entry);
+
+        assert!(rendered.contains("ExploreLocation"), "{rendered}");
+        assert!(rendered.contains("damped by SurveyMemory"), "{rendered}");
+        assert!(rendered.contains("found=false"), "{rendered}");
+        assert!(rendered.contains("tick 312"), "{rendered}");
+        assert!(rendered.contains("confidence=850"), "{rendered}");
+        assert!(rendered.contains(&place.to_string()), "{rendered}");
+        assert!(rendered.contains("MayContainCommodity"), "{rendered}");
+        assert!(rendered.contains("Apple"), "{rendered}");
     }
 
     fn dead_trace(agent: EntityId, tick: Tick) -> AgentDecisionTrace {
@@ -2397,6 +2488,7 @@ mod tests {
                     ranked,
                     top_ranked_comparison: None,
                     suppressed,
+                    damped: Vec::new(),
                     zero_motive,
                     omitted_political,
                     omitted_bandit,
@@ -2452,6 +2544,7 @@ mod tests {
                     ranked: Vec::new(),
                     top_ranked_comparison: None,
                     suppressed: Vec::new(),
+                    damped: Vec::new(),
                     zero_motive: Vec::new(),
                     omitted_political: Vec::new(),
                     omitted_bandit: Vec::new(),
@@ -3043,6 +3136,7 @@ mod tests {
                 ],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3113,6 +3207,7 @@ mod tests {
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3267,6 +3362,7 @@ mod tests {
             ranked: vec![],
             top_ranked_comparison: None,
             suppressed: vec![],
+            damped: Vec::new(),
             zero_motive: vec![],
             omitted_political: vec![],
             omitted_bandit: vec![],
@@ -3331,6 +3427,7 @@ mod tests {
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3454,6 +3551,7 @@ mod tests {
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3546,6 +3644,7 @@ mod tests {
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3617,6 +3716,7 @@ mod tests {
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3686,6 +3786,7 @@ mod tests {
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3755,6 +3856,7 @@ mod tests {
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3811,6 +3913,7 @@ mod tests {
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3895,6 +3998,7 @@ mod tests {
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -3981,6 +4085,7 @@ mod tests {
                     decisive_dimension: RankedGoalComparisonDimension::MotiveScore,
                 }),
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -4056,6 +4161,7 @@ mod tests {
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -4150,6 +4256,7 @@ mod tests {
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -4225,6 +4332,7 @@ mod tests {
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -4651,6 +4759,7 @@ mod tests {
                 ranked: vec![],
                 top_ranked_comparison: None,
                 suppressed: vec![],
+                damped: Vec::new(),
                 zero_motive: vec![],
                 omitted_political: vec![],
                 omitted_bandit: vec![],
@@ -4843,6 +4952,7 @@ mod tests {
                     }],
                     top_ranked_comparison: None,
                     suppressed: vec![],
+                    damped: Vec::new(),
                     zero_motive: vec![],
                     omitted_political: vec![],
                     omitted_bandit: vec![],

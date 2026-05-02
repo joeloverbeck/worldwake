@@ -123,12 +123,13 @@ For computation-optimization specs (type e, optimization subtype), skip root-cau
 
 **Read `references/codebase-validation.md` and `references/worldwake-validation-patterns.md` now, with the Read tool, before any validation work.** These files carry the validation checklists and the pattern-specific triggers (new GoalKind variant, new component on Agent, new component read by AI crate, new action type, new cross-crate enum variant). Skipping these reads means pattern-specific checklists will be missed and findings produced in that state are incomplete.
 
-After reading each file, emit a **content-tied acknowledgment** — one per Read call, immediately after that Read returns. Each acknowledgment must quote a concrete anchor from the file just loaded, not a free-form "Loaded: …" string:
+After each Read, emit a **content-tied acknowledgment** with a concrete anchor from the file just loaded, not a free-form "Loaded: …" string. Multiple acks for consecutive Reads may be combined into one chat message provided each file's anchor appears separately:
 
 - `Loaded codebase-validation.md — top section is "3.0 Cross-Crate Scope Establishment"`
 - `Loaded worldwake-validation-patterns.md — first pattern is "New GoalKind Variant"`
+- Combined-line form (when both files are read in sequence): `Loaded codebase-validation.md (top: "3.0 Cross-Crate Scope Establishment") and worldwake-validation-patterns.md (first pattern: "New GoalKind Variant")`
 
-A generic "Loaded: codebase-validation.md, worldwake-validation-patterns.md" without a content anchor is treated as a skipped load, because it can be emitted without opening the file. Batching acknowledgments at report time defeats the audit trail. Then validate every reference from Step 2, applying any pattern-specific checklist the spec triggers.
+A generic "Loaded: codebase-validation.md, worldwake-validation-patterns.md" without per-file content anchors is treated as a skipped load, because it can be emitted without opening either file. Batching acknowledgments at report time (after Step 3 validation work is done) also defeats the audit trail — the ack must appear in chat before the validation work that depends on the loaded content. Then validate every reference from Step 2, applying any pattern-specific checklist the spec triggers.
 
 Do not present findings yet. Collect everything for Step 4.
 
@@ -139,6 +140,8 @@ Do not present findings yet. Collect everything for Step 4.
 ### Steps 5-6: Classify and Present Findings
 
 **Read `references/findings-and-questions.md` now, with the Read tool, before classifying.** Emit a content-tied acknowledgment immediately after the Read call — e.g., `Loaded findings-and-questions.md — opens with "Step 5: Classify Findings"`. A bare "Loaded: findings-and-questions.md" is treated as a skipped load. The file prescribes the one-line finding format and the Step 6 presentation template; using your own format is not a substitute. Then classify all findings from Steps 3-4 and present to the user using that template.
+
+**Option fidelity (mandatory before drafting Questions)**: Each Question option that names an existing type, function, file path, or integration target must be grounded in current code — grep the named symbol's actual implementation **at presentation time** and frame the option label by what the grep returned, not by an assumption about the target's iteration shape, timing, or call surface. A wrongly-framed option leads the user to approve a fix on a false premise; the resulting evidence-refining mismatch at Step 7 erodes the consent contract even when the recommendation still holds. Examples of premise traps to grep against: "runs every tick on every agent" (the SystemFn may iterate places, not agents), "currently iterates X" (the loop may be over Y), "lives in crate Z" (the symbol may have moved), "is a Default field" (the field may require explicit construction). The option-fidelity grep is in addition to the Step 3 codebase validation that already established the symbol exists.
 
 **Redesign-count checkpoint**: Before presenting, count two values: (a) **redesign count** — deliverables whose approach materially changed (eliminated, replaced with a different mechanism, or restructured such that the implementation path is not a refinement of the original) versus total deliverables in the spec as drafted; (b) **addition count** — net-new deliverables the reassessment adds to the spec. A deliverable whose text is reworded but whose approach remains a refinement of the original does not count toward either metric. The `### Substantial Redesign Flag` section is mandatory in the Step 6 output (placed immediately above `### Questions`) when **either** trigger fires: redesign count exceeds 50% of original deliverables, **or** addition count exceeds 25% of original deliverables. Both signals reshape the ticket-decomposition surface; either alone warrants the flag. Emit both counts in your pre-draft notes even when neither trigger fires, so the decision is auditable. When a deliverable's redesign status depends on pending question resolution, emit the range (e.g., `2-3/6`) and name which deliverable(s) are conditional so the reader can resolve the count once the questions close.
 
@@ -151,6 +154,8 @@ Wait for user response before proceeding to Step 7. (In plan mode: after questio
 #### Pre-Apply Verification Table
 
 Before editing, build a per-finding verification mini-table **and emit it in chat before calling Write/Edit**. For each finding (by its Step 6 key — `I1`, `I2`, `M1`, `F1`, etc.), run a targeted check (grep, count, path existence) and record both the command and the result. The table is the gate — a vague "I checked the findings" is not sufficient and will be treated as no verification.
+
+**Spec-file enumeration row (mandatory for findings that eliminate or rename a named term)**: When a finding eliminates or renames a type, function, variant, struct field, or other named symbol from the spec, one row of the pre-apply table MUST grep the **spec file itself** for every appearance of the term so all edit sites are enumerated before the first Edit call. Codebase-evidence rows confirm the codebase reality (e.g., "no such type exists outside the spec"); a separate spec-file row enumerates the in-spec edit surface. Without this row, post-apply grep typically catches stale survivors only after edits have landed, forcing a second cleanup pass. Example row: `| I3 | grep -n "CognitiveProfileDef" specs/S130-...md | 3 sites: D9 line 305, Crates line 17, Component Registration line 377 — all need coordinated edits |`. The two row types are complementary, not substitutes.
 
 Example:
 

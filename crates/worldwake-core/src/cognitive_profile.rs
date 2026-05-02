@@ -82,6 +82,12 @@ pub struct CognitiveProfile {
     /// Ticks a learned opportunity remains ranking-relevant before expiring.
     #[serde(default = "default_learned_opportunity_memory_ticks")]
     pub learned_opportunity_memory_ticks: u32,
+    /// Maximum number of survey records retained per agent.
+    #[serde(default = "default_survey_memory_capacity")]
+    pub survey_memory_capacity: usize,
+    /// Ticks a survey record remains ranking-relevant before expiring.
+    #[serde(default = "default_survey_memory_retention_ticks")]
+    pub survey_memory_retention_ticks: u64,
     /// Base cooldown ticks after a goal fails before the agent retries it.
     pub initial_cooldown_ticks: u32,
     /// Maximum cooldown ticks after repeated failures (exponential backoff cap).
@@ -130,6 +136,8 @@ impl Default for CognitiveProfile {
             guard_min_confidence_ceiling: default_guard_min_confidence_ceiling(),
             repair_memory_ticks: default_repair_memory_ticks(),
             learned_opportunity_memory_ticks: default_learned_opportunity_memory_ticks(),
+            survey_memory_capacity: default_survey_memory_capacity(),
+            survey_memory_retention_ticks: default_survey_memory_retention_ticks(),
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
             max_snapshot_entities_per_place: 50,
@@ -207,6 +215,14 @@ const fn default_learned_opportunity_memory_ticks() -> u32 {
     60
 }
 
+const fn default_survey_memory_capacity() -> usize {
+    24
+}
+
+const fn default_survey_memory_retention_ticks() -> u64 {
+    300
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CognitiveProfile, PortfolioSlotWeights};
@@ -262,6 +278,8 @@ mod tests {
         );
         assert_eq!(profile.repair_memory_ticks, 120);
         assert_eq!(profile.learned_opportunity_memory_ticks, 60);
+        assert_eq!(profile.survey_memory_capacity, 24);
+        assert_eq!(profile.survey_memory_retention_ticks, 300);
         assert_eq!(profile.initial_cooldown_ticks, 4);
         assert_eq!(profile.max_cooldown_ticks, 64);
         assert_eq!(profile.max_snapshot_entities_per_place, 50);
@@ -297,6 +315,8 @@ mod tests {
             guard_min_confidence_ceiling: crate::Permille::new(875).unwrap(),
             repair_memory_ticks: 144,
             learned_opportunity_memory_ticks: 88,
+            survey_memory_capacity: 12,
+            survey_memory_retention_ticks: 240,
             initial_cooldown_ticks: 6,
             max_cooldown_ticks: 72,
             max_snapshot_entities_per_place: 75,
@@ -423,6 +443,8 @@ mod tests {
             &CognitiveProfile {
                 repair_memory_ticks: 11,
                 learned_opportunity_memory_ticks: 22,
+                survey_memory_capacity: 13,
+                survey_memory_retention_ticks: 44,
                 ..CognitiveProfile::default()
             },
             PrettyConfig::default(),
@@ -433,6 +455,8 @@ mod tests {
             .filter(|line| {
                 !line.contains("repair_memory_ticks")
                     && !line.contains("learned_opportunity_memory_ticks")
+                    && !line.contains("survey_memory_capacity")
+                    && !line.contains("survey_memory_retention_ticks")
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -445,6 +469,14 @@ mod tests {
         assert_eq!(
             profile.learned_opportunity_memory_ticks,
             CognitiveProfile::default().learned_opportunity_memory_ticks
+        );
+        assert_eq!(
+            profile.survey_memory_capacity,
+            CognitiveProfile::default().survey_memory_capacity
+        );
+        assert_eq!(
+            profile.survey_memory_retention_ticks,
+            CognitiveProfile::default().survey_memory_retention_ticks
         );
     }
 

@@ -21,7 +21,7 @@ use worldwake_core::{
     PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
     ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RouteExperience,
     SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
-    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    SubstitutePreferences, SurveyMemory, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
     ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState,
     WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
 };
@@ -1083,6 +1083,12 @@ impl SocialBeliefView for PerAgentBeliefView<'_> {
     ) -> Option<&worldwake_core::LearnedOpportunityMemory> {
         (agent == self.agent)
             .then(|| self.world.get_component_learned_opportunity_memory(agent))
+            .flatten()
+    }
+
+    fn survey_memory(&self, agent: EntityId) -> Option<&SurveyMemory> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_survey_memory(agent))
             .flatten()
     }
 
@@ -3165,6 +3171,8 @@ mod tests {
             exploration_arrival_boost: Permille::new(650).unwrap(),
             max_consecutive_explorations: 5,
             visit_lookback_ticks: 17,
+            negative_survey_damping_window: 123,
+            negative_survey_damping_strength: Permille::new(625).unwrap(),
             consecutive_exploration_count: 1,
         };
         let agent = {

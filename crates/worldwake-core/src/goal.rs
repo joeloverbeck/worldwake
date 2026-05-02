@@ -21,6 +21,17 @@ pub enum ExplorationMotivation {
     Proactive,
 }
 
+/// What an exploring agent expects to find at the target place.
+/// Drives both ranking input and arrival-time hypothesis evaluation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum HypothesisKind {
+    MayContainCommodity { commodity: CommodityKind },
+    MayContainLatrine,
+    MayContainWashBasin,
+    MayContainSleepSite,
+    Proactive,
+}
+
 /// Quantity intent on an `AcquireCommodity` goal. The goal is satisfied
 /// when the agent has obtained at least `desired_min` units; the planner
 /// prefers plans projected to deliver `desired_target`. `horizon_ticks`
@@ -149,6 +160,7 @@ pub enum GoalKind {
     ExploreLocation {
         target_place: EntityId,
         motivating_need: ExplorationMotivation,
+        hypothesis: HypothesisKind,
     },
     StealItem {
         target_item: EntityId,
@@ -296,7 +308,7 @@ impl From<&GoalKind> for GoalKey {
 mod tests {
     use super::{
         AcquisitionQuantity, CommodityPurpose, ExplorationMotivation, GoalKey, GoalKind,
-        OpportunityAnchor, OpportunityKey, TellTopic, ViolationId,
+        HypothesisKind, OpportunityAnchor, OpportunityKey, TellTopic, ViolationId,
     };
     use crate::{
         ArtifactPostingContext, BountyTarget, BountyTerms, CommodityKind, CommunicationClass,
@@ -860,6 +872,9 @@ mod tests {
         let key = GoalKey::from(GoalKind::ExploreLocation {
             target_place,
             motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Thirst),
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            },
         });
 
         assert_eq!(key.commodity, None);
@@ -872,6 +887,9 @@ mod tests {
         let goal = GoalKind::ExploreLocation {
             target_place: entity_id(23, 4),
             motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
         };
 
         let bytes = bincode::serialize(&goal).unwrap();
@@ -892,6 +910,49 @@ mod tests {
             ExplorationMotivation::Proactive,
             ExplorationMotivation::Proactive
         );
+    }
+
+    #[test]
+    fn hypothesis_kind_roundtrips_through_bincode() {
+        let hypotheses = [
+            HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+            HypothesisKind::MayContainLatrine,
+            HypothesisKind::MayContainWashBasin,
+            HypothesisKind::MayContainSleepSite,
+            HypothesisKind::Proactive,
+        ];
+
+        for hypothesis in hypotheses {
+            let bytes = bincode::serialize(&hypothesis).unwrap();
+            let roundtrip: HypothesisKind = bincode::deserialize(&bytes).unwrap();
+
+            assert_eq!(roundtrip, hypothesis);
+        }
+    }
+
+    #[test]
+    fn goal_key_distinguishes_explore_location_by_hypothesis() {
+        let target_place = entity_id(23, 5);
+        let food_key = GoalKey::from(GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+        });
+        let water_key = GoalKey::from(GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            },
+        });
+
+        assert_ne!(food_key, water_key);
+        assert_eq!(food_key.place, Some(target_place));
+        assert_eq!(water_key.place, Some(target_place));
     }
 
     #[test]

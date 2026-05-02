@@ -4,15 +4,15 @@ mod golden_harness;
 
 use golden_harness::*;
 use worldwake_ai::{
-    CognitiveProfile, CommodityPurpose, DecisionOutcome, GoalKey, GoalKind, GoalTraceStatus,
-    PlanSearchOutcome, PlannerOpKind, PlanningPipelineTrace,
+    AgentTickDriver, CandidateDampingReason, CognitiveProfile, CommodityPurpose, DecisionOutcome,
+    GoalKey, GoalKind, GoalTraceStatus, PlanSearchOutcome, PlannerOpKind, PlanningPipelineTrace,
 };
 use worldwake_core::{
-    AcquisitionQuantity, CommodityKind, DiversificationProfile, EntityId, EventLog,
-    ExplorationMotivation, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, KnownRecipes,
-    MetabolismProfile, PerceptionProfile, PerceptionSource, Place, PlaceTag, Quantity,
-    ResourceSource, Seed, Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile, WorkstationTag,
-    World,
+    AcquisitionQuantity, BlockerMemory, CommodityKind, DiscrepancyMemory, DiversificationProfile,
+    EntityId, EventLog, ExplorationMotivation, ExplorationProfile, HomeostaticNeedId,
+    HomeostaticNeeds, HypothesisKind, KnownRecipes, MetabolismProfile, PerceptionProfile,
+    PerceptionSource, Place, PlaceTag, Quantity, ResourceSource, Seed, SurveyMemory, SurveyRecord,
+    Tick, Topology, TravelEdge, TravelEdgeId, UtilityProfile, WorkstationTag, World,
 };
 use worldwake_sim::{ActionTraceKind, ControllerState, Scheduler, SystemManifest};
 
@@ -421,6 +421,17 @@ fn exploration_goal(target_place: EntityId, motivating_need: HomeostaticNeedId) 
     GoalKey::from(GoalKind::ExploreLocation {
         target_place,
         motivating_need: ExplorationMotivation::NeedDriven(motivating_need),
+        hypothesis: match motivating_need {
+            HomeostaticNeedId::Hunger => HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+            HomeostaticNeedId::Thirst => HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            },
+            HomeostaticNeedId::Fatigue => HypothesisKind::MayContainSleepSite,
+            HomeostaticNeedId::Bladder => HypothesisKind::MayContainLatrine,
+            HomeostaticNeedId::Dirtiness => HypothesisKind::MayContainWashBasin,
+        },
     })
 }
 
@@ -447,6 +458,112 @@ fn planning_trace_at(
         DecisionOutcome::Planning(planning) => Some(planning.as_ref()),
         _ => None,
     }
+}
+
+fn survey_record_for(
+    h: &GoldenHarness,
+    agent: EntityId,
+    place: EntityId,
+    hypothesis: HypothesisKind,
+) -> Option<SurveyRecord> {
+    h.world
+        .get_component_survey_memory(agent)
+        .and_then(|memory| memory.find(place, hypothesis))
+        .copied()
+}
+
+fn run_until_survey_record(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    place: EntityId,
+    hypothesis: HypothesisKind,
+    tick_budget: u32,
+) -> SurveyRecord {
+    for _ in 0..tick_budget {
+        h.step_once();
+        if let Some(record) = survey_record_for(h, agent, place, hypothesis) {
+            return record;
+        }
+    }
+    panic!(
+        "expected arrival perception to write survey record for agent={agent:?}, place={place:?}, hypothesis={hypothesis:?}; traces={:#?}; actions={:#?}",
+        h.driver
+            .trace_sink()
+            .expect("decision tracing should be enabled")
+            .traces_for(agent),
+        h.action_trace_sink()
+            .expect("action tracing should be enabled")
+            .events_for(agent)
+    );
+}
+
+fn reset_agent_for_next_ranking_tick(
+    h: &mut GoldenHarness,
+    agent: EntityId,
+    place: EntityId,
+    tick: Tick,
+) {
+    h.scheduler = Scheduler::new_with_tick(tick, SystemManifest::canonical());
+    h.driver = AgentTickDriver::new();
+    h.driver.enable_tracing();
+    let mut txn = new_txn(&mut h.world, tick.0);
+    txn.set_ground_location(agent, place).unwrap();
+    txn.clear_component_intention_frame(agent).unwrap();
+    txn.set_component_blocker_memory(agent, BlockerMemory::default())
+        .unwrap();
+    txn.set_component_discrepancy_memory(agent, DiscrepancyMemory::default())
+        .unwrap();
+    if let Some(mut profile) = txn.get_component_exploration_profile(agent).copied() {
+        profile.consecutive_exploration_count = 0;
+        profile.visit_lookback_ticks = 0;
+        txn.set_component_exploration_profile(agent, profile)
+            .unwrap();
+    }
+    commit_txn(txn, &mut h.event_log);
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        place,
+        tick,
+        PerceptionSource::DirectObservation,
+    );
+}
+
+fn planning_trace_has_damping(
+    h: &GoldenHarness,
+    agent: EntityId,
+    tick: Tick,
+    expected_goal: GoalKey,
+    expected_reason: &CandidateDampingReason,
+) -> bool {
+    planning_trace_at(h, agent, tick).is_some_and(|planning| {
+        planning
+            .candidates
+            .damped
+            .iter()
+            .any(|entry| entry.goal_key == expected_goal && &entry.reason == expected_reason)
+    })
+}
+
+fn planning_trace_lacks_damping_for(
+    h: &GoldenHarness,
+    agent: EntityId,
+    tick: Tick,
+    expected_goal: GoalKey,
+) -> bool {
+    planning_trace_at(h, agent, tick).is_some_and(|planning| {
+        planning
+            .candidates
+            .generated
+            .iter()
+            .any(|candidate| candidate.goal_key == expected_goal)
+            && !planning
+                .candidates
+                .damped
+                .iter()
+                .any(|entry| entry.goal_key == expected_goal)
+    })
 }
 
 fn planning_trace_selected_goal(
@@ -573,6 +690,7 @@ fn selected_proactive_exploration_goals(
                 let GoalKind::ExploreLocation {
                     target_place,
                     motivating_need: ExplorationMotivation::Proactive,
+                    ..
                 } = planning.selection.selected_goal()?.kind
                 else {
                     return None;
@@ -703,6 +821,9 @@ fn golden_exploration_triggers_on_need_and_ignorance() {
     let exploration_goal = GoalKey::from(GoalKind::ExploreLocation {
         target_place: PLACE_FRONTIER,
         motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+        hypothesis: HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        },
     });
 
     assert!(
@@ -728,6 +849,463 @@ fn golden_exploration_triggers_on_need_and_ignorance() {
             .trace_sink()
             .expect("decision tracing should be enabled")
             .traces_for(agent)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 374: Preseeded Survey Damping Reaches Candidate Trace
+// ---------------------------------------------------------------------------
+//
+// Systems: AI
+// GoalKinds: ExploreLocation
+// ActionDomains: N/A
+// Places: ExplorationStart, ExplorationFrontier
+// Principles: 15, 29
+//
+// Setup: A hungry agent starts with a preseeded negative survey for the frontier place.
+//
+// Proves: ranking emits the generated `ExploreLocation` candidate and carries the SurveyMemory reason in `CandidateTrace.damped`.
+//
+// Chain: stored SurveyMemory(found=false) -> ranking damping -> public decision-trace diagnostic.
+#[test]
+fn survey_damping_records_candidate_trace_entry() {
+    let mut h = build_exploration_harness(Seed([222; 32]));
+    h.driver.enable_tracing();
+
+    let agent = exploration_agent(&mut h, "Survey-Wary Scout");
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_START,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+    set_agent_exploration_profile(
+        &mut h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            visit_lookback_ticks: 200,
+            negative_survey_damping_window: 200,
+            negative_survey_damping_strength: pm(800),
+            ..ExplorationProfile::default()
+        },
+    );
+    let hypothesis = HypothesisKind::MayContainCommodity {
+        commodity: CommodityKind::Apple,
+    };
+    let expected_goal = GoalKey::from(GoalKind::ExploreLocation {
+        target_place: PLACE_FRONTIER,
+        motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+        hypothesis,
+    });
+    {
+        let mut txn = new_txn(&mut h.world, 0);
+        txn.set_component_survey_memory(
+            agent,
+            SurveyMemory {
+                entries: vec![SurveyRecord {
+                    place: PLACE_FRONTIER,
+                    hypothesis,
+                    found: false,
+                    confidence: pm(1000),
+                    recorded_tick: Tick(0),
+                }],
+            },
+        )
+        .unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+
+    h.step_once();
+
+    let trace = h
+        .driver
+        .trace_sink()
+        .expect("decision tracing should be enabled")
+        .trace_at(agent, Tick(0))
+        .expect("tick 0 trace should exist");
+    let planning = match &trace.outcome {
+        DecisionOutcome::Planning(planning) => planning,
+        other => panic!("expected Planning outcome, got {other:?}"),
+    };
+    assert!(
+        planning
+            .candidates
+            .generated
+            .iter()
+            .any(|candidate| candidate.goal_key == expected_goal),
+        "survey damping proof requires the exploration candidate to reach planning"
+    );
+    assert_eq!(planning.candidates.damped.len(), 1);
+    assert_eq!(planning.candidates.damped[0].goal_key, expected_goal);
+    assert_eq!(
+        planning.candidates.damped[0].reason,
+        CandidateDampingReason::SurveyMemoryNegative {
+            place: PLACE_FRONTIER,
+            hypothesis,
+            recorded_tick: Tick(0),
+            confidence: pm(1000),
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 370: Negative Survey Damps Next Exploration Cycle
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Travel, Perception
+// GoalKinds: ExploreLocation
+// ActionDomains: Travel
+// Places: ExplorationStart, ExplorationFrontier
+// Principles: 7, 14, 15, 17
+//
+// Setup: A hungry agent autonomously explores an adjacent frontier with no apples; the harness then returns it to the start place to isolate the next ranking cycle.
+//
+// Proves: arrival perception writes a fresh negative `SurveyRecord`, and a later same-place `ExploreLocation` candidate carries the public SurveyMemory damping diagnostic.
+//
+// Chain: hunger pressure -> ExploreLocation travel -> arrival perception -> SurveyMemory(found=false) -> later ranking damping trace.
+#[test]
+fn survey_records_damp_re_exploration_under_hunger() {
+    let mut h = build_exploration_harness(Seed([223; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent = exploration_agent(&mut h, "Survey Loop Scout");
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_START,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let hypothesis = HypothesisKind::MayContainCommodity {
+        commodity: CommodityKind::Apple,
+    };
+    let expected_goal = exploration_goal(PLACE_FRONTIER, HomeostaticNeedId::Hunger);
+    let record = run_until_survey_record(&mut h, agent, PLACE_FRONTIER, hypothesis, 24);
+
+    assert_eq!(record.place, PLACE_FRONTIER);
+    assert_eq!(record.hypothesis, hypothesis);
+    assert!(
+        !record.found,
+        "the frontier contains no apple source or lot, so arrival should record a negative survey"
+    );
+    assert_eq!(
+        record.confidence,
+        exploration_perception_profile().observation_fidelity
+    );
+
+    let ranking_tick = Tick(record.recorded_tick.0.saturating_add(1));
+    reset_agent_for_next_ranking_tick(&mut h, agent, PLACE_START, ranking_tick);
+    h.step_once();
+    let trace_tick = processed_tick(&h);
+
+    assert!(
+        planning_trace_has_damping(
+            &h,
+            agent,
+            trace_tick,
+            expected_goal,
+            &CandidateDampingReason::SurveyMemoryNegative {
+                place: PLACE_FRONTIER,
+                hypothesis,
+                recorded_tick: record.recorded_tick,
+                confidence: record.confidence,
+            },
+        ),
+        "the next ranking cycle should expose survey-memory damping for the arrival-authored negative survey; trace={:#?}",
+        planning_trace_at(&h, agent, trace_tick)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 371: Survey Damping Fades After Window
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Travel, Perception
+// GoalKinds: ExploreLocation
+// ActionDomains: Travel
+// Places: ExplorationStart, ExplorationFrontier
+// Principles: 11, 15, 22A
+//
+// Setup: Same negative-survey chain as Scenario 370, but with a short `negative_survey_damping_window` that expires while the record remains in memory.
+//
+// Proves: after the configured window, the same exploration candidate is generated without a `CandidateTrace.damped` entry.
+//
+// Chain: negative survey -> freshness age exceeds profile window -> ranking no longer applies SurveyMemory damping.
+#[test]
+fn survey_records_damping_fades_after_window() {
+    let mut h = build_exploration_harness(Seed([224; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent = exploration_agent(&mut h, "Forgetful Survey Scout");
+    set_agent_exploration_profile(
+        &mut h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            visit_lookback_ticks: 200,
+            negative_survey_damping_window: 3,
+            negative_survey_damping_strength: pm(800),
+            ..ExplorationProfile::default()
+        },
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_START,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let hypothesis = HypothesisKind::MayContainCommodity {
+        commodity: CommodityKind::Apple,
+    };
+    let expected_goal = exploration_goal(PLACE_FRONTIER, HomeostaticNeedId::Hunger);
+    let record = run_until_survey_record(&mut h, agent, PLACE_FRONTIER, hypothesis, 24);
+    assert!(!record.found);
+
+    let ranking_tick = Tick(record.recorded_tick.0.saturating_add(4));
+    reset_agent_for_next_ranking_tick(&mut h, agent, PLACE_START, ranking_tick);
+    h.step_once();
+    let trace_tick = processed_tick(&h);
+
+    assert!(
+        planning_trace_lacks_damping_for(&h, agent, trace_tick, expected_goal),
+        "after the configured damping window, the candidate should be generated without a damping entry; trace={:#?}",
+        planning_trace_at(&h, agent, trace_tick)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 372: Survey Records Are Per-Agent
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, Travel, Perception
+// GoalKinds: ExploreLocation
+// ActionDomains: Travel
+// Places: ExplorationStart, ExplorationFrontier
+// Principles: 7, 15, 16
+//
+// Setup: Agent A performs the negative-survey travel chain; Agent B is created afterward at the same start place and never visits the frontier before comparison.
+//
+// Proves: A's survey damps A's later ranking, while B has no `SurveyMemory` entry and its generated candidate carries no SurveyMemory damping diagnostic.
+//
+// Chain: A local visit -> A SurveyMemory(found=false) -> A-only damping; B no visit -> no survey -> undamped candidate.
+#[test]
+fn survey_records_are_per_agent_not_shared() {
+    let mut h = build_exploration_harness(Seed([225; 32]));
+    h.driver.enable_tracing();
+    h.enable_action_tracing();
+
+    let agent_a = exploration_agent(&mut h, "Survey Owner");
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent_a,
+        PLACE_START,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let hypothesis = HypothesisKind::MayContainCommodity {
+        commodity: CommodityKind::Apple,
+    };
+    let expected_goal = exploration_goal(PLACE_FRONTIER, HomeostaticNeedId::Hunger);
+    let record = run_until_survey_record(&mut h, agent_a, PLACE_FRONTIER, hypothesis, 24);
+    assert!(!record.found);
+
+    let agent_b = exploration_agent(&mut h, "Ignorant Peer");
+    let ranking_tick = Tick(record.recorded_tick.0.saturating_add(1));
+    reset_agent_for_next_ranking_tick(&mut h, agent_a, PLACE_START, ranking_tick);
+    reset_agent_for_next_ranking_tick(&mut h, agent_b, PLACE_START, ranking_tick);
+
+    assert!(
+        survey_record_for(&h, agent_b, PLACE_FRONTIER, hypothesis).is_none(),
+        "Agent B never visited the frontier and should not inherit Agent A's survey"
+    );
+
+    h.step_once();
+    let trace_tick = processed_tick(&h);
+
+    assert!(
+        planning_trace_has_damping(
+            &h,
+            agent_a,
+            trace_tick,
+            expected_goal,
+            &CandidateDampingReason::SurveyMemoryNegative {
+                place: PLACE_FRONTIER,
+                hypothesis,
+                recorded_tick: record.recorded_tick,
+                confidence: record.confidence,
+            },
+        ),
+        "Agent A should rank with its own negative survey; trace={:#?}",
+        planning_trace_at(&h, agent_a, trace_tick)
+    );
+    assert!(
+        planning_trace_lacks_damping_for(&h, agent_b, trace_tick, expected_goal),
+        "Agent B should generate the same exploration candidate without Agent A's damping; trace={:#?}",
+        planning_trace_at(&h, agent_b, trace_tick)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 373: Survey Goal Identity Is Orthogonal By Hypothesis
+// ---------------------------------------------------------------------------
+//
+// Systems: AI, SurveyMemory
+// GoalKinds: ExploreLocation
+// ActionDomains: N/A
+// Places: ExplorationStart, ExplorationFrontier
+// Principles: 15, 16, 22
+//
+// Setup: A single agent has both hunger and thirst pressure against the same frontier place, then stores one survey per hypothesis.
+//
+// Proves: `GoalKey` identity includes the hypothesis, and `SurveyMemory` stores orthogonal entries for the same place under hunger and thirst.
+//
+// Chain: two needs -> two ExploreLocation hypotheses -> distinct GoalKeys -> two same-place SurveyMemory entries.
+#[test]
+fn survey_records_goal_identity_collision_is_benign() {
+    let mut h = build_exploration_harness(Seed([226; 32]));
+    h.driver.enable_tracing();
+
+    let harvest_apples = recipe_id(&h, "Harvest Apples");
+    let harvest_water = recipe_id(&h, "Harvest Water");
+    let agent = seed_agent_with_recipes(
+        &mut h.world,
+        &mut h.event_log,
+        "Dual-Need Scout",
+        PLACE_START,
+        HomeostaticNeeds::new(pm(900), pm(900), pm(0), pm(0), pm(0)),
+        MetabolismProfile::default(),
+        UtilityProfile {
+            hunger_weight: pm(950),
+            thirst_weight: pm(950),
+            fatigue_weight: pm(0),
+            bladder_weight: pm(0),
+            ..UtilityProfile::default()
+        },
+        KnownRecipes::with([harvest_apples, harvest_water]),
+    );
+    set_agent_perception_profile(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        exploration_perception_profile(),
+    );
+    set_agent_exploration_profile(
+        &mut h,
+        agent,
+        ExplorationProfile {
+            curiosity_weight: pm(500),
+            need_activation_threshold: pm(400),
+            visit_lookback_ticks: 200,
+            ..ExplorationProfile::default()
+        },
+    );
+    seed_belief_from_world(
+        &mut h.world,
+        &mut h.event_log,
+        agent,
+        PLACE_START,
+        Tick(0),
+        PerceptionSource::DirectObservation,
+    );
+
+    let hunger_goal = exploration_goal(PLACE_FRONTIER, HomeostaticNeedId::Hunger);
+    let thirst_goal = exploration_goal(PLACE_FRONTIER, HomeostaticNeedId::Thirst);
+    assert_ne!(
+        hunger_goal, thirst_goal,
+        "ExploreLocation goal identity must include hypothesis so hunger and thirst surveys do not collide"
+    );
+
+    h.step_once();
+    assert!(
+        planning_trace_has_generated_goal(&h, agent, Tick(0), hunger_goal),
+        "opening planning should emit hunger-driven exploration; trace={:#?}",
+        planning_trace_at(&h, agent, Tick(0))
+    );
+    assert!(
+        planning_trace_has_generated_goal(&h, agent, Tick(0), thirst_goal),
+        "opening planning should emit thirst-driven exploration for the same place; trace={:#?}",
+        planning_trace_at(&h, agent, Tick(0))
+    );
+
+    let hunger_hypothesis = HypothesisKind::MayContainCommodity {
+        commodity: CommodityKind::Apple,
+    };
+    let thirst_hypothesis = HypothesisKind::MayContainCommodity {
+        commodity: CommodityKind::Water,
+    };
+    let mut memory = SurveyMemory::default();
+    memory.record(
+        SurveyRecord {
+            place: PLACE_FRONTIER,
+            hypothesis: hunger_hypothesis,
+            found: false,
+            confidence: pm(875),
+            recorded_tick: Tick(1),
+        },
+        24,
+    );
+    memory.record(
+        SurveyRecord {
+            place: PLACE_FRONTIER,
+            hypothesis: thirst_hypothesis,
+            found: false,
+            confidence: pm(875),
+            recorded_tick: Tick(2),
+        },
+        24,
+    );
+    {
+        let mut txn = new_txn(&mut h.world, 2);
+        txn.set_component_survey_memory(agent, memory).unwrap();
+        commit_txn(txn, &mut h.event_log);
+    }
+    let hunger_record = survey_record_for(&h, agent, PLACE_FRONTIER, hunger_hypothesis)
+        .unwrap_or_else(|| {
+            panic!(
+                "SurveyMemory should retain the hunger survey record; memory={:?}",
+                h.world.get_component_survey_memory(agent)
+            )
+        });
+    let thirst_record = survey_record_for(&h, agent, PLACE_FRONTIER, thirst_hypothesis)
+        .unwrap_or_else(|| {
+            panic!(
+                "SurveyMemory should retain the thirst survey record; memory={:?}",
+                h.world.get_component_survey_memory(agent)
+            )
+        });
+
+    assert_eq!(hunger_record.place, PLACE_FRONTIER);
+    assert_eq!(thirst_record.place, PLACE_FRONTIER);
+    assert_eq!(hunger_record.hypothesis, hunger_hypothesis);
+    assert_eq!(thirst_record.hypothesis, thirst_hypothesis);
+    assert_ne!(
+        hunger_record.hypothesis, thirst_record.hypothesis,
+        "same-place survey records should remain orthogonal by hypothesis"
+    );
+    assert_eq!(
+        h.world
+            .get_component_survey_memory(agent)
+            .expect("agent should have survey memory")
+            .entries
+            .iter()
+            .filter(|record| record.place == PLACE_FRONTIER)
+            .count(),
+        2,
+        "SurveyMemory should keep one entry per (place, hypothesis)"
     );
 }
 
@@ -898,6 +1476,9 @@ fn golden_exploration_arrival_unlocks_beliefs_and_concrete_relief() {
     let exploration_goal = GoalKey::from(GoalKind::ExploreLocation {
         target_place: PLACE_FRONTIER,
         motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+        hypothesis: HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        },
     });
 
     let mut travel_committed = false;
@@ -1504,6 +2085,9 @@ fn golden_s102_counter_reset_on_need_satisfaction() {
     let explore_village_kind = GoalKind::ExploreLocation {
         target_place: PLACE_VILLAGE,
         motivating_need: ExplorationMotivation::NeedDriven(HomeostaticNeedId::Hunger),
+        hypothesis: HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        },
     };
     let mut saw_nonzero_tracker = false;
     let mut reset_tick = None;

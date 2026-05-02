@@ -4,9 +4,9 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, CommodityKind, DecisionEventPayload, EntityId, EventTag, FrameAssumption,
     HomeostaticNeedId, HomeostaticNeeds, ItemLot, MetabolismProfile, OUTDOOR_RELIEF_TAGS, Permille,
-    PlaceTag, Quantity, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, Tick,
-    VisibilitySpec, WakeCondition, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload,
-    WasteSource, WorkstationTag, WorldTxn,
+    PlaceTag, Quantity, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+    SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
+    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WorkstationTag, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -432,7 +432,10 @@ fn tick_sleep(
     }
 }
 
-fn sleep_recovery_delta(rest_efficiency: Permille, recovery_modifier: Permille) -> Permille {
+fn sleep_recovery_delta(
+    rest_efficiency: Permille,
+    recovery_modifier: SleepRecoveryModifier,
+) -> Permille {
     let scaled = (u32::from(rest_efficiency.value()) * u32::from(recovery_modifier.value())) / 1000;
     Permille::new(scaled.min(1000) as u16).unwrap()
 }
@@ -840,10 +843,10 @@ mod tests {
         EntityKind, EventLog, EventTag, EventView, EvidenceKind, FrameAssumption, FrameState,
         GoalKey, GoalKind, HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame,
         LatrineFullness, MetabolismProfile, PerceptionSource, Permille, PlaceDirtiness,
-        PrototypePlace, Quantity, ResourceSource, Seed, SleepEpisode, Tick, VisibilitySpec,
-        WakeCondition, WakeReason, WashBasinState, WasteSource, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_believed_entity_state, build_prototype_world,
-        prototype_place_entity,
+        PrototypePlace, Quantity, ResourceSource, Seed, SleepEpisode, SleepRecoveryModifier, Tick,
+        VisibilitySpec, WakeCondition, WakeReason, WashBasinState, WasteSource, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
@@ -1280,7 +1283,7 @@ mod tests {
             panic!("expected SleepEpisodeStarted payload");
         };
         assert_eq!(payload.sleeper, actor);
-        assert_eq!(payload.recovery_modifier, pm(1000));
+        assert_eq!(payload.recovery_modifier, SleepRecoveryModifier::IDENTITY);
         assert!(world.get_component_sleep_episode(actor).is_some());
 
         let first_tick = tick_action(
@@ -1370,7 +1373,7 @@ mod tests {
             intended_max_ticks: NonZeroU32::new(10).unwrap(),
             target_recovery: pm(960),
             accumulated_recovery: pm(40),
-            recovery_modifier: pm(1000),
+            recovery_modifier: SleepRecoveryModifier::IDENTITY,
             wake_conditions: vec![
                 WakeCondition::TargetRecoveryReached,
                 WakeCondition::IntendedDurationReached,
@@ -1416,7 +1419,7 @@ mod tests {
             intended_max_ticks: NonZeroU32::new(10).unwrap(),
             target_recovery: pm(1000),
             accumulated_recovery: pm(0),
-            recovery_modifier: pm(1000),
+            recovery_modifier: SleepRecoveryModifier::IDENTITY,
             wake_conditions: vec![WakeCondition::ProjectedNeedBreach {
                 need: HomeostaticNeedId::Hunger,
             }],

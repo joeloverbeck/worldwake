@@ -6,22 +6,22 @@ When an agent travels somewhere expecting to find a resource and arrives to find
 
 ## Phase and Status
 
-Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft. S128 has landed and is archived; the `SleepQualityProfile` dependency for `MayContainSleepSite` is now satisfied.
+Phase 10: Survival Mechanic Depth (Adjunct). Status: COMPLETED.
 
 ## Crates
 
 - `worldwake-core` — `SurveyRecord` and `SurveyMemory` components, `HypothesisKind` enum on `ExploreLocation`, `SurveyRecorded` event tag with payload struct, new fields on `CognitiveProfile` and `ExplorationProfile`.
-- `worldwake-sim` — new `survey_memory()` accessor on `GoalBeliefView`; `RuntimeBeliefView` impl forwarding to the underlying component read.
+- `worldwake-sim` — new `survey_memory()` accessor on `GoalBeliefView`, forwarded through the live `SocialBeliefView` blanket path and implemented by `PerAgentBeliefView` for the owning agent's component read.
 - `worldwake-systems` — perception system extension: when the agent arrives at a place with an active `ExploreLocation` intent targeting that place, evaluate hypothesis vs. perceived entities and write `SurveyMemory` entry. Decay rule piggybacks on the existing belief decay pass.
 - `worldwake-ai` — `ExploreLocation` candidate generation populates `hypothesis` from the motivating need via a hardcoded need→hypothesis mapping; ranking damps `ExploreLocation` for (place, hypothesis) pairs with a fresh negative survey; decision-trace surfaces the damping reason.
-- `worldwake-cli` — no `AgentDef` field for `SurveyMemory` (runtime-generated state, exempt from FND-22 scenario authoring); `spawn_agent` inserts `SurveyMemory::default()` for every agent. New profile fields land on existing `CognitiveProfileDef` and `ExplorationProfileDef`.
+- `worldwake-cli` — no `AgentDef` field for `SurveyMemory` (runtime-generated state, exempt from FND-22 scenario authoring); `spawn_agent` inserts `SurveyMemory::default()` for every agent. New `CognitiveProfile` fields land directly on the core type (consumed via `AgentDef.cognitive_profile: Option<CognitiveProfile>`); new `ExplorationProfile` fields land on the existing `ExplorationProfileDef` mirror.
 
 ## Dependencies
 
 - **S80 (Exploration Drive)** — completed. `ExploreLocation` substrate exists; this spec extends it.
 - **S102 (Frontier-Aware Exploration)** — completed. Frontier selection feeds into the candidate generator that populates the new hypothesis.
 - **S107 (Proactive Diversification)** — completed. `ExplorationMotivation::Proactive` exists; proactive exploration uses `HypothesisKind::Proactive`.
-- **S128 (Sleep Episodes and Place-Quality Recovery)** — **hard, satisfied**. `MayContainSleepSite` evaluation in D5 requires `SleepQualityProfile.recovery_modifier`; S128 is completed and archived at `archive/specs/S128-sleep-episode-place-quality.md`.
+- **S128 (Sleep Episodes and Place-Quality Recovery)** — **hard, satisfied**. `MayContainSleepSite` evaluation in D6 requires `SleepQualityProfile.recovery_modifier`; S128 is completed and archived at `archive/specs/S128-sleep-episode-place-quality.md`.
 - **S122 (Frame Assumption — Commodity Availability)** — soft. Arrival-time mismatch on `CommodityAvailableAt` already surfaces through S109 discrepancy memory; this spec piggybacks the existing `ExpectationMismatch` event for the resource-not-found case rather than introducing a new event type for the same concern.
 - **S101 (Activation-Based Belief Decay)** — soft. Survey records decay via the same per-tick maintenance pass that calls `enforce_limits` on other learned-state components.
 - **S110 (Decision History Events)** — soft. `SurveyRecorded` event lands in the same `EventTag` / `decision_event_payload` infrastructure S110 already established.
@@ -66,8 +66,8 @@ The motivating proposal lists five hypothesis values co-equally: `may_contain_fo
 | FND-22A (Learning, Habits, and Preference Shifts Are Concrete State) | Survey records are exactly the kind of concrete learned state FND-22A asks for: explicit acquisition (arrival event), explicit decay (freshness-based pruning), explicit replacement (re-survey on return). |
 | FND-26 (Systems Interact Through State, Not Through Each Other) | Perception writes `SurveyMemory`; AI reads `SurveyMemory` (via `GoalBeliefView::survey_memory()`) for ranking damping. No imperative cross-system call. |
 | FND-27 (Derived Summaries Are Caches, Never Truth) | `SurveyMemory` is authoritative per-agent state. The ranking damping factor is derived per-tick from freshness; not stored. |
-| FND-28 (No Backward Compatibility in Live Authority Paths) | The existing `ExploreLocation` shape (without `hypothesis`) is removed in favor of the new shape; all 60 destructuring/construction sites updated, no shim. |
-| FND-29 (Debuggability Is a Product Feature) | `SurveyRecorded` event records the (place, hypothesis, found, confidence) tuple. Decision-trace surfaces the suppression reason as "ExploreLocation suppressed: SurveyMemory has fresh negative for (Hillside Shelter, MayContainCommodity { Apple })." |
+| FND-28 (No Backward Compatibility in Live Authority Paths) | The existing `ExploreLocation` shape (without `hypothesis`) is removed in favor of the new shape; all workspace destructuring/construction sites updated, no shim. |
+| FND-29 (Debuggability Is a Product Feature) | `SurveyRecorded` event records the (place, hypothesis, found, confidence) tuple. Decision-trace surfaces the damping reason as "ExploreLocation { target: <place-id>, hypothesis: MayContainCommodity { commodity: Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850." |
 | FND-29A (Causal History Is Authoritative, Append-Only, Queryable) | One new `EventTag::SurveyRecorded` lands in the event log; survey records themselves persist in `SurveyMemory` until decayed. |
 | FND-30 (Every New System Spec Must Declare Its Causal Hooks) | Section H below covers the four required analyses (information-path, positive-feedback, dampeners, stored-vs-derived) per `docs/spec-drafting-rules.md`. |
 
@@ -112,7 +112,7 @@ GoalKind::ExploreLocation {
 }
 ```
 
-`ExplorationMotivation` is preserved (it captures the *why*); `HypothesisKind` adds the *what*. All ~60 existing destructuring/construction sites of `ExploreLocation` (search: `grep -rn "GoalKind::ExploreLocation {" crates/`) are updated to populate the new field — no shim, per FND-28.
+`ExplorationMotivation` is preserved (it captures the *why*); `HypothesisKind` adds the *what*. All existing destructuring/construction sites of `ExploreLocation` (search: `grep -rn "GoalKind::ExploreLocation {" crates/`) are updated to populate the new field — no shim, per FND-28.
 
 **Hardcoded need-to-hypothesis mapping** (for `motivating_need = ExplorationMotivation::NeedDriven(need_id)`):
 
@@ -128,7 +128,9 @@ For `motivating_need = ExplorationMotivation::Proactive`, `hypothesis = Hypothes
 
 The mapping is implemented as a `const fn need_hypothesis(need: HomeostaticNeedId) -> HypothesisKind` in `crates/worldwake-ai/src/candidate_generation.rs` (the file that owns `emit_*_goal` for needs). Per-agent dietary variation (e.g., one agent prefers Bread, another prefers Apple) is a non-goal — the mapping is uniform across agents in this spec.
 
-**Goal-key identity note**: Adding `hypothesis` to `GoalKind::ExploreLocation` changes `GoalKind`'s `Hash` output. Two `ExploreLocation` goals with the same `(target_place, motivating_need)` but different `hypothesis` therefore have different `GoalKey`s and are distinct goals for commitment, blocker memory, and discrepancy memory purposes. This is intentional: a Hunger-driven and a Thirst-driven exploration of the same place produce orthogonal surveys and should not collide. Binding identity (`matches_binding`) continues to use `target_place` only and is unchanged — Travel ops bind on place, not on hypothesis.
+**Goal-key identity note**: Adding `hypothesis` to `GoalKind::ExploreLocation` changes `GoalKind` equality/ordering through the stored payload. Two `ExploreLocation` goals with the same `(target_place, motivating_need)` but different `hypothesis` therefore have different `GoalKey`s and are distinct goals for commitment, blocker memory, and discrepancy memory purposes. This is intentional: a Hunger-driven and a Thirst-driven exploration of the same place produce orthogonal surveys and should not collide. Binding identity (`matches_binding`) continues to use `target_place` only and is unchanged — Travel ops bind on place, not on hypothesis.
+
+Because `GoalKind` is embedded in save-bound runtime/planning state, the D2 implementation bumps `SAVE_FORMAT_VERSION` from `59` to `60`. D4's later `SurveyMemory` registration starts from that baseline and owns the next saved-component-shape bump.
 
 ### D3: `SurveyRecord` and `SurveyMemory`
 
@@ -180,9 +182,14 @@ impl SurveyMemory {
     }
 
     /// Drop entries older than `profile.survey_memory_retention_ticks`.
-    /// Called from the per-tick belief maintenance pass alongside the
-    /// existing `RouteExperience::enforce_limits` and
-    /// `SourceReliability::enforce_limits` calls.
+    /// Called from the agent-iteration pass added to `evidence_decay_system`
+    /// (see SystemFn Integration). `CognitiveProfile` is the correct host
+    /// for the retention parameter because survey memory is exploration-
+    /// cognition state co-located with the existing `cognitive.*` retention
+    /// fields (e.g., `repair_memory_ticks`, `learned_opportunity_memory_ticks`).
+    /// `RouteExperience::enforce_limits` and `SourceReliability::enforce_limits`
+    /// take `&PreferenceProfile` because they govern trade/route preference
+    /// state; that profile is not the right home for cognitive retention.
     pub fn enforce_limits(&mut self, current_tick: Tick, profile: &CognitiveProfile) {
         let retention = profile.survey_memory_retention_ticks;
         self.entries.retain(|r| {
@@ -206,7 +213,7 @@ In `crates/worldwake-core/src/event_tag.rs`, add a new variant to `EventTag`:
 
 ```rust
 pub enum EventTag {
-    // ... existing 39 variants ...
+    // ... existing 43 variants ...
     SurveyRecorded,
 }
 ```
@@ -224,27 +231,27 @@ pub struct SurveyRecordedPayload {
 }
 ```
 
-`EventTag` is consumed by tag-add APIs (`txn.add_tag(...)`) and tag-membership tests, not by exhaustive matches in downstream crates (verified: `grep -rn "match.*EventTag::"` returns 0 exhaustive sites in ai/systems/cli), so adding a variant has no downstream blast radius beyond the new emission.
+`EventTag` is consumed by tag-add APIs (`txn.add_tag(...)`) and tag-membership tests, not by exhaustive matches in downstream crates. `DecisionEventPayload` does have exhaustive observer-rendering consumers in `crates/worldwake-cli/src/bin/observer.rs`, so the D5 foundation pass also updates that renderer to route `SurveyRecorded` to the surveyor, label it as `SurveyRecorded`, and summarize `(place, hypothesis, found, confidence)`. The runtime emission site still lands in D6.
 
 ### D6: Perception-time hypothesis evaluation
 
-In `crates/worldwake-systems/src/perception.rs`, after the arrival-perception path (the existing "agent enters new place → record observations" code) and **before** any per-tick goal-satisfaction sweep that might clear the agent's `IntentionFrame`, check the agent's `IntentionFrame.goal` for an active `ExploreLocation` goal targeting the just-entered place. The lifecycle ordering matters because `is_satisfied(ExploreLocation)` returns true on arrival (`effective_place == target_place`) — survey evaluation must run while the goal is still the active intent.
+In `crates/worldwake-systems/src/perception.rs`, after the arrival-perception path (`observe_passive_local_entities`, the existing "agent enters new place → record observations" code), check the agent's `IntentionFrame.goal` for an active `ExploreLocation` goal targeting the just-entered place. Lifecycle ordering: `perception_system` runs at dispatch position 8 (`crates/worldwake-systems/src/lib.rs:104`); the AI agent tick runs after perception in the same simulation step. `is_satisfied(GoalKind::ExploreLocation { target_place, .. })` at `crates/worldwake-ai/src/goal_model.rs:1448` returns `effective_place(actor) == Some(*target_place)` and is consulted only during the AI agent tick, so the agent's `IntentionFrame.goal` is still the active `ExploreLocation` when perception evaluates the hypothesis. There is no separate goal-satisfaction sweep between perception and the agent tick — the dispatch order alone establishes the read window.
 
 If found, evaluate `hypothesis` against the agent's freshly-perceived entities at the place (FND-14A: same-tick co-located reads of physical properties of `ResourceSource`, `ItemLot`, `PlaceTag`, `WorkstationTag`, `SleepQualityProfile` are belief-equivalent):
 
-- `MayContainCommodity { commodity }` → any perceived `ResourceSource` with `commodity == hypothesis.commodity && available_quantity > Quantity::zero()`, OR any `ItemLot` of that commodity at the place.
+- `MayContainCommodity { commodity }` → any perceived `ResourceSource` with `commodity == hypothesis.commodity && available_quantity > Quantity(0)`, OR any `ItemLot` of that commodity at the place.
 - `MayContainLatrine` → place carries `PlaceTag::Latrine` (verified: `PlaceTag` enum at `crates/worldwake-core/src/topology.rs:11–26`; `Latrine` is a place-level tag, not a workstation tag).
-- `MayContainWashBasin` → place hosts a workstation tagged `WorkstationTag::WashBasin` (verified: `WorkstationTag` enum at `crates/worldwake-core/src/production.rs:10–34`; `WashBasin` is a facility-level tag).
-- `MayContainSleepSite` → place carries `SleepQualityProfile` with `recovery_modifier > Permille::new(1000)` (better-than-universal-default; per S128 — hard dependency).
+- `MayContainWashBasin` → place hosts a workstation tagged `WorkstationTag::WashBasin` (verified: `WorkstationTag` enum body at `crates/worldwake-core/src/production.rs:10–20`; `WashBasin` is a facility-level tag).
+- `MayContainSleepSite` → place carries `SleepQualityProfile` with `recovery_modifier > SleepRecoveryModifier::IDENTITY` (better-than-universal-default; per S128 — hard dependency). D6 includes the root representation correction from bounded `Permille` to `SleepRecoveryModifier`, because above-default sleep-site quality is architecturally required and cannot be represented by `Permille`.
 - `Proactive` → always `found = true` (the act of arriving satisfies proactive intent).
 
-Write the `SurveyMemory` entry via `record(...)` with `confidence = profile.observation_fidelity` (the existing `PerceptionProfile.observation_fidelity` field at `crates/worldwake-core/src/belief.rs:2516`; the field is named `observation_fidelity`, not `fidelity`). Capacity is read from `cognitive.survey_memory_capacity`.
+Write the `SurveyMemory` entry via `record(...)` with `confidence = profile.observation_fidelity` (the existing `PerceptionProfile.observation_fidelity` field at `crates/worldwake-core/src/belief.rs:2556`; the field is named `observation_fidelity`, not `fidelity`). Capacity is read from `cognitive.survey_memory_capacity`.
 
 Emit `EventTag::SurveyRecorded` with `SurveyRecordedPayload`.
 
 ### D7: AI ranking integration
 
-In `crates/worldwake-ai/src/ranking.rs`, the `ExploreLocation` ranking arm (current call site at `ranking.rs:1096` → `exploration_motive(context, motivating_need) -> u32`) is wrapped with a damping step.
+In `crates/worldwake-ai/src/ranking.rs`, the `ExploreLocation` ranking arm (invocation site at `ranking.rs:1127` calling `exploration_motive(context, motivating_need) -> u32`, defined at `ranking.rs:1146`) is wrapped with a damping step.
 
 Read the agent's survey memory through `GoalBeliefView::survey_memory()` (new accessor — see D8) for `(target_place, hypothesis)`. Compute the damping factor using **integer/Permille arithmetic** (CLAUDE.md determinism: no floats):
 
@@ -284,13 +291,13 @@ fn survey_memory(&self, agent: EntityId) -> Option<&SurveyMemory> {
 }
 ```
 
-Add a backing implementation on `RuntimeBeliefView` that forwards to `world.get_component_survey_memory(agent)`. Update the `impl_goal_belief_view!` macro / blanket impl forwarding to include the new method.
+Add the live backing implementation on the concrete runtime view path: `SocialBeliefView::survey_memory()` defaults to `None`, `GoalBeliefView` forwards through the blanket `SocialBeliefView` bridge, and `PerAgentBeliefView` returns the owning agent's `world.get_component_survey_memory(agent)` value. This preserves the `GoalBeliefView` facade while keeping the read local to the agent represented by the runtime view.
 
 This is the standard pattern used by sibling memory accessors (`discrepancy_memory`, `blocker_memory`, `repair_memory`, `learned_opportunity_memory`) and is required because the AI ranking layer reads beliefs through `GoalBeliefView`, never directly from world components.
 
 ### D9: Profile field additions
 
-Extend two existing per-agent profile components in `worldwake-core` and their scenario `*Def` mirrors in `worldwake-cli`:
+Extend two existing per-agent profile components in `worldwake-core`:
 
 **`CognitiveProfile`** (`crates/worldwake-core/src/cognitive_profile.rs`):
 
@@ -299,6 +306,8 @@ Extend two existing per-agent profile components in `worldwake-core` and their s
 | `survey_memory_capacity` | `usize` | `24` |
 | `survey_memory_retention_ticks` | `u64` | `300` |
 
+Add `#[serde(default = "...")]` annotations on both new fields. `AgentDef.cognitive_profile` is `Option<CognitiveProfile>` at `crates/worldwake-cli/src/scenario/types.rs:457` (uses the core `CognitiveProfile` type directly with no `*Def` mirror), so existing scenarios with `cognitive_profile:` blocks deserialize unchanged once the serde defaults are in place. Update the `Default` impl on `CognitiveProfile` and any unit tests asserting field counts.
+
 **`ExplorationProfile`** (`crates/worldwake-core/src/exploration.rs`):
 
 | Field | Type | Default |
@@ -306,17 +315,21 @@ Extend two existing per-agent profile components in `worldwake-core` and their s
 | `negative_survey_damping_window` | `u32` | `200` (ticks) |
 | `negative_survey_damping_strength` | `Permille` | `Permille::new_unchecked(800)` |
 
-Mirror updates in `crates/worldwake-cli/src/scenario/types.rs` `CognitiveProfileDef` and `ExplorationProfileDef`, with serde defaults so existing scenarios deserialize unchanged. Update the corresponding `Default` impls and any unit tests asserting field counts.
+Mirror updates in `crates/worldwake-cli/src/scenario/types.rs` `ExplorationProfileDef` (which DOES exist at `types.rs:543–554`), with serde defaults so existing scenarios deserialize unchanged. Update the `Default` impl on `ExplorationProfile` and the `Default`/`From` impls on `ExplorationProfileDef`, plus any unit tests asserting field counts.
+
+The asymmetric handling — direct `CognitiveProfile` use vs. `ExplorationProfileDef` mirror — reflects the existing scenario-types layout: `CognitiveProfile` has no `EntityId` references requiring `*Def` indirection and is consumed directly; `ExplorationProfile` already has a mirror. This spec preserves both conventions rather than imposing a workspace-wide migration.
+
+These profile components are persisted component payloads. The D9 implementation therefore bumps `SAVE_FORMAT_VERSION` from `58` to `59`; D2 then bumps `59` to `60` for the persisted `GoalKind::ExploreLocation` payload widening; D4's later `SurveyMemory` registration starts from that baseline and owns the next saved-component-shape bump.
 
 ### D10: Resource-arrival mismatch reuse
 
-When the agent's arrival evaluates `MayContainCommodity { commodity }` to `found = false`, and the agent had a `FrameAssumption::CommodityAvailableAt { commodity, place }` (S122) on the active `IntentionFrame`, the existing `record_assumption_failure` path (`crates/worldwake-ai/src/agent_tick/frame.rs:596`) fires alongside the survey write. No new event needed — S122/S110 already surface this case via `EventTag::ExpectationMismatch`.
+When an acquisition travel/errand frame expects a commodity at a place and the live belief path refutes that assumption, the existing S122 `record_assumption_failure` path (`crates/worldwake-ai/src/agent_tick/frame.rs:596`) remains the mismatch surface. No new event is needed — S122/S110 already surface that case via `EventTag::ExpectationMismatch`.
 
-The S130 survey adds the "I checked here and found nothing" record even when no S122 assumption was present (e.g., the agent was exploring proactively and had no committed acquisition goal yet). The two systems are orthogonal and both can fire on the same arrival tick.
+The S130 survey adds the "I checked here and found nothing" record for active `ExploreLocation` arrivals. Live `IntentionFrame::expected_commodity()` only populates `FrameAssumption::CommodityAvailableAt` for acquisition goals in `Travel` / `Errand` domains, so D6 survey writes and S122 acquisition mismatch events are orthogonal surfaces rather than a required same-frame pairing.
 
 ### D11: Decision-trace surfacing
 
-In `crates/worldwake-ai/src/decision_trace.rs`, extend the candidate diagnostics to carry an optional damping reason. Add:
+In `crates/worldwake-ai/src/decision_trace.rs`, extend `CandidateTrace` (`decision_trace.rs:320`) to carry damping diagnostics in a new field parallel to the existing `pub suppressed: Vec<GoalKey>` (`decision_trace.rs:338`):
 
 ```rust
 pub enum CandidateDampingReason {
@@ -327,22 +340,33 @@ pub enum CandidateDampingReason {
         confidence: Permille,
     },
 }
+
+pub struct CandidateDampingEntry {
+    pub goal_key: GoalKey,
+    pub reason: CandidateDampingReason,
+}
 ```
 
-Attach as `damping: Option<CandidateDampingReason>` on the existing per-candidate diagnostic (alongside `CandidateSuppressionDiagnostic`). The trace renderer formats it as: `ExploreLocation { target: Hillside Shelter, hypothesis: MayContainCommodity { Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850.`
+Add `pub damped: Vec<CandidateDampingEntry>` as a new field on `CandidateTrace` alongside `suppressed`. The two collections preserve a lifecycle distinction: `suppressed` lists candidates that were not emitted to ranking at all (hard suppression — gates, vetoes, cooldowns); `damped` lists candidates that were emitted but had their `motive_score` reduced by a per-candidate factor (soft damping — survey memory, future damping reasons). Update every existing `CandidateTrace { ... }` construction site across the workspace to include an empty `damped` vector until D12/D13 population lands.
+
+The trace renderer formats damping entries as: `ExploreLocation { target: <place-id>, hypothesis: MayContainCommodity { commodity: Apple } } damped by SurveyMemory: found=false at tick 312, confidence=850.`
 
 ### D12: Golden coverage
 
-Add `crates/worldwake-ai/tests/golden_survey_records.rs`:
+Extend `crates/worldwake-ai/tests/golden_exploration.rs`, the live owning suite for `ExploreLocation` golden coverage:
 
-- **Sub-test 1 — negative survey is written and damps re-exploration.** Agent explores Hillside Shelter under hunger pressure with `hypothesis = MayContainCommodity { Apple }`. Place has no apples. After arrival, confirm `SurveyMemory` contains `SurveyRecord { found: false }`. On the next exploration cycle, confirm `ExploreLocation { Hillside Shelter, ... }` ranking score is damped enough to lose to alternatives.
-- **Sub-test 2 — damping fades.** After `negative_survey_damping_window` ticks pass, confirm ranking damping disappears and the agent will re-explore Hillside Shelter when frontier conditions favor it.
+- **Sub-test 1 — negative survey is written and damps re-exploration.** Agent explores Hillside Shelter under hunger pressure with `hypothesis = MayContainCommodity { Apple }`. Place has no apples. After arrival, confirm `SurveyMemory` contains `SurveyRecord { found: false }`. On the next isolated exploration ranking cycle, confirm `ExploreLocation { Hillside Shelter, ... }` carries a `CandidateTrace.damped` entry for the same `(place, hypothesis)`.
+- **Sub-test 2 — damping fades.** After `negative_survey_damping_window` ticks pass, confirm ranking damping disappears and the place's `ExploreLocation` candidate is generated without a survey-memory damping entry.
 - **Sub-test 3 — surveys are per-agent.** Two agents in the same scenario; Agent A surveys Hillside Shelter empty; Agent B (who never visited) still ranks Hillside Shelter for exploration normally. Confirm survey is per-agent, not shared.
-- **Sub-test 4 — goal-identity collision is benign.** Same agent emits `ExploreLocation { Hillside Shelter, NeedDriven(Hunger), MayContainCommodity { Apple } }` and `ExploreLocation { Hillside Shelter, NeedDriven(Thirst), MayContainCommodity { Water } }` in the same cycle. Confirm both candidates are valid distinct goals (different `GoalKey`), do not collide in commitment or blocker memory, and produce orthogonal surveys after arrival.
+- **Sub-test 4 — goal-identity collision is benign.** Same agent emits `ExploreLocation { Hillside Shelter, NeedDriven(Hunger), MayContainCommodity { Apple } }` and `ExploreLocation { Hillside Shelter, NeedDriven(Thirst), MayContainCommodity { Water } }` in the same cycle. Confirm both candidates are valid distinct goals (different `GoalKey`) and `SurveyMemory` stores orthogonal same-place records for the two hypotheses. The perception-authored survey write path is covered by sub-tests 1-3.
 
 ## SystemFn Integration
 
-No new SystemFn. Survey writes happen inside the existing perception system's arrival-perception path. Survey decay piggybacks on the existing per-tick belief maintenance that calls `RouteExperience::enforce_limits` and `SourceReliability::enforce_limits` (`crates/worldwake-core/src/experience.rs:22, 91`); add an analogous `SurveyMemory::enforce_limits(current_tick, &cognitive_profile)` call in the same pass. Per-agent capacity and retention come from `cognitive.survey_memory_capacity` and `cognitive.survey_memory_retention_ticks`.
+No new SystemFn. Two existing hosts are extended:
+
+1. **Survey writes** happen inside `perception_system` (`crates/worldwake-systems/src/perception.rs:35`), after `observe_passive_local_entities` and within the same `WorldTxn` flow that commits perception updates. See D6.
+
+2. **Survey decay** is hosted by `evidence_decay_system` (`crates/worldwake-systems/src/evidence_decay.rs:7`). That SystemFn currently runs a per-tick decay pass that iterates places via `query_scene_evidence` and prunes expired `SceneEvidence` entries. Extend it with an additional agent-iteration pass that iterates agents holding a `SurveyMemory` component and calls `SurveyMemory::enforce_limits(current_tick, &cognitive_profile)` for each. Per-agent capacity and retention come from `cognitive.survey_memory_capacity` and `cognitive.survey_memory_retention_ticks`. The existing scattered `RouteExperience::enforce_limits` (called from `crates/worldwake-systems/src/travel_actions.rs:145` on travel commit) and `SourceReliability::enforce_limits` (called from `crates/worldwake-systems/src/experience_recording.rs:27` and `crates/worldwake-ai/src/agent_tick/mod.rs:2121`) are NOT consolidated into this pass — they remain action/event-context-driven because their decay semantics depend on the agent having just produced a relevant action or expectation failure. Survey decay is the first per-tick agent-iteration decay path; consolidating the others is out of scope for this spec.
 
 ## Component Registration
 
@@ -354,7 +378,7 @@ No new SystemFn. Survey writes happen inside the existing perception system's ar
 
 `HypothesisKind` is a value type embedded in the goal variant; not a component.
 
-`CognitiveProfile` and `ExplorationProfile` field additions (D9) extend existing universal components and are scenario-authorable through the existing `CognitiveProfileDef` / `ExplorationProfileDef` mirrors.
+`CognitiveProfile` and `ExplorationProfile` field additions (D9) extend existing universal components and are scenario-authorable: `CognitiveProfile` directly through `AgentDef.cognitive_profile` (no `*Def` mirror exists or is added), and `ExplorationProfile` through the existing `ExplorationProfileDef` mirror.
 
 ## Cross-System Interactions
 
@@ -362,7 +386,7 @@ No new SystemFn. Survey writes happen inside the existing perception system's ar
 |--------|-------------|-----------|
 | Perception (`worldwake-systems`) | Writes `SurveyMemory` on arrival; emits `SurveyRecorded` event | State-mediated |
 | AI ranking (`worldwake-ai`) | Reads `SurveyMemory` via `GoalBeliefView::survey_memory()` for damping `ExploreLocation` candidates | State-mediated (belief-view-mediated) |
-| Frame assumption (S122, `worldwake-ai`) | When `found=false` and `CommodityAvailableAt` was present on the active `IntentionFrame`, S122's existing `record_assumption_failure` path records the discrepancy; S130 adds the survey record orthogonally on the same tick | State-mediated |
+| Frame assumption (S122, `worldwake-ai`) | Acquisition travel/errand frames continue to use `record_assumption_failure` for `CommodityAvailableAt` breaches; S130's D6 survey writes cover active `ExploreLocation` arrivals separately | State-mediated |
 | Belief decay (S101, `worldwake-core`) | Survey records decay through `enforce_limits(current_tick, &CognitiveProfile)` on the per-tick maintenance pass | State-mediated |
 | Decision history (S110, event log) | `SurveyRecorded` event lands in event log with full payload | State-mediated |
 
@@ -378,3 +402,27 @@ Per-agent fields added in D9:
 No per-place authoring — survey records are emergent from agent behavior.
 
 No magic numbers in agent-side code — all per-agent values flow through `CognitiveProfile` and `ExplorationProfile`.
+
+## Outcome
+
+Completed on 2026-05-02.
+
+- Landed `SurveyRecord` / `SurveyMemory`, `HypothesisKind`, and the widened `ExploreLocation { target_place, motivating_need, hypothesis }` goal identity.
+- Landed survey-memory profile fields, ECS registration, save-shape updates, `GoalBeliefView::survey_memory()`, per-agent `SurveyMemory` defaults, and `SurveyRecorded` event/log payload coverage.
+- Landed perception-time arrival hypothesis evaluation, survey-memory decay through `evidence_decay_system`, ranking damping for fresh negative surveys, and public `CandidateTrace.damped` diagnostics.
+- Added end-to-end golden coverage in `crates/worldwake-ai/tests/golden_exploration.rs` for negative survey creation/damping, damping fade, per-agent locality, same-place hypothesis orthogonality, and preseeded damping trace surfacing. Regenerated generated golden inventory/docs.
+
+Verification completed across the S130 ticket series:
+
+- `cargo test -p worldwake-core`
+- `cargo test -p worldwake-sim`
+- `cargo test -p worldwake-systems`
+- `cargo test -p worldwake-ai --test golden_exploration survey_records`
+- `cargo test -p worldwake-ai --test golden_exploration`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+
+Deviation:
+
+- The final D12 golden proof extends the existing owning `golden_exploration.rs` suite instead of adding a separate `golden_survey_records.rs` binary. Sub-test 4 proves goal-key identity plus `SurveyMemory` orthogonality directly; the perception-authored survey write path is covered by the other survey-record goldens.

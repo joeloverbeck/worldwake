@@ -380,6 +380,7 @@ fn decision_payload_agent(payload: &DecisionEventPayload) -> EntityId {
         DecisionEventPayload::BlockerRecorded(inner) => inner.agent,
         DecisionEventPayload::WasteCreated(inner) => inner.creator,
         DecisionEventPayload::WashFacilityUsed(inner) => inner.user,
+        DecisionEventPayload::SurveyRecorded(inner) => inner.surveyor,
     }
 }
 
@@ -401,6 +402,7 @@ fn decision_event_name(payload: &DecisionEventPayload) -> &'static str {
         DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
         DecisionEventPayload::WasteCreated(_) => "WasteCreated",
         DecisionEventPayload::WashFacilityUsed(_) => "WashFacilityUsed",
+        DecisionEventPayload::SurveyRecorded(_) => "SurveyRecorded",
     }
 }
 
@@ -522,6 +524,13 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
             inner.agent_dirtiness_delta.value(),
             inner.basin_dirtiness_delta.value(),
             inner.partial
+        ),
+        DecisionEventPayload::SurveyRecorded(inner) => format!(
+            "place={} hypothesis={:?} found={} confidence={}",
+            inner.place,
+            inner.hypothesis,
+            inner.found,
+            inner.confidence.value()
         ),
     }
 }
@@ -4133,9 +4142,10 @@ mod tests {
         GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, OpportunityAnchor,
         PendingEvent, Permille, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
         PrototypePlace, Quantity, RecipeId, ResourceSource, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, Tick, VisibilitySpec, WakeCondition, WakeReason,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
+        SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
+        WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -4464,7 +4474,7 @@ mod tests {
                         need: HomeostaticNeedId::Thirst,
                     },
                 ],
-                recovery_modifier: Permille::new(875).unwrap(),
+                recovery_modifier: SleepRecoveryModifier::new(1250),
             }),
         );
         emit_decision_event(
@@ -4552,6 +4562,7 @@ mod tests {
                     ranked: Vec::new(),
                     top_ranked_comparison: None,
                     suppressed: Vec::new(),
+                    damped: Vec::new(),
                     zero_motive: Vec::new(),
                     omitted_political: Vec::new(),
                     omitted_bandit: Vec::new(),
@@ -5437,7 +5448,7 @@ mod tests {
         }
         assert!(out.contains("Guard Theron"));
         assert!(out.contains("goal=ProduceCommodity { recipe_id: RecipeId(3) } motive=420 alts=1"));
-        assert!(out.contains("min=4 max=40 target=750 modifier=875"));
+        assert!(out.contains("min=4 max=40 target=750 modifier=1250"));
         assert!(out.contains("ticks=12->24 reason=ProjectedNeedBreach"));
         assert!(out.contains("source=WildernessRelief place_dirtiness_delta=80"));
         assert!(

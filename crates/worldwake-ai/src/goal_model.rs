@@ -2707,6 +2707,9 @@ mod tests {
             repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
             learned_opportunity_memory_ticks: CognitiveProfile::default()
                 .learned_opportunity_memory_ticks,
+            survey_memory_capacity: CognitiveProfile::default().survey_memory_capacity,
+            survey_memory_retention_ticks: CognitiveProfile::default()
+                .survey_memory_retention_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
             max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -8666,6 +8669,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: CommodityKind::Apple,
+                },
             },
             GoalKind::StealItem {
                 target_item: entity(97),
@@ -8763,6 +8769,9 @@ mod tests {
                 motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                     HomeostaticNeedId::Hunger,
                 ),
+                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                    commodity: CommodityKind::Apple,
+                },
             },
             GoalKind::Patrol { place: place_b },
             GoalKind::StealItem {
@@ -8794,14 +8803,27 @@ mod tests {
         let (view, actor, place_a, _place_b, _place_c) = spatial_view();
         let snapshot = snapshot_and_state(&view, actor);
         let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ExploreLocation {
+        let food_goal = GoalKind::ExploreLocation {
             target_place: place_a,
             motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                 HomeostaticNeedId::Hunger,
             ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+        };
+        let water_goal = GoalKind::ExploreLocation {
+            target_place: place_a,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Thirst,
+            ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            },
         };
 
-        assert!(goal.is_satisfied(&state));
+        assert!(food_goal.is_satisfied(&state));
+        assert!(water_goal.is_satisfied(&state));
     }
 
     #[test]
@@ -8815,6 +8837,9 @@ mod tests {
             motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                 HomeostaticNeedId::Hunger,
             ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
         };
 
         assert!(!goal.is_satisfied(&state));
@@ -8827,6 +8852,32 @@ mod tests {
             goal.matches_binding(&[place_b], PlannerOpKind::Travel),
             "Travel remains an auxiliary op, so binding is intentionally permissive"
         );
+    }
+
+    #[test]
+    fn matches_binding_for_explore_location_ignores_hypothesis() {
+        let target_place = entity(99);
+        let food_goal = GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Hunger,
+            ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+        };
+        let water_goal = GoalKind::ExploreLocation {
+            target_place,
+            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
+                HomeostaticNeedId::Thirst,
+            ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Water,
+            },
+        };
+
+        assert!(food_goal.matches_binding(&[target_place], PlannerOpKind::Travel));
+        assert!(water_goal.matches_binding(&[target_place], PlannerOpKind::Travel));
     }
 
     // ── matches_binding tests ──────────────────────────────────────────

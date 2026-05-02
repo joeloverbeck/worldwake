@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 125
+- Scenario blocks: 130
 - Contributing golden test files: 31
-- Associated tests: 157
+- Associated tests: 162
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -180,7 +180,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 133: Ignorance-Driven Frontier Exploration
 
-- Source: `golden_exploration.rs:672`
+- Source: `golden_exploration.rs:790`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -193,9 +193,84 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: unmet self-care need + frontier place belief -> exploration candidate generation -> planning selection -> travel plan synthesis.
 
+### Scenario 374: Preseeded Survey Damping Reaches Candidate Trace
+
+- Source: `golden_exploration.rs:856`
+- Systems: AI
+- GoalKinds: ExploreLocation
+- ActionDomains: N/A
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 15, 29
+
+**Setup**: A hungry agent starts with a preseeded negative survey for the frontier place.
+
+**Proves**: ranking emits the generated `ExploreLocation` candidate and carries the SurveyMemory reason in `CandidateTrace.damped`.
+
+**Cross-system chain**: stored SurveyMemory(found=false) -> ranking damping -> public decision-trace diagnostic.
+
+### Scenario 370: Negative Survey Damps Next Exploration Cycle
+
+- Source: `golden_exploration.rs:956`
+- Systems: AI, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 7, 14, 15, 17
+
+**Setup**: A hungry agent autonomously explores an adjacent frontier with no apples; the harness then returns it to the start place to isolate the next ranking cycle.
+
+**Proves**: arrival perception writes a fresh negative `SurveyRecord`, and a later same-place `ExploreLocation` candidate carries the public SurveyMemory damping diagnostic.
+
+**Cross-system chain**: hunger pressure -> ExploreLocation travel -> arrival perception -> SurveyMemory(found=false) -> later ranking damping trace.
+
+### Scenario 371: Survey Damping Fades After Window
+
+- Source: `golden_exploration.rs:1027`
+- Systems: AI, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 11, 15, 22A
+
+**Setup**: Same negative-survey chain as Scenario 370, but with a short `negative_survey_damping_window` that expires while the record remains in memory.
+
+**Proves**: after the configured window, the same exploration candidate is generated without a `CandidateTrace.damped` entry.
+
+**Cross-system chain**: negative survey -> freshness age exceeds profile window -> ranking no longer applies SurveyMemory damping.
+
+### Scenario 372: Survey Records Are Per-Agent
+
+- Source: `golden_exploration.rs:1089`
+- Systems: AI, Travel, Perception
+- GoalKinds: ExploreLocation
+- ActionDomains: Travel
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 7, 15, 16
+
+**Setup**: Agent A performs the negative-survey travel chain; Agent B is created afterward at the same start place and never visits the frontier before comparison.
+
+**Proves**: A's survey damps A's later ranking, while B has no `SurveyMemory` entry and its generated candidate carries no SurveyMemory damping diagnostic.
+
+**Cross-system chain**: A local visit -> A SurveyMemory(found=false) -> A-only damping; B no visit -> no survey -> undamped candidate.
+
+### Scenario 373: Survey Goal Identity Is Orthogonal By Hypothesis
+
+- Source: `golden_exploration.rs:1163`
+- Systems: AI, SurveyMemory
+- GoalKinds: ExploreLocation
+- ActionDomains: N/A
+- Places: ExplorationStart, ExplorationFrontier
+- Principles: 15, 16, 22
+
+**Setup**: A single agent has both hunger and thirst pressure against the same frontier place, then stores one survey per hypothesis.
+
+**Proves**: `GoalKey` identity includes the hypothesis, and `SurveyMemory` stores orthogonal entries for the same place under hunger and thirst.
+
+**Cross-system chain**: two needs -> two ExploreLocation hypotheses -> distinct GoalKeys -> two same-place SurveyMemory entries.
+
 ### Scenario 134: Known Satisfaction Path Suppresses Exploration
 
-- Source: `golden_exploration.rs:735`
+- Source: `golden_exploration.rs:1313`
 - Systems: AI, Needs, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -210,7 +285,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 135: Consecutive Exploration Cap Suppresses Re-Emission
 
-- Source: `golden_exploration.rs:801`
+- Source: `golden_exploration.rs:1379`
 - Systems: AI, Needs, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: N/A
@@ -225,7 +300,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 136: Arrival Perception Unlocks Concrete Relief
 
-- Source: `golden_exploration.rs:848`
+- Source: `golden_exploration.rs:1426`
 - Systems: AI, Needs, Travel, Perception, Production
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -240,7 +315,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 337: Budget Exhaustion Unlocks Frontier Exploration
 
-- Source: `golden_exploration.rs:976`
+- Source: `golden_exploration.rs:1557`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
 - ActionDomains: Travel, Production
@@ -255,7 +330,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 338: Multi-Hop Frontier Discovery Composes Across Rounds
 
-- Source: `golden_exploration.rs:1149`
+- Source: `golden_exploration.rs:1730`
 - Systems: AI, Needs, Travel, Production, Perception
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -270,7 +345,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 339: Arrival Boost Preserves The Exploration Chain
 
-- Source: `golden_exploration.rs:1363`
+- Source: `golden_exploration.rs:1944`
 - Systems: AI, Travel, Perception, Needs, Production
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel, Perception
@@ -285,7 +360,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 340: Need Satisfaction Lazily Resets Exhaustion State
 
-- Source: `golden_exploration.rs:1412`
+- Source: `golden_exploration.rs:1993`
 - Systems: AI, Needs, Travel, Production
 - GoalKinds: AcquireCommodity(SelfConsume), ExploreLocation
 - ActionDomains: Travel, Production, Needs
@@ -300,7 +375,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 343: Diversification Profile Unlocks Proactive Discovery
 
-- Source: `golden_exploration.rs:1608`
+- Source: `golden_exploration.rs:2192`
 - Systems: AI, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -315,7 +390,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 344: Need Pressure Vetoes Proactive Motivation
 
-- Source: `golden_exploration.rs:1647`
+- Source: `golden_exploration.rs:2231`
 - Systems: AI, Needs, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -330,7 +405,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 345: Proactive Cooldown Spaces Repeated Exploration
 
-- Source: `golden_exploration.rs:1717`
+- Source: `golden_exploration.rs:2301`
 - Systems: AI, Travel, Perception
 - GoalKinds: ExploreLocation
 - ActionDomains: Travel
@@ -1368,7 +1443,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 171: Survival Preferences Keeps Proactive Diversification Alive Under Survival
 
-- Source: `golden_survival_preferences.rs:355`
+- Source: `golden_survival_preferences.rs:356`
 - Systems: AI, Needs, Travel, Production, proactive diversification
 - GoalKinds: ExploreLocation, AcquireCommodity(SelfConsume), ConsumeOwnedCommodity, Sleep, Relieve, Wash
 - ActionDomains: Travel, Production, Needs

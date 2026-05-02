@@ -4,6 +4,27 @@ use crate::{Component, EntityId, HomeostaticNeedId, Permille, Tick};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
+/// Sleep recovery multiplier in permille units where `1000 == 1x`.
+///
+/// Unlike [`Permille`], this can represent above-default recovery
+/// (`> 1000`) while still allowing below-default sites (`< 1000`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub struct SleepRecoveryModifier(u16);
+
+impl SleepRecoveryModifier {
+    pub const IDENTITY: Self = Self(1000);
+
+    #[must_use]
+    pub const fn new(value: u16) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn value(self) -> u16 {
+        self.0
+    }
+}
+
 /// A condition that can end an active sleep episode.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum WakeCondition {
@@ -22,7 +43,7 @@ pub struct SleepEpisode {
     pub intended_max_ticks: NonZeroU32,
     pub target_recovery: Permille,
     pub accumulated_recovery: Permille,
-    pub recovery_modifier: Permille,
+    pub recovery_modifier: SleepRecoveryModifier,
     pub wake_conditions: Vec<WakeCondition>,
 }
 
@@ -47,7 +68,7 @@ pub enum GroundComfortTag {
 pub struct SleepQualityProfile {
     pub shelter: ShelterTag,
     pub ground_comfort: GroundComfortTag,
-    pub recovery_modifier: Permille,
+    pub recovery_modifier: SleepRecoveryModifier,
 }
 
 impl Component for SleepQualityProfile {}
@@ -57,14 +78,17 @@ impl Default for SleepQualityProfile {
         Self {
             shelter: ShelterTag::Open,
             ground_comfort: GroundComfortTag::Earth,
-            recovery_modifier: Permille::new_unchecked(1000),
+            recovery_modifier: SleepRecoveryModifier::IDENTITY,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, WakeCondition};
+    use super::{
+        GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, SleepRecoveryModifier,
+        WakeCondition,
+    };
     use crate::{EntityId, HomeostaticNeedId, Permille, Tick};
     use std::num::NonZeroU32;
 
@@ -75,9 +99,16 @@ mod tests {
             SleepQualityProfile {
                 shelter: ShelterTag::Open,
                 ground_comfort: GroundComfortTag::Earth,
-                recovery_modifier: Permille::new_unchecked(1000),
+                recovery_modifier: SleepRecoveryModifier::IDENTITY,
             }
         );
+    }
+
+    #[test]
+    fn sleep_recovery_modifier_represents_below_and_above_default_quality() {
+        assert_eq!(SleepRecoveryModifier::new(875).value(), 875);
+        assert_eq!(SleepRecoveryModifier::IDENTITY.value(), 1000);
+        assert_eq!(SleepRecoveryModifier::new(1250).value(), 1250);
     }
 
     #[test]
@@ -92,7 +123,7 @@ mod tests {
             intended_max_ticks: NonZeroU32::new(40).unwrap(),
             target_recovery: Permille::new(700).unwrap(),
             accumulated_recovery: Permille::new(125).unwrap(),
-            recovery_modifier: Permille::new(900).unwrap(),
+            recovery_modifier: SleepRecoveryModifier::new(1250),
             wake_conditions: vec![
                 WakeCondition::IntendedDurationReached,
                 WakeCondition::TargetRecoveryReached,
@@ -115,7 +146,7 @@ mod tests {
         let profile = SleepQualityProfile {
             shelter: ShelterTag::Shelter,
             ground_comfort: GroundComfortTag::Soft,
-            recovery_modifier: Permille::new(875).unwrap(),
+            recovery_modifier: SleepRecoveryModifier::new(1250),
         };
 
         let bytes = bincode::serialize(&profile).unwrap();

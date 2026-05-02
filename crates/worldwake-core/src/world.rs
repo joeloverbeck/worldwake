@@ -21,7 +21,7 @@ use crate::{
     RecordData, RelationTables, RepairMemory, ResourceExtractionQueues, ResourceSource,
     RewardEncumbrance, RouteExperience, SaleListing, SceneEvidence, SleepEpisode,
     SleepQualityProfile, SourceReliability, StockAssignment, StockStoragePolicy,
-    SubstitutePreferences, TellProfile, TheftDispositionProfile, Tick, Topology,
+    SubstitutePreferences, SurveyMemory, TellProfile, TheftDispositionProfile, Tick, Topology,
     TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WashBasinState, WorkstationMarker, WorldError,
     WoundList, component_schema::with_component_schema_entries,
@@ -190,6 +190,7 @@ impl World {
             world.insert_component_name(entity, Name(name.to_string()))?;
             world.insert_component_agent_data(entity, AgentData { control_source })?;
             world.insert_component_agent_belief_store(entity, AgentBeliefStore::new())?;
+            world.insert_component_survey_memory(entity, SurveyMemory::default())?;
             world.insert_component_artifact_posting_profile(
                 entity,
                 ArtifactPostingProfile::default(),
@@ -677,9 +678,9 @@ mod tests {
         Permille, Place, PlaceTag, PlaceVisitRecord, ProductionJob, ProvenanceEntry,
         PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
         ReservationRecord, ResourceSource, RightKind, SubstitutePreferences, SuccessionLaw,
-        TellProfile, TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile,
-        TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError,
-        Wound, WoundCause, WoundList, build_prototype_world,
+        SurveyMemory, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
+        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
+        WorkstationTag, WorldError, Wound, WoundCause, WoundList, build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -1314,6 +1315,10 @@ mod tests {
         assert_eq!(
             world.get_component_agent_belief_store(id),
             Some(&AgentBeliefStore::new())
+        );
+        assert_eq!(
+            world.get_component_survey_memory(id),
+            Some(&SurveyMemory::default())
         );
         assert!(
             world.get_component_perception_profile(id).is_some(),

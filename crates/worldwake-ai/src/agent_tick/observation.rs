@@ -10,6 +10,7 @@ use worldwake_sim::{
     TickInputError,
 };
 
+use crate::decision_trace::CandidateDampingEntry;
 use crate::failure_handling::ExecutionFailure;
 use crate::knowledge_path::KnowledgePath;
 use crate::plan_step_expectations::{
@@ -77,6 +78,8 @@ pub(crate) struct ReadPhaseResult {
     pub(super) places_after_belief_filter: u32,
     /// Candidate opportunities suppressed before commitment.
     pub(super) suppressed: Vec<crate::candidate_generation::CandidateSuppressionDiagnostic>,
+    /// Emitted goals whose ranking score was reduced by soft damping.
+    pub(super) damped: Vec<CandidateDampingEntry>,
     /// Goals with zero motive score.
     pub(super) zero_motive: Vec<worldwake_core::GoalKey>,
     /// Political goals omitted before emission due to hard gates.
@@ -320,6 +323,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
             suppressed.extend(outcome.suppressed);
             suppressed
         },
+        damped: outcome.damped,
         zero_motive: outcome.zero_motive,
         omitted_political: candidates.diagnostics.omitted_political,
         omitted_bandit: candidates.diagnostics.omitted_bandit,

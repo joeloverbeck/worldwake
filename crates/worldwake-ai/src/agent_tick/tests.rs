@@ -192,6 +192,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
         learned_opportunity_memory_ticks: CognitiveProfile::default()
             .learned_opportunity_memory_ticks,
+        survey_memory_capacity: CognitiveProfile::default().survey_memory_capacity,
+        survey_memory_retention_ticks: CognitiveProfile::default().survey_memory_retention_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
         max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -8414,6 +8416,9 @@ fn exploration_counter_increments_when_explore_goal_is_adopted() {
             motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                 HomeostaticNeedId::Hunger,
             ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
         }),
         Tick(5),
     );
@@ -8460,6 +8465,7 @@ fn proactive_exploration_commit_updates_last_proactive_tick() {
         GoalKey::from(GoalKind::ExploreLocation {
             target_place: entity(99),
             motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+            hypothesis: worldwake_core::HypothesisKind::Proactive,
         }),
         Tick(5),
     );

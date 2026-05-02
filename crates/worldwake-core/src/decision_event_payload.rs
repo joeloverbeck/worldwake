@@ -1,8 +1,8 @@
 use crate::{
     ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy, EntityId,
     ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey, HomeostaticNeedId,
-    MaterializationTag, MismatchDetail, OpportunityKey, Permille, SuspensionReason, Tick,
-    WakeCondition,
+    HypothesisKind, MaterializationTag, MismatchDetail, OpportunityKey, Permille,
+    SleepRecoveryModifier, SuspensionReason, Tick, WakeCondition,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -26,6 +26,7 @@ pub enum DecisionEventPayload {
     BlockerRecorded(BlockerRecordedPayload),
     WasteCreated(WasteCreatedPayload),
     WashFacilityUsed(WashFacilityUsedPayload),
+    SurveyRecorded(SurveyRecordedPayload),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -44,7 +45,7 @@ pub struct SleepEpisodeStartedPayload {
     pub intended_max_ticks: NonZeroU32,
     pub target_recovery: Permille,
     pub wake_conditions: Vec<WakeCondition>,
-    pub recovery_modifier: Permille,
+    pub recovery_modifier: SleepRecoveryModifier,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -81,6 +82,15 @@ pub struct WashFacilityUsedPayload {
     pub agent_dirtiness_delta: Permille,
     pub basin_dirtiness_delta: Permille,
     pub partial: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SurveyRecordedPayload {
+    pub surveyor: EntityId,
+    pub place: EntityId,
+    pub hypothesis: HypothesisKind,
+    pub found: bool,
+    pub confidence: Permille,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -408,14 +418,14 @@ mod tests {
         PlanInvalidationReason, PursuitInvalidationReasonTag, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
         SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SourceAttributionOutcomeTag,
-        SourceExpectationFailurePayload, SourceKeyPayload, WakeReason, WashFacilityUsedPayload,
-        WasteCreatedPayload, WasteSource,
+        SourceExpectationFailurePayload, SourceKeyPayload, SurveyRecordedPayload, WakeReason,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
     };
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
-        ExpectationKindTag, FrameAssumption, FrameClearReason, HomeostaticNeedId, InvalidatorTag,
-        MaterializationTag, MismatchDetail, ObservationPredicate, OpportunityAnchor,
-        OpportunityKey, SuspensionReason, Tick, WakeCondition,
+        ExpectationKindTag, FrameAssumption, FrameClearReason, HomeostaticNeedId, HypothesisKind,
+        InvalidatorTag, MaterializationTag, MismatchDetail, ObservationPredicate,
+        OpportunityAnchor, OpportunityKey, SuspensionReason, Tick, WakeCondition,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -514,7 +524,7 @@ mod tests {
                         need: HomeostaticNeedId::Thirst,
                     },
                 ],
-                recovery_modifier: crate::Permille::new(875).unwrap(),
+                recovery_modifier: crate::SleepRecoveryModifier::new(1250),
             }),
             DecisionEventPayload::SleepEpisodeEnded(SleepEpisodeEndedPayload {
                 sleeper: entity_id(5, 1),
@@ -542,6 +552,15 @@ mod tests {
                 agent_dirtiness_delta: crate::Permille::new(500).unwrap(),
                 basin_dirtiness_delta: crate::Permille::new(25).unwrap(),
                 partial: true,
+            }),
+            DecisionEventPayload::SurveyRecorded(SurveyRecordedPayload {
+                surveyor: entity_id(5, 1),
+                place: entity_id(5, 2),
+                hypothesis: HypothesisKind::MayContainCommodity {
+                    commodity: CommodityKind::Apple,
+                },
+                found: false,
+                confidence: crate::Permille::new(875).unwrap(),
             }),
             DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                 agent: entity_id(6, 0),
@@ -624,6 +643,7 @@ mod tests {
         assert_value_bounds::<WasteCreatedPayload>();
         assert_copy_value_bounds::<WasteSource>();
         assert_value_bounds::<WashFacilityUsedPayload>();
+        assert_value_bounds::<SurveyRecordedPayload>();
         assert_copy_value_bounds::<WakeReason>();
         assert_value_bounds::<PlanAdoptedPayload>();
         assert_value_bounds::<BeliefSnapshot>();

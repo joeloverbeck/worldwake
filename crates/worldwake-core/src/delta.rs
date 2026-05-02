@@ -20,8 +20,8 @@ use crate::{
     ProductionJob, ProductionOutputOwnershipPolicy, PursuitProfile, Quantity, RecordData,
     RepairMemory, ReservationRecord, ResourceExtractionQueues, ResourceSource, RewardEncumbrance,
     RouteExperience, SaleListing, SceneEvidence, SleepEpisode, SleepQualityProfile,
-    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
+    SourceReliability, StockAssignment, StockStoragePolicy, SubstitutePreferences, SurveyMemory,
+    TellProfile, TheftDispositionProfile, TradeDispositionProfile, UniqueItem, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WashBasinState, WorkstationMarker, WoundList,
     component_schema::with_component_schema_entries,
 };
@@ -285,7 +285,7 @@ mod tests {
         DiversificationProfile, DriveEscalationProfile, DriveThresholds, EntityId, EntityKind,
         EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore,
         ExplorationProfile, FactionData, FrameState, GoalKey, GoalKind, GroundComfortTag,
-        GroundSince, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
+        GroundSince, HomeostaticNeeds, HypothesisKind, InTransitOnEdge, InstitutionalClaim,
         InstitutionalRecordEntry, IntentionDispositionProfile, IntentionDomain, IntentionDomainTag,
         IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastHarvestTrace,
         LastProactiveExplorationTick, LastSeenMemory, LatrineFullness, LoadUnits, LotOperation,
@@ -297,10 +297,11 @@ mod tests {
         PursuitProfile, Quantity, QueuedContentionIntent, RecordData, RecordEntryId, RecordKind,
         ReservationId, ReservationRecord, ResourceExtractionQueues, ResourceSource,
         RewardEncumbrance, RewardSource, SaleListing, SceneEvidence, ShelterTag, SleepEpisode,
-        SleepQualityProfile, StockAssignment, StockAssignmentKind, StockStoragePolicy, TellProfile,
-        TheftDispositionProfile, Tick, TickRange, TravelEdgeId, UniqueItem, UniqueItemKind,
-        ViolationDispositionProfile, ViolationMemory, WakeCondition, WashBasinState,
-        WorkstationMarker, WorkstationTag, Wound, WoundCause, WoundList,
+        SleepQualityProfile, SleepRecoveryModifier, StockAssignment, StockAssignmentKind,
+        StockStoragePolicy, SurveyMemory, SurveyRecord, TellProfile, TheftDispositionProfile, Tick,
+        TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile,
+        ViolationMemory, WakeCondition, WashBasinState, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile,
             sample_contention_disposition_profile, sample_demand_memory, sample_discrepancy_memory,
@@ -346,6 +347,17 @@ mod tests {
                     severity: Permille::new(900).unwrap(),
                     inflicted_at: Tick(5),
                     bleed_rate_per_tick: Permille::new(0).unwrap(),
+                }],
+            }),
+            ComponentValue::SurveyMemory(SurveyMemory {
+                entries: vec![SurveyRecord {
+                    place: entity(7),
+                    hypothesis: HypothesisKind::MayContainCommodity {
+                        commodity: CommodityKind::Apple,
+                    },
+                    found: false,
+                    confidence: Permille::new(850).unwrap(),
+                    recorded_tick: Tick(6),
                 }],
             }),
             ComponentValue::CombatProfile(CombatProfile::new(
@@ -603,6 +615,8 @@ mod tests {
                 guard_min_confidence_ceiling: Permille::new(875).unwrap(),
                 repair_memory_ticks: 144,
                 learned_opportunity_memory_ticks: 72,
+                survey_memory_capacity: 18,
+                survey_memory_retention_ticks: 360,
                 initial_cooldown_ticks: 7,
                 max_cooldown_ticks: 90,
                 max_snapshot_entities_per_place: 60,
@@ -624,6 +638,8 @@ mod tests {
                 exploration_arrival_boost: Permille::new(550).unwrap(),
                 max_consecutive_explorations: 4,
                 visit_lookback_ticks: 240,
+                negative_survey_damping_window: 160,
+                negative_survey_damping_strength: Permille::new(700).unwrap(),
                 consecutive_exploration_count: 1,
             }),
             ComponentValue::DiversificationProfile(DiversificationProfile {
@@ -726,7 +742,7 @@ mod tests {
             ComponentValue::SleepQualityProfile(SleepQualityProfile {
                 shelter: ShelterTag::Shelter,
                 ground_comfort: GroundComfortTag::Soft,
-                recovery_modifier: Permille::new(850).unwrap(),
+                recovery_modifier: SleepRecoveryModifier::new(850),
             }),
             ComponentValue::PlaceDirtiness(PlaceDirtiness {
                 value: Permille::new(500).unwrap(),
@@ -792,7 +808,7 @@ mod tests {
                 intended_max_ticks: std::num::NonZeroU32::new(30).unwrap(),
                 target_recovery: Permille::new(650).unwrap(),
                 accumulated_recovery: Permille::new(125).unwrap(),
-                recovery_modifier: Permille::new(850).unwrap(),
+                recovery_modifier: SleepRecoveryModifier::new(850),
                 wake_conditions: vec![WakeCondition::TargetRecoveryReached],
             }),
             ComponentValue::IntentionDispositionProfile(IntentionDispositionProfile {
@@ -947,6 +963,7 @@ mod tests {
                 ComponentKind::ArtifactPostingProfile,
                 ComponentKind::AgentData,
                 ComponentKind::WoundList,
+                ComponentKind::SurveyMemory,
                 ComponentKind::CombatProfile,
                 ComponentKind::DeadAt,
                 ComponentKind::CombatStance,

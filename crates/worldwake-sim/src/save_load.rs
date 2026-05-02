@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 58;
+pub const SAVE_FORMAT_VERSION: u32 = 62;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -211,10 +211,10 @@ mod tests {
         PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
         RewardEncumbrance, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepQualityProfile, StateHash, SuspensionReason, Tick,
-        TickRange, UniqueItemKind, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_prototype_world,
+        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
+        SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec, WakeCondition,
+        WakeReason, WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -359,7 +359,7 @@ mod tests {
                     intended_max_ticks: NonZeroU32::new(40).unwrap(),
                     target_recovery: worldwake_core::Permille::new(750).unwrap(),
                     accumulated_recovery: worldwake_core::Permille::new(125).unwrap(),
-                    recovery_modifier: worldwake_core::Permille::new(875).unwrap(),
+                    recovery_modifier: SleepRecoveryModifier::new(1250),
                     wake_conditions: vec![
                         WakeCondition::TargetRecoveryReached,
                         WakeCondition::ScheduledCommitmentDue { tick: Tick(20) },
@@ -373,7 +373,7 @@ mod tests {
                 SleepQualityProfile {
                     shelter: ShelterTag::Shelter,
                     ground_comfort: GroundComfortTag::Soft,
-                    recovery_modifier: worldwake_core::Permille::new(875).unwrap(),
+                    recovery_modifier: SleepRecoveryModifier::new(1250),
                 },
             )
             .unwrap();
@@ -799,6 +799,7 @@ mod tests {
         let explore_goal = decision_goal(GoalKind::ExploreLocation {
             target_place: place,
             motivating_need: worldwake_core::ExplorationMotivation::Proactive,
+            hypothesis: worldwake_core::HypothesisKind::Proactive,
         });
         let claim_key = BeliefClaimKey {
             subject: target,
@@ -880,7 +881,7 @@ mod tests {
                             need: HomeostaticNeedId::Thirst,
                         },
                     ],
-                    recovery_modifier: worldwake_core::Permille::new(875).unwrap(),
+                    recovery_modifier: SleepRecoveryModifier::new(1250),
                 }),
             ),
             (
@@ -1009,7 +1010,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 58);
+        assert_eq!(SAVE_FORMAT_VERSION, 62);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

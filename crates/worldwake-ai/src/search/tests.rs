@@ -77,6 +77,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         repair_memory_ticks: CognitiveProfile::default().repair_memory_ticks,
         learned_opportunity_memory_ticks: CognitiveProfile::default()
             .learned_opportunity_memory_ticks,
+        survey_memory_capacity: CognitiveProfile::default().survey_memory_capacity,
+        survey_memory_retention_ticks: CognitiveProfile::default().survey_memory_retention_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
         max_snapshot_entities_per_place: CognitiveProfile::default()
@@ -14236,6 +14238,9 @@ fn explore_location_search_finds_travel_plan_to_target_place() {
             motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
                 HomeostaticNeedId::Hunger,
             ),
+            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
         }),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([target_place]),

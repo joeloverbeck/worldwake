@@ -11,8 +11,8 @@ use worldwake_core::{
     ExpectationStore, FrameAssumption, FrameState, GoalKey, GoalKind, GroundComfortTag,
     HomeostaticNeedId, HomeostaticNeeds, IntentionDomain, IntentionFrame, MetabolismProfile,
     OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, Seed, ShelterTag,
-    SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile, Tick, WakeCondition,
-    WakeReason,
+    SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
+    SleepRecoveryModifier, Tick, WakeCondition, WakeReason,
 };
 use worldwake_sim::{ActionRequestMode, ActionTraceKind, InputKind, RequestProvenance};
 
@@ -54,7 +54,7 @@ fn set_sleep_quality(h: &mut GoldenHarness, place: EntityId, recovery_modifier: 
         SleepQualityProfile {
             shelter: ShelterTag::Roofed,
             ground_comfort: GroundComfortTag::Earth,
-            recovery_modifier: pm(recovery_modifier),
+            recovery_modifier: SleepRecoveryModifier::new(recovery_modifier),
         },
     )
     .unwrap();

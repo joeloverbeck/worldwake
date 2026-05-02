@@ -2006,7 +2006,7 @@ mod tests {
         MerchandiseProfile, ObligationSatiationProfile, OfficeData, OfficeForceProfile,
         OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
         PreferenceProfile, RecordData, RecordEntryId, RecordKind, SubstitutePreferences,
-        SuccessionLaw, TellProfile, TradeDispositionProfile, UtilityProfile,
+        SuccessionLaw, SurveyMemory, TellProfile, TradeDispositionProfile, UtilityProfile,
         component_schema::with_component_schema_entries,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
@@ -2420,6 +2420,12 @@ mod tests {
                     after: ComponentValue::AgentData(crate::AgentData {
                         control_source: ControlSource::Human,
                     }),
+                }),
+                StateDelta::Component(ComponentDelta::Set {
+                    entity: agent,
+                    component_kind: ComponentKind::SurveyMemory,
+                    before: None,
+                    after: ComponentValue::SurveyMemory(SurveyMemory::default()),
                 }),
                 StateDelta::Component(ComponentDelta::Set {
                     entity: agent,

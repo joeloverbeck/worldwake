@@ -22,9 +22,9 @@ use worldwake_core::{
     OfficeForceProfile, OfficeForceState, PatrolRoute, Place, PlaceDirtiness,
     ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind,
     ResourceExtractionQueues, ResourceSource, Seed, SleepQualityProfile, SocialObservation,
-    SocialObservationDetail, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-    WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn, default_commodity_decay_map,
-    hash_world, load_per_unit,
+    SocialObservationDetail, SurveyMemory, Tick, Topology, TravelEdge, TravelEdgeId,
+    VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
+    default_commodity_decay_map, hash_world, load_per_unit,
 };
 use worldwake_sim::{
     ControllerState, DeterministicRng, RecipeRegistry, ReplayRecordingConfig, ReplayState,
@@ -600,6 +600,7 @@ fn spawn_agent(
 
     let agent_id = txn.create_agent(&agent_def.name, agent_def.control)?;
     names.insert(agent_def.name.clone(), agent_id);
+    txn.set_component_survey_memory(agent_id, SurveyMemory::default())?;
 
     let needs = agent_def.needs.unwrap_or_default();
     txn.set_component_homeostatic_needs(agent_id, needs)?;
@@ -616,19 +617,9 @@ fn spawn_agent(
     if let Some(profile) = agent_def.disposal_profile {
         txn.set_component_disposal_profile(agent_id, profile)?;
     }
-    let exploration =
-        agent_def
-            .exploration_profile
-            .map_or_else(ExplorationProfile::default, |profile| ExplorationProfile {
-                curiosity_weight: profile.curiosity_weight,
-                need_activation_threshold: profile.need_activation_threshold,
-                frontier_depth: profile.frontier_depth,
-                acquisition_failure_threshold: profile.acquisition_failure_threshold,
-                exploration_arrival_boost: profile.exploration_arrival_boost,
-                max_consecutive_explorations: profile.max_consecutive_explorations,
-                visit_lookback_ticks: profile.visit_lookback_ticks,
-                consecutive_exploration_count: 0,
-            });
+    let exploration = agent_def
+        .exploration_profile
+        .map_or_else(ExplorationProfile::default, ExplorationProfile::from);
     txn.set_component_exploration_profile(agent_id, exploration)?;
     if let Some(profile) = agent_def.diversification_profile {
         txn.set_component_diversification_profile(agent_id, profile)?;
@@ -1304,8 +1295,8 @@ mod tests {
         JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LatrineFullness,
         LoadUnits, MultiplierPermille, ObligationSatiationProfile, PatrolProfile, PatrolRoute,
         PerceptionProfile, Permille, PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile,
-        PursuitProfile, Quantity, ShelterTag, SleepQualityProfile, SubstitutePreferences,
-        TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
+        PursuitProfile, Quantity, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
+        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
         ViolationDispositionProfile, WashBasinState, WorkstationTag, default_commodity_decay_map,
     };
 
@@ -1489,6 +1480,10 @@ mod tests {
                 .unwrap()
                 .min_sleep_ticks,
             NonZeroU32::new(8).unwrap()
+        );
+        assert_eq!(
+            world.get_component_survey_memory(agent_id),
+            Some(&SurveyMemory::default())
         );
     }
 
@@ -2178,7 +2173,7 @@ mod tests {
         def.places[0].sleep_quality = Some(SleepQualityProfileDef {
             shelter: ShelterTag::Shelter,
             ground_comfort: GroundComfortTag::Soft,
-            recovery_modifier: 875,
+            recovery_modifier: 1250,
         });
 
         let spawned = spawn_scenario(&def).unwrap();
@@ -2193,7 +2188,7 @@ mod tests {
             Some(&SleepQualityProfile {
                 shelter: ShelterTag::Shelter,
                 ground_comfort: GroundComfortTag::Soft,
-                recovery_modifier: Permille::new(875).unwrap(),
+                recovery_modifier: SleepRecoveryModifier::new(1250),
             })
         );
     }
@@ -2214,21 +2209,27 @@ mod tests {
     }
 
     #[test]
-    fn sleep_quality_rejects_out_of_range_recovery_modifier() {
+    fn sleep_quality_accepts_above_default_recovery_modifier() {
         let mut def = minimal_def();
         def.places[0].sleep_quality = Some(SleepQualityProfileDef {
             shelter: ShelterTag::Open,
             ground_comfort: GroundComfortTag::Earth,
-            recovery_modifier: 1001,
+            recovery_modifier: 1250,
         });
 
-        match spawn_scenario(&def) {
-            Ok(_) => panic!("out-of-range sleep quality should fail scenario spawn"),
-            Err(ScenarioError::Validation(message)) => {
-                assert!(message.contains("sleep_quality.recovery_modifier 1001 exceeds 1000"));
-            }
-            Err(other) => panic!("expected validation error, got {other:?}"),
-        }
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let village = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+
+        assert_eq!(
+            world
+                .get_component_sleep_quality_profile(village)
+                .map(|profile| profile.recovery_modifier),
+            Some(SleepRecoveryModifier::new(1250))
+        );
     }
 
     #[test]
@@ -3414,6 +3415,8 @@ mod tests {
             exploration_arrival_boost: Permille::new(650).unwrap(),
             max_consecutive_explorations: 5,
             visit_lookback_ticks: 17,
+            negative_survey_damping_window: 123,
+            negative_survey_damping_strength: Permille::new(625).unwrap(),
         };
         let custom_thresholds = DriveThresholds::new(
             ThresholdBand::new(
@@ -3524,6 +3527,8 @@ mod tests {
                 exploration_arrival_boost: Permille::new(650).unwrap(),
                 max_consecutive_explorations: 5,
                 visit_lookback_ticks: 17,
+                negative_survey_damping_window: 123,
+                negative_survey_damping_strength: Permille::new(625).unwrap(),
                 consecutive_exploration_count: 0,
             })
         );
