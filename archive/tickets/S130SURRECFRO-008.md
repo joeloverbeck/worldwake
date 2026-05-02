@@ -1,6 +1,6 @@
 # S130SURRECFRO-008: SurveyMemory decay in evidence_decay_system
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `evidence_decay_system` extended with an agent-iteration pass for `SurveyMemory::enforce_limits`
@@ -118,3 +118,26 @@ Add to `crates/worldwake-systems/src/evidence_decay.rs` `#[cfg(test)]` block (al
 2. `cargo test -p worldwake-systems`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-02.
+
+- Extended `evidence_decay_system` with a second per-tick pass that collects agents with `SurveyMemory`, reads each agent's `CognitiveProfile`, applies `SurveyMemory::enforce_limits(tick, profile)`, and writes back only changed memories.
+- Added focused runtime coverage for stale survey pruning and fresh survey retention in `crates/worldwake-systems/src/evidence_decay.rs`.
+- Preserved the existing `SceneEvidence` place pass and its tests unchanged; survey decay remains in the same SystemFn and no new SystemFn was introduced.
+
+## Deviations
+
+- The landed implementation follows the existing `collect_updates` / `apply_update` shape instead of the inline one-block sketch: survey-memory changes are collected immutably first and then committed through `apply_survey_update`.
+- Survey-memory decay commits carry `System` and `WorldMutation` tags and target the updated agent, matching the existing place-evidence mutation event shape.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib evidence_decay::tests::evidence_decay_system_prunes_stale_survey_records -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib evidence_decay::tests::evidence_decay_system_keeps_fresh_survey_records -- --exact`.
+- Passed `cargo test -p worldwake-systems evidence_decay`.
+- Passed `cargo fmt --all`.
+- Passed `cargo test -p worldwake-systems`.
+- Passed `cargo test --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.

@@ -1,6 +1,6 @@
 use worldwake_core::{
-    CauseRef, EventLog, EventTag, EvidenceEntry, SceneEvidence, Tick, VisibilitySpec, WitnessData,
-    World, WorldTxn,
+    CauseRef, EntityId, EventLog, EventTag, EvidenceEntry, SceneEvidence, SurveyMemory, Tick,
+    VisibilitySpec, WitnessData, World, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -22,6 +22,11 @@ pub fn evidence_decay_system(ctx: SystemExecutionContext<'_>) -> Result<(), Syst
         apply_update(world, event_log, tick, update)?;
     }
 
+    let survey_updates = collect_survey_updates(world, tick);
+    for update in survey_updates {
+        apply_survey_update(world, event_log, tick, update)?;
+    }
+
     Ok(())
 }
 
@@ -29,6 +34,12 @@ pub fn evidence_decay_system(ctx: SystemExecutionContext<'_>) -> Result<(), Syst
 struct PendingUpdate {
     place: worldwake_core::EntityId,
     next: Option<SceneEvidence>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingSurveyUpdate {
+    agent: EntityId,
+    next: SurveyMemory,
 }
 
 fn collect_updates(world: &World, tick: Tick) -> Vec<PendingUpdate> {
@@ -48,6 +59,21 @@ fn collect_updates(world: &World, tick: Tick) -> Vec<PendingUpdate> {
                     next: Some(next),
                 })
                 .or(Some(PendingUpdate { place, next: None }))
+        })
+        .collect()
+}
+
+fn collect_survey_updates(world: &World, tick: Tick) -> Vec<PendingSurveyUpdate> {
+    world
+        .entities_with_survey_memory()
+        .filter_map(|agent| {
+            let profile = world.get_component_cognitive_profile(agent)?;
+            let memory = world.get_component_survey_memory(agent)?;
+            let mut next = memory.clone();
+            next.enforce_limits(tick, profile);
+
+            (next.entries.len() != memory.entries.len())
+                .then_some(PendingSurveyUpdate { agent, next })
         })
         .collect()
 }
@@ -88,15 +114,42 @@ fn apply_update(
     Ok(())
 }
 
+fn apply_survey_update(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+    update: PendingSurveyUpdate,
+) -> Result<(), SystemError> {
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::SystemTick(tick),
+        Some(update.agent),
+        None,
+        VisibilitySpec::Hidden,
+        WitnessData::default(),
+    );
+    txn.add_tag(EventTag::System)
+        .add_tag(EventTag::WorldMutation)
+        .add_target(update.agent);
+    txn.set_component_survey_memory(update.agent, update.next)
+        .map_err(|error| SystemError::new(error.to_string()))?;
+
+    let _ = txn.commit(event_log);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{evidence_decay_system, is_expired};
     use crate::dispatch_table;
     use std::collections::BTreeMap;
     use worldwake_core::{
-        CauseRef, DisturbanceKind, EventLog, EventTag, EventView, EvidenceEntry, EvidenceEntryId,
-        EvidenceKind, PrototypePlace, SceneEvidence, Seed, Tick, VisibilitySpec, WitnessData,
-        World, WorldTxn, build_prototype_world, prototype_place_entity,
+        CauseRef, CognitiveProfile, CommodityKind, ControlSource, DisturbanceKind, EventLog,
+        EventTag, EventView, EvidenceEntry, EvidenceEntryId, EvidenceKind, HypothesisKind,
+        Permille, PrototypePlace, SceneEvidence, Seed, StateDelta, SurveyMemory, SurveyRecord,
+        Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionInstance, ActionInstanceId, DeterministicRng,
@@ -120,6 +173,27 @@ mod tests {
         txn.set_component_scene_evidence(place, scene).unwrap();
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn seed_survey_agent(
+        world: &mut World,
+        memory: SurveyMemory,
+        retention_ticks: u64,
+    ) -> worldwake_core::EntityId {
+        let mut txn = new_txn(world, 1);
+        let agent = txn.create_agent("Surveyor", ControlSource::Ai).unwrap();
+        txn.set_component_survey_memory(agent, memory).unwrap();
+        txn.set_component_cognitive_profile(
+            agent,
+            CognitiveProfile {
+                survey_memory_retention_ticks: retention_ticks,
+                ..CognitiveProfile::default()
+            },
+        )
+        .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+        agent
     }
 
     fn system_context<'a>(
@@ -181,6 +255,21 @@ mod tests {
             },
             created_at: Tick(created_at),
             decay_ticks,
+        }
+    }
+
+    fn survey_record(place_index: u32, recorded_tick: u64) -> SurveyRecord {
+        SurveyRecord {
+            place: worldwake_core::EntityId {
+                slot: place_index,
+                generation: 0,
+            },
+            hypothesis: HypothesisKind::MayContainCommodity {
+                commodity: CommodityKind::Apple,
+            },
+            found: false,
+            confidence: Permille::new(800).unwrap(),
+            recorded_tick: Tick(recorded_tick),
         }
     }
 
@@ -305,6 +394,84 @@ mod tests {
                 ..
             }) if *entity == place
         )));
+    }
+
+    #[test]
+    fn evidence_decay_system_prunes_stale_survey_records() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let stale = survey_record(70, 99);
+        let retained = survey_record(71, 100);
+        let agent = seed_survey_agent(
+            &mut world,
+            SurveyMemory {
+                entries: vec![stale, retained],
+            },
+            100,
+        );
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([5; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        evidence_decay_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            200,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world.get_component_survey_memory(agent).unwrap().entries,
+            vec![retained]
+        );
+        let world_mutations = event_log.events_by_tag(EventTag::WorldMutation);
+        assert_eq!(world_mutations.len(), 1);
+        let record = event_log.get(world_mutations[0]).unwrap();
+        assert!(record.state_deltas().iter().any(|delta| matches!(
+            delta,
+            StateDelta::Component(worldwake_core::ComponentDelta::Set {
+                entity,
+                component_kind: worldwake_core::ComponentKind::SurveyMemory,
+                ..
+            }) if *entity == agent
+        )));
+    }
+
+    #[test]
+    fn evidence_decay_system_keeps_fresh_survey_records() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let retained_boundary = survey_record(70, 100);
+        let retained_fresh = survey_record(71, 150);
+        let agent = seed_survey_agent(
+            &mut world,
+            SurveyMemory {
+                entries: vec![retained_boundary, retained_fresh],
+            },
+            100,
+        );
+        let mut event_log = EventLog::new();
+        let mut rng = DeterministicRng::new(Seed([6; 32]));
+        let active_actions = BTreeMap::new();
+        let action_defs = ActionDefRegistry::new();
+
+        evidence_decay_system(system_context(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &active_actions,
+            &action_defs,
+            200,
+        ))
+        .unwrap();
+
+        assert_eq!(
+            world.get_component_survey_memory(agent).unwrap().entries,
+            vec![retained_boundary, retained_fresh]
+        );
+        assert!(event_log.is_empty());
     }
 
     #[test]

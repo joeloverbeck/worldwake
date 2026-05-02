@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — golden test additions only
-**Deps**: `archive/tickets/S130SURRECFRO-003.md`, `archive/tickets/S130SURRECFRO-006.md`, `archive/tickets/S130SURRECFRO-007.md`, 008, spec `specs/S130-survey-records-frontier-disconfirmation.md` D12
+**Deps**: `archive/tickets/S130SURRECFRO-003.md`, `archive/tickets/S130SURRECFRO-006.md`, `archive/tickets/S130SURRECFRO-007.md`, `archive/tickets/S130SURRECFRO-008.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D12
 
 ## Problem
 
