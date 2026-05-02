@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `CognitiveProfile`, `ExplorationProfile`, `ExplorationProfileDef`, `SAVE_FORMAT_VERSION`
-**Deps**: spec `specs/S130-survey-records-frontier-disconfirmation.md` D9
+**Deps**: spec `archive/specs/S130-survey-records-frontier-disconfirmation.md` D9
 
 ## Problem
 
@@ -14,7 +14,7 @@ S130 introduces per-agent survey memory and ranking damping. Both need configura
 
 1. `CognitiveProfile` exists at `crates/worldwake-core/src/cognitive_profile.rs`; no `*Def` mirror — `AgentDef.cognitive_profile: Option<CognitiveProfile>` at `crates/worldwake-cli/src/scenario/types.rs` consumes the core type directly. Adding `#[serde(default = "...")]` on new fields preserves compatibility for existing scenarios with `cognitive_profile:` blocks.
 2. `ExplorationProfile` exists at `crates/worldwake-core/src/exploration.rs`; `ExplorationProfileDef` mirror exists at `crates/worldwake-cli/src/scenario/types.rs` and is the scenario-authoring surface. The live branch had inline spawn conversion rather than `From`/`Into` impls, so this ticket added the conversion impls while adding the new fields.
-3. Spec `specs/S130-survey-records-frontier-disconfirmation.md` D9 mandates asymmetric handling — `CognitiveProfile` takes fields directly with serde defaults (no mirror); `ExplorationProfileDef` mirror gets matching field additions. The asymmetry reflects existing convention: `CognitiveProfile` has no `EntityId` references requiring `*Def` indirection.
+3. Spec `archive/specs/S130-survey-records-frontier-disconfirmation.md` D9 mandates asymmetric handling — `CognitiveProfile` takes fields directly with serde defaults (no mirror); `ExplorationProfileDef` mirror gets matching field additions. The asymmetry reflects existing convention: `CognitiveProfile` has no `EntityId` references requiring `*Def` indirection.
 4. `CognitiveProfile` and `ExplorationProfile` are save-bound component payloads. Adding non-skipped fields changes the current-format bincode shape, so this ticket owns the `SAVE_FORMAT_VERSION` bump from `58` to `59`; ticket 004 must now treat `59` as its baseline.
 
 ## Architecture Check

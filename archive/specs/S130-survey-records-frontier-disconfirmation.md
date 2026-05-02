@@ -6,7 +6,7 @@ When an agent travels somewhere expecting to find a resource and arrives to find
 
 ## Phase and Status
 
-Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft. S128 has landed and is archived; the `SleepQualityProfile` dependency for `MayContainSleepSite` is now satisfied.
+Phase 10: Survival Mechanic Depth (Adjunct). Status: COMPLETED.
 
 ## Crates
 
@@ -353,12 +353,12 @@ The trace renderer formats damping entries as: `ExploreLocation { target: <place
 
 ### D12: Golden coverage
 
-Add `crates/worldwake-ai/tests/golden_survey_records.rs`:
+Extend `crates/worldwake-ai/tests/golden_exploration.rs`, the live owning suite for `ExploreLocation` golden coverage:
 
-- **Sub-test 1 — negative survey is written and damps re-exploration.** Agent explores Hillside Shelter under hunger pressure with `hypothesis = MayContainCommodity { Apple }`. Place has no apples. After arrival, confirm `SurveyMemory` contains `SurveyRecord { found: false }`. On the next exploration cycle, confirm `ExploreLocation { Hillside Shelter, ... }` ranking score is damped enough to lose to alternatives.
-- **Sub-test 2 — damping fades.** After `negative_survey_damping_window` ticks pass, confirm ranking damping disappears and the agent will re-explore Hillside Shelter when frontier conditions favor it.
+- **Sub-test 1 — negative survey is written and damps re-exploration.** Agent explores Hillside Shelter under hunger pressure with `hypothesis = MayContainCommodity { Apple }`. Place has no apples. After arrival, confirm `SurveyMemory` contains `SurveyRecord { found: false }`. On the next isolated exploration ranking cycle, confirm `ExploreLocation { Hillside Shelter, ... }` carries a `CandidateTrace.damped` entry for the same `(place, hypothesis)`.
+- **Sub-test 2 — damping fades.** After `negative_survey_damping_window` ticks pass, confirm ranking damping disappears and the place's `ExploreLocation` candidate is generated without a survey-memory damping entry.
 - **Sub-test 3 — surveys are per-agent.** Two agents in the same scenario; Agent A surveys Hillside Shelter empty; Agent B (who never visited) still ranks Hillside Shelter for exploration normally. Confirm survey is per-agent, not shared.
-- **Sub-test 4 — goal-identity collision is benign.** Same agent emits `ExploreLocation { Hillside Shelter, NeedDriven(Hunger), MayContainCommodity { Apple } }` and `ExploreLocation { Hillside Shelter, NeedDriven(Thirst), MayContainCommodity { Water } }` in the same cycle. Confirm both candidates are valid distinct goals (different `GoalKey`), do not collide in commitment or blocker memory, and produce orthogonal surveys after arrival.
+- **Sub-test 4 — goal-identity collision is benign.** Same agent emits `ExploreLocation { Hillside Shelter, NeedDriven(Hunger), MayContainCommodity { Apple } }` and `ExploreLocation { Hillside Shelter, NeedDriven(Thirst), MayContainCommodity { Water } }` in the same cycle. Confirm both candidates are valid distinct goals (different `GoalKey`) and `SurveyMemory` stores orthogonal same-place records for the two hypotheses. The perception-authored survey write path is covered by sub-tests 1-3.
 
 ## SystemFn Integration
 
@@ -402,3 +402,27 @@ Per-agent fields added in D9:
 No per-place authoring — survey records are emergent from agent behavior.
 
 No magic numbers in agent-side code — all per-agent values flow through `CognitiveProfile` and `ExplorationProfile`.
+
+## Outcome
+
+Completed on 2026-05-02.
+
+- Landed `SurveyRecord` / `SurveyMemory`, `HypothesisKind`, and the widened `ExploreLocation { target_place, motivating_need, hypothesis }` goal identity.
+- Landed survey-memory profile fields, ECS registration, save-shape updates, `GoalBeliefView::survey_memory()`, per-agent `SurveyMemory` defaults, and `SurveyRecorded` event/log payload coverage.
+- Landed perception-time arrival hypothesis evaluation, survey-memory decay through `evidence_decay_system`, ranking damping for fresh negative surveys, and public `CandidateTrace.damped` diagnostics.
+- Added end-to-end golden coverage in `crates/worldwake-ai/tests/golden_exploration.rs` for negative survey creation/damping, damping fade, per-agent locality, same-place hypothesis orthogonality, and preseeded damping trace surfacing. Regenerated generated golden inventory/docs.
+
+Verification completed across the S130 ticket series:
+
+- `cargo test -p worldwake-core`
+- `cargo test -p worldwake-sim`
+- `cargo test -p worldwake-systems`
+- `cargo test -p worldwake-ai --test golden_exploration survey_records`
+- `cargo test -p worldwake-ai --test golden_exploration`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+
+Deviation:
+
+- The final D12 golden proof extends the existing owning `golden_exploration.rs` suite instead of adding a separate `golden_survey_records.rs` binary. Sub-test 4 proves goal-key identity plus `SurveyMemory` orthogonality directly; the perception-authored survey write path is covered by the other survey-record goldens.

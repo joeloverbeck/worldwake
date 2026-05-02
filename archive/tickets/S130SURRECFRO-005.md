@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `CandidateDampingReason` enum, `CandidateDampingEntry` struct, new `damped` field on `CandidateTrace`
-**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D11
+**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `archive/specs/S130-survey-records-frontier-disconfirmation.md` D11
 
 ## Problem
 
@@ -91,7 +91,7 @@ The renderer must use exhaustive matching on `CandidateDampingReason` so future 
 - `crates/worldwake-ai/tests/golden_harness/survival_forensics_assertions.rs` (modify — test helper constructor fallout)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — all-target test helper constructor fallout)
 - `crates/worldwake-visualizer/src/trace_buffers.rs` (modify — all-target test helper constructor fallout)
-- `specs/S130-survey-records-frontier-disconfirmation.md` (truth-sync D11 constructor/format wording)
+- `archive/specs/S130-survey-records-frontier-disconfirmation.md` (truth-sync D11 constructor/format wording)
 
 ## Out of Scope
 

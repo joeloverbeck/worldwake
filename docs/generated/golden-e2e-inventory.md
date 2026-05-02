@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 34
 - Files contributing `golden_*` tests: 34
-- Total `golden_*` tests: 162
+- Total `golden_*` tests: 167
 
 ## Per-File Inventory
 
@@ -17,7 +17,7 @@ Do not hand-edit it.
 | `golden_ai_decisions.rs` | 15 |
 | `golden_decision_history_events.rs` | 1 |
 | `golden_experience_preferences.rs` | 3 |
-| `golden_exploration.rs` | 11 |
+| `golden_exploration.rs` | 16 |
 | `golden_final_integration.rs` | 2 |
 | `golden_item_decay.rs` | 1 |
 | `golden_merchant_selling.rs` | 13 |
@@ -88,6 +88,11 @@ Do not hand-edit it.
 ### `golden_exploration.rs`
 
 - `golden_exploration_triggers_on_need_and_ignorance`
+- `survey_damping_records_candidate_trace_entry`
+- `survey_records_damp_re_exploration_under_hunger`
+- `survey_records_damping_fades_after_window`
+- `survey_records_are_per_agent_not_shared`
+- `survey_records_goal_identity_collision_is_benign`
 - `golden_exploration_is_suppressed_when_known_satisfaction_path_exists`
 - `golden_exploration_consecutive_cap_is_respected`
 - `golden_exploration_arrival_unlocks_beliefs_and_concrete_relief`

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `evidence_decay_system` extended with an agent-iteration pass for `SurveyMemory::enforce_limits`
-**Deps**: `archive/tickets/S130SURRECFRO-001.md`, `archive/tickets/S130SURRECFRO-002.md`, `archive/tickets/S130SURRECFRO-004.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` SystemFn Integration
+**Deps**: `archive/tickets/S130SURRECFRO-001.md`, `archive/tickets/S130SURRECFRO-002.md`, `archive/tickets/S130SURRECFRO-004.md`, spec `archive/specs/S130-survey-records-frontier-disconfirmation.md` SystemFn Integration
 
 ## Problem
 

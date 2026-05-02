@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `GoalKind::ExploreLocation` payload widening across `worldwake-core`, `worldwake-ai`, and consumers/test fixtures, plus `SAVE_FORMAT_VERSION` bump for the persisted goal payload shape
-**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D2
+**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `archive/specs/S130-survey-records-frontier-disconfirmation.md` D2
 
 ## Problem
 
@@ -102,7 +102,7 @@ Update the four ranking tests (`explore_location_ranking_is_not_biased_by_place_
 - Likely: `crates/worldwake-ai/tests/golden_*.rs` and `crates/worldwake-systems/src/**/*.rs` (modify — discovery via `grep -rn "GoalKind::ExploreLocation" crates/`; update each match by mechanical rule above)
 - `crates/worldwake-sim/src/save_load.rs` (modify — `SAVE_FORMAT_VERSION` `59→60`)
 - `crates/worldwake-cli/tests/fixtures/observer_decision_history/survival_baseline_5_ticks.md` (modify — observer fixture reflects `hypothesis` in rendered `Debug` output)
-- `specs/S130-survey-records-frontier-disconfirmation.md` and `archive/tickets/S130SURRECFRO-004.md` (truth-sync — save-format baseline now flows through ticket 003)
+- `archive/specs/S130-survey-records-frontier-disconfirmation.md` and `archive/tickets/S130SURRECFRO-004.md` (truth-sync — save-format baseline now flows through ticket 003)
 
 ## Out of Scope
 

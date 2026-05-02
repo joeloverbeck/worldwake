@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `SurveyMemory` ECS registration, `create_agent`/`spawn_agent` default insertion, `GoalBeliefView::survey_memory()` accessor, `SAVE_FORMAT_VERSION` bump
-**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D4, D8
+**Deps**: `archive/tickets/S130SURRECFRO-002.md`, spec `archive/specs/S130-survey-records-frontier-disconfirmation.md` D4, D8
 
 ## Problem
 

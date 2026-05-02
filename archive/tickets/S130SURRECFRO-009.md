@@ -1,34 +1,34 @@
 # S130SURRECFRO-009: Golden coverage for survey records
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — golden test additions only
-**Deps**: `archive/tickets/S130SURRECFRO-003.md`, `archive/tickets/S130SURRECFRO-006.md`, `archive/tickets/S130SURRECFRO-007.md`, `archive/tickets/S130SURRECFRO-008.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D12
+**Deps**: `archive/tickets/S130SURRECFRO-003.md`, `archive/tickets/S130SURRECFRO-006.md`, `archive/tickets/S130SURRECFRO-007.md`, `archive/tickets/S130SURRECFRO-008.md`, spec `archive/specs/S130-survey-records-frontier-disconfirmation.md` D12
 
 ## Problem
 
-The end-to-end behavioral chain — agent travels to a place expecting to find food, finds none, records a negative survey, and the next exploration cycle damps re-exploration of that place under the same hypothesis — must be proven by a golden test. This ticket adds `crates/worldwake-ai/tests/golden_survey_records.rs` with four sub-tests covering the negative-survey damping loop, damping fade-out, per-agent locality, and goal-identity orthogonality across hypotheses.
+The end-to-end behavioral chain — agent travels to a place expecting to find food, finds none, records a negative survey, and the next exploration cycle damps re-exploration of that place under the same hypothesis — must be proven by a golden test. Live reassessment found that `crates/worldwake-ai/tests/golden_exploration.rs` already owns `ExploreLocation` golden coverage and already contains the prior trace-only survey damping proof from ticket 006, so this ticket extends that owning suite instead of creating a duplicate `golden_survey_records.rs` binary.
 
 ## Assumption Reassessment (2026-05-02)
 
 1. The implementation tickets 003 (ExploreLocation hypothesis), 006 (ranking damping), 007 (perception hypothesis evaluation), and 008 (decay) collectively realize the spec's behavioral chain; this ticket asserts the chain end-to-end.
-2. **Coverage gap classification** (precision-rules.md Rule 3): existing focused/unit coverage in tickets 002, 003, 005, 006, 007, 008 covers individual primitives (record/find/enforce_limits, ranking damping factor, hypothesis evaluator, decay pass); existing runtime coverage in tickets 006 and 007 covers ranking-arm trace push and arrival-time survey writes. **Missing**: golden/E2E coverage of the multi-tick behavioral chain (travel → arrival → survey → next-cycle ranking damping). This ticket adds it.
+2. **Coverage gap classification** (precision-rules.md Rule 3): existing focused/unit coverage in tickets 002, 003, 005, 006, 007, 008 covers individual primitives (record/find/enforce_limits, ranking damping factor, hypothesis evaluator, decay pass); existing runtime coverage in tickets 006 and 007 covers ranking-arm trace push and arrival-time survey writes. `golden_exploration.rs::survey_damping_records_candidate_trace_entry` already proves a pre-seeded survey reaches the public `CandidateTrace.damped` carrier. **Missing**: golden/E2E coverage that the survey record can be produced by the travel → arrival → perception path before it affects a later ranking cycle. This ticket adds that coverage in `golden_exploration.rs`.
 3. **Intended verification layer** (precision-rules.md Rule 3): golden E2E coverage. The full action registries are required because the chain involves Travel actions, perception, and exploration-goal commitment cycles — local needs-only harness is not sufficient.
 4. **Scenario isolation** (precision-rules.md Rule 8): four sub-tests, each isolating one specific causal branch.
    - Sub-test 1: agent under hunger pressure with one place known empty of Apples; lawful competing affordances (e.g., other places with Apples) excluded by scenario design (only one reachable place exists, or others are deliberately empty as well to force the test to hit the damping condition).
    - Sub-test 2: same as sub-test 1, but advance ticks past `negative_survey_damping_window` before measuring re-ranking; assert damping has faded.
    - Sub-test 3: two agents (A surveys; B never visited); place B's ranking decision after A's survey landed; assert B's ranking score for the place is undamped.
-   - Sub-test 4: single agent with both Hunger and Thirst pressure; emits two `ExploreLocation` candidates for the same place under different hypotheses; assert both `GoalKey`s are distinct and arrival writes two orthogonal `SurveyRecord` entries.
+   - Sub-test 4: single agent with both Hunger and Thirst pressure; emits two `ExploreLocation` candidates for the same place under different hypotheses; assert both `GoalKey`s are distinct and `SurveyMemory` stores two orthogonal `SurveyRecord` entries without key collision. The perception-authored survey write path is already exercised by sub-tests 1-3.
 5. **Goal/operator surface** (precision-rules.md Rule 13): live `GoalKind` under test is `ExploreLocation` with the post-ticket-003 shape `{ target_place, motivating_need, hypothesis }`. Operator surface is the existing Travel + perception lifecycle; no new operators introduced by this spec.
 6. **Cumulative arithmetic** (precision-rules.md Rule 7): sub-test 2's damping-fade-out depends on `negative_survey_damping_window` (200 ticks per spec D9 default). Test fixture must advance at least 201 ticks between the negative survey and the re-measurement; or use a customized `ExplorationProfile` with a smaller window for test ergonomics. Concrete tick count and reasoning recorded in the test body.
-7. Existing golden tests use `cargo test -p worldwake-ai --test golden_*`; new file `golden_survey_records.rs` follows the same pattern. The golden inventory at `docs/generated/golden-e2e-inventory.md` is regenerated by `python3 scripts/golden_inventory.py --write --check-docs` after the tests land — out of scope for this ticket but noted for reviewer.
+7. Existing `ExploreLocation` goldens live in `crates/worldwake-ai/tests/golden_exploration.rs`; that suite is the live owner for the new survey-record scenarios. The golden inventory is regenerated by `python3 scripts/golden_inventory.py --write --check-docs` after the tests land because new `// Scenario ...` metadata is added.
 
 ## Architecture Check
 
 1. Each sub-test isolates one causal branch — adheres to precision-rules.md Rule 8 (scenario isolation). The intended invariants under test are named explicitly in each sub-test's body.
 2. Verification layers are golden E2E — the full causal chain through travel, perception, ranking, and decay must be exercised end-to-end. Lower layers are already covered by sibling tickets' focused/unit and runtime tests.
-3. No backward-compat shim — net-new test file.
+3. No backward-compat shim — existing owning golden suite only; no production code changes and no duplicate test binary.
 
 ## Verification Layers
 
@@ -40,9 +40,9 @@ The end-to-end behavioral chain — agent travels to a place expecting to find f
 
 ## What to Change
 
-### 1. New golden test file
+### 1. Extend the exploration golden suite
 
-Create `crates/worldwake-ai/tests/golden_survey_records.rs` with four sub-tests:
+Extend `crates/worldwake-ai/tests/golden_exploration.rs` with four focused golden tests:
 
 - `survey_records_damp_re_exploration_under_hunger`
 - `survey_records_damping_fades_after_window`
@@ -51,18 +51,19 @@ Create `crates/worldwake-ai/tests/golden_survey_records.rs` with four sub-tests:
 
 Each test:
 - Sets up a scenario (place graph, agents, needs profile, exploration profile) sufficient to drive `ExploreLocation` candidate emission.
-- Drives Travel + perception cycles to produce arrival.
-- Runs ranking and asserts `motive_score` and `CandidateTrace.damped` content per the sub-test's intended invariant.
+- Drives Travel + perception cycles to produce arrival where the owned invariant requires an arrival-authored survey record.
+- Runs a later ranking cycle and asserts `CandidateTrace.damped` content per the sub-test's intended invariant.
 
 Use existing golden-test scaffolding patterns (see neighboring `golden_*.rs` files for harness setup). Where this spec's behavior depends on customized `CognitiveProfile`/`ExplorationProfile` values (e.g., a smaller `negative_survey_damping_window` for test ergonomics), record the customization and rationale in the test body.
 
 ## Files to Touch
 
-- `crates/worldwake-ai/tests/golden_survey_records.rs` (new)
+- `crates/worldwake-ai/tests/golden_exploration.rs` (extend existing owning suite)
+- `docs/generated/golden-*` (regenerated if scenario metadata changes)
 
 ## Out of Scope
 
-- Regenerating `docs/generated/golden-e2e-inventory.md` — handled by repo tooling (`python3 scripts/golden_inventory.py --write --check-docs`); not part of this ticket's diff
+- Adding a duplicate `golden_survey_records.rs` binary — `golden_exploration.rs` is the live owning suite
 - Adding `ExploreLocation`-with-hypothesis coverage to other golden tests — out of scope; existing goldens that mention `ExploreLocation` were updated in ticket 003's mechanical sweep
 - Cross-agent survey propagation tests — explicitly non-goal per spec; surveys are per-agent in this spec
 - Performance regression guards — not a P12 spec; no metric thresholds required
@@ -71,11 +72,11 @@ Use existing golden-test scaffolding patterns (see neighboring `golden_*.rs` fil
 
 ### Tests That Must Pass
 
-1. New: `survey_records_damp_re_exploration_under_hunger` — arrival writes `found = false`; subsequent `ExploreLocation` ranking score is damped enough that an alternative goal wins.
+1. New: `survey_records_damp_re_exploration_under_hunger` — arrival writes `found = false`; subsequent `ExploreLocation` ranking carries a `CandidateTrace.damped` entry for the same `(place, hypothesis)`.
 2. New: `survey_records_damping_fades_after_window` — same setup as 1, but after `> negative_survey_damping_window` ticks pass, `ExploreLocation` ranking score returns to undamped levels.
 3. New: `survey_records_are_per_agent_not_shared` — Agent A's negative survey for a place does not damp Agent B's ranking of the same place under the same hypothesis.
-4. New: `survey_records_goal_identity_collision_is_benign` — Hunger and Thirst exploration of same place produce distinct `GoalKey`s, both candidates valid; arrival writes two orthogonal `SurveyRecord` entries.
-5. Existing suite: `cargo test -p worldwake-ai --test golden_*`.
+4. New: `survey_records_goal_identity_collision_is_benign` — Hunger and Thirst exploration of same place produce distinct `GoalKey`s, both candidates valid; `SurveyMemory` stores two orthogonal `SurveyRecord` entries.
+5. Existing suite: `cargo test -p worldwake-ai --test golden_exploration`.
 6. Existing suite: `cargo test --workspace`.
 
 ### Invariants
@@ -89,12 +90,37 @@ Use existing golden-test scaffolding patterns (see neighboring `golden_*.rs` fil
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/tests/golden_survey_records.rs` (new) — 4 golden E2E sub-tests as enumerated above.
+1. `crates/worldwake-ai/tests/golden_exploration.rs` — 4 added golden E2E sub-tests as enumerated above.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai --test golden_survey_records`
-2. `cargo test -p worldwake-ai --test golden_*`
+1. `cargo test -p worldwake-ai --test golden_exploration survey_records`
+2. `cargo test -p worldwake-ai --test golden_exploration`
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
-5. `python3 scripts/golden_inventory.py --write --check-docs` (post-ticket — regenerate the golden inventory; outside the diff)
+5. `python3 scripts/golden_inventory.py --write --check-docs`
+
+## Outcome
+
+Completed on 2026-05-02.
+
+- Extended `crates/worldwake-ai/tests/golden_exploration.rs` with the four survey-record golden scenarios owned by this ticket.
+- Added helper coverage that drives the autonomous travel → arrival → perception path until a negative survey record is authored, then isolates the next ranking cycle so the `CandidateTrace.damped` assertion measures survey-memory damping rather than unrelated recent-visit or discrepancy-memory state.
+- Added a scenario for the existing trace-only `survey_damping_records_candidate_trace_entry` test so generated golden docs no longer attach that proof to the preceding scenario block.
+- Regenerated golden inventory docs with the new scenario metadata.
+- Post-ticket review synced spec D12 to the landed `golden_exploration.rs` proof surface.
+
+## Deviations
+
+- Reassessment found that `golden_exploration.rs` is the live owner for `ExploreLocation` golden coverage, so no `golden_survey_records.rs` binary was added.
+- Sub-test 4 proves goal-key identity and `SurveyMemory::record` orthogonality directly; the perception-authored survey write path is covered by sub-tests 1-3.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_exploration survey_records -- --list` (listed the 4 survey-record tests).
+- Passed `cargo test -p worldwake-ai --test golden_exploration survey_records` (4 passed).
+- Passed `cargo test -p worldwake-ai --test golden_exploration` (38 passed).
+- Passed `python3 scripts/golden_inventory.py --write --check-docs` (`34 files, 34 contributing files, 167 tests, 130 scenario blocks`).
+- Passed `cargo test --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `git diff --check`.

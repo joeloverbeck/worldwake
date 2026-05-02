@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `HypothesisKind` enum, `SurveyRecord`/`SurveyMemory` module, `EventTag::SurveyRecorded`, `SurveyRecordedPayload`
-**Deps**: `archive/tickets/S130SURRECFRO-001.md`, spec `specs/S130-survey-records-frontier-disconfirmation.md` D1, D3, D5
+**Deps**: `archive/tickets/S130SURRECFRO-001.md`, spec `archive/specs/S130-survey-records-frontier-disconfirmation.md` D1, D3, D5
 
 ## Problem
 
