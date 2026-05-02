@@ -1,8 +1,8 @@
 use crate::{
     ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy, EntityId,
     ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey, HomeostaticNeedId,
-    HypothesisKind, MaterializationTag, MismatchDetail, OpportunityKey, Permille, SuspensionReason,
-    Tick, WakeCondition,
+    HypothesisKind, MaterializationTag, MismatchDetail, OpportunityKey, Permille,
+    SleepRecoveryModifier, SuspensionReason, Tick, WakeCondition,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -45,7 +45,7 @@ pub struct SleepEpisodeStartedPayload {
     pub intended_max_ticks: NonZeroU32,
     pub target_recovery: Permille,
     pub wake_conditions: Vec<WakeCondition>,
-    pub recovery_modifier: Permille,
+    pub recovery_modifier: SleepRecoveryModifier,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -524,7 +524,7 @@ mod tests {
                         need: HomeostaticNeedId::Thirst,
                     },
                 ],
-                recovery_modifier: crate::Permille::new(875).unwrap(),
+                recovery_modifier: crate::SleepRecoveryModifier::new(1250),
             }),
             DecisionEventPayload::SleepEpisodeEnded(SleepEpisodeEndedPayload {
                 sleeper: entity_id(5, 1),

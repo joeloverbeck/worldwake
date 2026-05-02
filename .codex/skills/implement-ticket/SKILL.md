@@ -19,11 +19,17 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Keep Cargo sequential, confirm ambiguous or pre-existing exact selectors with `-- --list`, and record only truthful verification boundaries.
 - Before the first Cargo command you will count as proof, load `references/verification.md` unless the ticket is already classified as a small/local fast path whose focused selector and proof boundary are unambiguous.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
+- Leave active ticket status non-completed until the last executable gate required for the final source diff has passed. Make `Status: COMPLETED` one of the final ticket edits, except when a provisional verification note explicitly names the remaining gates.
 - Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.
 
 Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail.
 
 Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here. Do not include a Cargo command inside any `multi_tool_use.parallel` bundle, even when the other bundled commands are read-only; run the Cargo command separately.
+
+Before any Cargo command:
+- Run it alone, outside `multi_tool_use.parallel`.
+- Do not bundle it with `rg`, `sed`, `git status`, `git diff`, or any other read-only helper command.
+- Poll or wait for any known in-flight Cargo session before starting another one.
 
 ## Quick Routing
 
@@ -240,6 +246,8 @@ If implementation or focused test setup later disproves a remaining ticket/spec 
 Load `references/mismatch-handling.md` when reassessment exposes a contradiction, risky ticket/code divergence, or a user decision that requires 1-3-1.
 
 When reassessment corrects a code-like sketch in the active ticket itself — helper signature, match arm, payload construction, event emission, or trace-routing snippet — update that local code block in the same pass as the surrounding prose. Do not wait until final closeout to remove a snippet that now describes an impossible implementation shape.
+
+When the user chooses an option from a 1-3-1 or other reassessment menu, immediately record the selected option's implementation boundary in the active ticket/spec before coding, unless the user explicitly asked for analysis only. Keep the note narrow: name the chosen boundary, the rejected stale premise, and any verification or sibling-sync consequence that is already known.
 
 If reassessment changes a shared API, type contract, schema shape, or cross-ticket assumption, update any still-active dependent tickets/spec references in the same family before implementing or closing out the current ticket. If the current ticket completes but remains active and a sibling's dependency reference is still truthful, no sibling edit is required; update siblings when their wording now falsely says the blocker is unresolved, when the dependency path changed through archival, or when the landed contract differs from the sibling assumption.
 When a ticket family has multiple planned save-shape changes, keep the sibling version chain truthful as each ticket lands. If the current ticket takes a `SAVE_FORMAT_VERSION` bump earlier than the draft expected, update later active siblings and active specs to treat the new version as their baseline and to own the next bump, instead of leaving stale `old -> new` wording in place.

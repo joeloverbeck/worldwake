@@ -2407,8 +2407,8 @@ pub(crate) use with_component_schema_entries;
 mod tests {
     use crate::{
         CommodityKind, EntityKind, GroundComfortTag, Permille, PlaceVisibilityProfile, Quantity,
-        RewardEncumbrance, SceneEvidence, ShelterTag, SleepEpisode, SleepQualityProfile, Tick,
-        Topology, WakeCondition, World, WorldError,
+        RewardEncumbrance, SceneEvidence, ShelterTag, SleepEpisode, SleepQualityProfile,
+        SleepRecoveryModifier, Tick, Topology, WakeCondition, World, WorldError,
     };
     use std::num::NonZeroU32;
 
@@ -2463,7 +2463,7 @@ mod tests {
         let profile = SleepQualityProfile {
             shelter: ShelterTag::Shelter,
             ground_comfort: GroundComfortTag::Soft,
-            recovery_modifier: Permille::new(850).unwrap(),
+            recovery_modifier: SleepRecoveryModifier::new(850),
         };
 
         world
@@ -2496,7 +2496,7 @@ mod tests {
             intended_max_ticks: NonZeroU32::new(30).unwrap(),
             target_recovery: Permille::new(600).unwrap(),
             accumulated_recovery: Permille::new(100).unwrap(),
-            recovery_modifier: Permille::new(950).unwrap(),
+            recovery_modifier: SleepRecoveryModifier::new(950),
             wake_conditions: vec![WakeCondition::IntendedDurationReached],
         };
 

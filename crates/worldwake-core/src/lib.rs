@@ -249,7 +249,8 @@ pub use repair_memory::{RepairEntry, RepairKey, RepairMemory};
 pub use reward_encumbrance::{RewardEncumbrance, RewardReservation};
 pub use rights::{EffectiveRight, RightKind};
 pub use sleep_episode::{
-    GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, WakeCondition,
+    GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, SleepRecoveryModifier,
+    WakeCondition,
 };
 pub use social_artifact::{
     ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile, ArtifactState,

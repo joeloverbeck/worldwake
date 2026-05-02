@@ -4142,9 +4142,10 @@ mod tests {
         GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, OpportunityAnchor,
         PendingEvent, Permille, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
         PrototypePlace, Quantity, RecipeId, ResourceSource, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, Tick, VisibilitySpec, WakeCondition, WakeReason,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
+        SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
+        WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -4473,7 +4474,7 @@ mod tests {
                         need: HomeostaticNeedId::Thirst,
                     },
                 ],
-                recovery_modifier: Permille::new(875).unwrap(),
+                recovery_modifier: SleepRecoveryModifier::new(1250),
             }),
         );
         emit_decision_event(
@@ -5447,7 +5448,7 @@ mod tests {
         }
         assert!(out.contains("Guard Theron"));
         assert!(out.contains("goal=ProduceCommodity { recipe_id: RecipeId(3) } motive=420 alts=1"));
-        assert!(out.contains("min=4 max=40 target=750 modifier=875"));
+        assert!(out.contains("min=4 max=40 target=750 modifier=1250"));
         assert!(out.contains("ticks=12->24 reason=ProjectedNeedBreach"));
         assert!(out.contains("source=WildernessRelief place_dirtiness_delta=80"));
         assert!(

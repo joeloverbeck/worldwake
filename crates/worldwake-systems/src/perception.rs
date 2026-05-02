@@ -2,12 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     AgentBeliefStore, BelievedActivity, BelievedInstitutionalClaim, CauseRef, CommodityKind,
     ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload,
-    EventTag, EventView, EvidenceRef, InstitutionalBeliefKey, InstitutionalClaim,
-    InstitutionalKnowledgeSource, MismatchKind, NoticeTopic, ObservationContext, PendingEvent,
-    PerceptionSource, Permille, RelationDelta, RelationValue, SocialObservation,
-    SocialObservationDetail, SocialObservationKind, StateDelta, TheftFacts, VisibilitySpec,
-    WitnessData, World, WorldTxn, build_believed_entity_state,
+    EventTag, EventView, EvidenceRef, GoalKind, HypothesisKind, InstitutionalBeliefKey,
+    InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind, NoticeTopic,
+    ObservationContext, PendingEvent, PerceptionSource, Permille, Quantity, RelationDelta,
+    RelationValue, SocialObservation, SocialObservationDetail, SocialObservationKind, StateDelta,
+    SurveyRecord, TheftFacts, VisibilitySpec, WitnessData, World, WorldTxn,
+    build_believed_entity_state,
 };
+use worldwake_core::{DecisionEventPayload, SurveyRecordedPayload};
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionInstanceId, PerceptionTraceEvent, SystemError,
     SystemExecutionContext,
@@ -64,6 +66,7 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         &direct_local_batches,
         &mut updated_stores,
     );
+    let survey_records = survey_records_for_arrivals(world, tick, &direct_local_batches);
 
     for event_id in event_ids {
         let Some(record) = event_log.get(event_id).cloned() else {
@@ -91,25 +94,163 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         }
     }
 
-    if updated_stores.is_empty() {
+    if updated_stores.is_empty() && survey_records.is_empty() {
         return Ok(());
     }
+
+    if !updated_stores.is_empty() {
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::SystemTick(tick),
+            None,
+            None,
+            VisibilitySpec::Hidden,
+            WitnessData::default(),
+        );
+        txn.add_tag(EventTag::System)
+            .add_tag(EventTag::WorldMutation);
+        for (agent, store) in updated_stores {
+            txn.set_component_agent_belief_store(agent, store)
+                .map_err(|error| SystemError::new(error.to_string()))?;
+        }
+        let _ = txn.commit(event_log);
+    }
+
+    for survey in survey_records {
+        record_survey(world, event_log, tick, survey)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct PendingSurveyRecord {
+    agent: EntityId,
+    place: EntityId,
+    record: SurveyRecord,
+}
+
+fn survey_records_for_arrivals(
+    world: &World,
+    tick: worldwake_core::Tick,
+    direct_local_batches: &BTreeMap<EntityId, DirectLocalObservationBatch>,
+) -> Vec<PendingSurveyRecord> {
+    direct_local_batches
+        .iter()
+        .filter_map(|(agent, batch)| pending_survey_record(world, tick, *agent, batch.place))
+        .collect()
+}
+
+fn pending_survey_record(
+    world: &World,
+    tick: worldwake_core::Tick,
+    agent: EntityId,
+    place: EntityId,
+) -> Option<PendingSurveyRecord> {
+    if world.effective_place(agent) != Some(place) {
+        return None;
+    }
+    let frame = world.get_component_intention_frame(agent)?;
+    let GoalKind::ExploreLocation {
+        target_place,
+        hypothesis,
+        ..
+    } = frame.goal.kind
+    else {
+        return None;
+    };
+    if target_place != place {
+        return None;
+    }
+    if world
+        .get_component_survey_memory(agent)
+        .and_then(|memory| memory.find(place, hypothesis))
+        .is_some_and(|record| record.recorded_tick == tick)
+    {
+        return None;
+    }
+    let confidence = world
+        .get_component_perception_profile(agent)?
+        .observation_fidelity;
+    let found = evaluate_hypothesis(world, place, hypothesis);
+    Some(PendingSurveyRecord {
+        agent,
+        place,
+        record: SurveyRecord {
+            place,
+            hypothesis,
+            found,
+            confidence,
+            recorded_tick: tick,
+        },
+    })
+}
+
+fn evaluate_hypothesis(world: &World, place: EntityId, hypothesis: HypothesisKind) -> bool {
+    match hypothesis {
+        HypothesisKind::MayContainCommodity { commodity } => {
+            world.query_resource_source().any(|(entity, source)| {
+                world.effective_place(entity) == Some(place)
+                    && source.commodity == commodity
+                    && source.available_quantity > Quantity(0)
+            }) || world.query_item_lot().any(|(entity, lot)| {
+                world.effective_place(entity) == Some(place) && lot.commodity == commodity
+            })
+        }
+        HypothesisKind::MayContainLatrine => {
+            world.place_has_tag(place, worldwake_core::PlaceTag::Latrine)
+        }
+        HypothesisKind::MayContainWashBasin => {
+            world.query_workstation_marker().any(|(entity, marker)| {
+                world.effective_place(entity) == Some(place)
+                    && marker.0 == worldwake_core::WorkstationTag::WashBasin
+            })
+        }
+        HypothesisKind::MayContainSleepSite => world
+            .get_component_sleep_quality_profile(place)
+            .is_some_and(|profile| {
+                profile.recovery_modifier > worldwake_core::SleepRecoveryModifier::IDENTITY
+            }),
+        HypothesisKind::Proactive => true,
+    }
+}
+
+fn record_survey(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: worldwake_core::Tick,
+    survey: PendingSurveyRecord,
+) -> Result<(), SystemError> {
+    let capacity = world
+        .get_component_cognitive_profile(survey.agent)
+        .map(|profile| profile.survey_memory_capacity)
+        .unwrap_or_default();
+    let mut memory = world
+        .get_component_survey_memory(survey.agent)
+        .cloned()
+        .unwrap_or_default();
+    memory.record(survey.record, capacity);
 
     let mut txn = WorldTxn::new(
         world,
         tick,
         CauseRef::SystemTick(tick),
-        None,
-        None,
+        Some(survey.agent),
+        Some(survey.place),
         VisibilitySpec::Hidden,
         WitnessData::default(),
     );
-    txn.add_tag(EventTag::System)
-        .add_tag(EventTag::WorldMutation);
-    for (agent, store) in updated_stores {
-        txn.set_component_agent_belief_store(agent, store)
-            .map_err(|error| SystemError::new(error.to_string()))?;
-    }
+    txn.set_component_survey_memory(survey.agent, memory)
+        .map_err(|error| SystemError::new(error.to_string()))?;
+    txn.add_tag(EventTag::SurveyRecorded).set_decision_payload(
+        DecisionEventPayload::SurveyRecorded(SurveyRecordedPayload {
+            surveyor: survey.agent,
+            place: survey.place,
+            hypothesis: survey.record.hypothesis,
+            found: survey.record.found,
+            confidence: survey.record.confidence,
+        }),
+    );
     let _ = txn.commit(event_log);
     Ok(())
 }
@@ -1223,24 +1364,27 @@ mod tests {
     };
     use crate::dispatch_table;
     use std::collections::{BTreeMap, BTreeSet};
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU8, NonZeroU32};
     use worldwake_core::{
         ActionDefId, ActionDomain, AgentBeliefStore, ArtifactHeader, ArtifactKind, ArtifactState,
         BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity,
         BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
-        BountyTarget, BountyTerms, CauseRef, CommodityKind, ComponentDelta, ComponentKind,
-        ComponentValue, Container, ContentionGrant, ContentionQueue, ContentionWaiter,
-        ControlSource, DeadAt, DisturbanceKind, EntityBeliefAspect, EntityKind, EventLog,
-        EventPayload, EventTag, EventView, EvidenceKind, EvidenceRef, HomeostaticNeeds,
-        InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits,
-        MismatchKind, NoticeContent, NoticeTopic, ObservedEntitySnapshot, OfficeForceState,
-        PendingEvent, PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
+        BountyTarget, BountyTerms, CauseRef, CognitiveProfile, CommodityKind, ComponentDelta,
+        ComponentKind, ComponentValue, Container, ContentionGrant, ContentionQueue,
+        ContentionWaiter, ControlSource, DeadAt, DecisionEventPayload, DisturbanceKind,
+        EntityBeliefAspect, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceKind,
+        EvidenceRef, ExplorationMotivation, FrameState, GoalKey, GoalKind, GroundComfortTag,
+        HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey, InstitutionalClaim,
+        InstitutionalKnowledgeSource, IntentionDomain, IntentionFrame, LoadUnits, MismatchKind,
+        NoticeContent, NoticeTopic, ObservedEntitySnapshot, OfficeForceState, PendingEvent,
+        PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace,
         Quantity, RelationDelta, RelationKind, RelationValue, ResourceSource, RewardSource,
-        SaleListing, SceneEvidence, Seed, SocialObservationDetail, SocialObservationKind,
-        StateDelta, StockAssignment, StockAssignmentKind, TheftFacts, Tick, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        build_observed_entity_snapshot, build_prototype_world, prototype_place_entity,
+        SaleListing, SceneEvidence, Seed, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
+        SocialObservationDetail, SocialObservationKind, StateDelta, StockAssignment,
+        StockAssignmentKind, SurveyRecordedPayload, TheftFacts, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_observed_entity_snapshot,
+        build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -1376,6 +1520,85 @@ mod tests {
             guard_template: None,
             expectation_template: vec![],
         })
+    }
+
+    fn survey_goal(place: worldwake_core::EntityId, hypothesis: HypothesisKind) -> GoalKind {
+        GoalKind::ExploreLocation {
+            target_place: place,
+            motivating_need: ExplorationMotivation::Proactive,
+            hypothesis,
+        }
+    }
+
+    fn active_explore_frame(
+        place: worldwake_core::EntityId,
+        hypothesis: HypothesisKind,
+    ) -> IntentionFrame {
+        IntentionFrame {
+            goal: GoalKey::from(survey_goal(place, hypothesis)),
+            domain: IntentionDomain::Travel { destination: place },
+            assumptions: vec![],
+            state: FrameState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 30,
+        }
+    }
+
+    fn run_perception(world: &mut World, event_log: &mut EventLog, tick: u64) {
+        let mut rng = DeterministicRng::new(Seed([0x77; 32]));
+        perception_system(SystemExecutionContext {
+            world,
+            event_log,
+            rng: &mut rng,
+            active_actions: &BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(tick),
+            system_id: SystemId::Perception,
+        })
+        .unwrap();
+    }
+
+    fn survey_payloads(event_log: &EventLog) -> Vec<SurveyRecordedPayload> {
+        event_log
+            .events_by_tag(EventTag::SurveyRecorded)
+            .iter()
+            .filter_map(|event_id| event_log.get(*event_id))
+            .filter_map(|event| match event.decision_payload() {
+                Some(DecisionEventPayload::SurveyRecorded(payload)) => Some(payload.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn setup_survey_agent(
+        world: &mut World,
+        place: worldwake_core::EntityId,
+        hypothesis: HypothesisKind,
+    ) -> worldwake_core::EntityId {
+        let mut txn = new_txn(world, 1);
+        let agent = txn.create_agent("Surveyor", ControlSource::Ai).unwrap();
+        txn.set_ground_location(agent, place).unwrap();
+        txn.set_component_agent_belief_store(agent, AgentBeliefStore::new())
+            .unwrap();
+        txn.set_component_perception_profile(agent, profile(1000))
+            .unwrap();
+        txn.set_component_cognitive_profile(
+            agent,
+            CognitiveProfile {
+                survey_memory_capacity: 8,
+                ..CognitiveProfile::default()
+            },
+        )
+        .unwrap();
+        txn.set_component_intention_frame(agent, active_explore_frame(place, hypothesis))
+            .unwrap();
+        let mut log = EventLog::new();
+        let _ = txn.commit(&mut log);
+        agent
     }
 
     fn active_instance(
@@ -1523,6 +1746,259 @@ mod tests {
             beliefs.get_entity(&subject).is_none(),
             "full place concealment should reduce effective fidelity to zero"
         );
+    }
+
+    #[test]
+    fn arrival_with_negative_commodity_hypothesis_writes_negative_survey() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let hypothesis = HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        };
+        let agent = setup_survey_agent(&mut world, place, hypothesis);
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 3);
+
+        let record = world
+            .get_component_survey_memory(agent)
+            .and_then(|memory| memory.find(place, hypothesis))
+            .expect("arrival should record survey");
+        assert!(!record.found);
+        assert_eq!(record.confidence, Permille::new(1000).unwrap());
+        assert_eq!(record.recorded_tick, Tick(3));
+        let payloads = survey_payloads(&event_log);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(
+            payloads[0],
+            SurveyRecordedPayload {
+                surveyor: agent,
+                place,
+                hypothesis,
+                found: false,
+                confidence: Permille::new(1000).unwrap(),
+            }
+        );
+    }
+
+    #[test]
+    fn arrival_with_positive_commodity_hypothesis_writes_positive_survey() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let hypothesis = HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let source = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(source, place).unwrap();
+            txn.set_component_resource_source(
+                source,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(3),
+                    max_quantity: Quantity(10),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                    extraction_slots: NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            setup_survey_agent(&mut world, place, hypothesis)
+        };
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 3);
+
+        let record = world
+            .get_component_survey_memory(agent)
+            .and_then(|memory| memory.find(place, hypothesis))
+            .expect("arrival should record survey");
+        assert!(record.found);
+        assert!(survey_payloads(&event_log)[0].found);
+    }
+
+    #[test]
+    fn arrival_with_item_lot_satisfies_commodity_hypothesis() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let hypothesis = HypothesisKind::MayContainCommodity {
+            commodity: CommodityKind::Apple,
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let lot = txn
+                .create_item_lot(CommodityKind::Apple, Quantity(2))
+                .unwrap();
+            txn.set_ground_location(lot, place).unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            setup_survey_agent(&mut world, place, hypothesis)
+        };
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 3);
+
+        assert!(
+            world
+                .get_component_survey_memory(agent)
+                .and_then(|memory| memory.find(place, hypothesis))
+                .is_some_and(|record| record.found)
+        );
+    }
+
+    #[test]
+    fn arrival_with_latrine_hypothesis_uses_place_tag() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::PublicLatrine);
+        let hypothesis = HypothesisKind::MayContainLatrine;
+        let agent = setup_survey_agent(&mut world, place, hypothesis);
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 3);
+
+        assert!(
+            world
+                .get_component_survey_memory(agent)
+                .and_then(|memory| memory.find(place, hypothesis))
+                .is_some_and(|record| record.found)
+        );
+    }
+
+    #[test]
+    fn arrival_with_wash_basin_hypothesis_uses_workstation_tag() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let hypothesis = HypothesisKind::MayContainWashBasin;
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let basin = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(basin, place).unwrap();
+            txn.set_component_workstation_marker(
+                basin,
+                WorkstationMarker(WorkstationTag::WashBasin),
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            setup_survey_agent(&mut world, place, hypothesis)
+        };
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 3);
+
+        assert!(
+            world
+                .get_component_survey_memory(agent)
+                .and_then(|memory| memory.find(place, hypothesis))
+                .is_some_and(|record| record.found)
+        );
+    }
+
+    #[test]
+    fn arrival_with_sleep_site_hypothesis_requires_recovery_modifier_above_universal_default() {
+        let mut default_world = World::new(build_prototype_world()).unwrap();
+        let default_place = default_world.topology().place_ids().next().unwrap();
+        let hypothesis = HypothesisKind::MayContainSleepSite;
+        let default_agent = setup_survey_agent(&mut default_world, default_place, hypothesis);
+        let mut default_log = EventLog::new();
+
+        run_perception(&mut default_world, &mut default_log, 3);
+
+        assert!(
+            default_world
+                .get_component_survey_memory(default_agent)
+                .and_then(|memory| memory.find(default_place, hypothesis))
+                .is_some_and(|record| !record.found)
+        );
+
+        let mut better_world = World::new(build_prototype_world()).unwrap();
+        let better_place = better_world.topology().place_ids().next().unwrap();
+        {
+            let mut txn = new_txn(&mut better_world, 1);
+            txn.set_component_sleep_quality_profile(
+                better_place,
+                SleepQualityProfile {
+                    shelter: ShelterTag::Shelter,
+                    ground_comfort: GroundComfortTag::Soft,
+                    recovery_modifier: SleepRecoveryModifier::new(1250),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+        let better_agent = setup_survey_agent(&mut better_world, better_place, hypothesis);
+        let mut better_log = EventLog::new();
+
+        run_perception(&mut better_world, &mut better_log, 3);
+
+        assert!(
+            better_world
+                .get_component_survey_memory(better_agent)
+                .and_then(|memory| memory.find(better_place, hypothesis))
+                .is_some_and(|record| record.found)
+        );
+    }
+
+    #[test]
+    fn arrival_with_proactive_hypothesis_always_writes_positive_survey() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let hypothesis = HypothesisKind::Proactive;
+        let agent = setup_survey_agent(&mut world, place, hypothesis);
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 3);
+
+        assert!(
+            world
+                .get_component_survey_memory(agent)
+                .and_then(|memory| memory.find(place, hypothesis))
+                .is_some_and(|record| record.found)
+        );
+    }
+
+    #[test]
+    fn arrival_without_active_explore_location_writes_no_survey() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let mut txn = new_txn(&mut world, 1);
+        let agent = txn.create_agent("Surveyor", ControlSource::Ai).unwrap();
+        txn.set_ground_location(agent, place).unwrap();
+        txn.set_component_agent_belief_store(agent, AgentBeliefStore::new())
+            .unwrap();
+        txn.set_component_perception_profile(agent, profile(1000))
+            .unwrap();
+        txn.set_component_intention_frame(
+            agent,
+            IntentionFrame {
+                goal: GoalKey::from(GoalKind::Sleep),
+                domain: IntentionDomain::Generic,
+                assumptions: vec![],
+                state: FrameState::Active,
+                established_at: Tick(1),
+                last_progress_tick: None,
+                stalled_ticks: 0,
+                patience_limit: 30,
+            },
+        )
+        .unwrap();
+        let mut bootstrap_log = EventLog::new();
+        let _ = txn.commit(&mut bootstrap_log);
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 3);
+
+        assert!(
+            world
+                .get_component_survey_memory(agent)
+                .is_none_or(|memory| memory.entries.is_empty())
+        );
+        assert!(survey_payloads(&event_log).is_empty());
     }
 
     #[test]

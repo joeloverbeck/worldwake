@@ -15,6 +15,8 @@
 | 1 | Agent C | GoalOffered | goal=ExploreLocation { target_place: EntityId { slot: 1, generation: 0 }, motivating_need: NeedDriven(Hunger), hypothesis: MayContainCommodity { commodity: Apple } } emitter=Exploration evidence=ExplorationPressurex1 |
 | 2 | Agent C | GoalOffered | goal=AcquireCommodity { commodity: Water, purpose: SelfConsume, quantity: AcquisitionQuantity { desired_min: 1, desired_target: 1, horizon_ticks: 200 } } emitter=HomeostaticNeeds evidence=HomeostaticPressurex1,PerceptionObservationx1 |
 | 2 | Agent C | GoalOffered | goal=ExploreLocation { target_place: EntityId { slot: 1, generation: 0 }, motivating_need: NeedDriven(Hunger), hypothesis: MayContainCommodity { commodity: Apple } } emitter=Exploration evidence=ExplorationPressurex1 |
+| 2 | Agent A | SurveyRecorded | place=e1g0 hypothesis=MayContainCommodity { commodity: Apple } found=true confidence=900 |
+| 2 | Agent B | SurveyRecorded | place=e1g0 hypothesis=MayContainCommodity { commodity: Apple } found=true confidence=900 |
 | 3 | Agent A | GoalOffered | goal=AcquireCommodity { commodity: Apple, purpose: SelfConsume, quantity: AcquisitionQuantity { desired_min: 1, desired_target: 1, horizon_ticks: 200 } } emitter=HomeostaticNeeds evidence=HomeostaticPressurex1,PerceptionObservationx1 |
 | 3 | Agent A | GoalOffered | goal=AcquireCommodity { commodity: Apple, purpose: SelfConsume, quantity: AcquisitionQuantity { desired_min: 1, desired_target: 1, horizon_ticks: 200 } } emitter=HomeostaticNeeds evidence=HomeostaticPressurex1,PerceptionObservationx1 |
 | 3 | Agent A | PlanAdopted | goal=AcquireCommodity { commodity: Apple, purpose: SelfConsume, quantity: AcquisitionQuantity { desired_min: 1, desired_target: 1, horizon_ticks: 200 } } steps=1 |
@@ -43,4 +45,3 @@
 | 4 | Agent C | GoalOffered | goal=ConsumeOwnedCommodity { commodity: Water } emitter=HomeostaticNeeds evidence=HomeostaticPressurex1,PerceptionObservationx1 |
 | 4 | Agent C | GoalOffered | goal=ExploreLocation { target_place: EntityId { slot: 1, generation: 0 }, motivating_need: NeedDriven(Hunger), hypothesis: MayContainCommodity { commodity: Apple } } emitter=Exploration evidence=ExplorationPressurex1 |
 | 4 | Agent C | PlanAdopted | goal=ConsumeOwnedCommodity { commodity: Water } steps=1 |
-

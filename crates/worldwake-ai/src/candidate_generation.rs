@@ -6334,10 +6334,11 @@ mod tests {
         PlaceVisitRecord, PreferenceProfile, ProofRequirement, PunishmentFineSelectionTrace,
         PunishmentFineTraceFacts, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData,
         RecordEntryId, RecordKind, ResourceSource, RewardSource, RightKind, SharedTellState,
-        ShelterTag, SleepQualityProfile, SocialObservation, SocialObservationDetail,
-        SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, TheftFacts, Tick, TickRange,
-        ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationKind,
-        ViolationMemory, WashBasinState, WorkstationTag, Wound, WoundCause, WoundId,
+        ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SocialObservation,
+        SocialObservationDetail, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic,
+        TheftFacts, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, ViolationKind, ViolationMemory, WashBasinState, WorkstationTag, Wound,
+        WoundCause, WoundId,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
@@ -7534,7 +7535,7 @@ mod tests {
         SleepQualityProfile {
             shelter: ShelterTag::Shelter,
             ground_comfort: GroundComfortTag::Soft,
-            recovery_modifier: pm(recovery_modifier),
+            recovery_modifier: SleepRecoveryModifier::new(recovery_modifier),
         }
     }
 

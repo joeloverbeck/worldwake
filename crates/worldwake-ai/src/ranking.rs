@@ -2680,11 +2680,12 @@ mod tests {
         ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
         PerceptionSource, Permille, PlaceDirtiness, PreferenceProfile, ProofRequirement,
         PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource,
-        RewardSource, RightKind, RouteExperience, ShelterTag, SleepQualityProfile, SourceKey,
-        SourceReliability, SubstitutePreferences, SurveyMemory, SurveyRecord, TellTopic,
-        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
-        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
-        WashBasinState, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
+        RewardSource, RightKind, RouteExperience, ShelterTag, SleepQualityProfile,
+        SleepRecoveryModifier, SourceKey, SourceReliability, SubstitutePreferences, SurveyMemory,
+        SurveyRecord, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
+        TradeCategory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
+        ViolationKind, WashBasinState, WorkstationTag, Wound, WoundCause, WoundId,
+        belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -3236,7 +3237,7 @@ mod tests {
         SleepQualityProfile {
             shelter: ShelterTag::Shelter,
             ground_comfort: GroundComfortTag::Soft,
-            recovery_modifier: pm(recovery_modifier),
+            recovery_modifier: SleepRecoveryModifier::new(recovery_modifier),
         }
     }
 

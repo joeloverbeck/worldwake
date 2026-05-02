@@ -2528,9 +2528,9 @@ mod tests {
         LastProactiveExplorationTick, LatrineFullness, LoadUnits, OfficeData, PatrolProfile,
         PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, Quantity, RecordData,
         RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance, RewardReservation,
-        RewardSource, ShelterTag, SleepQualityProfile, SuccessionLaw, SurveyMemory, TheftFacts,
-        Tick, UniqueItemKind, ViolationId, VisibilitySpec, WashBasinState, WitnessData,
-        WorkstationTag, World, WorldTxn, build_prototype_world,
+        RewardSource, ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SuccessionLaw,
+        SurveyMemory, TheftFacts, Tick, UniqueItemKind, ViolationId, VisibilitySpec,
+        WashBasinState, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
 
     fn sample_claim(
@@ -3174,12 +3174,12 @@ mod tests {
         let known_profile = SleepQualityProfile {
             shelter: ShelterTag::Shelter,
             ground_comfort: GroundComfortTag::Soft,
-            recovery_modifier: Permille::new(950).unwrap(),
+            recovery_modifier: SleepRecoveryModifier::new(1250),
         };
         let unknown_profile = SleepQualityProfile {
             shelter: ShelterTag::Roofed,
             ground_comfort: GroundComfortTag::Hard,
-            recovery_modifier: Permille::new(700).unwrap(),
+            recovery_modifier: SleepRecoveryModifier::new(700),
         };
         let actor = {
             let mut txn = new_txn(&mut world, 1);

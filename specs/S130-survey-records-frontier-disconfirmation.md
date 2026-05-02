@@ -242,7 +242,7 @@ If found, evaluate `hypothesis` against the agent's freshly-perceived entities a
 - `MayContainCommodity { commodity }` → any perceived `ResourceSource` with `commodity == hypothesis.commodity && available_quantity > Quantity(0)`, OR any `ItemLot` of that commodity at the place.
 - `MayContainLatrine` → place carries `PlaceTag::Latrine` (verified: `PlaceTag` enum at `crates/worldwake-core/src/topology.rs:11–26`; `Latrine` is a place-level tag, not a workstation tag).
 - `MayContainWashBasin` → place hosts a workstation tagged `WorkstationTag::WashBasin` (verified: `WorkstationTag` enum body at `crates/worldwake-core/src/production.rs:10–20`; `WashBasin` is a facility-level tag).
-- `MayContainSleepSite` → place carries `SleepQualityProfile` with `recovery_modifier > Permille::new(1000)` (better-than-universal-default; per S128 — hard dependency).
+- `MayContainSleepSite` → place carries `SleepQualityProfile` with `recovery_modifier > SleepRecoveryModifier::IDENTITY` (better-than-universal-default; per S128 — hard dependency). D6 includes the root representation correction from bounded `Permille` to `SleepRecoveryModifier`, because above-default sleep-site quality is architecturally required and cannot be represented by `Permille`.
 - `Proactive` → always `found = true` (the act of arriving satisfies proactive intent).
 
 Write the `SurveyMemory` entry via `record(...)` with `confidence = profile.observation_fidelity` (the existing `PerceptionProfile.observation_fidelity` field at `crates/worldwake-core/src/belief.rs:2556`; the field is named `observation_fidelity`, not `fidelity`). Capacity is read from `cognitive.survey_memory_capacity`.
@@ -323,9 +323,9 @@ These profile components are persisted component payloads. The D9 implementation
 
 ### D10: Resource-arrival mismatch reuse
 
-When the agent's arrival evaluates `MayContainCommodity { commodity }` to `found = false`, and the agent had a `FrameAssumption::CommodityAvailableAt { commodity, place }` (S122) on the active `IntentionFrame`, the existing `record_assumption_failure` path (`crates/worldwake-ai/src/agent_tick/frame.rs:596`) fires alongside the survey write. No new event needed — S122/S110 already surface this case via `EventTag::ExpectationMismatch`.
+When an acquisition travel/errand frame expects a commodity at a place and the live belief path refutes that assumption, the existing S122 `record_assumption_failure` path (`crates/worldwake-ai/src/agent_tick/frame.rs:596`) remains the mismatch surface. No new event is needed — S122/S110 already surface that case via `EventTag::ExpectationMismatch`.
 
-The S130 survey adds the "I checked here and found nothing" record even when no S122 assumption was present (e.g., the agent was exploring proactively and had no committed acquisition goal yet). The two systems are orthogonal and both can fire on the same arrival tick.
+The S130 survey adds the "I checked here and found nothing" record for active `ExploreLocation` arrivals. Live `IntentionFrame::expected_commodity()` only populates `FrameAssumption::CommodityAvailableAt` for acquisition goals in `Travel` / `Errand` domains, so D6 survey writes and S122 acquisition mismatch events are orthogonal surfaces rather than a required same-frame pairing.
 
 ### D11: Decision-trace surfacing
 
@@ -386,7 +386,7 @@ No new SystemFn. Two existing hosts are extended:
 |--------|-------------|-----------|
 | Perception (`worldwake-systems`) | Writes `SurveyMemory` on arrival; emits `SurveyRecorded` event | State-mediated |
 | AI ranking (`worldwake-ai`) | Reads `SurveyMemory` via `GoalBeliefView::survey_memory()` for damping `ExploreLocation` candidates | State-mediated (belief-view-mediated) |
-| Frame assumption (S122, `worldwake-ai`) | When `found=false` and `CommodityAvailableAt` was present on the active `IntentionFrame`, S122's existing `record_assumption_failure` path records the discrepancy; S130 adds the survey record orthogonally on the same tick | State-mediated |
+| Frame assumption (S122, `worldwake-ai`) | Acquisition travel/errand frames continue to use `record_assumption_failure` for `CommodityAvailableAt` breaches; S130's D6 survey writes cover active `ExploreLocation` arrivals separately | State-mediated |
 | Belief decay (S101, `worldwake-core`) | Survey records decay through `enforce_limits(current_tick, &CognitiveProfile)` on the per-tick maintenance pass | State-mediated |
 | Decision history (S110, event log) | `SurveyRecorded` event lands in event log with full payload | State-mediated |
 

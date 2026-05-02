@@ -16,10 +16,10 @@ use worldwake_core::{
     IntentionDispositionProfile, JusticeDispositionProfile, LatrineFullness, LoadUnits,
     MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
     PerceptionSource, Permille, PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile,
-    PursuitProfile, Quantity, ShelterTag, SleepQualityProfile, SubstitutePreferences,
-    SuccessionLaw, TellProfile, TheftDispositionProfile, TradeDispositionProfile, UtilityProfile,
-    ViolationDispositionProfile, WashBasinState, WorkstationTag, items::CommodityKind,
-    topology::PlaceTag,
+    PursuitProfile, Quantity, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
+    SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WashBasinState,
+    WorkstationTag, items::CommodityKind, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -340,17 +340,10 @@ pub struct SleepQualityProfileDef {
 
 impl SleepQualityProfileDef {
     pub fn into_profile(self) -> Result<SleepQualityProfile, String> {
-        let recovery_modifier = Permille::new(self.recovery_modifier).map_err(|_| {
-            format!(
-                "sleep_quality.recovery_modifier {} exceeds 1000",
-                self.recovery_modifier
-            )
-        })?;
-
         Ok(SleepQualityProfile {
             shelter: self.shelter,
             ground_comfort: self.ground_comfort,
-            recovery_modifier,
+            recovery_modifier: SleepRecoveryModifier::new(self.recovery_modifier),
         })
     }
 }
@@ -738,7 +731,7 @@ mod tests {
                     sleep_quality: (
                         shelter: Shelter,
                         ground_comfort: Soft,
-                        recovery_modifier: 900,
+                        recovery_modifier: 1250,
                     ),
                 ),
             ],
@@ -753,22 +746,22 @@ mod tests {
             Some(SleepQualityProfileDef {
                 shelter: ShelterTag::Shelter,
                 ground_comfort: GroundComfortTag::Soft,
-                recovery_modifier: 900,
+                recovery_modifier: 1250,
             })
         );
     }
 
     #[test]
-    fn sleep_quality_profile_def_rejects_out_of_range_modifier() {
+    fn sleep_quality_profile_def_accepts_above_default_modifier() {
         let def = SleepQualityProfileDef {
             shelter: ShelterTag::Open,
             ground_comfort: GroundComfortTag::Earth,
-            recovery_modifier: 1001,
+            recovery_modifier: 1250,
         };
 
         assert_eq!(
-            def.into_profile().unwrap_err(),
-            "sleep_quality.recovery_modifier 1001 exceeds 1000"
+            def.into_profile().unwrap().recovery_modifier,
+            SleepRecoveryModifier::new(1250)
         );
     }
 

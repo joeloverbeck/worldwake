@@ -297,11 +297,11 @@ mod tests {
         PursuitProfile, Quantity, QueuedContentionIntent, RecordData, RecordEntryId, RecordKind,
         ReservationId, ReservationRecord, ResourceExtractionQueues, ResourceSource,
         RewardEncumbrance, RewardSource, SaleListing, SceneEvidence, ShelterTag, SleepEpisode,
-        SleepQualityProfile, StockAssignment, StockAssignmentKind, StockStoragePolicy,
-        SurveyMemory, SurveyRecord, TellProfile, TheftDispositionProfile, Tick, TickRange,
-        TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile, ViolationMemory,
-        WakeCondition, WashBasinState, WorkstationMarker, WorkstationTag, Wound, WoundCause,
-        WoundList,
+        SleepQualityProfile, SleepRecoveryModifier, StockAssignment, StockAssignmentKind,
+        StockStoragePolicy, SurveyMemory, SurveyRecord, TellProfile, TheftDispositionProfile, Tick,
+        TickRange, TravelEdgeId, UniqueItem, UniqueItemKind, ViolationDispositionProfile,
+        ViolationMemory, WakeCondition, WashBasinState, WorkstationMarker, WorkstationTag, Wound,
+        WoundCause, WoundList,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile,
             sample_contention_disposition_profile, sample_demand_memory, sample_discrepancy_memory,
@@ -742,7 +742,7 @@ mod tests {
             ComponentValue::SleepQualityProfile(SleepQualityProfile {
                 shelter: ShelterTag::Shelter,
                 ground_comfort: GroundComfortTag::Soft,
-                recovery_modifier: Permille::new(850).unwrap(),
+                recovery_modifier: SleepRecoveryModifier::new(850),
             }),
             ComponentValue::PlaceDirtiness(PlaceDirtiness {
                 value: Permille::new(500).unwrap(),
@@ -808,7 +808,7 @@ mod tests {
                 intended_max_ticks: std::num::NonZeroU32::new(30).unwrap(),
                 target_recovery: Permille::new(650).unwrap(),
                 accumulated_recovery: Permille::new(125).unwrap(),
-                recovery_modifier: Permille::new(850).unwrap(),
+                recovery_modifier: SleepRecoveryModifier::new(850),
                 wake_conditions: vec![WakeCondition::TargetRecoveryReached],
             }),
             ComponentValue::IntentionDispositionProfile(IntentionDispositionProfile {
