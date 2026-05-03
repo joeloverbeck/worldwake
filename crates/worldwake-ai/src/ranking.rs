@@ -49,8 +49,8 @@ use worldwake_core::{
     GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille,
     NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, Quantity, ReliabilityRecord, RepairKey,
-    RepairMemory, RightKind, SourceKey, SubstitutePreferences, SurveyRecord, TellTopic,
+    OpportunityKey, PerceptionSource, Permille, PreferenceProfile, Quantity, ReliabilityRecord,
+    RepairKey, RepairMemory, RightKind, SourceKey, SubstitutePreferences, SurveyRecord, TellTopic,
     ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
     failure_ratio_permille,
 };
@@ -432,23 +432,16 @@ fn apply_source_reliability_discount(
         entity: source_entity,
         commodity,
     })?;
-    let failure_ratio = failure_ratio_permille(record);
-    if failure_ratio == 0 {
-        return None;
-    }
 
-    let trust_weight = u32::from(profile.source_trust_weight.value());
-    let effective_discount = trust_weight.saturating_mul(failure_ratio) / 1000;
-    let post_discount_motive =
-        (motive_score.saturating_mul(1000u32.saturating_sub(effective_discount)) / 1000).max(1);
-
-    Some(SourceReliabilityDiscount {
+    source_reliability_composite_discount(
         source_entity,
         commodity,
-        failure_ratio_permille: failure_ratio,
-        pre_discount_motive: motive_score,
-        post_discount_motive,
-    })
+        record,
+        record,
+        profile,
+        context.current_tick,
+        motive_score,
+    )
 }
 
 pub(crate) fn apply_pending_source_reliability_failures(
@@ -549,29 +542,95 @@ fn apply_source_reliability_discount_with_pending_failures(
     }
 
     let profile = context.view.preference_profile(context.agent)?;
-    let trust_weight = u32::from(profile.source_trust_weight.value());
-    let mut record = context
+    let record = context
         .view
         .source_reliability(context.agent)
         .and_then(|source_reliability| source_reliability.sources.get(&source_key).copied())
         .unwrap_or_else(|| ReliabilityRecord::new(context.current_tick));
-    record.failed_attempts = record.failed_attempts.saturating_add(1);
-    let failure_ratio = failure_ratio_permille(&record);
-    if failure_ratio == 0 {
+    let mut projected_record = record;
+    projected_record.failed_attempts = projected_record.failed_attempts.saturating_add(1);
+
+    source_reliability_composite_discount(
+        source_entity,
+        commodity,
+        &projected_record,
+        &record,
+        profile,
+        context.current_tick,
+        motive_score,
+    )
+}
+
+fn source_reliability_composite_discount(
+    source_entity: EntityId,
+    commodity: CommodityKind,
+    trust_record: &ReliabilityRecord,
+    observation_record: &ReliabilityRecord,
+    profile: PreferenceProfile,
+    current_tick: Tick,
+    motive_score: u32,
+) -> Option<SourceReliabilityDiscount> {
+    let failure_ratio = failure_ratio_permille(trust_record);
+    let trust_weight = u32::from(profile.source_trust_weight.value());
+    let trust_discount = trust_weight.saturating_mul(failure_ratio) / 1000;
+    let wait_weight = u32::from(profile.wait_sensitivity_weight.value());
+    let wait_penalty = observation_record
+        .average_wait_ticks
+        .saturating_mul(wait_weight)
+        / 1000;
+    let capacity_freshness_ticks = current_tick
+        .0
+        .saturating_sub(observation_record.last_observed_capacity_tick.0);
+    let capacity_signal = source_capacity_signal(
+        observation_record.last_observed_capacity,
+        capacity_freshness_ticks,
+        profile.memory_retention_ticks,
+    );
+
+    if failure_ratio == 0 && wait_penalty == 0 && capacity_signal == 0 {
         return None;
     }
 
-    let effective_discount = trust_weight.saturating_mul(failure_ratio) / 1000;
     let post_discount_motive =
-        (motive_score.saturating_mul(1000u32.saturating_sub(effective_discount)) / 1000).max(1);
+        motive_score.saturating_mul(1000u32.saturating_sub(trust_discount)) / 1000;
+    let post_discount_motive = post_discount_motive
+        .saturating_sub(wait_penalty)
+        .saturating_add(capacity_signal)
+        .max(1);
 
     Some(SourceReliabilityDiscount {
         source_entity,
         commodity,
         failure_ratio_permille: failure_ratio,
+        average_wait_ticks: observation_record.average_wait_ticks,
+        wait_penalty,
+        last_observed_capacity: observation_record.last_observed_capacity,
+        capacity_freshness_ticks,
+        capacity_signal,
         pre_discount_motive: motive_score,
         post_discount_motive,
     })
+}
+
+fn source_capacity_signal(
+    last_observed_capacity: u16,
+    capacity_freshness_ticks: u64,
+    memory_retention_ticks: u64,
+) -> u32 {
+    if capacity_freshness_ticks > memory_retention_ticks {
+        return 0;
+    }
+    if memory_retention_ticks == 0 {
+        return u32::from(last_observed_capacity);
+    }
+
+    let freshness_factor = 1000u128.saturating_sub(
+        u128::from(capacity_freshness_ticks).saturating_mul(1000)
+            / u128::from(memory_retention_ticks),
+    );
+    (u128::from(last_observed_capacity) * freshness_factor / 1000)
+        .try_into()
+        .unwrap_or(u32::MAX)
 }
 
 fn source_reliability_discount_scope(candidate: &GoalOffer) -> Option<(EntityId, CommodityKind)> {
@@ -5718,6 +5777,11 @@ mod tests {
                 source_entity: source,
                 commodity: CommodityKind::Bread,
                 failure_ratio_permille: 500,
+                average_wait_ticks: 0,
+                wait_penalty: 0,
+                last_observed_capacity: 0,
+                capacity_freshness_ticks: 10,
+                capacity_signal: 0,
                 pre_discount_motive: 90_000,
                 post_discount_motive: 45_000,
             })
@@ -5778,12 +5842,16 @@ mod tests {
         .unwrap();
 
         assert_eq!(discount.failure_ratio_permille, 1000);
+        assert_eq!(discount.average_wait_ticks, 0);
+        assert_eq!(discount.wait_penalty, 0);
+        assert_eq!(discount.last_observed_capacity, 0);
+        assert_eq!(discount.capacity_signal, 0);
         assert_eq!(discount.pre_discount_motive, 1);
         assert_eq!(discount.post_discount_motive, 1);
     }
 
     #[test]
-    fn source_reliability_discount_skips_zero_failure_ratio() {
+    fn source_reliability_discount_returns_none_when_all_axes_zero() {
         let agent = entity(1);
         let market = entity(2);
         let source = entity(50);
@@ -5836,6 +5904,194 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn source_reliability_discount_applies_wait_penalty_alone_when_no_failures() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let mut view = base_view(agent);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(500),
+            },
+        );
+        let mut record = source_reliability_record(3, 0);
+        record.average_wait_ticks = 12;
+        record.wait_observation_count = 3;
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Bread,
+                    },
+                    record,
+                )]),
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        let discount = apply_source_reliability_discount(
+            &goal_at_place_with_sources(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                },
+                market,
+                BTreeSet::from([source]),
+            ),
+            &context,
+            100,
+        )
+        .unwrap();
+
+        assert_eq!(discount.failure_ratio_permille, 0);
+        assert_eq!(discount.average_wait_ticks, 12);
+        assert_eq!(discount.wait_penalty, 6);
+        assert_eq!(discount.capacity_signal, 0);
+        assert!(discount.post_discount_motive < discount.pre_discount_motive);
+    }
+
+    #[test]
+    fn source_reliability_discount_applies_capacity_signal_within_freshness_window() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let mut view = base_view(agent);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 400,
+                wait_sensitivity_weight: pm(150),
+            },
+        );
+        let mut record = source_reliability_record(3, 0);
+        record.last_observed_capacity = 18;
+        record.last_observed_capacity_tick = Tick(0);
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Bread,
+                    },
+                    record,
+                )]),
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            Tick(100),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        let discount = apply_source_reliability_discount(
+            &goal_at_place_with_sources(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                },
+                market,
+                BTreeSet::from([source]),
+            ),
+            &context,
+            100,
+        )
+        .unwrap();
+
+        assert_eq!(discount.failure_ratio_permille, 0);
+        assert_eq!(discount.capacity_freshness_ticks, 100);
+        assert_eq!(discount.capacity_signal, 13);
+        assert!(discount.post_discount_motive > discount.pre_discount_motive);
+    }
+
+    #[test]
+    fn source_reliability_discount_zeroes_capacity_signal_when_stale() {
+        let agent = entity(1);
+        let market = entity(2);
+        let source = entity(50);
+        let mut view = base_view(agent);
+        view.preference_profiles.insert(
+            agent,
+            PreferenceProfile {
+                route_caution_weight: pm(0),
+                source_trust_weight: pm(1000),
+                route_memory_capacity: 8,
+                source_memory_capacity: 8,
+                memory_retention_ticks: 400,
+                wait_sensitivity_weight: pm(150),
+            },
+        );
+        let mut record = source_reliability_record(3, 0);
+        record.average_wait_ticks = 10;
+        record.last_observed_capacity = 18;
+        record.last_observed_capacity_tick = Tick(100);
+        view.source_reliabilities.insert(
+            agent,
+            SourceReliability {
+                sources: BTreeMap::from([(
+                    SourceKey {
+                        entity: source,
+                        commodity: CommodityKind::Bread,
+                    },
+                    record,
+                )]),
+            },
+        );
+        let utility = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            Tick(600),
+            &utility,
+            build_decision_context(&view, agent),
+        );
+
+        let discount = apply_source_reliability_discount(
+            &goal_at_place_with_sources(
+                GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                },
+                market,
+                BTreeSet::from([source]),
+            ),
+            &context,
+            100,
+        )
+        .unwrap();
+
+        assert_eq!(discount.capacity_freshness_ticks, 500);
+        assert!(discount.capacity_freshness_ticks > 400);
+        assert_eq!(discount.capacity_signal, 0);
+        assert_eq!(discount.wait_penalty, 1);
     }
 
     #[test]
@@ -6004,6 +6260,11 @@ mod tests {
                 source_entity: source,
                 commodity: CommodityKind::Bread,
                 failure_ratio_permille: 500,
+                average_wait_ticks: 0,
+                wait_penalty: 0,
+                last_observed_capacity: 0,
+                capacity_freshness_ticks: 10,
+                capacity_signal: 0,
                 pre_discount_motive: 200_000,
                 post_discount_motive: 100_000,
             })
@@ -6124,6 +6385,11 @@ mod tests {
                 source_entity: familiar_source,
                 commodity: CommodityKind::Bread,
                 failure_ratio_permille: 500,
+                average_wait_ticks: 0,
+                wait_penalty: 0,
+                last_observed_capacity: 0,
+                capacity_freshness_ticks: 10,
+                capacity_signal: 0,
                 pre_discount_motive: 90_000,
                 post_discount_motive: 45_000,
             })

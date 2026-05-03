@@ -30,6 +30,7 @@ Before any Cargo command:
 - Run it alone, outside `multi_tool_use.parallel`.
 - Do not bundle it with `rg`, `sed`, `git status`, `git diff`, or any other read-only helper command.
 - Poll or wait for any known in-flight Cargo session before starting another one.
+- If `cargo test ... -- --list` returns several tests for a shared family/prefix, do not append `--exact` to that same prefix. Either run the family filter without `--exact` and record the nonzero test set, or run each concrete listed test name exactly.
 
 ## Quick Routing
 

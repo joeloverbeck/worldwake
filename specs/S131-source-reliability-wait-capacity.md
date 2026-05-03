@@ -218,8 +218,8 @@ fn apply_source_reliability_discount(
         .saturating_mul(1000u32.saturating_sub(trust_discount)) / 1000;
     let post = post.saturating_sub(wait_penalty).saturating_add(capacity_signal).max(1);
 
-    if post == motive_score {
-        // No-op composite — no observations of any kind; skip recording.
+    if failure_ratio == 0 && wait_penalty == 0 && capacity_signal == 0 {
+        // No signal on any composite axis; skip recording.
         return None;
     }
 

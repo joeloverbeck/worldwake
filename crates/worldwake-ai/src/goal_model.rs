@@ -2837,6 +2837,11 @@ mod tests {
             source_entity: entity_id(9, 0),
             commodity: CommodityKind::Bread,
             failure_ratio_permille: 500,
+            average_wait_ticks: 0,
+            wait_penalty: 0,
+            last_observed_capacity: 0,
+            capacity_freshness_ticks: 0,
+            capacity_signal: 0,
             pre_discount_motive: 700,
             post_discount_motive: 350,
         };

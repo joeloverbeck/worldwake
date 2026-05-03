@@ -547,6 +547,11 @@ pub struct SourceReliabilityDiscount {
     pub source_entity: EntityId,
     pub commodity: CommodityKind,
     pub failure_ratio_permille: u32,
+    pub average_wait_ticks: u32,
+    pub wait_penalty: u32,
+    pub last_observed_capacity: u16,
+    pub capacity_freshness_ticks: u64,
+    pub capacity_signal: u32,
     pub pre_discount_motive: u32,
     pub post_discount_motive: u32,
 }
@@ -1951,10 +1956,15 @@ fn format_competition_discount_summary(discount: &CompetitionDiscount) -> String
 
 fn format_source_reliability_discount_summary(discount: &SourceReliabilityDiscount) -> String {
     format!(
-        ", source_reliability=entity={} commodity={:?} failure={} pre={} post={}",
+        ", source_reliability=entity={} commodity={:?} failure={} wait_avg={} wait_pen={} cap={} cap_age={} cap_sig={} pre={} post={}",
         discount.source_entity,
         discount.commodity,
         discount.failure_ratio_permille,
+        discount.average_wait_ticks,
+        discount.wait_penalty,
+        discount.last_observed_capacity,
+        discount.capacity_freshness_ticks,
+        discount.capacity_signal,
         discount.pre_discount_motive,
         discount.post_discount_motive,
     )
@@ -2453,6 +2463,11 @@ mod tests {
             source_entity: entity(12),
             commodity: CommodityKind::Bread,
             failure_ratio_permille: 500,
+            average_wait_ticks: 12,
+            wait_penalty: 3,
+            last_observed_capacity: 18,
+            capacity_freshness_ticks: 100,
+            capacity_signal: 13,
             pre_discount_motive: 700,
             post_discount_motive: 350,
         }
@@ -3826,6 +3841,11 @@ mod tests {
         assert!(summary.contains("source_reliability=entity="));
         assert!(summary.contains("commodity=Bread"));
         assert!(summary.contains("failure=500"));
+        assert!(summary.contains("wait_avg=12"));
+        assert!(summary.contains("wait_pen=3"));
+        assert!(summary.contains("cap=18"));
+        assert!(summary.contains("cap_age=100"));
+        assert!(summary.contains("cap_sig=13"));
         assert!(summary.contains("pre=700"));
         assert!(summary.contains("post=350"));
     }

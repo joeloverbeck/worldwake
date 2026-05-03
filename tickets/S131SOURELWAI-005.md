@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — golden test additions only
-**Deps**: archive/tickets/S131SOURELWAI-001.md, archive/tickets/S131SOURELWAI-002.md, archive/tickets/S131SOURELWAI-003.md, S131SOURELWAI-004
+**Deps**: archive/tickets/S131SOURELWAI-001.md, archive/tickets/S131SOURELWAI-002.md, archive/tickets/S131SOURELWAI-003.md, archive/tickets/S131SOURELWAI-004.md
 
 ## Problem
 

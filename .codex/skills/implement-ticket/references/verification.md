@@ -112,6 +112,7 @@ Before running focused Rust tests, resolve the exact live test IDs first (for ex
 
 Before running a ticket-named focused command, verify that the selector actually proves the owned surface. If a substring filter would compile a target while running zero tests, or would run a broader unrelated surface than the ticket claims, correct the command immediately and update the ticket's command list during reassessment/closeout.
 For Rust unit-test modules, module-name selectors like `cargo test -p <crate> <module_name>` can still fan out across unrelated bins, integration targets, or zero-test harnesses. After a `-- --list` check, prefer the narrowest truthful exact or module-qualified selector the current test binary layout supports. In multi-target Rust crates, when the proof lives in the library unit-test binary, prefer `cargo test -p <crate> --lib <module_path> -- --exact` over trying the crate-root selector form first.
+When the listed tests share only a family prefix and the proof target is the whole family, run the prefix filter without `--exact` after confirming the list, or run every concrete listed test name separately with `--exact`. Treat an exact run of the shared prefix that reports zero executed tests as a false start, not as verification.
 
 ## Cargo lock contention
 
