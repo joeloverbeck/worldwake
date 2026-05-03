@@ -1,6 +1,6 @@
 # S131SOURELWAI-005: Golden coverage for wait/capacity learning
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None — golden test additions only
@@ -20,7 +20,8 @@ Tickets 001–004 deliver the per-component changes (field extension, two grant 
 4. The harvest start path that triggers the resource-extraction wait observation (ticket 002 D2b hook) requires an agent with `PerceptionProfile` to observe post-grant world state — per `CLAUDE.md`'s "Golden production tests require `PerceptionProfile` on agents that need to observe post-production output" — and at least two believed sources for the planner to actually exercise the composite ranking from ticket 004.
 5. Test scenarios must use `Permille` for `wait_sensitivity_weight` per `docs/spec-drafting-rules.md` Section 3 (no f32/f64) — the spec D5 baseline is `Permille::new_unchecked(150)`; the high-sensitivity scenario uses `Permille::new_unchecked(800)`.
 6. No existing golden currently exercises wait/capacity learning. `golden_experience_preferences.rs` covers the failure-ratio side of source reliability; this ticket adds the wait/capacity side as a separate file rather than extending the existing one — separation keeps the scope of each golden focused per `docs/golden-e2e-testing.md` guidance.
-8. The spec's D7 scenario "After 32 wait observations, the EMA replaces the running mean" is intrinsically hard to set up in a multi-tick simulation (would require 32 distinct grant cycles within the test). The focused unit test `observe_wait_switches_to_ema_after_32` from ticket 001 already proves this; the golden version is replaced with a simpler "running mean accumulates across 5 grant cycles" scenario that exercises the same code path with realistic harness setup. State this scope adjustment explicitly so reviewers understand the EMA contract is verified by ticket 001's focused test, not by this golden.
+8. The spec's D7 scenario "After 32 wait observations, the EMA replaces the running mean" is intrinsically hard to set up in a multi-tick simulation (would require 32 distinct grant cycles within the test). The focused unit test `observe_wait_switches_to_ema_after_32` from ticket 001 already proves this; the golden version is replaced with a simpler wait-promotion scenario that exercises the resource-extraction grant hook with realistic harness setup. State this scope adjustment explicitly so reviewers understand the EMA and exact running-mean contracts are verified by ticket 001's focused tests, not by this golden.
+9. Final live reassessment narrowed the golden layer to cross-layer composition: real resource-extraction queue promotion writes wait memory, real perception writes capacity memory, and AI ranking reads stored wait/capacity fields through `SourceReliabilityDiscount` in decision traces. This avoids duplicating the archived lower-layer tests for exact recurrence math and hook mutation details.
 
 ## Architecture Check
 
@@ -30,17 +31,27 @@ Tickets 001–004 deliver the per-component changes (field extension, two grant 
 
 ## Verification Layers
 
-1. Wait observation accumulates across grant cycles → golden assertion on `BeliefStoreSnapshot` (or direct component read on the actor's `SourceReliability`) after 5 grant cycles, asserting `average_wait_ticks` matches the documented integer running estimate of the observed waits.
-2. High-`wait_sensitivity_weight` agent re-ranks alternative source after observations accumulate → decision-trace assertion that the agent's chosen source changes across ticks once `wait_penalty` exceeds the trust delta to the alternative.
-3. Capacity-freshness staleness → component-state assertion that an old `last_observed_capacity_tick` produces zero `capacity_signal` after `current_tick − last_observed_capacity_tick > memory_retention_ticks`.
-4. Resource-extraction wait observation → component-state assertion on the second-to-act actor's `SourceReliability` after the first actor's harvest commits and the second is granted the slot.
-5. No cross-layer collapse — each invariant maps to a distinct proof surface (component state for observation correctness; decision trace for re-ranking; action trace not used because the action lifecycle isn't the contract here).
+1. Resource-extraction wait observation -> component-state assertion on the queued actor's `SourceReliability` after a real first harvester commits and the queued actor is later promoted through the live extraction queue.
+2. Capacity observation -> component-state assertion that a real perception tick writes `last_observed_capacity` and `last_observed_capacity_tick` for the same `(source, commodity)` key ranking later consumes.
+3. Fresh capacity contribution -> decision-trace assertion that fresh capacity produces `capacity_signal > 0` and increases the post-composite motive.
+4. Capacity-freshness staleness -> decision-trace assertion that an old `last_observed_capacity_tick` produces `capacity_signal == 0` after `current_tick - last_observed_capacity_tick > memory_retention_ticks`.
+5. High-`wait_sensitivity_weight` re-ranking -> decision-trace assertion that stored repeated wait observations make the next `AcquireCommodity { Apple }` decision switch from the closer orchard to the farther uncontested orchard.
 
 ## What to Change
 
 ### 1. Create `golden_source_reliability.rs`
 
 Add `crates/worldwake-ai/tests/golden_source_reliability.rs` with the following test functions, each setting up a focused scenario via the standard golden harness:
+
+Final landed functions:
+
+- `resource_extraction_wait_observation_records_when_promoted`
+- `capacity_observation_records_from_perception`
+- `capacity_signal_within_retention_window_contributes_to_motive`
+- `capacity_freshness_zeros_signal_after_retention_window`
+- `high_wait_sensitivity_agent_prefers_alternative_after_three_wait_observations`
+
+The draft `wait_observation_running_mean_accumulates_across_grant_cycles` setup below is superseded by the landed resource-extraction wait-promotion golden plus the archived ticket 001/002 focused proofs. The exact running-mean and EMA arithmetic is not duplicated at the golden layer.
 
 #### `wait_observation_running_mean_accumulates_across_grant_cycles`
 
@@ -99,17 +110,17 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` to register the n
 
 ### Tests That Must Pass
 
-1. `cargo test -p worldwake-ai --test golden_source_reliability wait_observation_running_mean_accumulates_across_grant_cycles`
+1. `cargo test -p worldwake-ai --test golden_source_reliability resource_extraction_wait_observation_records_when_promoted -- --exact`
 2. `cargo test -p worldwake-ai --test golden_source_reliability high_wait_sensitivity_agent_prefers_alternative_after_three_wait_observations`
 3. `cargo test -p worldwake-ai --test golden_source_reliability capacity_freshness_zeros_signal_after_retention_window`
 4. `cargo test -p worldwake-ai --test golden_source_reliability capacity_signal_within_retention_window_contributes_to_motive`
-5. `cargo test -p worldwake-ai --test golden_source_reliability resource_extraction_wait_observation_records_when_promoted`
-6. Existing golden suite: `cargo test -p worldwake-ai --test 'golden_*'` — all existing goldens continue to pass; the new file does not perturb them.
+5. `cargo test -p worldwake-ai --test golden_source_reliability capacity_observation_records_from_perception`
+6. New golden binary: `cargo test -p worldwake-ai --test golden_source_reliability`.
 7. Inventory script runs clean: `python3 scripts/golden_inventory.py --check-docs` reports no diff after regeneration.
 
 ### Invariants
 
-1. Wait observations accumulate as a deterministic integer running estimate across multiple grant cycles — `wait_observation_count` increments by 1 per grant; `average_wait_ticks` matches the documented recurrence over the recorded waits.
+1. A real resource-extraction queue promotion writes a positive wait observation through the production hook. Exact running-mean and EMA arithmetic remain the archived ticket 001 focused-test contract.
 2. An agent with high `wait_sensitivity_weight` revises its acquisition preference in favor of less-contested alternatives once enough wait observations accumulate — FND-21 (intentions are revisable) verified end-to-end.
 3. Capacity signal contributes to motive within the retention window and zeros out beyond it — FND-29A (history is append-only) preserved by *discounting* stale observations rather than overwriting them.
 4. Resource-extraction grants produce the same wait observation semantics as facility-queue grants — both substrates are first-class learning surfaces per ticket 002's design.
@@ -119,13 +130,34 @@ Run `python3 scripts/golden_inventory.py --write --check-docs` to register the n
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/tests/golden_source_reliability.rs` — 5 new golden test functions per Section 1 of What to Change.
+1. `crates/worldwake-ai/tests/golden_source_reliability.rs` — 5 new golden test functions per the final landed Section 1 of What to Change.
 2. `docs/generated/golden-e2e-inventory.md` and sibling generated files — auto-updated; no manual edit.
 
 ### Commands
 
 1. `cargo test -p worldwake-ai --test golden_source_reliability` — narrowest verification while iterating on the new file.
-2. `cargo test -p worldwake-ai --test 'golden_*'` — confirms no existing golden is perturbed by belief-store / decision-trace shape changes from tickets 001–004.
+2. `cargo test -p worldwake-ai` — affected-crate broad verification for the new golden integration.
 3. `python3 scripts/golden_inventory.py --write --check-docs` — regenerate inventory and confirm clean.
 4. `cargo test --workspace` — full workspace gate.
 5. `scripts/verify.sh` — full pre-PR gate.
+
+## Outcome
+
+Completed on 2026-05-03.
+
+- Added `crates/worldwake-ai/tests/golden_source_reliability.rs` with five scenarios, numbered 137-141, covering resource-extraction wait writes, perception capacity writes, fresh capacity ranking, stale capacity zeroing, and wait-memory source re-ranking.
+- Regenerated golden docs, adding `docs/generated/golden-scenario-details/source-reliability.md` and refreshing the inventory, scenario index, coverage matrix, and line-number-only generated detail updates.
+
+## Deviations
+
+- Replaced the drafted `wait_observation_running_mean_accumulates_across_grant_cycles` autonomous golden with `resource_extraction_wait_observation_records_when_promoted` plus the existing archived focused proofs. This keeps the golden on the cross-system composition seam and avoids duplicating lower-layer running-mean/EMA tests.
+- The stale-capacity golden seeds a small wait observation so the composite trace is emitted while still proving `capacity_signal == 0`; the ranking path intentionally returns no `SourceReliabilityDiscount` when every axis is zero.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_source_reliability -- --list`.
+- Passed `cargo test -p worldwake-ai --test golden_source_reliability`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+- Passed `cargo test --workspace`.

@@ -1,12 +1,14 @@
 # S131: Source Reliability Wait and Capacity Extension
 
+**Status**: COMPLETED
+
 ## Summary
 
 Extend the existing `SourceReliability` per-agent memory so agents who repeatedly contend for a resource at a given source can learn to expect waits and weight alternatives accordingly. Today, `ReliabilityRecord { successful_acquisitions, failed_attempts, last_attempt_tick }` captures success/failure ratio per (entity, commodity) — useful for "this well usually works" but blind to two operationally critical signals: how *long* the agent typically waited for access, and how *much* the source typically yielded. The narrative report shows Agent A and B competing at North Orchard with `BlockingFact(ReservationConflict)` events at ticks 7, 65, 66, 408, 1085 — five contention events the agent today cannot use to learn "this source is reliably contested in the morning, plan around it." The fix is concrete: add `average_wait_ticks` (running mean of observed wait time), `last_observed_capacity` (most recent perception-time `available_quantity`), and a freshness-relevance discount so stale records lose weight before being evicted. The planner ranking gains a wait/capacity-aware composite score on the existing per-candidate source-reliability discount path — directly enabling the "repeated-game intelligence" PR-8 calls out without introducing speculative `SurvivalHabit` infrastructure.
 
 ## Phase and Status
 
-Phase 10: Survival Mechanic Depth (Adjunct). Status: Draft.
+Phase 10: Survival Mechanic Depth (Adjunct). Status: Implemented by the S131SOURELWAI-001 through S131SOURELWAI-005 ticket chain.
 
 ## Crates
 
@@ -294,11 +296,13 @@ Observer Section 3 / Section 4 then surface readable lines for "Agent A chose Ca
 
 Add `crates/worldwake-ai/tests/golden_source_reliability.rs`:
 
-- Agent acquires water at the same well 5 times with wait_ticks `(0, 3, 5, 8, 12)`. Confirm `average_wait_ticks` matches the documented integer running estimate.
-- Two agents at one well; second agent has `wait_sensitivity_weight = 800`, prefers a slightly worse alternative well after 3 wait observations on the first.
-- Capacity freshness: agent observes well at capacity 18 at tick 100, then waits 500 ticks (`memory_retention_ticks = 400`); confirm `capacity_signal` in ranking falls to zero (stale).
-- After 32 wait observations, the EMA replaces the running mean — confirm the 33rd observation shifts the average correctly per α = 1/32.
-- Resource-extraction wait observation: two agents queue at an orchard's `ResourceExtractionQueues`; confirm the second agent records a non-zero `average_wait_ticks` after the first agent's harvest commits and the second is granted the slot.
+- Resource-extraction wait observation: two agents queue at an orchard's `ResourceExtractionQueues`; confirm the second agent records a positive wait observation after the first agent's harvest commits and the queued actor is granted the slot.
+- Capacity perception: a co-located perception tick records `last_observed_capacity` and `last_observed_capacity_tick` for the same `(source, commodity)` key the ranking layer later consumes.
+- Fresh capacity ranking: an agent with a fresh stored capacity observation gets a positive `capacity_signal` in `SourceReliabilityDiscount`, and the post-composite motive increases.
+- Stale capacity ranking: an old capacity observation remains stored but contributes `capacity_signal == 0` once it is older than `PreferenceProfile.memory_retention_ticks`.
+- Wait-memory source choice: a high-`wait_sensitivity_weight` agent with repeated wait observations on the closer source selects the farther uncontested source, and the decision trace exposes the close source's wait penalty.
+
+Exact running-mean recurrence and the 33rd-observation EMA transition remain focused-test contracts from S131SOURELWAI-001. The golden suite owns cross-layer composition: live wait/capacity writes feeding later AI ranking and trace output.
 
 ## SystemFn Integration
 
@@ -331,3 +335,21 @@ Per-agent (universal `PreferenceProfile`):
 - `source_memory_capacity` — existing; bounds total reliability records.
 
 No magic numbers introduced in agent-side code. The `wait_observation_count` cap of 32 is a structural choice (FND-3 — bounded running statistic) documented in code-side comments and discoverable via debug inspection; not a designer dial that changes drama.
+
+## Outcome
+
+Completed on 2026-05-03.
+
+- Landed the S131 source-reliability extension through the archived `S131SOURELWAI-001` through `S131SOURELWAI-005` ticket chain.
+- Added persisted wait/capacity fields to `ReliabilityRecord`, `PreferenceProfile.wait_sensitivity_weight`, wait observation hooks for facility-queue and resource-extraction grants, capacity observation from perception, and composite source-reliability ranking with decision-trace fields.
+- Added golden coverage in `crates/worldwake-ai/tests/golden_source_reliability.rs` for five scenarios covering resource-extraction wait writes, capacity perception writes, fresh/stale capacity ranking, and wait-memory source reranking.
+- Refined D7 during closeout so exact running-mean recurrence and the 33rd-observation EMA transition remain focused-test contracts from `S131SOURELWAI-001`; the golden suite owns cross-layer composition.
+
+Verification:
+
+- `cargo test -p worldwake-ai --test golden_source_reliability -- --list`
+- `cargo test -p worldwake-ai --test golden_source_reliability`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test -p worldwake-ai`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`

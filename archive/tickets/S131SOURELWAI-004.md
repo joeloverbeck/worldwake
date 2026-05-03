@@ -117,7 +117,7 @@ Add new tests after line 5670:
 - `crates/worldwake-ai/src/decision_trace.rs` (modify) — extend `SourceReliabilityDiscount` struct + Display formatter.
 - `crates/worldwake-ai/src/goal_model.rs` (modify) — fixture update at line 2839.
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modify) — fixture update at line 4139.
-- `specs/S131-source-reliability-wait-capacity.md` (modify) — truth-sync the composite early-out pseudocode to the landed all-zero-axis contract.
+- `archive/specs/S131-source-reliability-wait-capacity.md` (modify) — truth-sync the composite early-out pseudocode to the landed all-zero-axis contract.
 
 ## Out of Scope
 

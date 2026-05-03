@@ -492,18 +492,18 @@ Phase 10 runs independently of Phase 7's pending consequence-carrier specs (S60�
 S126 ✅ archived
 S127 ✅ archived
 S128 ✅ archived
-S131 (independent; existing SourceReliability extension)
+S131 ✅ archived
 S130 ✅ archived (hard dep on S128 ✅; soft dep on S122 ✅)
 S129 ✅ archived (soft dep on S128 ✅; hard deps on S106 ✅, S110 ✅)
 ```
 
 All cross-spec dependencies among S126–S131 are **soft** (benefit but not blocking). Hard dependencies on S106, S110, S122 are already satisfied (those specs are completed).
 
-### Active Execution Steps
+### Archived Execution Steps
 
 **Wave 1** (parallel, no hard deps among new specs):
 - **S126**: ✅ COMPLETED — Need Projection and Plan Time-Budget Assumptions — archived at [archive/specs/S126-need-projection-time-budget.md](/home/joeloverbeck/projects/worldwake/archive/specs/S126-need-projection-time-budget.md). Landed `FrameAssumption::NeedSafeUntilTick`, `Discrepancy::NeedHorizonExceeded`, `HomeostaticNeeds::projected_tick_of`, keyed `MetabolismProfile::rate(need)` and `DriveThresholds::high(need)` accessors, the populate/evaluate/record chain through S109's typed-discrepancy path with `DiscrepancyClearing::TtlExpiry`, decision-trace surfacing, and end-to-end golden coverage in `golden_need_projection.rs` against the new auxiliary `scenarios/survival-need-projection.ron`. `SAVE_FORMAT_VERSION` bumped 47 → 48. The pre-existing `golden_goal_switching_during_multi_leg_travel` golden was rewritten under the new lawful horizon-aware contract during ticket -003.
-- **S131**: Source Reliability Wait and Capacity Extension — extends existing `ReliabilityRecord` with `average_wait_ticks`, `wait_observation_count`, `last_observed_capacity`, `last_observed_capacity_tick`; new `wait_sensitivity_weight` on `PreferenceProfile`; ranking integration.
+- **S131**: ✅ COMPLETED — Source Reliability Wait and Capacity Extension — archived at [archive/specs/S131-source-reliability-wait-capacity.md](/home/joeloverbeck/projects/worldwake/archive/specs/S131-source-reliability-wait-capacity.md). Landed `ReliabilityRecord` wait/capacity fields, `PreferenceProfile.wait_sensitivity_weight`, wait observation hooks for facility and resource-extraction grants, capacity observation from perception, composite source-reliability ranking, and five-scenario golden coverage in `golden_source_reliability.rs`.
 
 **Wave 2** (after Wave 1; soft deps consumable):
 - **S127**: ✅ COMPLETED — Quantity-Aware Acquisition and Visible Source State — archived at [archive/specs/S127-quantity-aware-acquisition.md](/home/joeloverbeck/projects/worldwake/archive/specs/S127-quantity-aware-acquisition.md). Landed `AcquisitionQuantity { desired_min, desired_target, horizon_ticks }` on `AcquireCommodity`, `extraction_slots` + `extraction_duration_ticks` on `ResourceSource`, `LastHarvestTrace` ring buffer pruned by the existing `item_decay_system`, `ResourceExtractionQueues` per-slot contention substrate, `CommitTraceData::Harvest.partial_quantity` for partial-success harvest aftermath, candidate-generation quantity derivation from agent state, decision-trace surfacing of the quantity tuple, and five-scenario golden coverage in `golden_quantity_aware_acquisition.rs` (single-slot queue, multi-slot parallel grants, partial success, S126-driven target, FOUNDATIONS Section VI Scenario E). Final ticket S127QUAAWAACQ-010 also wired the AI's `BlockingFact::ReservationConflict` clearing baseline through new `extraction_slot_*` accessors so harvest-contention blockers clear structurally rather than by TTL.
@@ -541,12 +541,12 @@ LOCROOT-001 ticket (completed — direct-root synthesis locality audit)
 
 ### Phase 10 Gate
 
-- [ ] All 6 specs reassessed (`/reassess-spec`) and ticket-decomposed
-- [ ] Wave 1 specs implemented and passing golden E2E tests
-- [ ] Wave 2 specs implemented and passing golden E2E tests
-- [ ] Wave 3 specs implemented and passing golden E2E tests
+- [x] All 6 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [x] Wave 1 specs implemented and passing golden E2E tests
+- [x] Wave 2 specs implemented and passing golden E2E tests
+- [x] Wave 3 specs implemented and passing golden E2E tests
 - [ ] Authored survival-baseline scenario rebalance landed (sleep_quality, place_dirtiness)
 - [ ] Survival-baseline narrative report shows: (a) measurable variation in sleep-site preference across agents, (b) `desired_target > 1` acquisition under projected horizons, (c) at least one `SurveyRecord` damping observable in decision trace, (d) one `SleepEpisodeStarted` per sleep adoption (no `sleep → sleep` artifact)
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
-- [ ] `cargo test --workspace` passing
-- [ ] Golden E2E coverage for each new spec's core behavior
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [x] `cargo test --workspace` passing
+- [x] Golden E2E coverage for each new spec's core behavior
