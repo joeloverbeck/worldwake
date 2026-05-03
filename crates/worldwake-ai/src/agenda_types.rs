@@ -1,5 +1,5 @@
 use crate::{
-    GoalOffer, GoalPriorityClass, RankedGoalProvenance,
+    GoalOffer, GoalPriorityClass, RankedGoalProvenance, SourceCompositeRank,
     decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     feasibility::FeasibilityHint,
 };
@@ -31,6 +31,7 @@ pub struct AgendaEntry {
     pub provenance: Option<RankedGoalProvenance>,
     pub source_reliability_discount: Option<SourceReliabilityDiscount>,
     pub competition_discount: Option<CompetitionDiscount>,
+    pub source_composite: Option<SourceCompositeRank>,
     pub feasibility: FeasibilityHint,
 }
 
@@ -45,6 +46,7 @@ impl AgendaEntry {
         provenance: Option<RankedGoalProvenance>,
         source_reliability_discount: Option<SourceReliabilityDiscount>,
         competition_discount: Option<CompetitionDiscount>,
+        source_composite: Option<SourceCompositeRank>,
         feasibility: FeasibilityHint,
     ) -> Self {
         Self {
@@ -64,6 +66,7 @@ impl AgendaEntry {
             provenance,
             source_reliability_discount,
             competition_discount,
+            source_composite,
             feasibility,
         }
     }
@@ -170,6 +173,7 @@ mod tests {
             Tick(7),
             GoalPriorityClass::Background,
             42,
+            None,
             None,
             None,
             None,

@@ -320,6 +320,7 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
         provenance: ranked.provenance.clone(),
         source_reliability_discount: ranked.source_reliability_discount.clone(),
         competition_discount: ranked.competition_discount.clone(),
+        source_composite: ranked.source_composite,
         feasibility: ranked.feasibility,
         acquisition_quantity: ranked.offer.acquisition_quantity,
     }
@@ -2303,7 +2304,7 @@ mod tests {
         ExpectationFailurePhase, GoalKey, GoalKind, GoalOffer, GoalPriorityClass, KillCondition,
         OpportunityAnchor, OpportunityExpectationKind, OpportunityKey, PlanSearchResult,
         PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        ProfileFixture, RevivalTrigger,
+        ProfileFixture, RevivalTrigger, SourceCompositeRank,
         agent_tick::portfolio::{FeasibilityVerdict, Portfolio, PortfolioSlot, SlotKind},
         build_semantics_table,
         decision_trace::{
@@ -3450,6 +3451,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: FeasibilityHint::Likely,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
@@ -3485,6 +3487,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: selected_goal,
@@ -3515,6 +3518,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: runner_up,
@@ -3545,6 +3549,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: third,
@@ -3575,6 +3580,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: fourth,
@@ -3683,6 +3689,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: GoalKey::from(kind),
@@ -3791,6 +3798,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: survival_goal,
@@ -3822,6 +3830,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: commitment_goal,
@@ -3853,6 +3862,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: selected_goal,
@@ -4088,6 +4098,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: FeasibilityHint::Likely,
             key: worldwake_core::OpportunityKey {
                 goal_key: opportunity.goal_key,
@@ -4152,6 +4163,29 @@ mod tests {
             summary.source_reliability_discount,
             ranked.source_reliability_discount
         );
+    }
+
+    #[test]
+    fn summarize_ranked_goal_preserves_source_composite() {
+        let goal = acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(place_entity(40)),
+            BTreeSet::from([entity(9)]),
+            BTreeSet::new(),
+        );
+        let mut ranked = ranked_goal(goal);
+        ranked.source_composite = Some(SourceCompositeRank {
+            source_entity: entity(9),
+            commodity: CommodityKind::Bread,
+            trust_factor_permille: 900,
+            wait_factor_permille: 800,
+            capacity_factor_permille: 1200,
+            composite_permille: 864,
+        });
+
+        let summary = summarize_ranked_goal(&ranked);
+
+        assert_eq!(summary.source_composite, ranked.source_composite);
     }
 
     #[test]
@@ -4242,6 +4276,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
@@ -4275,6 +4310,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: FeasibilityHint::Likely,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,

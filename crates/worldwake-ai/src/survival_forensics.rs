@@ -759,6 +759,7 @@ mod tests {
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
+                        source_composite: None,
                         feasibility: crate::FeasibilityHint::Likely,
                         acquisition_quantity: None,
                     }],

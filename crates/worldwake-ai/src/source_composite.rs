@@ -1,4 +1,5 @@
 use crate::{GoalOffer, ranking::RankingContext};
+use serde::{Deserialize, Serialize};
 use worldwake_core::{
     CommodityKind, EntityId, PreferenceProfile, ReliabilityRecord, SourceKey, SourceReliability,
     Tick, failure_ratio_permille,
@@ -10,7 +11,7 @@ const WAIT_NORMALIZER_TICKS: u32 = 60;
 const WAIT_PENALTY_CAP_PERMILLE: u32 = 800;
 const EMPTY_FRESH_CAPACITY_FLOOR_PERMILLE: u32 = 500;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SourceCompositeRank {
     pub source_entity: EntityId,
     pub commodity: CommodityKind,
@@ -20,8 +21,6 @@ pub struct SourceCompositeRank {
     pub composite_permille: u32,
 }
 
-// Staged for S133 comparator integration; ticket 003 becomes the first production caller.
-#[allow(dead_code)]
 pub(crate) fn source_composite_rank(
     candidate: &GoalOffer,
     context: &RankingContext<'_>,

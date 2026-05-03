@@ -1,6 +1,6 @@
 # S133SOUCOMTIE-003: Ranking comparator integrates SourceComposite tiebreaker
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `AgendaEntry` schema extension, `RankedGoalComparisonDimension` enum extension, `ranked_goal_ordering` semantic change, `RankedGoalSummary` plumbing
@@ -21,6 +21,7 @@ D4 is the load-bearing semantic change. Without comparator integration, motive-t
 5. AgendaEntry literal construction sites count workspace-wide ≈60 across `interrupts.rs`, `side_benefit.rs`, `agent_tick/portfolio.rs`, `feasibility.rs`, `feasibility_probe.rs`, `ranking.rs`, `agenda_manager.rs`, `agent_tick/planning.rs`, `decision_runtime.rs`, `tests/golden_portfolio_planning.rs`, `crates/worldwake-cli/src/bin/observer.rs`. Most are test fixtures using literal struct construction (no `..Default::default()` spread; `AgendaEntry` has no `Default` impl). Each must add `source_composite: None` mechanically.
 6. AI regression layer: this is a runtime ranking-pipeline change exercised by the existing `compare_ranked_goals` and downstream `agent_tick` flow. Local needs-only harness is sufficient for the new comparator unit tests; full action registries are not required.
 13. Later review note (2026-05-04): ticket 002 already corrected the stale `S132` narrative comment in `ranking.rs` while making `source_composite` lawful. Ticket 003 no longer owns that cleanup. The public re-export of `SourceCompositeRank` also landed in ticket 002, so this ticket imports the type from the existing public surface instead of touching `lib.rs` for that re-export.
+14. Live save-shape correction (2026-05-04): `AgendaEntry` is carried inside `AgentDecisionRuntime.agenda_state`, and runtime state is serialized in the save payload. Adding `AgendaEntry.source_composite` is therefore a current-format runtime save payload change. This ticket owns the `SAVE_FORMAT_VERSION` bump from 64 to 65 plus a non-default `AgentDecisionRuntime` bincode round-trip proof.
 
 ## Architecture Check
 
@@ -130,6 +131,8 @@ The ~60 `AgendaEntry { ... }` literal sites and ~10 `RankedGoalSummary { ... }` 
 - `crates/worldwake-ai/src/ranking.rs` (modify — comparator extension, peer-key helper, per-candidate population, ~10 inline test fixtures, new focused tests)
 - `crates/worldwake-ai/src/decision_trace.rs` (modify — `RankedGoalSummary` field)
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — `summarize_ranked_goal`, ~10 test fixtures, extend the `summarize_ranked_goal_preserves_source_reliability_discount` test or add a sibling for the composite)
+- `crates/worldwake-ai/src/source_composite.rs` (modify — derive serde for `SourceCompositeRank` because it is now nested under serialized `AgendaEntry`)
+- `crates/worldwake-sim/src/save_load.rs` (modify — bump `SAVE_FORMAT_VERSION` for the runtime payload shape change)
 - `crates/worldwake-ai/src/interrupts.rs` (modify — fixtures)
 - `crates/worldwake-ai/src/feasibility.rs` (modify — fixtures)
 - `crates/worldwake-ai/src/feasibility_probe.rs` (modify — fixtures)
@@ -159,6 +162,7 @@ The ~60 `AgendaEntry { ... }` literal sites and ~10 `RankedGoalSummary { ... }` 
 7. Existing comparator tests remain green: `same_priority_candidates_sort_by_motive_then_kind_then_ids` (`ranking.rs:7021`), `simultaneous_critical_self_care_needs_rank_by_weighted_order` (`ranking.rs:7430`), `explain_ranked_goal_order_reports_decisive_dimension` (`ranking.rs:9303`).
 8. Existing source-reliability tests remain green: `source_reliability_discount_*` (lines 5592–5827, 5983, 6074).
 9. Existing suite: `cargo test --workspace`.
+10. Runtime save payload shape: non-default `AgendaEntry.source_composite` round-trips through `AgentDecisionRuntime` serialization, and `SAVE_FORMAT_VERSION` is 65.
 
 ### Invariants
 
@@ -183,3 +187,40 @@ The ~60 `AgendaEntry { ... }` literal sites and ~10 `RankedGoalSummary { ... }` 
 5. `cargo test -p worldwake-ai --test golden_survival_preferences`.
 6. `cargo test -p worldwake-ai --test golden_survival_tell`.
 7. `cargo test --workspace` (full).
+
+## Outcome
+
+Completed on 2026-05-04.
+
+- Added `AgendaEntry.source_composite` and `RankedGoalSummary.source_composite`, with production ranking now computing `source_composite_rank(candidate, &context)` once per candidate and carrying it through `AgendaEntry::pending`.
+- Inserted `RankedGoalComparisonDimension::SourceComposite` immediately after `MotiveScore` and before `Feasibility`, gated by same-peer keys for `AcquireCommodity` and `RestockCommodity`.
+- Added focused comparator tests for same-commodity firing, cross-category neutrality, different-commodity no-fire behavior, and acquisition `desired_target` peer-key matching.
+- Added focused summary propagation coverage and non-default runtime serialization coverage.
+- Updated all explicit `AgendaEntry` / `RankedGoalSummary` fixture literals across the AI crate, CLI observer tests, and golden harness fixtures.
+- Bumped `SAVE_FORMAT_VERSION` from 64 to 65 because `AgentDecisionRuntime.agenda_state` serializes `AgendaEntry`.
+
+## Deviations
+
+- Reassessment found the ticket/spec undercounted persistence fallout: the composite is not authoritative world state and is not event-log persisted, but it is nested under runtime save bytes once carried on `AgendaEntry`. The implementation therefore includes serde derives on `SourceCompositeRank`, a save-format bump, and runtime round-trip proof.
+- The ticket-named survival golden binaries contain the four scenario assertions as `#[ignore]`; those exact ignored tests were run explicitly with `-- --ignored --exact` after the ordinary non-ignored binary checks.
+
+## Verification Result
+
+- Passed `cargo test --workspace --no-run`.
+- Passed `cargo test -p worldwake-ai --lib source_composite_tiebreaker`.
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::source_composite_peer_keys_compare_acquisition_quantity_by_desired_target -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning::tests::summarize_ranked_goal_preserves_source_composite -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib ranking::tests`.
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning`.
+- Passed `cargo test -p worldwake-ai --lib decision_runtime::tests::agent_decision_runtime_bincode_round_trip_preserves_all_fields -- --exact`.
+- Passed `cargo test -p worldwake-sim save_load::tests::save_to_bytes_roundtrip_preserves_full_nondefault_state -- --exact`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_drive_escalation`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_drive_escalation survival_drive_escalation_lands_row_four -- --ignored --exact`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_offices`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_offices survival_offices_proves_force_law_uptake -- --ignored --exact`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_preferences`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_preferences survival_preferences_keeps_proactive_diversification_alive_under_survival -- --ignored --exact`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_tell`.
+- Passed `cargo test -p worldwake-ai --test golden_survival_tell survival_tell_lands_row_five -- --ignored --exact`.
+- Passed `cargo test --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.

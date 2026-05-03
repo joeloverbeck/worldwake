@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — decision-trace formatter and per-candidate trace block extension
-**Deps**: S133SOUCOMTIE-003
+**Deps**: archive/tickets/S133SOUCOMTIE-003.md
 
 ## Problem
 

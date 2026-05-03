@@ -183,6 +183,7 @@ pub fn synthetic_ranked_goal_summary(
         provenance: None,
         source_reliability_discount: None,
         competition_discount: None,
+        source_composite: None,
         feasibility: worldwake_ai::FeasibilityHint::Likely,
         acquisition_quantity: None,
     }

@@ -183,6 +183,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
@@ -375,6 +376,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
@@ -406,6 +408,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
@@ -470,6 +473,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
@@ -501,6 +505,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
                 key: worldwake_core::OpportunityKey {
                     goal_key: goal,
@@ -772,6 +777,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
                 key: worldwake_core::OpportunityKey {
                     goal_key: GoalKey::from(worldwake_core::GoalKind::Patrol { place: market }),
@@ -871,6 +877,7 @@ mod tests {
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
+                source_composite: None,
                 feasibility: crate::feasibility::FeasibilityHint::Uncertain,
 
                 phase: crate::AgendaPhase::Pending,
