@@ -129,6 +129,8 @@ When a trace, report, or UI ticket names multiple carriers, columns, panes, or e
 
 When a ticket or spec claims that a value will appear in an evidence summary, trace record, diagnostic payload, or that existing infrastructure will "pick it up automatically", verify the exact live carrier type before coding. Confirm whether the carrier can represent the claimed field without lossy mapping; if not, rewrite the ticket/spec to the strongest honest seam, such as an anchor-driven or trait-read contract, before implementing the behavior.
 
+When a ticket or spec says "decision history", "decision trace", "observer", or "debug log" for the proof surface, classify the exact carrier before coding: append-only `DecisionEventPayload`, in-memory `DecisionOutcome` / `PlanningPipelineTrace`, `DecisionTraceSink::dump_agent()` debug output, or CLI observer report rendering. Do not assume a field on `RankedGoalSummary` or another planning trace carrier is visible through observer Section 3 or `decision_payload_summary`; if the live event payload cannot carry the field, narrow the ticket/spec to the strongest honest trace/debug seam or explicitly make payload widening current-ticket scope before implementation.
+
 #### Golden, observer, and report tickets
 
 Load `references/reassessment-golden-observer-report.md` when a ticket's proof surface is a golden, observer fixture, generated report, roadmap summary, or other read-only companion. Keep the top-level workflow focused on routing and ownership; use that reference for the detailed scenario-isolation, fixture-truthing, and generated-report representability checks.

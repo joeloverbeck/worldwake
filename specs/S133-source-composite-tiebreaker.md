@@ -61,7 +61,7 @@ The repeated-game intelligence motivation from PR-8 (`reports/proposed-gameplay-
 - **Cross-goal-kind comparison.** Wash vs AcquireCommodity ordering is unchanged. The composite only fires when both compared entries share the same `(commodity, purpose)` key (or `(commodity)` for `RestockCommodity`).
 - **New `SurvivalHabit` or `BlockedIntentRecord` substrate.** S131 already rejected those as speculative. S133 does not revive them.
 - **Cross-agent reliability sharing.** `ShareBelief` remains the only cross-agent path. Per-agent learning stays per-agent (FND-15).
-- **A new event tag.** The composite is a derived per-tick scoring artifact (FND-27); it has no place in the append-only event log beyond the decision-history payload that already records ranked candidates.
+- **A new event tag.** The composite is a derived per-tick scoring artifact (FND-27); it has no place in the append-only event log. It is carried by the existing decision-trace ranked-candidate summaries, not by a new domain event.
 - **Pre-rank candidate deduplication.** S133 does not drop sibling candidates from the rank; all opportunities for the chosen `(commodity, purpose)` remain in the ranked vec, ordered by composite. Dropping siblings would deny the planner downstream fallback structure when its first choice fails — and the agent's existing replan / pending-failure path would then have to regenerate them anyway.
 
 ## FOUNDATIONS Alignment
@@ -263,7 +263,7 @@ Add `SourceCompositeRank` to the per-candidate planning trace at `decision_trace
 source_composite=entity=_ commodity=_ trust=_ wait=_ cap=_ composite=_
 ```
 
-Surfaces under the same per-candidate trace block that already carries `source_reliability=…`. Both lines may appear together — the failure-ratio path (S131) handles motive-discount, the composite (S133) handles intra-commodity tiebreaker. Observer Section 3 / Section 4 then render readable lines like:
+Surfaces under the same per-candidate trace block that already carries `source_reliability=…`. Both lines may appear together — the failure-ratio path (S131) handles motive-discount, the composite (S133) handles intra-commodity tiebreaker. The live D5 rendering surface is the decision-trace summary and debug dump path; the CLI observer decision-event Section 3 payload summary does not carry per-candidate ranked summaries and remains unchanged by D5. Debug trace output can render lines like:
 
 ```
 Source choice (Apple): Far Orchard composite=1080 (trust=1000 wait=1000 cap=1080)
@@ -324,7 +324,7 @@ No magic numbers in agent-side code beyond the structural unit-conversion consta
 1. **D3** (add `capacity_observation_weight`) — touches core, cli scenario loader, save format. Smallest blast radius.
 2. **D2** (new `source_composite.rs` module) — pure ai-crate addition.
 3. **D4** (sort comparator extension) — add `source_composite` to `AgendaEntry`, extend `RankedGoalComparisonDimension`, plumb through plan-summary structs, and bump the save format for the runtime payload shape change.
-4. **D5** (decision-trace surfacing) — Display + observer renderer.
+4. **D5** (decision-trace surfacing) — Display + decision-trace/debug-dump surfacing; no CLI observer event-payload renderer change.
 5. **D1** (strip vestigial fields) — only after D2-D5 land; D2's `SourceCompositeRank` becomes the canonical surface for wait/capacity.
 6. **D6** (goldens) — new file; run alongside the four pre-existing survival goldens that must stay green.
 

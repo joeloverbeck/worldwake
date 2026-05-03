@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `SourceReliabilityDiscount` shrinks; `format_source_reliability_discount_summary` rewinds
-**Deps**: S133SOUCOMTIE-004
+**Deps**: archive/tickets/S133SOUCOMTIE-004.md
 
 ## Problem
 
