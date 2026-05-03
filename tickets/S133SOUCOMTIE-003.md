@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `AgendaEntry` schema extension, `RankedGoalComparisonDimension` enum extension, `ranked_goal_ordering` semantic change, `RankedGoalSummary` plumbing
-**Deps**: S133SOUCOMTIE-002
+**Deps**: archive/tickets/S133SOUCOMTIE-002.md
 
 ## Problem
 
@@ -20,7 +20,7 @@ D4 is the load-bearing semantic change. Without comparator integration, motive-t
 4. Ranking-sensitive precision check: when two `AcquireCommodity` siblings have *different* `motive_score` (because the failure-ratio discount applies to one but not the other), the existing `MotiveScore` dimension already separates them and `SourceComposite` does not fire — verified by the spec Design Goal 7 ("S133 layers the composite *on top of* that pre-existing motive discount"). When motive_score is tied, `SourceComposite` fires.
 5. AgendaEntry literal construction sites count workspace-wide ≈60 across `interrupts.rs`, `side_benefit.rs`, `agent_tick/portfolio.rs`, `feasibility.rs`, `feasibility_probe.rs`, `ranking.rs`, `agenda_manager.rs`, `agent_tick/planning.rs`, `decision_runtime.rs`, `tests/golden_portfolio_planning.rs`, `crates/worldwake-cli/src/bin/observer.rs`. Most are test fixtures using literal struct construction (no `..Default::default()` spread; `AgendaEntry` has no `Default` impl). Each must add `source_composite: None` mechanically.
 6. AI regression layer: this is a runtime ranking-pipeline change exercised by the existing `compare_ranked_goals` and downstream `agent_tick` flow. Local needs-only harness is sufficient for the new comparator unit tests; full action registries are not required.
-13. Adjacent contradiction classification: the `S132` reference in the comment block at `ranking.rs:564-572` is a stale internal comment from a prior draft naming. Treat as future cleanup; not in this ticket's scope (the comment will be deleted alongside ticket 005's vestigial-field removal where the broader rollback narrative lives).
+13. Later review note (2026-05-04): ticket 002 already corrected the stale `S132` narrative comment in `ranking.rs` while making `source_composite` lawful. Ticket 003 no longer owns that cleanup. The public re-export of `SourceCompositeRank` also landed in ticket 002, so this ticket imports the type from the existing public surface instead of touching `lib.rs` for that re-export.
 
 ## Architecture Check
 
@@ -139,7 +139,6 @@ The ~60 `AgendaEntry { ... }` literal sites and ~10 `RankedGoalSummary { ... }` 
 - `crates/worldwake-ai/src/decision_runtime.rs` (modify — fixtures)
 - `crates/worldwake-ai/tests/golden_portfolio_planning.rs` (modify — fixtures)
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — fixtures)
-- `crates/worldwake-ai/src/lib.rs` (modify — re-export if needed)
 
 ## Out of Scope
 

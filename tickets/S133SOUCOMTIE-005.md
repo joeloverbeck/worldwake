@@ -3,7 +3,7 @@
 **Status**: PENDING
 **Priority**: MEDIUM
 **Effort**: Small
-**Engine Changes**: Yes — `SourceReliabilityDiscount` shrinks; `format_source_reliability_discount_summary` rewinds; `S132` stale comment in `ranking.rs` rewritten to reference S133
+**Engine Changes**: Yes — `SourceReliabilityDiscount` shrinks; `format_source_reliability_discount_summary` rewinds
 **Deps**: S133SOUCOMTIE-004
 
 ## Problem
@@ -17,7 +17,7 @@ After tickets 002–004 land, the wait/capacity surface lives entirely on `Sourc
 1. `SourceReliabilityDiscount` lives at `crates/worldwake-ai/src/decision_trace.rs:546` with five fields the rollback reduced to constant zero (`average_wait_ticks`, `wait_penalty`, `last_observed_capacity`, `capacity_freshness_ticks`, `capacity_signal`). Construction sites: `ranking.rs:595` (production `source_reliability_failure_discount`), `ranking.rs:5749`, `ranking.rs:6048`, `ranking.rs:6173` (test fixtures), `decision_trace.rs:2462` (sample fixture), `agent_tick/planning.rs:4136` (test fixture), `goal_model.rs:2836` (test fixture). The Display formatter at `decision_trace.rs:1957-1971` consumes the dropped fields — must be rewritten back to the pre-S131 shape `", source_reliability=entity={} commodity={:?} failure={} pre={} post={}"`.
 2. Per spec D1: "The save format does not need a bump: `SourceReliabilityDiscount` is part of the per-tick decision trace, which is not persisted across saves." Verified — the struct is not in any `with_component_schema_entries!` macro invocation and is not serialized in save_load.rs.
 3. Shared abstraction boundary under audit: the per-candidate decision-trace projection of `SourceReliabilityDiscount` and its Display formatter. The wait/cap surface migrates to `SourceCompositeRank` (delivered by tickets 002+004); this ticket is the strip step.
-13. Adjacent contradiction surfaced: the comment block at `ranking.rs:564-572` references "S132 will reintegrate wait/capacity..." — this is stale and must be replaced with a brief comment pointing at S133 (and the live `source_composite_rank` consumer). Treat as required consequence of this ticket because the comment narrates the very shape this ticket finishes deleting.
+4. Later reassessment note (2026-05-04): ticket 002 already corrected the stale `S132` narrative comment in `ranking.rs` while making the `source_composite` module lawful. Ticket 005 no longer owns that comment repair.
 
 ## Architecture Check
 
@@ -81,14 +81,10 @@ In `crates/worldwake-ai/src/ranking.rs:595` (`source_reliability_failure_discoun
 
 In `decision_trace.rs:3839-3850`, remove the assertions for `wait_avg=`, `wait_pen=`, `cap=`, `cap_age=`, `cap_sig=` (those landed in ticket 004's composite-line assertions). Keep `source_reliability=entity=`, `commodity=Bread`, `failure=500`, `pre=700`, `post=350` assertions.
 
-### 6. Replace stale narrative comment
-
-In `crates/worldwake-ai/src/ranking.rs:564-572`, replace the "S132 will reintegrate..." block with a one-line note pointing readers at `source_composite_rank` (now the live consumer of wait/capacity per `SourceCompositeRank`).
-
 ## Files to Touch
 
 - `crates/worldwake-ai/src/decision_trace.rs` (modify — struct, Display, sample, summary assertion)
-- `crates/worldwake-ai/src/ranking.rs` (modify — production construction at 595, 4 test fixtures, narrative comment)
+- `crates/worldwake-ai/src/ranking.rs` (modify — production construction at 595, 4 test fixtures)
 - `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — test fixture at 4136)
 - `crates/worldwake-ai/src/goal_model.rs` (modify — test fixture at 2836)
 

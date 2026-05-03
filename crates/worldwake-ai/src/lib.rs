@@ -43,6 +43,7 @@ mod route_threat;
 pub mod search;
 mod shared_collections;
 pub mod side_benefit;
+mod source_composite;
 pub mod survival_forensics;
 mod theft;
 
@@ -131,6 +132,7 @@ pub use ranking::{
 };
 pub use search::{PlanSearchResult, search_plan};
 pub use side_benefit::{PlanValue, SideBenefit, build_plan_value, detect_side_benefits};
+pub use source_composite::SourceCompositeRank;
 pub use survival_forensics::{
     ActionTraceSnapshot, ActiveActionSummary, AgendaEntrySnapshot, BlockerSummary,
     CriticalWindowFrame, CriticalWindowReport, ExhaustionSummary, LocalSurvivalStateSummary,

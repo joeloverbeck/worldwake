@@ -566,7 +566,7 @@ fn apply_source_reliability_discount_with_pending_failures(
 // hooks that populate them, but the additive composite that fed those signals
 // into `motive_score` was rolled back: it perturbed cross-category goal ranking
 // (Wash vs AcquireCommodity, etc.) at magnitudes the spec did not anticipate.
-// S132 will reintegrate wait/capacity as a same-commodity sub-rank tiebreaker
+// S133 will reintegrate wait/capacity as a same-commodity sub-rank tiebreaker
 // over `(commodity, purpose)` opportunities, so the data path stays live but
 // only the failure-ratio axis currently moves motive. Trace fields keep
 // surfacing the underlying observations for debuggability (FND-29).
@@ -606,7 +606,9 @@ fn source_reliability_failure_discount(
     })
 }
 
-fn source_reliability_discount_scope(candidate: &GoalOffer) -> Option<(EntityId, CommodityKind)> {
+pub(crate) fn source_reliability_discount_scope(
+    candidate: &GoalOffer,
+) -> Option<(EntityId, CommodityKind)> {
     let mut source_entities = candidate.evidence_entities.iter().copied();
     let source_entity = source_entities.next()?;
     if source_entities.next().is_some() {
@@ -708,10 +710,10 @@ fn drive_goal_ranking_provenance(
     }
 }
 
-struct RankingContext<'a> {
-    view: &'a dyn GoalBeliefView,
-    agent: EntityId,
-    current_tick: Tick,
+pub(crate) struct RankingContext<'a> {
+    pub(crate) view: &'a dyn GoalBeliefView,
+    pub(crate) agent: EntityId,
+    pub(crate) current_tick: Tick,
     utility: &'a UtilityProfile,
     repair_memory: &'a RepairMemory,
     learned_opportunity_memory: &'a LearnedOpportunityMemory,

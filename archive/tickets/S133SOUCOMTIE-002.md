@@ -1,6 +1,6 @@
 # S133SOUCOMTIE-002: Source composite rank module and factor derivation
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — new `worldwake-ai::source_composite` module
@@ -18,6 +18,7 @@ Spec D2 defines `SourceCompositeRank` as the per-candidate derived view that the
 2. Spec D2 dictates the factor formulas, the integer-permille discipline, the 800 wait-cap and the 60-tick wait normalizer. `ReliabilityRecord` exposes `average_wait_ticks`, `wait_observation_count`, `last_observed_capacity`, `last_observed_capacity_tick`, `successful_acquisitions`, `failed_attempts` (verified `crates/worldwake-core/src/experience.rs::ReliabilityRecord`).
 3. Shared abstraction boundary under audit: `RankingContext<'_>` and `BeliefView::preference_profile/source_reliability` — the module must compute purely over those reads and never touch authoritative world state.
 4. Live `GoalKind` under test: the spec restricts to `AcquireCommodity { commodity, purpose, .. }` and `RestockCommodity { commodity }` — both confirmed live in `crates/worldwake-core/src/goal.rs` and exercised by the existing `source_reliability_discount_scope` helper.
+5. Live visibility correction (2026-05-04): `RankingContext` and `source_reliability_discount_scope` are currently file-private in `ranking.rs`. A separate `source_composite.rs` module cannot lawfully reuse them without a narrow crate-visible internal surface. The implementation must update only the needed `ranking.rs` visibility, keeping the new computation read-only and non-public outside `worldwake-ai`.
 
 ## Architecture Check
 
@@ -80,6 +81,7 @@ Private constants:
 
 - `crates/worldwake-ai/src/source_composite.rs` (new)
 - `crates/worldwake-ai/src/lib.rs` (modify — module declaration and public re-export)
+- `crates/worldwake-ai/src/ranking.rs` (modify — crate-visible `RankingContext`/source-scope access for the new sibling module)
 
 ## Out of Scope
 
@@ -100,7 +102,7 @@ Private constants:
 7. `capacity_factor_returns_bonus_for_fresh_full_observation` — capacity == `capacity_observation_weight.value()` and zero age returns 2000.
 8. `compose_factors_clamps_at_2000_permille` — three 2000-permille factors compose to 2000, not 8000.
 9. `source_composite_rank_returns_none_for_non_acquisition_goal` — `Sleep`, `Wash`, `Patrol` etc. return `None`.
-10. `source_composite_rank_returns_none_without_reliability_record` — agent with no `SourceReliability` component returns `None`.
+10. `source_composite_rank_returns_none_without_reliability_record` — no `(source_entity, commodity)` record in `SourceReliability.sources` returns `None`.
 11. Existing suite: `cargo test --workspace`.
 
 ### Invariants
@@ -121,3 +123,27 @@ Private constants:
 1. `cargo test -p worldwake-ai source_composite::` (focused).
 2. `cargo test -p worldwake-ai` (broader regression).
 3. `cargo test --workspace` (full regression — confirms no other crate breaks).
+
+## Outcome
+
+Completed on 2026-05-04.
+
+- Added `crates/worldwake-ai/src/source_composite.rs` with `SourceCompositeRank`, integer-permille trust/wait/capacity factor derivation, composite multiplication/clamping, and the crate-private `source_composite_rank` entry point.
+- Re-exported `SourceCompositeRank` from `worldwake-ai` and kept `source_composite_rank` crate-private for ticket 003's comparator integration.
+- Made only the required `ranking.rs` internals crate-visible (`RankingContext` plus the existing single-source scope helper) so the new sibling module reuses the live source-reliability boundary instead of duplicating it.
+- Added 10 focused unit tests covering the factor math and the non-acquisition / missing-record `None` cases.
+- Truth-synced sibling ticket `tickets/S133SOUCOMTIE-005.md` because this ticket already corrected the stale `S132` comment while opening the module boundary.
+
+## Deviations
+
+- The drafted file list omitted `crates/worldwake-ai/src/ranking.rs`; live Rust privacy made a narrow internal visibility edit necessary.
+- `source_composite_rank` is staged for ticket 003, so it carries a local `#[allow(dead_code)]` with an explicit comment until the comparator calls it.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib source_composite:: -- --list` (confirmed 10 focused tests).
+- Passed `cargo test -p worldwake-ai --lib source_composite::`.
+- Passed `cargo fmt --all`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo test --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
