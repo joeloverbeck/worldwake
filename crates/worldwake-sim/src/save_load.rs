@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 62;
+pub const SAVE_FORMAT_VERSION: u32 = 63;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -1010,7 +1010,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 62);
+        assert_eq!(SAVE_FORMAT_VERSION, 63);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1026,6 +1026,27 @@ mod tests {
         assert_eq!(restored.recipe_registry().len(), 1);
         assert_eq!(restored.replay_state().checkpoints().len(), 1);
         assert_eq!(restored.controller_state().controlled_entity(), Some(actor));
+        let restored_reliability = restored
+            .world()
+            .get_component_source_reliability(actor)
+            .unwrap();
+        let source_record = restored_reliability
+            .sources
+            .values()
+            .next()
+            .expect("sample source reliability record should roundtrip");
+        assert_eq!(source_record.average_wait_ticks, 4);
+        assert_eq!(source_record.wait_observation_count, 2);
+        assert_eq!(source_record.last_observed_capacity, 7);
+        assert_eq!(source_record.last_observed_capacity_tick, Tick(20));
+        assert_eq!(
+            restored
+                .world()
+                .get_component_preference_profile(actor)
+                .unwrap()
+                .wait_sensitivity_weight,
+            worldwake_core::Permille::new_unchecked(150)
+        );
         assert_eq!(
             restored.world().commodity_decay(),
             state.world().commodity_decay()

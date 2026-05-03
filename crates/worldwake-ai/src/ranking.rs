@@ -554,11 +554,7 @@ fn apply_source_reliability_discount_with_pending_failures(
         .view
         .source_reliability(context.agent)
         .and_then(|source_reliability| source_reliability.sources.get(&source_key).copied())
-        .unwrap_or(ReliabilityRecord {
-            successful_acquisitions: 0,
-            failed_attempts: 0,
-            last_attempt_tick: context.current_tick,
-        });
+        .unwrap_or_else(|| ReliabilityRecord::new(context.current_tick));
     record.failed_attempts = record.failed_attempts.saturating_add(1);
     let failure_ratio = failure_ratio_permille(&record);
     if failure_ratio == 0 {
@@ -3848,6 +3844,7 @@ mod tests {
             successful_acquisitions,
             failed_attempts,
             last_attempt_tick: current_tick(),
+            ..ReliabilityRecord::default()
         }
     }
 
@@ -5592,6 +5589,7 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
             },
         );
         let utility = utility();
@@ -5680,6 +5678,7 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
             },
         );
         view.source_reliabilities.insert(
@@ -5739,6 +5738,7 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
             },
         );
         view.source_reliabilities.insert(
@@ -5796,6 +5796,7 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
             },
         );
         view.source_reliabilities.insert(
@@ -5860,6 +5861,7 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
             },
         );
         view.source_reliabilities.insert(
@@ -5957,6 +5959,7 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
             },
         );
         view.source_reliabilities.insert(
@@ -6033,6 +6036,7 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
             },
         );
         view.source_reliabilities.insert(

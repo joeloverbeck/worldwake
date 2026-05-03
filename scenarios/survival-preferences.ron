@@ -136,6 +136,7 @@
                 route_memory_capacity: 24,
                 source_memory_capacity: 18,
                 memory_retention_ticks: 600,
+                wait_sensitivity_weight: 150,
             ),
             exploration_profile: (
                 curiosity_weight: 650,

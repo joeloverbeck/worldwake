@@ -359,7 +359,7 @@ Temporary diagnostic worktrees are acceptable for clean-baseline reproduction wh
 
 #### Save-format and serialized-surface verification
 
-When a shared serialized-surface ticket mentions both a save-format bump and `#[serde(default)]` or other defaulted new fields, decide explicitly whether older saves are meant to load at all before you finalize reassessment. If the repo's no-backwards-compat rule means the real contract is version rejection, rewrite the ticket/spec wording immediately instead of letting default-field language imply an unsupported migration path.
+When a shared serialized-surface ticket mentions both a save-format bump and `#[serde(default)]` or other defaulted new fields, decide explicitly whether older saves are meant to load at all before you finalize reassessment. For bincode-backed save payloads, treat additive fields as positional shape changes; `#[serde(default)]` is not an old-save compatibility plan by itself. If the repo's no-backwards-compat rule means the real contract is version rejection, rewrite the ticket/spec wording immediately instead of letting default-field language imply an unsupported migration path.
 
 When a shared serialized-surface ticket widens a schema, payload, enum, or saveable record, perform one final save-format check after focused proof is green: reopen the live `SAVE_FORMAT_VERSION` constant and confirm the landed diff bumped it exactly once relative to the current worktree state, not merely relative to the earlier reassessment snapshot or ticket text.
 

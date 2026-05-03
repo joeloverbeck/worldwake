@@ -12,11 +12,10 @@ fn update_source_reliability(
         .get_component_source_reliability(actor)
         .cloned()
         .unwrap_or_default();
-    let record = reliability.sources.entry(key).or_insert(ReliabilityRecord {
-        successful_acquisitions: 0,
-        failed_attempts: 0,
-        last_attempt_tick: current_tick,
-    });
+    let record = reliability
+        .sources
+        .entry(key)
+        .or_insert_with(|| ReliabilityRecord::new(current_tick));
     update(record);
     record.last_attempt_tick = current_tick;
 

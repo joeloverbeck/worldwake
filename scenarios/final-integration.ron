@@ -194,6 +194,7 @@
                 route_memory_capacity: 24,
                 source_memory_capacity: 18,
                 memory_retention_ticks: 400,
+                wait_sensitivity_weight: 150,
             ),
             merchandise_profile: (
                 sale_kinds: [Apple, Bread],

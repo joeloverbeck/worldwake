@@ -78,6 +78,63 @@ pub struct ReliabilityRecord {
     pub successful_acquisitions: u16,
     pub failed_attempts: u16,
     pub last_attempt_tick: Tick,
+    /// Running mean of observed wait ticks at this source.
+    ///
+    /// Updated by `observe_wait` when a queued source grant is promoted.
+    pub average_wait_ticks: u32,
+    /// Count of wait observations, capped at 32 before EMA blending.
+    pub wait_observation_count: u32,
+    /// Most recent perception-time available quantity.
+    ///
+    /// Zero means either "never observed" when
+    /// `last_observed_capacity_tick == Tick(0)`, or "observed empty" when the
+    /// capacity tick records a real observation time.
+    pub last_observed_capacity: u16,
+    /// Tick when `last_observed_capacity` was last refreshed.
+    pub last_observed_capacity_tick: Tick,
+}
+
+impl Default for ReliabilityRecord {
+    fn default() -> Self {
+        Self::new(Tick(0))
+    }
+}
+
+impl ReliabilityRecord {
+    #[must_use]
+    pub fn new(last_attempt_tick: Tick) -> Self {
+        Self {
+            successful_acquisitions: 0,
+            failed_attempts: 0,
+            last_attempt_tick,
+            average_wait_ticks: 0,
+            wait_observation_count: 0,
+            last_observed_capacity: 0,
+            last_observed_capacity_tick: Tick(0),
+        }
+    }
+
+    pub fn observe_wait(&mut self, wait_ticks: u32) {
+        if self.wait_observation_count < 32 {
+            let total = self
+                .average_wait_ticks
+                .saturating_mul(self.wait_observation_count)
+                .saturating_add(wait_ticks);
+            self.wait_observation_count += 1;
+            self.average_wait_ticks = total / self.wait_observation_count;
+        } else {
+            let blended = self
+                .average_wait_ticks
+                .saturating_mul(31)
+                .saturating_add(wait_ticks);
+            self.average_wait_ticks = blended / 32;
+        }
+    }
+
+    pub fn observe_capacity(&mut self, capacity: u16, tick: Tick) {
+        self.last_observed_capacity = capacity;
+        self.last_observed_capacity_tick = tick;
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
@@ -133,6 +190,8 @@ pub struct PreferenceProfile {
     pub source_memory_capacity: u32,
     /// How long (in ticks) experience memory entries are retained before expiry.
     pub memory_retention_ticks: u64,
+    /// Weight applied to expected wait time when choosing resource sources.
+    pub wait_sensitivity_weight: Permille,
 }
 
 impl Default for PreferenceProfile {
@@ -143,6 +202,7 @@ impl Default for PreferenceProfile {
             route_memory_capacity: 24,
             source_memory_capacity: 18,
             memory_retention_ticks: 400,
+            wait_sensitivity_weight: Permille::new_unchecked(150),
         }
     }
 }
@@ -231,14 +291,17 @@ mod tests {
         assert_eq!(profile.route_memory_capacity, 24);
         assert_eq!(profile.source_memory_capacity, 18);
         assert_eq!(profile.memory_retention_ticks, 400);
+        assert_eq!(
+            profile.wait_sensitivity_weight,
+            crate::Permille::new(150).unwrap()
+        );
     }
 
     #[test]
     fn failure_ratio_permille_returns_zero_without_attempts() {
         let record = ReliabilityRecord {
-            successful_acquisitions: 0,
-            failed_attempts: 0,
             last_attempt_tick: Tick(1),
+            ..ReliabilityRecord::default()
         };
 
         assert_eq!(failure_ratio_permille(&record), 0);
@@ -248,18 +311,19 @@ mod tests {
     fn failure_ratio_permille_handles_boundary_values() {
         let zero_failures = ReliabilityRecord {
             successful_acquisitions: 4,
-            failed_attempts: 0,
             last_attempt_tick: Tick(1),
+            ..ReliabilityRecord::default()
         };
         let even_split = ReliabilityRecord {
             successful_acquisitions: 3,
             failed_attempts: 3,
             last_attempt_tick: Tick(1),
+            ..ReliabilityRecord::default()
         };
         let all_failures = ReliabilityRecord {
-            successful_acquisitions: 0,
             failed_attempts: u16::MAX,
             last_attempt_tick: Tick(1),
+            ..ReliabilityRecord::default()
         };
 
         assert_eq!(failure_ratio_permille(&zero_failures), 0);
@@ -378,6 +442,10 @@ mod tests {
                 successful_acquisitions: 3,
                 failed_attempts: 1,
                 last_attempt_tick: Tick(21),
+                average_wait_ticks: 4,
+                wait_observation_count: 2,
+                last_observed_capacity: 7,
+                last_observed_capacity_tick: Tick(20),
             })
         );
     }
@@ -545,8 +613,8 @@ mod tests {
                     },
                     ReliabilityRecord {
                         successful_acquisitions: 1,
-                        failed_attempts: 0,
                         last_attempt_tick: Tick(4),
+                        ..ReliabilityRecord::default()
                     },
                 ),
                 (
@@ -555,9 +623,9 @@ mod tests {
                         commodity: crate::CommodityKind::Bread,
                     },
                     ReliabilityRecord {
-                        successful_acquisitions: 0,
                         failed_attempts: 1,
                         last_attempt_tick: Tick(18),
+                        ..ReliabilityRecord::default()
                     },
                 ),
             ]),
@@ -587,8 +655,8 @@ mod tests {
                     },
                     ReliabilityRecord {
                         successful_acquisitions: 1,
-                        failed_attempts: 0,
                         last_attempt_tick: Tick(10),
+                        ..ReliabilityRecord::default()
                     },
                 ),
                 (
@@ -598,8 +666,8 @@ mod tests {
                     },
                     ReliabilityRecord {
                         successful_acquisitions: 1,
-                        failed_attempts: 0,
                         last_attempt_tick: Tick(11),
+                        ..ReliabilityRecord::default()
                     },
                 ),
                 (
@@ -609,8 +677,8 @@ mod tests {
                     },
                     ReliabilityRecord {
                         successful_acquisitions: 1,
-                        failed_attempts: 0,
                         last_attempt_tick: Tick(12),
+                        ..ReliabilityRecord::default()
                     },
                 ),
             ]),
@@ -641,8 +709,8 @@ mod tests {
                     },
                     ReliabilityRecord {
                         successful_acquisitions: 1,
-                        failed_attempts: 0,
                         last_attempt_tick: Tick(10),
+                        ..ReliabilityRecord::default()
                     },
                 ),
                 (
@@ -652,8 +720,8 @@ mod tests {
                     },
                     ReliabilityRecord {
                         successful_acquisitions: 1,
-                        failed_attempts: 0,
                         last_attempt_tick: Tick(10),
+                        ..ReliabilityRecord::default()
                     },
                 ),
             ]),
@@ -717,8 +785,8 @@ mod tests {
                     },
                     ReliabilityRecord {
                         successful_acquisitions: 1,
-                        failed_attempts: 0,
                         last_attempt_tick: Tick(8),
+                        ..ReliabilityRecord::default()
                     },
                 ),
                 (
@@ -728,8 +796,8 @@ mod tests {
                     },
                     ReliabilityRecord {
                         successful_acquisitions: 1,
-                        failed_attempts: 0,
                         last_attempt_tick: Tick(9),
+                        ..ReliabilityRecord::default()
                     },
                 ),
             ]),
@@ -742,5 +810,111 @@ mod tests {
             entity: entity(2),
             commodity: crate::CommodityKind::Bread,
         }));
+    }
+
+    #[test]
+    fn observe_wait_running_mean_until_cap() {
+        let mut record = ReliabilityRecord::new(Tick(1));
+
+        for wait_ticks in [0, 3, 5, 8, 12] {
+            record.observe_wait(wait_ticks);
+        }
+
+        assert_eq!(record.average_wait_ticks, 4);
+        assert_eq!(record.wait_observation_count, 5);
+    }
+
+    #[test]
+    fn observe_wait_switches_to_ema_after_32() {
+        let mut record = ReliabilityRecord::new(Tick(1));
+
+        for _ in 0..32 {
+            record.observe_wait(4);
+        }
+        assert_eq!(record.average_wait_ticks, 4);
+        assert_eq!(record.wait_observation_count, 32);
+
+        record.observe_wait(100);
+
+        assert_eq!(record.average_wait_ticks, 7);
+        assert_eq!(record.wait_observation_count, 32);
+    }
+
+    #[test]
+    fn observe_capacity_overwrites_value_and_tick() {
+        let mut record = ReliabilityRecord::new(Tick(1));
+
+        record.observe_capacity(18, Tick(100));
+        record.observe_capacity(5, Tick(200));
+
+        assert_eq!(record.last_observed_capacity, 5);
+        assert_eq!(record.last_observed_capacity_tick, Tick(200));
+    }
+
+    #[test]
+    fn reliability_record_default_zeroes_observation_fields() {
+        let record = ReliabilityRecord::default();
+
+        assert_eq!(record.successful_acquisitions, 0);
+        assert_eq!(record.failed_attempts, 0);
+        assert_eq!(record.last_attempt_tick, Tick(0));
+        assert_eq!(record.average_wait_ticks, 0);
+        assert_eq!(record.wait_observation_count, 0);
+        assert_eq!(record.last_observed_capacity, 0);
+        assert_eq!(record.last_observed_capacity_tick, Tick(0));
+    }
+
+    #[test]
+    fn preference_profile_default_includes_wait_sensitivity_baseline() {
+        assert_eq!(
+            PreferenceProfile::default().wait_sensitivity_weight,
+            crate::Permille::new_unchecked(150)
+        );
+    }
+
+    #[test]
+    fn reliability_record_round_trips_observation_fields_through_bincode() {
+        let reliability = SourceReliability {
+            sources: BTreeMap::from([(
+                SourceKey {
+                    entity: entity(1),
+                    commodity: crate::CommodityKind::Apple,
+                },
+                ReliabilityRecord {
+                    successful_acquisitions: 2,
+                    failed_attempts: 1,
+                    last_attempt_tick: Tick(40),
+                    average_wait_ticks: 9,
+                    wait_observation_count: 3,
+                    last_observed_capacity: 18,
+                    last_observed_capacity_tick: Tick(35),
+                },
+            )]),
+        };
+
+        let roundtrip: SourceReliability =
+            bincode::deserialize(&bincode::serialize(&reliability).unwrap()).unwrap();
+
+        assert_eq!(roundtrip, reliability);
+    }
+
+    #[test]
+    fn failure_ratio_permille_ignores_observation_fields() {
+        let baseline = ReliabilityRecord {
+            successful_acquisitions: 1,
+            failed_attempts: 3,
+            last_attempt_tick: Tick(10),
+            ..ReliabilityRecord::default()
+        };
+        let observed = ReliabilityRecord {
+            average_wait_ticks: 12,
+            wait_observation_count: 4,
+            last_observed_capacity: 9,
+            last_observed_capacity_tick: Tick(9),
+            ..baseline
+        };
+
+        assert_eq!(failure_ratio_permille(&baseline), 750);
+        assert_eq!(failure_ratio_permille(&observed), 750);
     }
 }

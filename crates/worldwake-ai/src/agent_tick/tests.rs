@@ -6331,9 +6331,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
             commodity: CommodityKind::Apple,
         },
         worldwake_core::ReliabilityRecord {
-            successful_acquisitions: 0,
             failed_attempts: 3,
             last_attempt_tick: Tick(1),
+            ..worldwake_core::ReliabilityRecord::default()
         },
     );
 
@@ -6446,9 +6446,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
             commodity: CommodityKind::Apple,
         }),
         Some(&worldwake_core::ReliabilityRecord {
-            successful_acquisitions: 0,
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
+            ..worldwake_core::ReliabilityRecord::default()
         })
     );
     assert_eq!(
@@ -6457,9 +6457,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
             commodity: CommodityKind::Apple,
         }),
         Some(&worldwake_core::ReliabilityRecord {
-            successful_acquisitions: 0,
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
+            ..worldwake_core::ReliabilityRecord::default()
         })
     );
     let source_failure_events = harness

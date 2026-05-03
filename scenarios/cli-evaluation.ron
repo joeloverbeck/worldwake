@@ -281,6 +281,7 @@
                 route_memory_capacity: 24,
                 source_memory_capacity: 18,
                 memory_retention_ticks: 400,
+                wait_sensitivity_weight: 150,
             ),
             theft_disposition: (
                 steal_duration_ticks: 3,

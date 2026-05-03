@@ -147,6 +147,10 @@ pub fn sample_source_reliability() -> SourceReliability {
                 successful_acquisitions: 3,
                 failed_attempts: 1,
                 last_attempt_tick: Tick(21),
+                average_wait_ticks: 4,
+                wait_observation_count: 2,
+                last_observed_capacity: 7,
+                last_observed_capacity_tick: Tick(20),
             },
         )]),
     }
@@ -160,6 +164,7 @@ pub fn sample_preference_profile() -> PreferenceProfile {
         route_memory_capacity: 24,
         source_memory_capacity: 18,
         memory_retention_ticks: 400,
+        wait_sensitivity_weight: Permille::new(150).unwrap(),
     }
 }
 
