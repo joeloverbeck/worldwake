@@ -4,8 +4,8 @@ use crate::experience_recording::{
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
     ActionDefId, CommodityKind, Container, ContentionGrant, EntityId, EntityKind, EventTag,
-    HarvestTraceEntry, LoadUnits, ProductionOutputOwner, Quantity, SourceKey, VisibilitySpec,
-    WorkstationMarker, World, WorldTxn, load_per_unit,
+    HarvestTraceEntry, LoadUnits, ProductionOutputOwner, Quantity, ReliabilityRecord, SourceKey,
+    Tick, VisibilitySpec, WorkstationMarker, World, WorldTxn, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -489,6 +489,12 @@ fn grant_or_signal_full(
 
     if let Some(slot) = chosen_slot {
         let queue = &mut queues.queues[slot];
+        let head_queued_at = queue
+            .waiting
+            .values()
+            .next()
+            .filter(|waiter| waiter.actor == actor)
+            .map(|waiter| waiter.queued_at);
         if queue.granted.is_none() {
             // Promote the head waiter (or grab a free slot). Removing from
             // waiting before granting keeps the queue invariant that an
@@ -505,6 +511,9 @@ fn grant_or_signal_full(
             });
             txn.set_component_resource_extraction_queues(workstation, queues)
                 .map_err(|err| ActionError::InternalError(err.to_string()))?;
+            if let Some(queued_at) = head_queued_at {
+                record_extraction_wait_observation(txn, actor, workstation, queued_at)?;
+            }
         }
         Ok(())
     } else {
@@ -512,6 +521,41 @@ fn grant_or_signal_full(
             HARVEST_START_FAILURE_SLOTS_FULL.to_string(),
         ))
     }
+}
+
+fn record_extraction_wait_observation(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    workstation: EntityId,
+    queued_at: Tick,
+) -> Result<(), ActionError> {
+    let wait_ticks = txn
+        .tick()
+        .0
+        .saturating_sub(queued_at.0)
+        .try_into()
+        .unwrap_or(u32::MAX);
+    if wait_ticks == 0 {
+        return Ok(());
+    }
+    let Some(source) = txn.get_component_resource_source(workstation) else {
+        return Ok(());
+    };
+    let key = SourceKey {
+        entity: workstation,
+        commodity: source.commodity,
+    };
+    let mut reliability = txn
+        .get_component_source_reliability(actor)
+        .cloned()
+        .unwrap_or_default();
+    reliability
+        .sources
+        .entry(key)
+        .or_insert_with(|| ReliabilityRecord::new(txn.tick()))
+        .observe_wait(wait_ticks);
+    txn.set_component_source_reliability(actor, reliability)
+        .map_err(|err| ActionError::InternalError(err.to_string()))
 }
 
 /// Enqueue `actor` at the slot with the shortest waitlist. Called from
@@ -3960,5 +4004,130 @@ mod tests {
         assert_eq!(slot.granted.as_ref().map(|g| g.actor), Some(actor_a));
         assert_eq!(slot.position_of(actor_b), Some(0));
         assert_eq!(slot.position_of(actor_c), Some(1));
+    }
+
+    #[test]
+    fn harvest_start_records_wait_observation_when_promoted_from_queue() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, _ids) = setup_registries(&recipes);
+        let (mut world, actor_a, workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 9);
+        grant_recipe(&mut world, actor_a, recipe_id);
+        let actor_b = spawn_co_located_agent(&mut world, actor_a, "Bram", recipe_id, 5);
+
+        let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
+        let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xA3);
+        let mut next_id = ActionInstanceId(0);
+
+        let instance_id = start_action(
+            &affordance_a,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap();
+
+        let err_b = start_action(
+            &affordance_b,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err_b,
+            ActionError::PreconditionFailed("extraction_slots_full".to_string())
+        );
+
+        run_to_completion(
+            &mut world,
+            &mut event_log,
+            &mut rng,
+            &defs,
+            &handlers,
+            instance_id,
+            &mut active,
+            11,
+        );
+
+        start_action(
+            &affordance_b,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(15)),
+        )
+        .unwrap();
+
+        let reliability = world
+            .get_component_source_reliability(actor_b)
+            .expect("agents carry source reliability");
+        let record = reliability
+            .sources
+            .get(&SourceKey {
+                entity: workstation,
+                commodity: CommodityKind::Apple,
+            })
+            .expect("queued harvest grant should record wait observation");
+        assert_eq!(record.average_wait_ticks, 5);
+        assert_eq!(record.wait_observation_count, 1);
+    }
+
+    #[test]
+    fn harvest_start_skips_wait_observation_for_zero_wait_grant() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (defs, handlers, _ids) = setup_registries(&recipes);
+        let (mut world, actor, _workstation, _place) =
+            setup_world(false, WorkstationTag::OrchardRow, 9);
+        grant_recipe(&mut world, actor, recipe_id);
+        let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
+        let mut active = BTreeMap::new();
+        let mut event_log = EventLog::new();
+        let mut rng = test_rng(0xA4);
+        let mut next_id = ActionInstanceId(0);
+
+        start_action(
+            &affordance,
+            &defs,
+            &handlers,
+            ActionExecutionAuthority {
+                active_actions: &mut active,
+                world: &mut world,
+                event_log: &mut event_log,
+                rng: &mut rng,
+            },
+            &mut next_id,
+            worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(20)),
+        )
+        .unwrap();
+
+        assert!(
+            world
+                .get_component_source_reliability(actor)
+                .is_none_or(|reliability| reliability.sources.is_empty())
+        );
     }
 }

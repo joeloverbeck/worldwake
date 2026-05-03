@@ -47,6 +47,7 @@ Before any Cargo command:
 - For golden/observer proof tickets, first decide whether the mismatch is renderer/fixture drift or a real upstream event/report contract regression. Prove the upstream contract at the strongest existing lower-layer owning seam before editing any fixture, and if that contract is still honest, narrow the ticket to fixture truthing plus closeout.
 - For validation-suite / tests-only tickets, diff the drafted `Files to Touch`, `New/Modified Tests`, and `Acceptance Criteria` against the live branch immediately; record `already landed`, `still live`, and `no-change cited files` before planning new tests.
 - For existing per-tick maintenance-pass extensions, keep the added pass in the current SystemFn when that is the live owner. Before coding, name the pass ordering, collect-before-commit or apply-time reread shape, transaction tags/targets, missing-profile or missing-component skip behavior, idempotence/no-op contract, and whether the change affects persisted shape.
+- When the live system routes mutations through a local `commit_*`, `apply_*`, or similar helper, treat that helper as the mutation boundary. Thread narrow effect data into it and write inside its existing `WorldTxn` rather than adding a second after-the-fact `World` mutation path.
 
 ## Always First
 
@@ -235,6 +236,7 @@ When a ticket mostly adds a new file plus a small declaration/edit in a large ex
 When a small/local helper-extraction ticket asks to move existing inline logic into a helper, enumerate the exact live branches currently inlined before editing. If the ticket names an extra semantic branch that is not present in the inline code, rewrite the ticket before coding and mark that branch as future-owned instead of adding new behavior during a preservation refactor.
 
 When a ticket extends an existing per-tick maintenance pass with another local iteration pass, prefer the live system's existing update shape over the ticket's inline sketch when they differ. Typical safe shapes are immutable collection followed by transactional application, or apply-time rereads when shared-source staleness matters. Add focused proof for stale-prune, fresh-retain/no-op, idempotence when meaningful, and the emitted mutation shape when the existing system records events.
+When the expected no-op is "do not write this optional/lazily-created component entry," assert the semantic absence of the inserted key or row. Do not require the component itself to exist unless reassessment has verified the specific fixture path seeds it universally.
 
 When a small/local UI, visualizer, or read-model test asserts rows or state derived from a scenario, verify whether the asserted state exists immediately after load or only after deterministic simulation advancement. If the fixture must advance first, encode that advancement in the focused test and record the temporal proof boundary in ticket closeout instead of treating a tick-0 absence as a missing implementation.
 

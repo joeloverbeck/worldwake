@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDomain, CauseRef, ContentionPolicy, ContentionQueue, EntityId, EntityKind, EventLog,
-    EventTag, Tick, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+    EventTag, ReliabilityRecord, SourceKey, Tick, VisibilitySpec, WitnessData, WorkstationTag,
+    World, WorldTxn,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionStatus, SystemError, SystemExecutionContext,
@@ -15,6 +16,13 @@ struct QueueUpdateEffects<'a> {
     extra_tag: Option<EventTag>,
     extra_target: Option<EntityId>,
     cleared_waiters: &'a [worldwake_core::ContentionWaiter],
+    wait_observation: Option<WaitObservation>,
+}
+
+#[derive(Clone, Copy)]
+struct WaitObservation {
+    actor: EntityId,
+    wait_ticks: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -189,6 +197,7 @@ fn prune_invalid_waiters(
                 extra_tag: None,
                 extra_target: None,
                 cleared_waiters: &removed_waiters,
+                wait_observation: None,
             },
         )?;
     }
@@ -235,6 +244,7 @@ fn prune_patience_exceeded(
                 extra_tag: None,
                 extra_target: None,
                 cleared_waiters: &removed_waiters,
+                wait_observation: None,
             },
         )?;
     }
@@ -269,6 +279,7 @@ fn expire_stale_grant(
             extra_tag: Some(EventTag::QueueGrantExpired),
             extra_target: Some(granted.actor),
             cleared_waiters: &[],
+            wait_observation: None,
         },
     )
 }
@@ -307,6 +318,7 @@ fn prune_structurally_invalid_heads(
                 extra_tag: Some(EventTag::QueueHeadFailed),
                 extra_target: Some(queued_actor),
                 cleared_waiters: std::slice::from_ref(&queued),
+                wait_observation: None,
             },
         )?;
     }
@@ -337,6 +349,8 @@ fn promote_ready_head(
     let Some(queued) = queue.waiting.values().next() else {
         return Ok(());
     };
+    let queued_actor = queued.actor;
+    let queued_at = queued.queued_at;
     if !head_is_ready_to_start(
         world,
         active_actions,
@@ -347,6 +361,11 @@ fn promote_ready_head(
     ) {
         return Ok(());
     }
+    let wait_ticks = tick
+        .0
+        .saturating_sub(queued_at.0)
+        .try_into()
+        .unwrap_or(u32::MAX);
 
     let granted = queue
         .promote_head(tick, policy.grant_hold_ticks)
@@ -362,6 +381,10 @@ fn promote_ready_head(
             extra_tag: Some(EventTag::QueueGrantPromoted),
             extra_target: Some(granted.actor),
             cleared_waiters: &[],
+            wait_observation: Some(WaitObservation {
+                actor: queued_actor,
+                wait_ticks,
+            }),
         },
     )
 }
@@ -508,6 +531,26 @@ fn commit_queue_update(
     }
     txn.set_component_contention_queue(facility, queue)
         .map_err(|error| SystemError::new(error.to_string()))?;
+    if let Some(observation) = effects.wait_observation
+        && observation.wait_ticks > 0
+        && let Some(source) = txn.get_component_resource_source(facility)
+    {
+        let key = SourceKey {
+            entity: facility,
+            commodity: source.commodity,
+        };
+        let mut reliability = txn
+            .get_component_source_reliability(observation.actor)
+            .cloned()
+            .unwrap_or_default();
+        reliability
+            .sources
+            .entry(key)
+            .or_insert_with(|| ReliabilityRecord::new(tick))
+            .observe_wait(observation.wait_ticks);
+        txn.set_component_source_reliability(observation.actor, reliability)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+    }
     let _ = txn.commit(event_log);
     Ok(())
 }
@@ -542,7 +585,7 @@ mod tests {
         ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
         DeprivationKind, EntityId, EntityKind, EventLog, EventTag, EventView, GoalKey, GoalKind,
         KnownRecipes, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        Quantity, QueuedContentionIntent, ResourceSource, Seed, Tick, UniqueItemKind,
+        Quantity, QueuedContentionIntent, ResourceSource, Seed, SourceKey, Tick, UniqueItemKind,
         VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
         WoundCause, WoundId, WoundList, build_prototype_world,
     };
@@ -704,13 +747,23 @@ mod tests {
         actor: EntityId,
         intended_action: ActionDefId,
     ) {
-        let mut txn = new_txn(world, 2);
+        enqueue_at(world, facility, actor, intended_action, 2);
+    }
+
+    fn enqueue_at(
+        world: &mut World,
+        facility: EntityId,
+        actor: EntityId,
+        intended_action: ActionDefId,
+        tick: u64,
+    ) {
+        let mut txn = new_txn(world, tick);
         let mut queue = txn
             .get_component_contention_queue(facility)
             .cloned()
             .unwrap();
         queue
-            .enqueue(actor, intended_action, Tick(2), None)
+            .enqueue(actor, intended_action, Tick(tick), None)
             .unwrap();
         txn.set_component_contention_queue(facility, queue).unwrap();
         if txn.entity_kind(actor).is_some() {
@@ -1101,6 +1154,60 @@ mod tests {
         assert_eq!(granted.actor, actor);
         assert_eq!(granted.expires_at, Tick(6));
         assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
+    }
+
+    #[test]
+    fn promote_ready_head_records_wait_observation_for_resource_source_facility() {
+        let recipes = build_recipe_registry();
+        let (defs, _handlers, harvest_id, _craft_id) = setup_registries(&recipes);
+        let (mut world, place, facility) = setup_world(WorkstationTag::OrchardRow, 4);
+        let actor = add_actor(&mut world, place, worldwake_core::RecipeId(0));
+        enqueue_at(&mut world, facility, actor, harvest_id, 10);
+
+        run_system(
+            &mut world,
+            &mut EventLog::new(),
+            &defs,
+            &BTreeMap::new(),
+            15,
+        );
+
+        let reliability = world
+            .get_component_source_reliability(actor)
+            .expect("agents carry source reliability");
+        let record = reliability
+            .sources
+            .get(&SourceKey {
+                entity: facility,
+                commodity: CommodityKind::Apple,
+            })
+            .expect("wait observation should be recorded for resource source");
+        assert_eq!(record.average_wait_ticks, 5);
+        assert_eq!(record.wait_observation_count, 1);
+    }
+
+    #[test]
+    fn promote_ready_head_skips_wait_observation_when_facility_has_no_resource_source() {
+        let recipes = build_recipe_registry();
+        let (defs, _handlers, _harvest_id, craft_id) = setup_registries(&recipes);
+        let (mut world, place, facility) = setup_world(WorkstationTag::Mill, 0);
+        let actor = add_actor(&mut world, place, worldwake_core::RecipeId(1));
+        add_possessed_lot(&mut world, actor, place, CommodityKind::Grain, 1);
+        enqueue_at(&mut world, facility, actor, craft_id, 10);
+
+        run_system(
+            &mut world,
+            &mut EventLog::new(),
+            &defs,
+            &BTreeMap::new(),
+            15,
+        );
+
+        assert!(
+            world
+                .get_component_source_reliability(actor)
+                .is_none_or(|reliability| reliability.sources.is_empty())
+        );
     }
 
     #[test]

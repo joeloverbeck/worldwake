@@ -1,6 +1,6 @@
 # S131SOURELWAI-002: Wait observation hooks at both grant-promotion sites
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems` (facility queue + resource-extraction grant handlers gain learning hooks)
@@ -22,7 +22,7 @@ The motivating scenario for S131 (Agent A and B competing at North Orchard with 
 
 ## Architecture Check
 
-1. Each hook reads the head waiter's `queued_at` BEFORE the mutation that removes the waiter, captures `wait_ticks` as a local, then writes the agent's updated `SourceReliability` after the existing grant commit. This preserves the existing grant's atomicity (the grant transition + wait observation are in one transaction) and avoids re-reading the queue after mutation.
+1. Each hook reads the head waiter's `queued_at` BEFORE the mutation that removes the waiter, captures `wait_ticks` as a local, then writes the agent's updated `SourceReliability` in the same transaction after the grant state has been written. This preserves the existing grant's atomicity (the grant transition + wait observation are in one transaction) and avoids re-reading the queue after mutation.
 2. No backwards-compatibility shim. The hook is a new write site on the existing `SourceReliability` component; no parallel learning path is introduced and no legacy observation channel persists.
 3. The duplication of the hook across the two substrates is intentional per FND-26 — abstracting "any grant transition fires wait observation" through a shared helper would couple `facility_queue.rs` and `production_actions.rs` against a derived event abstraction that doesn't exist in the world model. The two write sites are the lawful authoritative producers of grant transitions; they each invoke the same `ReliabilityRecord::observe_wait` method from S131SOURELWAI-001.
 
@@ -41,11 +41,11 @@ The motivating scenario for S131 (Agent A and B competing at North Orchard with 
 Modify the function (currently `crates/worldwake-systems/src/facility_queue.rs:315–367`) so that:
 
 - Capture `let queued_actor = queued.actor;` and `let queued_at = queued.queued_at;` immediately after the existing `queued` borrow at line 337 (before the `head_is_ready_to_start` check at line 340).
-- After the existing `commit_queue_update` call (line 355–366) that emits `EventTag::QueueGrantPromoted`, look up the (entity, commodity) for this facility:
-  - Read `ResourceSource` on the facility via `world.get_component_resource_source(facility)`. If absent, skip wait observation (the facility has no commodity association).
+- Thread a wait-observation effect into the existing `commit_queue_update` call (line 355–366) that emits `EventTag::QueueGrantPromoted`, then look up the (entity, commodity) for this facility inside that transaction after the queue update is written:
+  - Read `ResourceSource` on the facility via `txn.get_component_resource_source(facility)`. If absent, skip wait observation (the facility has no commodity association).
   - Otherwise, build `SourceKey { entity: facility, commodity: source.commodity }`.
-- Compute `let wait_ticks: u32 = (tick.0 - queued_at.0).try_into().unwrap_or(u32::MAX);` (saturate on overflow; in practice wait ticks fit in `u32`).
-- Fetch `world.get_component_source_reliability(queued_actor).cloned().unwrap_or_default()`, call `record.observe_wait(wait_ticks)` on the entry obtained via `reliability.sources.entry(key).or_insert_with(|| ReliabilityRecord::new(tick))` (using the constructor from ticket 001), then write back via `world.set_component_source_reliability(queued_actor, reliability)`.
+- Compute `let wait_ticks: u32 = tick.0.saturating_sub(queued_at.0).try_into().unwrap_or(u32::MAX);` (saturate on overflow; in practice wait ticks fit in `u32`).
+- Fetch `txn.get_component_source_reliability(queued_actor).cloned().unwrap_or_default()`, call `record.observe_wait(wait_ticks)` on the entry obtained via `reliability.sources.entry(key).or_insert_with(|| ReliabilityRecord::new(tick))` (using the constructor from ticket 001), then write back via `txn.set_component_source_reliability(queued_actor, reliability)`.
 
 ### 2. Resource-extraction grant hook in `production_actions.rs::grant_or_signal_full`
 
@@ -65,7 +65,7 @@ Modify the function (currently `crates/worldwake-systems/src/production_actions.
 In `facility_queue.rs` `#[cfg(test)]` block (after the existing promote tests around line 1210), add:
 
 - `promote_ready_head_records_wait_observation_for_resource_source_facility`: build a workstation carrying both `ContentionQueue` and `ResourceSource { commodity: Apple }`; enqueue an actor at Tick(10); call the system function at Tick(15); assert the actor's `SourceReliability.sources[SourceKey { entity: facility, commodity: Apple }].average_wait_ticks == 5` and `wait_observation_count == 1`.
-- `promote_ready_head_skips_wait_observation_when_facility_has_no_resource_source`: build a workstation with `ContentionQueue` but no `ResourceSource`; promote a head; assert the actor's `SourceReliability` is empty (no key inserted, no observation recorded).
+- `promote_ready_head_skips_wait_observation_when_facility_has_no_resource_source`: build a workstation with `ContentionQueue` but no `ResourceSource`; promote a head; assert the actor's `SourceReliability` is absent or empty (no key inserted, no observation recorded).
 
 In `production_actions.rs` `#[cfg(test)]` block (after the existing harvest tests around line 3960), add:
 
@@ -97,7 +97,7 @@ In `production_actions.rs` `#[cfg(test)]` block (after the existing harvest test
 
 ### Invariants
 
-1. The wait-observation write happens after the grant transition is committed via the existing `commit_queue_update` / `txn.set_component_resource_extraction_queues` call — never before. Reordering would violate the read-before-mutate ordering for `queued_at`.
+1. The wait-observation write happens after the grant state is written via the existing `commit_queue_update` / `txn.set_component_resource_extraction_queues` transaction — never before. Reordering would violate the read-before-mutate ordering for `queued_at`.
 2. Zero-wait grants (no prior queue position) record no observation — the running mean in `ReliabilityRecord.average_wait_ticks` stays grounded in actual contention events, not in immediate access.
 3. Facilities without a `ResourceSource` component skip wait observation — the (entity, commodity) key requires a commodity association the facility itself doesn't have.
 4. The hook does not introduce new event-log entries (per spec Non-Goal "no new event tag"); the existing `EventTag::QueueGrantPromoted` is the authoritative grant record.
@@ -116,3 +116,28 @@ In `production_actions.rs` `#[cfg(test)]` block (after the existing harvest test
 3. `cargo test -p worldwake-systems` — confirms both hooks land cleanly in the same crate.
 4. `cargo test --workspace` — confirms downstream test fixtures (especially in `worldwake-ai` agent_tick tests) still pass with new writes happening on `SourceReliability`.
 5. `scripts/verify.sh` — full pre-PR gate.
+
+## Outcome
+
+Completed on 2026-05-03.
+
+- Added the facility-queue wait observation path to `promote_ready_head` through the existing `commit_queue_update` transaction. The hook captures the head waiter's `queued_at` before promotion, writes the promoted queue state, then records `ReliabilityRecord::observe_wait(wait_ticks)` for `SourceKey { entity: facility, commodity: ResourceSource.commodity }` when the facility has a `ResourceSource`.
+- Added the resource-extraction wait observation path to `grant_or_signal_full`. The hook captures the chosen slot's head waiter before `queue.remove_actor(actor)`, writes `ResourceExtractionQueues`, then records the same `(workstation, commodity)` wait observation when the promoted actor had a prior queue position.
+- Added focused tests for both grant substrates, including no-op behavior for non-resource-source facility grants and zero-wait extraction grants.
+
+## Deviations
+
+- The no-op focused tests assert that a skipped wait observation leaves `SourceReliability` absent or empty. Some focused fixtures create agents without a pre-existing `SourceReliability` component until the first reliability write; both states are the same no-observation contract because no `SourceKey` entry is inserted.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib facility_queue::tests -- --list`.
+- Passed `cargo test -p worldwake-systems --lib production_actions::tests -- --list`.
+- Passed `cargo test -p worldwake-systems --lib facility_queue::tests::promote_ready_head_records_wait_observation_for_resource_source_facility -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib facility_queue::tests::promote_ready_head_skips_wait_observation_when_facility_has_no_resource_source -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib production_actions::tests::harvest_start_records_wait_observation_when_promoted_from_queue -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib production_actions::tests::harvest_start_skips_wait_observation_for_zero_wait_grant -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib facility_queue::tests`.
+- Passed `cargo test -p worldwake-systems --lib production_actions::tests`.
+- Passed `cargo test -p worldwake-systems`.
+- Passed `./scripts/verify.sh` (`cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`).
