@@ -5,9 +5,9 @@ use worldwake_core::{
     EventTag, EventView, EvidenceRef, GoalKind, HypothesisKind, InstitutionalBeliefKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind, NoticeTopic,
     ObservationContext, PendingEvent, PerceptionSource, Permille, Quantity, RelationDelta,
-    RelationValue, SocialObservation, SocialObservationDetail, SocialObservationKind, StateDelta,
-    SurveyRecord, TheftFacts, VisibilitySpec, WitnessData, World, WorldTxn,
-    build_believed_entity_state,
+    RelationValue, ReliabilityRecord, SocialObservation, SocialObservationDetail,
+    SocialObservationKind, SourceKey, SourceReliability, StateDelta, SurveyRecord, TheftFacts,
+    VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
 };
 use worldwake_core::{DecisionEventPayload, SurveyRecordedPayload};
 use worldwake_sim::{
@@ -58,6 +58,8 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         action_defs,
         &mut updated_stores,
     );
+    let updated_source_reliabilities =
+        capacity_observations_for_direct_local_batches(world, tick, &direct_local_batches);
     observe_active_actions(
         world,
         tick,
@@ -94,11 +96,14 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         }
     }
 
-    if updated_stores.is_empty() && survey_records.is_empty() {
+    if updated_stores.is_empty()
+        && updated_source_reliabilities.is_empty()
+        && survey_records.is_empty()
+    {
         return Ok(());
     }
 
-    if !updated_stores.is_empty() {
+    if !updated_stores.is_empty() || !updated_source_reliabilities.is_empty() {
         let mut txn = WorldTxn::new(
             world,
             tick,
@@ -114,6 +119,10 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
             txn.set_component_agent_belief_store(agent, store)
                 .map_err(|error| SystemError::new(error.to_string()))?;
         }
+        for (agent, reliability) in updated_source_reliabilities {
+            txn.set_component_source_reliability(agent, reliability)
+                .map_err(|error| SystemError::new(error.to_string()))?;
+        }
         let _ = txn.commit(event_log);
     }
 
@@ -121,6 +130,45 @@ pub fn perception_system(ctx: SystemExecutionContext<'_>) -> Result<(), SystemEr
         record_survey(world, event_log, tick, survey)?;
     }
     Ok(())
+}
+
+fn capacity_observations_for_direct_local_batches(
+    world: &World,
+    tick: worldwake_core::Tick,
+    direct_local_batches: &BTreeMap<EntityId, DirectLocalObservationBatch>,
+) -> BTreeMap<EntityId, SourceReliability> {
+    let mut updates = BTreeMap::new();
+
+    for (agent, batch) in direct_local_batches {
+        let mut reliability = world
+            .get_component_source_reliability(*agent)
+            .cloned()
+            .unwrap_or_default();
+        let mut changed = false;
+
+        for (source_entity, snapshot) in &batch.observed_snapshots {
+            let Some(source) = snapshot.resource_source.as_ref() else {
+                continue;
+            };
+            let observed_capacity = u16::try_from(source.available_quantity.0).unwrap_or(u16::MAX);
+            let key = SourceKey {
+                entity: *source_entity,
+                commodity: source.commodity,
+            };
+            reliability
+                .sources
+                .entry(key)
+                .or_insert_with(|| ReliabilityRecord::new(tick))
+                .observe_capacity(observed_capacity, tick);
+            changed = true;
+        }
+
+        if changed {
+            updates.insert(*agent, reliability);
+        }
+    }
+
+    updates
 }
 
 #[derive(Clone, Copy)]
@@ -1379,12 +1427,12 @@ mod tests {
         NoticeContent, NoticeTopic, ObservedEntitySnapshot, OfficeForceState, PendingEvent,
         PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace,
-        Quantity, RelationDelta, RelationKind, RelationValue, ResourceSource, RewardSource,
-        SaleListing, SceneEvidence, Seed, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
-        SocialObservationDetail, SocialObservationKind, StateDelta, StockAssignment,
-        StockAssignmentKind, SurveyRecordedPayload, TheftFacts, Tick, VisibilitySpec, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_observed_entity_snapshot,
-        build_prototype_world, prototype_place_entity,
+        Quantity, RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource,
+        RewardSource, SaleListing, SceneEvidence, Seed, ShelterTag, SleepQualityProfile,
+        SleepRecoveryModifier, SocialObservationDetail, SocialObservationKind, SourceKey,
+        StateDelta, StockAssignment, StockAssignmentKind, SurveyRecordedPayload, TheftFacts, Tick,
+        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
+        build_observed_entity_snapshot, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -4301,6 +4349,133 @@ mod tests {
                 },
             }]
         );
+    }
+
+    #[test]
+    fn perception_writes_capacity_observation_for_co_located_resource_source() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, source) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let source = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(source, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_resource_source(
+                source,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(18),
+                    max_quantity: Quantity(20),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                    extraction_slots: NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, source)
+        };
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 100);
+
+        let key = SourceKey {
+            entity: source,
+            commodity: CommodityKind::Apple,
+        };
+        let record = world
+            .get_component_source_reliability(observer)
+            .and_then(|reliability| reliability.sources.get(&key))
+            .copied()
+            .expect("perception should record observed capacity");
+        assert_eq!(
+            record,
+            ReliabilityRecord {
+                last_observed_capacity: 18,
+                last_observed_capacity_tick: Tick(100),
+                ..ReliabilityRecord::new(Tick(100))
+            }
+        );
+    }
+
+    #[test]
+    fn perception_overwrites_capacity_observation_on_subsequent_tick() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, source) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            let source = txn.create_entity(EntityKind::Facility);
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_ground_location(source, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_perception_profile(observer, profile(1000))
+                .unwrap();
+            txn.set_component_resource_source(
+                source,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(18),
+                    max_quantity: Quantity(20),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                    extraction_slots: NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, source)
+        };
+        let mut event_log = EventLog::new();
+
+        run_perception(&mut world, &mut event_log, 100);
+        {
+            let mut txn = new_txn(&mut world, 150);
+            txn.set_component_resource_source(
+                source,
+                ResourceSource {
+                    commodity: CommodityKind::Apple,
+                    available_quantity: Quantity(5),
+                    max_quantity: Quantity(20),
+                    regeneration_ticks_per_unit: None,
+                    last_regeneration_tick: None,
+                    extraction_slots: NonZeroU8::new(1).unwrap(),
+                    extraction_duration_ticks: NonZeroU32::new(1).unwrap(),
+                },
+            )
+            .unwrap();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+        }
+
+        run_perception(&mut world, &mut event_log, 200);
+
+        let key = SourceKey {
+            entity: source,
+            commodity: CommodityKind::Apple,
+        };
+        let record = world
+            .get_component_source_reliability(observer)
+            .and_then(|reliability| reliability.sources.get(&key))
+            .copied()
+            .expect("perception should refresh observed capacity");
+        assert_eq!(record.last_observed_capacity, 5);
+        assert_eq!(record.last_observed_capacity_tick, Tick(200));
+        assert_eq!(record.successful_acquisitions, 0);
+        assert_eq!(record.failed_attempts, 0);
+        assert_eq!(record.last_attempt_tick, Tick(100));
+        assert_eq!(record.average_wait_ticks, 0);
+        assert_eq!(record.wait_observation_count, 0);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # S131SOURELWAI-003: Capacity observation hook in perception
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-systems` (perception system gains a per-actor capacity observation write alongside existing belief writes)
@@ -14,10 +14,10 @@ Today an agent who perceives a `ResourceSource` writes the source's `available_q
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `crates/worldwake-systems/src/perception.rs` defines `pub fn perception_system(ctx: SystemExecutionContext<'_>)` at line 37. Existing `ResourceSource`-related belief writes are in the perception walk at lines 1797, 4217, 4250 (per Step 2 grep). The `#[cfg(test)]` boundary is at line 1359; the existing test `passive_observation_emits_discovery_for_resource_source_mismatch:4200` exercises the discovery path for resource sources. `ResourceSource { commodity: CommodityKind, available_quantity: Quantity, ... }` lives at `crates/worldwake-core/src/production.rs:75–83`. `SourceKey { entity, commodity }` is the existing key convention used in `apply_source_reliability_discount` (`ranking.rs`) and `experience_recording.rs`.
+1. `crates/worldwake-systems/src/perception.rs` defines `pub fn perception_system(ctx: SystemExecutionContext<'_>)`. The live fresh-perception seam for co-located resource sources is `collect_direct_local_observation_batch(...)` building `BelievedEntityState` snapshots through `build_believed_entity_state(...)`, followed by `apply_direct_local_observation_batch(...)` recording those snapshots into the observer's `AgentBeliefStore`. The earlier grep hits at former lines 1797 / 4217 / 4250 are now test-fixture literals, not the production write site. The existing test `passive_observation_emits_discovery_for_resource_source_mismatch` exercises the resource-source direct-observation path. `ResourceSource { commodity: CommodityKind, available_quantity: Quantity, ... }` lives in `crates/worldwake-core/src/production.rs`. `SourceKey { entity, commodity }` is the existing key convention used in `apply_source_reliability_discount` (`ranking.rs`) and `experience_recording.rs`.
 2. Per FND-14A (same-tick co-located observation is belief-equivalent), the perception hook may read authoritative `ResourceSource.available_quantity` for entities the agent is co-located with — this is the same fact a correct perception pipeline would deliver to the agent's beliefs on the same tick. The hook is therefore lawful regardless of belief-store latency.
 3. Cross-system boundary under audit: perception (`worldwake-systems`) writes the agent's `SourceReliability` (ECS component owned by the agent in `worldwake-core`). Per FND-26 this is a state-mediated write within the existing perception walk — no new SystemFn is introduced. The boundary is the perception SystemFn → `SourceReliability` component, identical in shape to the existing perception → `AgentBeliefStore` writes.
-4. The single caller location for the new hook needs to be the perception walk over co-located entities for resource sources. The three candidate sites at lines 1797, 4217, 4250 must be triaged at implementation time: the correct site is the one that fires for *fresh* perception of co-located resource sources (not belief-store maintenance). The grep returned three matches; reading the surrounding context during implementation will confirm which is the active perception write.
+4. The single caller location for the new hook needs to be the direct-local observation batch over co-located entities. The hook should consume `batch.observed_snapshots` after the batch is collected, so it fires only for entities that passed the observer's perception check and avoids witness/event replay paths.
 6. Intended verification layer is focused/unit (`#[cfg(test)]` block of `perception.rs`) — the capacity-observation write is a state mutation observable by reading the actor's `SourceReliability` after `perception_system` ticks. Cross-tick freshness decay is verified at the ranking layer in ticket 004 (the discount computation reads `last_observed_capacity_tick` and discounts older observations). Golden coverage of capacity learning + ranking lands in ticket 005.
 
 ## Architecture Check
@@ -36,7 +36,7 @@ Today an agent who perceives a `ResourceSource` writes the source's `available_q
 
 ### 1. Add capacity-observation hook in `perception.rs`
 
-In `crates/worldwake-systems/src/perception.rs`, identify the active perception write site for co-located resource sources (one of lines 1797 / 4217 / 4250 — confirm during implementation by reading 20 lines of context at each site; the active site is the one inside the per-actor co-location walk that writes belief facts about the source's `available_quantity`).
+In `crates/worldwake-systems/src/perception.rs`, attach capacity observation to the direct-local observation batch produced for each observer. The active production seam is the `DirectLocalObservationBatch.observed_snapshots` map, not the stale grep-hit fixture literals.
 
 After the chosen belief write fires for a perceived `ResourceSource`-bearing entity:
 
@@ -46,7 +46,7 @@ After the chosen belief write fires for a perceived `ResourceSource`-bearing ent
 - Call `record.observe_capacity(observed_capacity, current_tick)`.
 - Write the updated `SourceReliability` back through the same world handle as the existing belief write.
 
-This must be a side-effect of the existing perception walk, not a new walk. If the existing belief write happens inside an iterator over perceived entities, attach the observation inside that same iterator body.
+This must be a side-effect of the existing perception walk, not a new independent scan over all nearby sources. The write may be staged into a per-agent `SourceReliability` update map and committed in the same perception-system transaction that writes updated belief stores.
 
 ### 2. Add focused tests
 
@@ -89,6 +89,28 @@ In the `perception.rs` `#[cfg(test)]` block (after `passive_observation_emits_di
 
 ### Commands
 
-1. `cargo test -p worldwake-systems perception::tests` — narrowest verification while iterating.
-2. `cargo test --workspace` — confirms no downstream perception consumers are perturbed.
-3. `scripts/verify.sh` — full pre-PR gate.
+1. `cargo test -p worldwake-systems --lib perception::tests::perception_writes_capacity_observation_for_co_located_resource_source -- --exact` — focused fresh-observation proof.
+2. `cargo test -p worldwake-systems --lib perception::tests::perception_overwrites_capacity_observation_on_subsequent_tick -- --exact` — focused overwrite proof.
+3. `cargo test -p worldwake-systems --lib perception::tests::passive_observation_emits_discovery_for_resource_source_mismatch -- --exact` — existing resource-source discovery regression.
+4. `cargo test -p worldwake-systems` — affected crate proof.
+5. `./scripts/verify.sh` — full live wrapper gate.
+
+## Outcome
+
+Completed on 2026-05-03.
+
+- Added the perception-system capacity observation hook in `crates/worldwake-systems/src/perception.rs`. The hook consumes `DirectLocalObservationBatch.observed_snapshots`, so it writes `SourceReliability.sources[SourceKey { entity, commodity }].last_observed_capacity` only for resource sources actually perceived through the direct co-located observation path.
+- Added focused unit coverage for first observation and subsequent overwrite behavior. The overwrite test also verifies that capacity observation leaves `successful_acquisitions`, `failed_attempts`, `last_attempt_tick`, `average_wait_ticks`, and `wait_observation_count` untouched.
+- Reassessed the stale grep-line premise: the cited line hits were test fixture literals on the live branch. The landed production seam is the direct-local observation batch rather than a separate scan or a witness/report path.
+
+## Deviations
+
+- The implementation stages `SourceReliability` updates into a per-agent map and commits them in the existing perception-system mutation transaction, instead of mutating inline at the belief-store helper call. This keeps the side effect tied to the same direct-local batch while preserving the current read-then-commit shape of `perception_system`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib perception::tests::perception_writes_capacity_observation_for_co_located_resource_source -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib perception::tests::perception_overwrites_capacity_observation_on_subsequent_tick -- --exact`.
+- Passed `cargo test -p worldwake-systems --lib perception::tests::passive_observation_emits_discovery_for_resource_source_mismatch -- --exact`.
+- Passed `cargo test -p worldwake-systems`.
+- Passed `./scripts/verify.sh`, which ran `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
