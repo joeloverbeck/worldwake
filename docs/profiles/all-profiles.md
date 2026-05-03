@@ -9,6 +9,7 @@
 
 Always applied to every agent with defaults. Scenario definitions may override individual fields.
 
+- [AgendaProfile](#agendaprofile) — Stable per-agent agenda memory and retry parameters used by the AI layer.
 - [ArtifactPostingProfile](#artifactpostingprofile) — Per-agent defaults for artifact TTL when posting notices and bounties.
 - [CognitiveProfile](#cognitiveprofile) — Stable per-agent cognitive reasoning parameters used by the AI layer.
 - [CommunicationProfile](#communicationprofile) — Per-agent parameters controlling communication acceptance by class.
@@ -47,6 +48,23 @@ Attached to non-agent entities (places, offices, etc.) or not referenced in the 
 - [MemoryCapacityProfile](#memorycapacityprofile) — (no description)
 - [OfficeForceProfile](#officeforceprofile) — Explicit force-succession timing policy attached to force-law offices.
 - [PlaceVisibilityProfile](#placevisibilityprofile) — Environmental visibility parameters attached to place entities.
+- [SleepQualityProfile](#sleepqualityprofile) — (no description)
+
+---
+
+## AgendaProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/agenda_profile.rs:6`
+
+Stable per-agent agenda memory and retry parameters used by the AI layer.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pending_capacity` | `u32` | Maximum number of pending agenda entries retained for the agent. (default: `16`) |
+| `suspended_capacity` | `u32` | Maximum number of suspended agenda entries retained for the agent. (default: `8`) |
+| `revive_cooldown_ticks` | `u32` | Cooldown before a pending agenda entry is reconsidered again. (default: `4`) |
 
 ---
 
@@ -70,7 +88,7 @@ Per-agent defaults for artifact TTL when posting notices and bounties.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/cognitive_profile.rs:6`
+**Source**: `crates/worldwake-core/src/cognitive_profile.rs:23`
 
 Stable per-agent cognitive reasoning parameters used by the AI layer.
 
@@ -95,13 +113,19 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `route_unknown_backoff_ticks` | `u32` | TTL for route-unknown discrepancies before retry. (default: `default_route_unknown_backoff_ticks()`) |
 | `search_exhaustion_backoff_ticks` | `u32` | TTL for search-budget-exhaustion discrepancies before retry. (default: `default_search_exhaustion_backoff_ticks()`) |
 | `partial_drift_backoff_ticks` | `u32` | TTL for partial-execution-drift discrepancies before retry. (default: `default_partial_drift_backoff_ticks()`) |
+| `expectation_tolerance_ticks` | `u32` | Grace window before a plan-step expectation is treated as overdue. (default: `default_expectation_tolerance_ticks()`) |
+| `guard_min_confidence_ceiling` | `Permille` | Per-agent cap on the minimum confidence required for plan-step guards. (default: `default_guard_min_confidence_ceiling()`) |
 | `repair_memory_ticks` | `u32` | Ticks a successful repair remains ranking-relevant before expiring. (default: `default_repair_memory_ticks()`) |
 | `learned_opportunity_memory_ticks` | `u32` | Ticks a learned opportunity remains ranking-relevant before expiring. (default: `default_learned_opportunity_memory_ticks()`) |
+| `survey_memory_capacity` | `usize` | Maximum number of survey records retained per agent. (default: `default_survey_memory_capacity()`) |
+| `survey_memory_retention_ticks` | `u64` | Ticks a survey record remains ranking-relevant before expiring. (default: `default_survey_memory_retention_ticks()`) |
 | `initial_cooldown_ticks` | `u32` | Base cooldown ticks after a goal fails before the agent retries it. (default: `4`) |
 | `max_cooldown_ticks` | `u32` | Maximum cooldown ticks after repeated failures (exponential backoff cap). (default: `64`) |
 | `max_snapshot_entities_per_place` | `u16` | Maximum entities included per place in the planner's world snapshot. (default: `50`) |
 | `landmark_extraction_depth` | `u8` | Maximum depth of landmark chain extraction during tactical planning. Higher values produce more landmarks for better search guidance at increased extraction cost. 0 disables landmarks. (default: `4`) |
 | `use_ff_heuristic` | `bool` | Whether this agent uses the FF-style relaxed-plan heuristic for tactical search guidance. (default: `default_use_ff_heuristic()`) |
+| `decision_history_alternatives` | `u8` | Maximum number of rejected alternatives recorded in decision history events. (default: `default_decision_history_alternatives()`) |
+| `slot_weights` | `PortfolioSlotWeights` | Relative slot weights for portfolio candidate ordering. (default: `PortfolioSlotWeights::default()`) |
 
 ---
 
@@ -169,6 +193,8 @@ Stable per-agent parameters governing need-driven exploration pressure.
 | `exploration_arrival_boost` | `Permille` | Utility bonus applied upon arriving at a newly explored location. (default: `Permille::new_unchecked(500)`) |
 | `max_consecutive_explorations` | `u8` | Maximum consecutive exploration actions before the agent must address other goals. (default: `3`) |
 | `visit_lookback_ticks` | `u32` | How far back in ticks the agent looks when evaluating recently visited places. (default: `200`) |
+| `negative_survey_damping_window` | `u32` | Tick window over which fresh negative surveys damp repeated exploration. (default: `default_negative_survey_damping_window()`) |
+| `negative_survey_damping_strength` | `Permille` | Maximum damping applied to fresh negative survey matches. (default: `default_negative_survey_damping_strength()`) |
 | `consecutive_exploration_count` | `u8` | Runtime counter tracking consecutive explorations (not a tuning parameter). (default: `0`) |
 
 ---
@@ -193,7 +219,7 @@ Per-agent disposition profile governing intention frame patience and commitment 
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/needs.rs:117`
+**Source**: `crates/worldwake-core/src/needs.rs:142`
 
 Per-agent physiology parameters that drive metabolism and recovery.
 
@@ -211,6 +237,7 @@ Per-agent physiology parameters that drive metabolism and recovery.
 | `bladder_accident_tolerance_ticks` | `NonZeroU32` | Ticks at critical bladder pressure before an accident occurs. (default: `nz(40)`) |
 | `toilet_ticks` | `NonZeroU32` | Duration in ticks to complete a toilet action. (default: `nz(8)`) |
 | `wash_ticks` | `NonZeroU32` | Duration in ticks to complete a washing action. (default: `nz(12)`) |
+| `min_sleep_ticks` | `NonZeroU32` | Minimum duration in ticks for a sleep episode. (default: `default_min_sleep_ticks()`) |
 | `travel_fatigue_multiplier` | `Permille` | Multiplier applied to fatigue rate while traveling. (default: `pm(0)`) |
 | `travel_thirst_multiplier` | `Permille` | Multiplier applied to thirst rate while traveling. (default: `pm(0)`) |
 | `travel_bladder_multiplier` | `Permille` | Multiplier applied to bladder rate while traveling. (default: `pm(0)`) |
@@ -239,7 +266,7 @@ Per-agent parameters controlling how obligation-class goals decay after repeated
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2458`
+**Source**: `crates/worldwake-core/src/belief.rs:2554`
 
 Per-agent parameters controlling belief retention and observation quality.
 
@@ -263,7 +290,7 @@ Per-agent parameters controlling belief retention and observation quality.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/experience.rs:125`
+**Source**: `crates/worldwake-core/src/experience.rs:182`
 
 Per-agent experience-based route and source preference parameters.
 
@@ -274,6 +301,8 @@ Per-agent experience-based route and source preference parameters.
 | `route_memory_capacity` | `u32` | Maximum number of route experience entries the agent retains. (default: `24`) |
 | `source_memory_capacity` | `u32` | Maximum number of source reliability entries the agent retains. (default: `18`) |
 | `memory_retention_ticks` | `u64` | How long (in ticks) experience memory entries are retained before expiry. (default: `400`) |
+| `wait_sensitivity_weight` | `Permille` | Weight applied to expected wait time when choosing resource sources. (default: `Permille::new_unchecked(150)`) |
+| `capacity_observation_weight` | `Permille` | Expected useful capacity saturation point for same-commodity source comparison.  A value of 20 means the agent treats 20 observed units as a fully saturated source signal; anything above that contributes the maximum capacity bonus. (default: `Permille::new_unchecked(20)`) |
 
 ---
 
@@ -281,7 +310,7 @@ Per-agent experience-based route and source preference parameters.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2510`
+**Source**: `crates/worldwake-core/src/belief.rs:2606`
 
 Per-agent parameters controlling what information an agent relays and accepts.
 
@@ -338,7 +367,7 @@ Stable per-agent limits for bounded indirect commodity valuation.
 
 **Category**: Optional (scenario-specified only)
 
-**Source**: `crates/worldwake-core/src/contention.rs:62`
+**Source**: `crates/worldwake-core/src/contention.rs:77`
 
 Per-agent tolerance for waiting in generalized contention queues.
 
@@ -565,6 +594,20 @@ Environmental visibility parameters attached to place entities.
 | Field | Type | Description |
 |-------|------|-------------|
 | `base_concealment` | `Permille` | Baseline concealment modifier for entities at this place; higher values make observation harder. |
+
+---
+
+## SleepQualityProfile
+
+**Category**: Non-agent / special-purpose
+
+**Source**: `crates/worldwake-core/src/sleep_episode.rs:68`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `shelter` | `ShelterTag` | *(undocumented)* (default: `ShelterTag::Open`) |
+| `ground_comfort` | `GroundComfortTag` | *(undocumented)* (default: `GroundComfortTag::Earth`) |
+| `recovery_modifier` | `SleepRecoveryModifier` | *(undocumented)* (default: `SleepRecoveryModifier::IDENTITY`) |
 
 ---
 

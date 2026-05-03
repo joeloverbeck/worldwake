@@ -394,6 +394,7 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
             source_memory_capacity: 18,
             memory_retention_ticks: 400,
             wait_sensitivity_weight: pm(150),
+            capacity_observation_weight: pm(20),
         },
     )
     .unwrap();

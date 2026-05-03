@@ -165,6 +165,7 @@ pub fn sample_preference_profile() -> PreferenceProfile {
         source_memory_capacity: 18,
         memory_retention_ticks: 400,
         wait_sensitivity_weight: Permille::new(150).unwrap(),
+        capacity_observation_weight: Permille::new(20).unwrap(),
     }
 }
 

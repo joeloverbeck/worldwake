@@ -136,6 +136,7 @@ When the migrated type is formatted for humans outside the primary owner module,
 
 1. Confirm whether the new field/type is serde-deserialized from scenarios, saves, or other authored input; if so, decide the omitted-field/defaulting proof up front.
 2. For authored scenario/schema fields, check generator/report/catalog readers such as `scenario_coverage`, golden inventory, or feature catalogs before coding; decide whether the new field is mapped now, intentionally unmapped, or follow-up owned.
+   For universal or optional profile structs, also check whether `docs/profiles/all-profiles.md` is generator-owned and run the repo's profile-doc generator, normally `python3 scripts/profile_docs.py --write` or its check mode if available.
 3. Sweep manual literals and separate full `Type { ... }` literals from partial `..Default::default()` literals before accepting the drafted file list as real scope.
 4. Edit constructor fallout with precise patches or syntax-aware tooling. Avoid broad regex rewrites that can insert fields into type definitions or unrelated same-shaped blocks; immediately re-scan touched files for accidental insertions before compiling.
 5. If the additive field lands on a serialized root, persisted carrier, or component payload included in save/load state, decide the save-version policy and the focused non-default roundtrip proof up front rather than leaving it to late broad verification.

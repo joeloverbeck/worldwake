@@ -150,7 +150,7 @@ When a live system already prunes or clears an authoritative derived surface whe
 
 #### Shared struct / field additions
 
-For additive shared struct/component field tickets, load `references/shared-field-migration.md`. Before the first focused proof, run one repo-wide pre-sweep for exact explicit literals (`Type {`), public constructors (`Type::new(`), helper builders, and destructuring patterns on the changed type. Classify those sites by ownership and construction style up front instead of letting compile fallout discover constructor or destructuring updates piecemeal.
+For additive shared struct/component field tickets, load `references/shared-field-migration.md`. Before the first focused proof, run one repo-wide pre-sweep for exact explicit literals (`Type {`), public constructors (`Type::new(`), helper builders, and destructuring patterns on the changed type. Classify those sites by ownership and construction style up front instead of letting compile fallout discover constructor or destructuring updates piecemeal. If the changed type derives serde or is reachable from scenario/authored input, also sweep `scenarios/`, checked-in fixture inputs, and the relevant load/report/generator tests before the first focused proof so authored-input fallout is not left to broad workspace verification.
 
 For component-schema and staged-substrate details, use the `schema-only / staged substrate` preflight in `references/ticket-classification.md` and the registry checks in `references/reassessment-checks.md` instead of keeping case law here.
 

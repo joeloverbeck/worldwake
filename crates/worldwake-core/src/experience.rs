@@ -192,6 +192,12 @@ pub struct PreferenceProfile {
     pub memory_retention_ticks: u64,
     /// Weight applied to expected wait time when choosing resource sources.
     pub wait_sensitivity_weight: Permille,
+    /// Expected useful capacity saturation point for same-commodity source comparison.
+    ///
+    /// A value of 20 means the agent treats 20 observed units as a fully
+    /// saturated source signal; anything above that contributes the maximum
+    /// capacity bonus.
+    pub capacity_observation_weight: Permille,
 }
 
 impl Default for PreferenceProfile {
@@ -203,6 +209,7 @@ impl Default for PreferenceProfile {
             source_memory_capacity: 18,
             memory_retention_ticks: 400,
             wait_sensitivity_weight: Permille::new_unchecked(150),
+            capacity_observation_weight: Permille::new_unchecked(20),
         }
     }
 }
@@ -294,6 +301,10 @@ mod tests {
         assert_eq!(
             profile.wait_sensitivity_weight,
             crate::Permille::new(150).unwrap()
+        );
+        assert_eq!(
+            profile.capacity_observation_weight,
+            crate::Permille::new(20).unwrap()
         );
     }
 
