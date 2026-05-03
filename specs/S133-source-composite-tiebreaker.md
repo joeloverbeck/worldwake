@@ -126,7 +126,7 @@ source_reliability=entity=_ commodity=_ failure=_ pre=_ post=_
 
 Update the field initializers at every `SourceReliabilityDiscount {...}` construction site (`ranking.rs` `source_reliability_failure_discount`, the `goal_model.rs` test fixture at `goal_model.rs:2839`, `agent_tick/planning.rs` test fixtures, all the assertion-form fixtures inside `ranking.rs::tests`). The dropped-field count is small and they are all currently zero, so the migration is mechanical.
 
-The save format does not need a bump: `SourceReliabilityDiscount` is part of the per-tick decision trace, which is not persisted across saves (only the underlying `ReliabilityRecord` is, and that is unchanged from S131).
+Live reassessment for ticket 005 corrected the save boundary: `SourceReliabilityDiscount` is also carried on `AgendaEntry`, and `AgentDecisionRuntime.agenda_state` is serialized. Removing fields from this struct changes the current runtime save payload, so D1 bumps `SAVE_FORMAT_VERSION` once and proves a non-default runtime round trip after the shrink.
 
 ### D2: `SourceCompositeRank` derivation
 
@@ -235,7 +235,7 @@ let source_composite = source_composite_rank(candidate, &context);
 
 …computed alongside `source_reliability_discount` and `competition_discount`. Threading through `AgendaEntry::pending` constructor and any plan-summary downstream consumers.
 
-Because `AgendaEntry` is stored inside `AgentDecisionRuntime.agenda_state`, this is also a runtime save-payload shape change. Bump `SAVE_FORMAT_VERSION` and prove non-default `source_composite` runtime round-trip.
+Because `AgendaEntry` is stored inside `AgentDecisionRuntime.agenda_state`, this was also a runtime save-payload shape change. Ticket 004 bumped `SAVE_FORMAT_VERSION` and proved non-default `source_composite` runtime round-trip; ticket 005 performs the next bump for the `SourceReliabilityDiscount` shrink.
 
 In `ranked_goal_ordering`, insert a new ordering dimension *immediately after* `MotiveScore` and *before* `Feasibility`:
 

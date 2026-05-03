@@ -437,15 +437,7 @@ fn apply_source_reliability_discount(
         commodity,
     })?;
 
-    source_reliability_failure_discount(
-        source_entity,
-        commodity,
-        record,
-        record,
-        profile,
-        context.current_tick,
-        motive_score,
-    )
+    source_reliability_failure_discount(source_entity, commodity, record, profile, motive_score)
 }
 
 pub(crate) fn apply_pending_source_reliability_failures(
@@ -558,9 +550,7 @@ fn apply_source_reliability_discount_with_pending_failures(
         source_entity,
         commodity,
         &projected_record,
-        &record,
         profile,
-        context.current_tick,
         motive_score,
     )
 }
@@ -572,15 +562,12 @@ fn apply_source_reliability_discount_with_pending_failures(
 // (Wash vs AcquireCommodity, etc.) at magnitudes the spec did not anticipate.
 // S133 will reintegrate wait/capacity as a same-commodity sub-rank tiebreaker
 // over `(commodity, purpose)` opportunities, so the data path stays live but
-// only the failure-ratio axis currently moves motive. Trace fields keep
-// surfacing the underlying observations for debuggability (FND-29).
+// only the failure-ratio axis currently moves motive through this discount.
 fn source_reliability_failure_discount(
     source_entity: EntityId,
     commodity: CommodityKind,
     trust_record: &ReliabilityRecord,
-    observation_record: &ReliabilityRecord,
     profile: PreferenceProfile,
-    current_tick: Tick,
     motive_score: u32,
 ) -> Option<SourceReliabilityDiscount> {
     let failure_ratio = failure_ratio_permille(trust_record);
@@ -592,19 +579,10 @@ fn source_reliability_failure_discount(
     let post_discount_motive =
         (motive_score.saturating_mul(1000u32.saturating_sub(trust_discount)) / 1000).max(1);
 
-    let capacity_freshness_ticks = current_tick
-        .0
-        .saturating_sub(observation_record.last_observed_capacity_tick.0);
-
     Some(SourceReliabilityDiscount {
         source_entity,
         commodity,
         failure_ratio_permille: failure_ratio,
-        average_wait_ticks: observation_record.average_wait_ticks,
-        wait_penalty: 0,
-        last_observed_capacity: observation_record.last_observed_capacity,
-        capacity_freshness_ticks,
-        capacity_signal: 0,
         pre_discount_motive: motive_score,
         post_discount_motive,
     })
@@ -5997,11 +5975,6 @@ mod tests {
                 source_entity: source,
                 commodity: CommodityKind::Bread,
                 failure_ratio_permille: 500,
-                average_wait_ticks: 0,
-                wait_penalty: 0,
-                last_observed_capacity: 0,
-                capacity_freshness_ticks: 10,
-                capacity_signal: 0,
                 pre_discount_motive: 90_000,
                 post_discount_motive: 45_000,
             })
@@ -6063,10 +6036,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(discount.failure_ratio_permille, 1000);
-        assert_eq!(discount.average_wait_ticks, 0);
-        assert_eq!(discount.wait_penalty, 0);
-        assert_eq!(discount.last_observed_capacity, 0);
-        assert_eq!(discount.capacity_signal, 0);
         assert_eq!(discount.pre_discount_motive, 1);
         assert_eq!(discount.post_discount_motive, 1);
     }
@@ -6300,11 +6269,6 @@ mod tests {
                 source_entity: source,
                 commodity: CommodityKind::Bread,
                 failure_ratio_permille: 500,
-                average_wait_ticks: 0,
-                wait_penalty: 0,
-                last_observed_capacity: 0,
-                capacity_freshness_ticks: 10,
-                capacity_signal: 0,
                 pre_discount_motive: 200_000,
                 post_discount_motive: 100_000,
             })
@@ -6426,11 +6390,6 @@ mod tests {
                 source_entity: familiar_source,
                 commodity: CommodityKind::Bread,
                 failure_ratio_permille: 500,
-                average_wait_ticks: 0,
-                wait_penalty: 0,
-                last_observed_capacity: 0,
-                capacity_freshness_ticks: 10,
-                capacity_signal: 0,
                 pre_discount_motive: 90_000,
                 post_discount_motive: 45_000,
             })

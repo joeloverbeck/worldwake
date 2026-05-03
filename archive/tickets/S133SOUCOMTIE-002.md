@@ -132,7 +132,7 @@ Completed on 2026-05-04.
 - Re-exported `SourceCompositeRank` from `worldwake-ai` and kept `source_composite_rank` crate-private for ticket 003's comparator integration.
 - Made only the required `ranking.rs` internals crate-visible (`RankingContext` plus the existing single-source scope helper) so the new sibling module reuses the live source-reliability boundary instead of duplicating it.
 - Added 10 focused unit tests covering the factor math and the non-acquisition / missing-record `None` cases.
-- Truth-synced sibling ticket `tickets/S133SOUCOMTIE-005.md` because this ticket already corrected the stale `S132` comment while opening the module boundary.
+- Truth-synced sibling ticket `archive/tickets/S133SOUCOMTIE-005.md` because this ticket already corrected the stale `S132` comment while opening the module boundary.
 
 ## Deviations
 

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None — test-only file exercising engine behavior delivered by tickets 001–005
-**Deps**: S133SOUCOMTIE-005
+**Deps**: archive/tickets/S133SOUCOMTIE-005.md
 
 ## Problem
 

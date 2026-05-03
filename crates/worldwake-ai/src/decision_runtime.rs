@@ -303,6 +303,7 @@ mod tests {
         HypotheticalEntityId, KillCondition, OpportunityAnchor, OpportunityExpectationKind,
         OpportunityKey, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
         PlanningEntityRef, ProfileFixture, RevivalTrigger,
+        decision_trace::SourceReliabilityDiscount,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::ActionDefId;
@@ -575,6 +576,13 @@ mod tests {
                     wait_factor_permille: 800,
                     capacity_factor_permille: 1200,
                     composite_permille: 864,
+                });
+                committed.source_reliability_discount = Some(SourceReliabilityDiscount {
+                    source_entity: entity(70),
+                    commodity: CommodityKind::Water,
+                    failure_ratio_permille: 250,
+                    pre_discount_motive: 80_000,
+                    post_discount_motive: 60_000,
                 });
                 let mut pending = sample_agenda_entry(
                     pending_goal,
