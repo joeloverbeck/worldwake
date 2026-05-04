@@ -174,6 +174,7 @@ fn bribe_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -222,6 +223,7 @@ fn threaten_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -246,6 +248,7 @@ fn declare_support_action_def(id: ActionDefId, handler: ActionHandlerId) -> Acti
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -270,6 +273,7 @@ fn press_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> Ac
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -294,6 +298,7 @@ fn yield_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> Ac
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 

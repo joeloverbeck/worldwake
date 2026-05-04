@@ -91,6 +91,7 @@ pub fn register_transport_actions(
             binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }),
         defs.register(ActionDef {
             id: put_down_id,
@@ -126,6 +127,7 @@ pub fn register_transport_actions(
             binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }),
         defs.register(ActionDef {
             id: drop_item_id,
@@ -161,6 +163,7 @@ pub fn register_transport_actions(
             binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }),
         defs.register(ActionDef {
             id: steal_id,
@@ -200,6 +203,7 @@ pub fn register_transport_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }),
     ]
 }

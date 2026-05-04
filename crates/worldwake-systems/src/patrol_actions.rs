@@ -60,6 +60,7 @@ fn patrol_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentRouteStep,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 

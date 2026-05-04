@@ -83,6 +83,7 @@ fn trade_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
             ],
         }),
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -1549,6 +1550,7 @@ fn staff_market_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 

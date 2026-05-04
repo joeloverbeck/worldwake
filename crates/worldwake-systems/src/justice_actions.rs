@@ -102,6 +102,7 @@ fn accuse_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -183,6 +184,7 @@ fn punishment_action_def(
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 

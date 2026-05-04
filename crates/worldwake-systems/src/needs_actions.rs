@@ -132,6 +132,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     });
 }
 
@@ -190,6 +191,7 @@ fn register_def(
         },
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     })
 }
 

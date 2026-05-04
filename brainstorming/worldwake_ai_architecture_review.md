@@ -1,995 +1,1051 @@
 # Worldwake AI and Simulation Upgrade Proposal
 
-## Verdict
+## **Verdict**
 
-Keep the current GOAP foundation. Do **not** replace it with behavior-tree scripting, HTN rails, or LLM improvisation.
+Yes, the current AI architecture has issues to fix, but the underlying direction is right. I would **not** replace it with behavior trees, pure utility AI, an LLM controller, or a looser “story director.” The existing GOAP architecture already matches the core Worldwake idea: goals are desired world conditions, actions are lawful affordances, plans are selected under bounded knowledge, and execution is revalidated against local belief. That is exactly the right backbone for “explainable emergence.”
 
-The right move is to evolve the current system into a **belief-first continual planning architecture** with:
+The main problem is scale and brittleness. The current planner looks strong for 35 goal kinds and hand-curated scenarios, but the moment you want agents reasoning among dozens or hundreds of possible goals, exploiting arbitrary scenario affordances, and surviving high contention, the architecture needs a second layer above GOAP: **a persistent belief/desire/intention portfolio, explicit causal-link plan assumptions, reusable HTN-style decomposition methods, continual sensing/replanning, and an affordance-driven opportunity compiler.**
 
-- uncertainty-aware belief queries,
-- explicit information-gathering goals,
-- limited contingent policy branches,
-- local repair before full replan,
-- stricter identity/legality enforcement,
-- richer evidence and commitment artifacts,
-- and authoritative decision history.
-
-That preserves the good part of the current design: lawful affordances, determinism, locality, belief/world separation, revisable intention, and explicit action costs.
+Classic GOAP is valuable because it separates “what condition do I want?” from “what hard-coded sequence do I run?”, and Orkin’s original framing explicitly contrasts GOAP goals with embedded behavior sequences. Your architecture already follows that principle with `GoalKind`, `GoalOffer`, `ActionDef`, affordance queries, and runtime search. The upgrade should deepen that model, not abandon it.
 
 ---
 
-## 1. Current architecture issues to fix
+## **1. Issues to fix in the current AI architecture**
 
-### 1.1 Uncertainty exists in the model, but the planner mostly sees collapsed answers
-**Alignment:** FND-14, FND-15, FND-16, FND-20
+### **P0: The live refactor must be completed before judging behavior**
 
-`RuntimeBeliefView` mainly exposes crisp values such as `Option<EntityId>`, `Vec<EntityId>`, and `Quantity`. That is too lossy for the kind of world your FOUNDATIONS require.
+The report says `ranking.rs` currently has compile errors around missing `capacity_observation_weight` and `source_composite` fields, and `source_composite.rs` still has unused in-progress helpers. That is not merely cosmetic. Under FOUNDATIONS, live authority paths must not contain half-migrated parallel representations or transitional shims. Finish the refactor, delete obsolete fields/constructors, and make the source-composite model a single authoritative ranking path.
 
-Result:
-- contradictory reports get flattened too early,
-- stale beliefs are hard to reason about except in a few special cases,
-- the planner cannot cleanly choose between “act now” and “verify first”,
-- and social/investigative intelligence gets capped because provenance and freshness are not first-class in most planner queries.
-
-**Fix:** expose belief objects, not just chosen values.
-
-Proposed shape:
-
-~~~text
-BeliefValue<T> {
-  value: T,
-  confidence: Permille,
-  observed_at: Tick,
-  claimed_event_time: Option<Tick>,
-  acquired_at: Tick,
-  status: BeliefStatus, // Certain | Probable | Stale | Disputed | Contradicted
-  provenance_chain: BeliefProvenanceId,
-}
-
-BeliefSet<T> {
-  best: Option<BeliefValue<T>>,
-  alternatives: Vec<BeliefValue<T>>,
-}
-~~~
-
-Use these in planner-facing queries for:
-- believed location,
-- believed stock,
-- believed route condition,
-- believed ownership/access,
-- believed office-holder / jurisdiction facts,
-- believed target presence.
-
-Do **not** jump to full generic epistemic planning everywhere. Use richer belief objects first. That gets most of the win.
+**Fix:** make the ranking refactor atomic: compile cleanly, update all construction sites, add regression tests proving old and new ranking fields are not both consulted, and add a lint/test that rejects unused ranking-source helpers in live code.
 
 ---
 
-### 1.2 Plans are too linear for a partial-information, interrupt-heavy world
-**Alignment:** FND-7, FND-8, FND-16, FND-20, FND-21
+### **P0: `apply_hypothetical_transition` is a dangerous duplicate simulator**
 
-`PlannedPlan` is a linear `Vec<PlannedStep>`. In this world that is too rigid.
+The report correctly flags that planner hypothetical transitions must match simulator outcomes. The current safety net is conformance testing, which is good, but architecturally this is still the highest-risk design seam: the planner has its own forward model, and the simulator has action handlers. If they drift, the agent “reasons” into impossible plans.
 
-The failure mode is obvious:
-- the agent plans against a stale belief,
-- a local contention outcome changes,
-- or a target is absent on arrival,
-- and the system must burn a full replan or fail through the step pipeline.
+**Fix:** move toward a **single canonical effect schema** per `ActionDef`.
 
-That is the wrong shape for a world where “verify, wait, ask, switch counterparty, take fallback route, back out safely” should be normal.
+Each action should expose one authoritative semantics object that can be applied in two modes:
 
-**Fix:** replace linear-only plans with a `PolicyPlan` that can still stay small and deterministic.
+Authoritative mode: mutates ECS/event log through the scheduler.  
+Hypothetical mode: mutates PlanningState overlays only.
 
-Proposed shape:
-
-~~~text
-PolicyPlan {
-  entry: PolicyNodeId,
-  nodes: Vec<PolicyNode>,
-}
-
-PolicyNode {
-  action: PlannedAction,
-  guards: Vec<PlanGuard>,
-  expectations: Vec<PlanExpectation>,
-  repair_options: Vec<LocalRepair>,
-  on_success: BranchTarget,
-  on_failure: BranchTarget,
-  on_observation_mismatch: BranchTarget,
-  on_contention_loss: BranchTarget,
-  on_danger_spike: BranchTarget,
-}
-~~~
-
-This is **not** a full POMDP rewrite. Keep it limited:
-- only uncertain/high-cost steps branch,
-- boring low-risk self-care stays straight-line,
-- branches cover common local cases, not arbitrary world futures.
+The planner should not hand-reimplement trade, craft, queue, attack, travel, post-bounty, punish, and steal effects. It should call the same declared effect model the simulator uses, with different sinks. This aligns with FND-26 and FND-28: systems interact through state, and live authority paths should not preserve parallel versions of the same fact.
 
 ---
 
-### 1.3 Next-step-only revalidation is too shallow
-**Alignment:** FND-16, FND-20, FND-21, FND-29
+### **P0: The snapshot entity cap can become illegal causal compression**
 
-Revalidating only the next step is not enough in a world with long actions, stale reports, and competing agents.
+`max_snapshot_entities_per_place = 50` is an obvious performance guard, but it is dangerous. FND-14A says same-tick co-located physical observation is belief-equivalent for directly perceivable facts. If an agent is in a crowded market with 80 relevant entities and the snapshot silently samples 50, then the planner may fail to perceive a colocated enemy, corpse, item, container, workstation, or sale lot for no in-world reason. That violates the spirit of locality and perception.
 
-Each adopted plan step should carry:
-- required believed facts,
-- minimum acceptable confidence,
-- explicit invalidators,
-- expected observations,
-- and legal repair targets.
+**Fix:** replace silent snapshot truncation with a concrete **attention/perception budget model**.
 
-Then the runtime can distinguish:
-- irrelevant drift,
-- relevant but repairable drift,
-- plan-invalidating drift,
-- and goal-changing drift.
+If the agent misses something, the answer should be: “because their attention, line of sight, crowd density, lighting, salience, distraction, panic, or search effort did not expose it.” Not: “because the planner cap was 50.”
 
-**Fix:** annotate every planned node with guard conditions and expectation sets.
-
-Minimum expectation taxonomy:
-- immediate expectation,
-- state expectation,
-- informed expectation,
-- regression expectation.
-
-For some plan classes, also support:
-- “not found where expected”,
-- “counterparty unwilling”,
-- “resource partially available”,
-- “danger rose while en route”.
-
----
-
-### 1.4 `ActionRequestMode::BestEffort` is too permissive as a default
-**Alignment:** FND-4, FND-8, FND-19, FND-21, FND-24
-
-Best-effort substitution is fine for some actions. It is dangerous for others.
-
-Safe-ish:
-- eat any fungible bread stack,
-- use equivalent workstation at same place,
-- travel by equivalent route segment.
-
-Unsafe:
-- accuse this specific person,
-- transfer this exact item,
-- claim this specific office,
-- punish this exact accused,
-- loot this exact corpse,
-- tell this exact witness,
-- escort this exact subject.
-
-**Fix:** add per-action binding strictness.
-
-~~~text
-enum BindingStrictness {
-  ExactIdentity,
-  FungibleEquivalentCommodity,
-  EquivalentFacilityClassAtSamePlace,
-  EquivalentRouteStep,
-  AnyLegalTarget,
-}
-~~~
-
-Revalidation, dispatch, and exact-target fallback must all use the **same** legality path and the same strictness class.
-
----
-
-### 1.5 The payload-override validator path is a design smell
-**Alignment:** FND-26, FND-28
-
-The current “normal affordance match” path plus “payload override validator” path is fragile.
-
-That is exactly the kind of dual live authority path that turns into fossilized logic.
-
-**Fix:** remove the distinction.
-
-Every action should expose one authoritative binding/legality function used by:
-- affordance enumeration,
-- plan-time successor construction,
-- revalidation,
-- dispatch.
-
-If the planner needs specialized parameters, those parameters must be typed plan bindings validated by that one function.
-
----
-
-### 1.6 `BlockingFact::Unknown` collapses too many realities
-**Alignment:** FND-16, FND-20, FND-29
-
-Right now “unknown” can mean:
-- genuinely unexplained failure,
-- stale belief,
-- temporary contention loss,
-- improper post-failure state,
-- structural impossibility,
-- missing observation,
-- or search-budget exhaustion.
-
-Those should not share one TTL class.
-
-**Fix:** replace `Unknown` with a discrepancy taxonomy.
-
-Minimum set:
-- `BeliefStale`
-- `BeliefContradicted`
-- `ContentionLost`
-- `ImproperPlanningState`
-- `MissingObservation`
-- `NoLegalBinding`
-- `NoWillingCounterparty`
-- `RouteUnknown`
-- `SearchBudgetExhausted`
-- `StructurallyImpossible`
-- `PartialExecutionDrift`
-
-Each needs:
-- distinct retry policy,
-- distinct invalidation condition,
-- distinct learning update,
-- distinct debug explanation.
-
----
-
-### 1.7 Top-2 planning makes ranking mistakes too expensive
-**Alignment:** FND-20, FND-21, FND-22
-
-`max_candidates_to_plan = 2` is too small given your world model.
-
-If the top two are infeasible but the third is trivial, the agent wastes a tick and looks dumb.
-If the ranking is slightly noisy, the planner can feel laggy or brittle.
-If multiple similar goals crowd the top, diversity collapses.
-
-**Fix:** move to portfolio planning.
-
-Instead of a flat top-2, build a tiny diversified agenda slice:
-- best urgent survival goal,
-- best current commitment/obligation,
-- best feasible background economic goal,
-- best information-gathering fallback when confidence is low.
-
-Run cheap feasibility probes across that slice before committing full search budget.
-
----
-
-### 1.8 Fixed emission order should not have semantic authority
-**Alignment:** FND-1, FND-20, FND-28
-
-A fixed ordered chain of `emit_*` functions is fine as an implementation detail.
-It should **not** be the thing that decides which provenance “wins” when offers collide.
-
-**Fix:** move candidate generation to an emitter registry with explicit arbitration after collection.
-
-Flow:
-1. all emitters produce `GoalOffer`s,
-2. offers are grouped by opportunity,
-3. arbitration rules combine or suppress them,
-4. then ranking runs.
-
-No goal should win because its emitter happened to run earlier.
-
----
-
-### 1.9 The planner needs a proper pending-goal layer, not just per-tick ranking
-**Alignment:** FND-20, FND-21
-
-A world like this needs:
-- committed goals,
-- pending goals,
-- suspended goals,
-- abandoned goals,
-- exhausted goals.
-
-That is different from “rank everything fresh every tick”.
-
-**Fix:** add an explicit agenda manager.
-
-~~~text
-AgendaState {
-  committed: Option<GoalCommitment>,
-  pending: BTreeMap<GoalKey, PendingGoalState>,
-  suspended: BTreeMap<GoalKey, SuspendedGoalState>,
-  exhausted: BTreeMap<GoalKey, ExhaustedGoalState>,
-}
-~~~
-
-Each pending/suspended entry should store:
-- origin,
-- freshness,
-- why it is not active now,
-- what would revive it,
-- what would kill it permanently.
-
----
-
-### 1.10 Static search budgets are too blunt
-**Alignment:** FND-20, FND-22
-
-Per-agent authored defaults are good.
-But static beam width, static top-k, and static horizon on every decision are crude.
-
-Critical danger, quiet loaf-buying, and a messy multi-party investigation should not spend the same shape of thought.
-
-**Fix:** keep deterministic authored profiles, but add runtime modulation from concrete state:
-- urgency,
-- uncertainty,
-- crowding/contention,
-- repeated recent failure,
-- distance,
-- institutional responsibility,
-- social stakes.
-
-Knobs to modulate:
-- `max_candidates_to_plan`
-- `beam_width`
-- `max_node_expansions`
-- `snapshot_travel_horizon`
-- `preferred_operator_boost`
-
-No runtime randomness. No drama dials. Pure state-driven metareasoning.
-
----
-
-### 1.11 The travel layer needs a hard epistemic fence
-**Alignment:** FND-7, FND-14, FND-27
-
-`shortest_travel_ticks` living on `PlanningSnapshot` is dangerous even if current code never reads it.
-That is too close to a future leak.
-
-**Fix:**
-- remove authoritative distance data from planner-visible snapshot types,
-- or put it behind a type boundary unavailable to AI planning code,
-- or generate planner-side travel tables only from perceived/believed route state.
-
-Also add a regression test:
-- remove authoritative matrix from build,
-- AI decisions must not change.
-
-Treat this as mandatory hardening.
-
----
-
-### 1.12 Optional deep traces are fine; optional decision causality is not
-**Alignment:** FND-29, FND-29A
-
-You do not need every search frontier node in the authoritative history.
-You **do** need enough always-on reasoning history to answer:
-- why this goal was committed,
-- why that one was rejected,
-- why the plan was invalidated,
-- what assumption broke,
-- why the agent kept or broke a commitment.
-
-**Fix:** log authoritative decision events, while keeping heavy search traces optional.
-
-Mandatory append-only events:
-- `GoalOffered`
-- `GoalSuppressed`
-- `GoalCommitted`
-- `GoalSuspended`
-- `GoalAbandoned`
-- `PlanAdopted`
-- `PlanInvalidated`
-- `ExpectationMismatch`
-- `RepairApplied`
-- `ReplanTriggered`
-- `BlockerRecorded`
-- `QueueJoined/Left/Expired`
-- `PromiseIssued/Accepted/Broken`
-
----
-
-### 1.13 Profile defaults are too easy to abuse into homogeneity
-**Alignment:** FND-22
-
-The architecture allows diversity.
-That is not the same as actually producing it.
-
-**Fix:** add scenario lints:
-- fail if an agent ships with bare default cognitive/utility/belief profile,
-- fail if proactive exploration is enabled without an explicit curiosity/information-seeking trait,
-- fail if courage/patience/memory fidelity are all inherited unchanged across a whole population archetype.
-
----
-
-## 2. AI upgrades that will make agents more resilient, realistic, and intelligent
-
-### 2.1 Upgrade GOAP into a belief-aware continual planner
-Keep GOAP as the core search.
-Wrap it in four additional layers:
-
-1. `AgendaManager`
-2. `InformationPlanner`
-3. `PolicyExecutor`
-4. `LearningUpdater`
-
-That is the right architecture here.
-
----
-
-### 2.2 Add explicit information-gathering as first-class planning
-**Alignment:** FND-7, FND-14, FND-15, FND-16, FND-20
-
-Right now the architecture can explore and investigate, but it does not look like information acquisition is a first-class general-purpose planning move.
-
-That needs to change.
-
-Add information goals such as:
-- `VerifyCommodityAtPlace`
-- `VerifyPersonAtPlace`
-- `VerifyRouteSafety`
-- `VerifyOwnershipOrAccess`
-- `VerifyInstitutionalFact`
-- `ClarifyConflictingReports`
-- `InspectContainer`
-- `ScoutArea`
-- `AskWitness`
-- `ConsultRecord`
-
-Also extend `ActionDef` with observation semantics:
-
-~~~text
-ObservationModel {
-  confirms: Vec<BeliefPredicate>,
-  refutes: Vec<BeliefPredicate>,
-  may_discover: Vec<ObservationKind>,
-  acquisition_mode: AcquisitionMode, // direct perception, testimony, record, trace
-}
-~~~
-
-Decision rule:
-- if confidence is low and the action is expensive, dangerous, or socially consequential, verify first;
-- if the claim is cheap to test on the way, test opportunistically;
-- if the claim is stale and low-value, defer or ignore.
-
-This is the biggest practical upgrade for scenarios like:
-- rumor-driven travel,
-- missing-person search,
-- robbery discovery,
-- route hazard response,
-- stale market beliefs.
-
----
-
-### 2.3 Add limited contingent policy branches
-**Alignment:** FND-8, FND-10, FND-16, FND-20, FND-21
-
-Do **not** try to make the whole planner fully contingent on day one.
-
-Add branching only for common local uncertainty classes:
-- target absent,
-- stock insufficient,
-- facility occupied,
-- counterparty unwilling,
-- witness contradicts,
-- route unsafe,
-- danger spike,
-- confidence collapse.
-
-That turns “act -> fail -> global replan” into:
-- “arrive -> inspect -> branch to fallback”.
-
-That is much more robust and much more believable.
-
----
-
-### 2.4 Add local repair before full replan
-**Alignment:** FND-12, FND-20, FND-21
-
-Repair order should be:
-
-1. exact-binding repair,
-2. equivalent-binding repair,
-3. suffix repair,
-4. bail-out/recovery action,
-5. full replan.
-
-Supported repair patterns:
-- alternate merchant at same place,
-- alternate workstation at same place,
-- alternate safe route to same destination,
-- alternate evidence source,
-- alternate queue entry,
-- substitute recipe input,
-- retreat to proper state and resume.
-
-Keep repair lawful.
-No hidden teleport to a “good planner state”.
-
----
-
-### 2.5 Add bail-out actions and proper-state recovery
-**Alignment:** FND-8, FND-12, FND-20, FND-21
-
-Some failures should not throw the agent into a planner-improper limbo.
-
-For actions whose low-level execution can partially apply effects, add explicit bail-outs:
-- stop and restow,
-- disengage safely,
-- leave queue,
-- return borrowed tool,
-- abandon search pattern cleanly,
-- recover posture,
-- withdraw from invalid interaction.
-
-Each bail-out maps the executor to a proper planning state.
-That makes integrated planning/execution far more robust.
-
----
-
-### 2.6 Make route choice multi-criteria, not just travel-time-biased
-**Alignment:** FND-3, FND-7, FND-10, FND-22
-
-Travel should be chosen from:
-- believed time,
-- believed danger,
-- confidence/freshness of route knowledge,
-- congestion/wait expectation,
-- permission/toll barriers,
-- patrol coverage,
-- escort obligation,
-- courage and risk tolerance.
-
-This should come from actual route-condition state and local beliefs, not from a hidden “danger score”.
-
----
-
-### 2.7 Add social coordination artifacts: promises, requests, orders, assignments
-**Alignment:** FND-7, FND-18, FND-21, FND-23, FND-25
-
-Multi-agent coordination is weaker than it should be if agents can only react to present state and informal belief-sharing.
-
-Add first-class artifacts/entities for:
-- promise,
-- request,
-- assignment,
-- order,
-- escort agreement,
-- delivery contract,
-- patrol tasking.
-
-Each needs:
-- issuer,
-- recipient,
-- place/time of issue,
-- content,
-- due window,
-- status,
-- witnesses or medium,
-- fulfillment conditions,
-- breach consequences.
-
-Then other agents can plan around accepted commitments **lawfully**.
-
-No telepathic coordination.
-No central scheduler sharing hidden intentions.
-
----
-
-### 2.8 Add perspective-aware social reasoning
-**Alignment:** FND-14, FND-15, FND-16, FND-20
-
-Before social actions like `ShareBelief`, `Accuse`, `ReportMissing`, `SupportCandidateForOffice`, or `EscortToSafety`, agents should reason about:
-- what the target likely knows,
-- how stale that knowledge is,
-- whether they trust the source,
-- whether they have jurisdiction or power,
-- whether a public artifact is better than direct speech.
-
-This can be implemented cheaply:
-- not full generic epistemic planning,
-- just perspective functions over available evidence and known carriers.
-
-That will massively improve social believability.
-
----
-
-### 2.9 Add concrete learned memories and habits
-**Alignment:** FND-22A
-
-Extend learning beyond blocker backoff.
-
-Add explicit per-agent learned state with origin and decay:
-- route reliability,
-- merchant reliability,
-- witness reliability,
-- wait expectation by facility,
-- hostile hot spots,
-- promise reliability of others,
-- preferred supplier and route habits,
-- recent contradiction sensitivity.
-
-Each update must record:
-- what experience produced it,
-- when,
-- which agent owns it,
-- how it decays or is overwritten.
-
-These are fallible summaries, never world truth.
-
----
-
-### 2.10 Make commitment persistence causal, not just a switch margin
-**Alignment:** FND-21, FND-24, FND-25
-
-Current switch margins give stability.
-That is good, but not enough.
-
-Agents should sometimes persist because:
-- they made a promise,
-- they accepted an assignment,
-- abandoning will cause trust loss,
-- failing an office duty has legal consequences,
-- they already waited in a queue,
-- breaking escort leaves another agent exposed.
-
-That means commitment should sometimes survive a mild utility challenge because breaking it has explicit downstream cost.
-
-Do this through real world consequences:
-- broken promise record,
-- trust update,
-- accusation,
-- reprimand,
-- relation damage,
-- unpaid contract.
-
-Not through invisible “sticky plan” magic.
-
----
-
-## 3. Simulation upgrades that better align with FOUNDATIONS
-
-### 3.1 Add richer evidence carriers
-**Alignment:** FND-5, FND-15, FND-18, FND-29
-
-If you want investigations, hunts, robberies, false accusations, and stale reports to actually work, you need richer evidence.
-
-Add first-class evidence entities/artifacts such as:
-- tracks,
-- broken lock,
-- disturbed container,
-- blood trail,
-- dropped cargo cluster,
-- footprint trail,
-- eyewitness statement,
-- patrol report,
-- warning notice,
-- route hazard marker,
-- corpse condition record.
-
-Each needs:
-- source event,
-- place,
-- creation time,
-- decay behavior,
-- visibility rules,
-- interpretation rules,
-- provenance.
-
-This is one of the highest-value simulation upgrades you can make.
-
----
-
-### 3.2 Make route and place condition state explicit
-**Alignment:** FND-3, FND-7, FND-12
-
-Perceived travel cost should come from:
-- actual blockage,
-- bridge condition,
-- congestion,
-- recent attack evidence,
-- patrol activity,
-- territorial hostility,
-- legal access state,
-- observed weather/season effect only if those systems really exist.
-
-Then agents can:
-- avoid roads for actual reasons,
-- post warnings,
-- spread rumors,
-- escort caravans through safer routes,
-- misjudge safety if their information is stale.
-
----
-
-### 3.3 Make institution throughput explicit
-**Alignment:** FND-6, FND-7, FND-23, FND-25A
-
-If offices matter, model:
-- intake queues,
-- backlog,
-- delegated duties,
-- clerk availability,
-- guard availability,
-- budget/treasury state,
-- delay,
-- jurisdiction,
-- succession latency.
-
-Then agents can reason about:
-- whether reporting now is worthwhile,
-- whether a bounty will actually be posted,
-- whether a case will stall,
-- whether an office vacancy causes a real patrol gap.
-
-That is straight out of your FOUNDATIONS.
-
----
-
-### 3.4 Separate artifact existence, visibility, credibility, legality, and actionability
-**Alignment:** FND-25A
-
-Do not treat “artifact exists” as “artifact is currently actionable”.
-
-For bounties, notices, accusations, warnings, warrants, listings:
-- existence,
-- visibility,
-- credibility,
-- legality,
-- actionability
-must be separate.
-
-AI should be able to reason about:
-- stale but still visible bounty,
-- visible rumor nobody trusts,
-- accusation with no jurisdiction,
-- warning that persists after the threat moved,
-- expired contract still affecting reputation.
-
----
-
-### 3.5 Make scarce-affordance claims explicit world state everywhere
-**Alignment:** FND-8, FND-21, Canonical Scenario E
-
-Any recurring contested affordance needs an explicit world mechanism:
-- queue token,
-- reservation artifact,
-- grant,
-- claim,
-- lock,
-- turnstile,
-- ticket,
-- lane right-of-way marker.
-
-Do not rely on planner-local shadow state for things other agents need to observe or contest.
-
----
-
-### 3.6 Add commitment aftermath
-**Alignment:** FND-10, FND-21, FND-22A, FND-25
-
-If a promise, order, debt, escort, or queue commitment is broken, the world should carry aftermath:
-- trust loss,
-- complaint,
-- reprimand,
-- sanction,
-- retaliation,
-- vacancy,
-- gossip,
-- refusal to cooperate later.
-
-Without this, social persistence stays too abstract.
-
----
-
-## 4. Changes beyond the previous categories that are still worth doing
-
-### 4.1 Make reasoning history authoritative enough to answer “why not that?”
-When committing a plan, log:
-- chosen goal,
-- top rejected alternatives,
-- reason classes for rejection,
-- belief sources that mattered,
-- blocker state,
-- commitment state.
-
-You do not need full frontier dumps for this.
-You do need enough to answer:
-- why this route,
-- why not the other witness,
-- why no bounty,
-- why abandon escort,
-- why keep stale pursuit one more tick.
-
----
-
-### 4.2 Add scenario lints and architecture lints
-Compile-time or scenario-load-time checks should fail if:
-- an agent has an all-default profile,
-- proactive exploration has no explicit curiosity/information trait,
-- an action with socially meaningful identity uses permissive binding strictness,
-- a social artifact lacks lifecycle states,
-- a contested affordance lacks explicit claim/queue/reservation entity type,
-- planner-visible snapshot types expose authoritative world-only helpers.
-
----
-
-### 4.3 Build falsification harnesses against the canonical scenario classes
-Automate FOUNDATIONS scenarios A-H.
-
-For each run, check:
-- no knowledge without carrier,
-- no item disappearance without source/sink path,
-- no bounty without issuer + place + funds + record,
-- no interruption without lawful observation/report,
-- no blocked opportunity without explicit contention state,
-- no institutional action without office/jurisdiction path,
-- no instantaneous belief correction from ground truth,
-- no cleanup deleting the only explanation.
-
----
-
-### 4.4 Add metrics that matter
-Track at least:
-- goal churn rate,
-- replan rate,
-- local repair rate,
-- unknown-discrepancy ratio,
-- plan branch count,
-- verification-before-high-stakes-action rate,
-- stale-pursuit failure rate,
-- commitment break rate,
-- blocker recurrence rate,
-- search budget waste on impossible goals,
-- candidate count before/after arbitration,
-- successor count before/after pruning,
-- route belief error vs observed route state.
-
----
-
-### 4.5 Do not “solve” this with LLM NPC brains
-That would be the wrong move for this project.
-
-Reject:
-- omniscient blackboards,
-- drama utility terms,
-- hidden reservation by intention,
-- narrative trigger systems,
-- central controller telling institutions what to do,
-- non-deterministic text-model decision authority in the live sim.
-
-That would break your foundations and make debugging miserable.
-
----
-
-## 5. Recommended refactor targets
-
-### 5.1 `GroundedGoal` -> `GoalOffer`
 Add:
-- confidence summary,
-- freshness summary,
-- obligation source,
-- commitment impact if ignored,
-- required information gaps,
-- competing claimant estimate,
-- invalidators,
-- learned expectation references.
+
+PerceptionBudget {  
+   max_observations: u16,  
+   salience_policy: SaliencePolicy,  
+   occlusion_policy: OcclusionPolicy,  
+   stress_penalty: Permille,  
+}
+
+ObservationOmission {  
+   omitted_entity: EntityId,  
+   reason: OmissionReason,  
+   tick: Tick,  
+}
+
+The snapshot may still be capped, but every omission must be explainable as agent-local perception, not CPU optimization.
 
 ---
 
-### 5.2 `RankedGoal` -> `AgendaEntry`
-Lifecycle:
-- offered,
-- pending,
-- committed,
-- suspended,
-- exhausted,
-- abandoned.
+### **P0: Decision traces are opt-in, but causal explainability must be always-on**
+
+The report says rich decision traces exist, but tracing is gated by `enable_tracing()`. That is fine for expansion-level diagnostics, but not sufficient for FND-29/FND-29A. If an agent causes a bounty chain, false accusation, theft report, or failed rescue, you need a permanent minimal explanation record even when debug tracing was off.
+
+**Fix:** split diagnostics into two tiers.
+
+Always-on, append-only, cheap:
+
+DecisionEvent {  
+   event_id,  
+   agent,  
+   tick,  
+   selected_goal,  
+   selected_plan_id,  
+   top_rejected_goals: SmallVec<GoalRejectionSummary>,  
+   decisive_beliefs: SmallVec<BeliefRef>,  
+   decisive_records: SmallVec<RecordRef>,  
+   decisive_world_observations: SmallVec<ObservationRef>,  
+   assumptions: SmallVec<PlanAssumptionRef>,  
+}
+
+Opt-in, expensive:
+
+SearchExpansionSummary  
+AffordanceTrace  
+RootCandidateTrace  
+BeamPruningTrace  
+FFHelpfulActionTrace
+
+That preserves debuggability without paying full trace cost every tick.
 
 ---
 
-### 5.3 `PlannedPlan` -> `PolicyPlan`
+### **P1: `max_candidates_to_plan = 2` is too brittle for hundreds of goals**
+
+Top-2 planning is aggressive. With many possible goals, it creates a ranking bottleneck: if the first two goals are attractive but infeasible, the agent can stall or waste cycles while a feasible third or fourth goal waits. The report already notices this.
+
+**Fix:** replace “plan top N goals” with **budgeted portfolio deliberation**.
+
+Instead of:
+
+rank all goals  
+search top 2  
+commit best found
+
+Use:
+
+rank into portfolio slots  
+allocate expansion budget across slots  
+keep partial search frontiers across ticks  
+commit first sufficiently good feasible plan  
+continue background deliberation when attention allows
+
+Example portfolio slots:
+
+enum PortfolioSlot {  
+   Survival,  
+   Safety,  
+   ActiveCommitment,  
+   Obligation,  
+   SocialInstitutional,  
+   Economic,  
+   Opportunity,  
+   Exploration,  
+   HabitRoutine,  
+}
+
+This lets a hungry agent still notice a dragon, an office-holder still process a murder report, and a merchant still react to a local theft without ranking quality becoming the sole gatekeeper.
+
+---
+
+### **P1: Hard suppression by goal family is too crude**
+
+Current suppression policy drops opportunism at High+ stress and social/political goals at Critical stress. That is clean, but too blunt. Some social actions are survival-relevant: shouting a warning, calling guards, asking for shelter, surrendering, begging for help, reporting an immediate threat, or rallying allies. Some political/institutional actions can be urgent under danger: ordering a gate closed or mustering patrols.
+
+**Fix:** suppress by **expected causal role**, not by goal family.
+
+A goal should not be suppressed because it is “social.” It should be suppressed because, under this agent’s beliefs, it does not reduce a current higher-priority pressure quickly enough.
+
+Replace:
+
+SuppressedAtCritical(ShareBelief)
+
+with something closer to:
+
+GoalInterruptionProfile {  
+   can_reduce_current_danger: bool,  
+   can_preserve_commitment: bool,  
+   requires_stationary_attention: bool,  
+   exposes_actor_to_threat: bool,  
+   expected_delay_ticks: u32,  
+   social_support_effect: Option<SupportEffect>,  
+}
+
+Then `ShareBelief { topic: DragonNearby }` can survive critical stress, while `SupportCandidateForOffice` does not.
+
+---
+
+### **P1: `relevant_ops` is currently a hard gate that can block emergent solutions**
+
+The report says each `GoalKind` declares relevant operator kinds. This is useful for performance, but dangerous when it becomes the definition of possibility. For example, `AcquireCommodity` currently maps to travel, trade, queue, harvest, craft, and move-cargo. But a desperate, greedy, criminal, starving, or panicked agent might steal food, beg for food, threaten a merchant, search a corpse, raid a camp, accept debt, or ask an ally. If the operator list omits those paths, the planner cannot discover them, no matter how lawful they would be in the world.
+
+**Fix:** make `relevant_ops` a hint, not the authority.
+
+The authority should be action effects:
+
+ActionDef {  
+   effect_schema: EffectSchema,  
+   legal_risk_schema: Option<LegalRiskSchema>,  
+   social_consequence_schema: Option<SocialConsequenceSchema>,  
+}
+
+Then goals query an effect index:
+
+Goal: I want Owns/Controls/CanConsume(food)  
+Index returns: buy, harvest, craft, receive gift, steal, loot, beg, confiscate, ration, borrow  
+Ranking filters by agent values, law, risk, confidence, urgency
+
+That is the difference between “agents execute designed paths” and “agents exploit what the scenario offers.”
+
+---
+
+### **P1: Candidate generation is too emitter-heavy for future scale**
+
+The architecture has around 50 `emit_*` functions. That is manageable now, but it will become a maintenance trap as goals multiply. Each new goal risks needing bespoke candidate emitters, bespoke ranking, bespoke blocker logic, and bespoke relevant-op mappings. That gradually becomes disguised scripting.
+
+**Fix:** introduce a declarative **goal schema registry**.
+
+Do not replace typed Rust goals with freeform strings. Instead, keep strong typing but require every goal schema to declare:
+
+GoalSchema {  
+   satisfaction_predicate,  
+   motive_sources,  
+   possible_effect_facts,  
+   default_operator_hints,  
+   required_belief_kinds,  
+   canonical_blockers,  
+   revival_conditions,  
+   trace_labels,  
+}
+
+Candidate generation then becomes:
+
+1. Gather motive sources from needs, obligations, threats, records, routines, opportunities.  
+2. Gather perceived/remembered affordances and records.  
+3. Match motives to goal schemas and action-effect schemas.  
+4. Emit GoalOffers with evidence traces.
+
+This aligns directly with FND-30: every system and goal has declared causal hooks, observability, failure states, and downstream consequences.
+
+---
+
+### **P1: Strategic and tactical planning need feedback, not one-way decomposition**
+
+The current split is: strategic itinerary first, tactical A* second. If tactical search fails for a strategic step, the whole plan fails. That is brittle. In a rich world, a failed tactic often means “choose another source,” “ask someone,” “verify rumor,” “detour,” “wait in queue,” “use another tool,” or “try a worse substitute,” not “the whole goal is impossible.”
+
+HTN planning is useful here because it decomposes tasks into subtasks while allowing domain knowledge to shape search; SHOP2, for example, uses methods to recursively decompose tasks into primitive operators and supports partially ordered subtasks and temporal/metric features. That kind of decomposition is appropriate for Worldwake only if methods encode reusable lawful procedures, not story rails.
+
+**Fix:** add **reusable HTN-style methods above GOAP**, not instead of GOAP.
+
+Examples:
+
+AcquireFood  
+ - consume carried food  
+ - buy from known seller  
+ - harvest known source  
+ - ask household member  
+ - beg from nearby agent  
+ - steal from accessible container  
+ - travel to rumored source and verify  
+ - substitute water/rest/sleep if hunger is not yet critical
+
+InvestigateViolation  
+ - inspect scene  
+ - interview witness  
+ - consult ledger  
+ - compare alibi  
+ - issue accusation  
+ - defer for lack of jurisdiction
+
+Each leaf remains an ordinary `ActionDef`. Each method must declare preconditions, costs, evidence requirements, possible failure states, and legal/social consequences.
+
+---
+
+### **P1: Plan guards should be generated from causal links, not only templates**
+
+Current guards include facts like target present, commodity available, route known, resource access, target moved, commodity depleted, and new blocker. Good start. But robust agents need to know **which prior fact supports which later step**.
+
+Partial-order/causal-link planning explicitly records links from earlier effects to later preconditions; UCPOP describes causal links as representing the assumptions a plan relies on. Worldwake should steal that idea, even if it keeps total-order execution.
+
+**Fix:** store causal links in every plan.
+
+PlanCausalLink {  
+   provider: CausalProvider, // prior step, belief, observation, record, carried item, office rule  
+   fact: PlanningFact,  
+   consumer_step_index: u16,  
+   invalidators: Vec<Invalidator>,  
+   confidence: Permille,  
+   source_time: Tick,  
+}
+
+Then revalidation becomes systematic:
+
+Only replan if a causal link supporting the remaining suffix is broken.  
+If a link breaks, repair that link first.  
+If repair fails, abandon or downgrade the intention.
+
+This makes plans more resilient and more explainable.
+
+---
+
+### **P1: Replanning is too discard-heavy; add plan repair**
+
+Currently, many failures clear the plan and push blockers/discrepancies. That is safe but crude. If step 3 of a 7-step plan fails because the merchant moved, the agent may still keep the goal, the route, the acquired prerequisite, and the later intent. Realistic agents repair plans.
+
+**Fix:** add `PlanRepairContext`.
+
+PlanRepairContext {  
+   failed_step,  
+   failed_causal_link,  
+   preserved_prefix,  
+   reusable_suffix,  
+   new_evidence,  
+   blocker,  
+}
+
+Repair attempts:
+
+1. Rebind target.  
+2. Replace provider of broken causal link.  
+3. Insert verification/sensing step.  
+4. Substitute method branch.  
+5. Downgrade to progress barrier.  
+6. Abandon only if repair search fails.
+
+This pairs naturally with causal links and HTN methods.
+
+---
+
+### **P1: Continual planning should be first-class**
+
+The current architecture already interleaves execution, monitoring, expectations, and replanning. The next step is to let agents plan **to learn**, not merely fail into learning. Brenner and Nebel’s continual-planning work is directly relevant: in dynamic multi-agent worlds, optimal complete plans are often impractical because agents lack knowledge or their knowledge becomes obsolete; their alternative is integrating planning, execution, monitoring, knowledge gathering, and later revision.
+
+**Fix:** introduce explicit epistemic subgoals.
+
+GoalKind::VerifyBelief { claim: BeliefClaimKey }  
+GoalKind::ConsultRecord { record: EntityId, topic: RecordTopic }  
+GoalKind::AskWitness { witness: EntityId, topic: TellTopic }  
+GoalKind::ScoutPlace { place: EntityId, hypothesis: HypothesisKind }  
+GoalKind::InspectContainer { container: EntityId, expectation_id: Option<ExpectationId> }
+
+The planner should insert these when the best plan depends on stale, low-confidence, contradicted, or missing beliefs.
+
+Important: do **not** build full probabilistic contingent plans for every possibility. That will explode. Use lightweight continual planning: verify what matters, act, observe, revise.
+
+---
+
+### **P1: Travel pruning is too myopic**
+
+The current travel-pruning rule rejects travel destinations whose remaining cost to goal increases. That is efficient but can suppress realistic detours: avoiding danger, visiting a witness, obtaining permission, getting a tool, asking directions, joining an escort, resting before a fight, or approaching from a safer route.
+
+**Fix:** allow travel away from the immediate goal when it satisfies a causal landmark, reduces risk, improves belief, obtains capacity, or supports a method branch.
+
+Travel pruning should be based on:
+
+distance-to-goal  
++ causal-link progress  
++ risk reduction  
++ information gain  
++ prerequisite acquisition  
++ commitment preservation
+
+not just monotonic distance.
+
+---
+
+### **P1: Budget exhaustion should degrade gracefully**
+
+`max_candidates_per_expansion = 200` currently causes immediate `BudgetExhausted` if exceeded. That is a tripwire. In crowded markets, battles, offices, or rumor hubs, the planner should degrade into “consider the most salient 200 now and continue later,” not fail the whole search.
+
+**Fix:** make search expansion resumable.
+
+SearchContinuation {  
+   frontier,  
+   unexpanded_candidate_cursor,  
+   budget_spent,  
+   created_tick,  
+   expires_tick,  
+}
+
+When an expansion overflows, record a continuation and resume next deliberation slice. The agent can also choose a cheap fallback meanwhile.
+
+---
+
+### **P1: Blocker TTLs are too generic**
+
+`transient_block_ticks = 20` and `structural_block_ticks = 200` are agent-local cognitive settings, so they are not forbidden drama probabilities. But they are still coarse. A blocked route, empty market, dead counterparty, lost office claim, missing witness, and failed theft should not share the same retry logic.
+
+**Fix:** blockers need typed clearing conditions and lifecycles.
+
+Blocker {  
+   blocking_fact,  
+   observed_tick,  
+   source_evidence,  
+   clearing_condition,  
+   expected_recheck_mode,  
+   memory_decay,  
+   confidence_decay,  
+}
+
+Examples:
+
+CommodityUnavailable clears when agent observes restock, hears credible restock report, or substitutes.  
+NoKnownPath clears when route is learned, guide is found, or map/record is consulted.  
+CounterpartyRefused clears when relationship changes, price changes, threat changes, or desperation rises.  
+OfficeClaimBlocked clears when incumbent dies, support shifts, legal record changes, or force controller changes.
+
+The expiry is memory decay, not world truth.
+
+---
+
+### **P2: Agent diversity exists structurally, but may not exist in practice**
+
+The report says `CognitiveProfile`, `ExecutionBudget`, `UtilityProfile`, `TellProfile`, `EpistemicDispositionProfile`, loyalties, courage, and other per-agent components exist. Good. But if scenarios mostly use defaults, populations will still behave homogenously.
+
+**Fix:** add scenario validation that rejects cloned cognition unless intentionally declared.
+
+Example:
+
+Village may not spawn 20 identical peasants unless AgentDef says homogeneous_population: true.  
+Every role archetype must vary at least N concrete dimensions:  
+ risk, patience, memory, courage, social trust, greed, duty, curiosity, fatigue tolerance.
+
+This directly supports FND-22 and FND-22A.
+
+---
+
+## **2. How to upgrade the AI for resilient, realistic, intelligent agents**
+
+### **Target architecture**
+
+I would evolve the architecture into this pipeline:
+
+Perception / testimony / records  
+       ↓  
+Belief store + evidence + contradictions + memory decay  
+       ↓  
+Motive sources: needs, threats, obligations, habits, values, relationships, opportunities  
+       ↓  
+Persistent goal portfolio / BDI intention manager  
+       ↓  
+HTN-style method selection for high-level procedures  
+       ↓  
+GOAP / A* / FF / landmark planner for primitive lawful actions  
+       ↓  
+Plan with causal links, expectations, guards, repair handles  
+       ↓  
+Execution through scheduler, queues, reservations, action durations  
+       ↓  
+Observation, surprise, blocker/discrepancy memory, learning
+
+This is a BDI-flavored architecture, but not academic ceremony. BDI is useful here because it explicitly distinguishes beliefs, desires, and intentions under bounded deliberation; Rao and Georgeff frame BDI attitudes as information, motivational, and deliberative states, which is exactly the distinction Worldwake needs.
+
+---
+
+### **Keep GOAP as the primitive lawful-action planner**
+
+GOAP should remain the thing that answers:
+
+Given this agent’s belief state,  
+this current intention,  
+this set of legal affordances,  
+and this bounded budget,  
+what action sequence could make progress?
+
+Your current FF heuristic and landmark machinery are appropriate. FF’s core idea is forward state-space search guided by a relaxed-plan heuristic that ignores delete effects and extracts useful pruning information; your planner already uses FF-like helpful-action guidance and landmarks.
+
+But GOAP should not own everything. It should not be responsible for long-term personality, institutional workload, social commitments, or evaluating hundreds of desires every tick.
+
+---
+
+### **Add a persistent goal portfolio**
+
+The current agenda lifecycle is close, but I would make it more explicit and more durable.
+
+DesireToken {  
+   goal: GoalKind,  
+   motive_sources: Vec<MotiveSourceRef>,  
+   evidence_trace: Vec<EvidenceRef>,  
+   urgency: UrgencyProfile,  
+   deadline: Option<Tick>,  
+   confidence: Permille,  
+   expected_cost_band: CostBand,  
+   expected_risk_band: RiskBand,  
+   social_legal_exposure: ExposureBand,  
+   current_status: DesireStatus,  
+   last_attempt: Option<AttemptSummary>,  
+}
+
+`MotiveSource` should be concrete:
+
+enum MotiveSource {  
+   NeedPressure(HomeostaticNeedId),  
+   Pain(WoundId),  
+   Fear(ThreatBeliefId),  
+   Obligation(ContractId),  
+   OfficeDuty(OfficeId, DutyId),  
+   Debt(DebtId),  
+   Loyalty(EntityId),  
+   Greed(OpportunityId),  
+   Habit(HabitId),  
+   Curiosity(HypothesisId),  
+   Shame(ReputationRecordId),  
+   Revenge(ViolationId),  
+}
+
+Ranking scores become derived views over motive sources, not free-floating truth. That keeps numeric utility compatible with FND-3.
+
+---
+
+### **Add an affordance-to-opportunity compiler**
+
+This is probably the most important upgrade for “agents exploit what scenarios offer.”
+
+Right now, candidate generation is primarily goal-family-driven: emit food goals, emit bounty goals, emit theft goals, emit office goals, and so on. That means scenario opportunities are noticed only if some emitter knows how to look for them.
+
+Add a bottom-up pass:
+
+For every perceived entity, record, place, route, social fact, and affordance:  
+   What effects could this enable?  
+   What needs/obligations/values could those effects satisfy?  
+   What risks or legal consequences would they create?  
+   What information could this object/person/place reveal?
+
+Example:
+
+Opportunity {  
+   anchor: EntityId,  
+   perceived_at: Tick,  
+   source_belief: BeliefRef,  
+   possible_effects: Vec<PlanningFact>,  
+   possible_information: Vec<ClaimTopic>,  
+   required_actions: Vec<PlannerOpKind>,  
+   legal_status: BelievedLegalStatus,  
+   social_exposure: SocialExposure,  
+   salience: Salience,  
+}
+
+Then the agent can reason:
+
+I am hungry.  
+I see bread.  
+I believe it belongs to the baker.  
+I can buy it, steal it, beg for it, threaten for it, or wait for discard.  
+My courage/greed/lawfulness/hunger decide which methods are considered.
+
+That is much more realistic than “AcquireCommodity supports Trade and Harvest.”
+
+---
+
+### **Add HTN methods as lawful reusable know-how**
+
+Agents need domain knowledge. A magistrate, hunter, merchant, thief, priest, guard, and peasant should not all decompose problems the same way.
+
+HTN-style methods are the right way to encode this, as long as they are **generic procedures**, not authored outcomes. SHOP2 shows the core model: nonprimitive tasks decompose recursively into subtasks until primitive operators are reached.
+
+Examples of legal Worldwake methods:
+
+Hunter.HuntBeast  
+ - gather latest tracks/reports  
+ - travel to last credible evidence  
+ - scout adjacent territory  
+ - engage if confidence and courage suffice  
+ - retreat or request allies if risk too high  
+ - return proof to issuer
+
+Magistrate.HandleRobberyReport  
+ - receive testimony  
+ - check jurisdiction  
+ - inspect record/ledger if available  
+ - create case record  
+ - assign investigation or ignore if resources absent  
+ - issue accusation/warrant/bounty if evidence threshold met
+
+Merchant.Restock  
+ - check local inventory  
+ - check known suppliers  
+ - reserve transport  
+ - buy cargo  
+ - return and post listing
+
+These methods must never teleport facts, skip travel, override rights, or guarantee outcomes. They only guide decomposition.
+
+---
+
+### **Add causal-link plans and assumption monitoring**
+
+Current revalidation checks the next step. Better agents need to monitor the assumptions supporting the entire remaining intention.
+
+A plan should explain itself as:
+
+I will do Step 4 because Step 2 should provide food.  
+I believe the food is at Market because witness W said so at tick 120.  
+I believe I can access Market because route R is known and not blocked.  
+I believe the baker will trade because I saw an active sale listing.
+
+Represent that directly:
+
+PlanAssumption {  
+   fact: PlanningFact,  
+   source: AssumptionSource,  
+   confidence: Permille,  
+   freshness: Tick,  
+   invalidators: Vec<Invalidator>,  
+   consumer_steps: Vec<u16>,  
+}
+
+Then interruption becomes principled:
+
+Dragon appears → invalidates route-safety assumption.  
+Merchant leaves → invalidates trade-target assumption.  
+Food sold out → invalidates commodity-available assumption.  
+Witness contradicted → lowers confidence, may insert verification.
+
+This will make agents feel less stupid and less brittle.
+
+---
+
+### **Add planned sensing and verification**
+
+Do not make agents omnisciently smarter. Make them smart enough to know what they do not know.
+
+Useful actions:
+
+Inspect stash  
+Check notice board  
+Ask witness  
+Ask guide for route  
+Consult ledger  
+Scout road  
+Track beast  
+Count inventory  
+Verify office holder  
+Examine corpse  
+Check lock
+
+These actions should produce belief updates, not direct truth injection. This supports the canonical rumor and robbery scenarios in FOUNDATIONS.
+
+---
+
+### **Add plan repair before full replanning**
+
+A realistic agent does not throw away an entire intention because one assumption failed.
+
+Example:
+
+Goal: acquire food.  
+Plan: travel to market → buy bread → eat.  
+Failure: baker has no bread.  
+Repair:  
+ - buy grain instead  
+ - ask baker about supplier  
+ - travel to second seller  
+ - steal if desperate and immoral  
+ - return home if fatigue/danger too high
+
+This should be a small repair search around the broken causal link, not a full reset.
+
+---
+
+### **Make planning itself resource-bounded in-world when appropriate**
+
+The engine’s CPU budget is not the same as the agent’s deliberation budget. But for complex deliberation, the agent should have attention limits.
+
+A panicked, wounded, exhausted agent should plan shallowly. A rested strategist in an office can reason further. The report already has `CognitiveProfile` and `ExecutionBudget`; use them more aggressively as agent traits.
+
 Add:
-- dependency structure,
-- guards,
-- expectations,
-- local repairs,
-- branch edges,
-- bail-out exits.
+
+DeliberationState {  
+   current_problem: Option<DeliberationProblem>,  
+   expansions_spent: u32,  
+   attention_reserved: Permille,  
+   started_tick: Tick,  
+   can_continue_while_walking: bool,  
+}
+
+A guard can patrol and think a bit. A surgeon treating a wound cannot also perform deep political planning. This aligns with FND-8’s attention/occupancy principle.
 
 ---
 
-### 5.4 `BlockedIntentMemory` -> split responsibilities
-Split into:
-- `DiscrepancyMemory`
-- `BlockerMemory`
-- `RepairMemory`
-- `LearnedOpportunityMemory`
+### **Add richer local opportunism**
 
-Do not use one structure for everything that went wrong.
+Opportunism should be a generic interrupt layer, not a few goal kinds.
 
----
+Local perception can generate interrupt proposals:
 
-### 5.5 `RuntimeBeliefView` -> uncertainty-aware planner API
-Replace raw planner-facing query returns where needed with:
-- `BeliefValue<T>`
-- `BeliefSet<T>`
-- quantity intervals or min/max confidence summaries,
-- provenance-bearing route condition views.
+I see a dragon → flee/hide/warn/attack.  
+I see a wounded ally → treat/carry/report/ignore.  
+I see unattended valuables → steal/guard/report/ignore.  
+I see a corpse → loot/bury/report/investigate.  
+I see a rival vulnerable → attack/blackmail/help/avoid.  
+I hear a false rumor → repeat/challenge/verify/exploit.
+
+Each proposal still enters the same portfolio/ranking system. No drama triggers. No “interesting event” rolls. Just local affordances meeting agent motives.
 
 ---
 
-### 5.6 Unified legality path
-One validation/binding path for:
-- affordance enumeration,
-- revalidation,
-- dispatch,
-- exact-target recovery.
+### **Upgrade learning without cheating**
 
-No side door.
+The report already has source reliability, blocker memory, discrepancy memory, survey memory, and experience preferences. That is the right shape. Extend it into concrete learned state:
 
----
+RoutePreference {  
+   route,  
+   learned_from: EvidenceRef,  
+   success_count,  
+   failure_count,  
+   last_outcome,  
+   decay_tick,  
+}
 
-## 6. Implementation order
+SourceReliability {  
+   source,  
+   topic_class,  
+   confirmations,  
+   contradictions,  
+   last_checked,  
+}
 
-### Phase 1: mandatory cleanup
-1. Hard-fence authoritative travel helpers out of planner-visible types.
-2. Add per-action binding strictness.
-3. Unify action validation/binding.
-4. Replace `Unknown` blocker with typed discrepancy classes.
-5. Make candidate arbitration independent of emitter order.
-6. Add authoritative decision-history events.
-7. Add scenario lints for profile homogeneity and proactive exploration grounding.
+Habit {  
+   context_signature,  
+   action_or_method,  
+   reinforcement,  
+   last_used,  
+   decay,  
+}
 
-### Phase 2: highest ROI AI improvements
-1. Add agenda manager with pending/suspended goals.
-2. Add uncertainty-aware belief objects to planner API.
-3. Add information-gathering goals and action observation models.
-4. Add cheap feasibility probes and portfolio planning.
-5. Add step guards and expectation monitoring.
+TrustRelation {  
+   other,  
+   domain,  
+   trust,  
+   evidence_history,  
+}
 
-### Phase 3: resilience upgrade
-1. Introduce limited `PolicyPlan` branching.
-2. Add local repair before full replan.
-3. Add bail-out/proper-state recovery actions.
-4. Add learned route/trader/witness/facility expectations.
-5. Add promise/request/order artifacts.
-
-### Phase 4: simulation deepening
-1. Evidence carriers.
-2. Route/place condition state.
-3. Institution throughput and delegation.
-4. Artifact lifecycle separation.
-5. Commitment aftermath and sanction paths.
-6. Expanded contention artifacts.
+The key rule: every learning update must answer “what experience caused this?” That is exactly FND-22A.
 
 ---
 
-## 7. Acceptance criteria
+## **3. Simulation upgrades to better align with FOUNDATIONS**
 
-A proposed change is acceptable only if all of these stay true:
+### **Make scheduling and contention world-visible**
 
-- decisions remain explainable as belief + motive + commitment,
-- no plan depends on hidden world truth,
-- no coordination depends on invisible scheduler state,
-- all retries and repairs are lawful actions or lawful state transitions,
-- deleting derived caches changes performance only, never meaning,
-- interruption and recovery leave inspectable aftermath,
-- canonical scenario classes emerge without dedicated scenario scripting.
+The report emphasizes deterministic iteration with `BTreeMap`, seeded RNG, and stable sorting. That is necessary, but not sufficient. FND-9 says tick order must not silently decide world meaning. If two agents grab the same bread, enter the same doorway, claim the same office, or attack in the same instant, deterministic `EntityId` order is not an in-world explanation.
+
+Add an explicit contention layer:
+
+ContentionEvent {  
+   contested_affordance,  
+   claimants,  
+   resolution_rule,  
+   evidence,  
+   winner,  
+   losers,  
+   tick,  
+}
+
+Resolution rules might be:
+
+arrival time  
+queue position  
+reservation token  
+office grant  
+physical proximity  
+initiative  
+strength contest  
+legal priority  
+random seeded microstate, if declared
+
+The outcome must leave an inspectable artifact or event.
 
 ---
 
-## 8. Bottom line
+### **Make institutions task-bearing actors, not just goal sources**
 
-The architecture is not wrong.
-It is just still too **linear**, too **crisp**, and too **forgetful about uncertainty** for the world standard your FOUNDATIONS are demanding.
+The report includes offices, succession, accusations, punishments, patrols, bounties, and candidates. Good. The next upgrade is institutional workload.
 
-The right upgrade is:
+An office should have:
 
-- **not** “more utility weights,”
-- **not** “bigger GOAP search,”
-- **not** “LLM NPCs,”
-- **not** “more scripted fallbacks.”
+Office {  
+   holder,  
+   jurisdiction,  
+   duties,  
+   budget,  
+   authority_records,  
+   succession_rule,  
+   delegation_rules,  
+}
 
-It is a clean architectural shift to:
+InstitutionalTask {  
+   issuer_office,  
+   duty_kind,  
+   priority_basis,  
+   required_authority,  
+   assigned_agent,  
+   status,  
+   evidence_refs,  
+   deadline,  
+}
 
-- belief-aware planner inputs,
-- information-seeking as a real option,
-- limited contingent execution,
-- local repair and proper-state recovery,
-- explicit social commitments,
-- richer evidence carriers,
-- and authoritative reasoning history.
+Then “the town reacts” becomes:
 
-That will make the agents tougher across scenarios, more realistic under ignorance, more socially legible, and much closer to the causality-first simulation your repository says it wants.
+survivor reports attack  
+watch office receives testimony  
+case record created  
+captain assigns patrol or posts bounty  
+treasury pays reward if proof accepted
+
+No singleton “town brain.”
+
+---
+
+### **Add explicit artifact lifecycles everywhere**
+
+FOUNDATIONS distinguishes existence, visibility, legality, credibility, and actionability. The current architecture has bounties, notices, records, accusations, expectations, and listings, but every artifact class should formalize lifecycle axes.
+
+Example:
+
+ArtifactLifecycle {  
+   existence: Exists | Destroyed,  
+   visibility: Hidden | Private | Posted | WidelyKnown,  
+   legal_effect: None | Active | Suspended | Expired | Revoked | Fulfilled,  
+   credibility: Credible | Disputed | Refuted | Unknown,  
+   actionability: Actionable | AwaitingProof | Blocked | Closed,  
+}
+
+An expired bounty should remain visible as history. A false accusation should remain inspectable after exoneration. A revoked warrant should not authorize arrest but should remain part of institutional memory.
+
+---
+
+### **Add boundary processes for remote shocks**
+
+FOUNDATIONS includes a canonical scenario for remote disruption causing delayed arrival failure, local shortage, substitution, rationing, hoarding, theft, or exit. The GOAP report does not describe boundary systems in detail.
+
+Add:
+
+BoundaryRegion {  
+   id,  
+   known_name,  
+   remote_stocks,  
+   route_channels,  
+   travel_delay,  
+   reliability,  
+   observables,  
+}
+
+BoundaryProcess {  
+   source_region,  
+   output_kind,  
+   scheduled_departure,  
+   expected_arrival,  
+   carrier,  
+   capacity,  
+   failure_modes,  
+   evidence_generated,  
+}
+
+Imports, refugees, taxes, herds, letters, weather fronts, and rumors should enter through these processes. No hidden spawners.
+
+---
+
+### **Deepen evidence as physical aftermath**
+
+For the canonical chains, the world needs more than events. It needs carriers:
+
+tracks  
+blood  
+broken locks  
+dropped cargo  
+wound records  
+corpse state  
+drag marks  
+empty containers  
+ledger mismatch  
+rumor copies  
+notice copies  
+witness memories  
+route traces
+
+Agents should plan around these. A hunter follows tracks. A magistrate compares testimony. A thief avoids witnesses. A survivor leaves fear, wounds, missing cargo, and testimony.
+
+This is the substrate that makes emergence legible rather than merely chaotic.
+
+---
+
+### **Upgrade ownership/access/jurisdiction as separate concrete relations**
+
+The report has control/ownership/legal-rights belief views. Make sure the authoritative model fully separates:
+
+owner  
+holder  
+container  
+possessor  
+access right  
+key/control mechanism  
+office authority  
+jurisdiction  
+debt/obligation  
+custody
+
+This is essential for theft, confiscation, taxation, inheritance, trespass, punishment, market access, and office duties. It is also central to the stored-gold canonical scenario.
+
+---
+
+### **Make long actions produce partial state**
+
+FOUNDATIONS says failure is new state. Do not let actions remain atomic if they should create intermediate consequences.
+
+Examples:
+
+Travel: exposes agent to events, fatigue, route evidence, delays.  
+Craft: consumes inputs over time, can leave half-finished work, waste, broken tools.  
+Combat: wounds, fear, dropped items, noise, witnesses, retreat paths.  
+Investigation: creates notes, suspicions, questioned witnesses, contaminated evidence.  
+Trade: queue position, negotiation state, reserved goods, refused offers.  
+Burial: moved corpse, disturbed witnesses, partial grave.
+
+The planner can still reason in abstract steps, but the simulator should expose partial outcomes to other agents.
+
+---
+
+### **Add routines and expectations as world-facing state**
+
+Realistic agents notice surprise because they expected something else. Worldwake already values this. Build it out:
+
+Routine {  
+   agent,  
+   expected_place_by_tick,  
+   expected_activity,  
+   tolerance,  
+   observers_who_care,  
+}
+
+Expectation {  
+   owner,  
+   subject,  
+   expected_fact,  
+   source,  
+   created_tick,  
+   freshness,  
+   violation_policy,  
+}
+
+This enables:
+
+guard missing from patrol → merchant worries  
+servant absent from kitchen → household searches  
+market empty at usual hour → buyers ask why  
+gold missing from stash → owner reports robbery  
+caravan late → office posts inquiry
+
+No omniscient absence detection.
+
+---
+
+## **4. Additional beneficial changes**
+
+### **Build a formal validation dashboard**
+
+The report lists many golden tests, conformance tests, determinism tests, and a soak. That is excellent. But for this architecture, “looked plausible” is never enough.
+
+Track live metrics:
+
+candidate count distribution  
+top-N feasible miss rate  
+budget exhaustion rate  
+frontier exhaustion rate  
+beam pruning rate  
+travel-prune regret cases  
+plan repair success rate  
+assumption invalidation causes  
+belief contradiction frequency  
+stale-belief wasted travel  
+source reliability correction rate  
+queue/contention outcomes  
+institutional backlog age  
+unexplained event count
+
+The key metric I would add immediately:
+
+ranked_goal_feasibility_gap:  
+   how often goal rank 3+ had a feasible plan when rank 1-2 failed
+
+If that number is nontrivial, `max_candidates_to_plan = 2` is already harming intelligence.
+
+---
+
+### **Add adversarial scenario fuzzers**
+
+Use property-based tests to generate ugly worlds:
+
+crowded market with 200 entities  
+many identical food sources  
+stale rumors and contradictory witnesses  
+dead office holder during crisis  
+two agents racing for one tool  
+trade counterparty leaves mid-plan  
+route changes while agent travels  
+resource appears behind legal access barrier  
+false accusation with real punishment  
+boundary shipment fails while town consumes stock
+
+Each fuzz run should assert causal validity, not desired story outcome.
+
+---
+
+### **Add architecture lints**
+
+I would add static or test-time lints for:
+
+No ActionDef without canonical effect schema.  
+No ActionDef with simulator effect but missing planner effect.  
+No GoalKind without satisfaction predicate.  
+No GoalKind whose only achievers are hidden special cases.  
+No relevant_ops entry that is the sole authority for possibility.  
+No belief-view accessor reading nonlocal authoritative state.  
+No snapshot truncation without ObservationOmission.  
+No artifact with active effect but missing lifecycle state.  
+No queue/reservation/grant without expiry/invalidation.  
+No decision without minimal DecisionEvent.
+
+These lints directly enforce FOUNDATIONS instead of relying on code review memory.
+
+---
+
+### **Use LLMs only outside live authority paths**
+
+Do not let an LLM choose live actions, invent facts, decide outcomes, summarize beliefs into authority, or “make the story better.” That would collide with locality, determinism, replay, source/sink accounting, and explainability.
+
+Safe uses:
+
+offline scenario generation  
+test-case generation  
+trace summarization for developers  
+authoring assistant for ActionDef/GoalSchema drafts  
+fuzzing adversarial social situations  
+natural-language explanation of already-recorded causal history
+
+The LLM can describe or propose. It must not become a hidden world process.
+
+---
+
+## **Recommended roadmap**
+
+### **Phase 1: Correctness and architectural hygiene**
+
+Finish the ranking/source-composite refactor. Replace simulator/planner effect duplication with canonical action effect schemas or at least a stricter conformance harness. Make minimal `DecisionEvent` records always-on. Replace silent snapshot caps with explicit perception/attention omissions. Add contention events for same-tick scarce affordances.
+
+### **Phase 2: Scalable deliberation**
+
+Replace top-2 planning with budgeted goal portfolio deliberation. Turn `relevant_ops` into hints backed by effect-schema indexing. Add goal schemas and motive-source ledgers. Add persistent partial search continuations. Track ranked-goal feasibility gaps.
+
+### **Phase 3: Robust intelligence**
+
+Add causal-link plan assumptions. Add plan repair. Add epistemic subgoals: inspect, ask, consult, scout, verify. Add HTN-style reusable methods for roles and institutions. Extend interruption to local opportunism.
+
+### **Phase 4: Richer simulation substrate**
+
+Add institutional task ledgers, boundary processes, richer artifact lifecycles, physical evidence carriers, routines/expectations, and partial outcomes for long actions.
+
+### **Phase 5: Validation at scale**
+
+Convert FOUNDATIONS canonical scenarios A–H into property-based scenario classes, not just hand-authored goldens. Add adversarial sampling, sensitivity sweeps, planner telemetry, and causal-history inspectors.
+
+---
+
+## **The strongest recommendation**
+
+Do **not** think of the future system as “better GOAP.” Think of it as:
+
+BDI-style persistent motives and commitments  
++ HTN-style lawful domain know-how  
++ GOAP primitive action search  
++ continual planning under partial belief  
++ causal-link monitoring and repair  
++ world-state institutions, evidence, contention, and artifact lifecycles
+
+That combination keeps Worldwake aligned with its foundational principles: no authored outcomes, no omniscient intelligence, no hidden drama manager, no abstract scores promoted to truth, no planner entitlement, and no unexplained events. It also gives you a credible path from 35 goals to hundreds without turning the AI into either a brittle script pile or an opaque black box.
+

@@ -141,6 +141,7 @@ fn post_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -183,6 +184,7 @@ fn post_notice_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -232,6 +234,7 @@ fn claim_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandl
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
@@ -280,6 +283,7 @@ fn withdraw_bounty_action_def(
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 

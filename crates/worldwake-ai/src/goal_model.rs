@@ -4329,6 +4329,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -4420,6 +4421,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::MoveCargo,
@@ -4491,6 +4493,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4564,6 +4567,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4643,6 +4647,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -4706,6 +4711,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -4771,6 +4777,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::SearchPlace,
@@ -4843,6 +4850,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::AskAboutPerson,
@@ -4941,6 +4949,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::AskAboutPerson,
@@ -5008,6 +5017,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ReportMissing,
@@ -5075,6 +5085,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Accuse,
@@ -5149,6 +5160,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Exile,
@@ -5217,6 +5229,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
@@ -5278,6 +5291,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Accuse,
@@ -5327,6 +5341,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ClaimBounty,
@@ -5388,6 +5403,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Fine,
@@ -5448,6 +5464,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Exile,
@@ -5504,6 +5521,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::EscortToSafety,
@@ -5563,6 +5581,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostNotice,
@@ -5632,6 +5651,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostBounty,
@@ -5687,6 +5707,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::EstablishCamp,
@@ -5751,6 +5772,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5808,6 +5830,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5865,6 +5888,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Harvest,
@@ -5920,6 +5944,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -5970,6 +5995,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
@@ -6021,6 +6047,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Attack,
@@ -6072,6 +6099,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Attack,
@@ -6124,6 +6152,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -6185,6 +6214,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::SearchPlace,
@@ -6243,6 +6273,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ReportMissing,
@@ -6299,6 +6330,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
@@ -7251,6 +7283,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let declare_semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -7332,6 +7365,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -7391,6 +7425,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::DeclareSupport,
@@ -7431,6 +7466,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PressForceClaim,
@@ -11577,6 +11613,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::MoveCargo,
@@ -11698,6 +11735,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostBounty,
@@ -11771,6 +11809,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostNotice,

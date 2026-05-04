@@ -66,6 +66,7 @@ fn ask_about_person_action_def(id: ActionDefId, handler: ActionHandlerId) -> Act
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 

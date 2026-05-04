@@ -1,0 +1,1546 @@
+# GOAP Architecture Reference — 2026-05-04
+
+> **Reader's note**: This report is self-contained for an external LLM with no repository access. Every type, signature, and algorithm used by the planner is included inline. The Worldwake repository is a Rust workspace; section 1 establishes the foundational types referenced throughout.
+>
+> **In-flight refactor warning**: At the time of writing, `ranking.rs` and `source_composite.rs` are mid-refactor — there are diagnostic-level compile errors in `ranking.rs` (missing `capacity_observation_weight` and `source_composite` struct fields at several construction sites) and two unused-function warnings in `source_composite.rs`. The architectural shape described here is correct; only specific field initializers will shift when the refactor completes. The unused source-composite helpers are part of an in-progress integration into the ranking pipeline.
+
+## 1. Architecture Context
+
+### 1.1 Crate Layout
+
+Worldwake is a 5-crate Cargo workspace:
+
+```
+worldwake-core    → IDs, types, ECS store, topology, items, relations, cognitive params
+worldwake-sim     → Event log, action framework, scheduler, replay, belief view trait
+worldwake-systems → Needs, production, trade, combat, travel (each system isolated)
+worldwake-ai      → Pressure-based GOAP planner — focus of this report
+worldwake-cli     → Human control interface
+```
+
+The planner lives entirely in `worldwake-ai`, but consumes types from `worldwake-core` (IDs, components, cognitive parameters), `worldwake-sim` (action definitions, belief view trait, affordance queries), and `worldwake-systems` (action handlers).
+
+### 1.2 ECS Conventions and Determinism Guarantees
+
+Custom ECS (no external crate). Component storage is `BTreeMap`-keyed by `EntityId` for *every* authoritative component — never `HashMap`. This is a hard-enforced invariant: planner search produces identical plans across runs given the same seed, and any `HashMap` introduced into authoritative state would break that.
+
+Determinism rules (enforced by code review and tests):
+
+- `BTreeMap`/`BTreeSet` only for authoritative iteration order
+- `ChaCha8Rng` seeded; no thread-local RNG
+- No `f32`/`f64` anywhere in authoritative state
+- No wall-clock time (`std::time::Instant` etc.)
+- Conservation enforced by `verify_conservation` over event log
+- Append-only event log is causal source of truth — never mutated retroactively
+
+### 1.3 Foundational Types
+
+Used throughout the report:
+
+```rust
+pub struct EntityId(pub u32);                     // Universally identifies entities
+pub struct Tick(pub u64);                         // Discrete simulation timestep
+pub struct Permille(u16);                         // Fixed-point [0, 1000] for fractions
+pub struct Quantity(pub u32);                     // Conserved fungible amount
+pub struct ActionDefId(pub u16);                  // References an ActionDef in the registry
+pub struct RecipeId(pub u16);                     // References a recipe in the recipe registry
+pub enum CommodityKind { /* food, water, coin, ... */ }
+pub enum EntityKind { Agent, Place, Item, Container, Workstation, ... }
+pub enum ControlSource { Human, Ai, None }        // Who chooses next action; world rules unchanged
+```
+
+Place graph: every entity is at exactly one place; movement is travel along edges with travel-time weights. There is no continuous space.
+
+---
+
+## 2. Goal Ranking
+
+### 2.1 GoalKind — Full Enum
+
+The `GoalKind` enum (`crates/worldwake-core/src/goal.rs`) names every desire the planner can pursue. 35 variants, grouped by behavioral domain. Variants carry only world anchors (commodities, entities, places) — never numeric magnitudes.
+
+```rust
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum GoalKind {
+    // Homeostasis (self-care)
+    ConsumeOwnedCommodity { commodity: CommodityKind },
+    AcquireCommodity {
+        commodity: CommodityKind,
+        purpose: CommodityPurpose,
+        quantity: AcquisitionQuantity,
+    },
+    Sleep,
+    Relieve,
+    Wash,
+    FreeCarryCapacity,
+
+    // Combat / threat
+    EngageHostile { target: EntityId },
+    RaidTarget { target: EntityId },
+    ReduceDanger,
+    RegroupWithFaction { faction: EntityId },
+    EstablishBanditCamp { faction: EntityId },
+    TreatWounds { patient: EntityId },
+
+    // Search / report / escort
+    SearchForMissing { subject: EntityId, last_seen: Option<EntityId> },
+    ReportMissing { subject: EntityId, to_office: Option<EntityId>, expectation_id: Option<ExpectationId> },
+    ReportFound { subject: EntityId, expectation_id: ExpectationId },
+    EscortToSafety { subject: EntityId, destination: EntityId },
+
+    // Production / enterprise
+    ProduceCommodity { recipe_id: RecipeId },
+    SellCommodity { commodity: CommodityKind },
+    RestockCommodity { commodity: CommodityKind },
+    MoveCargo { commodity: CommodityKind, destination: EntityId },
+
+    // Disposal / opportunism
+    LootCorpse { corpse: EntityId },
+    BuryCorpse { corpse: EntityId, burial_site: EntityId },
+
+    // Bounty / artifacts
+    FulfillBounty { bounty: EntityId },
+    PostBounty { posting: ArtifactPostingContext, terms: BountyTerms },
+    PostNotice { posting: ArtifactPostingContext, topic: NoticeTopic },
+
+    // Communication
+    ShareBelief { listener: EntityId, topic: TellTopic, communication_class: CommunicationClass },
+
+    // Office / institution
+    ClaimOffice { office: EntityId },
+    SupportCandidateForOffice { office: EntityId, candidate: EntityId },
+
+    // Justice / patrol / investigation
+    InvestigateViolation { violation_id: ViolationId, place: EntityId },
+    Patrol { place: EntityId },
+    Accuse { crime_register: EntityId, accused: EntityId, violation_id: ViolationId },
+    PunishAccused {
+        office: EntityId, accused: EntityId,
+        accusation_entry: RecordEntryId, punishment: PunishmentKind,
+    },
+
+    // Theft / exploration
+    StealItem { target_item: EntityId },
+    ExploreLocation {
+        target_place: EntityId,
+        motivating_need: ExplorationMotivation,
+        hypothesis: HypothesisKind,
+    },
+}
+```
+
+### 2.2 Pressure-Based Ranking Algorithm
+
+Entry point (`crates/worldwake-ai/src/ranking.rs`):
+
+```rust
+pub fn rank_candidates(
+    candidates: &[GoalOffer],
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    current_tick: Tick,
+    utility: &UtilityProfile,
+    decision_context: &DecisionContext,
+) -> RankingOutcome
+```
+
+Returns:
+
+```rust
+pub struct RankingOutcome {
+    pub ranked: Vec<AgendaEntry>,        // sorted by compare_ranked_goals
+    pub suppressed: Vec<AgendaEntry>,    // rejected by suppression filter
+    pub damped: Vec<AgendaEntry>,        // damped by secondary effects
+    pub zero_motive: Vec<AgendaEntry>,   // motive ≤ 0 after discounts
+}
+```
+
+Internally, each candidate flows through five evaluation layers, in order:
+
+1. **Suppression filter** (`evaluate_suppression`) — drops goals whose policy forbids them under current stress (see §2.4).
+2. **Priority class** (`ranked_priority_class`) — maps motive scaffold to one of `{Background, Low, Medium, High, Critical}`.
+3. **Motive score** (`ranked_motive_score`) — pressure-derived desire magnitude (see §2.3).
+4. **Source-reliability discount** — penalizes goals whose source beliefs have failed expectation history.
+5. **Competition discount** — reduces motive when contention or local scarcity is observed.
+
+Sort is stable: `compare_ranked_goals` orders by (priority class desc, motive score desc, deterministic tiebreak on goal-key bytes).
+
+### 2.3 Pressure Derivation
+
+Pressures (`pressure.rs`) translate raw belief into `Permille` magnitudes that drive motive scoring. Three families:
+
+- `derive_pain_pressure(view, agent) -> Permille` — sums wound severity.
+- `derive_danger_pressure(view, agent) -> Permille` — derived from `assess_danger` (combat threat).
+- Homeostatic pressures (food, water, fatigue, dirtiness, relief) — read directly from `HomeostaticNeeds` component, scaled against per-agent thresholds.
+
+`assess_danger`:
+
+```rust
+pub struct DangerAssessment {
+    pub pressure: Permille,
+    pub thresholds_present: bool,
+    pub current_attackers: Vec<EntityId>,
+    pub visible_hostiles: Vec<EntityId>,
+    pub hostile_targets: Vec<EntityId>,
+    pub has_wounds: bool,
+    pub is_incapacitated: bool,
+}
+```
+
+Bands (constants are bounded by per-agent `DangerThresholds`, never magic numbers):
+
+- 2+ active attackers OR (1 attacker + wounded/incapacitated) → critical
+- 1 attacker OR (visible hostile + wounded) → high
+- visible hostile only → medium
+- distant hostile target only → low
+
+### 2.4 Suppression Filter
+
+`evaluate_suppression` (`goal_policy.rs`) consults a per-goal `SuppressionRule`:
+
+```rust
+pub enum SuppressionRule {
+    Never,
+    WhenStressedAtOrAbove(GoalPriorityClass),
+}
+
+pub struct DecisionContext {
+    pub max_self_care_class: GoalPriorityClass,
+    pub danger_class: GoalPriorityClass,
+}
+```
+
+If `WhenStressedAtOrAbove(threshold)`, the goal is suppressed iff
+`max_self_care_class >= threshold || danger_class >= threshold`.
+
+Policy summary (full table in `goal_dispatch_decl.rs`):
+
+- **Never** suppressed: every self-care goal, every danger-reducing goal, every healing/treatment goal, every enterprise (produce/sell/restock/move-cargo).
+- **Suppressed at High+ stress**: opportunism (LootCorpse, BuryCorpse, ExploreLocation, StealItem).
+- **Suppressed at Critical stress**: all social/political (ShareBelief, ClaimOffice, SupportCandidate, Investigate, Patrol, Accuse, Punish, PostBounty, PostNotice).
+
+This is a hard pre-filter — suppressed goals never reach motive scoring or plan search.
+
+### 2.5 Goal Lifecycle and Agenda Management
+
+`agenda_manager.rs` orchestrates the per-tick goal lifecycle:
+
+```rust
+pub struct AgendaTransitions {
+    pub killed: Vec<AgendaEntry>,                  // satisfied or impossible
+    pub revived: Vec<AgendaEntryKey>,              // suspended → pending
+    pub commit_transition: CommitTransition,       // pending → committed
+    pub demoted_to_suspended: Vec<AgendaEntryKey>, // pending → suspended
+    pub demoted_to_pending: Vec<AgendaEntryKey>,   // committed → pending
+    pub ordered_candidates: Vec<AgendaEntry>,      // ranked for display/diagnostics
+}
+```
+
+Lifecycle phases (`tick_agenda`):
+
+1. **Kill** — drop goals whose postcondition is already true or whose anchor is dead.
+2. **Revive** — promote suspended goals whose `RevivalTrigger` fires (route learned, commodity restocked, attacker gone, etc.).
+3. **Merge** — splice fresh candidates with surviving entries.
+4. **Rank** — run `rank_candidates` (§2.2) over the merged set.
+5. **Commit** — select one to drive plan search, gated by `switch_margin` (default 100 permille — challenger must beat current goal's utility by 10%).
+6. **Demote** — push lower-ranked goals into pending or suspended state.
+
+Suspended goals carry a `RejectionLifecycle`:
+
+```rust
+pub enum RejectionLifecycle {
+    Satisfied,
+    InfeasibleUntil { trigger: RevivalTrigger },
+    Dead,
+}
+```
+
+This lets goals lie dormant cheaply rather than be regenerated every tick.
+
+---
+
+## 3. Candidate Generation
+
+### 3.1 Public Entry Points
+
+`candidate_generation.rs` exposes two functions:
+
+```rust
+#[must_use]
+pub fn generate_candidates(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    blocked: &BlockerMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+) -> Vec<GoalOffer>;
+
+pub(crate) fn generate_candidates_with_travel_horizon(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    blocked: &BlockerMemory,
+    violation_memory: &ViolationMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+    travel_horizon: u8,
+    tracing_enabled: bool,
+) -> CandidateGenerationResult;
+```
+
+The internal extended form returns a `CandidateGenerationResult`:
+
+```rust
+pub struct CandidateGenerationResult {
+    pub candidates: Vec<GoalOffer>,
+    pub diagnostics: CandidateGenerationDiagnostics,
+    pub pending_violations: Vec<PendingViolationRecord>,
+    pub pending_source_reliability_failures: Vec<OpportunityExpectationFailureIncident>,
+    pub pending_acquisition_exhaustion_resets: BTreeSet<HomeostaticNeedId>,
+}
+```
+
+Default `travel_horizon` is the agent's `CognitiveProfile.snapshot_travel_horizon` (default 6 ticks of travel reach).
+
+A `GoalOffer` ties a `GoalKind` to `OpportunityAnchor` (place/entity/commodity), an evidence trace (which beliefs justify it), and metadata used by the planner (relevant op kinds, prerequisite places, satisfaction predicate).
+
+### 3.2 Emit-Function Inventory
+
+A `GenerationContext` is built once per call (belief view, agent, blocked-intent memory, recipes, tick) and dispatched to ~50 `emit_*` gate functions. Each emitter scans agent beliefs for one goal family and pushes `GoalOffer`s. Grouped by domain:
+
+| Family            | Emitters (selection)                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Homeostatic needs | `emit_need_candidates`, `emit_self_consume_candidates`, `emit_sleep_goal`, `emit_relieve_goal`, `emit_wash_goal`                |
+| Acquisition       | `emit_need_driven_candidates`, `emit_dirtiness_water_acquisition_candidates`                                                    |
+| Exploration       | `emit_exploration_candidates`, `emit_exploration_candidates_for_blocked_self_care`, `emit_proactive_exploration_candidates`     |
+| Production        | `emit_production_candidates`, `emit_produce_goals`                                                                              |
+| Enterprise        | `emit_enterprise_candidates`, `emit_restock_goals`, `emit_sell_goals`, `emit_move_cargo_goals`                                  |
+| Bounty / artifact | `emit_bounty_candidates`, `emit_artifact_posting_candidates`, `emit_bounty_posting_candidates`, `emit_notice_posting_candidates`|
+| Combat            | `emit_combat_candidates`, `emit_engage_hostile_goals`, `emit_remote_engage_hostile_targets`, `emit_raid_target_goals`, `emit_remote_raid_targets`, `emit_reduce_danger_goal` |
+| Care              | `emit_care_goals` (TreatWounds, RegroupWithFaction, EstablishBanditCamp)                                                        |
+| Disposal          | `emit_disposal_candidates`, `emit_loot_goals`, `emit_bury_goals`                                                                |
+| Theft             | `emit_theft_candidates`                                                                                                         |
+| Justice           | `emit_recorded_violation_candidates`, `emit_expectation_violation_candidates`, `emit_violation_goal`, `emit_accusation_candidates`, `emit_punishment_candidates` |
+| Search / report   | `emit_search_candidates`, `emit_report_found_candidates`, `emit_escort_candidates`                                              |
+| Social            | `emit_social_candidates` (ShareBelief variants)                                                                                 |
+| Political         | `emit_political_candidates`, `emit_claim_office_candidate`, `emit_support_candidate_goals`                                      |
+| Patrol / faction  | `emit_crime_candidates`, `emit_patrol_candidates`, `emit_regroup_with_faction_goals`                                            |
+
+Common patterns inside each emitter:
+
+- Read agent belief via `GoalBeliefView` (subset trait of `RuntimeBeliefView`, see §4).
+- Filter against `BlockerMemory` (any goal whose `BlockerKey` is currently active is silently omitted; the omission is recorded in diagnostics under `fully_blocked_desires`).
+- Locality scope via `effective_place(agent)` and the `travel_horizon` distance bound.
+- Push one `GoalOffer` per (anchor, opportunity) tuple via `emit_candidate` / `emit_candidate_with_trace`.
+
+### 3.3 BlockerMemory and Locality Scoping
+
+`BlockerMemory` (`worldwake-core`) maps `BlockerKey → Blocker`:
+
+```rust
+pub struct BlockerKey {
+    pub goal_key: GoalKey,
+    pub related_place: Option<EntityId>,
+    pub related_entity: Option<EntityId>,
+    pub action_def_id: Option<ActionDefId>,
+}
+
+pub struct Blocker {
+    pub observed_tick: Tick,
+    pub blocking_fact: BlockingFact,
+    pub clearing_condition: BlockerClearingCondition,
+    pub expiry_tick: Tick,
+}
+```
+
+Expiry is governed by `CognitiveProfile.{transient_block_ticks, structural_block_ticks}` (defaults 20 / 200 ticks). Clearing conditions are concrete predicates over beliefs: route learned, commodity available, attacker absent, etc. — never numeric thresholds.
+
+Locality scoping uses two distance matrices precomputed at snapshot time (see §5.3): `shortest_travel_ticks` (raw graph distance) and `perceived_travel_costs` (threat-adjusted). Emitters use `perceived_travel_costs` to bound how far an agent is willing to consider opportunities; `travel_horizon` is the cap.
+
+### 3.4 Branching Factor Implications
+
+Candidate count directly drives plan-search branching. Empirical bounds (default profile, ~50 entity world):
+
+- Idle agent at home: 4–10 candidates (sleep, consume, wash, relieve, low-priority restock).
+- Stressed survival agent: 15–35 candidates (multiple acquisition paths × multiple known sources).
+- Office-holder in active town: 30–80 candidates (justice, patrol, social, plus baseline).
+
+`max_candidates_to_plan = 2` (default) means only the top 2 candidates by ranking actually undergo plan search — an aggressive cap that relies on ranking quality.
+
+---
+
+## 4. Affordance Queries
+
+### 4.1 Public Entry Points
+
+`crates/worldwake-sim/src/affordance_query.rs` exposes:
+
+```rust
+#[must_use]
+pub fn get_affordances(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+) -> Vec<Affordance>;
+
+#[must_use]
+pub fn get_affordances_for_defs(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    allowed_defs: &BTreeSet<ActionDefId>,
+) -> Vec<Affordance>;
+```
+
+The second form is the one the planner calls — it restricts enumeration to action defs relevant to the goal currently under search (see §4.5).
+
+### 4.2 ActionDef Structure
+
+```rust
+pub struct ActionDef {
+    pub id: ActionDefId,
+    pub name: String,
+    pub domain: ActionDomain,
+    pub actor_constraints: Vec<Constraint>,
+    pub targets: Vec<TargetSpec>,
+    pub preconditions: Vec<Precondition>,
+    pub reservation_requirements: Vec<ReservationReq>,
+    pub duration: DurationExpr,
+    pub body_cost_per_tick: BodyCostPerTick,
+    pub attention_cost: Permille,
+    pub interruptibility: Interruptibility,
+    pub commit_conditions: Vec<Precondition>,
+    pub visibility: VisibilitySpec,
+    pub causal_event_tags: BTreeSet<EventTag>,
+    pub payload: ActionPayload,
+    pub handler: ActionHandlerId,
+    pub binding_strictness: BindingStrictness,
+    pub guard_template: Option<GuardTemplateSpec>,
+    pub expectation_template: Vec<ExpectationTemplateSpec>,
+}
+```
+
+Key field semantics:
+
+- `actor_constraints` — checked once per actor (alive, not in transit, has control, knows recipe, carries item).
+- `targets` — slot specs that name what entities can fill each parameter (see §4.4).
+- `preconditions` — checked per binding (target alive, at-place, has commodity).
+- `payload` — `Fixed(ActionPayload)` or `Synthesized` (planner supplies a payload, validated by handler).
+- `guard_template` — runtime guards re-checked each tick during execution (§6.2).
+- `expectation_template` — observation specs the actor expects to perceive on completion (§6.4).
+
+### 4.3 RuntimeBeliefView Trait
+
+`RuntimeBeliefView` (`worldwake-sim/src/belief_view.rs`) is a marker trait composed of 11 belief subtypes:
+
+```rust
+pub trait RuntimeBeliefView:
+    ControlBeliefView          // ownership, legal rights
+    + EntityBeliefView         // alive/dead/incapacitated, corpses
+    + ProfileBeliefView        // courage, thresholds, metabolism
+    + SpatialBeliefView        // place, adjacency, route knowledge
+    + TemporalBeliefView       // reservations, durations
+    + InventoryBeliefView      // possessions, recipes, capacity
+    + CombatBeliefView         // wounds, hostiles, attackers
+    + EconomicBeliefView       // trade disposition, lots, merchants
+    + SocialBeliefView         // confidence policy, intentions
+    + PoliticalBeliefView      // factions, authority, bandit affiliation
+    + FacilityBeliefView       // workstations, sources, basins
+{}
+```
+
+Affordance queries route every lookup through this trait. There is no global state read for the actor's account — even when `effective_place(actor)` is read from authoritative state, that read is justified by FND-14A (same-tick co-location is belief-equivalent for direct physical observables).
+
+### 4.4 Target Enumeration
+
+```rust
+pub enum TargetSpec {
+    SpecificEntity(EntityId),
+    ActorPlace,
+    EntityAtActorPlace { kind: EntityKind },
+    EntityAtActorPlaceAnyOf { kinds: [EntityKind; 2] },
+    EntityDirectlyPossessedByActor { kind: EntityKind },
+    EntityDirectlyPossessedByActorAnyOf { kinds: [EntityKind; 2] },
+    AdjacentPlace,
+}
+```
+
+`enumerate_targets` walks the belief view and returns a `Vec<EntityId>` for each spec:
+
+- `SpecificEntity` → singleton if alive.
+- `ActorPlace` → agent's effective place.
+- `EntityAtActorPlace { kind }` → all entities of `kind` co-located with the actor.
+- `EntityAtActorPlaceAnyOf` → union of two kinds at actor's place.
+- `EntityDirectlyPossessedByActor` → all carried items of `kind`.
+- `EntityDirectlyPossessedByActorAnyOf` → union of two carried kinds.
+- `AdjacentPlace` → all places one travel-edge away.
+
+Every result is sorted (`BTreeSet`) before return for deterministic enumeration. A per-call `target_cache` prevents re-enumerating the same spec across multiple action defs in one pass.
+
+### 4.5 Goal-Relevant Operators (`relevant_ops`)
+
+Each `GoalKind` declares a set of `PlannerOpKind` values — only actions of those kinds can advance the goal (`goal_dispatch_decl.rs`). Sample mappings:
+
+```text
+ConsumeOwnedCommodity → [Consume, Travel, MoveCargo]
+AcquireCommodity      → [Travel, Trade, QueueForFacilityUse, Harvest, Craft, MoveCargo]
+Sleep                 → [Sleep]
+Relieve               → [Relieve, Travel]
+Wash                  → [Wash, Travel]
+EngageHostile         → [Travel, Attack]
+TreatWounds           → [Travel, Heal, Trade, QueueForFacilityUse, Craft, MoveCargo, Harvest]
+ProduceCommodity      → [Travel, QueueForFacilityUse, Craft, MoveCargo]
+ClaimOffice           → [Travel, ConsultRecord, Bribe, Threaten, DeclareSupport, PressForceClaim]
+ExploreLocation       → [Travel]
+PostBounty            → [Travel, PostBounty]
+ShareBelief           → [Tell]
+```
+
+The planner converts a goal's `relevant_ops` into the `allowed_defs: BTreeSet<ActionDefId>` argument to `get_affordances_for_defs`, drastically reducing enumeration cost.
+
+---
+
+## 5. Plan Search Pipeline
+
+### 5.1 Entry Point and Result Type
+
+```rust
+pub fn search_plan(
+    snapshot: &PlanningSnapshot,
+    goal: &GoalOffer,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    recipes: &RecipeRegistry,
+    blocked: &BlockerMemory,
+    current_tick: Tick,
+    binding_rejections: Option<&mut Vec<BindingRejection>>,
+    expansion_summaries: Option<&mut Vec<SearchExpansionSummary>>,
+) -> PlanSearchResult;
+
+pub enum PlanSearchResult {
+    Found(Box<PlannedPlan>),
+    Unsupported,
+    BudgetExhausted { expansions_used: u16 },
+    FrontierExhausted { expansions_used: u16 },
+}
+```
+
+`search_plan` delegates to `search_plan_with_trace_metadata`, which is the actual loop body. Output is a `PlannedPlan`:
+
+```rust
+pub struct PlannedPlan {
+    pub goal: GoalOffer,
+    pub steps: Vec<PlannedStep>,
+    pub terminal_kind: PlanTerminalKind,
+    pub adoption_tick: Tick,
+    // ... materialization bindings, expectations, etc.
+}
+
+pub enum PlanTerminalKind {
+    GoalSatisfied,
+    ProgressBarrier,         // tactical milestone reached, partial plan
+    CombatCommitment,        // committed to engage; finalize at execution
+}
+```
+
+`ProgressBarrier` is the planner's escape hatch when the full goal isn't reachable within budget but a useful subgoal is — the agent commits to that intermediate location and replans on arrival.
+
+### 5.2 Strategic / Tactical Decomposition
+
+Search is two-layer:
+
+1. **Strategic** (`search/strategic.rs`) — produces a location-visit itinerary from beliefs. Output:
+
+```rust
+pub struct StrategicPlan {
+    pub steps: Vec<StrategicStep>,
+}
+pub struct StrategicStep {
+    pub destination: EntityId,
+    pub sub_goal: TacticalSubGoal,
+    pub estimated_travel_ticks: u32,
+}
+pub enum TacticalSubGoal {
+    AcquirePrerequisite { commodity: CommodityKind, destination: EntityId },
+    Explore { destination: EntityId },
+    SocialQuery { commodity: CommodityKind, destination: EntityId },
+    TravelToGoal { destination: EntityId },
+}
+```
+
+Algorithm (Dijkstra over a stage graph):
+
+- Identify goal places + missing prerequisite commodities.
+- Build stages: one acquire stage per missing commodity, one final stage at the goal place.
+- Locally consume prerequisites already at the actor's place.
+- Run a min-heap shortest-path search over `(stage_index, current_place)` states, expanding to all candidate destinations per stage.
+- Prune dominated revisits to the same `(stage, place)` pair.
+- Budget: `max_prerequisite_locations * 2` expansions (default 6).
+
+Output is the cheapest path through the stage graph.
+
+2. **Tactical** — A* search at each strategic step, expanding action sequences until the sub-goal's destination/predicate is satisfied.
+
+### 5.3 PlanningSnapshot — The Belief Surface
+
+`crates/worldwake-ai/src/planning_snapshot.rs`. Snapshot is constructed once per planning attempt; all search reads happen against this frozen state, never authoritative world state.
+
+```rust
+pub struct PlanningSnapshot {
+    pub(crate) actor: EntityId,
+    pub(crate) current_tick: Tick,
+    pub(crate) actor_belief_store: AgentBeliefStore,
+    pub(crate) entities: BTreeMap<EntityId, SnapshotEntity>,
+    pub(crate) places: BTreeMap<EntityId, SnapshotPlace>,
+    pub(crate) blocked_facility_uses: BTreeSet<(EntityId, ActionDefId)>,
+    pub(crate) actor_known_entity_beliefs: BTreeMap<EntityId, BelievedEntityState>,
+    pub(crate) actor_known_social_observations: Vec<SocialObservation>,
+    pub(crate) actor_known_institutional_beliefs: Vec<BelievedInstitutionalClaim>,
+    pub(crate) actor_told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
+    pub(crate) actor_bandit_factions: Vec<EntityId>,
+    pub(crate) actor_active_violation_records: Vec<RecordedViolation>,
+    pub(crate) actor_contested_offices: Vec<EntityId>,
+    pub(crate) actor_loyalties: BTreeMap<EntityId, Permille>,
+    pub(crate) actor_office_holder_beliefs: BTreeMap<EntityId, SupportBeliefRead>,
+    pub(crate) actor_force_controller_beliefs: BTreeMap<EntityId, ForceControllerBeliefRead>,
+    pub(crate) office_certain_support_declarations:
+        BTreeMap<EntityId, Vec<(EntityId, EntityId)>>,
+    pub(crate) office_support_declaration_beliefs:
+        BTreeMap<EntityId, OfficeSupportBeliefReads>,
+    pub(crate) actor_confidence_policy: BeliefConfidencePolicy,
+    pub(crate) actor_claim_confidence_threshold: Permille,
+    pub(crate) actor_tell_profile: Option<TellProfile>,
+    pub(crate) actor_epistemic_profile: Option<EpistemicDispositionProfile>,
+    pub(crate) actor_consultation_speed_factor: Option<Permille>,
+    pub(crate) actor_expectation_store: Option<ExpectationStore>,
+    pub(crate) actor_last_seen_memory: Option<LastSeenMemory>,
+    pub(crate) actor_bandit_flee_thresholds: BTreeMap<EntityId, Permille>,
+    pub(crate) actor_bandit_establishment_ticks: BTreeMap<EntityId, NonZeroU32>,
+    shortest_travel_ticks: DistanceMatrix,        // graph distance
+    perceived_travel_costs: DistanceMatrix,       // threat-adjusted
+}
+```
+
+Each `SnapshotEntity` is a domain-grouped record:
+
+```rust
+pub struct SnapshotEntity {
+    pub entity: SnapshotEntityCore,    // kind, alive, dead, incapacitated
+    pub spatial: SnapshotSpatial,      // effective_place, in_transit_state, patrol_route
+    pub inventory: SnapshotInventory,  // possessions, container, commodities, recipes, capacity
+    pub combat: SnapshotCombat,        // wounds, profiles, courage, hostiles, attackers
+    pub social: SnapshotSocial,        // theft disposition
+    pub economic: SnapshotEconomic,    // trade disposition, listings
+    pub political: SnapshotPolitical,  // justice/violation dispositions, record/office data
+    pub temporal: SnapshotTemporal,    // reservations, queue status
+    pub profiles: SnapshotProfiles,    // homeostatic needs, metabolism, posting profiles
+    pub facility: SnapshotFacility,    // workstation tag, stock, source, wash basin, job
+    pub control: SnapshotControl,      // owner, controllability
+}
+```
+
+Snapshot is bounded: `max_snapshot_entities_per_place` (default 50) caps how many entities are sampled per place.
+
+### 5.4 PlanningState — Mutable Search State
+
+```rust
+pub struct PlanningState<'snapshot> {
+    snapshot: &'snapshot PlanningSnapshot,
+    entity_place_overrides: SharedMap<PlanningEntityRef, Option<EntityId>>,
+    bandit_camp_faction_overrides: SharedMap<EntityId, Option<EntityId>>,
+    direct_container_overrides: SharedMap<PlanningEntityRef, Option<PlanningEntityRef>>,
+    direct_possessor_overrides: SharedMap<PlanningEntityRef, Option<PlanningEntityRef>>,
+    resource_quantity_overrides: SharedMap<EntityId, Quantity>,
+    commodity_quantity_overrides: SharedMap<(PlanningEntityRef, CommodityKind), Quantity>,
+    reservation_shadows: SharedMap<EntityId, Vec<TickRange>>,
+    removed_entities: SharedSet<PlanningEntityRef>,
+    sale_listing_overrides: SharedMap<PlanningEntityRef, bool>,
+    sale_seller_overrides: SharedMap<PlanningEntityRef, Option<EntityId>>,
+    needs_overrides: SharedMap<EntityId, HomeostaticNeeds>,
+    pain_overrides: SharedMap<EntityId, Permille>,
+    support_declaration_overrides: SharedMap<(EntityId, EntityId), Option<EntityId>>,
+    office_holder_belief_overrides:
+        SharedMap<EntityId, InstitutionalBeliefRead<Option<EntityId>>>,
+    force_controller_belief_overrides:
+        SharedMap<EntityId, InstitutionalBeliefRead<(Option<EntityId>, bool)>>,
+    support_declaration_belief_overrides:
+        SharedMap<(EntityId, EntityId), InstitutionalBeliefRead<Option<EntityId>>>,
+    facility_queue_membership_overrides:
+        SharedMap<EntityId, Option<HypotheticalQueueJoin>>,
+    facility_grant_overrides: SharedMap<EntityId, Option<ContentionGrant>>,
+    hypothetical_registry: SharedMap<HypotheticalEntityId, HypotheticalEntityMeta>,
+    entities_at_cache: Rc<RefCell<BTreeMap<EntityId, Vec<EntityId>>>>,
+    effective_place_cache: Rc<RefCell<BTreeMap<PlanningEntityRef, Option<EntityId>>>>,
+    next_hypothetical_id: u32,
+}
+```
+
+Search nodes hold a `PlanningState` and the partial plan:
+
+```rust
+struct SearchNode<'snapshot> {
+    state: PlanningState<'snapshot>,
+    steps: SharedVec<PlannedStep>,
+    total_estimated_ticks: u32,    // for plan duration
+    search_cost: u32,              // A* g (travel-weighted)
+    tactical_barrier_reached: bool,
+    heuristic_ticks: u32,          // A* h = max(spatial, landmark)
+}
+```
+
+`PlanningEntityRef` is `Authoritative(EntityId)` or `Hypothetical(HypotheticalEntityId)` — search may posit synthetic entities (e.g., a not-yet-crafted item) and reason about them before they exist.
+
+### 5.5 Dual Frontier with Preferred-Operator Boost
+
+```rust
+pub(super) struct DualFrontier<'snapshot> {
+    regular: BinaryHeap<FrontierEntry<'snapshot>>,
+    preferred: BinaryHeap<FrontierEntry<'snapshot>>,
+    boost_remaining: u8,
+    preferred_operator_boost: u8,
+    use_preferred_next: bool,
+}
+```
+
+`pop` picks from `preferred` when boost is active or alternation flag favors it; otherwise from `regular`. Each pop decrements `boost_remaining` (when boosted) and flips `use_preferred_next`. The boost is *triggered* whenever an expansion produces any preferred successors:
+
+```rust
+if successors.iter().any(|(_, _, _, preferred)| *preferred) {
+    frontier.trigger_boost();   // sets boost_remaining = preferred_operator_boost
+}
+```
+
+Ordering inside each heap (A* with lexicographic tiebreaks):
+
+```rust
+fn compare_search_nodes(left: &SearchNode<'_>, right: &SearchNode<'_>) -> Ordering {
+    let left_f  = left.search_cost.saturating_add(left.heuristic_ticks);
+    let right_f = right.search_cost.saturating_add(right.heuristic_ticks);
+    left_f
+        .cmp(&right_f)
+        .then_with(|| left.search_cost.cmp(&right.search_cost))
+        .then_with(|| left.total_estimated_ticks.cmp(&right.total_estimated_ticks))
+        .then_with(|| left.steps.len().cmp(&right.steps.len()))
+        .then_with(|| left.steps.as_slice().cmp(right.steps.as_slice()))
+}
+```
+
+Lexicographic step comparison guarantees full determinism — two equivalent partial plans will sort consistently across runs.
+
+### 5.6 Heuristics
+
+Spatial (`heuristic.rs`):
+
+```rust
+pub(super) fn compute_heuristic(
+    snapshot: &PlanningSnapshot,
+    state: &PlanningState<'_>,
+    goal_relevant_places: &[EntityId],
+) -> u32 {
+    if goal_relevant_places.is_empty() { return 0; }
+    let actor = state.snapshot().actor();
+    let actor_place = state.effective_place_ref(PlanningEntityRef::Authoritative(actor));
+    actor_place
+        .and_then(|place|
+            snapshot.min_perceived_travel_cost_to_any(place, goal_relevant_places))
+        .unwrap_or(0)
+}
+```
+
+i.e. min perceived travel cost from actor's place to any goal-relevant place.
+
+Landmark (`heuristic.rs`):
+
+```rust
+pub(super) fn compute_landmark_heuristic(
+    landmarks: &LandmarkSet,
+    current_facts: &BTreeSet<PlanningFact>,
+) -> u32 {
+    actionable_landmarks(landmarks, current_facts).len() as u32
+}
+```
+
+— count of landmarks not yet achieved whose predecessors are satisfied.
+
+Combined (`transition.rs`):
+
+```rust
+let heuristic_ticks = spatial_heuristic.max(landmark_heuristic);
+```
+
+Max (not sum) because both are independently admissible lower bounds; max preserves admissibility.
+
+### 5.7 Landmark Extraction (Delete-Relaxation)
+
+`search/landmarks.rs`. Inputs: `initial_facts`, `goal_facts`, `operators` (relaxed action templates), `max_depth: u8` (from `CognitiveProfile.landmark_extraction_depth`, default 4).
+
+```rust
+pub struct LandmarkSet {
+    pub landmarks: BTreeSet<PlanningFact>,
+    pub orderings: Vec<(PlanningFact, PlanningFact)>,  // (predecessor, successor)
+}
+```
+
+`PlanningFact` is the planner's atomic state predicate (`AtPlace`, `Carries`, `Owns`, `WoundHealed`, etc.).
+
+Algorithm:
+
+```text
+landmarks ← goal_facts
+queue ← [(g, 0) for g in goal_facts]
+while queue not empty:
+    (fact, depth) ← queue.pop()
+    if depth >= max_depth or fact in initial_facts: continue
+    achievers ← { op | op.add_effects ⊇ {fact} }
+    if achievers is empty: continue
+    shared_pre ← ⋂ { op.preconditions | op in achievers }
+    for predecessor in shared_pre \ {fact}:
+        orderings.push((predecessor, fact))
+        if landmarks.insert(predecessor):
+            queue.push((predecessor, depth + 1))
+```
+
+Output (landmark predecessors that all achievers must satisfy) drives both the landmark heuristic and preferred-operator selection.
+
+### 5.8 FF Relaxed-Plan Heuristic
+
+`search/landmarks.rs`. `CognitiveProfile.use_ff_heuristic` (default `true`) gates this.
+
+```rust
+pub struct RelaxedPlanResult {
+    pub h_ff: u32,
+    pub helpful_action_indices: BTreeSet<usize>,
+}
+
+pub(super) fn compute_ff_heuristic(
+    initial_facts: &BTreeSet<PlanningFact>,
+    goal_facts: &BTreeSet<PlanningFact>,
+    operators: &[PlanningOperator],
+) -> Option<RelaxedPlanResult>;
+```
+
+Two-pass FastForward:
+
+1. **Forward chaining** — layer-by-layer expand `reachable_facts`. At each layer, apply all operators whose preconditions are satisfied; record `first_achiever[fact] = (layer, op_index)`. Stop when `goal_facts ⊆ reachable_facts` or no progress (returns `None`).
+2. **Backward extraction** — from each goal fact, recursively trace `first_achiever`, collect operator indices into `selected`. Layer-0 operators go into `helpful_action_indices`. Return `h_ff = |selected|`.
+
+Helpful actions feed the preferred queue.
+
+### 5.9 Search Loop (Outer)
+
+```text
+while not frontier.empty():
+    node ← frontier.pop()
+    if node.state satisfies goal: return Found
+    update tactical_barrier_reached
+    if depth ≥ max_plan_depth: continue
+    if expansions ≥ max_node_expansions:
+        return Found(best_barrier) if any else BudgetExhausted
+
+    expansions += 1
+    candidates ← search_candidates(...)              // §5.10
+    candidates ← apply_tactical_filter(candidates)   // §5.11
+    candidates ← prune_travel_away_from_goal(...)    // §5.12
+    candidates ← cap_travel_candidates(...)          // §5.13
+    if |candidates| > max_candidates_per_expansion: return BudgetExhausted
+
+    successors ← []
+    for c in candidates:
+        match build_successor_detailed(node, c):
+            Ok((Some(terminal_kind), succ, _)):
+                if terminal_kind is GoalSatisfied or CombatCommitment:
+                    return Found(succ.plan)
+                if terminal_kind is ProgressBarrier:
+                    best_barrier ← min(best_barrier, succ)
+            Ok((None, succ, _)):
+                successors.push(succ)
+            Err(_): record skip
+
+    landmarks ← extract_landmarks_if_first_expansion(...)
+    h_ff_result ← compute_ff_heuristic(...) if cognitive.use_ff_heuristic
+    mark preferred successors via landmark guidance + helpful actions
+
+    sort successors by compare_search_nodes
+    truncate to beam_width                          // §5.14
+    if any preferred: frontier.trigger_boost()
+    push successors to preferred / regular queues
+
+return Found(best_barrier) if any else FrontierExhausted
+```
+
+### 5.10 Search Candidates
+
+Distinct from §3 candidate generation: §3 produces *goal candidates*; §5.10 produces *action candidates* during expansion.
+
+```rust
+pub(super) struct SearchCandidate {
+    pub(super) def_id: ActionDefId,
+    pub(super) authoritative_targets: Vec<EntityId>,
+    pub(super) planning_targets: Vec<PlanningEntityRef>,
+    pub(super) payload_override: Option<ActionPayload>,
+    pub(super) planner_only: bool,
+    pub(super) trace_index: Option<usize>,
+    pub(super) expansion_trace_index: Option<usize>,
+}
+```
+
+Sources:
+
+1. **Affordance-derived** — `get_affordances_for_defs` over the goal's `relevant_ops`-restricted `allowed_defs`.
+2. **Goal-synthesized** — for relevant defs not currently afforded, attempt synthesis via `goal.synthesized_root_candidate_targets()` (e.g., a `Trade` candidate against a believed-but-not-co-located merchant).
+3. **Planner-only** — `planner_only_candidates()` posits hypothetical entities (e.g., a not-yet-crafted item).
+
+Filter pipeline:
+
+- Epistemic barrier filtering (stale beliefs may force `Travel` / verify-locally ops).
+- Binding mismatch (goal must accept this op as advancing it).
+- Opportunity anchor coherence.
+- Goal availability (`candidate_is_available`).
+- Blocked-facility filter (`blocked_facility_uses`).
+- Place-scoped blocker filter.
+
+### 5.11 Tactical Goal Filtering
+
+```rust
+pub(super) enum TacticalGoal {
+    AcquirePrerequisite { commodity: CommodityKind, destination: EntityId },
+    Explore { destination: EntityId },
+    SocialQuery { commodity: CommodityKind, destination: EntityId },
+    TravelToGoal { destination: EntityId },
+}
+```
+
+Per-tactical filter rules:
+
+- `AcquirePrerequisite` — at destination: reject Travel; else only Travel toward destination.
+- `Explore` — at destination: reject all (barrier reached); else Travel toward destination.
+- `SocialQuery` — at destination: only `AskWitness`; else Travel toward destination.
+- `TravelToGoal` — at destination: reject Travel; at root: accept non-travel goal-relevant ops; else Travel toward destination.
+
+If no tactical goal but goal is anchored on a place, similar destination-directed filtering applies.
+
+### 5.12 Travel-Pruning (Away-From-Goal Detection)
+
+For each travel candidate with destination `d`, compute
+`remaining = min_perceived_travel_cost_to_any(d, effective_goal_places)`. Retain if `remaining <= current_min_to_goal`; prune otherwise. Pruned successors are recorded in `TravelPruningTrace` for diagnostics.
+
+### 5.13 Travel Candidate Cap
+
+`CognitiveProfile.max_travel_candidates_per_expansion` (default `None` → uncapped). When set, travel candidates are scored by `direct_cost + min_remaining_to_goal`, sorted, and truncated to the cap.
+
+### 5.14 Beam Truncation
+
+After successor sort:
+
+```rust
+let retained = successors.len().min(execution_budget.beam_width() as usize);
+successors.truncate(retained);
+```
+
+`beam_width` defaults to 8. Pruned successors are discarded entirely (no requeue), tagged `PrunedByBeam` in expansion summary.
+
+### 5.15 Expansion Budget
+
+Three checkpoints:
+
+- **Node expansion limit** (`expansions >= cognitive.max_node_expansions`, default 224) → `BudgetExhausted` (or `Found(best_barrier)` if any).
+- **Per-expansion candidate cap** (`candidates_generated > cognitive.max_candidates_per_expansion`, default 200) → `BudgetExhausted`.
+- **Plan depth** (`node.steps.len() >= cognitive.max_plan_depth`, default 8) → skip expansion (no return; loop continues).
+
+### 5.16 State Transitions
+
+`build_successor_detailed` (`search/transition.rs`):
+
+```rust
+pub(super) fn build_successor_detailed<'s>(
+    goal: &GoalOffer,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    node: &SearchNode<'s>,
+    candidate: &SearchCandidate,
+    recipes: &RecipeRegistry,
+    execution_budget: &ExecutionBudget,
+    tactical_goal: Option<&TacticalGoal>,
+    landmark_set: &LandmarkSet,
+) -> Result<
+    (Option<PlanTerminalKind>, SearchNode<'s>, RootCandidatePayloadStatus),
+    RootCandidateSkipReason,
+>;
+```
+
+Pipeline:
+
+1. Validate semantics and op-kind match against goal.
+2. Resolve payload via `goal.key.kind.build_payload_override()` if needed.
+3. Estimate duration via `state.estimate_duration(DurationExpr)`.
+4. `apply_hypothetical_transition` — clone `PlanningState` and apply mutation (move actor, transfer commodity, satisfy need, etc.).
+5. Build `PlannedStep { def_id, targets, target_place, payload_override, op_kind, estimated_ticks, guard, expectations }`.
+6. `terminal_kind()` decides if this step satisfies the goal, hits a tactical barrier, or commits to combat.
+7. Update costs: `total_estimated_ticks += estimated_ticks` (saturating); `search_cost += travel_step_cost` (perceived for travel; `estimated_ticks` for non-travel).
+8. Recompute heuristic on new state; return new `SearchNode`.
+
+`apply_hypothetical_transition` is the core simulator-equivalence point: planner outcomes for belief-visible state must match the actual simulator's effect (verified by `planner_conformance` test).
+
+---
+
+## 6. Plan Revalidation & Execution
+
+### 6.1 Per-Tick Revalidation
+
+`crates/worldwake-ai/src/plan_revalidation.rs`:
+
+```rust
+pub fn classify_revalidation(
+    view: &dyn RuntimeBeliefView,
+    actor: EntityId,
+    step_index: u16,
+    step: &PlannedStep,
+    bindings: &MaterializationBindings,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+) -> RevalidationOutcome;
+
+pub enum RevalidationOutcome {
+    Valid,
+    Invalidated {
+        reason: PlanInvalidationReason,
+        expectation_kind: Option<ExpectationKindTag>,
+        mismatch_detail: Option<MismatchDetail>,
+    },
+}
+```
+
+Invocation: every tick before the agent dispatches a step. The check covers:
+
+1. Guard predicates still hold (§6.2).
+2. Targets resolve via `MaterializationBindings` (hypothetical entities materialized from earlier steps still match real entities).
+3. Action def's `actor_constraints` and `preconditions` still pass.
+4. `requested_affordance_matches` confirms the step's payload still maps to a legal affordance.
+5. For payload-override steps with `ActionPayload::None` defs, the handler-registered validator passes (§6.3).
+
+### 6.2 Plan Guard System
+
+`plan_guard.rs`:
+
+```rust
+pub struct PlanGuard {
+    pub required_facts: Vec<RequiredFact>,
+    pub min_confidence: Permille,
+    pub invalidators: Vec<Invalidator>,
+}
+
+pub enum RequiredFact {
+    TargetPresent { target: EntityId, at_place: EntityId },
+    CommodityAvailable { place: EntityId, kind: CommodityKind, min_quantity: Quantity },
+    RouteKnown { from: EntityId, to: EntityId },
+    ResourceAccess { resource: EntityId, agent_holds_permission: bool },
+}
+
+pub enum Invalidator {
+    BeliefStatusChange { claim: BeliefClaimKey },
+    TargetMoved { target: EntityId },
+    CommodityDepleted { place: EntityId, kind: CommodityKind },
+    NewBlockerRecorded { baseline_tick: Tick },
+}
+```
+
+`min_confidence` is gated by `CognitiveProfile.guard_min_confidence_ceiling` (default 1000 = no cap; per-agent caps allow lower-confidence guards for risk-tolerant agents).
+
+Guards are constructed at plan adoption time by `plan_guard_build.rs` from each `ActionDef.guard_template`. Bound entities/places/commodities from the planned step fill the template parameters.
+
+### 6.3 Payload Override Validation
+
+For action defs with `payload: ActionPayload::None`, the planner must synthesize the payload (e.g., Trade specifies counterparty and lots at runtime). Handlers that accept synthesized payloads register a validator via `ActionHandlerBuilder::with_payload_override_validator`:
+
+```rust
+type PayloadOverrideValidator = fn(
+    def: &ActionDef,
+    actor: EntityId,
+    targets: &[EntityId],
+    payload: &ActionPayload,
+    view: &dyn RuntimeBeliefView,
+) -> bool;
+```
+
+Revalidation calls this validator (`plan_revalidation.rs:339`) when:
+
+1. Step has `payload_override`.
+2. Action def's payload is `None`.
+3. Actor constraints pass.
+4. Preconditions pass.
+5. Handler does not synthesize affordance payloads itself.
+
+Failure invalidates the plan step. This is a quiet but critical contract — handlers that accept synthesized payloads but fail to register a validator cause silent revalidation rejection, often surfacing as "agent never executes Trade".
+
+### 6.4 Plan Step Expectations
+
+`plan_step_expectations.rs`:
+
+```rust
+pub struct PlanExpectation {
+    pub kind: ExpectationKind,
+    pub observe_by: Option<Tick>,
+}
+
+pub enum ExpectationKind {
+    Immediate { event_tag: EventTag },
+    State { predicate: StatePredicate },
+    Informed { observation: ObservationPredicate },
+    Regression { predicate: StatePredicate },        // negative — must NOT hold
+}
+```
+
+On plan adoption, `write_plan_step_expectations` allocates one `ExpectationRecord` per expectation. Grace window comes from `CognitiveProfile.expectation_tolerance_ticks` (default 2). Lifecycle: `Active → Overdue → Expired` (or `Resolved` on observation match). Expired expectations trigger replanning via §7.
+
+### 6.5 Action Dispatch (BestEffort)
+
+`agent_tick/execution.rs::enqueue_valid_step_or_handle_failure`:
+
+```rust
+ctx.scheduler.input_queue_mut().enqueue(
+    tick,
+    InputKind::RequestAction {
+        actor: agent,
+        def_id: step.def_id,
+        targets,
+        payload_override: step.payload_override.clone(),
+        mode: ActionRequestMode::BestEffort,   // ← always from AI planner
+        provenance: RequestProvenance::AiPlan,
+    },
+);
+runtime.step_in_flight = true;
+```
+
+`BestEffort` semantics: if the action can't start at execution time (preconditions failed at last microsecond, target moved, etc.), the action is aborted gracefully and the agent's next tick triggers replanning (§7). This is contrasted with `Strict` mode (used by tooling), which panics on precondition failure.
+
+### 6.6 Tick Loop Per Agent
+
+`agent_tick/mod.rs` orders the per-agent tick into phases (in this order):
+
+1. **Read** — reconcile beliefs against new perceptions, expire expectations.
+2. **Active action** — if `step_in_flight`, check completion; evaluate interrupts (`switch_margin` test); advance step or trigger failure.
+3. **Planning** — if no active plan, generate goal candidates, rank, run plan search for top `max_candidates_to_plan` (default 2) goals, select best plan.
+4. **Execution** — revalidate next step, resolve targets, enqueue action request.
+5. **Finalize** — persist memory updates (BlockerMemory, DiscrepancyMemory).
+
+`AgentDecisionRuntime` carries the per-agent state across ticks:
+
+```rust
+pub struct AgentDecisionRuntime {
+    pub current_plan: Option<PlannedPlan>,
+    pub current_step_index: usize,
+    pub step_in_flight: bool,
+    pub materialization_bindings: MaterializationBindings,
+    pub runtime_observation_snapshot: ObservationSnapshot,
+    pub last_frame_clear_reason: Option<FrameClearReason>,
+    // ... blocker memory, discrepancy memory, exhaustion state
+}
+```
+
+`MaterializationBindings` resolve hypothetical entity refs (synthesized during search) into authoritative `EntityId`s as they become real (e.g., when a craft step actually produces the item).
+
+---
+
+## 7. Replanning
+
+### 7.1 Failure Handling
+
+`failure_handling.rs`:
+
+```rust
+pub fn handle_plan_failure(
+    context: &PlanFailureContext<'_>,
+    runtime: &mut AgentDecisionRuntime,
+    jc: &mut Option<IntentionFrame>,
+    blocked_memory: &mut BlockerMemory,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    facility_intents: &mut ContentionIntents,
+    cognitive: &CognitiveProfile,
+) -> FailureClassification;
+
+pub enum FailureClassification {
+    Blocker(BlockingFact),
+    Discrepancy(Discrepancy),
+}
+
+pub enum BlockingFact {
+    TargetGone { entity: EntityId },
+    NoKnownPath { from: EntityId, to: EntityId },
+    CombatTooRisky,
+    CommodityUnavailable { place: EntityId, kind: CommodityKind },
+    CounterpartyRefused { counterparty: EntityId },
+    NoLegalBinding,
+    // ...
+}
+
+pub enum Discrepancy {
+    StaleBeliefDrift,
+    BeliefContradicted,
+    ImproperState,
+    MissingObservation,
+    PartialDrift,
+}
+```
+
+Steps:
+
+1. Clear `current_plan`, `step_in_flight`, `materialization_bindings`.
+2. `classify_discrepancy` — distinguish persistent obstacle (`Blocker`) from transient mismatch (`Discrepancy`).
+3. Record into `BlockerMemory` (with TTL from `transient_block_ticks` or `structural_block_ticks`) or `DiscrepancyMemory` (with kind-specific TTL).
+4. Update goal cooldown (exponential backoff — see §7.3).
+
+### 7.2 Replan Triggers
+
+| Trigger                       | Source                       |
+| ----------------------------- | ---------------------------- |
+| Action start refused           | `agent_tick/execution.rs` (precondition failed) |
+| Action aborted at runtime      | `agent_tick/active_action.rs` (TargetGone, ContenderPreempted, AgentDead, Interrupted) |
+| Revalidation failed            | `agent_tick/execution.rs` (guard, affordance, payload) |
+| Expectation overdue / mismatch | `agent_tick/observation.rs` (deadline, event tag) |
+| Frame patience exhausted       | `agent_tick/frame.rs` |
+| Goal switch (utility margin)   | `agent_tick/active_action.rs` (challenger > current + `switch_margin`) |
+| Search budget exhausted        | `decision_runtime.rs` (BudgetExhausted) |
+| Frontier exhausted             | `decision_runtime.rs` (FrontierExhausted) |
+| Pursuit belief invalidated     | `plan_revalidation.rs::is_pursuit_plan_invalid` (Travel + Attack) |
+
+All triggers route through `handle_plan_failure` (or directly into `BlockerMemory`/`DiscrepancyMemory` for non-failure replans like budget exhaustion).
+
+### 7.3 Cooldown / Exponential Backoff
+
+`record_budget_exhaustion`:
+
+```rust
+let consecutive_failures = self.consecutive_failures.saturating_add(1);
+let shift = u32::from(consecutive_failures.saturating_sub(1).min(6));
+let cooldown = cognitive.initial_cooldown_ticks
+    .checked_shl(shift)
+    .unwrap_or(u32::MAX)
+    .min(cognitive.max_cooldown_ticks);
+self.next_retry_tick = Some(Tick(current_tick.0.saturating_add(u64::from(cooldown))));
+```
+
+Defaults: 4 → 8 → 16 → 32 → 64 (cap). `FrontierExhausted` is treated as structurally hopeless: cooldown = `structural_block_ticks` (200) and the goal stays suppressed in `BlockerMemory` until that expires or its clearing condition fires.
+
+### 7.4 Pursuit Belief Updates
+
+For Travel+Attack plans (RaidTarget, EngageHostile), `is_pursuit_plan_invalid` runs each tick and returns `Some(reason)` when:
+
+- `NoProfile` — pursuit profile missing
+- `NoBelief` — target belief no longer in store
+- `TargetDead` — target perceived dead
+- `TargetPlaceUnknown` — agent now lacks target's last-known place
+- `TargetColocated` — already at target's place (no need to travel)
+- `ConfidenceTooLow` — derived confidence < threshold
+- `PlaceChanged` — target's believed place differs from planned destination
+
+Any of these triggers `handle_plan_failure` and a goal cooldown.
+
+---
+
+## 8. Cognitive Parameters
+
+### 8.1 CognitiveProfile
+
+Per-agent component. Verbatim defaults from `crates/worldwake-core/src/cognitive_profile.rs::impl Default`:
+
+| Field                                   | Type      | Default | Effect                                                                          |
+| --------------------------------------- | --------- | ------- | ------------------------------------------------------------------------------- |
+| `max_candidates_to_plan`                | `u8`      | 2       | Top-N goals that undergo plan search per tick                                   |
+| `max_candidates_per_expansion`          | `u16`     | 200     | Hard cap on per-expansion action successors before BudgetExhausted              |
+| `max_plan_depth`                        | `u8`      | 8       | Max sequential actions in a plan                                                |
+| `max_travel_candidates_per_expansion`   | `Option<u16>` | None | Optional travel-only branching cap; None = uncapped                             |
+| `snapshot_travel_horizon`               | `u8`      | 6       | Travel-edge reach when building planning snapshots                              |
+| `max_node_expansions`                   | `u16`     | 224     | Total node expansion budget per plan search                                     |
+| `switch_margin`                         | `Permille` | 100    | Min utility advantage to switch goal mid-plan                                   |
+| `planning_switch_margin`                | `Permille` | 150    | Min advantage to switch plan (challenger plan vs current plan)                  |
+| `transient_block_ticks`                 | `u32`     | 20      | TTL for transient blockers                                                      |
+| `structural_block_ticks`                | `u32`     | 200     | TTL for structural blockers (no plan exists)                                    |
+| `stale_belief_backoff_ticks`            | `u32`     | 30      | Discrepancy retry: stale belief                                                 |
+| `contradicted_belief_backoff_ticks`     | `u32`     | 60      | Discrepancy retry: belief contradicted                                          |
+| `improper_state_backoff_ticks`          | `u32`     | 2       | Discrepancy retry: planner state mismatch                                       |
+| `missing_observation_backoff_ticks`     | `u32`     | 20      | Discrepancy retry: expected observation missing                                 |
+| `no_legal_binding_backoff_ticks`        | `u32`     | 120     | Discrepancy retry: no legal binding for action                                  |
+| `counterparty_refusal_backoff_ticks`    | `u32`     | 40      | Discrepancy retry: counterparty refused                                         |
+| `route_unknown_backoff_ticks`           | `u32`     | 200     | Discrepancy retry: route unknown                                                |
+| `search_exhaustion_backoff_ticks`       | `u32`     | 100     | Discrepancy retry: search budget exhausted                                      |
+| `partial_drift_backoff_ticks`           | `u32`     | 4       | Discrepancy retry: partial-execution drift                                      |
+| `expectation_tolerance_ticks`           | `u32`     | 2       | Grace window before plan-step expectation goes overdue                          |
+| `guard_min_confidence_ceiling`          | `Permille` | 1000   | Cap on guard's `min_confidence`; lower allows risk-tolerant agents              |
+| `repair_memory_ticks`                   | `u32`     | 120     | Successful-repair retention                                                     |
+| `learned_opportunity_memory_ticks`      | `u32`     | 60      | Learned-opportunity retention                                                   |
+| `survey_memory_capacity`                | `usize`   | 24      | Max survey records per agent                                                    |
+| `survey_memory_retention_ticks`         | `u64`     | 300     | Survey record TTL                                                               |
+| `initial_cooldown_ticks`                | `u32`     | 4       | Base cooldown after a goal failure                                              |
+| `max_cooldown_ticks`                    | `u32`     | 64      | Cap on exponential cooldown                                                     |
+| `max_snapshot_entities_per_place`       | `u16`     | 50      | Per-place entity sample for planning snapshot                                   |
+| `landmark_extraction_depth`             | `u8`      | 4       | Max depth of landmark backward chaining; 0 disables landmarks                   |
+| `use_ff_heuristic`                      | `bool`    | true    | Enable FF relaxed-plan heuristic                                                |
+| `decision_history_alternatives`         | `u8`      | 5       | Max rejected alternatives recorded per decision                                 |
+| `slot_weights`                          | `PortfolioSlotWeights` | survival=1000, commitment=900, economic=700 | Goal-portfolio slot weighting |
+
+### 8.2 ExecutionBudget
+
+```rust
+pub struct ExecutionBudget {
+    beam_width: u8,                  // default 8
+    max_prerequisite_locations: u8,  // default 3
+    preferred_operator_boost: u8,    // default 2
+}
+
+impl Default for ExecutionBudget {
+    fn default() -> Self { Self::new(8, 3, 2) }
+}
+```
+
+`try_new` enforces `beam_width >= 1` and `max_prerequisite_locations >= 1`.
+
+| Field                          | Default | Effect                                                                |
+| ------------------------------ | ------- | --------------------------------------------------------------------- |
+| `beam_width`                   | 8       | Max non-terminal successors retained after each expansion             |
+| `max_prerequisite_locations`   | 3       | Cap on prerequisite-location stages in strategic itinerary            |
+| `preferred_operator_boost`     | 2       | Consecutive preferred-queue pops before alternation; 0 = strict 1:1   |
+
+### 8.3 Per-Agent Diversity (FND-22)
+
+Both `CognitiveProfile` and `ExecutionBudget` are `Component`s, inserted per agent at scenario load. Scenario fixtures (`AgentDef`) can override any field; agents that don't specify get `::default()`. This is the architectural seam through which agent diversity is realized — a "scout" agent might have `max_plan_depth: 12, beam_width: 12`, while a "thug" might have `max_plan_depth: 4, max_candidates_to_plan: 1`. The same world rules apply; the agents *think* differently.
+
+Scenario authoring is required to be exhaustive — every profile component registered on `EntityKind::Agent` must be settable via `AgentDef + spawn_agent()` (CLAUDE.md "Scenario profile completeness" invariant).
+
+---
+
+## 9. FOUNDATIONS Alignment
+
+This section embeds the relevant principles inline and notes how the planning architecture satisfies them — and where tensions exist.
+
+### FND-1 — Maximal Emergence Through Local Causality
+
+> "Worldwake exists to produce emergent behavior through interacting systems and agents, never through authored sequences, hidden quest logic, or one-off story triggers. An event is valid only if it arose from prior world state, agent belief, institutional rule, or natural process already present in the simulation. … **Test**: If the only honest explanation for an event is 'the game decided something interesting should happen now,' the design violates this principle."
+
+**Alignment**: Strong. The planner's only inputs are (a) agent beliefs, (b) action defs declared up-front, (c) cognitive parameters. There is no "scene script" or quest authority. The 35-variant `GoalKind` enumerates desires, not narratives. Every plan is reconstructable from the agent's belief state at adoption time.
+
+**Tension**: `BlockerMemory.expiry_tick` (`transient_block_ticks=20`, `structural_block_ticks=200`) is a numeric-tuning lever that *does* affect behavior — agents stop trying again after a fixed period. The defense is that these are *agent-local cognitive properties* (per-agent, configurable), not authored event probabilities. Still, the values are global defaults.
+
+### FND-3 — Concrete State Over Abstract Scores
+
+> "Prefer modeling the thing itself over a score that represents it. Danger should come from actual threats on routes, not `danger_score`. … Abstract summaries are allowed only as derived views or caches. They may never become the source of truth."
+
+**Alignment**: Generally strong. `DangerAssessment` is *derived* from concrete `current_attackers`, `visible_hostiles`, `wounds`, `is_incapacitated` — it is a view over concrete state. `ranked_motive_score` reads pressure as a `Permille`, but pressure itself is computed from concrete needs and observations. `GoalKind` carries no numeric magnitudes — just anchors.
+
+**Tension**: `Permille` motive scores propagate through ranking and are compared via `switch_margin`. If a planner subsystem trusts only `Permille` and not the underlying belief, it has effectively promoted a score to truth. Suppression filters mitigate this by gating on belief-derived `GoalPriorityClass` rather than raw scores. The `slot_weights` in `PortfolioSlotWeights` are pure global numeric weights — these are an abstract score whose status as cache vs. truth is worth scrutinizing.
+
+### FND-7 — Locality of Motion, Interaction, and Communication
+
+> "All physical interaction requires co-location or explicit range. … Agents, institutions, and planners may not query global truth on behalf of a character."
+
+**Alignment**: Strong by construction. `PlanningSnapshot` is an agent-local belief surface; search reads it exclusively. `RuntimeBeliefView` is the only access path for affordance queries. `effective_place(actor)` reads authoritative state but is permitted by FND-14A (co-location ≡ direct perception).
+
+**Tension**: Strategic planning's `min_perceived_travel_cost` consults `perceived_travel_costs` distance matrix, computed at snapshot time from the agent's belief about routes. If a route is unknown, it has infinite cost — correct. But the *matrix* aggregates many agent beliefs into one structure, which feels global; defense is that it's regenerated per snapshot per agent and never shared.
+
+### FND-12 — Performance May Compress Computation, Never Causality
+
+> "Optimization is allowed. Causal cheating is not. … performance may change how the machine computes a result, never what the world means."
+
+**Alignment**: Search is pure computation over a frozen snapshot — no causal effect on the world. `BudgetExhausted` and `FrontierExhausted` are *honest* failures: the agent fails to find a plan and replans later, mirroring "I thought about it and gave up." The planner does not silently "succeed" via shortcut.
+
+**Tension**: `apply_hypothetical_transition` *must* match the simulator's actual effect on belief-visible state. If they drift (e.g., a Trade hypothesis assumes a counterparty accepts but the simulator's handler reads a different field), the planner finds a plan the simulator can't execute. This is exactly what `golden_simulation_gaps.rs` and `planner_conformance.rs` exist to catch — a deliberate hard-enforced invariant.
+
+### FND-14 — World State Is Not Belief State (with FND-14A)
+
+> "Ground truth and agent knowledge are separate layers. Agents act on what they believe… A planner may consult only the agent's accessible belief state."
+>
+> FND-14A: "Co-location is perception. An observing agent's directly perceivable physical properties of a co-located entity … may be read from authoritative world state without violating FND-14, because a correct perception pipeline delivers those same facts on the same tick. … Social, relational, and inferred facts — ownership, effective rights, institutional claims, jurisdiction, possessor identity beyond co-location, prior testimony, recorded artifacts, credibility of absent sources — **always** require an explicit belief entry."
+
+**Alignment**: This is the single most carefully enforced principle in the planner. `PlanningSnapshot` is a frozen agent-belief surface. `RuntimeBeliefView` is the trait gate. `per_agent_belief_view.rs` (referenced in CLAUDE.md) is the canonical split implementation that lets co-located physical facts read authoritative state while social facts must be in the belief store.
+
+**Tension**: The planner reads many fields directly from `PlanningSnapshot.actor_*` — these are constructed at snapshot time by a process that *does* know world state. The defense is that the snapshot construction code mirrors what perception would deliver. But there is no automated check (beyond goldens) that a new field added to `PlanningSnapshot` is filled from belief, not authoritative state. This is a known social/process invariant rather than a structural one.
+
+### FND-16 — Ignorance, Uncertainty, and Contradiction Are First-Class
+
+> "Agents must be able to not know, to suspect, to misremember, to hold stale beliefs, and to believe false or conflicting reports. Unknown is not false."
+
+**Alignment**: Strong on the input side. Beliefs carry source, confidence, timestamp; `BeliefConfidencePolicy` and `actor_claim_confidence_threshold` let agents reject low-confidence claims. The planner doesn't object to contradictions — it builds plans on whichever belief was selected by the policy.
+
+**Tension**: Plan search itself produces a single best plan, not a probability distribution over plans. The agent commits to *one* plan; if its assumptions were wrong, replanning catches it (FND-21). The planner doesn't reason explicitly about belief uncertainty during search — it treats the snapshot as fact and replans on contradiction. This is the right tractability tradeoff but means belief uncertainty doesn't shape the search tree, only the gating around it.
+
+### FND-20 — Resource-Bounded Practical Reasoning Over Scripts
+
+> "AI agents must reason as limited actors in a dynamic world, using beliefs, priorities, habits, skills, and commitments to choose actions. Plans exist to make reasoning tractable under limited time and limited knowledge, not to hard-script a performance. Goals name desired world conditions, not privileged one-step solutions. … Any planner formalism may encode only reusable lawful affordances, decomposition knowledge, or search control. It may not encode plot progression, scene-specific rails, target-specific success paths, or hidden exception logic that bypasses ordinary world causality."
+
+**Alignment**: This is the central principle the GOAP architecture is built to satisfy. Every action in a plan is a legal `ActionDef` from the registry — no scripted shortcuts. `ExecutionBudget` and `CognitiveProfile.max_node_expansions` are explicit resource bounds. The planner *can fail* (BudgetExhausted, FrontierExhausted) — it isn't omnipotent.
+
+**Tension**: `relevant_ops` mappings (§4.5) are a form of decomposition knowledge — they say "Sleep needs only Sleep ops, not Trade." This is *almost* "target-specific success paths" but is grounded in physical causality (you can't trade your way to sleep). Landmarks and FF helpful actions are search control, allowed by the principle. Tactical sub-goals (`TacticalSubGoal::AcquirePrerequisite`) are decomposition knowledge — also allowed.
+
+### FND-21 — Intentions Are Revisable Commitments
+
+> "Agents need commitments so they do not thrash between options every tick. But commitments are never rails. They are stable intentions held under assumptions. Intent is not entitlement. A plan reserves nothing unless the world contains an explicit reservation, queue position, contract, assignment, or other claim artifact that other agents can observe or contest. … Agents must monitor the assumptions beneath an active intention and suspend, revise, or replace that intention when new local evidence invalidates it."
+
+**Alignment**: `switch_margin` (default 100 ‰) prevents thrashing while still allowing better plans to win. Plan guards (§6.2) and revalidation (§6.1) check assumptions every tick. `BlockerMemory` records failed assumptions explicitly. Plans hold no silent reservations — when reservation is needed, agents enqueue against actual `ReservationReq` artifacts.
+
+**Tension**: `materialization_bindings` quietly track hypothetical entities across ticks. If a planned step depends on a hypothetical item being crafted, and another agent crafts it first, the binding may resolve to a real entity our agent doesn't own. Revalidation should catch this via affordance match, but the path is subtle.
+
+### FND-22 — Agent Diversity Through Concrete Variation
+
+> "Agents in the same role must differ in needs, skills, values, loyalties, courage, greed, patience, memory reliability, perception fidelity, and tolerance for risk or ambiguity. These differences come from concrete per-agent parameters, histories, injuries, relationships, and learned experience."
+
+**Alignment**: `CognitiveProfile` is per-agent and includes 31 fields covering plan depth, search breadth, expectation tolerance, cooldown shape, memory retention, slot weighting. `ExecutionBudget` is independently per-agent. Combined with per-agent `UtilityProfile`, `IntentionDispositionProfile`, `TellProfile`, `EpistemicDispositionProfile`, this is a high-dimensional diversity space.
+
+**Tension**: Default values exist and are widely used in test fixtures (and possibly in production scenarios). If most agents take defaults, the population is functionally homogeneous on planner shape — only domain dispositions vary. Active diversity requires scenario authoring.
+
+### FND-26 — Systems Interact Through State, Not Through Each Other
+
+> "Systems do not imperatively command each other to force outcomes. They read authoritative state, local beliefs, and prior records; they write new state, effects, and records."
+
+**Alignment**: The planner is a *consumer* of world state and *producer* of action requests on a queue. It does not call into combat, production, or trade systems directly. Action handlers (in `worldwake-systems`) are dispatched by the scheduler, not the planner.
+
+**Tension**: `apply_hypothetical_transition` essentially embeds a model of every action handler's effect. If the planner gets it wrong, it builds infeasible plans. The architectural defense is `planner_conformance.rs` testing equivalence on belief-visible state.
+
+### FND-28 — No Backward Compatibility in Live Authority Paths
+
+> "Do not preserve dead abstractions, alias paths, compatibility layers, deprecated shims, or legacy systems inside the live authoritative simulation simply because old code once depended on them. … Two live authoritative representations of the same fact may not coexist."
+
+**Alignment**: The planner's authoritative state lives entirely in the agent decision runtime (`AgentDecisionRuntime`) and the world (components). There are no shadow planners or compatibility wrappers.
+
+**Tension**: At report time, `ranking.rs` has compile errors from a refactor that hasn't yet updated all `*Profile` construction sites with `capacity_observation_weight` and `source_composite` fields, and `source_composite.rs` has two unused helpers. These are not compatibility shims — they are mid-refactor — but they violate the spirit of FND-28 by having two live representations until the cut completes.
+
+### FND-29 — Debuggability Is a Product Feature
+
+> "Emergence without introspection is indistinguishable from bugs. The simulation must support questions such as: Why did this agent do that? … The answers must be reconstructable from state, beliefs, records, and causal history — not guessed by developers."
+
+**Alignment**: Strong. `decision_trace.rs` exposes:
+
+- `FrameTransitionTrace`, `PortfolioTrace`, `CandidateTrace`, `AffordanceTrace` (planning inputs)
+- `SearchExpansionSummary`, `PlanAttemptTrace` (search internals: depth, heuristics, beam, candidates)
+- `SelectionTrace`, `ExecutionTrace`, `InterruptTrace` (decision and execution)
+- `DiscrepancyTrace`, `ExhaustionTraceEntry` (failure recording)
+
+These are first-class types, not log lines, and feed `DecisionTraceSink` for golden test inspection. `golden_decision_history_events.rs` asserts trace richness.
+
+**Tension**: Trace collection is gated by `harness.driver.enable_tracing()` — it's not always on. CLAUDE.md's "no append-only event log" comment frames the *event log* as the always-on causal record; decision traces are diagnostic-grade, on demand. This is a defensible split (traces are expensive) but worth flagging for external review.
+
+---
+
+## 10. Live Diagnostics
+
+### 10.1 Trace Type Inventory
+
+`crates/worldwake-ai/src/decision_trace.rs` exposes (selection):
+
+```rust
+pub struct AgentDecisionTrace {
+    pub agent: EntityId,
+    pub tick: Tick,
+    pub outcome: DecisionOutcome,   // Dead | ActiveAction { ... } | Planning { ... }
+}
+
+pub struct PlanAttemptTrace {
+    pub goal: GoalOffer,
+    pub opportunity_anchor: OpportunityAnchor,
+    pub outcome: PlanAttemptOutcome,         // Found | BudgetExhausted | FrontierExhausted | Unsupported
+    pub strategic_plan: Option<StrategicPlan>,
+    pub landmarks_extracted: u16,
+    pub expansion_summaries: Vec<SearchExpansionSummary>,
+}
+
+pub struct SearchExpansionSummary {
+    pub depth: u8,
+    pub remaining_travel_ticks: u32,
+    pub combined_places_count: u16,
+    pub prerequisite_places_count: u16,
+    pub candidates_generated: u16,
+    pub candidates_skipped: u16,
+    pub terminal_successors: u16,
+    pub non_terminal_before_beam: u16,
+    pub non_terminal_after_beam: u16,
+    pub found_goal_satisfied: bool,
+    pub preferred_candidates: u16,
+    pub landmark_heuristic: u32,
+    pub ff_heuristic: Option<u32>,
+    pub helpful_action_count: u16,
+    pub travel_pruning: Option<TravelPruningTrace>,
+    pub prerequisite_guidance: Option<PrerequisiteGuidanceTrace>,
+    pub expansion_candidates: Vec<ExpansionCandidateTrace>,
+    pub root_candidates: Vec<RootCandidateTrace>,
+    pub root_omissions: Vec<RootOperatorOmissionTrace>,
+}
+```
+
+Plus: `CandidateGenerationDiagnostics` (omission reasons per goal kind), `AffordanceTrace` (afforded action enumeration), `ExecutionTrace` (revalidation outcome, target resolution), `InterruptTrace` (challenger evaluation), `ExhaustionTraceEntry` (cooldown state).
+
+### 10.2 Collection
+
+```rust
+pub struct DecisionTraceSink { traces: Vec<AgentDecisionTrace> }
+
+impl DecisionTraceSink {
+    pub fn record(&mut self, trace: AgentDecisionTrace);
+    pub fn traces_for(&self, agent: EntityId) -> Vec<&AgentDecisionTrace>;
+}
+```
+
+Activated per-test via `harness.driver.enable_tracing()`. When inactive, search produces no trace structures and pays no overhead beyond mandatory budget tracking.
+
+### 10.3 Test-Suite Coverage
+
+37 golden tests + 4 conformance/forensic + 1 soak (`crates/worldwake-ai/tests/`):
+
+| Category                     | Tests                                                                 | Asserts                                             |
+| ---------------------------- | --------------------------------------------------------------------- | --------------------------------------------------- |
+| Survival baseline            | `golden_survival_baseline`, `golden_survival_drive_escalation`        | All agents survive tick budget; drives prioritize correctly |
+| Combat                       | `golden_survival_combat`, `golden_survival_contested`                 | Plans flee when overwhelmed; contention via reservations |
+| Production / trade           | `golden_survival_production`, `golden_survival_trade`, `golden_merchant_selling` | Multi-step craft chains complete; trades execute   |
+| Decision quality             | `golden_ai_decisions`, `golden_portfolio_planning`                    | Goals switch on margin; portfolio slots ordered     |
+| Belief mechanics             | `golden_perception_exposure`, `golden_survival_ask_consult`, `golden_survival_tell` | Stale beliefs, perception exposure, gossip propagation |
+| Source / experience          | `golden_source_composite`, `golden_source_reliability`, `golden_experience_preferences` | Reliability discounting across multi-source choices |
+| Justice / theft              | `golden_survival_justice`, `golden_survival_theft`                    | Accusations route to office, fines/exile execute    |
+| Office / institutions        | `golden_offices`, `golden_survival_offices`                           | Office succession, record management                |
+| Planner pathology            | `golden_planner_pathology`                                            | BudgetExhausted/FrontierExhausted detected, cooldown |
+| Quantity reasoning           | `golden_quantity_aware_acquisition`                                   | Plans acquire exact quantities                      |
+| Conformance (planner ↔ sim)  | `planner_conformance`, `golden_simulation_gaps`                       | Hypothetical transitions equal simulator outcomes   |
+| Determinism                  | `forensic_determinism`                                                | Same seed → identical traces                        |
+| Sleep / barriers             | `forensic_sleep_progress_barrier`                                     | Sleep barrier honored, expectation deadlines fire   |
+| Long-run stability           | `soak_profiler` (10k ticks)                                           | No deadlock; planning telemetry stable              |
+| Execution-budget conformance | `conformance_execution_budget`                                        | Budget X works, X-1 fails; FrontierExhausted at boundary |
+
+### 10.4 Live Metrics
+
+**Not captured live for this report** — running goldens to extract aggregate metrics was deferred per skill guidance. The `SearchExpansionSummary` field set is sufficient for an external evaluator to specify which metrics they want extracted: candidates_generated distribution, beam-truncation rate, FF helpful-action coverage, landmark utility, frontier-vs-budget exhaustion ratio, etc.
+
+---
+
+## 11. Architectural Observations
+
+Patterns and asymmetries noticed during analysis. These are flags for evaluation, not recommendations.
+
+1. **`max_candidates_to_plan = 2` is aggressive.** Top-2 goals undergo plan search per tick (and only one ultimately commits). This relies hard on ranking quality. An agent whose 3rd-ranked goal is the only feasible one will stall: top-2 plan attempts both fail, agent enters cooldown for those, and 3rd goal is never tried this tick (it'll surface next tick after cooldowns). This is a real trade-off, not necessarily a bug.
+
+2. **Heuristic combination uses max, not sum.** `h = max(spatial, landmark)` is admissible but loose. Modern FF planners often use `h_ff` directly. With both `landmark_heuristic` and `ff_heuristic` available but not combined, search may be slower than necessary. There are likely good reasons (different goal kinds dominate different heuristics) but the current choice is conservative.
+
+3. **`Permille` for slot weights and motive scoring.** `slot_weights` (survival=1000, commitment=900, economic=700) is a pure numeric ranking lever. FND-3's "abstract scores" warning applies — these aren't derived from concrete state, they are designer dials. The defense is that they are agent-local (per-agent `CognitiveProfile`) and inspectable, but they fit the FND-3 pattern of a numeric override.
+
+4. **Strategic and tactical decompositions are tightly coupled.** Strategic produces `StrategicStep`s that are rigidly mapped to `TacticalGoal`s. There is no feedback path: if tactical search exhausts on a strategic step, strategic doesn't reroute through a different itinerary — the whole plan fails. A two-way replan negotiation might unlock more plans within the same node budget.
+
+5. **`planner_only` candidates posit hypothetical entities mid-search.** This is a powerful primitive (lets agents plan toward not-yet-existing items) but the materialization pathway (`MaterializationBindings`) crosses tick boundaries. A second agent crafting the same item first is handled, but the bookkeeping is subtle and concentrated in `agent_tick/execution.rs` and `plan_revalidation.rs`.
+
+6. **BlockerMemory is global-by-agent but not goal-specific in expiry.** Both `transient_block_ticks=20` and `structural_block_ticks=200` apply uniformly across goal kinds. A "you're out of food" blocker and a "you can't claim that office" blocker have very different real-world clear times; sharing one TTL constant is coarse.
+
+7. **`use_ff_heuristic = true` default.** FF is computed every expansion. With `landmark_extraction_depth = 4` also default, the heuristic stack is non-trivial per node. Conformance test `conformance_execution_budget` validates baseline budgets pass with this stack — but there's no measured cost-benefit comparison between FF on/off in the tests we surveyed.
+
+8. **`max_node_expansions = 224` is suspiciously specific.** It looks like a tuned constant. If it was tuned against a specific benchmark scenario, that scenario's coverage of the plan-shape distribution drives the default. Worth checking what scenario fixed this number.
+
+9. **Pursuit replanning runs every tick.** `is_pursuit_plan_invalid` re-checks Travel+Attack plans on every tick — a tax for combat plans that doesn't apply to other plan kinds. There's no equivalent for merchant routes, escort plans, or production chains. May or may not be the right asymmetry.
+
+10. **Diagnostic traces are opt-in.** `enable_tracing()` is per-harness. In a live simulation, agents that *do* misbehave can't be retroactively traced. FND-29 presses for inspectable causal history; the planner's runtime memory (BlockerMemory, DiscrepancyMemory, AgendaTransitions) is the always-on substitute, but it carries no expansion-level detail.
+
+11. **CognitiveProfile has 31 fields. ExecutionBudget has 3.** An asymmetry of ~10x in tunable surface between cognition and search execution. Most search-control parameters live in `CognitiveProfile` rather than `ExecutionBudget` — the line between the two is somewhat arbitrary. Consolidation may help understanding; separation may help diversity (different agents tune cognition more than execution).
+
+12. **`max_candidates_per_expansion = 200` is enforced as an immediate `BudgetExhausted`.** Generating >200 candidates in a single expansion *fails the search outright* rather than truncating to top-200. For pathological expansions (many trade partners visible), this is a tripwire that ends the search rather than degrading gracefully. Whether this is the right failure mode is worth evaluating.
+
+13. **Mid-refactor diagnostics in `ranking.rs` and `source_composite.rs`.** As of report time, the codebase has compile errors in `ranking.rs` (missing `capacity_observation_weight` field at 6+ construction sites; missing `source_composite` field at 2 sites) and unused helpers in `source_composite.rs`. The architectural shape described is correct, but a live build would fail. External evaluators should be aware that the source-composite ranking layer is mid-integration.
+
+---
+
+*End of report.*

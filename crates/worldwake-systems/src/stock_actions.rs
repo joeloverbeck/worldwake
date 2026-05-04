@@ -87,6 +87,7 @@ pub fn register_stock_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }),
         defs.register(ActionDef {
             id: collect_id,
@@ -120,6 +121,7 @@ pub fn register_stock_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }),
         defs.register(ActionDef {
             id: stage_id,
@@ -157,6 +159,7 @@ pub fn register_stock_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }),
         defs.register(ActionDef {
             id: unstage_id,
@@ -194,6 +197,7 @@ pub fn register_stock_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }),
     ]
 }
@@ -693,6 +697,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         }
     }
 

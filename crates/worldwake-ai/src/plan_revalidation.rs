@@ -929,6 +929,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         (registry, handlers)
     }
@@ -968,6 +969,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         (registry, handlers)
     }
@@ -1033,6 +1035,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         (registry, handlers)
     }
@@ -1091,6 +1094,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         (registry, handlers)
     }
@@ -1150,6 +1154,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         (registry, handlers)
     }
@@ -1227,6 +1232,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         (registry, handlers)
     }

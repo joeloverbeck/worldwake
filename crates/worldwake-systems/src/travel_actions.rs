@@ -60,6 +60,7 @@ pub fn register_travel_actions(
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentRouteStep,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     })
 }
 

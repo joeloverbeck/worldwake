@@ -66,6 +66,7 @@ fn queue_for_facility_use_action_def(id: ActionDefId, handler: ActionHandlerId) 
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 

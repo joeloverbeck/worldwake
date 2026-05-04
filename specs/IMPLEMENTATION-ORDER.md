@@ -553,3 +553,79 @@ LOCROOT-001 ticket (completed — direct-root synthesis locality audit)
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [x] `cargo test --workspace` passing
 - [x] Golden E2E coverage for each new spec's core behavior
+
+---
+
+## Phase 11: Belief-First Continual Planning Architectural
+
+Derived from external AI architecture assessment (`brainstorming/worldwake_ai_architecture_review.md`, regenerated 2026-05-04 post-S133) validated against the actual codebase and `docs/FOUNDATIONS.md`. The assessment post-dates ALL completed specs through S133. Of ~33 distinct proposals across the assessment's 4 sections + roadmap, 9 accepted (S134–S142), 4 folded into accepted specs, 20 rejected.
+
+Phase 11 is the third layer of the Belief-First Continual Planning arc: Phase 8 (Foundation — typed discrepancies, decision-history events, belief envelope, portfolio planning), Phase 9 (Structural — plan-step guards, agenda manager), Phase 11 (Architectural — canonical effect schemas, opportunity compiler, plan causal links and repair, motive sources, multi-axis artifact lifecycle, contention inspectability, epistemic sensing).
+
+Key triage decisions:
+- **Stale claims rejected**: PR-1 (ranking.rs compile errors) is stale — S133 (commits c01e1027, 5089337b, 27c36047 on 2026-05-04) cleanly wired `capacity_observation_weight` and `source_composite`. PR-5 (replace `max_candidates_to_plan = 2` with portfolio) already addressed by S112. PR-16 (scenario homogeneity validation) already addressed by S111.
+- **Already drafted**: PR-25 (BoundaryRegion/BoundaryProcess) already drafted as S62 in Phase 7. PR-27 (jurisdiction/delegation) folds into existing drafted S63.
+- **Folded into accepted specs**: PR-7 (relevant_ops as hint) → S138; PR-13 (richer travel pruning) → S138; PR-15 (typed blocker clearing) → S137; PR-20 (richer interrupt-layer opportunism) → S138.
+- **Deferred to Phase 12**: PR-9 (HTN-style methods) — productive only after S134 (effect schemas), S138 (opportunity compiler), and S141 (motive sources) land. PR-23 (InstitutionalTask ledger) — defer until office-driven scenarios are exercised. PR-26 (full evidence-carrier set) — defer until combat scenarios stress-test the gap. PR-29 (recurring routines) — defer until Phase 7's S60+ specs exercise patrol/office scenarios. PR-32 (additional architecture lints) — handled per emerging invariant as tickets rather than a standalone spec.
+- **Rejected as YAGNI**: PR-6 (causal-role goal-interruption profile — refinement absent specific failure scenario), PR-14 (cross-tick search continuation — S132 + S102 cover graceful degradation), PR-19 (in-world deliberation attention), PR-21 (concrete habit/trust learning state — S131/S130/S107 cover today's needs), PR-28 (long actions partial state — beyond S127's harvest/wash), PR-30 (live metrics dashboard — observer.rs covers most), PR-31 (adversarial fuzzers), PR-33 (LLM guidance — not a spec).
+
+Phase 11 runs independently of Phase 7's pending consequence-carrier specs (S60–S66) — no hard dependency in either direction. Most Phase 11 specs touch the AI planner substrate, the event log, or the artifact-lifecycle layer; Phase 7 adds new ECS consequence carriers.
+
+### Dependency Graph
+
+```text
+S134 (independent)            S135 (independent)            S140 (independent)            S142 (independent)
+   │                                                                                            
+   └── S138 (hard dep on S134)
+         │
+         ├── S137 (soft deps on S134, S136, S138)
+         │     │
+         │     └── S139 (soft deps on S137, S138)
+         │
+         └── (S139 also soft deps on S138)
+
+S136 (independent)
+   │
+   └── S141 (soft dep on S136)
+```
+
+### Active Execution Steps
+
+**Wave 1** (parallel, no hard deps):
+- **S134**: Canonical Effect Schema for ActionDef — unify planner forward model with simulator action handlers via declarative `EffectSchema` per `ActionDef`. Removes `apply_hypothetical_transition` parallel dispatch.
+- **S135**: Planner Snapshot Perception Budget and Observation Omission — collapse `max_snapshot_entities_per_place` into S105's `observation_budget` with explicit `ObservationOmission` records.
+- **S136**: Always-On Decision Event Payload Extension — extend always-on decision events with `top_rejected_goals`, `decisive_beliefs`, `decisive_records`, `decisive_world_observations`, `assumptions`.
+- **S140**: Multi-Axis Artifact Lifecycle — five-axis lifecycle (existence/visibility/legal_effect/credibility/actionability) replacing single-enum `ArtifactState`. FND-25A direct compliance.
+- **S142**: Contention Event Inspectability — `EventTag::ContentionResolved` with typed `ContentionResolutionRule` and per-claimant outcome.
+
+**Wave 2** (after Wave 1):
+- **S138**: Affordance-to-Opportunity Compiler with Effect-Schema Indexing — bottom-up opportunity compiler driven by `EffectSchemaIndex`; `relevant_ops` becomes hint, effect-schema becomes authority. Folds in PR-7, PR-13, PR-20.
+  - hard depends on S134 (for `EffectSchemaIndex`)
+- **S141**: Motive Source Ledger and Desire Tokens — `MotiveSource` enum on `GoalOffer`; `motive_score` becomes derived view over per-agent state references. FND-3 direct compliance.
+  - soft depends on S136 (for `decisive_motive_sources` payload integration)
+
+**Wave 3** (after Wave 2):
+- **S137**: Plan Causal Links and Localized Repair Search — extend `PlanGuard` with `CausalLink` provenance; `PlanRepairContext` localized repair before full replan; per-`Discrepancy` `ClearingCondition`. Folds in PR-15.
+  - soft depends on S134 (repair benefits from queryable effect-schema), S136 (repair-applied payload integration), S138 (rebind-target consumes opportunity output)
+- **S139**: Epistemic Sensing Subgoals — Ask Witness and Inspect Container — discrete `GoalKind::AskWitness` and `GoalKind::InspectContainer` with `EpistemicProfile`. Required for FOUNDATIONS Scenarios C and G end-to-end.
+  - soft depends on S137 (`RepairKind::InsertVerification` splices these), S138 (opportunity compiler emits witness/container anchors)
+
+### Phase 11 Gate
+
+- [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [ ] Wave 1 specs implemented and passing golden E2E tests
+- [ ] Wave 2 specs implemented and passing golden E2E tests
+- [ ] Wave 3 specs implemented and passing golden E2E tests
+- [ ] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
+- [ ] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
+- [ ] Always-on decision events carry `decisive_*` references for every commit/replan/blocker on `survival-baseline.ron`
+- [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`
+- [ ] Opportunity compiler golden proves desperate-agent steal opportunity emission and salience-weighted ranking
+- [ ] Multi-axis artifact lifecycle proves FOUNDATIONS Scenario G (false rumor → wrongful accusation → contested evidence → exoneration) end-to-end
+- [ ] Motive-source parity regression: every existing 1440-tick survival golden produces identical `motive_score` values pre/post-S141
+- [ ] Contention-resolution events emit at every grant-issuance site under `survival-contested.ron`
+- [ ] FOUNDATIONS Scenario C (stored gold robbery): owner-believes-gold-present → `InspectContainer` → mismatch → robbery report producible end-to-end
+- [ ] FOUNDATIONS Scenario G (false rumor → wrongful accusation → correction): `AskWitness` chain across two contradicting witnesses producible end-to-end
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [ ] `cargo test --workspace` passing
+- [ ] Golden E2E coverage for each new spec's core behavior

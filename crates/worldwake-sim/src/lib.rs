@@ -27,6 +27,7 @@ pub mod commodity_opportunity;
 pub mod compaction;
 pub mod controller_state;
 pub mod deterministic_rng;
+pub mod effect_schema;
 pub mod input_event;
 pub mod input_queue;
 pub mod institutional_knowledge_trace;
@@ -110,6 +111,10 @@ pub use commodity_opportunity::{CommodityOpportunityBreakdown, commodity_opportu
 pub use compaction::compact_event_log;
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
+pub use effect_schema::{
+    EffectFact, EffectMode, EffectOutcome, EffectPrecondition, EffectSchema, EffectSink,
+    EffectStep, apply_effects,
+};
 pub use input_event::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
 pub use input_queue::{InputQueue, InputQueueError};
 pub use institutional_knowledge_trace::{

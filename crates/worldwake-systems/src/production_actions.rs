@@ -148,6 +148,7 @@ fn harvest_action_def(
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     })
 }
 
@@ -224,6 +225,7 @@ fn craft_action_def(
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     })
 }
 
@@ -1583,6 +1585,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
 
         let instance = ActionInstance {
@@ -2334,6 +2337,7 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
 
         let instance = ActionInstance {

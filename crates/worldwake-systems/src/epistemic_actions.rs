@@ -64,6 +64,7 @@ fn ask_witness_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDe
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema::empty(),
     }
 }
 
