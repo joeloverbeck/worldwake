@@ -1,6 +1,6 @@
 # S133: Source Composite Tiebreaker for Same-Commodity Acquisition
 
-**Status**: DRAFT — proposed 2026-05-03 to recover S131's repeated-game intent without the cross-category goal-rank perturbation introduced by the rolled-back S131SOURELWAI-004 motive-additive composite.
+**Status**: COMPLETED — D1-D6 landed. S133 recovers S131's repeated-game intent without the cross-category goal-rank perturbation introduced by the rolled-back S131SOURELWAI-004 motive-additive composite.
 
 ## Summary
 
@@ -148,14 +148,20 @@ pub(crate) fn source_composite_rank(
     context: &RankingContext<'_>,
 ) -> Option<SourceCompositeRank> {
     let (source_entity, commodity) = source_reliability_discount_scope(candidate)?;
-    let source_reliability = context.view.source_reliability(context.agent)?;
+    let source_reliability = context.view.source_reliability(context.agent);
     let profile = context.view.preference_profile(context.agent)?;
-    let key = SourceKey { entity: source_entity, commodity };
-    let record = source_reliability.sources.get(&key)?;
+    let record = source_reliability.as_ref().and_then(|source_reliability| {
+        source_reliability.sources.get(&SourceKey {
+            entity: source_entity,
+            commodity,
+        })
+    });
 
-    let trust_factor_permille = trust_factor_permille(record, profile);
-    let wait_factor_permille = wait_factor_permille(record, profile);
-    let capacity_factor_permille = capacity_factor_permille(record, profile, context.current_tick);
+    let trust_factor_permille = record.map_or(1000, |record| trust_factor_permille(record, profile));
+    let wait_factor_permille = record.map_or(1000, |record| wait_factor_permille(record, profile));
+    let capacity_factor_permille = record.map_or(1000, |record| {
+        capacity_factor_permille(record, profile, context.current_tick)
+    });
     let composite_permille = compose_factors(
         trust_factor_permille,
         wait_factor_permille,
@@ -176,6 +182,7 @@ pub(crate) fn source_composite_rank(
 Factor functions (each returns a permille in `[0, 2000]`, neutral = 1000):
 
 - **trust factor** = `1000 - (failure_ratio_permille × source_trust_weight) / 1000`. Neutral 1000 when no failures recorded; floor 0 when every attempt failed.
+- **no-record neutrality** = missing source reliability or missing per-source record still returns a `SourceCompositeRank` with neutral factors. D6 added this production correction so no-record sources do not fall through to a missing-rank comparator default.
 - **wait factor** = `1000 - capped_wait_penalty_permille`, where `capped_wait_penalty_permille = min(800, average_wait_ticks × wait_sensitivity_weight / wait_normalizer_ticks)`. The cap of 800 keeps the floor at 200 — even an extremely contested source contributes 20% of neutral, never 0%, because contention is recoverable in principle.
 - **capacity factor** = neutral 1000 when stale (`capacity_freshness_ticks > memory_retention_ticks`) or when `wait_observation_count == 0 && last_observed_capacity == 0` (never observed). Otherwise:
   - `freshness_factor_permille = 1000 - capacity_freshness_ticks × 1000 / memory_retention_ticks` (clamped at `[0, 1000]`)
@@ -275,14 +282,14 @@ Source choice (Apple): Far Orchard composite=1080 (trust=1000 wait=1000 cap=1080
 
 ### D6: Goldens
 
-Reauthor the three goldens that S131SOURELWAI-004 introduced to test the rolled-back motive-additive path. New file `crates/worldwake-ai/tests/golden_source_composite.rs` covers:
+Reauthor the three goldens that S131SOURELWAI-004 introduced to test the rolled-back motive-additive path. New file `crates/worldwake-ai/tests/golden_source_composite.rs` covers scenarios 375-380:
 
 - **Same-commodity wait reranking.** Two orchards, same agent, identical hunger. Close orchard has three `observe_wait(30)` events recorded; far orchard has none. With `wait_sensitivity_weight = 800`, the agent picks the FAR orchard. Trace shows `RankedGoalComparisonDimension::SourceComposite` fired and lists the close orchard's wait_factor below 1000.
-- **Cross-category neutrality.** Hungry agent at a place with a fresh-capacity orchard *and* a critical wash basin. The orchard's high capacity factor must NOT pull AcquireCommodity above Wash when Wash has higher motive. Trace shows the comparator stops at `MotiveScore` (Wash wins on motive) and never reaches `SourceComposite`. Direct regression for the 2026-05-03 four-golden failure mode.
-- **Fresh capacity bonus.** Hungry agent with two orchards at equal travel cost, same successful_acquisitions, different `last_observed_capacity` (18 vs 4, both fresh). Higher-capacity source wins via `SourceComposite`.
+- **Cross-category neutrality.** Hungry agent at a place with a fresh-capacity orchard *and* a critical wash basin. The orchard's high capacity factor must NOT pull AcquireCommodity above Wash when Wash has higher priority/motive rank. Live ordering resolves the top comparison at `PriorityClass` for this fixture, before `SourceComposite` is eligible. Direct regression for the 2026-05-03 four-golden failure mode.
+- **Fresh capacity bonus.** Hungry agent with two orchards at equal travel cost, same successful_acquisitions, different `last_observed_capacity` (18 vs 4, both fresh). Higher-capacity source wins via `SourceComposite`; lower positive capacity remains a smaller bonus above neutral, not a depletion penalty.
 - **Stale capacity neutrality.** As above but the high-capacity observation is stale (older than `memory_retention_ticks`). The agent now picks based on whatever else differs, and the trace records `capacity_factor_permille = 1000` for the stale source — neutral, not zero.
-- **Empty-but-fresh observation penalty.** Two orchards at equal cost, both with observed capacity, but one's most recent observation is `last_observed_capacity = 0` and fresh. The empty-observed source is reranked below.
-- **No-record neutrality.** New agent with no `SourceReliability` data for either source. Both sources get `composite_permille = 1000`, the comparator falls through to lower tiebreakers (place-key etc.), and the rank is deterministic.
+- **Empty-but-fresh observation penalty.** Two orchards at equal cost and both still authoritative candidates, but one's most recent agent memory is `last_observed_capacity = 0` and fresh. The empty-observed source is reranked below with a recoverable factor in `[500, 1000)`.
+- **No-record neutrality.** New agent with no reliability record for either source. Both sources get `composite_permille = 1000`; the comparator either records no decisive top comparison or falls through to deterministic lower tiebreakers (`PlaceKey`/`EntityKey`). This required a D6 production fix: missing `ReliabilityRecord` now returns neutral `SourceCompositeRank` factors instead of omitting the rank and letting comparator defaults bias the source.
 
 Existing S131 data-path goldens (`golden_source_reliability::resource_extraction_wait_observation_records_when_promoted`, `…::capacity_observation_records_from_perception`) remain in place and continue to verify the write paths.
 
@@ -321,6 +328,8 @@ No magic numbers in agent-side code beyond the structural unit-conversion consta
 
 ## Implementation Order
 
+Completed as the S133SOUCOMTIE-001 through S133SOUCOMTIE-006 ticket chain:
+
 1. **D3** (add `capacity_observation_weight`) — touches core, cli scenario loader, save format. Smallest blast radius.
 2. **D2** (new `source_composite.rs` module) — pure ai-crate addition.
 3. **D4** (sort comparator extension) — add `source_composite` to `AgendaEntry`, extend `RankedGoalComparisonDimension`, plumb through plan-summary structs, and bump the save format for the runtime payload shape change.
@@ -328,8 +337,20 @@ No magic numbers in agent-side code beyond the structural unit-conversion consta
 5. **D1** (strip vestigial fields) — only after D2-D5 land; D2's `SourceCompositeRank` becomes the canonical surface for wait/capacity.
 6. **D6** (goldens) — new file; run alongside the four pre-existing survival goldens that must stay green.
 
-A single ticket chain is sufficient (likely 4–5 tickets, mirroring S131's chain in shape). No phase-gate impact: Phase 10 is already gated on S131 completion; S133 is post-gate cleanup.
+No phase-gate impact: Phase 10 is already gated on S131 completion; S133 is post-gate cleanup.
 
-## Outcome (post-implementation)
+## Outcome
 
-After S133 lands, all four originally-failing goldens stay green; the wait/capacity learning surface is a real consumer of agent behavior again (now restricted to its proper architectural niche); and the decision trace clearly attributes any source-choice flip to the new `SourceComposite` ordering dimension. No motive-additive composite remains in the codebase; FND-26 / FND-27 / FND-28 are satisfied without backward-compatibility shims.
+Completed: 2026-05-04.
+
+S133 landed the same-commodity source composite tiebreaker, decision-trace surfacing, save-shape updates, cleanup of the rolled-back S131 motive-additive fields, and D6 golden coverage in `golden_source_composite.rs` scenarios 375-380. All four originally-failing survival goldens stay green; the wait/capacity learning surface is a real consumer of agent behavior again, restricted to its proper intra-commodity architectural niche; and the decision trace attributes source-choice flips to `SourceComposite` only when that tiebreaker is actually decisive.
+
+Final D6 verification added one correction beyond the draft: no-record sources now produce neutral `SourceCompositeRank` factors rather than omitting the rank, so missing memory remains neutral instead of becoming a comparator default. No motive-additive composite remains in the codebase; FND-26 / FND-27 / FND-28 are satisfied without backward-compatibility shims.
+
+Verification highlights:
+
+- `cargo test -p worldwake-ai --test golden_source_composite`
+- `cargo test -p worldwake-ai --test golden_source_reliability`
+- four originally-failing survival goldens with their ignored exact scenario tests
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `./scripts/verify.sh`

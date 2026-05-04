@@ -1,8 +1,8 @@
 use crate::{GoalOffer, ranking::RankingContext};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    CommodityKind, EntityId, PreferenceProfile, ReliabilityRecord, SourceKey, SourceReliability,
-    Tick, failure_ratio_permille,
+    CommodityKind, EntityId, PreferenceProfile, ReliabilityRecord, SourceKey, Tick,
+    failure_ratio_permille,
 };
 
 const NEUTRAL_FACTOR_PERMILLE: u32 = 1000;
@@ -25,20 +25,27 @@ pub(crate) fn source_composite_rank(
     candidate: &GoalOffer,
     context: &RankingContext<'_>,
 ) -> Option<SourceCompositeRank> {
-    crate::ranking::source_reliability_discount_scope(candidate)?;
-    let source_reliability = context.view.source_reliability(context.agent)?;
+    let (source_entity, commodity) = crate::ranking::source_reliability_discount_scope(candidate)?;
+    let source_reliability = context.view.source_reliability(context.agent);
     let profile = context.view.preference_profile(context.agent)?;
-    source_composite_rank_from_reliability(
-        candidate,
-        &source_reliability,
+    Some(source_composite_rank_from_record(
+        source_entity,
+        commodity,
+        source_reliability.as_ref().and_then(|source_reliability| {
+            source_reliability.sources.get(&SourceKey {
+                entity: source_entity,
+                commodity,
+            })
+        }),
         profile,
         context.current_tick,
-    )
+    ))
 }
 
+#[cfg(test)]
 fn source_composite_rank_from_reliability(
     candidate: &GoalOffer,
-    source_reliability: &SourceReliability,
+    source_reliability: &worldwake_core::SourceReliability,
     profile: PreferenceProfile,
     current_tick: Tick,
 ) -> Option<SourceCompositeRank> {
@@ -47,24 +54,45 @@ fn source_composite_rank_from_reliability(
         entity: source_entity,
         commodity,
     };
-    let record = source_reliability.sources.get(&key)?;
-    let trust_factor_permille = trust_factor_permille(record, profile);
-    let wait_factor_permille = wait_factor_permille(record, profile);
-    let capacity_factor_permille = capacity_factor_permille(record, profile, current_tick);
+    Some(source_composite_rank_from_record(
+        source_entity,
+        commodity,
+        source_reliability.sources.get(&key),
+        profile,
+        current_tick,
+    ))
+}
+
+fn source_composite_rank_from_record(
+    source_entity: EntityId,
+    commodity: CommodityKind,
+    record: Option<&ReliabilityRecord>,
+    profile: PreferenceProfile,
+    current_tick: Tick,
+) -> SourceCompositeRank {
+    let trust_factor_permille = record.map_or(NEUTRAL_FACTOR_PERMILLE, |record| {
+        trust_factor_permille(record, profile)
+    });
+    let wait_factor_permille = record.map_or(NEUTRAL_FACTOR_PERMILLE, |record| {
+        wait_factor_permille(record, profile)
+    });
+    let capacity_factor_permille = record.map_or(NEUTRAL_FACTOR_PERMILLE, |record| {
+        capacity_factor_permille(record, profile, current_tick)
+    });
     let composite_permille = compose_factors(
         trust_factor_permille,
         wait_factor_permille,
         capacity_factor_permille,
     );
 
-    Some(SourceCompositeRank {
+    SourceCompositeRank {
         source_entity,
         commodity,
         trust_factor_permille,
         wait_factor_permille,
         capacity_factor_permille,
         composite_permille,
-    })
+    }
 }
 
 fn trust_factor_permille(record: &ReliabilityRecord, profile: PreferenceProfile) -> u32 {
@@ -143,7 +171,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         AcquisitionQuantity, CommodityPurpose, EntityId, GoalKey, GoalKind, OpportunityAnchor,
-        Permille,
+        Permille, SourceReliability,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -296,20 +324,25 @@ mod tests {
     }
 
     #[test]
-    fn source_composite_rank_returns_none_without_reliability_record() {
+    fn source_composite_rank_defaults_to_neutral_without_reliability_record() {
         let source = entity(2);
         let reliability = SourceReliability {
             sources: BTreeMap::new(),
         };
 
-        assert_eq!(
-            source_composite_rank_from_reliability(
-                &acquisition_goal(source, CommodityKind::Bread),
-                &reliability,
-                profile(),
-                Tick(10)
-            ),
-            None
-        );
+        let rank = source_composite_rank_from_reliability(
+            &acquisition_goal(source, CommodityKind::Bread),
+            &reliability,
+            profile(),
+            Tick(10),
+        )
+        .expect("record absence should still produce neutral source composite");
+
+        assert_eq!(rank.source_entity, source);
+        assert_eq!(rank.commodity, CommodityKind::Bread);
+        assert_eq!(rank.trust_factor_permille, 1000);
+        assert_eq!(rank.wait_factor_permille, 1000);
+        assert_eq!(rank.capacity_factor_permille, 1000);
+        assert_eq!(rank.composite_permille, 1000);
     }
 }

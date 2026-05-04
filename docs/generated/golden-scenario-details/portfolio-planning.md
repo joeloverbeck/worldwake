@@ -7,7 +7,7 @@ Scenarios: 1
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `golden_portfolio_planning.rs:212`
+- Source: `golden_portfolio_planning.rs:213`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production

@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 35
-- Files contributing `golden_*` tests: 35
-- Total `golden_*` tests: 172
+- Golden test files: 36
+- Files contributing `golden_*` tests: 36
+- Total `golden_*` tests: 175
 
 ## Per-File Inventory
 
@@ -30,7 +30,8 @@ Do not hand-edit it.
 | `golden_quantity_aware_acquisition.rs` | 5 |
 | `golden_simulation_gaps.rs` | 5 |
 | `golden_sleep_episode.rs` | 6 |
-| `golden_source_reliability.rs` | 5 |
+| `golden_source_composite.rs` | 6 |
+| `golden_source_reliability.rs` | 2 |
 | `golden_survival_ask_consult.rs` | 1 |
 | `golden_survival_baseline.rs` | 7 |
 | `golden_survival_combat.rs` | 2 |
@@ -206,13 +207,19 @@ Do not hand-edit it.
 - `site_preference_adopts_higher_quality_sleep_place`
 - `sleep_episode_events_render_in_decision_trace`
 
+### `golden_source_composite.rs`
+
+- `same_commodity_wait_reranking_picks_far_orchard_when_close_orchard_has_observed_waits`
+- `cross_category_neutrality_keeps_wash_above_acquire_apple_when_motive_higher`
+- `fresh_capacity_bonus_picks_higher_capacity_orchard_when_motive_tied`
+- `stale_capacity_observation_returns_neutral_factor`
+- `empty_but_fresh_observation_demotes_depleted_source`
+- `no_record_neutrality_falls_through_to_lower_tiebreakers`
+
 ### `golden_source_reliability.rs`
 
 - `resource_extraction_wait_observation_records_when_promoted`
 - `capacity_observation_records_from_perception`
-- `capacity_signal_within_retention_window_contributes_to_motive`
-- `capacity_freshness_zeros_signal_after_retention_window`
-- `high_wait_sensitivity_agent_prefers_alternative_after_three_wait_observations`
 
 ### `golden_survival_ask_consult.rs`
 

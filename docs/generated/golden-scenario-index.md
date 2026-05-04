@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 135
-- Contributing golden test files: 32
-- Associated tests: 167
+- Scenario blocks: 138
+- Contributing golden test files: 33
+- Associated tests: 170
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -144,7 +144,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
-- Source: `golden_experience_preferences.rs:542`
+- Source: `golden_experience_preferences.rs:543`
 - Systems: Travel, learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -156,7 +156,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `golden_experience_preferences.rs:566`
+- Source: `golden_experience_preferences.rs:567`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -168,7 +168,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `golden_experience_preferences.rs:587`
+- Source: `golden_experience_preferences.rs:588`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -906,7 +906,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:677`
+- Source: `golden_planner_pathology.rs:678`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Production, Needs
@@ -921,7 +921,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
 
-- Source: `golden_planner_pathology.rs:802`
+- Source: `golden_planner_pathology.rs:803`
 - Systems: Needs, AI, Production
 - GoalKinds: FreeCarryCapacity
 - ActionDomains: Needs, Production
@@ -936,7 +936,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 144: Obligation satiation allows survival needs to override posting
 
-- Source: `golden_planner_pathology.rs:934`
+- Source: `golden_planner_pathology.rs:935`
 - Systems: Social artifact actions, Needs, AI, Perception
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs
@@ -951,7 +951,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `golden_portfolio_planning.rs:212`
+- Source: `golden_portfolio_planning.rs:213`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production
@@ -1174,9 +1174,87 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: sleep start/end events -> DecisionEventPayload variants -> observer-renderable names and summaries.
 
+### Scenario 375: Source Composite Wait Reranks Same-Commodity Siblings
+
+- Source: `golden_source_composite.rs:344`
+- Systems: AI, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: SourceCompositeHome, CloseOrchard, FarOrchard
+- Principles: 3, 15, 20, 26
+
+**Setup**: Two equal-distance apple sources; only the close source has three remembered wait observations.
+
+**Proves**: The same-commodity comparator selects the source with the neutral wait factor and attributes the choice to SourceComposite.
+
+### Scenario 376: Source Composite Does Not Cross Goal Categories
+
+- Source: `golden_source_composite.rs:388`
+- Systems: AI, SourceReliability, Dirtiness
+- GoalKinds: Wash, AcquireCommodity(SelfConsume)
+- ActionDomains: Needs, Production
+- Places: SourceCompositeHome, FarOrchard
+- Principles: 3, 20, 26
+
+**Setup**: A dirty, mildly hungry agent knows a high-capacity apple source and a usable local wash basin.
+
+**Proves**: Wash wins before SourceComposite is eligible; SourceComposite remains intra-commodity.
+
+### Scenario 377: Fresh Capacity Bonus Reranks Same-Commodity Siblings
+
+- Source: `golden_source_composite.rs:429`
+- Systems: AI, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: SourceCompositeHome, FarOrchard, LowCapacityOrchard
+- Principles: 3, 15, 20, 26
+
+**Setup**: Two equal-distance apple sources have fresh observed capacities of 18 and 4 units.
+
+**Proves**: The higher-capacity source wins through SourceComposite.
+
+### Scenario 378: Stale Capacity Observation Is Neutral
+
+- Source: `golden_source_composite.rs:478`
+- Systems: AI, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: SourceCompositeHome, FarOrchard, LowCapacityOrchard
+- Principles: 3, 15, 16, 26
+
+**Setup**: One source has an old high-capacity observation; the other has a fresh low-capacity observation.
+
+**Proves**: The stale observation contributes `capacity_factor_permille = 1000`.
+
+### Scenario 379: Empty Fresh Capacity Demotes Source
+
+- Source: `golden_source_composite.rs:520`
+- Systems: AI, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: SourceCompositeHome, FarOrchard, LowCapacityOrchard
+- Principles: 3, 15, 16, 26
+
+**Setup**: Two equal-distance apple sources are both observed, but one fresh observation says the source is empty.
+
+**Proves**: The empty-observed source ranks lower while remaining a candidate.
+
+### Scenario 380: Missing Source Records Are Neutral
+
+- Source: `golden_source_composite.rs:557`
+- Systems: AI, SourceReliability
+- GoalKinds: AcquireCommodity(SelfConsume)
+- ActionDomains: Production, Travel
+- Places: SourceCompositeHome, CloseOrchard, FarOrchard
+- Principles: 3, 15, 16, 26
+
+**Setup**: A fresh agent knows two equal-distance apple sources but has no reliability record for either source.
+
+**Proves**: Both sources receive neutral source-composite factors; SourceComposite does not decide the final ordering.
+
 ### Scenario 137: Resource Extraction Grant Writes Wait Memory
 
-- Source: `golden_source_reliability.rs:243`
+- Source: `golden_source_reliability.rs:99`
 - Systems: AI, Production, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -1191,7 +1269,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 138: Perception Writes Capacity Memory
 
-- Source: `golden_source_reliability.rs:330`
+- Source: `golden_source_reliability.rs:186`
 - Systems: Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -1203,51 +1281,6 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: The normal perception tick records the source's observed capacity into the agent's SourceReliability for the same (source, commodity) key used by ranking.
 
 **Cross-system chain**: Co-located resource source -> perception batch -> SourceReliability capacity observation.
-
-### Scenario 139: Fresh Capacity Signal Reaches Ranking
-
-- Source: `golden_source_reliability.rs:373`
-- Systems: SourceReliability, AI ranking, decision trace
-- GoalKinds: AcquireCommodity(SelfConsume)
-- ActionDomains: Travel, Production
-- Places: S131 Market, S131 Close Orchard
-- Principles: 3, 15, 27, 29
-
-**Setup**: A hungry agent at the market knows a remote orchard and has a fresh capacity observation for that source.
-
-**Proves**: The next planning pass reads the stored capacity observation and emits a positive capacity signal in the ranked goal decision trace.
-
-**Cross-system chain**: Stored capacity memory -> AcquireCommodity candidate -> ranking composite -> decision trace SourceReliabilityDiscount.
-
-### Scenario 140: Stale Capacity Signal Is Discounted To Zero
-
-- Source: `golden_source_reliability.rs:426`
-- Systems: SourceReliability, AI ranking, decision trace
-- GoalKinds: AcquireCommodity(SelfConsume)
-- ActionDomains: Travel, Production
-- Places: S131 Market, S131 Close Orchard
-- Principles: 16, 27, 29A
-
-**Setup**: A hungry agent's old capacity observation is older than PreferenceProfile.memory_retention_ticks before AI control resumes.
-
-**Proves**: Ranking preserves the stored observation but gives it zero capacity_signal once it is stale.
-
-**Cross-system chain**: Old capacity memory -> delayed AI tick -> ranking composite -> decision trace with cap_sig=0.
-
-### Scenario 141: Wait Memory Re-Ranks Source Choice
-
-- Source: `golden_source_reliability.rs:510`
-- Systems: SourceReliability, AI ranking, decision trace
-- GoalKinds: AcquireCommodity(SelfConsume)
-- ActionDomains: Travel, Production
-- Places: S131 Market, S131 Close Orchard, S131 Far Orchard
-- Principles: 21, 22, 27, 29
-
-**Setup**: The close orchard is initially the preferred apple source. The same agent then retains repeated wait observations for the close orchard while the farther orchard has no wait history.
-
-**Proves**: A high wait_sensitivity_weight causes the next ranking pass to pick the farther source and exposes the close source's wait penalty in the decision trace.
-
-**Cross-system chain**: Stored wait memory -> next AI planning pass -> composite ranking -> selected OpportunityAnchor changes to the alternative source.
 
 ### Scenario 170: Survival Ask-Consult Lands Roadmap Row Six
 
