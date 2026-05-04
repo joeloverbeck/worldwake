@@ -2285,6 +2285,7 @@ impl FacilityBeliefView for PlanningState<'_> {
 #[cfg(test)]
 mod tests {
     use super::{HypotheticalEntityId, PlanningEntityRef, PlanningState};
+    use crate::effect_sink_hypothetical::HypotheticalEffectSink;
     use crate::planner_duration_contract::PlannerDurationDependency;
     use crate::planning_snapshot::build_planning_snapshot;
     use std::collections::{BTreeMap, BTreeSet};
@@ -2308,7 +2309,7 @@ mod tests {
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
         ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
         CombatBeliefView, Constraint, ControlBeliefView, DeterministicRng, DurationExpr,
-        EconomicBeliefView, EntityBeliefView, GoalBeliefView, Interruptibility,
+        EconomicBeliefView, EffectSink, EntityBeliefView, GoalBeliefView, Interruptibility,
         PoliticalBeliefView, Precondition, ProfileBeliefView, ReservationReq, RuntimeBeliefView,
         SocialBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
         estimate_duration_from_beliefs, get_affordances,
@@ -3876,6 +3877,60 @@ mod tests {
             state.commodity_quantity_ref(
                 PlanningEntityRef::Authoritative(actor),
                 CommodityKind::Bread
+            ),
+            Quantity(1)
+        );
+    }
+
+    #[test]
+    fn hypothetical_effect_sink_transfers_quantities_between_overlays() {
+        let (view, actor, _town, _field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+        let mut sink = HypotheticalEffectSink::new(state);
+
+        sink.write_transfer(bread, actor, CommodityKind::Bread, Quantity(1))
+            .unwrap();
+
+        assert_eq!(
+            sink.state().commodity_quantity_ref(
+                PlanningEntityRef::Authoritative(bread),
+                CommodityKind::Bread,
+            ),
+            Quantity(0)
+        );
+        assert_eq!(
+            sink.state().commodity_quantity_ref(
+                PlanningEntityRef::Authoritative(actor),
+                CommodityKind::Bread,
+            ),
+            Quantity(2)
+        );
+    }
+
+    #[test]
+    fn hypothetical_effect_sink_checkpoint_restores_failed_primary_branch() {
+        let (view, actor, _town, _field, bread) = test_view();
+        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
+        let state = PlanningState::new(&snapshot);
+        let mut sink = HypotheticalEffectSink::new(state);
+        let checkpoint = sink.checkpoint();
+
+        sink.write_produce(actor, CommodityKind::Bread, Quantity(4))
+            .unwrap();
+        sink.restore(checkpoint).unwrap();
+
+        assert_eq!(
+            sink.state().commodity_quantity_ref(
+                PlanningEntityRef::Authoritative(actor),
+                CommodityKind::Bread,
+            ),
+            Quantity(1)
+        );
+        assert_eq!(
+            sink.state().commodity_quantity_ref(
+                PlanningEntityRef::Authoritative(bread),
+                CommodityKind::Bread,
             ),
             Quantity(1)
         );

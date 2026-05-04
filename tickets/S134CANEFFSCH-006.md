@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — replaces empty-placeholder schemas with real `EffectSchema` literals in trade, queue, and escort actions and switches their commit handler bodies to `apply_effects(..., Authoritative)`
-**Deps**: archive/tickets/S134CANEFFSCH-001.md, S134CANEFFSCH-002
+**Deps**: archive/tickets/S134CANEFFSCH-001.md, archive/tickets/S134CANEFFSCH-002.md
 
 ## Problem
 
@@ -17,7 +17,7 @@ S134 deliverable D5 requires migrating the trade-and-coordination family — `tr
 3. Trade is bilateral: actor receives commodity X, counterparty receives commodity Y. The schema's `EffectStep::Transfer` chain encodes both directions in one schema. Counterparty willingness is currently a handler-internal check; in the schema language it becomes an `EffectPrecondition` (likely `BeliefHeld { agent: counterparty, claim: WillingToTrade(...) }` or a new variant — confirm during reassessment).
 4. Queue actions exercise the contention-grant substrate: `ContentionGrantHeld` precondition checks queue-grant ownership; the step list includes queue-membership mutation (join/leave) and `ConsumeContentionGrant` if the action consumes a grant.
 5. Escort to safety is a multi-step ferry: movement update for both actor and protectee, with co-location check throughout. Likely uses standard `EffectStep` variants once the schema language is fleshed out — confirm during reassessment whether escort needs a domain-specific step variant.
-6. Shared abstraction boundary under audit: trade's bilateral transfer is the most complex schema in this ticket — both directions must commit atomically (`PartialOnFailure`'s rollback semantics from ticket 002 apply if either side's `Transfer` precondition fails).
+6. Shared abstraction boundary under audit: trade's bilateral transfer is the most complex schema in this ticket — both directions must commit atomically. Ticket 002 proved that hypothetical rollback works through sink checkpoints, but `AuthoritativeEffectSink` cannot generically restore a `WorldTxn` checkpoint yet. This ticket owns adding an authoritative-safe atomic effect shape or transaction discipline before bilateral trade can rely on schema delegation.
 7. Existing focused/unit coverage:
    - `trade_actions.rs`, `facility_queue_actions.rs`, `escort_actions.rs` `#[cfg(test)]` blocks
    - Goldens — `golden_merchant_*.rs`, `golden_trade_*.rs`, `golden_facility_queue_*.rs`, `golden_escort_*.rs`. Enumerate during reassessment.
@@ -26,14 +26,14 @@ S134 deliverable D5 requires migrating the trade-and-coordination family — `tr
 
 ## Architecture Check
 
-1. Bilateral trade as a single declarative schema makes the atomic-commit semantics explicit (both transfers happen or neither does), replacing handler-internal coordination with the schema's `PartialOnFailure` rollback. This makes the contract auditable from the schema literal alone (FND-29).
+1. Bilateral trade as a single declarative schema makes the atomic-commit semantics explicit (both transfers happen or neither does), replacing handler-internal coordination with an authoritative-safe atomic effect shape or transaction discipline. This makes the contract auditable from the schema literal alone (FND-29).
 2. The contention-grant substrate (`facility_queue_actions.rs` queues) is exercised through `EffectPrecondition::ContentionGrantHeld` and `EffectStep::ConsumeContentionGrant`, integrating queue actions into the same evaluation pipeline as combat and harvest (which also use grants for corpse-use and resource-source contention) — uniform contention substrate.
 3. Escort-to-safety's movement semantics use the same place-graph mutation primitives existing handlers do; the schema's step language must include movement (likely an `EffectStep::Move { entity, destination }` variant — add in this ticket if not yet present).
 
 ## Verification Layers
 
 1. Bitwise-identical event-log invariant → event-log delta on trade-touching, queue-touching, and escort-touching goldens.
-2. Bilateral-trade atomicity invariant → action trace: when one side's preconditions fail mid-execution, neither transfer is committed; the existing handler's atomic-commit behavior is preserved by `PartialOnFailure` rollback.
+2. Bilateral-trade atomicity invariant → action trace: when one side's preconditions fail mid-execution, neither transfer is committed; the existing handler's atomic-commit behavior is preserved by the atomic effect shape or transaction discipline added in this ticket.
 3. Contention-grant invariant → focused runtime test: `conformance_queue_for_facility` continues to pass; queue grants are consumed in the same order pre- and post-ticket.
 4. Canonical state hash invariant → soak: identical hashes on the three soak scenarios.
 
@@ -59,7 +59,7 @@ EffectSchema {
 }
 ```
 
-Both `Transfer` steps must commit atomically — leverage `PartialOnFailure`'s rollback semantics or add an explicit `Atomic { steps }` step variant if `PartialOnFailure`'s primary/fallback shape is not the right fit (decide during reassessment).
+Both `Transfer` steps must commit atomically. Do not rely on ticket 002's generic authoritative `restore`, which intentionally rejects rollback for `WorldTxn`; add an explicit `Atomic { steps }` step variant, preflight all transfer quantities before mutating, or introduce another authoritative-safe transaction discipline during reassessment.
 
 ### 2. Construct `EffectSchema` literal for staff_market
 

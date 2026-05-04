@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — replaces empty-placeholder schemas with real `EffectSchema` literals in 7 combat actions and switches their commit handler bodies to `apply_effects(..., Authoritative)`
-**Deps**: archive/tickets/S134CANEFFSCH-001.md, S134CANEFFSCH-002
+**Deps**: archive/tickets/S134CANEFFSCH-001.md, archive/tickets/S134CANEFFSCH-002.md
 
 ## Problem
 
@@ -17,7 +17,7 @@ S134 deliverable D5 (Action handler migration) requires every action's imperativ
 3. Shared abstraction boundary under audit: each combat action's authoritative effect set must produce the same component mutations and event-log entries as today's imperative handler. The bitwise-identical event-log invariant is the contract.
 4. Existing focused/unit coverage exercising combat handlers: tests in `combat.rs` `#[cfg(test)]` block (combat-domain handler tests around `start_attack`, `tick_attack`, `commit_attack`, `abort_attack` etc.) plus broader goldens — `crates/worldwake-ai/tests/golden_combat_*.rs`, `golden_combat_smoke.rs`, `golden_dragon_attack.rs`, `golden_loot_*.rs`, `golden_heal_*.rs`. Enumerate during reassessment via `rg -l "attack\|loot\|heal\|bury\|queue_for_(corpse|care)" crates/worldwake-ai/tests/golden_*.rs`.
 5. Bitwise-identical event-log invariant: the schema-driven path must produce the same `EventTag` emissions, the same component mutations (wounds, body parts, contention-grant consumptions, container transfers for loot), and the same canonical state hash post-replay as the pre-ticket imperative path.
-6. `WoundCause` taxonomy lives at `crates/worldwake-core/src/wounds.rs:44–50`; `WoundSeverity` does NOT exist (per spec D1 type-naming notes). The `EffectStep::ApplyWound` variant constructs wounds using existing wound shape primitives only.
+6. `WoundCause` taxonomy lives at `crates/worldwake-core/src/wounds.rs:44–50`; `WoundSeverity` does NOT exist (per spec D1 type-naming notes). Ticket 002 left `EffectStep::ApplyWound` as a staged variant that both real sinks reject with `Discrepancy::ImproperPlanningState` because the step does not yet carry enough combat wound payload to construct a real wound. This ticket owns extending or replacing that step with the complete combat wound construction data before combat handlers can delegate through `apply_effects`.
 
 ## Architecture Check
 
@@ -40,14 +40,14 @@ In each `register_*_action` function, replace `effect_schema: EffectSchema::empt
 
 Per-action sketch (final form determined during reassessment after reading current handler bodies):
 
-- **attack**: preconditions — `CoLocated { actor, target }`, target-is-alive precondition. Steps — `ApplyWound { target, cause: WoundCause::Combat(weapon) }`, `EmitEvent { tag: EventTag::CombatAttack }`.
+- **attack**: preconditions — `CoLocated { actor, target }`, target-is-alive precondition. Steps — complete wound-application step (extending or replacing the ticket-002 staged `ApplyWound` shape as needed), `EmitEvent { tag: EventTag::CombatAttack }`.
 - **defend**: preconditions — `CoLocated { actor, target }`. Steps — defensive component mutation, `EmitEvent { tag: EventTag::CombatDefend }`.
 - **loot**: preconditions — `CoLocated { actor, target }`, target-is-corpse, contention-grant-held. Steps — `Transfer { source: target, dest: actor, commodity, quantity }`, `ConsumeContentionGrant { grant }`, `EmitEvent { tag: EventTag::Loot }`.
 - **bury**: preconditions — `CoLocated`, target-is-corpse, grave-plot present. Steps — corpse-burial component mutation, `EmitEvent { tag: EventTag::Bury }`.
 - **heal**: preconditions — `CoLocated`, target-has-wound, contention-grant-held. Steps — wound mitigation, `ConsumeContentionGrant`, `EmitEvent { tag: EventTag::Heal }`.
 - **queue_for_corpse_use** / **queue_for_care_target**: preconditions — `CoLocated` with the queue substrate. Steps — queue-membership mutation, `EmitEvent { tag: EventTag::QueueJoin }`.
 
-The exact `EffectStep` variants required may extend the enum from ticket 001 — if combat needs a step variant not already defined (e.g., a body-part-specific damage step), add it to `EffectStep` in this ticket and implement the corresponding sink method in both authoritative and hypothetical impls.
+The exact `EffectStep` variants required may extend the enum from ticket 001. Combat already surfaced one incomplete staged effect from ticket 002: wound application. Add the complete wound construction payload to `EffectStep` (or replace `ApplyWound` with a better combat-specific step) and implement the corresponding sink method in both authoritative and hypothetical impls.
 
 ### 2. Replace combat commit handler bodies with `apply_effects` delegation
 
@@ -66,7 +66,7 @@ The imperative body is deleted, not preserved.
 
 ### 3. `EffectStep` and sink-method extensions if needed
 
-If combat surfaces an effect not yet covered by the foundation enum (most likely `ApplyWound` already covers it; defensive component mutation may need a new variant), add the variant to `EffectStep` in `effect_schema.rs` and implement the sink method in both authoritative and hypothetical impls. Document the addition in the ticket implementation log so subsequent category tickets know the variant exists.
+If combat surfaces another effect not yet covered by the foundation enum, such as defensive component mutation, add the variant to `EffectStep` in `effect_schema.rs` and implement the sink method in both authoritative and hypothetical impls. Document each addition in the ticket implementation log so subsequent category tickets know the variant exists.
 
 ## Files to Touch
 

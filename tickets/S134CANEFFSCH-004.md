@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — replaces empty-placeholder schemas with real `EffectSchema` literals in 5 needs actions and switches their commit handler bodies to `apply_effects(..., Authoritative)`
-**Deps**: archive/tickets/S134CANEFFSCH-001.md, S134CANEFFSCH-002
+**Deps**: archive/tickets/S134CANEFFSCH-001.md, archive/tickets/S134CANEFFSCH-002.md
 
 ## Problem
 

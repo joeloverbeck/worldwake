@@ -20,10 +20,17 @@ S134 collapses all three paths into a single canonical effect schema attached to
 
 Phase 11: Belief-First Continual Planning Architectural — Draft
 
+## Implementation Notes
+
+- Ticket 002 landed the first real `EffectSink` implementations and made sink writes fallible. `apply_effects` emits facts only after the sink accepts each write.
+- The authoritative sink lives in `worldwake-systems` over `WorldTxn`; it covers current commodity transfer/consume/produce, event-tag, expectation, and contention-grant surfaces. It does not expose a generic transaction snapshot/restore. Future schemas that require authoritative all-or-nothing multi-step semantics must add an explicit atomic effect shape, preflight discipline, or transaction support before relying on rollback.
+- `EffectStep::ApplyWound` is currently a staged variant. Both real sinks reject it with `Discrepancy::ImproperPlanningState` until the combat schema ticket extends or replaces the step with enough payload to construct real wounds.
+- Runtime action handlers still do not call `apply_effects`; the ticket-002 sink work is dormant infrastructure ahead of category migrations.
+
 ## Crates
 
 - `worldwake-sim` — new `effect_schema` module owning `EffectSchema`, `EffectMode`, `EffectStep`, `EffectPrecondition`, `EffectFact`, `EffectOutcome`, the `EffectSink` trait, and the unified `apply_effects(...)` evaluator. Extends `ActionDef` with a required `effect_schema: EffectSchema` field. `binding_strictness`, `guard_template`, and `expectation_template` remain on `ActionDef` (layered roles, not absorbed by `EffectSchema`).
-- `worldwake-systems` — every `register_*_action` (~24 registration files, ≥40 individual action definitions including composites like `register_needs_actions`, `register_craft_actions`, `register_harvest_actions`, `register_office_actions`, `register_artifact_actions`) replaces the imperative handler body with a constructed `EffectSchema`. Per-action commit-trace data (`CommitTraceData::Harvest.partial_quantity`, `CommitTraceData::Tell`) becomes a typed output of the schema rather than handler-internal logic. The authoritative `EffectSink` impl lives here (or in `worldwake-sim` if generic enough).
+- `worldwake-systems` — every `register_*_action` (~24 registration files, ≥40 individual action definitions including composites like `register_needs_actions`, `register_craft_actions`, `register_harvest_actions`, `register_office_actions`, `register_artifact_actions`) replaces the imperative handler body with a constructed `EffectSchema`. Per-action commit-trace data (`CommitTraceData::Harvest.partial_quantity`, `CommitTraceData::Tell`) becomes a typed output of the schema rather than handler-internal logic. The authoritative `EffectSink` impl lives here over `WorldTxn`.
 - `worldwake-ai` — `planner_ops.rs` deletes `apply_hypothetical_transition` and the `PlannerTransitionKind` enum and dispatch. `goal_model.rs` deletes the `apply_planner_step` method on `GoalKindPlannerExt` (and all per-`GoalKind` impls). The planner calls `apply_effects(&action_def.effect_schema, …, EffectMode::Hypothetical)` for forward-model evaluation against a `PlanningState`-backed `EffectSink` impl that lives here. Conformance tests become precondition-and-mode coverage tests.
 - `worldwake-core` — no new component. `Discrepancy` (already at `crates/worldwake-core/src/discrepancy.rs:8`) is reused as the schema-evaluation failure type. `EventTag`, `EntityId`, `Quantity`, `Permille`, `CommodityKind`, `BeliefClaimKey`, `WoundCause` are all reused directly by `EffectStep`/`EffectPrecondition` variants — no new core type unless an existing handler used a non-typed primitive that must become typed.
 - `worldwake-cli` — no change. Scenarios continue to load `ActionDef` via the existing registry.
@@ -104,7 +111,9 @@ pub enum EffectStep {
     Transfer { source: EntityId, dest: EntityId, commodity: CommodityKind, quantity: Quantity },
     Consume { source: EntityId, commodity: CommodityKind, quantity: Quantity },
     Produce { sink: EntityId, commodity: CommodityKind, quantity: Quantity },
-    ApplyWound { target: EntityId, cause: WoundCause /* WoundSeverity does not exist; use existing wound shape */ },
+    // Currently staged after ticket 002; combat must extend or replace this
+    // shape with enough payload for real wound construction.
+    ApplyWound { target: EntityId, cause: WoundCause },
     EmitEvent { tag: EventTag /* payload uses existing per-tag payload types, no EventPayloadKey indirection */ },
     AssertExpectationFulfilled { expectation: ExpectationId },
     ConsumeContentionGrant { grant: /* ContentionGrant reference shape, see worldwake-core/src/contention.rs */ },
@@ -120,7 +129,7 @@ pub enum EffectFact {
     // unsuitable for the typed-effect surface this enum needs.
     CommodityTransfer { source: EntityId, dest: EntityId, commodity: CommodityKind, quantity: Quantity },
     PartialQuantity { requested: Quantity, delivered: Quantity },
-    WoundApplied { target: EntityId, wound: /* existing wound shape */ },
+    WoundApplied { target: EntityId, cause: WoundCause },
     ExpectationFulfilled { expectation: ExpectationId },
     ContentionGrantConsumed { /* existing grant reference */ },
     EventEmitted { tag: EventTag },
@@ -134,12 +143,15 @@ pub struct EffectOutcome {
 /// Authoritative impl lives in worldwake-systems (or worldwake-sim if generic).
 /// Hypothetical impl over PlanningState lives in worldwake-ai.
 pub trait EffectSink {
-    fn write_transfer(&mut self, /* … */);
-    fn write_consume(&mut self, /* … */);
-    fn write_produce(&mut self, /* … */);
-    fn write_wound(&mut self, /* … */);
-    fn write_event(&mut self, /* … */);
-    fn consume_grant(&mut self, /* … */);
+    fn check_precondition(&self, /* … */) -> Result<(), Discrepancy>;
+    fn checkpoint(&mut self) -> usize;
+    fn restore(&mut self, checkpoint: usize) -> Result<(), Discrepancy>;
+    fn write_transfer(&mut self, /* … */) -> Result<(), Discrepancy>;
+    fn write_consume(&mut self, /* … */) -> Result<(), Discrepancy>;
+    fn write_produce(&mut self, /* … */) -> Result<(), Discrepancy>;
+    fn write_wound(&mut self, /* … */) -> Result<(), Discrepancy>;
+    fn write_event(&mut self, /* … */) -> Result<(), Discrepancy>;
+    fn consume_grant(&mut self, /* … */) -> Result<(), Discrepancy>;
     // ... one method per EffectStep variant
 }
 

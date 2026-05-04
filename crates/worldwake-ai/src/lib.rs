@@ -10,6 +10,7 @@ pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;
 pub mod dirty_set;
+pub mod effect_sink_hypothetical;
 mod enterprise;
 pub mod exhaustion;
 pub mod failure_handling;
@@ -83,6 +84,7 @@ pub use decision_trace::{
     ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
+pub use effect_sink_hypothetical::HypotheticalEffectSink;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
 pub use failure_handling::{PlanFailureContext, clear_resolved_failures, handle_plan_failure};
 pub use feasibility::{FeasibilityHint, feasibility_hint};
