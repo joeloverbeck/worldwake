@@ -1,4 +1,4 @@
-use crate::{ActionPayload, TargetSpec};
+use crate::{ActionPayload, ConsumableEffect, TargetSpec};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
     ActionDefId, BeliefClaimKey, CombatStance, CommodityKind, Discrepancy, EntityId, EventTag,
@@ -132,6 +132,16 @@ pub enum EffectStep {
     },
     ClearEntityContentionIfNoWounds {
         entity: EffectEntityRef,
+    },
+    ConsumeTargetConsumable {
+        target: EffectEntityRef,
+        effect: ConsumableEffect,
+    },
+    EndSleepEpisode,
+    UseToilet,
+    RelieveWilderness,
+    UseWashBasin {
+        basin: EffectEntityRef,
     },
     PartialOnFailure {
         primary: Vec<EffectStep>,
@@ -274,6 +284,31 @@ pub trait EffectSink {
         &mut self,
         _entity: EntityId,
     ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_target_consumable(
+        &mut self,
+        _actor: EntityId,
+        _target: EntityId,
+        _effect: ConsumableEffect,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn end_sleep_episode(&mut self, _actor: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn use_toilet(&mut self, _actor: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn relieve_wilderness(&mut self, _actor: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn use_wash_basin(&mut self, _actor: EntityId, _basin: EntityId) -> Result<(), Discrepancy> {
         Err(Discrepancy::ImproperPlanningState)
     }
 }
@@ -448,6 +483,23 @@ fn apply_step(
         EffectStep::ClearEntityContentionIfNoWounds { entity } => {
             let entity = resolve_entity_ref(*entity, context)?;
             sink.clear_entity_contention_if_no_wounds(entity)?;
+        }
+        EffectStep::ConsumeTargetConsumable { target, effect } => {
+            let target = resolve_entity_ref(*target, context)?;
+            sink.consume_target_consumable(context.actor, target, *effect)?;
+        }
+        EffectStep::EndSleepEpisode => {
+            sink.end_sleep_episode(context.actor)?;
+        }
+        EffectStep::UseToilet => {
+            sink.use_toilet(context.actor)?;
+        }
+        EffectStep::RelieveWilderness => {
+            sink.relieve_wilderness(context.actor)?;
+        }
+        EffectStep::UseWashBasin { basin } => {
+            let basin = resolve_entity_ref(*basin, context)?;
+            sink.use_wash_basin(context.actor, basin)?;
         }
         EffectStep::PartialOnFailure { primary, fallback } => {
             let checkpoint = sink.checkpoint();

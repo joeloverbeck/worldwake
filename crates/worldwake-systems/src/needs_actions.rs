@@ -2,17 +2,19 @@ use crate::inventory::consume_one_unit;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, CommodityKind, DecisionEventPayload, EntityId, EventTag, FrameAssumption,
-    HomeostaticNeedId, HomeostaticNeeds, ItemLot, MetabolismProfile, OUTDOOR_RELIEF_TAGS, Permille,
-    PlaceTag, Quantity, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-    SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
-    WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WorkstationTag, WorldTxn,
+    ActionDefId, CommodityKind, DecisionEventPayload, Discrepancy, EntityId, EventTag,
+    FrameAssumption, HomeostaticNeedId, HomeostaticNeeds, ItemLot, MetabolismProfile,
+    OUTDOOR_RELIEF_TAGS, Permille, PlaceTag, Quantity, SleepEpisode, SleepEpisodeEndedPayload,
+    SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
+    WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WorkstationTag,
+    WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
-    CommitOutcome, Constraint, ConsumableEffect, DeterministicRng, DurationExpr, Interruptibility,
-    MetabolismDurationKind, Precondition, TargetSpec,
+    CommitOutcome, Constraint, ConsumableEffect, DeterministicRng, DurationExpr, EffectEntityRef,
+    EffectEvaluationContext, EffectMode, EffectPrecondition, EffectSchema, EffectSink, EffectStep,
+    Interruptibility, MetabolismDurationKind, Precondition, TargetSpec, apply_effects_with_context,
 };
 
 use crate::evidence_support::emit_evidence;
@@ -132,7 +134,7 @@ pub fn register_needs_actions(defs: &mut ActionDefRegistry, handlers: &mut Actio
         binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: needs_effect_schema("relieve_wilderness"),
     });
 }
 
@@ -191,8 +193,47 @@ fn register_def(
         },
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: needs_effect_schema(name),
     })
+}
+
+fn needs_effect_schema(name: &str) -> EffectSchema {
+    match name {
+        "eat" => consumable_effect_schema(ConsumableEffect::Hunger),
+        "drink" => consumable_effect_schema(ConsumableEffect::Thirst),
+        "sleep" => EffectSchema {
+            preconditions: Vec::new(),
+            steps: vec![EffectStep::EndSleepEpisode],
+        },
+        "toilet" => EffectSchema {
+            preconditions: Vec::new(),
+            steps: vec![EffectStep::UseToilet],
+        },
+        "relieve_wilderness" => EffectSchema {
+            preconditions: Vec::new(),
+            steps: vec![EffectStep::RelieveWilderness],
+        },
+        "wash" => EffectSchema {
+            preconditions: vec![EffectPrecondition::CoLocated {
+                actor: EffectEntityRef::Actor,
+                target: EffectEntityRef::Target { index: 0 },
+            }],
+            steps: vec![EffectStep::UseWashBasin {
+                basin: EffectEntityRef::Target { index: 0 },
+            }],
+        },
+        other => panic!("unexpected needs action {other}"),
+    }
+}
+
+fn consumable_effect_schema(effect: ConsumableEffect) -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::ConsumeTargetConsumable {
+            target: EffectEntityRef::Target { index: 0 },
+            effect,
+        }],
+    }
 }
 
 fn eat_preconditions() -> Vec<Precondition> {
@@ -498,15 +539,14 @@ fn projected_need_breach_tick(
 }
 
 fn commit_sleep_episode(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    end_sleep_episode(instance.actor, context.tick, None, txn)?;
-    Ok(CommitOutcome::empty())
+    apply_needs_effect_schema(def, instance, context.tick, txn)
 }
 
 fn abort_sleep_episode(
@@ -558,52 +598,226 @@ fn end_sleep_episode(
     Ok(())
 }
 
-fn commit_eat(
-    _def: &ActionDef,
+struct NeedsEffectSink<'txn, 'world> {
+    txn: &'txn mut WorldTxn<'world>,
+    current_tick: Tick,
+    action_error: Option<ActionError>,
+}
+
+impl<'txn, 'world> NeedsEffectSink<'txn, 'world> {
+    fn new(txn: &'txn mut WorldTxn<'world>, current_tick: Tick) -> Self {
+        Self {
+            txn,
+            current_tick,
+            action_error: None,
+        }
+    }
+
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(mut self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.take().unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for NeedsEffectSink<'_, '_> {
+    fn check_precondition(
+        &self,
+        precondition: &EffectPrecondition,
+        actor_entity: EntityId,
+        targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        let ok = match precondition {
+            EffectPrecondition::TargetMatchesSlot { .. }
+            | EffectPrecondition::CapacityFloor { .. }
+            | EffectPrecondition::BeliefHeld { .. }
+            | EffectPrecondition::QuantityAvailable { .. }
+            | EffectPrecondition::ContentionGrantHeld { .. } => true,
+            EffectPrecondition::CoLocated { actor, target } => {
+                let actor = resolve_needs_effect_entity_ref(*actor, actor_entity, targets)?;
+                let target = resolve_needs_effect_entity_ref(*target, actor_entity, targets)?;
+                self.txn.effective_place(actor) == self.txn.effective_place(target)
+            }
+        };
+
+        ok.then_some(()).ok_or(Discrepancy::MissingObservation)
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(
+        &mut self,
+        _target: EntityId,
+        _cause: worldwake_core::WoundCause,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, tag: EventTag) -> Result<(), Discrepancy> {
+        self.txn.add_tag(tag);
+        Ok(())
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: worldwake_core::ExpectationId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_target_consumable(
+        &mut self,
+        actor: EntityId,
+        target: EntityId,
+        effect: ConsumableEffect,
+    ) -> Result<(), Discrepancy> {
+        apply_consumable_effects(actor, target, effect, self.txn)
+            .map_err(|err| self.record_error(err))
+    }
+
+    fn end_sleep_episode(&mut self, actor: EntityId) -> Result<(), Discrepancy> {
+        end_sleep_episode(actor, self.current_tick, None, self.txn)
+            .map_err(|err| self.record_error(err))
+    }
+
+    fn use_toilet(&mut self, actor: EntityId) -> Result<(), Discrepancy> {
+        apply_toilet(actor, self.txn).map_err(|err| self.record_error(err))
+    }
+
+    fn relieve_wilderness(&mut self, actor: EntityId) -> Result<(), Discrepancy> {
+        apply_relieve_wilderness(actor, self.txn).map_err(|err| self.record_error(err))
+    }
+
+    fn use_wash_basin(&mut self, actor: EntityId, basin: EntityId) -> Result<(), Discrepancy> {
+        apply_wash(actor, basin, self.txn).map_err(|err| self.record_error(err))
+    }
+}
+
+fn resolve_needs_effect_entity_ref(
+    entity_ref: EffectEntityRef,
+    actor: EntityId,
+    targets: &[EntityId],
+) -> Result<EntityId, Discrepancy> {
+    match entity_ref {
+        EffectEntityRef::Actor => Ok(actor),
+        EffectEntityRef::Target { index } => targets
+            .get(index)
+            .copied()
+            .ok_or(Discrepancy::NoLegalBinding),
+        EffectEntityRef::Entity(entity) => Ok(entity),
+    }
+}
+
+fn apply_needs_effect_schema(
+    def: &ActionDef,
     instance: &ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    current_tick: Tick,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = NeedsEffectSink::new(txn, current_tick);
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: instance.def_id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
+fn commit_eat(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    apply_consumable_effects(instance, txn, true)?;
-    Ok(CommitOutcome::empty())
+    apply_needs_effect_schema(def, instance, context.tick, txn)
 }
 
 fn commit_drink(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    apply_consumable_effects(instance, txn, false)?;
-    Ok(CommitOutcome::empty())
+    apply_needs_effect_schema(def, instance, context.tick, txn)
 }
 
 fn apply_consumable_effects(
-    instance: &ActionInstance,
+    actor: EntityId,
+    target: EntityId,
+    effect: ConsumableEffect,
     txn: &mut WorldTxn<'_>,
-    require_hunger_effect: bool,
 ) -> Result<(), ActionError> {
-    let target = *instance
-        .targets
-        .first()
-        .ok_or(ActionError::InvalidTarget(instance.actor))?;
     let profile = lot_profile(txn, target)?;
-    if require_hunger_effect && profile.hunger_relief_per_unit.value() == 0 {
-        return Err(ActionError::PreconditionFailed(format!(
-            "lot {target} has no hunger relief"
-        )));
-    }
-    if !require_hunger_effect && profile.thirst_relief_per_unit.value() == 0 {
-        return Err(ActionError::PreconditionFailed(format!(
-            "lot {target} has no thirst relief"
-        )));
+    match effect {
+        ConsumableEffect::Hunger if profile.hunger_relief_per_unit.value() == 0 => {
+            return Err(ActionError::PreconditionFailed(format!(
+                "lot {target} has no hunger relief"
+            )));
+        }
+        ConsumableEffect::Thirst if profile.thirst_relief_per_unit.value() == 0 => {
+            return Err(ActionError::PreconditionFailed(format!(
+                "lot {target} has no thirst relief"
+            )));
+        }
+        ConsumableEffect::Hunger | ConsumableEffect::Thirst => {}
     }
 
-    let needs = actor_needs(txn, instance.actor)?;
+    let needs = actor_needs(txn, actor)?;
     let next = HomeostaticNeeds::new(
         needs.hunger.saturating_sub(profile.hunger_relief_per_unit),
         needs.thirst.saturating_sub(profile.thirst_relief_per_unit),
@@ -612,21 +826,25 @@ fn apply_consumable_effects(
         needs.dirtiness,
     );
     consume_one_unit(txn, target)?;
-    set_actor_needs(txn, instance.actor, next)
+    set_actor_needs(txn, actor, next)
 }
 
 fn commit_toilet(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let needs = actor_needs(txn, instance.actor)?;
-    let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::InternalError(format!("actor {} has no place", instance.actor))
-    })?;
+    apply_needs_effect_schema(def, instance, context.tick, txn)
+}
+
+fn apply_toilet(actor: EntityId, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+    let needs = actor_needs(txn, actor)?;
+    let place = txn
+        .effective_place(actor)
+        .ok_or_else(|| ActionError::InternalError(format!("actor {actor} has no place")))?;
     let waste = txn
         .create_item_lot(CommodityKind::Waste, Quantity(1))
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -655,7 +873,7 @@ fn commit_toilet(
 
         txn.add_tag(EventTag::WasteCreated).set_decision_payload(
             DecisionEventPayload::WasteCreated(WasteCreatedPayload {
-                creator: instance.actor,
+                creator: actor,
                 place,
                 waste_lot: waste,
                 source: WasteSource::OvercapacityLatrine,
@@ -665,7 +883,7 @@ fn commit_toilet(
     }
     set_actor_needs(
         txn,
-        instance.actor,
+        actor,
         HomeostaticNeeds::new(
             needs.hunger,
             needs.thirst,
@@ -673,23 +891,26 @@ fn commit_toilet(
             pm(0),
             needs.dirtiness,
         ),
-    )?;
-    Ok(CommitOutcome::empty())
+    )
 }
 
 fn commit_relieve_wilderness(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let needs = actor_needs(txn, instance.actor)?;
-    let profile = actor_profile(txn, instance.actor)?;
-    let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::InternalError(format!("actor {} has no place", instance.actor))
-    })?;
+    apply_needs_effect_schema(def, instance, context.tick, txn)
+}
+
+fn apply_relieve_wilderness(actor: EntityId, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+    let needs = actor_needs(txn, actor)?;
+    let profile = actor_profile(txn, actor)?;
+    let place = txn
+        .effective_place(actor)
+        .ok_or_else(|| ActionError::InternalError(format!("actor {actor} has no place")))?;
     let waste = txn
         .create_item_lot(CommodityKind::Waste, Quantity(1))
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -709,7 +930,7 @@ fn commit_relieve_wilderness(
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
     set_actor_needs(
         txn,
-        instance.actor,
+        actor,
         HomeostaticNeeds::new(
             needs.hunger,
             needs.thirst,
@@ -733,28 +954,28 @@ fn commit_relieve_wilderness(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_tag(EventTag::WasteCreated)
         .set_decision_payload(DecisionEventPayload::WasteCreated(WasteCreatedPayload {
-            creator: instance.actor,
+            creator: actor,
             place,
             waste_lot: waste,
             source: WasteSource::WildernessRelief,
             place_dirtiness_delta,
         }));
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 fn commit_wash(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let basin = *instance
-        .targets
-        .first()
-        .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    let needs = actor_needs(txn, instance.actor)?;
+    apply_needs_effect_schema(def, instance, context.tick, txn)
+}
+
+fn apply_wash(actor: EntityId, basin: EntityId, txn: &mut WorldTxn<'_>) -> Result<(), ActionError> {
+    let needs = actor_needs(txn, actor)?;
     let mut basin_state = txn
         .get_component_wash_basin_state(basin)
         .cloned()
@@ -793,7 +1014,7 @@ fn commit_wash(
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     set_actor_needs(
         txn,
-        instance.actor,
+        actor,
         HomeostaticNeeds::new(
             needs.hunger,
             needs.thirst,
@@ -805,7 +1026,7 @@ fn commit_wash(
     txn.add_tag(EventTag::WashFacilityUsed)
         .set_decision_payload(DecisionEventPayload::WashFacilityUsed(
             WashFacilityUsedPayload {
-                user: instance.actor,
+                user: actor,
                 basin,
                 water_consumed,
                 agent_dirtiness_delta,
@@ -813,7 +1034,7 @@ fn commit_wash(
                 partial,
             },
         ));
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 fn proportional_permille(
@@ -852,8 +1073,8 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
-        ActionInstanceId, DeterministicRng, PerAgentBeliefView, Precondition, TickOutcome,
-        abort_action, get_affordances, start_action, tick_action,
+        ActionInstanceId, BindingStrictness, DeterministicRng, EffectStep, PerAgentBeliefView,
+        Precondition, TickOutcome, abort_action, get_affordances, start_action, tick_action,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1080,8 +1301,22 @@ mod tests {
         assert_eq!(defs.len(), 6);
         assert_eq!(handlers.len(), 6);
         assert_eq!(defs.get(ActionDefId(0)).unwrap().name, "eat");
+        assert!(
+            !defs
+                .get(ActionDefId(0))
+                .unwrap()
+                .effect_schema
+                .steps
+                .is_empty()
+        );
+        assert_eq!(
+            defs.get(ActionDefId(0)).unwrap().binding_strictness,
+            BindingStrictness::FungibleEquivalentCommodity
+        );
         let sleep = defs.get(ActionDefId(2)).unwrap();
         assert_eq!(sleep.name, "sleep");
+        assert_eq!(sleep.effect_schema.steps, vec![EffectStep::EndSleepEpisode]);
+        assert_eq!(sleep.binding_strictness, BindingStrictness::AnyLegalTarget);
         assert_eq!(
             sleep.duration,
             worldwake_sim::DurationExpr::Variable {
@@ -1095,6 +1330,17 @@ mod tests {
         );
         assert_eq!(defs.get(ActionDefId(4)).unwrap().name, "wash");
         let wash = defs.get(ActionDefId(4)).unwrap();
+        assert_eq!(
+            wash.binding_strictness,
+            BindingStrictness::EquivalentWorkstationTagAtSamePlace
+        );
+        assert!(
+            matches!(
+                wash.effect_schema.steps.as_slice(),
+                [EffectStep::UseWashBasin { .. }]
+            ),
+            "wash should commit through the needs effect schema"
+        );
         assert_eq!(wash.targets.len(), 1, "wash should target only the basin");
         assert!(
             wash.preconditions
@@ -1111,7 +1357,16 @@ mod tests {
             )),
             "wash should no longer gate on a direct water-source target"
         );
-        assert_eq!(defs.get(ActionDefId(5)).unwrap().name, "relieve_wilderness");
+        let relieve = defs.get(ActionDefId(5)).unwrap();
+        assert_eq!(relieve.name, "relieve_wilderness");
+        assert_eq!(
+            relieve.effect_schema.steps,
+            vec![EffectStep::RelieveWilderness]
+        );
+        assert_eq!(
+            relieve.binding_strictness,
+            BindingStrictness::AnyLegalTarget
+        );
     }
 
     #[test]
