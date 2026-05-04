@@ -24,8 +24,11 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 
 - Ticket 002 landed the first real `EffectSink` implementations and made sink writes fallible. `apply_effects` emits facts only after the sink accepts each write.
 - The authoritative sink lives in `worldwake-systems` over `WorldTxn`; it covers current commodity transfer/consume/produce, event-tag, expectation, and contention-grant surfaces. It does not expose a generic transaction snapshot/restore. Future schemas that require authoritative all-or-nothing multi-step semantics must add an explicit atomic effect shape, preflight discipline, or transaction support before relying on rollback.
-- `EffectStep::ApplyWound` is currently a staged variant. Both real sinks reject it with `Discrepancy::ImproperPlanningState` until the combat schema ticket extends or replaces the step with enough payload to construct real wounds.
-- Runtime action handlers still do not call `apply_effects`; the ticket-002 sink work is dormant infrastructure ahead of category migrations.
+- `EffectStep::ApplyWound` remains a staged generic variant. Combat attack now uses `EffectStep::ResolveCombatAttack`, because authoritative wound construction depends on combat profiles, stance, payload weapon, existing wounds, tick, and seeded RNG.
+- Combat action commit handlers now call `apply_effects_with_context(...)` through a combat-owned delegation helper. Non-combat runtime handlers still have not migrated.
+- Ticket 003 corrects an important substrate mismatch in the first draft: `ActionDef.effect_schema` is registry-time template data, so schema operands cannot be literal runtime `EntityId`s only. The live schema language now includes `EffectEntityRef::{Actor, Target, Entity}` and `EffectActionRef` so registry templates can lawfully bind actor, target, and payload-derived action identities at evaluation time. The original `apply_effects(...)` wrapper remains for existing callers; action handlers that need payload/current-action context use `apply_effects_with_context(...)`.
+- Combat migration adds authoritative combat effect steps for the commit-time world mutations that cannot be represented as commodity transfer alone: contention queue entry, contention membership cleanup, capacity-limited corpse loot, corpse burial, attack wound/evidence resolution, and wound-resolution contention cleanup. These are typed effect steps interpreted by the combat-owned authoritative sink; they are not wrappers around a parallel live commit path.
+- The hypothetical sink resolves the new runtime entity refs for existing generic effects but still rejects combat-specific steps until the planner switch ticket implements mode parity for the expanded effect language. This is intentional staged substrate: the planner still uses the old hypothetical path through tickets 003-009, and ticket 010 owns replacing that path only after every category schema has a verified hypothetical interpretation.
 
 ## Crates
 
@@ -98,25 +101,43 @@ pub enum EffectMode {
 pub enum EffectPrecondition {
     /// Slot constraint references an existing TargetSpec variant.
     TargetMatchesSlot { slot_index: usize, shape: TargetSpec },
-    CoLocated { actor: EntityId, target: EntityId },
-    QuantityAvailable { source: EntityId, commodity: CommodityKind, min: Quantity },
+    CoLocated { actor: EffectEntityRef, target: EffectEntityRef },
+    QuantityAvailable { source: EffectEntityRef, commodity: CommodityKind, min: Quantity },
     CapacityFloor { container: EntityId, min_free: Quantity },
     RoleAuthority { actor: EntityId, role: /* existing role enum from worldwake-core */ },
-    ContentionGrantHeld { actor: EntityId, affordance: EntityId },
-    BeliefHeld { agent: EntityId, claim: BeliefClaimKey },
+    ContentionGrantHeld { actor: EffectEntityRef, affordance: EffectEntityRef },
+    BeliefHeld { agent: EffectEntityRef, claim: BeliefClaimKey },
     // ... one variant per category of precondition currently checked imperatively
 }
 
+pub enum EffectEntityRef {
+    Actor,
+    Target { index: usize },
+    Entity(EntityId),
+}
+
+pub enum EffectActionRef {
+    CurrentAction,
+    PayloadQueueIntendedAction,
+    Action(ActionDefId),
+}
+
 pub enum EffectStep {
-    Transfer { source: EntityId, dest: EntityId, commodity: CommodityKind, quantity: Quantity },
-    Consume { source: EntityId, commodity: CommodityKind, quantity: Quantity },
-    Produce { sink: EntityId, commodity: CommodityKind, quantity: Quantity },
+    Transfer { source: EffectEntityRef, dest: EffectEntityRef, commodity: CommodityKind, quantity: Quantity },
+    Consume { source: EffectEntityRef, commodity: CommodityKind, quantity: Quantity },
+    Produce { sink: EffectEntityRef, commodity: CommodityKind, quantity: Quantity },
     // Currently staged after ticket 002; combat must extend or replace this
     // shape with enough payload for real wound construction.
-    ApplyWound { target: EntityId, cause: WoundCause },
+    ApplyWound { target: EffectEntityRef, cause: WoundCause },
     EmitEvent { tag: EventTag /* payload uses existing per-tag payload types, no EventPayloadKey indirection */ },
     AssertExpectationFulfilled { expectation: ExpectationId },
-    ConsumeContentionGrant { grant: /* ContentionGrant reference shape, see worldwake-core/src/contention.rs */ },
+    ConsumeContentionGrant { grant: EffectEntityRef },
+    EnqueueContention { actor: EffectEntityRef, entity: EffectEntityRef, intended_action: EffectActionRef },
+    ClearContentionMembership { actor: EffectEntityRef, entity: EffectEntityRef, action: EffectActionRef },
+    LootPossessionsWithinCapacity { looter: EffectEntityRef, corpse: EffectEntityRef },
+    BuryCorpse { corpse: EffectEntityRef, burial_site: EffectEntityRef },
+    ResolveCombatAttack { attacker: EffectEntityRef, target: EffectEntityRef },
+    ClearEntityContentionIfNoWounds { entity: EffectEntityRef },
     PartialOnFailure { primary: Vec<EffectStep>, fallback: Vec<EffectStep> },
     // ... one variant per kind of authoritative effect that handlers currently produce
 }
@@ -162,11 +183,18 @@ pub fn apply_effects(
     sink: &mut dyn EffectSink,
     mode: EffectMode,
 ) -> Result<EffectOutcome, Discrepancy> { /* … */ }
+
+pub fn apply_effects_with_context(
+    schema: &EffectSchema,
+    context: EffectEvaluationContext<'_>, // actor, targets, payload, current action id
+    sink: &mut dyn EffectSink,
+    mode: EffectMode,
+) -> Result<EffectOutcome, Discrepancy> { /* … */ }
 ```
 
 Type-naming notes:
 
-- The prior draft's `CommodityKey`, `ContentionGrantKey`, `ExpectationKey`, `EventPayloadKey`, `AffordanceKey`, `AuthorityKind`, `ActorRef`, `TargetRef`, `ActionSlot`, `TargetShape`, `ActionOccupancy`, `QuantityExpr`, `ResolvedBinding`, `WoundSeverity` types do not exist in the codebase and are not introduced. Use existing types: `EntityId` for actors/targets/grants, `CommodityKind` for commodities, `ExpectationId` for expectations, `Quantity` for quantities, `EventTag` for event tags, `TargetSpec` for slot shape, `WoundCause` (no severity enum exists today), `BindingStrictness` (already on `ActionDef`).
+- The prior draft's `CommodityKey`, `ContentionGrantKey`, `ExpectationKey`, `EventPayloadKey`, `AffordanceKey`, `AuthorityKind`, `ActionSlot`, `TargetShape`, `ActionOccupancy`, `QuantityExpr`, `ResolvedBinding`, `WoundSeverity` types do not exist in the codebase and are not introduced. Use existing types: `EffectEntityRef` for actor/target/entity operands in registry templates, `EntityId` for already-resolved entities, `CommodityKind` for commodities, `ExpectationId` for expectations, `Quantity` for quantities, `EventTag` for event tags, `TargetSpec` for slot shape, `WoundCause` (no severity enum exists today), `BindingStrictness` (already on `ActionDef`).
 - The ~37 `register_*_action` functions across 24 files in `worldwake-systems/src/` accept actor + target through `ActionInstance` (`worldwake-sim/src/action_instance.rs:6–21`); `apply_effects` matches that shape directly rather than introducing `ResolvedBinding`.
 
 ### `ActionDef` extension (in `worldwake-sim`)

@@ -1,8 +1,8 @@
-use crate::TargetSpec;
+use crate::{ActionPayload, TargetSpec};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    BeliefClaimKey, CommodityKind, Discrepancy, EntityId, EventTag, ExpectationId, Quantity,
-    WoundCause,
+    ActionDefId, BeliefClaimKey, CombatStance, CommodityKind, Discrepancy, EntityId, EventTag,
+    ExpectationId, Quantity, WoundCause,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -34,11 +34,11 @@ pub enum EffectPrecondition {
         shape: TargetSpec,
     },
     CoLocated {
-        actor: EntityId,
-        target: EntityId,
+        actor: EffectEntityRef,
+        target: EffectEntityRef,
     },
     QuantityAvailable {
-        source: EntityId,
+        source: EffectEntityRef,
         commodity: CommodityKind,
         min: Quantity,
     },
@@ -47,35 +47,49 @@ pub enum EffectPrecondition {
         min_free: Quantity,
     },
     ContentionGrantHeld {
-        actor: EntityId,
-        affordance: EntityId,
+        actor: EffectEntityRef,
+        affordance: EffectEntityRef,
     },
     BeliefHeld {
-        agent: EntityId,
+        agent: EffectEntityRef,
         claim: BeliefClaimKey,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum EffectEntityRef {
+    Actor,
+    Target { index: usize },
+    Entity(EntityId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum EffectActionRef {
+    CurrentAction,
+    PayloadQueueIntendedAction,
+    Action(ActionDefId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EffectStep {
     Transfer {
-        source: EntityId,
-        dest: EntityId,
+        source: EffectEntityRef,
+        dest: EffectEntityRef,
         commodity: CommodityKind,
         quantity: Quantity,
     },
     Consume {
-        source: EntityId,
+        source: EffectEntityRef,
         commodity: CommodityKind,
         quantity: Quantity,
     },
     Produce {
-        sink: EntityId,
+        sink: EffectEntityRef,
         commodity: CommodityKind,
         quantity: Quantity,
     },
     ApplyWound {
-        target: EntityId,
+        target: EffectEntityRef,
         cause: WoundCause,
     },
     EmitEvent {
@@ -85,7 +99,39 @@ pub enum EffectStep {
         expectation: ExpectationId,
     },
     ConsumeContentionGrant {
-        grant: EntityId,
+        grant: EffectEntityRef,
+    },
+    SetCombatStance {
+        entity: EffectEntityRef,
+        stance: CombatStance,
+    },
+    ClearCombatStance {
+        entity: EffectEntityRef,
+    },
+    EnqueueContention {
+        actor: EffectEntityRef,
+        entity: EffectEntityRef,
+        intended_action: EffectActionRef,
+    },
+    ClearContentionMembership {
+        actor: EffectEntityRef,
+        entity: EffectEntityRef,
+        action: EffectActionRef,
+    },
+    LootPossessionsWithinCapacity {
+        looter: EffectEntityRef,
+        corpse: EffectEntityRef,
+    },
+    BuryCorpse {
+        corpse: EffectEntityRef,
+        burial_site: EffectEntityRef,
+    },
+    ResolveCombatAttack {
+        attacker: EffectEntityRef,
+        target: EffectEntityRef,
+    },
+    ClearEntityContentionIfNoWounds {
+        entity: EffectEntityRef,
     },
     PartialOnFailure {
         primary: Vec<EffectStep>,
@@ -169,6 +215,75 @@ pub trait EffectSink {
     ) -> Result<(), Discrepancy>;
 
     fn consume_grant(&mut self, grant: EntityId) -> Result<(), Discrepancy>;
+
+    fn set_combat_stance(
+        &mut self,
+        _entity: EntityId,
+        _stance: CombatStance,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn clear_combat_stance(&mut self, _entity: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn enqueue_contention(
+        &mut self,
+        _actor: EntityId,
+        _entity: EntityId,
+        _intended_action: ActionDefId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn clear_contention_membership(
+        &mut self,
+        _actor: EntityId,
+        _entity: EntityId,
+        _action: ActionDefId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn loot_possessions_within_capacity(
+        &mut self,
+        _looter: EntityId,
+        _corpse: EntityId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn bury_corpse(
+        &mut self,
+        _corpse: EntityId,
+        _burial_site: EntityId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn resolve_combat_attack(
+        &mut self,
+        _attacker: EntityId,
+        _target: EntityId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn clear_entity_contention_if_no_wounds(
+        &mut self,
+        _entity: EntityId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct EffectEvaluationContext<'a> {
+    pub actor: EntityId,
+    pub targets: &'a [EntityId],
+    pub payload: &'a ActionPayload,
+    pub action_def_id: ActionDefId,
 }
 
 pub fn apply_effects(
@@ -178,32 +293,53 @@ pub fn apply_effects(
     sink: &mut dyn EffectSink,
     mode: EffectMode,
 ) -> Result<EffectOutcome, Discrepancy> {
+    apply_effects_with_context(
+        schema,
+        EffectEvaluationContext {
+            actor,
+            targets,
+            payload: &ActionPayload::None,
+            action_def_id: ActionDefId(0),
+        },
+        sink,
+        mode,
+    )
+}
+
+pub fn apply_effects_with_context(
+    schema: &EffectSchema,
+    context: EffectEvaluationContext<'_>,
+    sink: &mut dyn EffectSink,
+    mode: EffectMode,
+) -> Result<EffectOutcome, Discrepancy> {
     match mode {
         EffectMode::Authoritative | EffectMode::Hypothetical => {}
     }
 
     for precondition in &schema.preconditions {
-        sink.check_precondition(precondition, actor, targets)?;
+        sink.check_precondition(precondition, context.actor, context.targets)?;
     }
 
     let mut facts = Vec::new();
-    apply_steps(&schema.steps, sink, &mut facts)?;
+    apply_steps(&schema.steps, &context, sink, &mut facts)?;
     Ok(EffectOutcome { facts })
 }
 
 fn apply_steps(
     steps: &[EffectStep],
+    context: &EffectEvaluationContext<'_>,
     sink: &mut dyn EffectSink,
     facts: &mut Vec<EffectFact>,
 ) -> Result<(), Discrepancy> {
     for step in steps {
-        apply_step(step, sink, facts)?;
+        apply_step(step, context, sink, facts)?;
     }
     Ok(())
 }
 
 fn apply_step(
     step: &EffectStep,
+    context: &EffectEvaluationContext<'_>,
     sink: &mut dyn EffectSink,
     facts: &mut Vec<EffectFact>,
 ) -> Result<(), Discrepancy> {
@@ -214,10 +350,12 @@ fn apply_step(
             commodity,
             quantity,
         } => {
-            sink.write_transfer(*source, *dest, *commodity, *quantity)?;
+            let source = resolve_entity_ref(*source, context)?;
+            let dest = resolve_entity_ref(*dest, context)?;
+            sink.write_transfer(source, dest, *commodity, *quantity)?;
             facts.push(EffectFact::CommodityTransfer {
-                source: *source,
-                dest: *dest,
+                source,
+                dest,
                 commodity: *commodity,
                 quantity: *quantity,
             });
@@ -227,19 +365,22 @@ fn apply_step(
             commodity,
             quantity,
         } => {
-            sink.write_consume(*source, *commodity, *quantity)?;
+            let source = resolve_entity_ref(*source, context)?;
+            sink.write_consume(source, *commodity, *quantity)?;
         }
         EffectStep::Produce {
             sink: sink_entity,
             commodity,
             quantity,
         } => {
-            sink.write_produce(*sink_entity, *commodity, *quantity)?;
+            let sink_entity = resolve_entity_ref(*sink_entity, context)?;
+            sink.write_produce(sink_entity, *commodity, *quantity)?;
         }
         EffectStep::ApplyWound { target, cause } => {
-            sink.write_wound(*target, *cause)?;
+            let target = resolve_entity_ref(*target, context)?;
+            sink.write_wound(target, *cause)?;
             facts.push(EffectFact::WoundApplied {
-                target: *target,
+                target,
                 cause: *cause,
             });
         }
@@ -254,27 +395,108 @@ fn apply_step(
             });
         }
         EffectStep::ConsumeContentionGrant { grant } => {
-            sink.consume_grant(*grant)?;
-            facts.push(EffectFact::ContentionGrantConsumed { grant: *grant });
+            let grant = resolve_entity_ref(*grant, context)?;
+            sink.consume_grant(grant)?;
+            facts.push(EffectFact::ContentionGrantConsumed { grant });
+        }
+        EffectStep::SetCombatStance { entity, stance } => {
+            let entity = resolve_entity_ref(*entity, context)?;
+            sink.set_combat_stance(entity, *stance)?;
+        }
+        EffectStep::ClearCombatStance { entity } => {
+            let entity = resolve_entity_ref(*entity, context)?;
+            sink.clear_combat_stance(entity)?;
+        }
+        EffectStep::EnqueueContention {
+            actor,
+            entity,
+            intended_action,
+        } => {
+            let actor = resolve_entity_ref(*actor, context)?;
+            let entity = resolve_entity_ref(*entity, context)?;
+            let intended_action = resolve_action_ref(*intended_action, context)?;
+            sink.enqueue_contention(actor, entity, intended_action)?;
+        }
+        EffectStep::ClearContentionMembership {
+            actor,
+            entity,
+            action,
+        } => {
+            let actor = resolve_entity_ref(*actor, context)?;
+            let entity = resolve_entity_ref(*entity, context)?;
+            let action = resolve_action_ref(*action, context)?;
+            sink.clear_contention_membership(actor, entity, action)?;
+        }
+        EffectStep::LootPossessionsWithinCapacity { looter, corpse } => {
+            let looter = resolve_entity_ref(*looter, context)?;
+            let corpse = resolve_entity_ref(*corpse, context)?;
+            sink.loot_possessions_within_capacity(looter, corpse)?;
+        }
+        EffectStep::BuryCorpse {
+            corpse,
+            burial_site,
+        } => {
+            let corpse = resolve_entity_ref(*corpse, context)?;
+            let burial_site = resolve_entity_ref(*burial_site, context)?;
+            sink.bury_corpse(corpse, burial_site)?;
+        }
+        EffectStep::ResolveCombatAttack { attacker, target } => {
+            let attacker = resolve_entity_ref(*attacker, context)?;
+            let target = resolve_entity_ref(*target, context)?;
+            sink.resolve_combat_attack(attacker, target)?;
+        }
+        EffectStep::ClearEntityContentionIfNoWounds { entity } => {
+            let entity = resolve_entity_ref(*entity, context)?;
+            sink.clear_entity_contention_if_no_wounds(entity)?;
         }
         EffectStep::PartialOnFailure { primary, fallback } => {
             let checkpoint = sink.checkpoint();
             let fact_checkpoint = facts.len();
-            if apply_steps(primary, sink, facts).is_err() {
+            if apply_steps(primary, context, sink, facts).is_err() {
                 facts.truncate(fact_checkpoint);
                 sink.restore(checkpoint)?;
-                apply_steps(fallback, sink, facts)?;
+                apply_steps(fallback, context, sink, facts)?;
             }
         }
     }
     Ok(())
 }
 
+fn resolve_entity_ref(
+    entity_ref: EffectEntityRef,
+    context: &EffectEvaluationContext<'_>,
+) -> Result<EntityId, Discrepancy> {
+    match entity_ref {
+        EffectEntityRef::Actor => Ok(context.actor),
+        EffectEntityRef::Target { index } => context
+            .targets
+            .get(index)
+            .copied()
+            .ok_or(Discrepancy::NoLegalBinding),
+        EffectEntityRef::Entity(entity) => Ok(entity),
+    }
+}
+
+fn resolve_action_ref(
+    action_ref: EffectActionRef,
+    context: &EffectEvaluationContext<'_>,
+) -> Result<ActionDefId, Discrepancy> {
+    match action_ref {
+        EffectActionRef::CurrentAction => Ok(context.action_def_id),
+        EffectActionRef::PayloadQueueIntendedAction => context
+            .payload
+            .as_queue_for_facility_use()
+            .map(|payload| payload.intended_action)
+            .ok_or(Discrepancy::NoLegalBinding),
+        EffectActionRef::Action(action) => Ok(action),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        EffectFact, EffectMode, EffectOutcome, EffectPrecondition, EffectSchema, EffectSink,
-        EffectStep, apply_effects,
+        EffectEntityRef, EffectFact, EffectMode, EffectOutcome, EffectPrecondition, EffectSchema,
+        EffectSink, EffectStep, apply_effects,
     };
     use worldwake_core::{CommodityKind, EntityId, EventTag, ExpectationId, Quantity, WoundCause};
 
@@ -423,8 +645,8 @@ mod tests {
             preconditions: Vec::new(),
             steps: vec![
                 EffectStep::Transfer {
-                    source: actor,
-                    dest: target,
+                    source: EffectEntityRef::Actor,
+                    dest: EffectEntityRef::Target { index: 0 },
                     commodity: CommodityKind::Bread,
                     quantity: Quantity(3),
                 },
@@ -434,7 +656,9 @@ mod tests {
                 EffectStep::AssertExpectationFulfilled {
                     expectation: ExpectationId(7),
                 },
-                EffectStep::ConsumeContentionGrant { grant: target },
+                EffectStep::ConsumeContentionGrant {
+                    grant: EffectEntityRef::Target { index: 0 },
+                },
             ],
         };
         let mut sink = NoopSink::default();
@@ -483,12 +707,12 @@ mod tests {
             steps: vec![EffectStep::PartialOnFailure {
                 primary: vec![
                     EffectStep::Produce {
-                        sink: actor,
+                        sink: EffectEntityRef::Actor,
                         commodity: CommodityKind::Bread,
                         quantity: Quantity(1),
                     },
                     EffectStep::Consume {
-                        source: actor,
+                        source: EffectEntityRef::Actor,
                         commodity: CommodityKind::Bread,
                         quantity: Quantity(2),
                     },
@@ -530,8 +754,8 @@ mod tests {
             preconditions: Vec::new(),
             steps: vec![
                 EffectStep::Transfer {
-                    source: actor,
-                    dest: target,
+                    source: EffectEntityRef::Actor,
+                    dest: EffectEntityRef::Target { index: 0 },
                     commodity: CommodityKind::Bread,
                     quantity: Quantity(1),
                 },

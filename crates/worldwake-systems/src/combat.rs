@@ -13,9 +13,10 @@ use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, ActionDomain, BodyCostPerTick, BodyPart, CauseRef, CombatStance,
     CombatWeaponProfile, CombatWeaponRef, ComponentDelta, ComponentKind, Container, DeadAt,
-    DeathCause, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView, EvidenceRef,
-    HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec, WitnessData,
-    WorkstationTag, WorldTxn, Wound, WoundCause, WoundList, is_wound_load_fatal, load_per_unit,
+    DeathCause, Discrepancy, DriveThresholds, EntityId, EntityKind, EventLog, EventTag, EventView,
+    EvidenceRef, HomeostaticNeeds, LoadUnits, Permille, Quantity, StateDelta, VisibilitySpec,
+    WitnessData, WorkstationTag, WorldTxn, Wound, WoundCause, WoundList, is_wound_load_fatal,
+    load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
@@ -23,7 +24,11 @@ use worldwake_sim::{
     ActionProgress, ActionState, CombatActionPayload, CommitOutcome, Constraint, DeterministicRng,
     DurationExpr, Interruptibility, LootActionPayload, PayloadEntityRole, Precondition,
     QueueForFacilityUsePayload, RuntimeBeliefView, SelfTargetActionKind, SystemError,
-    SystemExecutionContext, TargetSpec,
+    SystemExecutionContext, TargetSpec, apply_effects_with_context,
+};
+use worldwake_sim::{
+    EffectActionRef, EffectEntityRef, EffectEvaluationContext, EffectMode, EffectPrecondition,
+    EffectSchema, EffectSink, EffectStep,
 };
 
 const BODY_PARTS: [BodyPart; 6] = [
@@ -425,7 +430,16 @@ fn attack_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: EffectSchema {
+            preconditions: vec![EffectPrecondition::CoLocated {
+                actor: EffectEntityRef::Actor,
+                target: EffectEntityRef::Target { index: 0 },
+            }],
+            steps: vec![EffectStep::ResolveCombatAttack {
+                attacker: EffectEntityRef::Actor,
+                target: EffectEntityRef::Target { index: 0 },
+            }],
+        },
     }
 }
 
@@ -485,7 +499,12 @@ fn defend_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: EffectSchema {
+            preconditions: Vec::new(),
+            steps: vec![EffectStep::ClearCombatStance {
+                entity: EffectEntityRef::Actor,
+            }],
+        },
     }
 }
 
@@ -531,7 +550,23 @@ fn loot_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: EffectSchema {
+            preconditions: vec![EffectPrecondition::CoLocated {
+                actor: EffectEntityRef::Actor,
+                target: EffectEntityRef::Target { index: 0 },
+            }],
+            steps: vec![
+                EffectStep::LootPossessionsWithinCapacity {
+                    looter: EffectEntityRef::Actor,
+                    corpse: EffectEntityRef::Target { index: 0 },
+                },
+                EffectStep::ClearContentionMembership {
+                    actor: EffectEntityRef::Actor,
+                    entity: EffectEntityRef::Target { index: 0 },
+                    action: EffectActionRef::CurrentAction,
+                },
+            ],
+        },
     }
 }
 
@@ -588,7 +623,29 @@ fn bury_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: EffectSchema {
+            preconditions: vec![
+                EffectPrecondition::CoLocated {
+                    actor: EffectEntityRef::Actor,
+                    target: EffectEntityRef::Target { index: 0 },
+                },
+                EffectPrecondition::CoLocated {
+                    actor: EffectEntityRef::Actor,
+                    target: EffectEntityRef::Target { index: 1 },
+                },
+            ],
+            steps: vec![
+                EffectStep::BuryCorpse {
+                    corpse: EffectEntityRef::Target { index: 0 },
+                    burial_site: EffectEntityRef::Target { index: 1 },
+                },
+                EffectStep::ClearContentionMembership {
+                    actor: EffectEntityRef::Actor,
+                    entity: EffectEntityRef::Target { index: 0 },
+                    action: EffectActionRef::CurrentAction,
+                },
+            ],
+        },
     }
 }
 
@@ -627,7 +684,17 @@ fn queue_for_corpse_use_action_def(id: ActionDefId, handler: ActionHandlerId) ->
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: EffectSchema {
+            preconditions: vec![EffectPrecondition::CoLocated {
+                actor: EffectEntityRef::Actor,
+                target: EffectEntityRef::Target { index: 0 },
+            }],
+            steps: vec![EffectStep::EnqueueContention {
+                actor: EffectEntityRef::Actor,
+                entity: EffectEntityRef::Target { index: 0 },
+                intended_action: EffectActionRef::PayloadQueueIntendedAction,
+            }],
+        },
     }
 }
 
@@ -870,7 +937,22 @@ fn heal_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: EffectSchema {
+            preconditions: vec![EffectPrecondition::CoLocated {
+                actor: EffectEntityRef::Actor,
+                target: EffectEntityRef::Target { index: 0 },
+            }],
+            steps: vec![
+                EffectStep::ClearContentionMembership {
+                    actor: EffectEntityRef::Actor,
+                    entity: EffectEntityRef::Target { index: 0 },
+                    action: EffectActionRef::CurrentAction,
+                },
+                EffectStep::ClearEntityContentionIfNoWounds {
+                    entity: EffectEntityRef::Target { index: 0 },
+                },
+            ],
+        },
     }
 }
 
@@ -909,7 +991,17 @@ fn queue_for_care_target_action_def(id: ActionDefId, handler: ActionHandlerId) -
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: EffectSchema {
+            preconditions: vec![EffectPrecondition::CoLocated {
+                actor: EffectEntityRef::Actor,
+                target: EffectEntityRef::Target { index: 0 },
+            }],
+            steps: vec![EffectStep::EnqueueContention {
+                actor: EffectEntityRef::Actor,
+                entity: EffectEntityRef::Target { index: 0 },
+                intended_action: EffectActionRef::PayloadQueueIntendedAction,
+            }],
+        },
     }
 }
 
@@ -947,16 +1039,14 @@ fn tick_defend(
 
 #[allow(clippy::unnecessary_wraps)]
 fn commit_defend(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
+    rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    txn.clear_component_combat_stance(instance.actor)
-        .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    Ok(CommitOutcome::empty())
+    apply_combat_effect_schema(def, instance, rng, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1389,16 +1479,10 @@ fn commit_queue_for_corpse_use(
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
+    rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = queue_payload(def, &instance.payload)?;
-    let corpse = *instance
-        .targets
-        .first()
-        .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    enqueue_for_contention(txn, instance.actor, corpse, payload.intended_action)?;
-    Ok(CommitOutcome::empty())
+    apply_combat_effect_schema(def, instance, rng, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1441,16 +1525,10 @@ fn commit_queue_for_care_target(
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
+    rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = queue_payload(def, &instance.payload)?;
-    let patient = *instance
-        .targets
-        .first()
-        .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    enqueue_for_contention(txn, instance.actor, patient, payload.intended_action)?;
-    Ok(CommitOutcome::empty())
+    apply_combat_effect_schema(def, instance, rng, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1478,6 +1556,356 @@ fn start_heal(
     Ok(Some(ActionState::Heal {
         medicine_spent: false,
     }))
+}
+
+struct CombatEffectSink<'txn, 'world, 'instance, 'rng> {
+    txn: &'txn mut WorldTxn<'world>,
+    def: &'instance ActionDef,
+    instance: &'instance ActionInstance,
+    rng: &'rng mut DeterministicRng,
+    action_error: Option<ActionError>,
+}
+
+impl CombatEffectSink<'_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for CombatEffectSink<'_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        precondition: &EffectPrecondition,
+        actor: EntityId,
+        targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        let ok = match precondition {
+            EffectPrecondition::TargetMatchesSlot {
+                slot_index,
+                shape: TargetSpec::SpecificEntity(expected),
+            } => targets
+                .get(*slot_index)
+                .is_some_and(|target| target == expected),
+            EffectPrecondition::TargetMatchesSlot { .. }
+            | EffectPrecondition::CapacityFloor { .. }
+            | EffectPrecondition::BeliefHeld { .. } => true,
+            EffectPrecondition::CoLocated {
+                actor: actor_ref,
+                target,
+            } => {
+                let actor = resolve_combat_effect_entity_ref(*actor_ref, actor, targets)?;
+                let target = resolve_combat_effect_entity_ref(*target, actor, targets)?;
+                self.txn.effective_place(actor) == self.txn.effective_place(target)
+            }
+            EffectPrecondition::QuantityAvailable {
+                source,
+                commodity,
+                min,
+            } => {
+                let source = resolve_combat_effect_entity_ref(*source, actor, targets)?;
+                self.txn.controlled_commodity_quantity(source, *commodity) >= *min
+            }
+            EffectPrecondition::ContentionGrantHeld {
+                actor: actor_ref,
+                affordance,
+            } => {
+                let actor = resolve_combat_effect_entity_ref(*actor_ref, actor, targets)?;
+                let affordance = resolve_combat_effect_entity_ref(*affordance, actor, targets)?;
+                self.txn
+                    .get_component_contention_queue(affordance)
+                    .and_then(|queue| queue.granted.as_ref())
+                    .is_some_and(|grant| grant.actor == actor)
+            }
+        };
+
+        ok.then_some(()).ok_or(Discrepancy::MissingObservation)
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(&mut self, _target: EntityId, _cause: WoundCause) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, tag: EventTag) -> Result<(), Discrepancy> {
+        self.txn.add_tag(tag);
+        Ok(())
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: worldwake_core::ExpectationId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn clear_combat_stance(&mut self, entity: EntityId) -> Result<(), Discrepancy> {
+        self.txn
+            .clear_component_combat_stance(entity)
+            .map_err(|err| self.record_error(ActionError::InternalError(err.to_string())))
+    }
+
+    fn enqueue_contention(
+        &mut self,
+        actor: EntityId,
+        entity: EntityId,
+        intended_action: ActionDefId,
+    ) -> Result<(), Discrepancy> {
+        enqueue_for_contention(self.txn, actor, entity, intended_action)
+            .map_err(|err| self.record_error(err))
+    }
+
+    fn clear_contention_membership(
+        &mut self,
+        actor: EntityId,
+        entity: EntityId,
+        action: ActionDefId,
+    ) -> Result<(), Discrepancy> {
+        clear_contention_membership(self.txn, actor, entity, action)
+            .map_err(|err| self.record_error(err))
+    }
+
+    fn loot_possessions_within_capacity(
+        &mut self,
+        looter: EntityId,
+        corpse: EntityId,
+    ) -> Result<(), Discrepancy> {
+        let (validated_corpse, place) =
+            validate_loot_context(self.txn, self.instance).map_err(|err| self.record_error(err))?;
+        if validated_corpse != corpse || looter != self.instance.actor {
+            return Err(self.record_error(ActionError::InvalidTarget(corpse)));
+        }
+        for entity in direct_loot_entities(self.txn, corpse) {
+            let _ = transferable_loot_entity(self.txn, looter, corpse, entity, place)
+                .map_err(|err| self.record_error(err))?;
+        }
+        Ok(())
+    }
+
+    fn bury_corpse(&mut self, corpse: EntityId, burial_site: EntityId) -> Result<(), Discrepancy> {
+        let (validated_corpse, validated_burial_site, place) =
+            validate_bury_context(self.txn, self.instance).map_err(|err| self.record_error(err))?;
+        if validated_corpse != corpse || validated_burial_site != burial_site {
+            return Err(self.record_error(ActionError::InvalidTarget(corpse)));
+        }
+        let grave = create_grave_container(self.txn, corpse, place)
+            .map_err(|err| self.record_error(err))?;
+        self.txn
+            .put_into_container(corpse, grave)
+            .map_err(|err| self.record_error(ActionError::InternalError(err.to_string())))
+    }
+
+    fn resolve_combat_attack(
+        &mut self,
+        attacker: EntityId,
+        target: EntityId,
+    ) -> Result<(), Discrepancy> {
+        let payload =
+            combat_payload(self.def, self.instance).map_err(|err| self.record_error(err))?;
+        let validated_target = validate_attack_context(self.txn, self.instance, payload)
+            .map_err(|err| self.record_error(err))?;
+        if attacker != self.instance.actor || target != validated_target {
+            return Err(self.record_error(ActionError::InvalidTarget(target)));
+        }
+        validate_selected_weapon(self.txn, attacker, payload.weapon)
+            .map_err(|err| self.record_error(err))?;
+        let place = self.txn.effective_place(attacker).ok_or_else(|| {
+            self.record_error(ActionError::PreconditionFailed(format!(
+                "actor {attacker} has no place"
+            )))
+        })?;
+
+        let attacker_profile = self
+            .txn
+            .get_component_combat_profile(attacker)
+            .copied()
+            .ok_or_else(|| {
+                self.record_error(ActionError::AbortRequested(
+                    ActionAbortRequestReason::ActorMissingCombatProfile { actor: attacker },
+                ))
+            })?;
+        let target_profile = self
+            .txn
+            .get_component_combat_profile(target)
+            .copied()
+            .ok_or_else(|| {
+                self.record_error(ActionError::AbortRequested(
+                    ActionAbortRequestReason::TargetMissingCombatProfile { target },
+                ))
+            })?;
+        let attacker_needs = self.txn.get_component_homeostatic_needs(attacker);
+        let target_needs = self.txn.get_component_homeostatic_needs(target);
+        let attacker_wounds = self.txn.get_component_wound_list(attacker);
+        let target_wounds = self
+            .txn
+            .get_component_wound_list(target)
+            .cloned()
+            .unwrap_or_default();
+        let target_stance = self.txn.get_component_combat_stance(target).copied();
+
+        let Some(wound) = resolve_attack_wound(
+            AttackResolutionActor {
+                entity: attacker,
+                profile: attacker_profile,
+                needs: attacker_needs,
+                wounds: attacker_wounds,
+            },
+            AttackResolutionTarget {
+                profile: target_profile,
+                stance: target_stance,
+                needs: target_needs,
+                wounds: &target_wounds,
+            },
+            AttackResolutionContext {
+                weapon: payload.weapon,
+                tick: self.txn.tick(),
+            },
+            self.rng,
+        )
+        .map_err(|err| self.record_error(err))?
+        else {
+            return Ok(());
+        };
+
+        let mut next_wounds = target_wounds;
+        let wound_severity = wound.severity;
+        next_wounds.wounds.push(wound);
+        let fatal_after_wound = is_wound_load_fatal(&next_wounds, &target_profile);
+        self.txn
+            .set_component_wound_list(target, next_wounds)
+            .map_err(|err| self.record_error(ActionError::InternalError(err.to_string())))?;
+        ensure_care_contention_state(self.txn, target)
+            .map_err(|err| self.record_error(ActionError::InternalError(err)))?;
+        emit_evidence(
+            self.txn,
+            place,
+            worldwake_core::EvidenceKind::BloodTrail {
+                from_place: place,
+                severity: wound_severity,
+                caused_by: Some(attacker),
+            },
+            100,
+        )
+        .map_err(|err| self.record_error(ActionError::InternalError(err.to_string())))?;
+        if fatal_after_wound {
+            emit_evidence(
+                self.txn,
+                place,
+                worldwake_core::EvidenceKind::DisturbanceMarker {
+                    place,
+                    kind: worldwake_core::DisturbanceKind::CombatAftermath,
+                    created_at: self.txn.tick(),
+                },
+                50,
+            )
+            .map_err(|err| self.record_error(ActionError::InternalError(err.to_string())))?;
+        }
+        Ok(())
+    }
+
+    fn clear_entity_contention_if_no_wounds(
+        &mut self,
+        entity: EntityId,
+    ) -> Result<(), Discrepancy> {
+        if self
+            .txn
+            .get_component_wound_list(entity)
+            .is_some_and(|wounds| wounds.wounds.is_empty())
+        {
+            clear_entity_contention_state(self.txn, entity)
+                .map_err(|err| self.record_error(ActionError::InternalError(err)))?;
+        }
+        Ok(())
+    }
+}
+
+fn resolve_combat_effect_entity_ref(
+    entity_ref: EffectEntityRef,
+    actor: EntityId,
+    targets: &[EntityId],
+) -> Result<EntityId, Discrepancy> {
+    match entity_ref {
+        EffectEntityRef::Actor => Ok(actor),
+        EffectEntityRef::Target { index } => targets
+            .get(index)
+            .copied()
+            .ok_or(Discrepancy::NoLegalBinding),
+        EffectEntityRef::Entity(entity) => Ok(entity),
+    }
+}
+
+fn apply_combat_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = CombatEffectSink {
+        txn,
+        def,
+        instance,
+        rng,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: instance.def_id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
 }
 
 fn direct_loot_entities(txn: &WorldTxn<'_>, corpse: EntityId) -> Vec<EntityId> {
@@ -1640,19 +2068,14 @@ fn tick_heal(
 }
 
 fn commit_loot(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
+    rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let (corpse, place) = validate_loot_context(txn, instance)?;
-    for entity in direct_loot_entities(txn, corpse) {
-        let _ = transferable_loot_entity(txn, instance.actor, corpse, entity, place)?;
-    }
-    clear_contention_membership(txn, instance.actor, corpse, instance.def_id)?;
-    Ok(CommitOutcome::empty())
+    apply_combat_effect_schema(def, instance, rng, txn)
 }
 
 fn create_grave_container(
@@ -1675,19 +2098,14 @@ fn create_grave_container(
 }
 
 fn commit_bury(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
+    rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let (corpse, _burial_site, place) = validate_bury_context(txn, instance)?;
-    let grave = create_grave_container(txn, corpse, place)?;
-    txn.put_into_container(corpse, grave)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    clear_contention_membership(txn, instance.actor, corpse, instance.def_id)?;
-    Ok(CommitOutcome::empty())
+    apply_combat_effect_schema(def, instance, rng, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1709,91 +2127,7 @@ fn commit_attack(
     rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = combat_payload(def, instance)?;
-    let target = validate_attack_context(txn, instance, payload)?;
-    validate_selected_weapon(txn, instance.actor, payload.weapon)?;
-    let place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::PreconditionFailed(format!("actor {} has no place", instance.actor))
-    })?;
-
-    let attacker_profile = txn
-        .get_component_combat_profile(instance.actor)
-        .copied()
-        .ok_or(ActionError::AbortRequested(
-            ActionAbortRequestReason::ActorMissingCombatProfile {
-                actor: instance.actor,
-            },
-        ))?;
-    let target_profile =
-        txn.get_component_combat_profile(target)
-            .copied()
-            .ok_or(ActionError::AbortRequested(
-                ActionAbortRequestReason::TargetMissingCombatProfile { target },
-            ))?;
-    let attacker_needs = txn.get_component_homeostatic_needs(instance.actor);
-    let target_needs = txn.get_component_homeostatic_needs(target);
-    let attacker_wounds = txn.get_component_wound_list(instance.actor);
-    let target_wounds = txn
-        .get_component_wound_list(target)
-        .cloned()
-        .unwrap_or_default();
-    let target_stance = txn.get_component_combat_stance(target).copied();
-
-    let Some(wound) = resolve_attack_wound(
-        AttackResolutionActor {
-            entity: instance.actor,
-            profile: attacker_profile,
-            needs: attacker_needs,
-            wounds: attacker_wounds,
-        },
-        AttackResolutionTarget {
-            profile: target_profile,
-            stance: target_stance,
-            needs: target_needs,
-            wounds: &target_wounds,
-        },
-        AttackResolutionContext {
-            weapon: payload.weapon,
-            tick: txn.tick(),
-        },
-        rng,
-    )?
-    else {
-        return Ok(CommitOutcome::empty());
-    };
-
-    let mut next_wounds = target_wounds;
-    let wound_severity = wound.severity;
-    next_wounds.wounds.push(wound);
-    let fatal_after_wound = is_wound_load_fatal(&next_wounds, &target_profile);
-    txn.set_component_wound_list(target, next_wounds)
-        .map_err(|error| ActionError::InternalError(error.to_string()))?;
-    ensure_care_contention_state(txn, target).map_err(ActionError::InternalError)?;
-    emit_evidence(
-        txn,
-        place,
-        worldwake_core::EvidenceKind::BloodTrail {
-            from_place: place,
-            severity: wound_severity,
-            caused_by: Some(instance.actor),
-        },
-        100,
-    )
-    .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    if fatal_after_wound {
-        emit_evidence(
-            txn,
-            place,
-            worldwake_core::EvidenceKind::DisturbanceMarker {
-                place,
-                kind: worldwake_core::DisturbanceKind::CombatAftermath,
-                created_at: txn.tick(),
-            },
-            50,
-        )
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    }
-    Ok(CommitOutcome::empty())
+    apply_combat_effect_schema(def, instance, rng, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1843,23 +2177,14 @@ fn abort_bury(
 
 #[allow(clippy::unnecessary_wraps)]
 fn commit_heal(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
+    rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    if let Some(patient) = instance.targets.first().copied() {
-        clear_contention_membership(txn, instance.actor, patient, instance.def_id)?;
-        if txn
-            .get_component_wound_list(patient)
-            .is_some_and(|wounds| wounds.wounds.is_empty())
-        {
-            clear_entity_contention_state(txn, patient).map_err(ActionError::InternalError)?;
-        }
-    }
-    Ok(CommitOutcome::empty())
+    apply_combat_effect_schema(def, instance, rng, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1881,9 +2206,9 @@ fn abort_heal(
 #[cfg(test)]
 mod tests {
     use super::{
-        AttackResolutionActor, AttackResolutionContext, AttackResolutionTarget, combat_system,
-        effective_guard_skill, register_attack_action, register_bury_action,
-        register_defend_action, register_heal_action, register_loot_action,
+        AttackResolutionActor, AttackResolutionContext, AttackResolutionTarget,
+        apply_combat_effect_schema, combat_system, effective_guard_skill, register_attack_action,
+        register_bury_action, register_defend_action, register_heal_action, register_loot_action,
         register_queue_for_care_target_action, register_queue_for_corpse_use_action,
         resolve_attack_wound,
     };
@@ -1903,8 +2228,8 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDuration, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, ActionStatus, Affordance, CombatActionPayload,
-        DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView,
+        ActionInstance, ActionInstanceId, ActionPayload, ActionStatus, Affordance,
+        CombatActionPayload, DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView,
         QueueForFacilityUsePayload, SystemExecutionContext, SystemId, TickOutcome, get_affordances,
         start_action, tick_action,
     };
@@ -2326,6 +2651,90 @@ mod tests {
         assert!(
             heal.preconditions
                 .contains(&worldwake_sim::Precondition::TargetHasWounds(0))
+        );
+    }
+
+    #[test]
+    fn combat_action_defs_have_non_empty_commit_effect_schemas() {
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        register_attack_action(&mut defs, &mut handlers);
+        register_defend_action(&mut defs, &mut handlers);
+        register_loot_action(&mut defs, &mut handlers);
+        register_bury_action(&mut defs, &mut handlers);
+        register_heal_action(&mut defs, &mut handlers);
+        register_queue_for_corpse_use_action(&mut defs, &mut handlers);
+        register_queue_for_care_target_action(&mut defs, &mut handlers);
+
+        let mut names: Vec<_> = defs.iter().map(|def| def.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            vec![
+                "attack",
+                "bury",
+                "defend",
+                "heal",
+                "loot",
+                "queue_for_care_target",
+                "queue_for_corpse_use",
+            ]
+        );
+        for def in defs.iter() {
+            assert!(
+                !def.effect_schema.steps.is_empty(),
+                "{} should have a commit effect schema",
+                def.name
+            );
+        }
+    }
+
+    #[test]
+    fn attack_schema_rejects_non_colocated_target_before_commit_effects() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let attacker = spawn_guard(&mut world, 1, ControlSource::Ai);
+        let target = spawn_guard(&mut world, 2, ControlSource::Ai);
+        let remote_place = world.topology().place_ids().nth(1).unwrap();
+        {
+            let mut txn = new_txn(&mut world, 3);
+            txn.set_ground_location(target, remote_place).unwrap();
+            commit_txn(txn);
+        }
+
+        let mut defs = worldwake_sim::ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let attack_id = register_attack_action(&mut defs, &mut handlers);
+        let attack = defs.get(attack_id).unwrap();
+        let instance = ActionInstance {
+            instance_id: ActionInstanceId(1),
+            def_id: attack_id,
+            payload: ActionPayload::Combat(CombatActionPayload {
+                target,
+                weapon: CombatWeaponRef::Unarmed,
+            }),
+            actor: attacker,
+            targets: vec![target],
+            start_tick: Tick(4),
+            remaining_duration: ActionDuration::new(1),
+            status: ActionStatus::Active,
+            reservation_ids: Vec::new(),
+            local_state: None,
+            body_cost_override: None,
+        };
+
+        let mut rng = test_rng(0x42);
+        let mut txn = new_txn(&mut world, 4);
+        let err = apply_combat_effect_schema(attack, &instance, &mut rng, &mut txn).unwrap_err();
+
+        assert_eq!(
+            err,
+            ActionError::PreconditionFailed("effect schema failed: MissingObservation".to_string())
+        );
+        assert!(
+            txn.get_component_wound_list(target)
+                .unwrap()
+                .wounds
+                .is_empty()
         );
     }
 

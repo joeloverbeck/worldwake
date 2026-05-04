@@ -1,7 +1,7 @@
 use worldwake_core::{
     CommodityKind, Discrepancy, EntityId, EventTag, ExpectationId, Quantity, WorldTxn, WoundCause,
 };
-use worldwake_sim::{EffectPrecondition, EffectSink, TargetSpec};
+use worldwake_sim::{EffectEntityRef, EffectPrecondition, EffectSink, TargetSpec};
 
 pub struct AuthoritativeEffectSink<'txn, 'world> {
     txn: &'txn mut WorldTxn<'world>,
@@ -117,7 +117,7 @@ impl EffectSink for AuthoritativeEffectSink<'_, '_> {
     fn check_precondition(
         &self,
         precondition: &EffectPrecondition,
-        _actor: EntityId,
+        actor_entity: EntityId,
         targets: &[EntityId],
     ) -> Result<(), Discrepancy> {
         let ok = match precondition {
@@ -131,18 +131,26 @@ impl EffectSink for AuthoritativeEffectSink<'_, '_> {
             | EffectPrecondition::CapacityFloor { .. }
             | EffectPrecondition::BeliefHeld { .. } => true,
             EffectPrecondition::CoLocated { actor, target } => {
-                self.txn.effective_place(*actor) == self.txn.effective_place(*target)
+                let actor = resolve_entity_ref(*actor, actor_entity, targets)?;
+                let target = resolve_entity_ref(*target, actor_entity, targets)?;
+                self.txn.effective_place(actor) == self.txn.effective_place(target)
             }
             EffectPrecondition::QuantityAvailable {
                 source,
                 commodity,
                 min,
-            } => self.txn.controlled_commodity_quantity(*source, *commodity) >= *min,
-            EffectPrecondition::ContentionGrantHeld { actor, affordance } => self
-                .txn
-                .get_component_contention_queue(*affordance)
-                .and_then(|queue| queue.granted.as_ref())
-                .is_some_and(|grant| grant.actor == *actor),
+            } => {
+                let source = resolve_entity_ref(*source, actor_entity, targets)?;
+                self.txn.controlled_commodity_quantity(source, *commodity) >= *min
+            }
+            EffectPrecondition::ContentionGrantHeld { actor, affordance } => {
+                let actor = resolve_entity_ref(*actor, actor_entity, targets)?;
+                let affordance = resolve_entity_ref(*affordance, actor_entity, targets)?;
+                self.txn
+                    .get_component_contention_queue(affordance)
+                    .and_then(|queue| queue.granted.as_ref())
+                    .is_some_and(|grant| grant.actor == actor)
+            }
         };
 
         ok.then_some(()).ok_or(Discrepancy::MissingObservation)
@@ -217,6 +225,21 @@ impl EffectSink for AuthoritativeEffectSink<'_, '_> {
         self.txn
             .set_component_contention_queue(grant, queue)
             .map_err(|_| Discrepancy::PartialExecutionDrift)
+    }
+}
+
+fn resolve_entity_ref(
+    entity_ref: EffectEntityRef,
+    actor: EntityId,
+    targets: &[EntityId],
+) -> Result<EntityId, Discrepancy> {
+    match entity_ref {
+        EffectEntityRef::Actor => Ok(actor),
+        EffectEntityRef::Target { index } => targets
+            .get(index)
+            .copied()
+            .ok_or(Discrepancy::NoLegalBinding),
+        EffectEntityRef::Entity(entity) => Ok(entity),
     }
 }
 

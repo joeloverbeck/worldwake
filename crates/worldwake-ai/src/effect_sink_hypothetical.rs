@@ -2,7 +2,9 @@ use crate::planning_state::{PlanningEntityRef, PlanningState};
 use worldwake_core::{
     CommodityKind, Discrepancy, EntityId, EventTag, ExpectationId, Quantity, WoundCause,
 };
-use worldwake_sim::{EffectPrecondition, EffectSink, TargetSpec, TemporalBeliefView};
+use worldwake_sim::{
+    EffectEntityRef, EffectPrecondition, EffectSink, TargetSpec, TemporalBeliefView,
+};
 
 pub struct HypotheticalEffectSink<'snapshot> {
     state: PlanningState<'snapshot>,
@@ -74,7 +76,7 @@ impl EffectSink for HypotheticalEffectSink<'_> {
     fn check_precondition(
         &self,
         precondition: &EffectPrecondition,
-        _actor: EntityId,
+        actor_entity: EntityId,
         targets: &[EntityId],
     ) -> Result<(), Discrepancy> {
         let ok = match precondition {
@@ -88,21 +90,29 @@ impl EffectSink for HypotheticalEffectSink<'_> {
             | EffectPrecondition::CapacityFloor { .. }
             | EffectPrecondition::BeliefHeld { .. } => true,
             EffectPrecondition::CoLocated { actor, target } => {
+                let actor = resolve_entity_ref(*actor, actor_entity, targets)?;
+                let target = resolve_entity_ref(*target, actor_entity, targets)?;
                 self.state
-                    .effective_place_ref(PlanningEntityRef::Authoritative(*actor))
+                    .effective_place_ref(PlanningEntityRef::Authoritative(actor))
                     == self
                         .state
-                        .effective_place_ref(PlanningEntityRef::Authoritative(*target))
+                        .effective_place_ref(PlanningEntityRef::Authoritative(target))
             }
             EffectPrecondition::QuantityAvailable {
                 source,
                 commodity,
                 min,
-            } => self.quantity_available(*source, *commodity, *min),
-            EffectPrecondition::ContentionGrantHeld { actor, affordance } => self
-                .state
-                .facility_grant(*affordance)
-                .is_some_and(|grant| grant.actor == *actor),
+            } => {
+                let source = resolve_entity_ref(*source, actor_entity, targets)?;
+                self.quantity_available(source, *commodity, *min)
+            }
+            EffectPrecondition::ContentionGrantHeld { actor, affordance } => {
+                let actor = resolve_entity_ref(*actor, actor_entity, targets)?;
+                let affordance = resolve_entity_ref(*affordance, actor_entity, targets)?;
+                self.state
+                    .facility_grant(affordance)
+                    .is_some_and(|grant| grant.actor == actor)
+            }
         };
 
         ok.then_some(()).ok_or(Discrepancy::MissingObservation)
@@ -207,5 +217,20 @@ impl EffectSink for HypotheticalEffectSink<'_> {
     fn consume_grant(&mut self, grant: EntityId) -> Result<(), Discrepancy> {
         self.update_state(|state| state.simulate_grant_consumed(grant));
         Ok(())
+    }
+}
+
+fn resolve_entity_ref(
+    entity_ref: EffectEntityRef,
+    actor: EntityId,
+    targets: &[EntityId],
+) -> Result<EntityId, Discrepancy> {
+    match entity_ref {
+        EffectEntityRef::Actor => Ok(actor),
+        EffectEntityRef::Target { index } => targets
+            .get(index)
+            .copied()
+            .ok_or(Discrepancy::NoLegalBinding),
+        EffectEntityRef::Entity(entity) => Ok(entity),
     }
 }

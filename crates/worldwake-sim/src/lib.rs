@@ -112,8 +112,9 @@ pub use compaction::compact_event_log;
 pub use controller_state::{ControlError, ControllerState};
 pub use deterministic_rng::DeterministicRng;
 pub use effect_schema::{
-    EffectFact, EffectMode, EffectOutcome, EffectPrecondition, EffectSchema, EffectSink,
-    EffectStep, apply_effects,
+    EffectActionRef, EffectEntityRef, EffectEvaluationContext, EffectFact, EffectMode,
+    EffectOutcome, EffectPrecondition, EffectSchema, EffectSink, EffectStep, apply_effects,
+    apply_effects_with_context,
 };
 pub use input_event::{ActionRequestMode, InputEvent, InputKind, RequestProvenance};
 pub use input_queue::{InputQueue, InputQueueError};
