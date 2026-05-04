@@ -303,6 +303,7 @@ mod tests {
         HypotheticalEntityId, KillCondition, OpportunityAnchor, OpportunityExpectationKind,
         OpportunityKey, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
         PlanningEntityRef, ProfileFixture, RevivalTrigger,
+        decision_trace::SourceReliabilityDiscount,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::ActionDefId;
@@ -393,6 +394,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: FeasibilityHint::Uncertain,
         }
     }
@@ -561,12 +563,27 @@ mod tests {
                     commodity: CommodityKind::Bread,
                     destination: entity(44),
                 });
-                let committed = sample_agenda_entry(
+                let mut committed = sample_agenda_entry(
                     committed_goal,
                     OpportunityAnchor::Place(entity(17)),
                     AgendaPhase::Committed,
                     Tick(11),
                 );
+                committed.source_composite = Some(crate::SourceCompositeRank {
+                    source_entity: entity(70),
+                    commodity: CommodityKind::Water,
+                    trust_factor_permille: 900,
+                    wait_factor_permille: 800,
+                    capacity_factor_permille: 1200,
+                    composite_permille: 864,
+                });
+                committed.source_reliability_discount = Some(SourceReliabilityDiscount {
+                    source_entity: entity(70),
+                    commodity: CommodityKind::Water,
+                    failure_ratio_permille: 250,
+                    pre_discount_motive: 80_000,
+                    post_discount_motive: 60_000,
+                });
                 let mut pending = sample_agenda_entry(
                     pending_goal,
                     OpportunityAnchor::Place(entity(18)),

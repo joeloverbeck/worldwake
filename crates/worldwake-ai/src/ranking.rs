@@ -34,8 +34,10 @@ use crate::{
     goal_model::free_carry_capacity_contract_from_view,
     pressure::is_bandit_raid_deterred_by_wounds,
     route_threat::threat_warning_signal_for_place,
+    source_composite::source_composite_rank,
     theft::assess_theft_deterrence,
 };
+use std::num::NonZeroU16;
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
@@ -49,8 +51,8 @@ use worldwake_core::{
     GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead,
     InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille,
     NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, Quantity, ReliabilityRecord, RepairKey,
-    RepairMemory, RightKind, SourceKey, SubstitutePreferences, SurveyRecord, TellTopic,
+    OpportunityKey, PerceptionSource, Permille, PreferenceProfile, Quantity, ReliabilityRecord,
+    RepairKey, RepairMemory, RightKind, SourceKey, SubstitutePreferences, SurveyRecord, TellTopic,
     ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
     failure_ratio_permille,
 };
@@ -244,6 +246,7 @@ pub(crate) fn rank_candidates_with_memories(
             .map_or(motive_score, |discount| discount.post_discount_motive);
         let competition_discount =
             apply_competition_discount(candidate, &context, post_source_reliability_motive);
+        let source_composite = source_composite_rank(candidate, &context);
         let scored = AgendaEntry::pending(
             candidate.clone(),
             current_tick,
@@ -256,6 +259,7 @@ pub(crate) fn rank_candidates_with_memories(
             provenance,
             source_reliability_discount,
             competition_discount,
+            source_composite,
             crate::feasibility::FeasibilityHint::Uncertain,
         );
         if let Some(entry) = survey_damping_entry(candidate, &context) {
@@ -432,23 +436,8 @@ fn apply_source_reliability_discount(
         entity: source_entity,
         commodity,
     })?;
-    let failure_ratio = failure_ratio_permille(record);
-    if failure_ratio == 0 {
-        return None;
-    }
 
-    let trust_weight = u32::from(profile.source_trust_weight.value());
-    let effective_discount = trust_weight.saturating_mul(failure_ratio) / 1000;
-    let post_discount_motive =
-        (motive_score.saturating_mul(1000u32.saturating_sub(effective_discount)) / 1000).max(1);
-
-    Some(SourceReliabilityDiscount {
-        source_entity,
-        commodity,
-        failure_ratio_permille: failure_ratio,
-        pre_discount_motive: motive_score,
-        post_discount_motive,
-    })
+    source_reliability_failure_discount(source_entity, commodity, record, profile, motive_score)
 }
 
 pub(crate) fn apply_pending_source_reliability_failures(
@@ -549,25 +538,46 @@ fn apply_source_reliability_discount_with_pending_failures(
     }
 
     let profile = context.view.preference_profile(context.agent)?;
-    let trust_weight = u32::from(profile.source_trust_weight.value());
-    let mut record = context
+    let record = context
         .view
         .source_reliability(context.agent)
         .and_then(|source_reliability| source_reliability.sources.get(&source_key).copied())
-        .unwrap_or(ReliabilityRecord {
-            successful_acquisitions: 0,
-            failed_attempts: 0,
-            last_attempt_tick: context.current_tick,
-        });
-    record.failed_attempts = record.failed_attempts.saturating_add(1);
-    let failure_ratio = failure_ratio_permille(&record);
+        .unwrap_or_else(|| ReliabilityRecord::new(context.current_tick));
+    let mut projected_record = record;
+    projected_record.failed_attempts = projected_record.failed_attempts.saturating_add(1);
+
+    source_reliability_failure_discount(
+        source_entity,
+        commodity,
+        &projected_record,
+        profile,
+        motive_score,
+    )
+}
+
+// S131 landed wait/capacity learning state (`average_wait_ticks`,
+// `last_observed_capacity`, `wait_sensitivity_weight`) and the perception/queue
+// hooks that populate them, but the additive composite that fed those signals
+// into `motive_score` was rolled back: it perturbed cross-category goal ranking
+// (Wash vs AcquireCommodity, etc.) at magnitudes the spec did not anticipate.
+// S133 will reintegrate wait/capacity as a same-commodity sub-rank tiebreaker
+// over `(commodity, purpose)` opportunities, so the data path stays live but
+// only the failure-ratio axis currently moves motive through this discount.
+fn source_reliability_failure_discount(
+    source_entity: EntityId,
+    commodity: CommodityKind,
+    trust_record: &ReliabilityRecord,
+    profile: PreferenceProfile,
+    motive_score: u32,
+) -> Option<SourceReliabilityDiscount> {
+    let failure_ratio = failure_ratio_permille(trust_record);
     if failure_ratio == 0 {
         return None;
     }
-
-    let effective_discount = trust_weight.saturating_mul(failure_ratio) / 1000;
+    let trust_weight = u32::from(profile.source_trust_weight.value());
+    let trust_discount = trust_weight.saturating_mul(failure_ratio) / 1000;
     let post_discount_motive =
-        (motive_score.saturating_mul(1000u32.saturating_sub(effective_discount)) / 1000).max(1);
+        (motive_score.saturating_mul(1000u32.saturating_sub(trust_discount)) / 1000).max(1);
 
     Some(SourceReliabilityDiscount {
         source_entity,
@@ -578,7 +588,9 @@ fn apply_source_reliability_discount_with_pending_failures(
     })
 }
 
-fn source_reliability_discount_scope(candidate: &GoalOffer) -> Option<(EntityId, CommodityKind)> {
+pub(crate) fn source_reliability_discount_scope(
+    candidate: &GoalOffer,
+) -> Option<(EntityId, CommodityKind)> {
     let mut source_entities = candidate.evidence_entities.iter().copied();
     let source_entity = source_entities.next()?;
     if source_entities.next().is_some() {
@@ -680,10 +692,10 @@ fn drive_goal_ranking_provenance(
     }
 }
 
-struct RankingContext<'a> {
-    view: &'a dyn GoalBeliefView,
-    agent: EntityId,
-    current_tick: Tick,
+pub(crate) struct RankingContext<'a> {
+    pub(crate) view: &'a dyn GoalBeliefView,
+    pub(crate) agent: EntityId,
+    pub(crate) current_tick: Tick,
     utility: &'a UtilityProfile,
     repair_memory: &'a RepairMemory,
     learned_opportunity_memory: &'a LearnedOpportunityMemory,
@@ -2336,8 +2348,9 @@ fn steal_item_assessment(
 pub enum RankedGoalComparisonDimension {
     PriorityClass,
     SubstitutePreferenceOrder,
-    Feasibility,
     MotiveScore,
+    SourceComposite,
+    Feasibility,
     GoalSpecificity,
     OpportunityStrength,
     ShareBeliefTopicOrder,
@@ -2374,6 +2387,27 @@ fn ranked_goal_ordering(
     let ordering = right.motive_score.cmp(&left.motive_score);
     if ordering != Ordering::Equal {
         return (ordering, Some(RankedGoalComparisonDimension::MotiveScore));
+    }
+
+    if let Some((left_key, right_key)) = source_composite_peer_keys(&left.offer, &right.offer)
+        && left_key == right_key
+    {
+        let ordering = right
+            .source_composite
+            .as_ref()
+            .map_or(0, |rank| rank.composite_permille)
+            .cmp(
+                &left
+                    .source_composite
+                    .as_ref()
+                    .map_or(0, |rank| rank.composite_permille),
+            );
+        if ordering != Ordering::Equal {
+            return (
+                ordering,
+                Some(RankedGoalComparisonDimension::SourceComposite),
+            );
+        }
     }
 
     let ordering = left.feasibility.cmp(&right.feasibility);
@@ -2429,6 +2463,46 @@ fn ranked_goal_ordering(
     }
 
     (Ordering::Equal, None)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceCompositePeerKey {
+    Acquire {
+        commodity: CommodityKind,
+        purpose: CommodityPurpose,
+        desired_target: NonZeroU16,
+    },
+    Restock {
+        commodity: CommodityKind,
+    },
+}
+
+fn source_composite_peer_keys(
+    left: &GoalOffer,
+    right: &GoalOffer,
+) -> Option<(SourceCompositePeerKey, SourceCompositePeerKey)> {
+    Some((
+        source_composite_peer_key(left)?,
+        source_composite_peer_key(right)?,
+    ))
+}
+
+fn source_composite_peer_key(offer: &GoalOffer) -> Option<SourceCompositePeerKey> {
+    match offer.key.kind {
+        GoalKind::AcquireCommodity {
+            commodity,
+            purpose,
+            quantity,
+        } => Some(SourceCompositePeerKey::Acquire {
+            commodity,
+            purpose,
+            desired_target: quantity.desired_target,
+        }),
+        GoalKind::RestockCommodity { commodity } => {
+            Some(SourceCompositePeerKey::Restock { commodity })
+        }
+        _ => None,
+    }
 }
 
 fn compare_substitute_preference_order(left: &AgendaEntry, right: &AgendaEntry) -> Ordering {
@@ -2660,10 +2734,11 @@ mod tests {
         GoalOffer, GoalPriorityClass, OpportunityExpectationFailureIncident,
         OpportunityExpectationKind, RankedDriveGoalProvenance, RankedDriveKind,
         RankedDriveMotiveInput, RankedGoalProvenance, RankedPriorityAdjustment,
+        SourceCompositeRank,
         decision_trace::{CandidateDampingReason, CompetitionDiscount, SourceReliabilityDiscount},
     };
     use std::collections::{BTreeMap, BTreeSet};
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU16, NonZeroU32};
     use worldwake_core::{
         AcquisitionQuantity, ActionDomain, ArtifactKind, ArtifactPostingContext, ArtifactState,
         BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
@@ -2677,10 +2752,10 @@ mod tests {
         InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
         MetabolismProfile, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
-        ObligationSatiationProfile, OfficeData, OpportunityAnchor, PatrolProfile, PatrolRoute,
-        PerceptionSource, Permille, PlaceDirtiness, PreferenceProfile, ProofRequirement,
-        PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord, ResourceSource,
-        RewardSource, RightKind, RouteExperience, ShelterTag, SleepQualityProfile,
+        ObligationSatiationProfile, OfficeData, OpportunityAnchor, OpportunityKey, PatrolProfile,
+        PatrolRoute, PerceptionSource, Permille, PlaceDirtiness, PreferenceProfile,
+        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord,
+        ResourceSource, RewardSource, RightKind, RouteExperience, ShelterTag, SleepQualityProfile,
         SleepRecoveryModifier, SourceKey, SourceReliability, SubstitutePreferences, SurveyMemory,
         SurveyRecord, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
         TradeCategory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
@@ -3384,6 +3459,182 @@ mod tests {
         }
     }
 
+    fn acquisition_quantity(desired_min: u16, desired_target: u16) -> AcquisitionQuantity {
+        AcquisitionQuantity {
+            desired_min: NonZeroU16::new(desired_min).unwrap(),
+            desired_target: NonZeroU16::new(desired_target).unwrap(),
+            horizon_ticks: NonZeroU32::new(200).unwrap(),
+        }
+    }
+
+    fn composite_rank(
+        source_entity: EntityId,
+        commodity: CommodityKind,
+        composite_permille: u32,
+    ) -> SourceCompositeRank {
+        SourceCompositeRank {
+            source_entity,
+            commodity,
+            trust_factor_permille: 1000,
+            wait_factor_permille: 1000,
+            capacity_factor_permille: 1000,
+            composite_permille,
+        }
+    }
+
+    fn source_composite_entry(
+        source_entity: EntityId,
+        commodity: CommodityKind,
+        purpose: CommodityPurpose,
+        quantity: AcquisitionQuantity,
+        motive_score: u32,
+        composite_permille: u32,
+    ) -> AgendaEntry {
+        let offer = goal_at_place_with_sources(
+            GoalKind::AcquireCommodity {
+                commodity,
+                purpose,
+                quantity,
+            },
+            entity(90),
+            BTreeSet::from([source_entity]),
+        );
+        AgendaEntry {
+            key: OpportunityKey {
+                goal_key: offer.key,
+                anchor: offer.anchor,
+            },
+            offer,
+            phase: crate::AgendaPhase::Pending,
+            origin: crate::AgendaOrigin::NeedDrive,
+            introduced_tick: Tick(0),
+            last_reconsidered_tick: Tick(0),
+            revival_trigger: None,
+            kill_condition: crate::KillCondition::External,
+            priority_class: GoalPriorityClass::Medium,
+            motive_score,
+            provenance: None,
+            source_reliability_discount: None,
+            competition_discount: None,
+            source_composite: Some(composite_rank(source_entity, commodity, composite_permille)),
+            feasibility: crate::FeasibilityHint::Uncertain,
+        }
+    }
+
+    #[test]
+    fn source_composite_tiebreaker_fires_when_motive_score_tied_and_peer_keys_match() {
+        let close_source = entity(10);
+        let far_source = entity(11);
+        let quantity = AcquisitionQuantity::single();
+        let close = source_composite_entry(
+            close_source,
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+            quantity,
+            500,
+            700,
+        );
+        let far = source_composite_entry(
+            far_source,
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+            quantity,
+            500,
+            1400,
+        );
+
+        let comparison = super::explain_ranked_goal_order(&close, &far)
+            .expect("composite should decide same-commodity source siblings");
+
+        assert_eq!(comparison.winner, far.key);
+        assert_eq!(
+            comparison.decisive_dimension,
+            super::RankedGoalComparisonDimension::SourceComposite
+        );
+    }
+
+    #[test]
+    fn source_composite_tiebreaker_does_not_fire_for_cross_category_compare() {
+        let mut wash = source_composite_entry(
+            entity(10),
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+            AcquisitionQuantity::single(),
+            600,
+            700,
+        );
+        wash.offer = goal(GoalKind::Wash);
+        wash.key = OpportunityKey {
+            goal_key: wash.offer.key,
+            anchor: wash.offer.anchor,
+        };
+
+        let acquire = source_composite_entry(
+            entity(11),
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+            AcquisitionQuantity::single(),
+            500,
+            1400,
+        );
+
+        let comparison = super::explain_ranked_goal_order(&wash, &acquire)
+            .expect("motive score should decide cross-category comparison");
+
+        assert_eq!(comparison.winner, wash.key);
+        assert_eq!(
+            comparison.decisive_dimension,
+            super::RankedGoalComparisonDimension::MotiveScore
+        );
+    }
+
+    #[test]
+    fn source_composite_tiebreaker_does_not_fire_for_different_commodity_acquire() {
+        let apple = source_composite_entry(
+            entity(10),
+            CommodityKind::Apple,
+            CommodityPurpose::SelfConsume,
+            AcquisitionQuantity::single(),
+            500,
+            700,
+        );
+        let bread = source_composite_entry(
+            entity(11),
+            CommodityKind::Bread,
+            CommodityPurpose::SelfConsume,
+            AcquisitionQuantity::single(),
+            500,
+            1400,
+        );
+
+        let comparison = super::explain_ranked_goal_order(&apple, &bread)
+            .expect("later dimensions should decide different commodities");
+
+        assert_ne!(
+            comparison.decisive_dimension,
+            super::RankedGoalComparisonDimension::SourceComposite
+        );
+    }
+
+    #[test]
+    fn source_composite_peer_keys_compare_acquisition_quantity_by_desired_target() {
+        let lower_min = goal(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: acquisition_quantity(1, 5),
+        });
+        let higher_min = goal(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: acquisition_quantity(3, 5),
+        });
+
+        let (left_key, right_key) = super::source_composite_peer_keys(&lower_min, &higher_min)
+            .expect("same desired target should produce comparable peer keys");
+
+        assert_eq!(left_key, right_key);
+    }
+
     fn observed_activity_state(
         place: EntityId,
         domain: ActionDomain,
@@ -3848,6 +4099,7 @@ mod tests {
             successful_acquisitions,
             failed_attempts,
             last_attempt_tick: current_tick(),
+            ..ReliabilityRecord::default()
         }
     }
 
@@ -5592,6 +5844,8 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
+                capacity_observation_weight: pm(20),
             },
         );
         let utility = utility();
@@ -5680,6 +5934,8 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
+                capacity_observation_weight: pm(20),
             },
         );
         view.source_reliabilities.insert(
@@ -5739,6 +5995,8 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
+                capacity_observation_weight: pm(20),
             },
         );
         view.source_reliabilities.insert(
@@ -5783,7 +6041,7 @@ mod tests {
     }
 
     #[test]
-    fn source_reliability_discount_skips_zero_failure_ratio() {
+    fn source_reliability_discount_returns_none_when_failure_ratio_is_zero() {
         let agent = entity(1);
         let market = entity(2);
         let source = entity(50);
@@ -5796,6 +6054,8 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
+                capacity_observation_weight: pm(20),
             },
         );
         view.source_reliabilities.insert(
@@ -5837,6 +6097,10 @@ mod tests {
         );
     }
 
+    // Motive-additive composite tests for wait/capacity (S131SOURELWAI-004)
+    // were removed when S131's D4 integration was rolled back; S132 will
+    // reintroduce wait/capacity as a same-commodity sub-rank tiebreaker.
+
     #[test]
     fn motive_score_falls_back_to_success_ratio_for_acquire_commodity() {
         // Two believed sources for the same commodity with different
@@ -5860,6 +6124,8 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
+                capacity_observation_weight: pm(20),
             },
         );
         view.source_reliabilities.insert(
@@ -5957,6 +6223,8 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
+                capacity_observation_weight: pm(20),
             },
         );
         view.source_reliabilities.insert(
@@ -6033,6 +6301,8 @@ mod tests {
                 route_memory_capacity: 8,
                 source_memory_capacity: 8,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
+                capacity_observation_weight: pm(20),
             },
         );
         view.source_reliabilities.insert(
@@ -6318,6 +6588,7 @@ mod tests {
             })),
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
@@ -6351,6 +6622,7 @@ mod tests {
             })),
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
@@ -6402,6 +6674,7 @@ mod tests {
             })),
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Likely,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
@@ -6435,6 +6708,7 @@ mod tests {
             })),
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Likely,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,
@@ -8444,6 +8718,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,

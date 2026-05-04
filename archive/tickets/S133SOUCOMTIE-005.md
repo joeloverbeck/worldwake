@@ -1,0 +1,159 @@
+# S133SOUCOMTIE-005: Strip vestigial wait and capacity fields from SourceReliabilityDiscount
+
+**Status**: COMPLETED
+**Priority**: MEDIUM
+**Effort**: Small
+**Engine Changes**: Yes — `SourceReliabilityDiscount` shrinks; `format_source_reliability_discount_summary` rewinds
+**Deps**: archive/tickets/S133SOUCOMTIE-004.md
+
+## Problem
+
+After tickets 002–004 land, the wait/capacity surface lives entirely on `SourceCompositeRank`. The fields `average_wait_ticks`, `wait_penalty`, `last_observed_capacity`, `capacity_freshness_ticks`, `capacity_signal` on `SourceReliabilityDiscount` are zero-filled holdovers from S131SOURELWAI-004's rolled-back motive-additive composite. Per FND-28 (no backward-compat in live authority paths), they must be removed once their replacement is live; leaving them violates the principle and adds dead width to the trace format.
+
+## Assumption Reassessment (2026-05-03)
+
+<!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
+
+1. `SourceReliabilityDiscount` lives at `crates/worldwake-ai/src/decision_trace.rs:546` with five fields the rollback reduced to constant zero (`average_wait_ticks`, `wait_penalty`, `last_observed_capacity`, `capacity_freshness_ticks`, `capacity_signal`). Construction sites: `ranking.rs:595` (production `source_reliability_failure_discount`), `ranking.rs:5749`, `ranking.rs:6048`, `ranking.rs:6173` (test fixtures), `decision_trace.rs:2462` (sample fixture), `agent_tick/planning.rs:4136` (test fixture), `goal_model.rs:2836` (test fixture). The Display formatter at `decision_trace.rs:1957-1971` consumes the dropped fields — must be rewritten back to the pre-S131 shape `", source_reliability=entity={} commodity={:?} failure={} pre={} post={}"`.
+2. Later live reassessment corrected spec D1's save-boundary claim: `SourceReliabilityDiscount` is not a component-schema field, but it is embedded in `AgendaEntry`, and `AgentDecisionRuntime.agenda_state` is serialized. Removing fields from `SourceReliabilityDiscount` therefore changes the current runtime save payload and requires a single `SAVE_FORMAT_VERSION` bump plus focused non-default runtime round-trip proof.
+3. Shared abstraction boundary under audit: the per-candidate decision-trace projection of `SourceReliabilityDiscount` and its Display formatter. The wait/cap surface migrates to `SourceCompositeRank` (delivered by tickets 002+004); this ticket is the strip step.
+4. Later reassessment note (2026-05-04): ticket 002 already corrected the stale `S132` narrative comment in `ranking.rs` while making the `source_composite` module lawful. Ticket 005 no longer owns that comment repair.
+
+## Architecture Check
+
+1. Removing dead fields straightens the trace shape and matches FND-28's "no backward compat in live authority paths." Alternatives considered: (i) leaving the fields in place "for stability" — rejected because their values are always zero post-rollback and `SourceCompositeRank` already carries the live versions of the same data; (ii) gating behind a feature flag — rejected per FND-28 and the project's no-shim policy.
+2. Existing `source_reliability_discount_*` focused tests at `ranking.rs:5592-5827, 5983, 6074` exercise the failure-ratio path only; they continue to pass after the field shrink because the failure-ratio fields are preserved.
+
+## Verification Layers
+
+1. Struct shrink compiles cleanly across all construction sites → workspace build.
+2. Display format change → existing summary assertion test at `decision_trace.rs:3841` shrinks (the wait/cap substring assertions land in ticket 004's composite assertions; the failure-ratio substrings remain).
+3. Failure-ratio motive discount path remains intact → existing focused tests `source_reliability_discount_applies_failure_ratio_proportionally:5700`, `source_reliability_discount_floors_positive_motive_at_one:5765`, `source_reliability_discount_returns_none_when_failure_ratio_is_zero:5827`, `source_reliability_discount_composes_with_competition_discount:5983`, `pending_source_reliability_failure_reorders_candidates_before_persistence:6074` all remain green.
+4. Runtime save shape remains explicit → `SAVE_FORMAT_VERSION` bumps once and `agent_decision_runtime_bincode_round_trip_preserves_all_fields` carries a non-default `SourceReliabilityDiscount`.
+5. Single-layer (trace-projection struct shrink) ticket; no authoritative-state mutation, no comparator semantic change.
+
+## What to Change
+
+### 1. Shrink `SourceReliabilityDiscount`
+
+In `crates/worldwake-ai/src/decision_trace.rs:546`:
+
+```rust
+pub struct SourceReliabilityDiscount {
+    pub source_entity: EntityId,
+    pub commodity: CommodityKind,
+    pub failure_ratio_permille: u32,
+    pub pre_discount_motive: u32,
+    pub post_discount_motive: u32,
+}
+```
+
+Drop: `average_wait_ticks`, `wait_penalty`, `last_observed_capacity`, `capacity_freshness_ticks`, `capacity_signal`.
+
+### 2. Rewind Display formatter
+
+In `decision_trace.rs:1957-1971`, replace with:
+
+```rust
+fn format_source_reliability_discount_summary(discount: &SourceReliabilityDiscount) -> String {
+    format!(
+        ", source_reliability=entity={} commodity={:?} failure={} pre={} post={}",
+        discount.source_entity,
+        discount.commodity,
+        discount.failure_ratio_permille,
+        discount.pre_discount_motive,
+        discount.post_discount_motive,
+    )
+}
+```
+
+### 3. Update production construction site
+
+In `crates/worldwake-ai/src/ranking.rs:595` (`source_reliability_failure_discount`), drop the five vestigial fields. Also drop the now-unused `capacity_freshness_ticks` local computation at `ranking.rs:591-593` and the `observation_record` arg threading if it becomes unused after the strip — verify by compile.
+
+### 4. Update test fixtures
+
+- `crates/worldwake-ai/src/decision_trace.rs:2462` `sample_source_reliability_discount` — drop the five fields.
+- `crates/worldwake-ai/src/ranking.rs:5749, 6048, 6173` — drop the five fields.
+- `crates/worldwake-ai/src/agent_tick/planning.rs:4136` — drop the five fields.
+- `crates/worldwake-ai/src/goal_model.rs:2836` — drop the five fields.
+
+### 5. Shrink existing summary assertion
+
+In `decision_trace.rs:3839-3850`, remove the assertions for `wait_avg=`, `wait_pen=`, `cap=`, `cap_age=`, `cap_sig=` (those landed in ticket 004's composite-line assertions). Keep `source_reliability=entity=`, `commodity=Bread`, `failure=500`, `pre=700`, `post=350` assertions.
+
+## Files to Touch
+
+- `crates/worldwake-ai/src/decision_trace.rs` (modify — struct, Display, sample, summary assertion)
+- `crates/worldwake-ai/src/ranking.rs` (modify — production construction at 595, 4 test fixtures)
+- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — test fixture at 4136)
+- `crates/worldwake-ai/src/goal_model.rs` (modify — test fixture at 2836)
+- `crates/worldwake-ai/src/decision_runtime.rs` (modify — runtime round-trip fixture carries non-default surviving fields)
+- `crates/worldwake-sim/src/save_load.rs` (modify — current save-format version bump)
+
+## Out of Scope
+
+- New composite trace formatting (ticket 004).
+- Any old-save compatibility shim. The current save format bumps once because `SourceReliabilityDiscount` is also in serialized `AgentDecisionRuntime.agenda_state`; older versions remain rejected by the existing save loader.
+- Golden coverage (ticket 006).
+
+## Acceptance Criteria
+
+### Tests That Must Pass
+
+1. Existing focused tests for the failure-ratio path: `source_reliability_discount_skips_non_commodity_goals` (`ranking.rs:5592`), `source_reliability_discount_returns_none_without_experience:5611`, `source_reliability_discount_returns_none_without_preference_profile:5655`, `source_reliability_discount_applies_failure_ratio_proportionally:5700`, `source_reliability_discount_floors_positive_motive_at_one:5765`, `source_reliability_discount_returns_none_when_failure_ratio_is_zero:5827`, `source_reliability_discount_composes_with_competition_discount:5983`, `pending_source_reliability_failure_reorders_candidates_before_persistence:6074`.
+2. Existing summary assertion test at `decision_trace.rs:3841` (shrunk) — `source_reliability=entity=`, `failure=`, `pre=`, `post=` substrings still present; wait/cap substrings absent.
+3. Existing `summarize_ranked_goal_preserves_source_reliability_discount` (`agent_tick/planning.rs:4128`) — still preserves the surviving fields after roundtrip.
+4. Workspace builds cleanly: `cargo build --workspace`.
+5. Existing suite: `cargo test --workspace`.
+6. Save/runtime proof: `agent_decision_runtime_bincode_round_trip_preserves_all_fields` carries a non-default `SourceReliabilityDiscount` after the shrink, and `SAVE_FORMAT_VERSION` advances.
+
+### Invariants
+
+1. `SourceReliabilityDiscount` carries only the failure-ratio motive surface (Design Goal 7); wait/capacity surface lives on `SourceCompositeRank` only (FND-28: one canonical representation).
+2. Save format bumps once for the current `AgentDecisionRuntime.agenda_state` shape change; no backward-compat shim is introduced.
+3. No backward-compat shim and no zero-field placeholder remains (FND-28).
+
+## Test Plan
+
+### New/Modified Tests
+
+1. `crates/worldwake-ai/src/decision_trace.rs:3841` — shrunk to drop wait/cap substring assertions.
+2. `crates/worldwake-ai/src/decision_runtime.rs` — existing runtime bincode round-trip fixture now includes a non-default `SourceReliabilityDiscount`.
+3. No new tests; the focused failure-ratio coverage already exists.
+
+### Commands
+
+1. `cargo build --workspace` (catches every construction site).
+2. `cargo test -p worldwake-ai --lib decision_trace::tests` (focused).
+3. `cargo test -p worldwake-ai --lib ranking::tests::source_reliability_discount` (focused).
+4. `cargo test -p worldwake-ai --lib ranking::tests::pending_source_reliability_failure_reorders_candidates_before_persistence -- --exact` (focused pending-failure path).
+5. `cargo test -p worldwake-ai --lib agent_tick::planning::tests::summarize_ranked_goal_preserves_source_reliability_discount -- --exact` (focused summary preservation).
+6. `cargo test -p worldwake-ai --lib decision_runtime::tests::agent_decision_runtime_bincode_round_trip_preserves_all_fields -- --exact` (focused runtime save-shape proof).
+7. `cargo test --workspace` (full).
+8. `cargo clippy --workspace --all-targets -- -D warnings` (CI-shaped lint).
+
+## Outcome
+
+Completed on 2026-05-04.
+
+- Removed the five vestigial wait/capacity fields from `SourceReliabilityDiscount` and all production/test construction sites.
+- Rewound the source-reliability summary formatter to the failure-ratio-only shape and updated the existing summary assertion to prove the wait/cap substrings are absent.
+- Removed unused wait/capacity argument threading from `source_reliability_failure_discount`; `SourceCompositeRank` remains the canonical wait/capacity trace surface from tickets 002+004.
+- Bumped `SAVE_FORMAT_VERSION` from 65 to 66 because live reassessment showed `SourceReliabilityDiscount` is also serialized inside `AgentDecisionRuntime.agenda_state`.
+
+## Deviations
+
+- The draft/spec D1 claimed no save bump was needed because `SourceReliabilityDiscount` was per-tick trace-only. Live code disproved that: `AgendaEntry` stores `source_reliability_discount`, and `AgentDecisionRuntime.agenda_state` is bincode-serialized. The ticket and `specs/S133-source-composite-tiebreaker.md` were corrected to the serialized-runtime boundary.
+- No old-save compatibility shim was added; older versions continue to be rejected by the existing save loader per the repo's no-backward-compatibility rule.
+
+## Verification Result
+
+- Passed `cargo build --workspace`.
+- Passed `cargo test -p worldwake-ai --lib decision_trace::tests`.
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::source_reliability_discount`.
+- Passed `cargo test -p worldwake-ai --lib ranking::tests::pending_source_reliability_failure_reorders_candidates_before_persistence -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning::tests::summarize_ranked_goal_preserves_source_reliability_discount -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib decision_runtime::tests::agent_decision_runtime_bincode_round_trip_preserves_all_fields -- --exact`.
+- Passed `cargo test --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.

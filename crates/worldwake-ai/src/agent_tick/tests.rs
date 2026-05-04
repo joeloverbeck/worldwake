@@ -120,6 +120,7 @@ fn committed_goal_entry(goal_key: GoalKey, tick: Tick) -> AgendaEntry {
         provenance: None,
         source_reliability_discount: None,
         competition_discount: None,
+        source_composite: None,
         feasibility: crate::FeasibilityHint::Uncertain,
     }
 }
@@ -1517,6 +1518,7 @@ fn ranked_goal(
         provenance: None,
         source_reliability_discount: None,
         competition_discount: None,
+        source_composite: None,
         feasibility: crate::feasibility::FeasibilityHint::Uncertain,
         phase: crate::AgendaPhase::Pending,
         origin: crate::AgendaOrigin::NeedDrive,
@@ -6331,9 +6333,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
             commodity: CommodityKind::Apple,
         },
         worldwake_core::ReliabilityRecord {
-            successful_acquisitions: 0,
             failed_attempts: 3,
             last_attempt_tick: Tick(1),
+            ..worldwake_core::ReliabilityRecord::default()
         },
     );
 
@@ -6446,9 +6448,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
             commodity: CommodityKind::Apple,
         }),
         Some(&worldwake_core::ReliabilityRecord {
-            successful_acquisitions: 0,
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
+            ..worldwake_core::ReliabilityRecord::default()
         })
     );
     assert_eq!(
@@ -6457,9 +6459,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
             commodity: CommodityKind::Apple,
         }),
         Some(&worldwake_core::ReliabilityRecord {
-            successful_acquisitions: 0,
             failed_attempts: 1,
             last_attempt_tick: Tick(20),
+            ..worldwake_core::ReliabilityRecord::default()
         })
     );
     let source_failure_events = harness

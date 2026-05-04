@@ -2610,6 +2610,8 @@ mod tests {
                     route_memory_capacity: 8,
                     source_memory_capacity,
                     memory_retention_ticks: 100,
+                    wait_sensitivity_weight: pm(150),
+                    capacity_observation_weight: pm(20),
                 },
             )
             .unwrap();
@@ -3043,8 +3045,8 @@ mod tests {
                 },
                 ReliabilityRecord {
                     successful_acquisitions: 3,
-                    failed_attempts: 0,
                     last_attempt_tick: Tick(1),
+                    ..ReliabilityRecord::default()
                 },
             )]),
         });
@@ -3114,8 +3116,8 @@ mod tests {
             }),
             Some(&ReliabilityRecord {
                 successful_acquisitions: 1,
-                failed_attempts: 0,
                 last_attempt_tick: Tick(4),
+                ..ReliabilityRecord::default()
             })
         );
     }
@@ -3253,9 +3255,9 @@ mod tests {
                     commodity: CommodityKind::Bread,
                 }),
             Some(&ReliabilityRecord {
-                successful_acquisitions: 0,
                 failed_attempts: 1,
                 last_attempt_tick: Tick(6),
+                ..ReliabilityRecord::default()
             })
         );
     }

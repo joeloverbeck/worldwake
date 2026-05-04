@@ -1545,6 +1545,8 @@ mod tests {
                 route_memory_capacity: 1,
                 source_memory_capacity: 1,
                 memory_retention_ticks: 100,
+                wait_sensitivity_weight: pm(150),
+                capacity_observation_weight: pm(20),
             },
         );
         set_route_experience(

@@ -450,6 +450,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: FeasibilityHint::Uncertain,
         }
     }

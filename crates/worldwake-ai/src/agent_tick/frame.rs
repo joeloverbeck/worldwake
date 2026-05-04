@@ -989,6 +989,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             phase: crate::AgendaPhase::Pending,
             origin: crate::AgendaOrigin::NeedDrive,

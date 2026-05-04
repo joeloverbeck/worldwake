@@ -2814,6 +2814,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: Some(discount.clone()),
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             key: worldwake_core::OpportunityKey {
                 goal_key: GoalKey::from(GoalKind::Sleep),
@@ -2862,6 +2863,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: Some(discount.clone()),
             competition_discount: None,
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
             key: worldwake_core::OpportunityKey {
                 goal_key: GoalKey::from(GoalKind::Sleep),
@@ -2943,6 +2945,7 @@ mod tests {
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
+            source_composite: None,
             feasibility: crate::feasibility::FeasibilityHint::Uncertain,
 
             phase: crate::AgendaPhase::Pending,

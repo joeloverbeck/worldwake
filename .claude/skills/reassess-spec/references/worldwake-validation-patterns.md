@@ -181,3 +181,21 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 9. **Location accessor**: `World::effective_place(entity) -> Option<EntityId>` (`crates/worldwake-core/src/world/placement.rs`), inherited by `WorldTxn` via `Deref`. There is no `txn.location_of(agent)` accessor.
 
 **Flag as Issue**: Specs in this class that name nonexistent shortcut accessors (e.g., `entities_by_kind`, `edges_out`, `location_of`, `active_action_of`, `get_component_display_name`, `active_goal_of`), embed lifetime-bound types (`TickStepServices`, `AutonomousControllerRuntime`) as plain struct fields, or reach for `AgendaState` through a transient borrow rather than through the persistent `AgentTickDriver`.
+
+## Multi-Substrate Hook Coverage
+
+**Trigger**: Spec adds a hook on a grant transition, event emission, perception write, or learning point that has parallel substrates in worldwake. Common parallel-substrate pairs:
+
+- `ContentionQueue` (facility-level, `crates/worldwake-systems/src/facility_queue.rs::promote_ready_head`) ↔ `ResourceExtractionQueues` (per-slot on resource sources, `crates/worldwake-systems/src/production_actions.rs::grant_or_signal_full`). Only `ContentionQueue` grants emit `EventTag::QueueGrantPromoted`; resource-extraction grants do not.
+- Same-tick co-located observation (FND-14A direct read of authoritative state) ↔ memory-backed belief lookup (perception writes to `AgentBeliefStore`, AI reads from belief view).
+- Goal emission in `crates/worldwake-ai/src/candidate_generation.rs` ↔ goal ranking in `crates/worldwake-ai/src/ranking.rs` (gates vs. ordering — see also "Candidate Scoring Architecture" pattern).
+- Action precondition checks at `start_*` ↔ `validate_*` ↔ payload revalidation in `plan_revalidation.rs` (the Authoritative-to-AI Impact Rule from CLAUDE.md spans these).
+
+**Verify the spec addresses**:
+
+1. Enumerate the parallel substrates by grep — for each substrate the spec's domain spans, identify the actual handler/site (file + function + line range).
+2. Map the spec's motivating examples or scenario classes to their substrates: which entity types and components does each example use, and which substrate carries that state? Specs commonly cite a scenario whose substrate differs from the named hook (e.g., orchard contention runs through `ResourceExtractionQueues`, not the named `ContentionQueue` site).
+3. Require the spec to either (a) hook each relevant substrate explicitly with its own deliverable or sub-deliverable, or (b) explicitly Non-Goal the substrates it does not cover, with a written rationale. Silent omission is the failure mode.
+4. For the hook ordering: when a substrate's grant/promotion mutates state, identify which fields the hook needs to read BEFORE the mutation (e.g., `queued_at` from a waiter that's about to be removed) and call out the read-before-mutate ordering in the deliverable.
+
+**Flag as HIGH Issue**: Spec hooks one substrate while its motivating scenario or stated coverage spans others. The named hook will never fire for the unhooked scenarios — the spec is internally inconsistent even though every named symbol resolves.

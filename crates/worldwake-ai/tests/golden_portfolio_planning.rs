@@ -85,6 +85,7 @@ fn committed_goal_entry(goal_key: GoalKey, opportunity: OpportunityKey, tick: Ti
         provenance: None,
         source_reliability_discount: None,
         competition_discount: None,
+        source_composite: None,
         feasibility: FeasibilityHint::Uncertain,
     }
 }

@@ -114,6 +114,8 @@ fn route_profile(route_caution_weight: u16) -> PreferenceProfile {
         route_memory_capacity: 8,
         source_memory_capacity: 8,
         memory_retention_ticks: 240,
+        wait_sensitivity_weight: pm(150),
+        capacity_observation_weight: pm(20),
     }
 }
 

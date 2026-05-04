@@ -40,6 +40,13 @@ When the shared type is an authored scenario/test-facing definition such as
 destructuring/report helpers, and `#[cfg(test)]` modules that build it
 explicitly before trusting a narrow focused test.
 
+When the shared type is a scenario-definable component or profile embedded under
+an authored definition, also sweep the authored component blocks rather than only
+the definition type itself. For example, if a universal agent profile changes,
+search committed scenarios and fixtures for `AgentDef.<profile>` blocks such as
+`preference_profile` that may use full struct literals and therefore need the new
+field explicitly.
+
 When that authored scenario/test-facing type is also used across crate
 boundaries or downstream generators, extend that pre-sweep before the first
 broadened proof run. Search for explicit literals, destructuring patterns, and
