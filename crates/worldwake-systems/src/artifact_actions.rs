@@ -7,14 +7,16 @@ use crate::reward_encumbrance_support::{
 };
 use worldwake_core::{
     ArtifactHeader, ArtifactKind, ArtifactState, BodyCostPerTick, BountyTarget, BountyTerms,
-    ContentionPolicy, ContentionQueue, EntityId, EntityKind, EventLog, EventTag, NoticeContent,
-    NoticeTopic, Quantity, RewardSource, Tick, VisibilitySpec, World, WorldTxn,
+    ContentionPolicy, ContentionQueue, Discrepancy, EntityId, EntityKind, EventLog, EventTag,
+    NoticeContent, NoticeTopic, Quantity, RewardSource, Tick, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
     ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress,
-    ActionState, CommitOutcome, Constraint, DeterministicRng, DurationExpr, Interruptibility,
-    PostBountyActionPayload, PostNoticeActionPayload, Precondition, RuntimeBeliefView, TargetSpec,
+    ActionState, CommitOutcome, Constraint, DeterministicRng, DurationExpr,
+    EffectEvaluationContext, EffectMode, EffectPrecondition, EffectSchema, EffectSink, EffectStep,
+    Interruptibility, PostBountyActionPayload, PostNoticeActionPayload, Precondition,
+    RuntimeBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_artifact_actions(
@@ -141,7 +143,7 @@ fn post_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: artifact_effect_schema(EffectStep::PostBounty),
     }
 }
 
@@ -184,7 +186,7 @@ fn post_notice_action_def(id: worldwake_core::ActionDefId, handler: ActionHandle
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: artifact_effect_schema(EffectStep::PostNotice),
     }
 }
 
@@ -234,7 +236,7 @@ fn claim_bounty_action_def(id: worldwake_core::ActionDefId, handler: ActionHandl
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: artifact_effect_schema(EffectStep::ClaimBounty),
     }
 }
 
@@ -283,7 +285,14 @@ fn withdraw_bounty_action_def(
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: artifact_effect_schema(EffectStep::WithdrawBounty),
+    }
+}
+
+fn artifact_effect_schema(step: EffectStep) -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![step],
     }
 }
 
@@ -1152,6 +1161,17 @@ fn tick_post_bounty(
 fn commit_post_bounty(
     def: &ActionDef,
     instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_artifact_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_post_bounty_effect(
+    def: &ActionDef,
+    instance: &ActionInstance,
     _context: &ActionExecutionContext<'_>,
     _event_log: &EventLog,
     _rng: &mut DeterministicRng,
@@ -1241,6 +1261,17 @@ fn tick_withdraw_bounty(
 }
 
 fn commit_withdraw_bounty(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_artifact_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_withdraw_bounty_effect(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &ActionExecutionContext<'_>,
@@ -1319,6 +1350,17 @@ fn tick_post_notice(
 fn commit_post_notice(
     def: &ActionDef,
     instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_artifact_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_post_notice_effect(
+    def: &ActionDef,
+    instance: &ActionInstance,
     _context: &ActionExecutionContext<'_>,
     _event_log: &EventLog,
     _rng: &mut DeterministicRng,
@@ -1392,6 +1434,17 @@ fn tick_claim_bounty(
 fn commit_claim_bounty(
     def: &ActionDef,
     instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_artifact_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_claim_bounty_effect(
+    def: &ActionDef,
+    instance: &ActionInstance,
     _context: &ActionExecutionContext<'_>,
     _event_log: &EventLog,
     _rng: &mut DeterministicRng,
@@ -1449,6 +1502,178 @@ fn commit_claim_bounty(
     Ok(CommitOutcome::empty())
 }
 
+struct ArtifactEffectSink<'txn, 'world, 'def, 'instance, 'context, 'log, 'rng> {
+    txn: &'txn mut WorldTxn<'world>,
+    def: &'def ActionDef,
+    instance: &'instance ActionInstance,
+    context: &'context ActionExecutionContext<'context>,
+    event_log: &'log EventLog,
+    rng: &'rng mut DeterministicRng,
+    action_error: Option<ActionError>,
+}
+
+impl ArtifactEffectSink<'_, '_, '_, '_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+
+    fn checked_instance(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<ActionInstance, Discrepancy> {
+        if actor != self.instance.actor || targets != self.instance.targets.as_slice() {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        let mut instance = self.instance.clone();
+        instance.payload = payload.clone();
+        Ok(instance)
+    }
+}
+
+impl EffectSink for ArtifactEffectSink<'_, '_, '_, '_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn post_bounty(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let instance = self.checked_instance(actor, targets, payload)?;
+        apply_post_bounty_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn post_notice(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let instance = self.checked_instance(actor, targets, payload)?;
+        apply_post_notice_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn claim_bounty(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        action_def_id: worldwake_core::ActionDefId,
+    ) -> Result<(), Discrepancy> {
+        if action_def_id != self.def.id {
+            return Err(self.record_error(ActionError::InternalError(format!(
+                "effect action id {action_def_id} did not match def {}",
+                self.def.id
+            ))));
+        }
+        let payload = self.instance.payload.clone();
+        let instance = self.checked_instance(actor, targets, &payload)?;
+        apply_claim_bounty_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn withdraw_bounty(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        let payload = self.instance.payload.clone();
+        let instance = self.checked_instance(actor, targets, &payload)?;
+        apply_withdraw_bounty_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+}
+
+fn apply_artifact_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = ArtifactEffectSink {
+        txn,
+        def,
+        instance,
+        context,
+        event_log,
+        rng,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
 fn abort_claim_bounty(
     def: &ActionDef,
     instance: &ActionInstance,
@@ -1492,8 +1717,8 @@ mod tests {
     use worldwake_sim::{
         ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
         ActionHandlerRegistry, ActionInstanceId, ActionPayload, Affordance, DeterministicRng,
-        PerAgentBeliefView, PostBountyActionPayload, PostNoticeActionPayload, TickOutcome,
-        start_action, tick_action,
+        EffectStep, PerAgentBeliefView, PostBountyActionPayload, PostNoticeActionPayload,
+        TickOutcome, start_action, tick_action,
     };
 
     use super::*;
@@ -1801,6 +2026,22 @@ mod tests {
         assert_eq!(defs.get(ids[1]).unwrap().name, "post_notice");
         assert_eq!(defs.get(ids[2]).unwrap().name, "claim_bounty");
         assert_eq!(defs.get(ids[3]).unwrap().name, "withdraw_bounty");
+        assert_eq!(
+            defs.get(ids[0]).unwrap().effect_schema.steps,
+            vec![EffectStep::PostBounty]
+        );
+        assert_eq!(
+            defs.get(ids[1]).unwrap().effect_schema.steps,
+            vec![EffectStep::PostNotice]
+        );
+        assert_eq!(
+            defs.get(ids[2]).unwrap().effect_schema.steps,
+            vec![EffectStep::ClaimBounty]
+        );
+        assert_eq!(
+            defs.get(ids[3]).unwrap().effect_schema.steps,
+            vec![EffectStep::WithdrawBounty]
+        );
         assert_eq!(
             defs.get(ids[0]).unwrap().targets,
             vec![TargetSpec::ActorPlace]

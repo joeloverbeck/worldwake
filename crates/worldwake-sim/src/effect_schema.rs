@@ -187,6 +187,18 @@ pub enum EffectStep {
     Investigate,
     ReportMissing,
     ReportFound,
+    Accuse,
+    Fine,
+    Exile,
+    Bribe,
+    Threaten,
+    DeclareSupport,
+    PressForceClaim,
+    YieldForceClaim,
+    PostBounty,
+    PostNotice,
+    ClaimBounty,
+    WithdrawBounty,
     PartialOnFailure {
         primary: Vec<EffectStep>,
         fallback: Vec<EffectStep>,
@@ -550,6 +562,110 @@ pub trait EffectSink {
     ) -> Result<(), Discrepancy> {
         Err(Discrepancy::ImproperPlanningState)
     }
+
+    fn accuse(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn fine(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn exile(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn bribe(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn threaten(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn declare_support(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn press_force_claim(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn yield_force_claim(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn post_bounty(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn post_notice(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn claim_bounty(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+        _action_def_id: ActionDefId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn withdraw_bounty(
+        &mut self,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -829,6 +945,42 @@ fn apply_step(
         }
         EffectStep::ReportFound => {
             sink.report_found(context.actor, context.payload)?;
+        }
+        EffectStep::Accuse => {
+            sink.accuse(context.actor, context.targets, context.payload)?;
+        }
+        EffectStep::Fine => {
+            sink.fine(context.actor, context.targets, context.payload)?;
+        }
+        EffectStep::Exile => {
+            sink.exile(context.actor, context.targets, context.payload)?;
+        }
+        EffectStep::Bribe => {
+            sink.bribe(context.actor, context.targets, context.payload)?;
+        }
+        EffectStep::Threaten => {
+            sink.threaten(context.actor, context.targets, context.payload)?;
+        }
+        EffectStep::DeclareSupport => {
+            sink.declare_support(context.actor, context.payload)?;
+        }
+        EffectStep::PressForceClaim => {
+            sink.press_force_claim(context.actor, context.payload)?;
+        }
+        EffectStep::YieldForceClaim => {
+            sink.yield_force_claim(context.actor, context.payload)?;
+        }
+        EffectStep::PostBounty => {
+            sink.post_bounty(context.actor, context.targets, context.payload)?;
+        }
+        EffectStep::PostNotice => {
+            sink.post_notice(context.actor, context.targets, context.payload)?;
+        }
+        EffectStep::ClaimBounty => {
+            sink.claim_bounty(context.actor, context.targets, context.action_def_id)?;
+        }
+        EffectStep::WithdrawBounty => {
+            sink.withdraw_bounty(context.actor, context.targets)?;
         }
         EffectStep::PartialOnFailure { primary, fallback } => {
             let checkpoint = sink.checkpoint();

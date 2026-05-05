@@ -32,6 +32,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - Production, stock, and transport migration adds authoritative category steps for resource harvesting, craft completion, stock storage/display/listing mutation, pickup/drop, and theft. Generic transfer/consume/produce steps remain available, but they do not represent resource-source depletion and harvest traces, craft job cleanup, stock assignment/listing changes, split-lot materialization, unique-item contention cleanup, or theft evidence. Harvest partial delivery is emitted as `EffectFact::PartialQuantity` by the `HarvestResource` category step and projected into the existing commit trace shape.
 - Trade, queue, and escort migration adds authoritative category steps for trade settlement, staff-market demand recording, and escort completion, while facility queue admission uses the generic `EnqueueContention` step with `PayloadQueueIntendedAction`. Generic `Transfer`/`Move` sketches were not sufficient for trade and escort because the live commits depend on negotiation state, dynamic sale-lot commodity, agreed payload quantity, demand/source-memory aftermath, event-log-derived route hostility, movement evidence, and care-queue handoff.
 - Travel, patrol, and bandit-camp migration adds authoritative category steps for travel arrival, patrol route advancement, and bandit camp establishment. Generic `Move`/`CreateEntity` sketches were not sufficient because the live commits depend on `ActionState::Travel`, event-log-derived route hostility, movement evidence, exploration-arrival belief reinforcement, patrol-route validation, camp supply-container reuse/resizing, supply ownership/container transfer, and transfer provenance.
+- Justice, office, and artifact migration adds authoritative category steps for accusation, fine, exile, bribe, threaten, support declaration, force-claim press/yield, bounty posting/claim/withdrawal, and notice posting. Generic record/entity/relation/transfer sketches were not sufficient because the live commits depend on crime-register entries, institutional belief projections, justice disposition math, office jurisdiction/force-law/claim checks, loyalty/hostility aftermath, bounty artifact component construction, reward encumbrance release/reservation, contention cleanup, and obligation-tracker updates.
 - The hypothetical sink resolves the new runtime entity refs for existing generic effects but still rejects category-specific staged steps until the planner switch ticket implements mode parity for the expanded effect language. This is intentional staged substrate: the planner still uses the old hypothetical path through tickets 003-009, and ticket 010 owns replacing that path only after every category schema has a verified hypothetical interpretation.
 
 ## Crates
@@ -108,7 +109,8 @@ pub enum EffectPrecondition {
     CoLocated { actor: EffectEntityRef, target: EffectEntityRef },
     QuantityAvailable { source: EffectEntityRef, commodity: CommodityKind, min: Quantity },
     CapacityFloor { container: EntityId, min_free: Quantity },
-    RoleAuthority { actor: EntityId, role: /* existing role enum from worldwake-core */ },
+    // Authority and institution-specific checks live in typed category steps
+    // unless a future action proves a generic authority precondition is lawful.
     ContentionGrantHeld { actor: EffectEntityRef, affordance: EffectEntityRef },
     BeliefHeld { agent: EffectEntityRef, claim: BeliefClaimKey },
     // ... one variant per category of precondition currently checked imperatively

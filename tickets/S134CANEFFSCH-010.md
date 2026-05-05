@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — switches the planner's hypothetical evaluation to `apply_effects(..., Hypothetical)` / `apply_effects_with_context(..., Hypothetical)` as needed by payload-bearing schemas, deletes `apply_hypothetical_transition`, `PlannerTransitionKind`, `GoalKindPlannerExt::apply_planner_step` and per-`GoalKind` impls, and replaces the dual-implementation conformance harness with three coverage tests
-**Deps**: archive/tickets/S134CANEFFSCH-003.md, archive/tickets/S134CANEFFSCH-004.md, archive/tickets/S134CANEFFSCH-005.md, archive/tickets/S134CANEFFSCH-006.md, archive/tickets/S134CANEFFSCH-007.md, archive/tickets/S134CANEFFSCH-008.md, tickets/S134CANEFFSCH-009.md
+**Deps**: archive/tickets/S134CANEFFSCH-003.md, archive/tickets/S134CANEFFSCH-004.md, archive/tickets/S134CANEFFSCH-005.md, archive/tickets/S134CANEFFSCH-006.md, archive/tickets/S134CANEFFSCH-007.md, archive/tickets/S134CANEFFSCH-008.md, archive/tickets/S134CANEFFSCH-009.md
 
 ## Problem
 

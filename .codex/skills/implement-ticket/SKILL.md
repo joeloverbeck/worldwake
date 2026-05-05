@@ -26,6 +26,20 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 
 Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail.
 
+## Mandatory Closeout Checklist
+
+Before marking an active ticket `COMPLETED` or sending the final response:
+
+- Confirm the final source/test/generated diff is covered by completed executable verification. If source or executable proof files changed after a broad gate, rerun the narrowest affected proof and the required broad gate.
+- If the final ticket/spec `Test Plan`, `Acceptance Criteria`, or `Verification Result` still names `./scripts/verify.sh`, inspect the live script and either run it, run every live gate it wraps and record that the wrapper itself was not run, or rewrite the ticket to remove the wrapper with a stated reason. Do not claim wrapper-equivalent proof unless every live wrapper gate was covered.
+- Make `Status: COMPLETED` one of the last ticket edits, after the executable gates needed for the final source diff have passed.
+- Run Markdown/diff hygiene after final ticket/spec edits, normally `git diff --check`. For untracked owned Markdown, use an explicit untracked-file whitespace check.
+- Run targeted stale-claim scans over touched tickets/specs/sibling handoffs for disproved commands, old ownership claims, superseded helper names, and rejected implementation sketches. Quote Markdown code spans safely with single-quoted shell patterns, for example:
+  ```bash
+  rg -n 'old phrase|generic `CreateEntity`|stale command' tickets/ specs/
+  ```
+- Re-check `git status --short` and classify new or pre-existing dirty paths so the final summary does not attribute unrelated work to the ticket.
+
 Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here. Do not include a Cargo command inside any `multi_tool_use.parallel` bundle, even when the other bundled commands are read-only; run the Cargo command separately.
 
 Before any Cargo command:
