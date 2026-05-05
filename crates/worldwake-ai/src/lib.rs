@@ -114,9 +114,9 @@ pub use plan_selection::{SelectionPolicy, select_best_plan};
 pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{
     ExpectedMaterialization, OpportunityExpectationKind, PlanTerminalKind, PlannedPlan,
-    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
-    apply_hypothetical_transition, authoritative_target, authoritative_targets,
-    build_semantics_table, resolve_planning_target_with, resolve_planning_targets_with,
+    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerSyntheticCargo, authoritative_target,
+    authoritative_targets, build_semantics_table, resolve_planning_target_with,
+    resolve_planning_targets_with,
 };
 pub use planning_snapshot::{
     PlanningSnapshot, build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,

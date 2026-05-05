@@ -63,8 +63,8 @@ The planner continues to use the old `apply_hypothetical_transition` path throug
 - `crates/worldwake-systems/src/production_actions.rs`
 - `crates/worldwake-systems/src/stock_actions.rs`
 - `crates/worldwake-systems/src/transport_actions.rs`
-- `specs/S134-canonical-effect-schema.md`
-- `tickets/S134CANEFFSCH-010.md`
+- `archive/specs/S134-canonical-effect-schema.md`
+- `archive/tickets/S134CANEFFSCH-010.md`
 
 ## Out of Scope
 

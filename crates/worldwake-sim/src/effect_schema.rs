@@ -482,6 +482,14 @@ pub trait EffectSink {
         Err(Discrepancy::ImproperPlanningState)
     }
 
+    fn complete_travel_to(
+        &mut self,
+        actor: EntityId,
+        _destination: Option<EntityId>,
+    ) -> Result<(), Discrepancy> {
+        self.complete_travel(actor)
+    }
+
     fn advance_patrol_route(
         &mut self,
         _actor: EntityId,
@@ -912,7 +920,7 @@ fn apply_step(
             sink.complete_escort_to_safety(context.actor, target, context.payload)?;
         }
         EffectStep::CompleteTravel => {
-            sink.complete_travel(context.actor)?;
+            sink.complete_travel_to(context.actor, context.targets.first().copied())?;
         }
         EffectStep::AdvancePatrolRoute => {
             let target = resolve_entity_ref(EffectEntityRef::Target { index: 0 }, context)?;

@@ -12,7 +12,7 @@ use crate::planner_ops::planner_only_candidates;
 use crate::shared_collections::SharedVec;
 use crate::{
     CommodityPurpose, GoalKey, GoalKind, GoalOffer, PlanSearchResult, PlanTerminalKind,
-    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind, PlanningEntityRef,
+    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerSyntheticCargo, PlanningEntityRef,
     PlanningSnapshot, PlanningState, ProfileFixture, RequiredFact, build_planning_snapshot,
     build_planning_snapshot_with_blocked_facility_uses, build_semantics_table,
 };
@@ -1403,7 +1403,7 @@ fn search_returns_none_when_only_wrong_local_consumable_is_controllable() {
 
     let (registry, handlers) = build_registry();
     let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 1);
-    // Protects the search_plan -> apply_hypothetical_transition seam for consume targets.
+    // Protects the search_plan -> effect-schema hypothetical seam for consume targets.
     let plan = search_plan(
         &snapshot,
         &consume_goal(CommodityKind::Bread),
@@ -7185,7 +7185,7 @@ fn travel_semantics() -> PlannerOpSemantics {
         op_kind: PlannerOpKind::Travel,
         may_appear_mid_plan: true,
         is_materialization_barrier: false,
-        transition_kind: PlannerTransitionKind::GoalModelFallback,
+        synthetic_cargo: PlannerSyntheticCargo::None,
     }
 }
 
@@ -7194,7 +7194,7 @@ fn harvest_semantics() -> PlannerOpSemantics {
         op_kind: PlannerOpKind::Harvest,
         may_appear_mid_plan: true,
         is_materialization_barrier: true,
-        transition_kind: PlannerTransitionKind::GoalModelFallback,
+        synthetic_cargo: PlannerSyntheticCargo::None,
     }
 }
 
@@ -7391,7 +7391,7 @@ fn prune_travel_never_prunes_non_travel_actions() {
             op_kind: PlannerOpKind::Trade,
             may_appear_mid_plan: true,
             is_materialization_barrier: true,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         },
     );
 
@@ -11479,7 +11479,7 @@ fn search_travel_to_goal_candidate_filter() {
             op_kind: PlannerOpKind::Patrol,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         },
     );
     semantics_table.insert(harvest_id, harvest_semantics());

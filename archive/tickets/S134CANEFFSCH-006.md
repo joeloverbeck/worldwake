@@ -67,7 +67,7 @@ Each `commit_*` handler now delegates to `apply_effects_with_context(..., Effect
 - `crates/worldwake-systems/src/facility_queue_actions.rs` (modify — 1 schema, 1 commit handler body replacement)
 - `crates/worldwake-systems/src/escort_actions.rs` (modify — 1 schema, 1 commit handler body replacement)
 - `crates/worldwake-sim/src/effect_schema.rs` (modify — `CompleteTrade`, `RecordStaffMarketDemand`, `CompleteEscortToSafety`)
-- `specs/S134-canonical-effect-schema.md` (modify — active spec truth-sync)
+- `archive/specs/S134-canonical-effect-schema.md` (modify — active spec truth-sync at implementation time)
 
 ## Out of Scope
 

@@ -17,13 +17,13 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 ## Crates
 
 - `worldwake-ai` — new `opportunity_compiler` module owning `Opportunity`, `OpportunityKey` (extended), and the per-tick compilation pass that runs before candidate generation. New `EffectSchemaIndex` module that builds a `BTreeMap<EffectFactKey, SmallVec<ActionDefId, 4>>` from the current `ActionDef` registry. `candidate_generation.rs` consumes opportunities as a parallel input alongside existing emitters. `goal_dispatch_decl.rs` reclassifies `relevant_ops` from authoritative gate to ranking hint. `interrupts.rs` extends to read opportunities. `search/heuristic.rs::prune_travel_away_from_goal_with_expansion_trace` consumes an opportunity-aware detour budget.
-- `worldwake-core` — extends `OpportunityKey` (`crates/worldwake-core/src/goal.rs`) with the typed `effect_facts: SmallVec<EffectFactKey, 4>`, `risks: SmallVec<RiskFact, 2>`, `information: SmallVec<ClaimTopic, 2>`. Adds `EffectFactKey` (a discriminant over `EffectFact` from S134; if S134 is not yet landed, a transitional `OpportunityEffectKey` covers the named subset).
+- `worldwake-core` — extends `OpportunityKey` (`crates/worldwake-core/src/goal.rs`) with the typed `effect_facts: SmallVec<EffectFactKey, 4>`, `risks: SmallVec<RiskFact, 2>`, `information: SmallVec<ClaimTopic, 2>`. Adds `EffectFactKey` (a discriminant over `EffectFact` from S134).
 - `worldwake-systems` — no change. Action effects already declare what they produce; the index reads the registry.
 - `worldwake-cli` — observer Section 3 renders compiled opportunities per agent per tick (top-K by salience). Decision-trace `RootCandidateTrace` annotates which root candidates originated from emitters vs the opportunity compiler.
 
 ## Dependencies
 
-- S134 (Canonical Effect Schema) — Phase 11 sibling. **Hard dependency.** The `EffectSchemaIndex` queries `ActionDef.effect_schema`. S134 must land in or before S138's first ticket. If S134 schedule slips, S138 can land a transitional `OpportunityEffectKey` over a hand-maintained subset of action effects (Acquire/Trade/Harvest/Steal/Beg/Loot/Confiscate/Receive); the transitional path is a documented compatibility shim removed when S134 lands.
+- S134 (Canonical Effect Schema) — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. **Hard dependency satisfied.** The `EffectSchemaIndex` queries `ActionDef.effect_schema`; no transitional hand-maintained opportunity-effect key is needed.
 - S105 (Observation Salience Filtering) — completed. Opportunity compilation runs per perceived entity; budget already governs which entities are perceived.
 - S130 (Survey Records and Frontier Disconfirmation) — completed. `SurveyMemory` damps opportunities anchored on confirmed-empty places — the compiler reads survey memory before emitting an opportunity.
 - S107 (Proactive Diversification) — completed. `DiversificationProfile` continues to bias `ExploreLocation` opportunities; the compiler consults it.
@@ -49,7 +49,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - **Cross-agent opportunity sharing.** Opportunities are per-agent. Cross-agent propagation flows through `ShareBelief` over the underlying beliefs, not through opportunity gossip.
 - **Persistent `Opportunity` storage.** Opportunities are derived per-tick state (FND-27). The agent's existing `LearnedOpportunityMemory` (S109) records *which opportunities the agent has previously chosen and how that turned out*, not opportunities themselves.
 - **Goal-kind expansion.** S138 does not add new `GoalKind` variants. Steal/Beg/Loot/etc. *actions* exist or will exist (steal already exists in `bandit_camp_actions`); the compiler routes them through existing goal kinds (`AcquireCommodity` with risk/legality variation).
-- **Pre-S134 effect-schema index.** If S134 schedule slips, the transitional `OpportunityEffectKey` covers the subset needed for the canonical regression scenarios. The transition is removed when S134 lands.
+- **Transitional effect-schema index.** Not applicable; S134 is complete, so S138 uses the real `ActionDef.effect_schema` index directly.
 
 ## FOUNDATIONS Alignment
 
@@ -191,6 +191,6 @@ Per FND-22, two agents seeing the same opportunity rank it differently because t
 
 ## Risks
 
-- **Effect-schema index timing.** Pre-S134, the index is hand-maintained over a subset. Mitigation: ticket-001 lands the transitional `OpportunityEffectKey` covering Acquire/Trade/Harvest/Steal/Beg/Loot/Confiscate/Receive — the canonical-scenario-A and stored-gold-canonical-scenario-C subsets. Removed when S134 lands.
+- **Effect-schema index timing.** S134 is complete, so S138's implementation should build the index from real `ActionDef.effect_schema` entries directly rather than landing a hand-maintained transitional subset.
 - **Opportunity explosion in dense scenes.** A market with 80 vendors could compile 80+ opportunities. Mitigation: salience floor; per-tick opportunity cap (16 per agent); reuse of S105's perception budget upstream so the compiler input is already truncated.
 - **Travel-detour budget mis-tuning.** A too-permissive `detour_budget_permille` could turn travel into wandering. Mitigation: default `pm(150)` is conservative; goldens (scenario 2 above) lock the boundary; observer surfaces detour decisions with attribution.

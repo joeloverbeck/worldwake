@@ -26,7 +26,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - S114 (Plan Step Guards) — completed. Provides `PlanGuard`, `PlanExpectation`, `Invalidator`, `ExpectationMismatchPayload`, and the revalidation seam. S137 extends `PlanGuard` with causal links.
 - S109 (Typed Discrepancy Taxonomy) — completed. Provides `Discrepancy`, `BlockerMemory`, `RepairMemory`. S137 adds `clearing_condition` per variant and consumes `RepairMemory` to suppress repeat repair attempts.
 - S110 (Decision History Events) — completed. `EventTag::RepairApplied` already exists; S137 populates its payload with the chosen `RepairKind`.
-- S134 (Canonical Effect Schema) — Phase 11 sibling. `RepairKind::ReplaceProvider` benefits from a queryable effect-schema index when picking a replacement step, but does not hard-depend on S134; absent S134, repair walks the existing `relevant_ops` index.
+- S134 (Canonical Effect Schema) — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. `RepairKind::ReplaceProvider` benefits from the queryable effect-schema surface when picking a replacement step.
 - S138 (Affordance-to-Opportunity Compiler) — Phase 11 sibling. Soft dependency: with S138, `RepairKind::RebindTarget` can pick a sibling target the opportunity compiler surfaced; absent S138, rebind walks the agent's existing belief observations.
 - S136 (Decision Event Payload Extension) — Phase 11 sibling. Soft dependency: `RepairAppliedPayload` benefits from `decisive_beliefs`/`decisive_records` populated by S136; if S136 lands first, the repair-attempt trace inherits the same fields.
 
@@ -211,7 +211,7 @@ No new `SystemFn`. Repair runs within the existing `agent_tick` system at the re
 
 ## Cross-System Interactions
 
-- **AI ↔ AI internal**: repair calls existing planner ops (`apply_hypothetical_transition` pre-S134, `apply_effects` post-S134), existing belief queries, existing opportunity index.
+- **AI ↔ AI internal**: repair calls the schema-backed planner effect evaluator (`apply_effects` / `apply_effects_with_context` in hypothetical mode), existing belief queries, and the existing opportunity index.
 - **AI → Sim**: emit `EventTag::RepairApplied` through the existing event-log path.
 - **Sim → CLI**: observer reads the event payload.
 

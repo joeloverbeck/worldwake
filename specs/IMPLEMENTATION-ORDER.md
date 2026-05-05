@@ -574,7 +574,7 @@ Phase 11 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S134 (independent)            S135 (independent)            S140 (independent)            S142 (independent)
+S134 (completed, archived)    S135 (independent)            S140 (independent)            S142 (independent)
    │                                                                                            
    └── S138 (hard dep on S134)
          │
@@ -591,8 +591,10 @@ S136 (independent)
 
 ### Active Execution Steps
 
-**Wave 1** (parallel, no hard deps):
-- **S134**: Canonical Effect Schema for ActionDef — unify planner forward model with simulator action handlers via declarative `EffectSchema` per `ActionDef`. Removes `apply_hypothetical_transition` parallel dispatch.
+**Completed Wave 1 substrate**:
+- **S134**: Canonical Effect Schema for ActionDef — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. Planner forward model now uses simulator action schemas via declarative `EffectSchema` per `ActionDef`; `apply_hypothetical_transition` parallel dispatch was removed.
+
+**Remaining Wave 1** (parallel, no hard deps):
 - **S135**: Planner Snapshot Perception Budget and Observation Omission — collapse `max_snapshot_entities_per_place` into S105's `observation_budget` with explicit `ObservationOmission` records.
 - **S136**: Always-On Decision Event Payload Extension — extend always-on decision events with `top_rejected_goals`, `decisive_beliefs`, `decisive_records`, `decisive_world_observations`, `assumptions`.
 - **S140**: Multi-Axis Artifact Lifecycle — five-axis lifecycle (existence/visibility/legal_effect/credibility/actionability) replacing single-enum `ArtifactState`. FND-25A direct compliance.
@@ -600,13 +602,13 @@ S136 (independent)
 
 **Wave 2** (after Wave 1):
 - **S138**: Affordance-to-Opportunity Compiler with Effect-Schema Indexing — bottom-up opportunity compiler driven by `EffectSchemaIndex`; `relevant_ops` becomes hint, effect-schema becomes authority. Folds in PR-7, PR-13, PR-20.
-  - hard depends on S134 (for `EffectSchemaIndex`)
+  - hard dependency S134 is satisfied (for `EffectSchemaIndex`)
 - **S141**: Motive Source Ledger and Desire Tokens — `MotiveSource` enum on `GoalOffer`; `motive_score` becomes derived view over per-agent state references. FND-3 direct compliance.
   - soft depends on S136 (for `decisive_motive_sources` payload integration)
 
 **Wave 3** (after Wave 2):
 - **S137**: Plan Causal Links and Localized Repair Search — extend `PlanGuard` with `CausalLink` provenance; `PlanRepairContext` localized repair before full replan; per-`Discrepancy` `ClearingCondition`. Folds in PR-15.
-  - soft depends on S134 (repair benefits from queryable effect-schema), S136 (repair-applied payload integration), S138 (rebind-target consumes opportunity output)
+  - S134 soft dependency is satisfied (repair benefits from queryable effect-schema); still soft depends on S136 (repair-applied payload integration), S138 (rebind-target consumes opportunity output)
 - **S139**: Epistemic Sensing Subgoals — Ask Witness and Inspect Container — discrete `GoalKind::AskWitness` and `GoalKind::InspectContainer` with `EpistemicProfile`. Required for FOUNDATIONS Scenarios C and G end-to-end.
   - soft depends on S137 (`RepairKind::InsertVerification` splices these), S138 (opportunity compiler emits witness/container anchors)
 
@@ -616,7 +618,7 @@ S136 (independent)
 - [ ] Wave 1 specs implemented and passing golden E2E tests
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
-- [ ] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
+- [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
 - [ ] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
 - [ ] Always-on decision events carry `decisive_*` references for every commit/replan/blocker on `survival-baseline.ron`
 - [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`

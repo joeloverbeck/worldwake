@@ -50,6 +50,18 @@ This skeleton is a starting point, not permission to widen public API. Prefer a 
 
 Record the answers in the active ticket before coding when they change the drafted implementation boundary.
 
+## Planner Parity / Old-Path Deletion
+
+Use this section when the ticket owns switching planner hypothetical evaluation to the shared schema evaluator, deleting old planner transition paths, or proving hypothetical parity for category-owned steps.
+
+1. Enumerate every registered `EffectStep` that can appear in planner-visible `ActionDef.effect_schema` values. Include category-owned steps added by earlier staged migration tickets, not only generic transfer/consume/produce steps.
+2. Find every default-rejecting or unimplemented `EffectSink` method that the hypothetical sink could now reach. Decide per step whether hypothetical mode can lawfully interpret it from `PlanningState`, payload, action context, and planning targets, or whether the active ticket/spec must narrow the planner-visible schema boundary.
+3. Implement hypothetical interpretations through the planner-owned sink or a seam-local helper. Do not call authoritative systems, read authoritative world state for an agent, or flatten category aftermath into generic effects to make parity compile.
+4. For materialization, split-lot, movement, travel, queue, office, social, combat, or other category steps with nontrivial aftermath, record which projected state is planner-relevant and which authoritative trace/event residue remains outside the hypothetical overlay.
+5. Prove registered schemas no longer hit unsupported hypothetical steps on the intended planner path. Prefer focused conformance/coverage tests plus the affected AI package or golden lane over ad hoc probes.
+6. Delete the old transition symbols in the same closeout when the ticket owns old-path deletion, then run a targeted grep such as `rg -n 'apply_hypothetical_transition|PlannerTransitionKind|apply_planner_step' crates`.
+7. If planner parity required changing planning targets, payload context, expected materializations, or action-start behavior, load `references/reassessment-planner-ai.md` and prove the earliest affected boundary before broad verification.
+
 ## Closeout
 
 If the landed schema uses category-owned steps instead of the draft's generic step sketch, close out the ticket with that deviation explicitly:

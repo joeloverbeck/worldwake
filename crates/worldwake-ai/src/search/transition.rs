@@ -5,8 +5,8 @@ use crate::goal_model::{
 };
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::{
-    GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedStep, PlannerOpKind,
-    PlannerOpSemantics, PlanningEntityRef, apply_hypothetical_transition, build_plan_expectations,
+    GoalKindPlannerExt, GoalOffer, HypotheticalEffectSink, PlanTerminalKind, PlannedStep,
+    PlannerOpKind, PlannerOpSemantics, PlanningEntityRef, build_plan_expectations,
     build_plan_guard,
 };
 use heuristic::{
@@ -14,7 +14,10 @@ use heuristic::{
 };
 use std::collections::BTreeMap;
 use worldwake_core::{ActionDefId, EntityKind, ExecutionBudget};
-use worldwake_sim::{ActionDefRegistry, RecipeRegistry, TemporalBeliefView};
+use worldwake_sim::{
+    ActionDefRegistry, EffectEvaluationContext, EffectMode, RecipeRegistry, TemporalBeliefView,
+    apply_effects_with_context,
+};
 
 use super::heuristic;
 use super::landmarks::{LandmarkSet, planning_facts_from_state};
@@ -151,14 +154,22 @@ pub(super) fn build_successor_detailed<'snapshot>(
             },
         )?;
     let estimated_ticks = duration.ticks();
-    let transition = apply_hypothetical_transition(
-        goal,
-        *semantics,
-        node.state.clone(),
-        &candidate.planning_targets,
-        payload_override.as_ref(),
+    let mut sink = HypotheticalEffectSink::new(node.state.clone());
+    apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor,
+            targets: &candidate.authoritative_targets,
+            payload: effective_payload,
+            action_def_id: candidate.def_id,
+        },
+        &mut sink,
+        EffectMode::Hypothetical,
     )
-    .ok_or(crate::decision_trace::RootCandidateSkipReason::HypotheticalTransitionFailed)?;
+    .map_err(|_| crate::decision_trace::RootCandidateSkipReason::HypotheticalTransitionFailed)?;
+    let transition_targets = candidate.planning_targets.clone();
+    let expected_materializations = sink.expected_materializations().to_vec();
+    let transition_state = sink.into_state();
     let step_targets = match semantics.op_kind {
         // Accusation search may route via the crime register home place, but the
         // executable step must still target the accused entity.
@@ -168,7 +179,7 @@ pub(super) fn build_successor_detailed<'snapshot>(
             .copied()
             .map(PlanningEntityRef::Authoritative)
             .collect(),
-        _ => transition.targets.clone(),
+        _ => transition_targets,
     };
     let target_place = resolve_step_target_place(&node.state, &step_targets);
     let mut step = PlannedStep {
@@ -179,14 +190,14 @@ pub(super) fn build_successor_detailed<'snapshot>(
         op_kind: semantics.op_kind,
         estimated_ticks,
         is_materialization_barrier: semantics.is_materialization_barrier,
-        expected_materializations: transition.expected_materializations,
+        expected_materializations,
         guard: None,
         expectations: Vec::new(),
     };
     let adoption_tick = node.state.current_tick();
     step.guard = build_plan_guard(def, &step, adoption_tick);
     step.expectations = build_plan_expectations(def, &step, adoption_tick);
-    let terminal = terminal_kind(goal, &transition.state, &step, tactical_goal);
+    let terminal = terminal_kind(goal, &transition_state, &step, tactical_goal);
     if !semantics.may_appear_mid_plan && terminal.is_none() {
         return Err(crate::decision_trace::RootCandidateSkipReason::NonTerminalLeafOnly);
     }
@@ -217,28 +228,28 @@ pub(super) fn build_successor_detailed<'snapshot>(
         .ok_or(crate::decision_trace::RootCandidateSkipReason::TotalDurationOverflow)?;
     let combined_places = combined_relevant_places_for_tactical(
         goal,
-        &transition.state,
+        &transition_state,
         recipes,
         execution_budget,
         tactical_goal,
     );
     let spatial_heuristic = compute_heuristic(
         node.state.snapshot(),
-        &transition.state,
+        &transition_state,
         &combined_places.places,
     );
     let landmark_heuristic =
-        compute_landmark_heuristic(landmark_set, &planning_facts_from_state(&transition.state));
+        compute_landmark_heuristic(landmark_set, &planning_facts_from_state(&transition_state));
     let heuristic_ticks = spatial_heuristic.max(landmark_heuristic);
     let tactical_barrier_reached = node.tactical_barrier_reached
-        || tactical_goal.is_some_and(|goal| goal.progress_barrier_satisfied(&transition.state));
+        || tactical_goal.is_some_and(|goal| goal.progress_barrier_satisfied(&transition_state));
     let mut steps = node.steps.clone();
     steps.push(step);
 
     Ok((
         terminal,
         SearchNode {
-            state: transition.state,
+            state: transition_state,
             steps,
             total_estimated_ticks,
             search_cost,
@@ -295,8 +306,9 @@ pub(super) fn terminal_kind(
         &step
             .targets
             .iter()
+            .copied()
             .filter_map(|target| match target {
-                PlanningEntityRef::Authoritative(entity) => Some(*entity),
+                PlanningEntityRef::Authoritative(entity) => Some(entity),
                 PlanningEntityRef::Hypothetical(_) => None,
             })
             .collect::<Vec<_>>(),

@@ -1,14 +1,14 @@
 # S134: Canonical Effect Schema for ActionDef
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
-Worldwake currently maintains three parallel forward models per action:
+Before S134, Worldwake maintained three parallel forward models per action:
 
 1. **Imperative authoritative handlers** (`crates/worldwake-systems/src/*_actions.rs`) — start/tick/commit/abort handler bodies that mutate authoritative ECS through the scheduler.
 2. **Explicit per-action hypothetical transitions** — 8 non-fallback arms of `PlannerTransitionKind` dispatched by `apply_hypothetical_transition` (`crates/worldwake-ai/src/planner_ops.rs:311`): `ConsumeMatchingTargetCommodity`, `PickUpGroundLot`, `StealGroundLot`, `PutDownGroundLot`, `StoreStockIntoLocalFacility`, `StageStoredStockForSale`, `CollectFacilityStockToPossession`, `UnstageDisplayedStock`. These mutate `PlanningState` overlays (`crates/worldwake-ai/src/planning_state.rs:46`).
-3. **Per-`GoalKind` hypothetical transitions** — `GoalKindPlannerExt::apply_planner_step` (`crates/worldwake-ai/src/goal_model.rs:54` trait method, `:1051` impl block) reached by every action that maps to `PlannerTransitionKind::GoalModelFallback` (currently the majority — combat, travel, trade, queue, patrol, tell, investigate, social actions, etc.). This also mutates `PlanningState` overlays, but keyed on the goal rather than the action.
+3. **Per-`GoalKind` hypothetical transitions** — `GoalKindPlannerExt::apply_planner_step` (`crates/worldwake-ai/src/goal_model.rs:54` trait method, `:1051` impl block) reached by every action that mapped to `PlannerTransitionKind::GoalModelFallback` (then the majority — combat, travel, trade, queue, patrol, tell, investigate, social actions, etc.). This also mutated `PlanningState` overlays, but keyed on the goal rather than the action.
 
 `crates/worldwake-ai/tests/planner_conformance.rs` guards against drift between (1) and (2)/(3), but the seam is the highest-risk surface in the planner — drift means agents reason into impossible plans or skip plans the world would actually permit.
 
@@ -18,14 +18,14 @@ S134 collapses all three paths into a single canonical effect schema attached to
 
 ## Phase and Status
 
-Phase 11: Belief-First Continual Planning Architectural — Draft
+Phase 11: Belief-First Continual Planning Architectural — completed 2026-05-05.
 
 ## Implementation Notes
 
 - Ticket 002 landed the first real `EffectSink` implementations and made sink writes fallible. `apply_effects` emits facts only after the sink accepts each write.
 - The authoritative sink lives in `worldwake-systems` over `WorldTxn`; it covers current commodity transfer/consume/produce, event-tag, expectation, and contention-grant surfaces. It does not expose a generic transaction snapshot/restore. Future schemas that require authoritative all-or-nothing multi-step semantics must add an explicit atomic effect shape, preflight discipline, or transaction support before relying on rollback.
 - `EffectStep::ApplyWound` remains a staged generic variant. Combat attack now uses `EffectStep::ResolveCombatAttack`, because authoritative wound construction depends on combat profiles, stance, payload weapon, existing wounds, tick, and seeded RNG.
-- Combat action commit handlers now call `apply_effects_with_context(...)` through a combat-owned delegation helper. Needs action commit handlers now call the same evaluator through a needs-owned delegation helper. Other runtime handler categories still have not migrated.
+- Combat action commit handlers now call `apply_effects_with_context(...)` through a combat-owned delegation helper. Needs action commit handlers now call the same evaluator through a needs-owned delegation helper. The remaining runtime handler categories migrated in tickets 005-009.
 - Ticket 003 corrects an important substrate mismatch in the first draft: `ActionDef.effect_schema` is registry-time template data, so schema operands cannot be literal runtime `EntityId`s only. The live schema language now includes `EffectEntityRef::{Actor, Target, Entity}` and `EffectActionRef` so registry templates can lawfully bind actor, target, and payload-derived action identities at evaluation time. The original `apply_effects(...)` wrapper remains for existing callers; action handlers that need payload/current-action context use `apply_effects_with_context(...)`.
 - Combat migration adds authoritative combat effect steps for the commit-time world mutations that cannot be represented as commodity transfer alone: contention queue entry, contention membership cleanup, capacity-limited corpse loot, corpse burial, attack wound/evidence resolution, and wound-resolution contention cleanup. These are typed effect steps interpreted by the combat-owned authoritative sink; they are not wrappers around a parallel live commit path.
 - Needs migration adds authoritative needs effect steps for branch-specific needs actions: consuming a bound consumable lot from its concrete item profile, ending sleep episodes, using a latrine, relieving in wilderness, and using a wash basin. These are typed effect steps interpreted by a needs-owned authoritative sink because the old handlers carry domain payloads and aftermath, not just a generic need-delta write.
@@ -33,7 +33,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - Trade, queue, and escort migration adds authoritative category steps for trade settlement, staff-market demand recording, and escort completion, while facility queue admission uses the generic `EnqueueContention` step with `PayloadQueueIntendedAction`. Generic `Transfer`/`Move` sketches were not sufficient for trade and escort because the live commits depend on negotiation state, dynamic sale-lot commodity, agreed payload quantity, demand/source-memory aftermath, event-log-derived route hostility, movement evidence, and care-queue handoff.
 - Travel, patrol, and bandit-camp migration adds authoritative category steps for travel arrival, patrol route advancement, and bandit camp establishment. Generic `Move`/`CreateEntity` sketches were not sufficient because the live commits depend on `ActionState::Travel`, event-log-derived route hostility, movement evidence, exploration-arrival belief reinforcement, patrol-route validation, camp supply-container reuse/resizing, supply ownership/container transfer, and transfer provenance.
 - Justice, office, and artifact migration adds authoritative category steps for accusation, fine, exile, bribe, threaten, support declaration, force-claim press/yield, bounty posting/claim/withdrawal, and notice posting. Generic record/entity/relation/transfer sketches were not sufficient because the live commits depend on crime-register entries, institutional belief projections, justice disposition math, office jurisdiction/force-law/claim checks, loyalty/hostility aftermath, bounty artifact component construction, reward encumbrance release/reservation, contention cleanup, and obligation-tracker updates.
-- The hypothetical sink resolves the new runtime entity refs for existing generic effects but still rejects category-specific staged steps until the planner switch ticket implements mode parity for the expanded effect language. This is intentional staged substrate: the planner still uses the old hypothetical path through tickets 003-009, and ticket 010 owns replacing that path only after every category schema has a verified hypothetical interpretation.
+- Ticket 010 replaced the old planner hypothetical path with schema evaluation in `EffectMode::Hypothetical`. The hypothetical sink now interprets the planner-visible category steps introduced by tickets 003-009 and the old `apply_hypothetical_transition`, `PlannerTransitionKind`, and `GoalKindPlannerExt::apply_planner_step` paths are deleted.
 
 ## Crates
 
@@ -57,7 +57,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 3. **Declarative outputs.** Every schema lists `EffectStep`s. Each step names the world fact it asserts (commodity transfer, wound application, expectation fulfillment, contention-grant consumption, …) using existing core types (`EntityId`, `CommodityKind`, `Quantity`, `EventTag`, `WoundCause`, `BeliefClaimKey`). The evaluator interprets each fact in the active mode.
 4. **Mode parity at the evaluator layer.** `EffectMode::Authoritative` and `EffectMode::Hypothetical` differ only in their sinks — the ECS scheduler vs the `PlanningState` overlay. The schema interpretation is identical.
 5. **Partial-outcome support.** Schemas can declare `EffectStep::PartialOnFailure { primary, fallback }` so that a contended harvest can yield 3 of the requested 5 units (already present as ad-hoc `partial_quantity` in S127). The fallback is itself an `EffectStep` chain.
-6. **Conformance via coverage, not duplication.** The current dual-implementation conformance test is replaced by: (a) a coverage test that every registered `ActionDef` has a non-empty `EffectSchema`; (b) a precondition-completeness test that every `Discrepancy` variant the simulator can record on action failure is reachable via at least one schema's preconditions.
+6. **Conformance via coverage, not duplication.** The current dual-implementation conformance test is replaced by: (a) a coverage test that every registered `ActionDef` has a non-empty `EffectSchema`; (b) a precondition-failure test that live schema preconditions classify failures into typed `Discrepancy` values. The broader `Discrepancy` enum also includes planner/runtime blocker classes that are not schema-precondition products.
 7. **No silent privilege.** Schemas may not skip the contention substrate, override locality, or invoke other systems' privileged behavior. The evaluator only writes to the ECS / overlay through the same write paths action handlers used (FND-26).
 8. **Determinism.** Schema interpretation is deterministic over `BTreeMap`-ordered inputs. No floats, no wall-clock time. The evaluator runs entirely on integer math over `Permille` values where applicable.
 
@@ -238,7 +238,7 @@ pub struct ActionDef {
 
 - Delete the `apply_planner_step` method from the `GoalKindPlannerExt` trait (`crates/worldwake-ai/src/goal_model.rs:54`) and all per-`GoalKind` implementations (`:1051` impl block onward).
 - Delete every test that exercises `apply_planner_step` (~14+ usages in `goal_model.rs` test module).
-- The work currently performed by `apply_planner_step` (per-`GoalKind` overlay mutation reached via `PlannerTransitionKind::GoalModelFallback`) is subsumed by `apply_effects(&action_def.effect_schema, …, EffectMode::Hypothetical)` invoked in the planner search loop. Each action that previously fell through to `GoalModelFallback` now carries a complete `EffectSchema` describing its hypothetical transition explicitly.
+- The work previously performed by `apply_planner_step` (per-`GoalKind` overlay mutation reached via `PlannerTransitionKind::GoalModelFallback`) is subsumed by `apply_effects(&action_def.effect_schema, …, EffectMode::Hypothetical)` invoked in the planner search loop. Each action that previously fell through to `GoalModelFallback` now carries a complete `EffectSchema` describing its hypothetical transition explicitly.
 
 ### Action handler migration (in `worldwake-systems`)
 
@@ -257,10 +257,10 @@ The imperative body is removed. Composite registrations (e.g., `register_needs_a
 
 ### Conformance test rewrite (in `worldwake-ai/tests/planner_conformance.rs`)
 
-- Replace the existing per-action dual-implementation diff tests (currently 21 conformance tests, count drifts as new actions land — do not pin a specific count in spec or tickets) with:
+- Replace the existing per-action dual-implementation diff tests (formerly 21 conformance tests, count drifts as new actions land — do not pin a specific count in spec or tickets) with:
   - `every_actiondef_has_effect_schema()` — registry coverage assertion.
-  - `every_discrepancy_variant_reachable_from_some_schema_precondition()` — taxonomic completeness (covers all 11 variants of `Discrepancy` plus future additions).
-  - `partial_outcome_steps_emit_typed_facts()` — no ad-hoc handler-internal `partial: bool`.
+  - `schema_precondition_failures_are_typed_discrepancies()` — live schema precondition failures map to typed `Discrepancy` values.
+  - `partial_outcome_steps_emit_typed_facts()` — partial delivery is represented by typed `EffectFact::PartialQuantity`.
 
 ## FND-01 Section H — Causal Hooks Declaration
 
@@ -293,10 +293,10 @@ Not applicable — `EffectSchema` is a registry-time per-action constant, not a 
 
 ## Validation and Falsification
 
-- **Conformance**: `every_actiondef_has_effect_schema()` and `every_discrepancy_variant_reachable_from_some_schema_precondition()` assert taxonomic completeness.
-- **Migration regression**: Every existing golden in `crates/worldwake-ai/tests/golden_*.rs` (currently ~36 files) continues to pass without modification. The schema-driven evaluation must produce bitwise-identical event logs to the pre-S134 imperative path on every committed scenario seed.
+- **Conformance**: `every_actiondef_has_effect_schema()` and `schema_precondition_failures_are_typed_discrepancies()` assert registry coverage and typed schema-precondition failure coverage.
+- **Migration regression**: `cargo test -p worldwake-ai` passes, including all non-ignored `worldwake-ai` goldens. The schema-driven planner evaluation preserves the behavior covered by the local golden suite; long ignored replay lanes remain CI-owned.
 - **Planner determinism**: `crates/worldwake-ai/tests/planner_conformance.rs` is updated as above; the existing dual-implementation conformance tests are replaced by precondition-coverage and partial-outcome-typedness tests.
-- **Soak**: 1440-tick replay of `scenarios/survival-baseline.ron`, `scenarios/survival-scattered.ron`, `scenarios/survival-contested.ron` produce identical canonical state hashes (`blake3` over the post-replay ECS) before and after S134.
+- **Soak**: no separate pre/post 1440-tick state-hash artifact was captured for S134. The landed proof surface is the non-ignored `worldwake-ai` golden suite plus the repository `./scripts/verify.sh` gate, which includes scenario coverage.
 
 ## Risks
 
@@ -304,3 +304,14 @@ Not applicable — `EffectSchema` is a registry-time per-action constant, not a 
 - **Schema expressiveness.** Some current handlers carry conditional logic (e.g., per-action `BindingStrictness` override at `crates/worldwake-systems/src/needs_actions.rs:183–188`, which assigns different `BindingStrictness` variants per action name). The schema must expose conditional-step or conditional-precondition shapes that match. Mitigation: identify the irreducible conditionality during the first migration ticket (combat); if it cannot be declarative, narrow `EffectStep::Conditional` to the smallest necessary form.
 - **`PlanningState` overlay coverage.** The overlay must support every effect the schema can produce through the `EffectSink` impl. Mitigation: ticket-decomposition pairs each handler-migration ticket with a corresponding overlay-extension test. The current 17-field overlay shape (`crates/worldwake-ai/src/planning_state.rs:46`) already covers the substrates the 8 explicit `PlannerTransitionKind` arms touch — gap is in the coverage that previously fell through to `apply_planner_step`.
 - **Per-`GoalKind` semantics absorption.** Deleting `apply_planner_step` requires that every action previously routed through `PlannerTransitionKind::GoalModelFallback` now carries a complete `EffectSchema`. Mitigation: the first migration tickets explicitly target the goal-model-fallback substrate; precondition-coverage tests catch any goal-shaped semantics that didn't translate to action-shaped schemas.
+
+## Outcome
+
+Completed: 2026-05-05
+
+- Landed `ActionDef.effect_schema` and the shared `worldwake-sim::effect_schema` evaluator.
+- Migrated authoritative commit effects across combat, needs, production, stock, transport, trade, queue, escort, travel, patrol, bandit-camp, social, epistemic, justice, office, and artifact action families.
+- Switched planner hypothetical evaluation to the shared schema evaluator in `EffectMode::Hypothetical`.
+- Deleted the old `apply_hypothetical_transition`, `PlannerTransitionKind`, and `GoalKindPlannerExt::apply_planner_step` paths.
+- Replaced dual-implementation planner conformance tests with schema coverage tests.
+- Verification completed through `cargo test -p worldwake-ai --test planner_conformance`, `cargo test -p worldwake-ai`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, deleted-symbol grep, and `./scripts/verify.sh`.

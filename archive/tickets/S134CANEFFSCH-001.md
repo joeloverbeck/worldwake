@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — adds `worldwake-sim::effect_schema` module, extends `ActionDef` with required `effect_schema: EffectSchema` field
-**Deps**: spec `specs/S134-canonical-effect-schema.md`
+**Deps**: spec `archive/specs/S134-canonical-effect-schema.md`
 
 ## Problem
 
