@@ -3,16 +3,18 @@ use crate::experience_recording::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, CommodityKind, Container, ContentionGrant, EntityId, EntityKind, EventTag,
-    HarvestTraceEntry, LoadUnits, ProductionOutputOwner, Quantity, ReliabilityRecord, SourceKey,
-    Tick, VisibilitySpec, WorkstationMarker, World, WorldTxn, load_per_unit,
+    ActionDefId, CommodityKind, Container, ContentionGrant, Discrepancy, EntityId, EntityKind,
+    EventTag, HarvestTraceEntry, LoadUnits, ProductionOutputOwner, Quantity, ReliabilityRecord,
+    SourceKey, Tick, VisibilitySpec, WorkstationMarker, World, WorldTxn, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, ActionState,
     CommitOutcome, CommitTraceData, Constraint, CraftActionPayload, DeterministicRng, DurationExpr,
-    HarvestActionPayload, HarvestCommitTrace, Interruptibility, Precondition, RecipeDefinition,
-    RecipeRegistry, ReservationReq, RuntimeBeliefView, TargetSpec,
+    EffectEntityRef, EffectEvaluationContext, EffectFact, EffectMode, EffectPrecondition,
+    EffectSchema, EffectSink, EffectStep, HarvestActionPayload, HarvestCommitTrace,
+    Interruptibility, Precondition, RecipeDefinition, RecipeRegistry, ReservationReq,
+    RuntimeBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 /// Sentinel `PreconditionFailed` message emitted by `start_harvest` when no
@@ -148,7 +150,7 @@ fn harvest_action_def(
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: harvest_effect_schema(),
     })
 }
 
@@ -225,8 +227,26 @@ fn craft_action_def(
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: craft_effect_schema(),
     })
+}
+
+fn harvest_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::HarvestResource {
+            workstation: EffectEntityRef::Target { index: 0 },
+        }],
+    }
+}
+
+fn craft_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::FinishCraft {
+            workstation: EffectEntityRef::Target { index: 0 },
+        }],
+    }
 }
 
 fn harvest_payload<'a>(
@@ -751,6 +771,157 @@ fn resolve_output_owner(
     }
 }
 
+struct ProductionEffectSink<'txn, 'world> {
+    txn: &'txn mut WorldTxn<'world>,
+    action_error: Option<ActionError>,
+}
+
+impl ProductionEffectSink<'_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for ProductionEffectSink<'_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(
+        &mut self,
+        _target: EntityId,
+        _cause: worldwake_core::WoundCause,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: worldwake_core::ExpectationId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn harvest_resource(
+        &mut self,
+        actor: EntityId,
+        workstation: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<Vec<EffectFact>, Discrepancy> {
+        apply_harvest_resource(self.txn, actor, workstation, payload)
+            .map_err(|err| self.record_error(err))
+    }
+
+    fn finish_craft(
+        &mut self,
+        actor: EntityId,
+        workstation: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        apply_finish_craft(self.txn, actor, workstation, payload)
+            .map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_production_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = ProductionEffectSink {
+        txn,
+        action_error: None,
+    };
+    let outcome = match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: instance.def_id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(outcome) => outcome,
+        Err(discrepancy) => return Err(sink.take_error(discrepancy)),
+    };
+
+    let partial = outcome.facts.iter().find_map(|fact| match fact {
+        EffectFact::PartialQuantity {
+            requested,
+            delivered,
+        } => Some((*requested, *delivered)),
+        _ => None,
+    });
+    if let Some((requested_quantity, partial_quantity)) = partial {
+        Ok(
+            CommitOutcome::empty().with_trace(CommitTraceData::Harvest(HarvestCommitTrace {
+                requested_quantity,
+                partial_quantity: Some(partial_quantity),
+            })),
+        )
+    } else {
+        Ok(CommitOutcome::empty())
+    }
+}
+
 fn commit_harvest(
     def: &ActionDef,
     instance: &ActionInstance,
@@ -759,11 +930,20 @@ fn commit_harvest(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = harvest_payload(def, instance)?;
-    let workstation = *instance
-        .targets
-        .first()
-        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    apply_production_effect_schema(def, instance, txn)
+}
+
+fn apply_harvest_resource(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    workstation: EntityId,
+    payload: &ActionPayload,
+) -> Result<Vec<EffectFact>, ActionError> {
+    let payload = payload.as_harvest().ok_or_else(|| {
+        ActionError::InternalError(format!(
+            "harvest effect missing harvest payload for {actor}"
+        ))
+    })?;
     let place = txn.effective_place(workstation).ok_or_else(|| {
         ActionError::InternalError(format!("workstation {workstation} has no effective place"))
     })?;
@@ -797,14 +977,14 @@ fn commit_harvest(
             .cloned()
             .unwrap_or_default();
         trace.push(HarvestTraceEntry {
-            harvester: instance.actor,
+            harvester: actor,
             tick: txn.tick(),
             quantity: 0,
             partial: true,
         });
         txn.set_component_last_harvest_trace(workstation, trace)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
-        release_extraction_slot(txn, instance.actor, workstation)?;
+        release_extraction_slot(txn, actor, workstation)?;
         // AbortRequested routes through `finalize_failed_action`, which commits
         // the WorldTxn (including the failed-harvest trace append above) before
         // returning. PreconditionFailed would drop the txn — see ticket
@@ -818,7 +998,7 @@ fn commit_harvest(
     txn.set_component_resource_source(workstation, source)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
-    let owner = resolve_output_owner(txn, instance.actor, workstation)?;
+    let owner = resolve_output_owner(txn, actor, workstation)?;
     let lot = txn
         .create_item_lot_with_owner(payload.output_commodity, Quantity(actual), place, owner)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -835,7 +1015,7 @@ fn commit_harvest(
     })?;
     let is_partial = actual < requested;
     trace.push(HarvestTraceEntry {
-        harvester: instance.actor,
+        harvester: actor,
         tick: txn.tick(),
         quantity: actual_u16,
         partial: is_partial,
@@ -845,22 +1025,20 @@ fn commit_harvest(
 
     record_successful_source_acquisition(
         txn,
-        instance.actor,
+        actor,
         harvest_source_key(payload, workstation),
         txn.tick(),
     )?;
 
-    release_extraction_slot(txn, instance.actor, workstation)?;
+    release_extraction_slot(txn, actor, workstation)?;
 
     if is_partial {
-        Ok(
-            CommitOutcome::empty().with_trace(CommitTraceData::Harvest(HarvestCommitTrace {
-                requested_quantity: payload.requested_quantity,
-                partial_quantity: Some(Quantity(actual)),
-            })),
-        )
+        Ok(vec![EffectFact::PartialQuantity {
+            requested: payload.requested_quantity,
+            delivered: Quantity(actual),
+        }])
     } else {
-        Ok(CommitOutcome::empty())
+        Ok(Vec::new())
     }
 }
 
@@ -872,11 +1050,18 @@ fn commit_craft(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = craft_payload(def, instance)?;
-    let workstation = *instance
-        .targets
-        .first()
-        .ok_or(ActionError::InvalidTarget(instance.actor))?;
+    apply_production_effect_schema(def, instance, txn)
+}
+
+fn apply_finish_craft(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    workstation: EntityId,
+    payload: &ActionPayload,
+) -> Result<(), ActionError> {
+    let payload = payload.as_craft().ok_or_else(|| {
+        ActionError::InternalError(format!("craft effect missing craft payload for {actor}"))
+    })?;
     let place = txn.effective_place(workstation).ok_or_else(|| {
         ActionError::InternalError(format!("workstation {workstation} has no effective place"))
     })?;
@@ -901,14 +1086,14 @@ fn commit_craft(
     txn.clear_component_production_job(workstation)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
 
-    let owner = resolve_output_owner(txn, instance.actor, workstation)?;
+    let owner = resolve_output_owner(txn, actor, workstation)?;
     for (commodity, quantity) in &payload.outputs {
         let lot = txn
             .create_item_lot_with_owner(*commodity, *quantity, place, owner)
             .map_err(|err| ActionError::InternalError(err.to_string()))?;
         txn.add_target(lot);
     }
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 fn harvest_source_key(payload: &HarvestActionPayload, workstation: EntityId) -> SourceKey {
@@ -2300,6 +2485,29 @@ mod tests {
                 outputs: vec![(CommodityKind::Bread, Quantity(1))],
                 required_tool_kinds: Vec::new(),
             })
+        );
+    }
+
+    #[test]
+    fn production_action_defs_have_category_effect_schemas() {
+        let (harvest_recipes, _) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (harvest_defs, _, harvest_ids) = setup_registries(&harvest_recipes);
+        let harvest = harvest_defs.get(harvest_ids[0]).unwrap();
+        assert_eq!(
+            harvest.effect_schema.steps,
+            vec![EffectStep::HarvestResource {
+                workstation: EffectEntityRef::Target { index: 0 },
+            }]
+        );
+
+        let (craft_recipes, _) = craft_recipe_registry(BodyCostPerTick::zero(), Vec::new());
+        let (craft_defs, _, craft_ids) = setup_craft_registries(&craft_recipes);
+        let craft = craft_defs.get(craft_ids[0]).unwrap();
+        assert_eq!(
+            craft.effect_schema.steps,
+            vec![EffectStep::FinishCraft {
+                workstation: EffectEntityRef::Target { index: 0 },
+            }]
         );
     }
 

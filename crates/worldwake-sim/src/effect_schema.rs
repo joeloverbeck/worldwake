@@ -1,4 +1,4 @@
-use crate::{ActionPayload, ConsumableEffect, TargetSpec};
+use crate::{ActionPayload, ConsumableEffect, Materialization, TargetSpec};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
     ActionDefId, BeliefClaimKey, CombatStance, CommodityKind, Discrepancy, EntityId, EventTag,
@@ -142,6 +142,36 @@ pub enum EffectStep {
     RelieveWilderness,
     UseWashBasin {
         basin: EffectEntityRef,
+    },
+    HarvestResource {
+        workstation: EffectEntityRef,
+    },
+    FinishCraft {
+        workstation: EffectEntityRef,
+    },
+    StoreStock {
+        lot: EffectEntityRef,
+    },
+    CollectDisplayStock {
+        lot: EffectEntityRef,
+    },
+    StageStockForSale {
+        lot: EffectEntityRef,
+    },
+    UnstageStock {
+        lot: EffectEntityRef,
+    },
+    PickUp {
+        target: EffectEntityRef,
+    },
+    PutDown {
+        target: EffectEntityRef,
+    },
+    DropItem {
+        target: EffectEntityRef,
+    },
+    Steal {
+        target: EffectEntityRef,
     },
     PartialOnFailure {
         primary: Vec<EffectStep>,
@@ -309,6 +339,70 @@ pub trait EffectSink {
     }
 
     fn use_wash_basin(&mut self, _actor: EntityId, _basin: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn harvest_resource(
+        &mut self,
+        _actor: EntityId,
+        _workstation: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<Vec<EffectFact>, Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn finish_craft(
+        &mut self,
+        _actor: EntityId,
+        _workstation: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn store_stock(&mut self, _actor: EntityId, _lot: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn collect_display_stock(
+        &mut self,
+        _actor: EntityId,
+        _lot: EntityId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn stage_stock_for_sale(
+        &mut self,
+        _actor: EntityId,
+        _lot: EntityId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn unstage_stock(&mut self, _actor: EntityId, _lot: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn pick_up(
+        &mut self,
+        _actor: EntityId,
+        _target: EntityId,
+        _payload: &ActionPayload,
+        _action_def_id: ActionDefId,
+    ) -> Result<Option<Materialization>, Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn put_down(&mut self, _actor: EntityId, _target: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn drop_item(&mut self, _actor: EntityId, _target: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn steal(&mut self, _actor: EntityId, _target: EntityId) -> Result<(), Discrepancy> {
         Err(Discrepancy::ImproperPlanningState)
     }
 }
@@ -500,6 +594,51 @@ fn apply_step(
         EffectStep::UseWashBasin { basin } => {
             let basin = resolve_entity_ref(*basin, context)?;
             sink.use_wash_basin(context.actor, basin)?;
+        }
+        EffectStep::HarvestResource { workstation } => {
+            let workstation = resolve_entity_ref(*workstation, context)?;
+            facts.extend(sink.harvest_resource(context.actor, workstation, context.payload)?);
+        }
+        EffectStep::FinishCraft { workstation } => {
+            let workstation = resolve_entity_ref(*workstation, context)?;
+            sink.finish_craft(context.actor, workstation, context.payload)?;
+        }
+        EffectStep::StoreStock { lot } => {
+            let lot = resolve_entity_ref(*lot, context)?;
+            sink.store_stock(context.actor, lot)?;
+        }
+        EffectStep::CollectDisplayStock { lot } => {
+            let lot = resolve_entity_ref(*lot, context)?;
+            sink.collect_display_stock(context.actor, lot)?;
+        }
+        EffectStep::StageStockForSale { lot } => {
+            let lot = resolve_entity_ref(*lot, context)?;
+            sink.stage_stock_for_sale(context.actor, lot)?;
+        }
+        EffectStep::UnstageStock { lot } => {
+            let lot = resolve_entity_ref(*lot, context)?;
+            sink.unstage_stock(context.actor, lot)?;
+        }
+        EffectStep::PickUp { target } => {
+            let target = resolve_entity_ref(*target, context)?;
+            let _materialization = sink.pick_up(
+                context.actor,
+                target,
+                context.payload,
+                context.action_def_id,
+            )?;
+        }
+        EffectStep::PutDown { target } => {
+            let target = resolve_entity_ref(*target, context)?;
+            sink.put_down(context.actor, target)?;
+        }
+        EffectStep::DropItem { target } => {
+            let target = resolve_entity_ref(*target, context)?;
+            sink.drop_item(context.actor, target)?;
+        }
+        EffectStep::Steal { target } => {
+            let target = resolve_entity_ref(*target, context)?;
+            sink.steal(context.actor, target)?;
         }
         EffectStep::PartialOnFailure { primary, fallback } => {
             let checkpoint = sink.checkpoint();

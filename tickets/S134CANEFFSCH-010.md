@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — switches the planner's hypothetical evaluation to `apply_effects(..., Hypothetical)`, deletes `apply_hypothetical_transition`, `PlannerTransitionKind`, `GoalKindPlannerExt::apply_planner_step` and per-`GoalKind` impls, and replaces the dual-implementation conformance harness with three coverage tests
-**Deps**: archive/tickets/S134CANEFFSCH-003.md, archive/tickets/S134CANEFFSCH-004.md, S134CANEFFSCH-005, S134CANEFFSCH-006, S134CANEFFSCH-007, S134CANEFFSCH-008, S134CANEFFSCH-009
+**Deps**: archive/tickets/S134CANEFFSCH-003.md, archive/tickets/S134CANEFFSCH-004.md, archive/tickets/S134CANEFFSCH-005.md, S134CANEFFSCH-006, S134CANEFFSCH-007, S134CANEFFSCH-008, S134CANEFFSCH-009
 
 ## Problem
 
@@ -89,7 +89,7 @@ Delete the 21 conformance tests in `crates/worldwake-ai/tests/planner_conformanc
 
 - `every_actiondef_has_effect_schema()` — iterate the `ActionDefRegistry` and assert every `ActionDef.effect_schema` has at least one step (or one precondition for read-only actions). Empty schemas surviving past tickets 003–009 are a regression.
 - `every_discrepancy_variant_reachable_from_some_schema_precondition()` — for each `Discrepancy` variant in `crates/worldwake-core/src/discrepancy.rs:8` (11 variants — `BeliefStale`, `BeliefContradicted`, `SourceInvalidated`, `ImproperPlanningState`, `MissingObservation`, `NoLegalBinding`, `NoWillingCounterparty`, `RouteUnknown`, `SearchBudgetExhausted`, `PartialExecutionDrift`, `NeedHorizonExceeded`), assert at least one schema's precondition list can produce that variant. Test fixtures for each. The test enforces taxonomic completeness — a new `Discrepancy` variant added without a producing precondition is a coverage gap.
-- `partial_outcome_steps_emit_typed_facts()` — assert that every action whose handler used to surface `partial_quantity` (S127) now has its partial outcome encoded via `EffectStep::PartialOnFailure` and produces a typed `EffectFact::PartialQuantity` rather than a handler-internal `Option<Quantity>` flag.
+- `partial_outcome_steps_emit_typed_facts()` — assert that every action whose handler used to surface `partial_quantity` (S127) now produces a typed `EffectFact::PartialQuantity` through its schema path rather than a handler-internal `Option<Quantity>` flag. S134CANEFFSCH-005 emits this fact through the `HarvestResource` category step, not through generic `PartialOnFailure`.
 
 ### 5. Clean up dead references
 
@@ -144,7 +144,7 @@ After the deletions:
 1. `crates/worldwake-ai/tests/planner_conformance.rs` — delete 21 dual-impl tests, add 3 coverage tests:
    - `every_actiondef_has_effect_schema` — iterate registry, assert all schemas non-empty.
    - `every_discrepancy_variant_reachable_from_some_schema_precondition` — for each of the 11 `Discrepancy` variants, prove a producing precondition exists.
-   - `partial_outcome_steps_emit_typed_facts` — for each action whose pre-S134 handler surfaced `partial_quantity`, assert the schema's `PartialOnFailure` chain produces `EffectFact::PartialQuantity`.
+   - `partial_outcome_steps_emit_typed_facts` — for each action whose pre-S134 handler surfaced `partial_quantity`, assert the schema path produces `EffectFact::PartialQuantity`.
 2. `crates/worldwake-ai/src/goal_model.rs` `#[cfg(test)]` block — delete ~14 `apply_planner_step` tests (the function is gone).
 3. `crates/worldwake-ai/src/planner_ops.rs` `#[cfg(test)]` block — delete ~8 `apply_hypothetical_transition` tests (the function is gone).
 4. Existing goldens — no source change; their pass-without-modification is the load-bearing regression check.
