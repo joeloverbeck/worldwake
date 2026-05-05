@@ -4,13 +4,16 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, SaleListing, StockAssignment,
-    StockAssignmentKind, StockStoragePolicy, VisibilitySpec, WorldTxn,
+    ActionDefId, BodyCostPerTick, CommodityKind, Discrepancy, EntityId, EntityKind, EventTag,
+    Quantity, SaleListing, StockAssignment, StockAssignmentKind, StockStoragePolicy,
+    VisibilitySpec, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
     ActionInstance, ActionPayload, ActionProgress, ActionState, CommitOutcome, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
+    DeterministicRng, DurationExpr, EffectEntityRef, EffectEvaluationContext, EffectMode,
+    EffectPrecondition, EffectSchema, EffectSink, EffectStep, Interruptibility, Precondition,
+    TargetSpec, apply_effects_with_context,
 };
 
 use crate::inventory::move_entity_to_direct_possession;
@@ -87,6 +90,7 @@ pub fn register_stock_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: stock_effect_schema(StockEffectKind::Store),
         }),
         defs.register(ActionDef {
             id: collect_id,
@@ -120,6 +124,7 @@ pub fn register_stock_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: stock_effect_schema(StockEffectKind::CollectDisplay),
         }),
         defs.register(ActionDef {
             id: stage_id,
@@ -157,6 +162,7 @@ pub fn register_stock_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: stock_effect_schema(StockEffectKind::StageForSale),
         }),
         defs.register(ActionDef {
             id: unstage_id,
@@ -194,8 +200,31 @@ pub fn register_stock_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: stock_effect_schema(StockEffectKind::Unstage),
         }),
     ]
+}
+
+#[derive(Clone, Copy)]
+enum StockEffectKind {
+    Store,
+    CollectDisplay,
+    StageForSale,
+    Unstage,
+}
+
+fn stock_effect_schema(kind: StockEffectKind) -> EffectSchema {
+    let lot = EffectEntityRef::Target { index: 0 };
+    let step = match kind {
+        StockEffectKind::Store => EffectStep::StoreStock { lot },
+        StockEffectKind::CollectDisplay => EffectStep::CollectDisplayStock { lot },
+        StockEffectKind::StageForSale => EffectStep::StageStockForSale { lot },
+        StockEffectKind::Unstage => EffectStep::UnstageStock { lot },
+    };
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![step],
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -321,17 +350,154 @@ fn start_store_stock(
     Ok(None)
 }
 
+struct StockEffectSink<'txn, 'world> {
+    txn: &'txn mut WorldTxn<'world>,
+    action_error: Option<ActionError>,
+}
+
+impl StockEffectSink<'_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for StockEffectSink<'_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(
+        &mut self,
+        _target: EntityId,
+        _cause: worldwake_core::WoundCause,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: worldwake_core::ExpectationId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn store_stock(&mut self, actor: EntityId, lot: EntityId) -> Result<(), Discrepancy> {
+        apply_store_stock(self.txn, actor, lot).map_err(|err| self.record_error(err))
+    }
+
+    fn collect_display_stock(&mut self, actor: EntityId, lot: EntityId) -> Result<(), Discrepancy> {
+        apply_collect_display_stock(self.txn, actor, lot).map_err(|err| self.record_error(err))
+    }
+
+    fn stage_stock_for_sale(&mut self, actor: EntityId, lot: EntityId) -> Result<(), Discrepancy> {
+        apply_stage_stock_for_sale(self.txn, actor, lot).map_err(|err| self.record_error(err))
+    }
+
+    fn unstage_stock(&mut self, actor: EntityId, lot: EntityId) -> Result<(), Discrepancy> {
+        apply_unstage_stock(self.txn, actor, lot).map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_stock_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = StockEffectSink {
+        txn,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: instance.def_id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => {}
+        Err(discrepancy) => return Err(sink.take_error(discrepancy)),
+    }
+    Ok(CommitOutcome::empty())
+}
+
 fn commit_store_stock(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let lot = require_item_lot_target(instance)?;
-    let (facility, policy) = resolve_merchant_home_facility(txn, instance.actor)
-        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
+    apply_stock_effect_schema(def, instance, txn)
+}
+
+fn apply_store_stock(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    lot: EntityId,
+) -> Result<(), ActionError> {
+    let (facility, policy) = resolve_merchant_home_facility(txn, actor)
+        .or_else(|_| resolve_controlled_facility(txn, actor))?;
 
     // Clear possession.
     txn.clear_possessor(lot)
@@ -349,7 +515,7 @@ fn commit_store_stock(
     )
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -377,26 +543,33 @@ fn start_collect_display_stock(
 }
 
 fn commit_collect_display_stock(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let lot = require_item_lot_target(instance)?;
+    apply_stock_effect_schema(def, instance, txn)
+}
+
+fn apply_collect_display_stock(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    lot: EntityId,
+) -> Result<(), ActionError> {
     let place = txn
-        .effective_place(instance.actor)
+        .effective_place(actor)
         .ok_or(ActionError::PreconditionFailed(
             "actor has no effective place".to_string(),
         ))?;
 
     // Move lot out of container into direct possession.
-    move_entity_to_direct_possession(txn, lot, instance.actor, place)?;
+    move_entity_to_direct_possession(txn, lot, actor, place)?;
     // Clear stock assignment.
     txn.clear_component_stock_assignment(lot)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -432,16 +605,23 @@ fn start_stage_stock_for_sale(
 }
 
 fn commit_stage_stock_for_sale(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let lot = require_item_lot_target(instance)?;
-    let (facility, policy) = resolve_facility_for_lot(txn, instance.actor, lot)
-        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
+    apply_stock_effect_schema(def, instance, txn)
+}
+
+fn apply_stage_stock_for_sale(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    lot: EntityId,
+) -> Result<(), ActionError> {
+    let (facility, policy) = resolve_facility_for_lot(txn, actor, lot)
+        .or_else(|_| resolve_controlled_facility(txn, actor))?;
     let display_container = policy.display_container.ok_or_else(|| {
         ActionError::PreconditionFailed("facility has no display container for staging".to_string())
     })?;
@@ -469,7 +649,7 @@ fn commit_stage_stock_for_sale(
     )
     .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(lot);
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -499,16 +679,23 @@ fn start_unstage_stock(
 }
 
 fn commit_unstage_stock(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let lot = require_item_lot_target(instance)?;
-    let (facility, policy) = resolve_facility_for_lot(txn, instance.actor, lot)
-        .or_else(|_| resolve_controlled_facility(txn, instance.actor))?;
+    apply_stock_effect_schema(def, instance, txn)
+}
+
+fn apply_unstage_stock(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    lot: EntityId,
+) -> Result<(), ActionError> {
+    let (facility, policy) = resolve_facility_for_lot(txn, actor, lot)
+        .or_else(|_| resolve_controlled_facility(txn, actor))?;
 
     // Move lot from display container back to stock container.
     txn.remove_from_container(lot)
@@ -527,7 +714,7 @@ fn commit_unstage_stock(
     // Clear SaleListing.
     let _ = txn.clear_component_sale_listing(lot);
     txn.add_target(lot);
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -667,7 +854,7 @@ mod tests {
         }
     }
 
-    fn dummy_def() -> ActionDef {
+    fn dummy_def(effect_kind: StockEffectKind) -> ActionDef {
         ActionDef {
             id: ActionDefId(999),
             name: "test".to_string(),
@@ -693,11 +880,37 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: stock_effect_schema(effect_kind),
         }
     }
 
     fn dummy_rng() -> DeterministicRng {
         DeterministicRng::new(worldwake_core::Seed([0; 32]))
+    }
+
+    #[test]
+    fn stock_action_defs_have_category_effect_schemas() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let ids = register_stock_actions(&mut defs, &mut handlers);
+
+        let expected = [
+            EffectStep::StoreStock {
+                lot: EffectEntityRef::Target { index: 0 },
+            },
+            EffectStep::CollectDisplayStock {
+                lot: EffectEntityRef::Target { index: 0 },
+            },
+            EffectStep::StageStockForSale {
+                lot: EffectEntityRef::Target { index: 0 },
+            },
+            EffectStep::UnstageStock {
+                lot: EffectEntityRef::Target { index: 0 },
+            },
+        ];
+        for (id, step) in ids.into_iter().zip(expected) {
+            assert_eq!(defs.get(id).unwrap().effect_schema.steps, vec![step]);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -707,7 +920,7 @@ mod tests {
     #[test]
     fn store_stock_moves_lot_into_stock_container() {
         let mut h = setup_harness();
-        let def = dummy_def();
+        let def = dummy_def(StockEffectKind::Store);
         let mut rng = dummy_rng();
 
         // Pre: lot is possessed by agent.
@@ -742,7 +955,7 @@ mod tests {
     #[test]
     fn store_stock_sets_stock_assignment() {
         let mut h = setup_harness();
-        let def = dummy_def();
+        let def = dummy_def(StockEffectKind::Store);
         let mut rng = dummy_rng();
 
         {
@@ -778,7 +991,8 @@ mod tests {
     #[test]
     fn collect_display_stock_moves_lot_to_possession() {
         let mut h = setup_harness();
-        let def = dummy_def();
+        let store_def = dummy_def(StockEffectKind::Store);
+        let collect_def = dummy_def(StockEffectKind::CollectDisplay);
         let mut rng = dummy_rng();
 
         // First store the lot.
@@ -786,7 +1000,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_store_stock(
-                &def,
+                &store_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -805,7 +1019,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_collect_display_stock(
-                &def,
+                &collect_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -850,7 +1064,7 @@ mod tests {
             stranger
         };
 
-        let def = dummy_def();
+        let def = dummy_def(StockEffectKind::Store);
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let mut instance = make_instance(stranger, h.bread_lot);
         let result = start_store_stock(
@@ -877,7 +1091,8 @@ mod tests {
     #[test]
     fn store_and_collect_preserves_lot_quantity() {
         let mut h = setup_harness();
-        let def = dummy_def();
+        let store_def = dummy_def(StockEffectKind::Store);
+        let collect_def = dummy_def(StockEffectKind::CollectDisplay);
         let mut rng = dummy_rng();
 
         let original_qty = h
@@ -891,7 +1106,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_store_stock(
-                &def,
+                &store_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -919,7 +1134,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_collect_display_stock(
-                &def,
+                &collect_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -1005,7 +1220,7 @@ mod tests {
 
     /// Store the bread lot into the facility (prerequisite for staging tests).
     fn store_lot(h: &mut DisplayTestHarness) {
-        let def = dummy_def();
+        let def = dummy_def(StockEffectKind::Store);
         let mut rng = dummy_rng();
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let instance = make_instance(h.agent, h.bread_lot);
@@ -1031,7 +1246,7 @@ mod tests {
     #[test]
     fn stage_stock_moves_lot_to_display_and_adds_listing() {
         let mut h = setup_display_harness();
-        let def = dummy_def();
+        let def = dummy_def(StockEffectKind::StageForSale);
         let mut rng = dummy_rng();
 
         store_lot(&mut h);
@@ -1082,7 +1297,8 @@ mod tests {
     #[test]
     fn unstage_stock_reverses_staging() {
         let mut h = setup_display_harness();
-        let def = dummy_def();
+        let stage_def = dummy_def(StockEffectKind::StageForSale);
+        let unstage_def = dummy_def(StockEffectKind::Unstage);
         let mut rng = dummy_rng();
 
         store_lot(&mut h);
@@ -1092,7 +1308,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_stage_stock_for_sale(
-                &def,
+                &stage_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -1111,7 +1327,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_unstage_stock(
-                &def,
+                &unstage_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -1152,7 +1368,8 @@ mod tests {
     fn stage_stock_fails_without_display_container() {
         // Use the original harness which has NO display container.
         let mut h = setup_harness();
-        let def = dummy_def();
+        let store_def = dummy_def(StockEffectKind::Store);
+        let stage_def = dummy_def(StockEffectKind::StageForSale);
         let mut rng = dummy_rng();
 
         // Store lot first.
@@ -1160,7 +1377,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_store_stock(
-                &def,
+                &store_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -1178,7 +1395,7 @@ mod tests {
         let mut txn = new_txn(&mut h.world, &mut h.event_log);
         let mut instance = make_instance(h.agent, h.bread_lot);
         let result = start_stage_stock_for_sale(
-            &def,
+            &stage_def,
             &mut instance,
             &worldwake_sim::ActionExecutionContext::without_recipes(
                 worldwake_core::CauseRef::Bootstrap,
@@ -1201,7 +1418,9 @@ mod tests {
     #[test]
     fn full_round_trip_store_stage_unstage_collect_preserves_quantity() {
         let mut h = setup_display_harness();
-        let def = dummy_def();
+        let stage_def = dummy_def(StockEffectKind::StageForSale);
+        let unstage_def = dummy_def(StockEffectKind::Unstage);
+        let collect_def = dummy_def(StockEffectKind::CollectDisplay);
         let mut rng = dummy_rng();
 
         let original_qty = h
@@ -1217,7 +1436,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_stage_stock_for_sale(
-                &def,
+                &stage_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -1235,7 +1454,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_unstage_stock(
-                &def,
+                &unstage_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,
@@ -1253,7 +1472,7 @@ mod tests {
             let mut txn = new_txn(&mut h.world, &mut h.event_log);
             let instance = make_instance(h.agent, h.bread_lot);
             commit_collect_display_stock(
-                &def,
+                &collect_def,
                 &instance,
                 &worldwake_sim::ActionExecutionContext::without_recipes(
                     worldwake_core::CauseRef::Bootstrap,

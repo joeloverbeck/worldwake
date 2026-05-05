@@ -1,14 +1,15 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, ActionDomain, BanditCamp, BanditFactionPolicy, BodyCostPerTick, Container,
-    EntityId, EntityKind, EventTag, LoadUnits, PlaceTag, VisibilitySpec, World, WorldTxn,
-    current_container_load, load_of_entity,
+    EntityId, EntityKind, EventTag, ExpectationId, LoadUnits, PlaceTag, Quantity, VisibilitySpec,
+    World, WorldTxn, WoundCause, current_container_load, load_of_entity,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, CommitOutcome,
-    Constraint, DeterministicRng, DurationExpr, EstablishCampActionPayload, Interruptibility,
-    Precondition, RuntimeBeliefView, TargetSpec,
+    Constraint, DeterministicRng, DurationExpr, EffectEvaluationContext, EffectMode,
+    EffectPrecondition, EffectSchema, EffectSink, EffectStep, EstablishCampActionPayload,
+    Interruptibility, Precondition, RuntimeBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_establish_camp_action(
@@ -68,6 +69,14 @@ fn establish_camp_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: establish_camp_effect_schema(),
+    }
+}
+
+fn establish_camp_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::EstablishBanditCamp],
     }
 }
 
@@ -365,20 +374,14 @@ fn tick_establish_camp(
     Ok(ActionProgress::Continue)
 }
 
-fn commit_establish_camp(
-    _def: &ActionDef,
-    instance: &ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
-    _event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
+fn apply_establish_camp(
     txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    place: EntityId,
+    payload: &ActionPayload,
 ) -> Result<CommitOutcome, ActionError> {
-    let place = *instance
-        .targets
-        .first()
-        .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    let faction = payload_faction(&instance.payload)?;
-    let validated = validate_establish_camp(txn, instance.actor, place, faction)?;
+    let faction = payload_faction(payload)?;
+    let validated = validate_establish_camp(txn, actor, place, faction)?;
     let container = ensure_supply_container(txn, &validated)?;
 
     if validated.existing_place_camp.is_none() {
@@ -400,6 +403,141 @@ fn commit_establish_camp(
         &validated.supply_lots,
     )?;
     Ok(CommitOutcome::empty())
+}
+
+struct EstablishCampEffectSink<'txn, 'world> {
+    txn: &'txn mut WorldTxn<'world>,
+    action_error: Option<ActionError>,
+}
+
+impl EstablishCampEffectSink<'_, '_> {
+    fn record_error(&mut self, error: ActionError) -> worldwake_core::Discrepancy {
+        self.action_error = Some(error);
+        worldwake_core::Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: worldwake_core::Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for EstablishCampEffectSink<'_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(
+        &mut self,
+        _target: EntityId,
+        _cause: WoundCause,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: ExpectationId,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn establish_bandit_camp(
+        &mut self,
+        actor: EntityId,
+        target: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        apply_establish_camp(self.txn, actor, target, payload)
+            .map(|_| ())
+            .map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_establish_camp_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = EstablishCampEffectSink {
+        txn,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
+fn commit_establish_camp(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    _event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_establish_camp_effect_schema(def, instance, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -468,8 +606,9 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionHandlerRegistry,
-        ActionInstanceId, ActionPayload, DeterministicRng, EstablishCampActionPayload,
-        PerAgentBeliefView, TickOutcome, abort_action, get_affordances, start_action, tick_action,
+        ActionInstanceId, ActionPayload, DeterministicRng, DurationExpr, EffectStep,
+        EstablishCampActionPayload, PerAgentBeliefView, TargetSpec, TickOutcome, abort_action,
+        get_affordances, start_action, tick_action,
     };
 
     struct Harness {
@@ -610,6 +749,23 @@ mod tests {
             VisibilitySpec::SamePlace,
             worldwake_core::WitnessData::default(),
         )
+    }
+
+    #[test]
+    fn register_establish_camp_action_creates_schema_driven_definition() {
+        let harness = Harness::new();
+        let def = harness
+            .defs
+            .iter()
+            .find(|def| def.name == "establish_camp")
+            .unwrap();
+
+        assert_eq!(def.targets, vec![TargetSpec::ActorPlace]);
+        assert_eq!(def.duration, DurationExpr::BanditCampEstablishmentProfile);
+        assert_eq!(
+            def.effect_schema.steps,
+            vec![EffectStep::EstablishBanditCamp]
+        );
     }
 
     #[test]

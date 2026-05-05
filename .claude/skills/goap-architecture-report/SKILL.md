@@ -72,6 +72,10 @@ If trace infrastructure exists, describe it in the report. Do not run `cargo tes
 
 ### Phase 3 — Report Assembly
 
+Before assembling, spot-verify any signature, struct definition, or default-value table you intend to quote verbatim — agent excerpts can lag behind recent renames. Use `grep`/`Read` directly for the canonical source.
+
+If the codebase has visible compile-error or dead-code diagnostics at session start (e.g., from rust-analyzer), include a `> **In-flight refactor warning**:` blockquote at the top of the report listing the affected files and noting that architectural shape is described correctly even where specific field initializers will shift when the refactor completes.
+
 Write the report to `reports/goap-architecture-report.md`. Do not commit.
 
 ## Report Structure

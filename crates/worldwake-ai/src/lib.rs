@@ -10,6 +10,7 @@ pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;
 pub mod dirty_set;
+pub mod effect_sink_hypothetical;
 mod enterprise;
 pub mod exhaustion;
 pub mod failure_handling;
@@ -83,6 +84,7 @@ pub use decision_trace::{
     ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
+pub use effect_sink_hypothetical::HypotheticalEffectSink;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
 pub use failure_handling::{PlanFailureContext, clear_resolved_failures, handle_plan_failure};
 pub use feasibility::{FeasibilityHint, feasibility_hint};
@@ -112,9 +114,9 @@ pub use plan_selection::{SelectionPolicy, select_best_plan};
 pub use planner_duration_contract::PlannerDurationDependency;
 pub use planner_ops::{
     ExpectedMaterialization, OpportunityExpectationKind, PlanTerminalKind, PlannedPlan,
-    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerTransitionKind,
-    apply_hypothetical_transition, authoritative_target, authoritative_targets,
-    build_semantics_table, resolve_planning_target_with, resolve_planning_targets_with,
+    PlannedStep, PlannerOpKind, PlannerOpSemantics, PlannerSyntheticCargo, authoritative_target,
+    authoritative_targets, build_semantics_table, resolve_planning_target_with,
+    resolve_planning_targets_with,
 };
 pub use planning_snapshot::{
     PlanningSnapshot, build_planning_snapshot, build_planning_snapshot_with_blocked_facility_uses,

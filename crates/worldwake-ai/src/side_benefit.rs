@@ -99,8 +99,9 @@ fn visited_places(plan: &PlannedPlan) -> BTreeSet<EntityId> {
         .iter()
         .filter(|step| step.op_kind == PlannerOpKind::Travel)
         .flat_map(|step| step.targets.iter())
+        .copied()
         .filter_map(|target| match target {
-            PlanningEntityRef::Authoritative(entity) => Some(*entity),
+            PlanningEntityRef::Authoritative(entity) => Some(entity),
             PlanningEntityRef::Hypothetical(_) => None,
         })
         .collect()

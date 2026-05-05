@@ -2732,6 +2732,7 @@ mod tests {
             binding_strictness: BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         (registry, handlers)
     }
@@ -4360,6 +4361,7 @@ mod tests {
             binding_strictness: BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
         action_defs.register(ActionDef {
             id: ActionDefId(1),
@@ -4381,6 +4383,7 @@ mod tests {
             binding_strictness: BindingStrictness::FungibleEquivalentCommodity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         });
 
         let exact = super::summarize_step(

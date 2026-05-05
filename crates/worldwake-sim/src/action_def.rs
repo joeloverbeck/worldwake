@@ -1,6 +1,6 @@
 use crate::{
-    ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility, Precondition,
-    ReservationReq, TargetSpec,
+    ActionHandlerId, ActionPayload, Constraint, DurationExpr, EffectSchema, Interruptibility,
+    Precondition, ReservationReq, TargetSpec,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -141,6 +141,7 @@ pub struct ActionDef {
     pub guard_template: Option<GuardTemplateSpec>,
     #[serde(default)]
     pub expectation_template: Vec<ExpectationTemplateSpec>,
+    pub effect_schema: EffectSchema,
 }
 
 #[cfg(test)]
@@ -151,8 +152,8 @@ mod tests {
         QuantitySource, RequiredFactSpec, StatePredicateSpec,
     };
     use crate::{
-        ActionHandlerId, ActionPayload, Constraint, DurationExpr, Interruptibility, Precondition,
-        ReservationReq, TargetSpec,
+        ActionHandlerId, ActionPayload, Constraint, DurationExpr, EffectSchema, Interruptibility,
+        Precondition, ReservationReq, TargetSpec,
     };
     use serde::{Serialize, de::DeserializeOwned};
     use std::collections::BTreeSet;
@@ -213,6 +214,7 @@ mod tests {
             binding_strictness: BindingStrictness::EquivalentRouteStep,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: EffectSchema::empty(),
         }
     }
 
@@ -308,6 +310,7 @@ mod tests {
             binding_strictness,
             guard_template,
             expectation_template,
+            effect_schema,
         } = action_def;
 
         let _: ActionDefId = id;
@@ -329,6 +332,7 @@ mod tests {
         let _: BindingStrictness = binding_strictness;
         let _: Option<GuardTemplateSpec> = guard_template;
         let _: Vec<ExpectationTemplateSpec> = expectation_template;
+        let _: EffectSchema = effect_schema;
     }
 
     #[test]

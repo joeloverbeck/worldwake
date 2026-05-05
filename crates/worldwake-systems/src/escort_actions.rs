@@ -1,15 +1,17 @@
 use std::collections::BTreeSet;
 
 use worldwake_core::{
-    ActionDefId, ActionDomain, BodyCostPerTick, EntityId, EntityKind, EventLog, EventTag,
-    EvidenceKind, InTransitOnEdge, Tick, VisibilitySpec, World, WorldTxn,
+    ActionDefId, ActionDomain, BodyCostPerTick, CommodityKind, Discrepancy, EntityId, EntityKind,
+    EventLog, EventTag, EvidenceKind, ExpectationId, InTransitOnEdge, Quantity, Tick,
+    VisibilitySpec, World, WorldTxn, WoundCause,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CommitOutcome, Constraint, DeterministicRng, DurationExpr,
+    EffectEvaluationContext, EffectMode, EffectPrecondition, EffectSchema, EffectSink, EffectStep,
     EscortToSafetyActionPayload, Interruptibility, PerAgentBeliefView, Precondition,
-    RuntimeBeliefView, TargetSpec,
+    RuntimeBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 use crate::contention_support::ensure_care_contention_state;
@@ -86,6 +88,14 @@ fn escort_to_safety_action_def(id: ActionDefId, handler: ActionHandlerId) -> Act
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: escort_to_safety_effect_schema(),
+    }
+}
+
+fn escort_to_safety_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::CompleteEscortToSafety],
     }
 }
 
@@ -457,36 +467,169 @@ fn tick_escort_to_safety(
 }
 
 fn commit_escort_to_safety(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     event_log: &EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = escort_payload(&instance.payload)?;
-    let (subject, _destination, leg_index, departure_tick, _arrival_tick) = escort_state(instance)?;
-    settle_leg_arrival(
-        txn,
-        instance.actor,
-        subject,
-        payload,
-        usize::from(leg_index),
-    )?;
-    let edge_id = *payload
-        .route_edges
-        .get(usize::from(leg_index))
-        .ok_or_else(|| ActionError::InternalError("escort route missing final edge".to_string()))?;
-    let hostile = had_combat_during_travel(event_log, instance.actor, departure_tick, txn.tick());
-    record_route_experience(txn, instance.actor, edge_id, txn.tick(), hostile)?;
-    ensure_care_contention_state(txn, subject).map_err(ActionError::InternalError)?;
-    let already_queued_for_care = txn
-        .get_component_contention_queue(subject)
-        .is_some_and(|queue| queue.has_actor(instance.actor));
-    if !already_queued_for_care {
-        enqueue_for_contention(txn, instance.actor, subject, payload.intended_heal_action)?;
+    let _ = escort_payload(&instance.payload)?;
+    apply_escort_effect_schema(def, instance, event_log, txn)
+}
+
+struct EscortEffectSink<'txn, 'world, 'instance, 'log> {
+    txn: &'txn mut WorldTxn<'world>,
+    instance: &'instance ActionInstance,
+    event_log: &'log EventLog,
+    action_error: Option<ActionError>,
+}
+
+impl EscortEffectSink<'_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
     }
-    Ok(CommitOutcome::empty())
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for EscortEffectSink<'_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(&mut self, _target: EntityId, _cause: WoundCause) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: ExpectationId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn complete_escort_to_safety(
+        &mut self,
+        actor: EntityId,
+        target: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let payload = payload
+            .as_escort_to_safety()
+            .ok_or(Discrepancy::NoLegalBinding)?;
+        let (subject, _destination, leg_index, departure_tick, _arrival_tick) =
+            escort_state(self.instance).map_err(|err| self.record_error(err))?;
+        if subject != target {
+            return Err(self.record_error(ActionError::InvalidTarget(target)));
+        }
+        let leg_index = usize::from(leg_index);
+        settle_leg_arrival(self.txn, actor, subject, payload, leg_index)
+            .map_err(|err| self.record_error(err))?;
+        let edge_id = *payload.route_edges.get(leg_index).ok_or_else(|| {
+            self.record_error(ActionError::InternalError(
+                "escort route missing final edge".to_string(),
+            ))
+        })?;
+        let current_tick = self.txn.tick();
+        let hostile = had_combat_during_travel(self.event_log, actor, departure_tick, current_tick);
+        record_route_experience(self.txn, actor, edge_id, current_tick, hostile)
+            .map_err(|err| self.record_error(err))?;
+        ensure_care_contention_state(self.txn, subject)
+            .map_err(ActionError::InternalError)
+            .map_err(|err| self.record_error(err))?;
+        let already_queued_for_care = self
+            .txn
+            .get_component_contention_queue(subject)
+            .is_some_and(|queue| queue.has_actor(actor));
+        if !already_queued_for_care {
+            enqueue_for_contention(self.txn, actor, subject, payload.intended_heal_action)
+                .map_err(|err| self.record_error(err))?;
+        }
+        Ok(())
+    }
+}
+
+fn apply_escort_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    event_log: &EventLog,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = EscortEffectSink {
+        txn,
+        instance,
+        event_log,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
 }
 
 fn abort_escort_to_safety(
@@ -1024,5 +1167,9 @@ mod tests {
         assert_eq!(def.name, "escort_to_safety");
         assert_eq!(def.domain, ActionDomain::Care);
         assert!(handlers.get(def.handler).is_some());
+        assert_eq!(
+            def.effect_schema.steps,
+            vec![worldwake_sim::EffectStep::CompleteEscortToSafety]
+        );
     }
 }

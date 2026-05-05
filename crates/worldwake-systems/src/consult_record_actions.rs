@@ -1,14 +1,15 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, EntityId, EntityKind, EventTag,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, VisibilitySpec,
-    World, WorldTxn,
+    ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, Discrepancy, EntityId, EntityKind,
+    EventTag, InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
+    VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, Constraint, ConsultRecordActionPayload, DeterministicRng,
-    DurationExpr, Interruptibility, PayloadEntityRole, Precondition, RuntimeBeliefView, TargetSpec,
+    DurationExpr, EffectEvaluationContext, EffectMode, EffectSink, EffectStep, Interruptibility,
+    PayloadEntityRole, Precondition, RuntimeBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_consult_record_action(
@@ -73,6 +74,10 @@ fn consult_record_action_def(id: ActionDefId, handler: ActionHandlerId) -> Actio
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: worldwake_sim::EffectSchema {
+            preconditions: vec![],
+            steps: vec![EffectStep::ConsultRecord],
+        },
     }
 }
 
@@ -241,6 +246,93 @@ fn commit_consult_record(
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<worldwake_sim::CommitOutcome, ActionError> {
+    apply_consult_record_effect_schema(def, instance, txn)
+}
+
+struct ConsultRecordEffectSink<'txn, 'world, 'def, 'instance> {
+    txn: &'txn mut WorldTxn<'world>,
+    def: &'def ActionDef,
+    instance: &'instance ActionInstance,
+    action_error: Option<ActionError>,
+}
+
+impl ConsultRecordEffectSink<'_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for ConsultRecordEffectSink<'_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &worldwake_sim::EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consult_record(
+        &mut self,
+        actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        if actor != self.instance.actor {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        apply_consult_record_commit(self.def, self.instance, self.txn)
+            .map(|_| ())
+            .map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_consult_record_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<worldwake_sim::CommitOutcome, ActionError> {
+    let mut sink = ConsultRecordEffectSink {
+        txn,
+        def,
+        instance,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(worldwake_sim::CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
+fn apply_consult_record_commit(
+    def: &ActionDef,
+    instance: &ActionInstance,
     txn: &mut WorldTxn<'_>,
 ) -> Result<worldwake_sim::CommitOutcome, ActionError> {
     let payload = consult_record_payload(def, &instance.payload)?;

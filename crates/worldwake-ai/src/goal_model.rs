@@ -13,13 +13,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
     AcquisitionQuantity, ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind,
-    CommodityPurpose, EntityId, EntityKind, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
+    CommodityPurpose, EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
     InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS, Permille,
     PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick, WorkstationTag, belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
-    CombatActionPayload, CombatBeliefView, ConsultRecordActionPayload, DeclareSupportActionPayload,
+    CombatActionPayload, ConsultRecordActionPayload, DeclareSupportActionPayload,
     EconomicBeliefView, EntityBeliefView, EscortToSafetyActionPayload, FacilityBeliefView,
     InventoryBeliefView, InvestigateActionPayload, LootActionPayload, PostBountyActionPayload,
     PostNoticeActionPayload, PressForceClaimActionPayload, ProfileBeliefView, PunishActionPayload,
@@ -51,13 +51,6 @@ pub trait GoalKindPlannerExt {
         def: &ActionDef,
         semantics: &PlannerOpSemantics,
     ) -> Result<Option<ActionPayload>, GoalPayloadOverrideError>;
-    fn apply_planner_step<'snapshot>(
-        &self,
-        state: PlanningState<'snapshot>,
-        op_kind: PlannerOpKind,
-        targets: &[EntityId],
-        payload_override: Option<&ActionPayload>,
-    ) -> PlanningState<'snapshot>;
     fn is_progress_barrier(&self, step: &PlannedStep) -> bool;
     fn is_satisfied(&self, state: &PlanningState<'_>) -> bool;
     /// Places where this goal can potentially be achieved.
@@ -1047,230 +1040,6 @@ impl GoalKindPlannerExt for GoalKind {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
-    fn apply_planner_step<'snapshot>(
-        &self,
-        state: PlanningState<'snapshot>,
-        op_kind: PlannerOpKind,
-        targets: &[EntityId],
-        payload_override: Option<&ActionPayload>,
-    ) -> PlanningState<'snapshot> {
-        let actor = state.snapshot().actor();
-        if political_step_blocked_by_unknown_vacancy(self, &state, op_kind) {
-            return state;
-        }
-        // Cargo uses transport transition kinds in planner_ops.rs for hypothetical state changes,
-        // so MoveCargo intentionally falls through the default no-op path here.
-        match op_kind {
-            PlannerOpKind::Travel => {
-                if let Some(destination) = targets.first().copied() {
-                    state.move_actor_to(destination)
-                } else {
-                    state
-                }
-            }
-            PlannerOpKind::Consume => match self {
-                GoalKind::ConsumeOwnedCommodity { commodity }
-                | GoalKind::AcquireCommodity { commodity, .. } => {
-                    state.consume_commodity(*commodity)
-                }
-                _ => state,
-            },
-            PlannerOpKind::Sleep => {
-                let Some(mut needs) = state.homeostatic_needs(actor) else {
-                    return state;
-                };
-                let Some(profile) = state.metabolism_profile(actor) else {
-                    return state;
-                };
-                needs.fatigue = needs.fatigue.saturating_sub(profile.rest_efficiency);
-                state.with_homeostatic_needs(actor, needs)
-            }
-            PlannerOpKind::Relieve => update_actor_needs(state, |needs, _thresholds| {
-                needs.bladder = Permille::new_unchecked(0);
-            }),
-            PlannerOpKind::Wash => update_actor_needs(state, |needs, _thresholds| {
-                needs.dirtiness = Permille::new_unchecked(0);
-            }),
-            PlannerOpKind::Heal => match self {
-                GoalKind::TreatWounds { patient } => {
-                    state.with_pain(*patient, Permille::new_unchecked(0))
-                }
-                _ => state,
-            },
-            PlannerOpKind::Loot => match self {
-                GoalKind::LootCorpse { corpse } => {
-                    let actor = state.snapshot().actor();
-                    CommodityKind::ALL
-                        .iter()
-                        .copied()
-                        .fold(state, |next, commodity| {
-                            let quantity = next.commodity_quantity(*corpse, commodity);
-                            if quantity == Quantity(0) {
-                                return next;
-                            }
-                            let actor_quantity = next.commodity_quantity(actor, commodity);
-                            next.with_commodity_quantity(*corpse, commodity, Quantity(0))
-                                .with_commodity_quantity(
-                                    actor,
-                                    commodity,
-                                    Quantity(actor_quantity.0.saturating_add(quantity.0)),
-                                )
-                        })
-                }
-                _ => state,
-            },
-            PlannerOpKind::Bury => match self {
-                GoalKind::BuryCorpse {
-                    corpse,
-                    burial_site,
-                } => state.set_container_ref(
-                    PlanningEntityRef::Authoritative(*corpse),
-                    PlanningEntityRef::Authoritative(*burial_site),
-                ),
-                _ => state,
-            },
-            PlannerOpKind::QueueForFacilityUse => {
-                let queued_use = targets.first().copied().zip(
-                    payload_override
-                        .and_then(ActionPayload::as_queue_for_facility_use)
-                        .map(|payload| payload.intended_action),
-                );
-                if let Some((facility, intended_action)) = queued_use {
-                    state.simulate_queue_join(facility, intended_action)
-                } else {
-                    state
-                }
-            }
-            PlannerOpKind::DeclareSupport => match self {
-                GoalKind::ClaimOffice { office } => {
-                    // Principle 7 (Locality): DeclareSupport requires actor at office jurisdiction.
-                    if actor_at_office_seat(&state, actor, *office)
-                        && office_succession_law(&state, *office) == Some(SuccessionLaw::Support)
-                    {
-                        state.with_support_declaration(actor, *office, actor)
-                    } else {
-                        state
-                    }
-                }
-                GoalKind::SupportCandidateForOffice { office, candidate } => {
-                    if actor_at_office_seat(&state, actor, *office) {
-                        state.with_support_declaration(actor, *office, *candidate)
-                    } else {
-                        state
-                    }
-                }
-                _ => state,
-            },
-            PlannerOpKind::Bribe => match self {
-                GoalKind::ClaimOffice { office } => {
-                    apply_bribe_for_office(state, actor, *office, payload_override)
-                }
-                _ => state,
-            },
-            PlannerOpKind::Threaten => match self {
-                GoalKind::ClaimOffice { office } => {
-                    apply_threaten_for_office(state, actor, *office, payload_override)
-                }
-                _ => state,
-            },
-            PlannerOpKind::PressForceClaim => match self {
-                GoalKind::ClaimOffice { office } => {
-                    if actor_at_office_seat(&state, actor, *office)
-                        && office_succession_law(&state, *office) == Some(SuccessionLaw::Force)
-                    {
-                        let mut state = state;
-                        state.override_force_controller_belief(
-                            *office,
-                            InstitutionalBeliefRead::Certain((Some(actor), false)),
-                        );
-                        state
-                    } else {
-                        state
-                    }
-                }
-                _ => state,
-            },
-            PlannerOpKind::ConsultRecord => match office_requiring_vacancy_belief(self) {
-                Some(office) => {
-                    let Some(record) = payload_override
-                        .and_then(ActionPayload::as_consult_record)
-                        .map(|payload| payload.record)
-                        .or_else(|| targets.first().copied())
-                    else {
-                        return state;
-                    };
-                    match consulted_office_holder_read_for_record(&state, record, office) {
-                        InstitutionalBeliefRead::Unknown => state,
-                        read => {
-                            let mut state = state;
-                            state.override_office_holder_belief(office, read);
-                            state
-                        }
-                    }
-                }
-                None => state,
-            },
-            PlannerOpKind::EstablishCamp => match self {
-                GoalKind::EstablishBanditCamp { faction } => {
-                    if let Some(place) = state.effective_place(actor) {
-                        state.with_bandit_camp_faction(place, Some(*faction))
-                    } else {
-                        state
-                    }
-                }
-                _ => state,
-            },
-            PlannerOpKind::Harvest => {
-                if let Some(harvest) = payload_override.and_then(ActionPayload::as_harvest) {
-                    let mut next = state;
-                    let hypothetical =
-                        next.spawn_hypothetical_lot(EntityKind::ItemLot, harvest.output_commodity);
-                    let hypothetical_ref = PlanningEntityRef::Hypothetical(hypothetical);
-                    next = next.set_quantity_ref(
-                        hypothetical_ref,
-                        harvest.output_commodity,
-                        harvest.requested_quantity,
-                    );
-                    if let Some(place) = next.effective_place(actor) {
-                        next = next.move_entity_ref(hypothetical_ref, place);
-                    }
-                    next
-                } else {
-                    state
-                }
-            }
-            PlannerOpKind::Trade
-            | PlannerOpKind::StaffMarket
-            | PlannerOpKind::StockManagement
-            | PlannerOpKind::Craft
-            | PlannerOpKind::ClaimBounty
-            | PlannerOpKind::WithdrawBounty
-            | PlannerOpKind::PostBounty
-            | PlannerOpKind::PostNotice
-            | PlannerOpKind::Attack
-            | PlannerOpKind::Defend
-            | PlannerOpKind::Patrol
-            | PlannerOpKind::Tell
-            | PlannerOpKind::MoveCargo
-            | PlannerOpKind::DropItem
-            | PlannerOpKind::YieldForceClaim
-            | PlannerOpKind::Investigate
-            | PlannerOpKind::AskWitness
-            | PlannerOpKind::SearchPlace
-            | PlannerOpKind::AskAboutPerson
-            | PlannerOpKind::ReportMissing
-            | PlannerOpKind::ReportFound
-            | PlannerOpKind::Accuse
-            | PlannerOpKind::Fine
-            | PlannerOpKind::Exile => state,
-            PlannerOpKind::EscortToSafety => match self {
-                GoalKind::EscortToSafety { destination, .. } => state.move_actor_to(*destination),
-                _ => state,
-            },
-        }
-    }
-
     fn is_progress_barrier(&self, step: &PlannedStep) -> bool {
         if step.op_kind == PlannerOpKind::QueueForFacilityUse {
             return matches!(
@@ -2214,84 +1983,6 @@ fn demand_memory_places(
     places.into_iter().collect()
 }
 
-fn update_actor_needs(
-    state: PlanningState<'_>,
-    apply: impl FnOnce(&mut worldwake_core::HomeostaticNeeds, worldwake_core::DriveThresholds),
-) -> PlanningState<'_> {
-    let actor = state.snapshot().actor();
-    let Some(mut needs) = state.homeostatic_needs(actor) else {
-        return state;
-    };
-    let Some(thresholds) = state.drive_thresholds(actor) else {
-        return state;
-    };
-    apply(&mut needs, thresholds);
-    state.with_homeostatic_needs(actor, needs)
-}
-
-/// Hypothetical bribe outcome: actor pays commodity, target declares support.
-/// Principle 7 (Locality): Check if the actor's planned position matches the
-/// office's jurisdiction. Used by all political social actions (`DeclareSupport`,
-/// `Bribe`, `Threaten`) to prevent the planner from simulating remote political
-/// actions without a preceding `Travel` step.
-fn actor_at_office_seat(state: &PlanningState<'_>, actor: EntityId, office: EntityId) -> bool {
-    let actor_place = state.effective_place(actor);
-    let seat = state.snapshot().seat(office);
-    actor_place.is_some() && actor_place == seat
-}
-
-fn apply_bribe_for_office<'s>(
-    state: PlanningState<'s>,
-    actor: EntityId,
-    office: EntityId,
-    payload_override: Option<&ActionPayload>,
-) -> PlanningState<'s> {
-    let Some(bribe) = payload_override.and_then(ActionPayload::as_bribe) else {
-        return state;
-    };
-    // Principle 7 (Locality): Bribe requires actor at the office jurisdiction.
-    // Bribe targets are co-located at the jurisdiction (enforced by affordance generation).
-    if !actor_at_office_seat(&state, actor, office) {
-        return state;
-    }
-    let current_qty = state.commodity_quantity(actor, bribe.offered_commodity);
-    if current_qty >= bribe.offered_quantity {
-        let remaining = Quantity(current_qty.0.saturating_sub(bribe.offered_quantity.0));
-        state
-            .with_commodity_quantity(actor, bribe.offered_commodity, remaining)
-            .with_support_declaration(bribe.target, office, actor)
-    } else {
-        state
-    }
-}
-
-fn apply_threaten_for_office<'s>(
-    state: PlanningState<'s>,
-    actor: EntityId,
-    office: EntityId,
-    payload_override: Option<&ActionPayload>,
-) -> PlanningState<'s> {
-    let Some(threaten) = payload_override.and_then(ActionPayload::as_threaten) else {
-        return state;
-    };
-    // Principle 7 (Locality): Threaten requires actor at the office jurisdiction.
-    // Threaten targets are co-located at the jurisdiction (enforced by affordance generation).
-    if !actor_at_office_seat(&state, actor, office) {
-        return state;
-    }
-    let attack_skill = state
-        .combat_profile(actor)
-        .map_or(Permille::new_unchecked(0), |p| p.attack_skill);
-    let target_courage = state
-        .courage(threaten.target)
-        .unwrap_or(Permille::new_unchecked(1000));
-    if attack_skill > target_courage {
-        state.with_support_declaration(threaten.target, office, actor)
-    } else {
-        state
-    }
-}
-
 #[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum GoalPriorityClass {
     Background,
@@ -2635,8 +2326,8 @@ mod tests {
     };
     use crate::{
         CommodityPurpose, GoalKey, GoalKind, PlannedStep, PlannerOpKind, PlannerOpSemantics,
-        PlannerTransitionKind, PlanningEntityRef, PlanningState, ProfileFixture,
-        build_planning_snapshot, build_semantics_table,
+        PlannerSyntheticCargo, PlanningState, ProfileFixture, build_planning_snapshot,
+        build_semantics_table,
         decision_trace::{CompetitionDiscount, SourceReliabilityDiscount},
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -2660,16 +2351,15 @@ mod tests {
         WashBasinState, WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
-    use worldwake_sim::PressForceClaimActionPayload;
+
     use worldwake_sim::{
         AccuseActionPayload, ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId,
-        ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload, BribeActionPayload,
-        ConsultRecordActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        HarvestActionPayload, Interruptibility, InventoryBeliefView, InvestigateActionPayload,
+        ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload, ControlBeliefView,
+        DurationExpr, EntityBeliefView, Interruptibility, InvestigateActionPayload,
         ProfileBeliefView, PunishActionPayload, QueueForFacilityUsePayload, RecipeRegistry,
         ReportMissingActionPayload, RuntimeBeliefView, SearchPlaceActionPayload, SpatialBeliefView,
-        TellActionPayload, TemporalBeliefView, ThreatenActionPayload, TradeActionPayload,
-        TransportActionPayload, estimate_duration_from_beliefs,
+        TellActionPayload, TemporalBeliefView, TradeActionPayload, TransportActionPayload,
+        estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -3085,24 +2775,6 @@ mod tests {
                 PlannerOpKind::SearchPlace,
             ]
         );
-    }
-
-    #[test]
-    fn report_missing_goal_relevant_ops_stay_reserved_to_report_surface() {
-        let goal = GoalKind::ReportMissing {
-            subject: entity_id(4, 3),
-            to_office: Some(entity_id(8, 0)),
-            expectation_id: None,
-        };
-        let (view, actor, ..) = spatial_view();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-
-        assert_eq!(
-            goal.relevant_op_kinds(),
-            &[PlannerOpKind::Travel, PlannerOpKind::ReportMissing]
-        );
-        assert!(!goal.is_satisfied(&state));
     }
 
     #[test]
@@ -4329,12 +4001,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -4420,12 +4093,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::MoveCargo,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::PickUpGroundLot,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -4491,12 +4165,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -4564,12 +4239,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
         let affordance_payload = ActionPayload::Tell(TellActionPayload { listener, topic });
 
@@ -4643,12 +4319,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
         let affordance_payload = ActionPayload::Tell(TellActionPayload {
             listener,
@@ -4706,12 +4383,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -4771,12 +4449,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::SearchPlace,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -4843,12 +4522,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::AskAboutPerson,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let result = goal.build_payload_override(None, &state, &[witness], &def, &semantics);
@@ -4941,12 +4621,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::AskAboutPerson,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -5008,12 +4689,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ReportMissing,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -5075,12 +4757,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Accuse,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -5149,12 +4832,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Exile,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -5217,12 +4901,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Tell,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5278,12 +4963,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Accuse,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5327,12 +5013,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ClaimBounty,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5388,12 +5075,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Fine,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5448,12 +5136,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Exile,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5504,12 +5193,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::EscortToSafety,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5563,12 +5253,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostNotice,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5632,12 +5323,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostBounty,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5687,12 +5379,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::EstablishCamp,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5751,12 +5444,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
             may_appear_mid_plan: false,
             is_materialization_barrier: true,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5808,12 +5502,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
             may_appear_mid_plan: false,
             is_materialization_barrier: true,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5865,12 +5560,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Harvest,
             may_appear_mid_plan: false,
             is_materialization_barrier: true,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5920,12 +5616,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
             may_appear_mid_plan: false,
             is_materialization_barrier: true,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -5970,12 +5667,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Trade,
             may_appear_mid_plan: false,
             is_materialization_barrier: true,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -6021,12 +5719,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Attack,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -6072,12 +5771,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Attack,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -6124,12 +5824,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -6185,12 +5886,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::SearchPlace,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -6243,12 +5945,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::ReportMissing,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         assert_eq!(
@@ -6299,12 +6002,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::Investigate,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let result = goal.build_payload_override(
@@ -6501,33 +6205,6 @@ mod tests {
         assert!(GoalKind::Sleep.is_satisfied(&relieved_state));
         assert!(GoalKind::Relieve.is_satisfied(&relieved_state));
         assert!(GoalKind::Wash.is_satisfied(&relieved_state));
-    }
-
-    #[test]
-    fn sleep_planner_transition_accumulates_rest_efficiency_until_low_band_clears() {
-        let (mut view, actor, _seller) = base_view();
-        view.needs.insert(
-            actor,
-            HomeostaticNeeds::new(pm(0), pm(0), pm(350), pm(0), pm(0)),
-        );
-
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
-        let state = PlanningState::new(&snapshot);
-
-        let once = GoalKind::Sleep.apply_planner_step(state, PlannerOpKind::Sleep, &[], None);
-        assert_eq!(once.homeostatic_needs(actor).unwrap().fatigue, pm(330));
-        assert!(
-            !GoalKind::Sleep.is_satisfied(&once),
-            "one sleep tick should not falsely satisfy fatigue=350 under the low-band contract"
-        );
-
-        let twice = GoalKind::Sleep.apply_planner_step(once, PlannerOpKind::Sleep, &[], None);
-        assert_eq!(twice.homeostatic_needs(actor).unwrap().fatigue, pm(310));
-        assert!(!GoalKind::Sleep.is_satisfied(&twice));
-
-        let thrice = GoalKind::Sleep.apply_planner_step(twice, PlannerOpKind::Sleep, &[], None);
-        assert_eq!(thrice.homeostatic_needs(actor).unwrap().fatigue, pm(290));
-        assert!(GoalKind::Sleep.is_satisfied(&thrice));
     }
 
     #[test]
@@ -6800,138 +6477,6 @@ mod tests {
     }
 
     #[test]
-    fn apply_planner_step_updates_hypothetical_state_via_goal_semantics() {
-        let (view, actor, _seller) = base_view();
-        let goal = GoalKind::ConsumeOwnedCommodity {
-            commodity: CommodityKind::Bread,
-        };
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
-        let base_state = PlanningState::new(&snapshot);
-
-        let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Consume, &[], None);
-
-        assert!(
-            advanced.homeostatic_needs(actor).unwrap().hunger
-                < DriveThresholds::default().hunger.low()
-        );
-    }
-
-    #[test]
-    fn harvest_step_creates_hypothetical_ground_output_without_crediting_actor_inventory() {
-        let (view, actor, _seller) = base_view();
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
-        let base_state = PlanningState::new(&snapshot);
-        let goal = GoalKind::AcquireCommodity {
-            commodity: CommodityKind::Apple,
-            purpose: CommodityPurpose::SelfConsume,
-            quantity: AcquisitionQuantity::single(),
-        };
-
-        let advanced = goal.apply_planner_step(
-            base_state,
-            PlannerOpKind::Harvest,
-            &[],
-            Some(&ActionPayload::Harvest(HarvestActionPayload {
-                recipe_id: RecipeId(4),
-                required_workstation_tag: WorkstationTag::OrchardRow,
-                output_commodity: CommodityKind::Apple,
-                requested_quantity: Quantity(3),
-                required_tool_kinds: Vec::new(),
-            })),
-        );
-
-        assert_eq!(
-            advanced.commodity_quantity(actor, CommodityKind::Apple),
-            Quantity(0)
-        );
-    }
-
-    #[test]
-    fn harvest_step_spawns_hypothetical_ground_output_lot_at_actor_place() {
-        let (view, actor, _seller) = base_view();
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
-        let base_state = PlanningState::new(&snapshot);
-        let goal = GoalKind::Wash;
-
-        let advanced = goal.apply_planner_step(
-            base_state,
-            PlannerOpKind::Harvest,
-            &[],
-            Some(&ActionPayload::Harvest(HarvestActionPayload {
-                recipe_id: RecipeId(4),
-                required_workstation_tag: WorkstationTag::Well,
-                output_commodity: CommodityKind::Water,
-                requested_quantity: Quantity(2),
-                required_tool_kinds: Vec::new(),
-            })),
-        );
-
-        let actor_ref = PlanningEntityRef::Authoritative(actor);
-        let actor_place = advanced.effective_place_ref(actor_ref);
-        let lots = actor_place
-            .into_iter()
-            .flat_map(|place| advanced.hypothetical_ground_lot_refs_at_place(place))
-            .collect::<Vec<_>>();
-        assert!(
-            lots.iter().any(|lot| {
-                advanced.item_lot_commodity_ref(*lot) == Some(CommodityKind::Water)
-                    && advanced.commodity_quantity_ref(*lot, CommodityKind::Water) == Quantity(2)
-                    && advanced.direct_possessor_ref(*lot).is_none()
-            }),
-            "harvest should create a hypothetical ground water lot at the actor place for downstream pick-up and wash planning"
-        );
-    }
-
-    #[test]
-    fn harvest_step_without_payload_is_identity() {
-        let (view, actor, _seller) = base_view();
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
-        let base_state = PlanningState::new(&snapshot);
-        let goal = GoalKind::AcquireCommodity {
-            commodity: CommodityKind::Apple,
-            purpose: CommodityPurpose::SelfConsume,
-            quantity: AcquisitionQuantity::single(),
-        };
-        let before = base_state.commodity_quantity(actor, CommodityKind::Apple);
-
-        let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Harvest, &[], None);
-
-        assert_eq!(
-            advanced.commodity_quantity(actor, CommodityKind::Apple),
-            before
-        );
-    }
-
-    #[test]
-    fn acquire_self_consume_goal_is_not_satisfied_before_pickup_after_hypothetical_harvest() {
-        let (view, actor, _seller) = base_view();
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
-        let base_state = PlanningState::new(&snapshot);
-        let goal = GoalKind::AcquireCommodity {
-            commodity: CommodityKind::Apple,
-            purpose: CommodityPurpose::SelfConsume,
-            quantity: AcquisitionQuantity::single(),
-        };
-
-        assert!(!goal.is_satisfied(&base_state));
-
-        let advanced = goal.apply_planner_step(
-            base_state,
-            PlannerOpKind::Harvest,
-            &[],
-            Some(&ActionPayload::Harvest(HarvestActionPayload {
-                recipe_id: RecipeId(4),
-                required_workstation_tag: WorkstationTag::OrchardRow,
-                output_commodity: CommodityKind::Apple,
-                requested_quantity: Quantity(3),
-                required_tool_kinds: Vec::new(),
-            })),
-        );
-
-        assert!(!goal.is_satisfied(&advanced));
-    }
-
-    #[test]
     fn acquire_self_consume_goal_is_not_satisfied_by_aggregate_quantity_without_held_lot() {
         let (view, actor, _seller) = base_view();
         let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
@@ -6950,92 +6495,6 @@ mod tests {
             !goal.is_satisfied(&state),
             "self-consume acquisition must require a concrete held commodity lot, not only aggregate quantity"
         );
-    }
-
-    #[test]
-    fn loot_goal_step_transfers_believed_corpse_inventory_and_satisfies_goal() {
-        let (mut view, actor, _seller) = base_view();
-        let corpse = entity(30);
-        let town = entity(10);
-        view.kinds.insert(corpse, EntityKind::Agent);
-        view.effective_places.insert(corpse, town);
-        view.entities_at.entry(town).or_default().push(corpse);
-        view.commodity_quantities
-            .insert((corpse, CommodityKind::Coin), Quantity(5));
-
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
-        let base_state = PlanningState::new(&snapshot);
-        let goal = GoalKind::LootCorpse { corpse };
-
-        assert!(!goal.is_satisfied(&base_state));
-
-        let advanced = goal.apply_planner_step(base_state, PlannerOpKind::Loot, &[corpse], None);
-
-        assert_eq!(
-            advanced.commodity_quantity(corpse, CommodityKind::Coin),
-            Quantity(0)
-        );
-        assert_eq!(
-            advanced.commodity_quantity(actor, CommodityKind::Coin),
-            Quantity(8)
-        );
-        assert!(goal.is_satisfied(&advanced));
-    }
-
-    #[test]
-    fn bury_goal_step_marks_corpse_contained_and_satisfies_goal() {
-        let (mut view, actor, _seller) = base_view();
-        let corpse = entity(30);
-        let grave_plot = entity(31);
-        let town = entity(10);
-        view.kinds.insert(corpse, EntityKind::Agent);
-        view.kinds.insert(grave_plot, EntityKind::Facility);
-        view.effective_places.insert(corpse, town);
-        view.effective_places.insert(grave_plot, town);
-        view.entities_at
-            .entry(town)
-            .or_default()
-            .extend([corpse, grave_plot]);
-
-        let snapshot = build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::new(), 2);
-        let base_state = PlanningState::new(&snapshot);
-        let goal = GoalKind::BuryCorpse {
-            corpse,
-            burial_site: grave_plot,
-        };
-
-        assert!(!goal.is_satisfied(&base_state));
-
-        let advanced =
-            goal.apply_planner_step(base_state, PlannerOpKind::Bury, &[corpse, grave_plot], None);
-
-        assert_eq!(advanced.direct_container(corpse), Some(grave_plot));
-        assert!(goal.is_satisfied(&advanced));
-    }
-
-    #[test]
-    fn queue_for_facility_use_step_simulates_queue_join_from_payload() {
-        let (view, actor, _seller) = base_view();
-        let field = entity(30);
-        let snapshot =
-            build_planning_snapshot(&view, actor, &BTreeSet::from([field]), &BTreeSet::new(), 1);
-        let goal = GoalKind::RestockCommodity {
-            commodity: CommodityKind::Bread,
-        };
-
-        let advanced = goal.apply_planner_step(
-            PlanningState::new(&snapshot),
-            PlannerOpKind::QueueForFacilityUse,
-            &[field],
-            Some(&ActionPayload::QueueForFacilityUse(
-                QueueForFacilityUsePayload {
-                    intended_action: ActionDefId(44),
-                },
-            )),
-        );
-
-        assert!(advanced.is_actor_queued_at_facility(field));
-        assert!(!advanced.has_actor_facility_grant(field, ActionDefId(44)));
     }
 
     #[test]
@@ -7173,582 +6632,6 @@ mod tests {
     }
 
     #[test]
-    fn consult_record_step_overrides_unknown_vacancy_belief_and_unblocks_declare_support() {
-        let actor = entity(1);
-        let office = entity(40);
-        let candidate = entity(41);
-        let archive = entity(10);
-        let jurisdiction = entity(11);
-        let record = entity(12);
-        let faction = entity(13);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([actor, candidate, office, record]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(candidate, EntityKind::Agent);
-        view.kinds.insert(office, EntityKind::Office);
-        view.kinds.insert(record, EntityKind::Record);
-        view.effective_places.insert(actor, archive);
-        view.effective_places.insert(candidate, jurisdiction);
-        view.effective_places.insert(office, jurisdiction);
-        view.effective_places.insert(record, archive);
-        view.entities_at.insert(archive, vec![actor, record]);
-        view.entities_at
-            .insert(jurisdiction, vec![candidate, office]);
-        view.carry_capacities.insert(actor, LoadUnits(10));
-        view.entity_loads.insert(actor, LoadUnits(0));
-        view.consultation_speed_factors
-            .insert(actor, Permille::new(500).unwrap());
-        view.office_data_map
-            .insert(office, vacant_office("Steward", jurisdiction, faction));
-        view.record_data.insert(
-            record,
-            worldwake_core::RecordData {
-                record_kind: RecordKind::OfficeRegister,
-                home_place: archive,
-                issuer: actor,
-                consultation_ticks: 4,
-                max_entries_per_consult: 2,
-                entries: vec![worldwake_core::InstitutionalRecordEntry {
-                    entry_id: worldwake_core::RecordEntryId(0),
-                    claim: worldwake_core::InstitutionalClaim::OfficeHolder {
-                        office,
-                        holder: None,
-                        effective_tick: Tick(3),
-                    },
-                    recorded_tick: Tick(3),
-                    supersedes: None,
-                }],
-                next_entry_id: 1,
-            },
-        );
-
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, candidate, record]),
-            &BTreeSet::from([archive, jurisdiction]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::SupportCandidateForOffice { office, candidate };
-        let declare_def = ActionDef {
-            id: ActionDefId(77),
-            name: "declare_support".to_string(),
-            domain: ActionDomain::Social,
-            actor_constraints: Vec::new(),
-            targets: Vec::new(),
-            preconditions: Vec::new(),
-            reservation_requirements: Vec::new(),
-            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
-            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
-            attention_cost: worldwake_core::Permille::ZERO,
-            interruptibility: Interruptibility::NonInterruptible,
-            commit_conditions: Vec::new(),
-            visibility: VisibilitySpec::SamePlace,
-            causal_event_tags: BTreeSet::new(),
-            payload: ActionPayload::None,
-            handler: ActionHandlerId(0),
-            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
-            guard_template: None,
-            expectation_template: vec![],
-        };
-        let declare_semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::DeclareSupport,
-            may_appear_mid_plan: false,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
-        };
-
-        assert_eq!(
-            goal.build_payload_override(None, &state, &[], &declare_def, &declare_semantics),
-            Err(GoalPayloadOverrideError::UnsupportedGoal)
-        );
-
-        let consulted = goal.apply_planner_step(
-            state,
-            PlannerOpKind::ConsultRecord,
-            &[record],
-            Some(&ActionPayload::ConsultRecord(ConsultRecordActionPayload {
-                record,
-            })),
-        );
-
-        assert_eq!(
-            consulted.believed_office_holder(office),
-            InstitutionalBeliefRead::Certain(None)
-        );
-        assert!(
-            goal.build_payload_override(None, &consulted, &[], &declare_def, &declare_semantics)
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn support_candidate_builds_declare_support_payload_and_satisfies_after_step() {
-        let actor = entity(1);
-        let office = entity(40);
-        let candidate = entity(41);
-        let town = entity(10);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([actor, candidate, office]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(candidate, EntityKind::Agent);
-        view.kinds.insert(office, EntityKind::Office);
-        view.effective_places.insert(actor, town);
-        view.effective_places.insert(candidate, town);
-        view.effective_places.insert(office, town);
-        view.entities_at
-            .insert(town, vec![actor, candidate, office]);
-        set_office_jurisdiction(&mut view, office, town);
-        view.office_holder_beliefs
-            .insert(office, InstitutionalBeliefRead::Certain(None));
-
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, candidate]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::SupportCandidateForOffice { office, candidate };
-        let def = ActionDef {
-            id: ActionDefId(77),
-            name: "declare_support".to_string(),
-            domain: ActionDomain::Social,
-            actor_constraints: Vec::new(),
-            targets: Vec::new(),
-            preconditions: Vec::new(),
-            reservation_requirements: Vec::new(),
-            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
-            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
-            attention_cost: worldwake_core::Permille::ZERO,
-            interruptibility: Interruptibility::NonInterruptible,
-            commit_conditions: Vec::new(),
-            visibility: VisibilitySpec::SamePlace,
-            causal_event_tags: BTreeSet::new(),
-            payload: ActionPayload::None,
-            handler: ActionHandlerId(0),
-            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
-            guard_template: None,
-            expectation_template: vec![],
-        };
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::DeclareSupport,
-            may_appear_mid_plan: false,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
-        };
-
-        let payload = goal
-            .build_payload_override(None, &state, &[], &def, &semantics)
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            payload.as_declare_support(),
-            Some(&worldwake_sim::DeclareSupportActionPayload { office, candidate })
-        );
-
-        let progressed =
-            goal.apply_planner_step(state, PlannerOpKind::DeclareSupport, &[], Some(&payload));
-        assert!(goal.is_satisfied(&progressed));
-        assert!(goal.is_progress_barrier(&PlannedStep {
-            def_id: def.id,
-            targets: Vec::new(),
-            target_place: None,
-            payload_override: Some(payload),
-            op_kind: PlannerOpKind::DeclareSupport,
-            estimated_ticks: 1,
-            is_materialization_barrier: false,
-            expected_materializations: Vec::new(),
-            guard: None,
-            expectations: Vec::new(),
-        }));
-    }
-
-    #[test]
-    fn claim_office_force_law_rejects_declare_support_payload_override() {
-        let (state, _actor, office) =
-            force_claim_office_state(InstitutionalBeliefRead::Certain((None, false)));
-        let goal = GoalKind::ClaimOffice { office };
-        let def = ActionDef {
-            id: ActionDefId(88),
-            name: "declare_support".to_string(),
-            domain: ActionDomain::Social,
-            actor_constraints: Vec::new(),
-            targets: Vec::new(),
-            preconditions: Vec::new(),
-            reservation_requirements: Vec::new(),
-            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
-            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
-            attention_cost: worldwake_core::Permille::ZERO,
-            interruptibility: Interruptibility::NonInterruptible,
-            commit_conditions: Vec::new(),
-            visibility: VisibilitySpec::SamePlace,
-            causal_event_tags: BTreeSet::new(),
-            payload: ActionPayload::None,
-            handler: ActionHandlerId(0),
-            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
-            guard_template: None,
-            expectation_template: vec![],
-        };
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::DeclareSupport,
-            may_appear_mid_plan: false,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
-        };
-
-        assert_eq!(
-            goal.build_payload_override(None, &state, &[], &def, &semantics),
-            Err(GoalPayloadOverrideError::UnsupportedGoal),
-            "force-law ClaimOffice must not synthesize declare_support payloads"
-        );
-    }
-
-    #[test]
-    fn claim_office_force_law_builds_press_force_claim_payload_override() {
-        let (state, _actor, office) =
-            force_claim_office_state(InstitutionalBeliefRead::Certain((None, false)));
-        let goal = GoalKind::ClaimOffice { office };
-        let def = ActionDef {
-            id: ActionDefId(89),
-            name: "press_force_claim".to_string(),
-            domain: ActionDomain::Social,
-            actor_constraints: Vec::new(),
-            targets: Vec::new(),
-            preconditions: Vec::new(),
-            reservation_requirements: Vec::new(),
-            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
-            body_cost_per_tick: worldwake_core::BodyCostPerTick::zero(),
-            attention_cost: worldwake_core::Permille::ZERO,
-            interruptibility: Interruptibility::NonInterruptible,
-            commit_conditions: Vec::new(),
-            visibility: VisibilitySpec::SamePlace,
-            causal_event_tags: BTreeSet::new(),
-            payload: ActionPayload::None,
-            handler: ActionHandlerId(0),
-            binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
-            guard_template: None,
-            expectation_template: vec![],
-        };
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::PressForceClaim,
-            may_appear_mid_plan: false,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
-        };
-
-        let payload = goal
-            .build_payload_override(None, &state, &[], &def, &semantics)
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            payload.as_press_force_claim(),
-            Some(&PressForceClaimActionPayload { office }),
-            "force-law ClaimOffice should synthesize press_force_claim payloads"
-        );
-    }
-
-    // ── goal_relevant_places tests ─────────────────────────────────────
-
-    fn spatial_view() -> (TestBeliefView, EntityId, EntityId, EntityId, EntityId) {
-        let actor = entity(1);
-        let place_a = entity(10);
-        let place_b = entity(11);
-        let place_c = entity(12);
-
-        let mut view = TestBeliefView::default();
-        view.alive.extend([actor, place_a, place_b, place_c]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(place_a, EntityKind::Place);
-        view.kinds.insert(place_b, EntityKind::Place);
-        view.kinds.insert(place_c, EntityKind::Place);
-        view.effective_places.insert(actor, place_a);
-        view.entities_at.insert(place_a, vec![actor]);
-        view.adjacent
-            .insert(place_a, vec![(place_b, NonZeroU32::new(2).unwrap())]);
-        view.adjacent.insert(
-            place_b,
-            vec![
-                (place_a, NonZeroU32::new(2).unwrap()),
-                (place_c, NonZeroU32::new(3).unwrap()),
-            ],
-        );
-        view.adjacent
-            .insert(place_c, vec![(place_b, NonZeroU32::new(3).unwrap())]);
-        view.needs.insert(
-            actor,
-            HomeostaticNeeds::new(pm(500), pm(0), pm(500), pm(0), pm(0)),
-        );
-        view.thresholds.insert(actor, DriveThresholds::default());
-        (view, actor, place_a, place_b, place_c)
-    }
-
-    fn snapshot_and_state(
-        view: &TestBeliefView,
-        actor: EntityId,
-    ) -> crate::planning_snapshot::PlanningSnapshot {
-        build_planning_snapshot(view, actor, &BTreeSet::new(), &BTreeSet::new(), 3)
-    }
-
-    #[test]
-    fn move_cargo_returns_destination_place() {
-        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::MoveCargo {
-            commodity: CommodityKind::Bread,
-            destination: place_b,
-        };
-        assert_eq!(goal.goal_relevant_places(&state, &recipes), vec![place_b]);
-    }
-
-    #[test]
-    fn regroup_with_faction_goal_relevant_places_use_believed_rally_point() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let faction = entity(30);
-        view.faction_rally_point_beliefs
-            .insert(faction, InstitutionalBeliefRead::Certain(Some(place_b)));
-        view.known_institutional_beliefs.insert(
-            actor,
-            vec![BelievedInstitutionalClaim {
-                claim: InstitutionalClaim::FactionRallyPoint {
-                    faction,
-                    rally_place: Some(place_b),
-                    effective_tick: Tick(4),
-                },
-                source: InstitutionalKnowledgeSource::DirectObservation,
-                learned_tick: Tick(4),
-                learned_at: Some(place_b),
-            }],
-        );
-
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::RegroupWithFaction { faction };
-
-        assert_eq!(goal.goal_relevant_places(&state, &recipes), vec![place_b]);
-    }
-
-    #[test]
-    fn restock_without_commodity_returns_resource_source_places() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let resource_entity = entity(20);
-        view.alive.insert(resource_entity);
-        view.kinds.insert(resource_entity, EntityKind::ItemLot);
-        view.effective_places.insert(resource_entity, place_b);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(resource_entity);
-        view.resource_sources.insert(
-            resource_entity,
-            ResourceSource {
-                commodity: CommodityKind::Apple,
-                available_quantity: Quantity(5),
-                max_quantity: Quantity(10),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        );
-        let believed_source = view.resource_sources.get(&resource_entity).cloned();
-        remember_entity(
-            &mut view,
-            actor,
-            resource_entity,
-            believed_entity_state_at(place_b, Tick(1), believed_source),
-        );
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::RestockCommodity {
-            commodity: CommodityKind::Apple,
-        };
-        let places = goal.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_b]);
-    }
-
-    #[test]
-    fn restock_with_commodity_returns_demand_memory_places() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        view.commodity_quantities
-            .insert((actor, CommodityKind::Bread), Quantity(3));
-        view.demand_memory.insert(
-            actor,
-            vec![DemandObservation {
-                commodity: CommodityKind::Bread,
-                quantity: Quantity(5),
-                place: place_b,
-                tick: Tick(1),
-                counterparty: None,
-                reason: DemandObservationReason::WantedToBuyButNoSeller,
-            }],
-        );
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::RestockCommodity {
-            commodity: CommodityKind::Bread,
-        };
-        let places = goal.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_b]);
-    }
-
-    #[test]
-    fn consume_owned_with_possession_returns_actor_place() {
-        let (mut view, actor, place_a, _place_b, _place_c) = spatial_view();
-        view.commodity_quantities
-            .insert((actor, CommodityKind::Bread), Quantity(1));
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ConsumeOwnedCommodity {
-            commodity: CommodityKind::Bread,
-        };
-        let places = goal.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_a]);
-    }
-
-    #[test]
-    fn acquire_returns_resource_source_and_merchant_places() {
-        let (mut view, actor, _place_a, place_b, place_c) = spatial_view();
-        // Resource source at place_b
-        let resource_entity = entity(20);
-        view.alive.insert(resource_entity);
-        view.kinds.insert(resource_entity, EntityKind::ItemLot);
-        view.effective_places.insert(resource_entity, place_b);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(resource_entity);
-        view.resource_sources.insert(
-            resource_entity,
-            ResourceSource {
-                commodity: CommodityKind::Bread,
-                available_quantity: Quantity(3),
-                max_quantity: Quantity(10),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        );
-        let believed_source = view.resource_sources.get(&resource_entity).cloned();
-        remember_entity(
-            &mut view,
-            actor,
-            resource_entity,
-            believed_entity_state_at(place_b, Tick(1), believed_source),
-        );
-        // Merchant at place_c
-        let merchant = entity(30);
-        view.alive.insert(merchant);
-        view.kinds.insert(merchant, EntityKind::Agent);
-        view.effective_places.insert(merchant, place_c);
-        view.entities_at.entry(place_c).or_default().push(merchant);
-        view.merchandise_profiles.insert(
-            merchant,
-            MerchandiseProfile {
-                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_facility: Some(place_c),
-            },
-        );
-        view.trade_profiles
-            .insert(merchant, sample_trade_disposition_profile());
-        view.commodity_quantities
-            .insert((merchant, CommodityKind::Bread), Quantity(2));
-        let mut merchant_belief = believed_entity_state_at(place_c, Tick(1), None);
-        merchant_belief.believed_kind = Some(EntityKind::Agent);
-        merchant_belief
-            .last_known_inventory
-            .insert(CommodityKind::Bread, Quantity(2));
-        remember_entity(&mut view, actor, merchant, merchant_belief);
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::AcquireCommodity {
-            commodity: CommodityKind::Bread,
-            purpose: CommodityPurpose::SelfConsume,
-            quantity: AcquisitionQuantity::single(),
-        };
-        let places = goal.goal_relevant_places(&state, &recipes);
-        assert!(
-            places.contains(&place_b),
-            "should contain resource source place"
-        );
-        assert!(places.contains(&place_c), "should contain merchant place");
-    }
-
-    #[test]
-    fn engage_hostile_returns_target_place() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let target = entity(25);
-        view.alive.insert(target);
-        view.kinds.insert(target, EntityKind::Agent);
-        view.effective_places.insert(target, place_b);
-        view.entities_at.entry(place_b).or_default().push(target);
-        let mut target_belief = believed_entity_state_at(place_b, Tick(1), None);
-        target_belief.believed_kind = Some(EntityKind::Agent);
-        remember_entity(&mut view, actor, target, target_belief);
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::EngageHostile { target };
-        let places = goal.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_b]);
-    }
-
-    #[test]
-    fn loot_corpse_returns_corpse_place() {
-        let (mut view, actor, _place_a, _place_b, place_c) = spatial_view();
-        let corpse = entity(26);
-        view.alive.remove(&corpse); // corpse is dead
-        view.kinds.insert(corpse, EntityKind::Agent);
-        view.effective_places.insert(corpse, place_c);
-        view.entities_at.entry(place_c).or_default().push(corpse);
-        let mut corpse_belief = believed_entity_state_at(place_c, Tick(1), None);
-        corpse_belief.believed_kind = Some(EntityKind::Agent);
-        corpse_belief.alive = false;
-        remember_entity(&mut view, actor, corpse, corpse_belief);
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::LootCorpse { corpse };
-        let places = goal.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_c]);
-    }
-
-    #[test]
-    fn reduce_danger_returns_empty() {
-        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::ReduceDanger.goal_relevant_places(&state, &recipes);
-        assert!(places.is_empty());
-    }
-
-    #[test]
-    fn report_missing_without_office_uses_actor_place_as_relevant_place() {
-        let (view, actor, place_a, _place_b, _place_c) = spatial_view();
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ReportMissing {
-            subject: entity(20),
-            to_office: None,
-            expectation_id: None,
-        };
-
-        assert_eq!(goal.goal_relevant_places(&state, &recipes), vec![place_a]);
-    }
-
-    #[test]
     fn free_carry_capacity_goal_relevant_places_use_actor_place() {
         let (view, actor, place, waste_lot) = free_carry_capacity_view();
         let snapshot = build_planning_snapshot(
@@ -7767,16 +6650,6 @@ mod tests {
     }
 
     #[test]
-    fn sleep_returns_empty() {
-        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::Sleep.goal_relevant_places(&state, &recipes);
-        assert!(places.is_empty());
-    }
-
-    #[test]
     fn free_carry_capacity_contract_from_view_uses_carried_load_not_controlled_inventory_total() {
         let (mut view, actor, _place, _waste_lot) = free_carry_capacity_view();
         view.entity_loads.insert(entity(20), LoadUnits(6));
@@ -7788,1073 +6661,6 @@ mod tests {
 
         assert_eq!(contract.current_load, LoadUnits(6));
         assert!(!contract.is_actionable());
-    }
-
-    #[test]
-    fn wash_returns_empty_without_local_wash_access() {
-        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
-        assert!(places.is_empty());
-    }
-
-    #[test]
-    fn wash_ignores_unbelieved_remote_wash_basin() {
-        let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
-        let basin = entity(50);
-        let well = entity(51);
-        view.alive.insert(basin);
-        view.alive.insert(well);
-        view.kinds.insert(basin, EntityKind::Facility);
-        view.kinds.insert(well, EntityKind::Facility);
-        view.effective_places.insert(basin, place_c);
-        view.effective_places.insert(well, place_c);
-        view.entities_at.entry(place_c).or_default().push(basin);
-        view.entities_at.entry(place_c).or_default().push(well);
-        view.workstation_tags
-            .insert(basin, WorkstationTag::WashBasin);
-        view.resource_sources.insert(
-            well,
-            ResourceSource {
-                commodity: CommodityKind::Water,
-                available_quantity: Quantity(2),
-                max_quantity: Quantity(2),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        );
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
-        assert!(places.is_empty());
-        assert!(!places.contains(&place_a));
-    }
-
-    #[test]
-    fn wash_ignores_remote_basin_without_state_carrier() {
-        // FND-14A: physical basin state is co-located perception only.
-        // The planner stages a wash plan only when the agent has observed
-        // the basin's state — directly (co-located) or via
-        // `BelievedEntityState::wash_basin_state` — so a basin without a
-        // stored state snapshot is invisible to wash planning until the
-        // agent visits it.
-        let (mut view, actor, place_a, _place_b, place_c) = spatial_view();
-        let basin = entity(50);
-        let well = entity(51);
-        view.alive.insert(basin);
-        view.alive.insert(well);
-        view.kinds.insert(basin, EntityKind::Facility);
-        view.kinds.insert(well, EntityKind::Facility);
-        view.effective_places.insert(basin, place_c);
-        view.effective_places.insert(well, place_c);
-        view.entities_at.entry(place_c).or_default().push(basin);
-        view.entities_at.entry(place_c).or_default().push(well);
-        view.known_entity_beliefs.insert(
-            actor,
-            vec![
-                (
-                    basin,
-                    BelievedEntityState {
-                        believed_kind: Some(EntityKind::Facility),
-                        last_known_place: Some(place_c),
-                        last_known_inventory: BTreeMap::new(),
-                        workstation_tag: Some(WorkstationTag::WashBasin),
-                        resource_source: None,
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        ..BelievedEntityState::single_observation_defaults(
-                            Tick(4),
-                            worldwake_core::PerceptionSource::DirectObservation,
-                        )
-                    },
-                ),
-                (
-                    well,
-                    BelievedEntityState {
-                        believed_kind: Some(EntityKind::Facility),
-                        last_known_place: Some(place_c),
-                        last_known_inventory: BTreeMap::new(),
-                        workstation_tag: None,
-                        resource_source: Some(ResourceSource {
-                            commodity: CommodityKind::Water,
-                            available_quantity: Quantity(2),
-                            max_quantity: Quantity(2),
-                            regeneration_ticks_per_unit: None,
-                            last_regeneration_tick: None,
-                            extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                            extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-                        }),
-                        alive: true,
-                        wounds: Vec::new(),
-                        last_known_courage: None,
-                        believed_activity: None,
-                        believed_artifact: None,
-                        believed_contention: None,
-                        believed_evidence: None,
-                        ..BelievedEntityState::single_observation_defaults(
-                            Tick(4),
-                            worldwake_core::PerceptionSource::DirectObservation,
-                        )
-                    },
-                ),
-            ],
-        );
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
-        assert!(places.is_empty());
-        assert!(!places.contains(&place_a));
-    }
-
-    #[test]
-    fn wash_returns_local_place_with_clean_basin_state() {
-        let (mut view, actor, place_a, _place_b, _place_c) = spatial_view();
-        let basin = entity(50);
-        view.alive.insert(basin);
-        view.kinds.insert(basin, EntityKind::Facility);
-        view.effective_places.insert(basin, place_a);
-        view.entities_at.entry(place_a).or_default().push(basin);
-        view.workstation_tags
-            .insert(basin, WorkstationTag::WashBasin);
-        view.wash_basin_states.insert(
-            basin,
-            WashBasinState {
-                clean_water_units: 2,
-                ..WashBasinState::default()
-            },
-        );
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::Wash.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_a]);
-    }
-
-    #[test]
-    fn relieve_returns_latrine_places() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        view.place_tags
-            .insert(place_b, BTreeSet::from([worldwake_core::PlaceTag::Latrine]));
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::Relieve.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_b]);
-    }
-
-    #[test]
-    fn relieve_goal_relevant_places_includes_outdoor() {
-        let (mut view, actor, _place_a, place_b, place_c) = spatial_view();
-        // place_b has a latrine, place_c has a forest (outdoor relief tag).
-        view.place_tags
-            .insert(place_b, BTreeSet::from([worldwake_core::PlaceTag::Latrine]));
-        view.place_tags
-            .insert(place_c, BTreeSet::from([worldwake_core::PlaceTag::Forest]));
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::Relieve.goal_relevant_places(&state, &recipes);
-        assert!(
-            places.contains(&place_b),
-            "latrine place should be included"
-        );
-        assert!(
-            places.contains(&place_c),
-            "outdoor place should be included"
-        );
-    }
-
-    #[test]
-    fn relieve_goal_relevant_places_deduplicates() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        // place_b is both a latrine and a road — should appear only once.
-        view.place_tags.insert(
-            place_b,
-            BTreeSet::from([
-                worldwake_core::PlaceTag::Latrine,
-                worldwake_core::PlaceTag::Road,
-            ]),
-        );
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let places = GoalKind::Relieve.goal_relevant_places(&state, &recipes);
-        assert_eq!(
-            places.iter().filter(|&&p| p == place_b).count(),
-            1,
-            "duplicate place should be deduplicated"
-        );
-    }
-
-    #[test]
-    fn produce_returns_places_with_specific_workstation() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let forge = entity(40);
-        view.alive.insert(forge);
-        view.kinds.insert(forge, EntityKind::UniqueItem);
-        view.effective_places.insert(forge, place_b);
-        view.entities_at.entry(place_b).or_default().push(forge);
-        view.workstation_tags.insert(forge, WorkstationTag::Forge);
-        let mut forge_belief = believed_entity_state_at(place_b, Tick(1), None);
-        forge_belief.believed_kind = Some(EntityKind::UniqueItem);
-        forge_belief.workstation_tag = Some(WorkstationTag::Forge);
-        remember_entity(&mut view, actor, forge, forge_belief);
-        let mut recipes = worldwake_sim::RecipeRegistry::new();
-        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
-            name: "Smelt Iron".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(1))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(5).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Forge),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ProduceCommodity { recipe_id };
-        let places = goal.goal_relevant_places(&state, &recipes);
-        assert_eq!(places, vec![place_b]);
-    }
-
-    #[test]
-    fn produce_without_workstation_requirement_returns_empty() {
-        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
-        let mut recipes = worldwake_sim::RecipeRegistry::new();
-        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
-            name: "HandCraft".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(1))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: None,
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ProduceCommodity { recipe_id };
-        let places = goal.goal_relevant_places(&state, &recipes);
-        assert!(places.is_empty());
-    }
-
-    #[test]
-    fn prerequisite_places_treat_wounds_include_remote_controllable_medicine_lot() {
-        let (mut view, actor, place_a, place_b, _place_c) = spatial_view();
-        let patient = entity(50);
-        let medicine = entity(51);
-        view.alive.extend([patient, medicine]);
-        view.kinds.insert(patient, EntityKind::Agent);
-        view.kinds.insert(medicine, EntityKind::ItemLot);
-        view.effective_places.insert(patient, place_a);
-        view.effective_places.insert(medicine, place_b);
-        view.entities_at.entry(place_a).or_default().push(patient);
-        view.entities_at.entry(place_b).or_default().push(medicine);
-        view.controllable.insert((actor, medicine));
-        view.lot_commodities
-            .insert(medicine, CommodityKind::Medicine);
-        view.commodity_quantities
-            .insert((medicine, CommodityKind::Medicine), Quantity(1));
-        let mut medicine_belief = believed_entity_state_at(place_b, Tick(1), None);
-        medicine_belief.believed_kind = Some(EntityKind::ItemLot);
-        medicine_belief
-            .last_known_inventory
-            .insert(CommodityKind::Medicine, Quantity(1));
-        remember_entity(&mut view, actor, medicine, medicine_belief);
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::TreatWounds { patient };
-        let places = goal.prerequisite_places(
-            &state,
-            &RecipeRegistry::new(),
-            &execution_budget(&ProfileFixture::default()),
-        );
-
-        assert_eq!(places, vec![place_b]);
-    }
-
-    #[test]
-    fn prerequisite_places_treat_wounds_empty_when_actor_already_has_medicine() {
-        let (mut view, actor, place_a, place_b, _place_c) = spatial_view();
-        let patient = entity(60);
-        let medicine = entity(61);
-        view.alive.extend([patient, medicine]);
-        view.kinds.insert(patient, EntityKind::Agent);
-        view.kinds.insert(medicine, EntityKind::ItemLot);
-        view.effective_places.insert(patient, place_a);
-        view.effective_places.insert(medicine, place_b);
-        view.entities_at.entry(place_a).or_default().push(patient);
-        view.entities_at.entry(place_b).or_default().push(medicine);
-        view.controllable.insert((actor, medicine));
-        view.lot_commodities
-            .insert(medicine, CommodityKind::Medicine);
-        view.commodity_quantities
-            .insert((medicine, CommodityKind::Medicine), Quantity(1));
-        view.commodity_quantities
-            .insert((actor, CommodityKind::Medicine), Quantity(1));
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::TreatWounds { patient };
-        let places = goal.prerequisite_places(
-            &state,
-            &RecipeRegistry::new(),
-            &execution_budget(&ProfileFixture::default()),
-        );
-
-        assert!(places.is_empty());
-    }
-
-    #[test]
-    fn prerequisite_places_treat_wounds_prefer_loose_medicine_over_sellers_and_sources() {
-        let (mut view, actor, place_a, place_b, place_c) = spatial_view();
-        let patient = entity(70);
-        let loose_medicine = entity(71);
-        let seller = entity(72);
-        let herb_patch = entity(73);
-        view.alive
-            .extend([patient, loose_medicine, seller, herb_patch]);
-        view.kinds.insert(patient, EntityKind::Agent);
-        view.kinds.insert(loose_medicine, EntityKind::ItemLot);
-        view.kinds.insert(seller, EntityKind::Agent);
-        view.kinds.insert(herb_patch, EntityKind::Place);
-        view.effective_places.insert(patient, place_a);
-        view.effective_places.insert(loose_medicine, place_b);
-        view.effective_places.insert(seller, place_c);
-        view.effective_places.insert(herb_patch, place_a);
-        view.entities_at
-            .entry(place_a)
-            .or_default()
-            .extend([patient, herb_patch]);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(loose_medicine);
-        view.entities_at.entry(place_c).or_default().push(seller);
-        view.lot_commodities
-            .insert(loose_medicine, CommodityKind::Medicine);
-        view.commodity_quantities
-            .insert((loose_medicine, CommodityKind::Medicine), Quantity(1));
-        view.merchandise_profiles.insert(
-            seller,
-            MerchandiseProfile {
-                sale_kinds: BTreeSet::from([CommodityKind::Medicine]),
-                home_facility: None,
-            },
-        );
-        view.resource_sources.insert(
-            herb_patch,
-            ResourceSource {
-                commodity: CommodityKind::Medicine,
-                available_quantity: Quantity(1),
-                max_quantity: Quantity(1),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        );
-        let mut loose_medicine_belief = believed_entity_state_at(place_b, Tick(1), None);
-        loose_medicine_belief.believed_kind = Some(EntityKind::ItemLot);
-        loose_medicine_belief
-            .last_known_inventory
-            .insert(CommodityKind::Medicine, Quantity(1));
-        remember_entity(&mut view, actor, loose_medicine, loose_medicine_belief);
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::TreatWounds { patient };
-        let places = goal.prerequisite_places(
-            &state,
-            &RecipeRegistry::new(),
-            &execution_budget(&ProfileFixture::default()),
-        );
-
-        assert_eq!(places, vec![place_b]);
-    }
-
-    #[test]
-    fn prerequisite_places_produce_commodity_include_missing_input_places() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let wheat_field = entity(80);
-        view.alive.insert(wheat_field);
-        view.kinds.insert(wheat_field, EntityKind::Place);
-        view.effective_places.insert(wheat_field, place_b);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(wheat_field);
-        view.resource_sources.insert(
-            wheat_field,
-            ResourceSource {
-                commodity: CommodityKind::Grain,
-                available_quantity: Quantity(3),
-                max_quantity: Quantity(3),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        );
-        let believed_source = view.resource_sources.get(&wheat_field).cloned();
-        let mut wheat_field_belief = believed_entity_state_at(place_b, Tick(1), believed_source);
-        wheat_field_belief.believed_kind = Some(EntityKind::Place);
-        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
-
-        let mut recipes = RecipeRegistry::new();
-        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ProduceCommodity { recipe_id };
-
-        assert_eq!(
-            goal.prerequisite_places(
-                &state,
-                &recipes,
-                &execution_budget(&ProfileFixture::default())
-            ),
-            vec![place_b]
-        );
-    }
-
-    #[test]
-    fn prerequisite_places_produce_commodity_empty_when_inputs_are_already_owned() {
-        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
-
-        let mut recipes = RecipeRegistry::new();
-        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot).with_commodity_quantity(
-            actor,
-            CommodityKind::Grain,
-            Quantity(2),
-        );
-        let goal = GoalKind::ProduceCommodity { recipe_id };
-
-        assert!(
-            goal.prerequisite_places(
-                &state,
-                &recipes,
-                &execution_budget(&ProfileFixture::default())
-            )
-            .is_empty()
-        );
-    }
-
-    #[test]
-    fn prerequisite_places_produce_commodity_partial_inputs_still_expose_missing_input_places() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let wheat_field = entity(81);
-        view.alive.insert(wheat_field);
-        view.kinds.insert(wheat_field, EntityKind::Place);
-        view.effective_places.insert(wheat_field, place_b);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(wheat_field);
-        view.resource_sources.insert(
-            wheat_field,
-            ResourceSource {
-                commodity: CommodityKind::Grain,
-                available_quantity: Quantity(3),
-                max_quantity: Quantity(3),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        );
-        let believed_source = view.resource_sources.get(&wheat_field).cloned();
-        let mut wheat_field_belief = believed_entity_state_at(place_b, Tick(1), believed_source);
-        wheat_field_belief.believed_kind = Some(EntityKind::Place);
-        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
-
-        let mut recipes = RecipeRegistry::new();
-        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot).with_commodity_quantity(
-            actor,
-            CommodityKind::Grain,
-            Quantity(1),
-        );
-        let goal = GoalKind::ProduceCommodity { recipe_id };
-
-        assert_eq!(
-            goal.prerequisite_places(
-                &state,
-                &recipes,
-                &execution_budget(&ProfileFixture::default())
-            ),
-            vec![place_b]
-        );
-    }
-
-    #[test]
-    fn prerequisite_places_produce_commodity_exclude_depleted_resource_sources() {
-        let (mut view, actor, _place_a, place_b, place_c) = spatial_view();
-        let depleted_field = entity(84);
-        let stocked_field = entity(85);
-        for (field, place, quantity) in [
-            (depleted_field, place_b, Quantity(0)),
-            (stocked_field, place_c, Quantity(3)),
-        ] {
-            view.alive.insert(field);
-            view.kinds.insert(field, EntityKind::Place);
-            view.effective_places.insert(field, place);
-            view.entities_at.entry(place).or_default().push(field);
-            view.resource_sources.insert(
-                field,
-                ResourceSource {
-                    commodity: CommodityKind::Grain,
-                    available_quantity: quantity,
-                    max_quantity: Quantity(3),
-                    regeneration_ticks_per_unit: None,
-                    last_regeneration_tick: None,
-                    extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                    extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-                },
-            );
-            let believed_source = view.resource_sources.get(&field).cloned();
-            let mut field_belief = believed_entity_state_at(place, Tick(1), believed_source);
-            field_belief.believed_kind = Some(EntityKind::Place);
-            remember_entity(&mut view, actor, field, field_belief);
-        }
-
-        let mut recipes = RecipeRegistry::new();
-        let recipe_id = recipes.register(worldwake_sim::RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ProduceCommodity { recipe_id };
-
-        assert_eq!(
-            goal.prerequisite_places(
-                &state,
-                &recipes,
-                &execution_budget(&ProfileFixture::default())
-            ),
-            vec![place_c]
-        );
-    }
-
-    #[test]
-    fn prerequisite_places_restock_commodity_include_missing_recipe_input_places() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let wheat_field = entity(82);
-        view.alive.insert(wheat_field);
-        view.kinds.insert(wheat_field, EntityKind::Place);
-        view.effective_places.insert(wheat_field, place_b);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(wheat_field);
-        view.resource_sources.insert(
-            wheat_field,
-            ResourceSource {
-                commodity: CommodityKind::Grain,
-                available_quantity: Quantity(3),
-                max_quantity: Quantity(3),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        );
-        let believed_source = view.resource_sources.get(&wheat_field).cloned();
-        let mut wheat_field_belief = believed_entity_state_at(place_b, Tick(1), believed_source);
-        wheat_field_belief.believed_kind = Some(EntityKind::Place);
-        remember_entity(&mut view, actor, wheat_field, wheat_field_belief);
-
-        let mut recipes = RecipeRegistry::new();
-        recipes.register(worldwake_sim::RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::RestockCommodity {
-            commodity: CommodityKind::Bread,
-        };
-
-        assert_eq!(
-            goal.prerequisite_places(
-                &state,
-                &recipes,
-                &execution_budget(&ProfileFixture::default())
-            ),
-            vec![place_b]
-        );
-    }
-
-    #[test]
-    fn prerequisite_places_restock_commodity_empty_when_no_recipe_matches_output() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let wheat_field = entity(83);
-        view.alive.insert(wheat_field);
-        view.kinds.insert(wheat_field, EntityKind::Place);
-        view.effective_places.insert(wheat_field, place_b);
-        view.entities_at
-            .entry(place_b)
-            .or_default()
-            .push(wheat_field);
-        view.resource_sources.insert(
-            wheat_field,
-            ResourceSource {
-                commodity: CommodityKind::Grain,
-                available_quantity: Quantity(3),
-                max_quantity: Quantity(3),
-                regeneration_ticks_per_unit: None,
-                last_regeneration_tick: None,
-                extraction_slots: std::num::NonZeroU8::new(1).unwrap(),
-                extraction_duration_ticks: std::num::NonZeroU32::new(1).unwrap(),
-            },
-        );
-
-        let mut recipes = RecipeRegistry::new();
-        recipes.register(worldwake_sim::RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::RestockCommodity {
-            commodity: CommodityKind::Apple,
-        };
-
-        assert!(
-            goal.prerequisite_places(
-                &state,
-                &recipes,
-                &execution_budget(&ProfileFixture::default())
-            )
-            .is_empty()
-        );
-    }
-
-    #[test]
-    fn prerequisite_places_restock_commodity_empty_when_all_recipe_inputs_are_owned() {
-        let (view, actor, _place_a, _place_b, _place_c) = spatial_view();
-
-        let mut recipes = RecipeRegistry::new();
-        recipes.register(worldwake_sim::RecipeDefinition {
-            name: "Bake Bread".to_string(),
-            inputs: vec![(CommodityKind::Grain, Quantity(2))],
-            outputs: vec![(CommodityKind::Bread, Quantity(1))],
-            work_ticks: NonZeroU32::new(3).unwrap(),
-            required_workstation_tag: Some(WorkstationTag::Mill),
-            required_tool_kinds: Vec::new(),
-            body_cost_per_tick: BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(0), pm(1)),
-        });
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot).with_commodity_quantity(
-            actor,
-            CommodityKind::Grain,
-            Quantity(2),
-        );
-        let goal = GoalKind::RestockCommodity {
-            commodity: CommodityKind::Bread,
-        };
-
-        assert!(
-            goal.prerequisite_places(
-                &state,
-                &recipes,
-                &execution_budget(&ProfileFixture::default())
-            )
-            .is_empty()
-        );
-    }
-
-    #[test]
-    fn prerequisite_places_sell_commodity_returns_home_facility_when_remote() {
-        let (mut view, actor, _place_a, place_b, _place_c) = spatial_view();
-        // Create a facility entity at place_b
-        let facility = entity(70);
-        view.alive.insert(facility);
-        view.kinds.insert(facility, EntityKind::Facility);
-        view.effective_places.insert(facility, place_b);
-        view.entities_at.entry(place_b).or_default().push(facility);
-        view.merchandise_profiles.insert(
-            actor,
-            MerchandiseProfile {
-                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_facility: Some(facility),
-            },
-        );
-
-        // Include facility in evidence so the snapshot knows its effective_place
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([facility]),
-            &BTreeSet::new(),
-            3,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::SellCommodity {
-            commodity: CommodityKind::Bread,
-        };
-        let places = goal.prerequisite_places(
-            &state,
-            &RecipeRegistry::new(),
-            &execution_budget(&ProfileFixture::default()),
-        );
-
-        // Actor at place_a, facility at place_b → should return place_b
-        assert_eq!(places, vec![place_b]);
-    }
-
-    #[test]
-    fn prerequisite_places_sell_commodity_empty_when_at_home() {
-        let (mut view, actor, place_a, _place_b, _place_c) = spatial_view();
-        // Create facility at same place as actor (place_a)
-        let facility = entity(71);
-        view.alive.insert(facility);
-        view.kinds.insert(facility, EntityKind::Facility);
-        view.effective_places.insert(facility, place_a);
-        view.merchandise_profiles.insert(
-            actor,
-            MerchandiseProfile {
-                sale_kinds: BTreeSet::from([CommodityKind::Bread]),
-                home_facility: Some(facility),
-            },
-        );
-
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::SellCommodity {
-            commodity: CommodityKind::Bread,
-        };
-        let places = goal.prerequisite_places(
-            &state,
-            &RecipeRegistry::new(),
-            &execution_budget(&ProfileFixture::default()),
-        );
-
-        // Actor already at home facility → no prerequisite places
-        assert!(places.is_empty());
-    }
-
-    #[test]
-    fn all_goal_kind_variants_have_goal_relevant_places_impl() {
-        // This test ensures exhaustive coverage by creating all GoalKind variants
-        // and calling goal_relevant_places. If a new variant is added without
-        // an arm in the match, this will fail to compile.
-        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let recipes = worldwake_sim::RecipeRegistry::new();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-
-        let goals: Vec<GoalKind> = vec![
-            GoalKind::ConsumeOwnedCommodity {
-                commodity: CommodityKind::Bread,
-            },
-            GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
-            },
-            GoalKind::Sleep,
-            GoalKind::Relieve,
-            GoalKind::Wash,
-            GoalKind::EngageHostile { target: entity(99) },
-            GoalKind::RaidTarget { target: entity(97) },
-            GoalKind::ReduceDanger,
-            GoalKind::RegroupWithFaction {
-                faction: entity(96),
-            },
-            GoalKind::TreatWounds {
-                patient: entity(99),
-            },
-            GoalKind::SearchForMissing {
-                subject: entity(95),
-                last_seen: Some(place_b),
-            },
-            GoalKind::ReportMissing {
-                subject: entity(95),
-                to_office: Some(entity(94)),
-                expectation_id: None,
-            },
-            GoalKind::EscortToSafety {
-                subject: entity(99),
-                destination: place_b,
-            },
-            GoalKind::ProduceCommodity {
-                recipe_id: RecipeId(0),
-            },
-            GoalKind::SellCommodity {
-                commodity: CommodityKind::Bread,
-            },
-            GoalKind::RestockCommodity {
-                commodity: CommodityKind::Bread,
-            },
-            GoalKind::MoveCargo {
-                commodity: CommodityKind::Bread,
-                destination: place_b,
-            },
-            GoalKind::LootCorpse { corpse: entity(99) },
-            GoalKind::BuryCorpse {
-                corpse: entity(99),
-                burial_site: entity(98),
-            },
-            GoalKind::ShareBelief {
-                listener: entity(99),
-                topic: TellTopic::EntityBelief {
-                    subject: entity(98),
-                },
-                communication_class: worldwake_core::CommunicationClass::Gossip,
-            },
-            GoalKind::ClaimOffice { office: entity(99) },
-            GoalKind::SupportCandidateForOffice {
-                office: entity(99),
-                candidate: entity(98),
-            },
-            GoalKind::ExploreLocation {
-                target_place: place_b,
-                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
-                    HomeostaticNeedId::Hunger,
-                ),
-                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
-                    commodity: CommodityKind::Apple,
-                },
-            },
-            GoalKind::StealItem {
-                target_item: entity(97),
-            },
-            GoalKind::Patrol { place: place_b },
-            GoalKind::Accuse {
-                crime_register: entity(95),
-                accused: entity(96),
-                violation_id: ViolationId(3),
-            },
-            GoalKind::PunishAccused {
-                office: entity(93),
-                accused: entity(95),
-                accusation_entry: RecordEntryId(7),
-                punishment: PunishmentKind::Exile {
-                    from_faction: entity(94),
-                },
-            },
-        ];
-
-        assert_eq!(goals.len(), 27);
-        for goal in &goals {
-            let _ = goal.goal_relevant_places(&state, &recipes);
-        }
-    }
-
-    #[test]
-    fn all_goal_kind_variants_have_prerequisite_places_impl() {
-        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let budget = ProfileFixture::default();
-        let recipes = RecipeRegistry::new();
-
-        let goals: Vec<GoalKind> = vec![
-            GoalKind::ConsumeOwnedCommodity {
-                commodity: CommodityKind::Bread,
-            },
-            GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
-            },
-            GoalKind::Sleep,
-            GoalKind::Relieve,
-            GoalKind::Wash,
-            GoalKind::EngageHostile { target: place_b },
-            GoalKind::RaidTarget { target: place_b },
-            GoalKind::ReduceDanger,
-            GoalKind::RegroupWithFaction { faction: actor },
-            GoalKind::TreatWounds { patient: place_b },
-            GoalKind::SearchForMissing {
-                subject: actor,
-                last_seen: Some(place_b),
-            },
-            GoalKind::ReportMissing {
-                subject: place_b,
-                to_office: Some(actor),
-                expectation_id: None,
-            },
-            GoalKind::EscortToSafety {
-                subject: actor,
-                destination: place_b,
-            },
-            GoalKind::ProduceCommodity {
-                recipe_id: RecipeId(0),
-            },
-            GoalKind::SellCommodity {
-                commodity: CommodityKind::Bread,
-            },
-            GoalKind::RestockCommodity {
-                commodity: CommodityKind::Bread,
-            },
-            GoalKind::MoveCargo {
-                commodity: CommodityKind::Bread,
-                destination: place_b,
-            },
-            GoalKind::LootCorpse { corpse: place_b },
-            GoalKind::BuryCorpse {
-                corpse: place_b,
-                burial_site: actor,
-            },
-            GoalKind::ShareBelief {
-                listener: place_b,
-                topic: TellTopic::EntityBelief { subject: actor },
-                communication_class: worldwake_core::CommunicationClass::Gossip,
-            },
-            GoalKind::ClaimOffice { office: place_b },
-            GoalKind::SupportCandidateForOffice {
-                office: place_b,
-                candidate: actor,
-            },
-            GoalKind::ExploreLocation {
-                target_place: place_b,
-                motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
-                    HomeostaticNeedId::Hunger,
-                ),
-                hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
-                    commodity: CommodityKind::Apple,
-                },
-            },
-            GoalKind::Patrol { place: place_b },
-            GoalKind::StealItem {
-                target_item: place_b,
-            },
-            GoalKind::Accuse {
-                crime_register: actor,
-                accused: place_b,
-                violation_id: ViolationId(4),
-            },
-            GoalKind::PunishAccused {
-                office: actor,
-                accused: place_b,
-                accusation_entry: RecordEntryId(8),
-                punishment: PunishmentKind::Fine {
-                    commodity: CommodityKind::Coin,
-                    amount: Quantity(1),
-                },
-            },
-        ];
-
-        for goal in goals {
-            let _ = goal.prerequisite_places(&state, &recipes, &execution_budget(&budget));
-        }
-    }
-
-    #[test]
-    fn explore_location_is_satisfied_when_actor_reaches_target_place() {
-        let (view, actor, place_a, _place_b, _place_c) = spatial_view();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let food_goal = GoalKind::ExploreLocation {
-            target_place: place_a,
-            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
-                HomeostaticNeedId::Hunger,
-            ),
-            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
-                commodity: CommodityKind::Apple,
-            },
-        };
-        let water_goal = GoalKind::ExploreLocation {
-            target_place: place_a,
-            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
-                HomeostaticNeedId::Thirst,
-            ),
-            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
-                commodity: CommodityKind::Water,
-            },
-        };
-
-        assert!(food_goal.is_satisfied(&state));
-        assert!(water_goal.is_satisfied(&state));
-    }
-
-    #[test]
-    fn explore_location_goal_relevant_places_and_binding_follow_target_place() {
-        let (view, actor, _place_a, place_b, _place_c) = spatial_view();
-        let snapshot = snapshot_and_state(&view, actor);
-        let state = PlanningState::new(&snapshot);
-        let target_place = entity(99);
-        let goal = GoalKind::ExploreLocation {
-            target_place,
-            motivating_need: worldwake_core::ExplorationMotivation::NeedDriven(
-                HomeostaticNeedId::Hunger,
-            ),
-            hypothesis: worldwake_core::HypothesisKind::MayContainCommodity {
-                commodity: CommodityKind::Apple,
-            },
-        };
-
-        assert!(!goal.is_satisfied(&state));
-        assert_eq!(
-            goal.goal_relevant_places(&state, &RecipeRegistry::new()),
-            vec![target_place]
-        );
-        assert!(goal.matches_binding(&[target_place], PlannerOpKind::Travel));
-        assert!(
-            goal.matches_binding(&[place_b], PlannerOpKind::Travel),
-            "Travel remains an auxiliary op, so binding is intentionally permissive"
-        );
     }
 
     #[test]
@@ -9217,581 +7023,6 @@ mod tests {
         }
     }
 
-    // ── Bribe / Threaten planning state transition tests ────────────────
-
-    /// Helper: build a minimal view for political planning tests.
-    /// Actor at `town` with specified bread quantity and combat profile.
-    fn political_view(
-        actor: EntityId,
-        target: EntityId,
-        town: EntityId,
-        office: EntityId,
-        actor_bread: Quantity,
-        actor_combat: Option<CombatProfile>,
-        target_courage: Option<Permille>,
-    ) -> TestBeliefView {
-        let mut view = TestBeliefView::default();
-        view.alive.extend([actor, target, town, office]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(target, EntityKind::Agent);
-        view.kinds.insert(town, EntityKind::Place);
-        view.kinds.insert(office, EntityKind::Office);
-        view.effective_places.insert(actor, town);
-        view.effective_places.insert(target, town);
-        view.effective_places.insert(office, town);
-        view.entities_at.insert(town, vec![actor, target, office]);
-        view.commodity_quantities
-            .insert((actor, CommodityKind::Bread), actor_bread);
-        if let Some(profile) = actor_combat {
-            view.combat_profiles.insert(actor, Some(profile));
-        }
-        if let Some(courage) = target_courage {
-            view.courage_values.insert(target, courage);
-        }
-        set_office_jurisdiction(&mut view, office, town);
-        view.office_holder_beliefs
-            .insert(office, InstitutionalBeliefRead::Certain(None));
-        view
-    }
-
-    fn combat_with_attack_skill(attack_skill: Permille) -> CombatProfile {
-        CombatProfile::new(
-            pm(1000),
-            pm(700),
-            attack_skill,
-            pm(580),
-            pm(80),
-            pm(25),
-            pm(18),
-            pm(120),
-            pm(35),
-            NonZeroU32::new(6).unwrap(),
-            NonZeroU32::new(10).unwrap(),
-        )
-    }
-
-    #[test]
-    fn bribe_sufficient_goods_deducts_and_adds_support() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        let view = political_view(actor, target, town, office, Quantity(5), None, None);
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ClaimOffice { office };
-        let payload = ActionPayload::Bribe(BribeActionPayload {
-            target,
-            offered_commodity: CommodityKind::Bread,
-            offered_quantity: Quantity(5),
-        });
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
-
-        assert_eq!(
-            advanced.commodity_quantity(actor, CommodityKind::Bread),
-            Quantity(0),
-            "actor should have 0 bread after bribe"
-        );
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            Some(actor),
-            "target should support actor after bribe"
-        );
-    }
-
-    #[test]
-    fn bribe_insufficient_goods_unchanged() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        let view = political_view(actor, target, town, office, Quantity(0), None, None);
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ClaimOffice { office };
-        let payload = ActionPayload::Bribe(BribeActionPayload {
-            target,
-            offered_commodity: CommodityKind::Bread,
-            offered_quantity: Quantity(5),
-        });
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
-
-        assert_eq!(
-            advanced.commodity_quantity(actor, CommodityKind::Bread),
-            Quantity(0),
-            "commodity should remain unchanged"
-        );
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            None,
-            "no support should be added when goods insufficient"
-        );
-    }
-
-    #[test]
-    fn bribe_no_payload_unchanged() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        let view = political_view(actor, target, town, office, Quantity(5), None, None);
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ClaimOffice { office };
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], None);
-
-        assert_eq!(
-            advanced.commodity_quantity(actor, CommodityKind::Bread),
-            Quantity(5),
-            "commodity should remain unchanged without payload"
-        );
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            None,
-            "no support should be added without payload"
-        );
-    }
-
-    #[test]
-    fn threaten_yield_adds_support() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        let view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(0),
-            Some(combat_with_attack_skill(pm(800))),
-            Some(pm(200)),
-        );
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ClaimOffice { office };
-        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
-
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            Some(actor),
-            "target should support actor when attack_skill > courage"
-        );
-    }
-
-    #[test]
-    fn threaten_resist_unchanged() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        let view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(0),
-            Some(combat_with_attack_skill(pm(200))),
-            Some(pm(800)),
-        );
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ClaimOffice { office };
-        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
-
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            None,
-            "no support when attack_skill < courage (resist)"
-        );
-    }
-
-    #[test]
-    fn threaten_missing_combat_profile_unchanged() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        let mut view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(0),
-            None,
-            Some(pm(200)),
-        );
-        // Explicitly set no combat profile for actor
-        view.combat_profiles.insert(actor, None);
-
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ClaimOffice { office };
-        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
-
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            None,
-            "no support when actor has no combat profile (attack defaults to 0)"
-        );
-    }
-
-    #[test]
-    fn threaten_missing_courage_unchanged() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        // Target has NO courage set → defaults to MAX → resist
-        let view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(0),
-            Some(combat_with_attack_skill(pm(800))),
-            None, // no courage on target
-        );
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        let goal = GoalKind::ClaimOffice { office };
-        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
-
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            None,
-            "no support when target courage is unknown (defaults to MAX)"
-        );
-    }
-
-    #[test]
-    fn bribe_non_claim_office_unchanged() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        let view = political_view(actor, target, town, office, Quantity(5), None, None);
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        // Use a non-ClaimOffice goal
-        let goal = GoalKind::ConsumeOwnedCommodity {
-            commodity: CommodityKind::Bread,
-        };
-        let payload = ActionPayload::Bribe(BribeActionPayload {
-            target,
-            offered_commodity: CommodityKind::Bread,
-            offered_quantity: Quantity(5),
-        });
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Bribe, &[], Some(&payload));
-
-        assert_eq!(
-            advanced.commodity_quantity(actor, CommodityKind::Bread),
-            Quantity(5),
-            "commodity should remain unchanged for non-ClaimOffice goal"
-        );
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            None,
-            "no support for non-ClaimOffice goal"
-        );
-    }
-
-    #[test]
-    fn threaten_non_claim_office_unchanged() {
-        let actor = entity(1);
-        let target = entity(2);
-        let town = entity(10);
-        let office = entity(40);
-        let view = political_view(
-            actor,
-            target,
-            town,
-            office,
-            Quantity(0),
-            Some(combat_with_attack_skill(pm(800))),
-            Some(pm(200)),
-        );
-        let snapshot = build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([office, target]),
-            &BTreeSet::from([town]),
-            1,
-        );
-        let state = PlanningState::new(&snapshot);
-        // Use a non-ClaimOffice goal
-        let goal = GoalKind::ConsumeOwnedCommodity {
-            commodity: CommodityKind::Bread,
-        };
-        let payload = ActionPayload::Threaten(ThreatenActionPayload { target });
-
-        let advanced = goal.apply_planner_step(state, PlannerOpKind::Threaten, &[], Some(&payload));
-
-        assert_eq!(
-            advanced.test_support_override(target, office),
-            None,
-            "no support for non-ClaimOffice goal even when attack > courage"
-        );
-    }
-
-    // ── ClaimOffice is_satisfied tests (E16DPOLPLAN-024) ─────────────
-
-    /// Helper: builds a minimal `TestBeliefView` + `PlanningState` for
-    /// `ClaimOffice` tests.
-    fn claim_office_state(
-        support_declarations: Vec<(EntityId, EntityId)>,
-    ) -> (PlanningState<'static>, EntityId, EntityId) {
-        let actor = entity(1);
-        let office = entity(40);
-        let town = entity(10);
-
-        let mut view = TestBeliefView::default();
-        view.alive.extend([actor, office, town]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(office, EntityKind::Office);
-        view.kinds.insert(town, EntityKind::Place);
-        view.effective_places.insert(actor, town);
-        view.effective_places.insert(office, town);
-        view.entities_at.insert(town, vec![actor, office]);
-        view.office_data_map.insert(
-            office,
-            OfficeData {
-                title: "Mayor".to_string(),
-                seat: town,
-                jurisdiction: BTreeSet::from([town]),
-                succession_law: SuccessionLaw::Support,
-                eligibility_rules: Vec::new(),
-                succession_period_ticks: 1,
-                vacancy_since: Some(worldwake_core::Tick(0)),
-            },
-        );
-
-        if !support_declarations.is_empty() {
-            // Ensure all supporters/candidates are alive and placed
-            for &(supporter, candidate) in &support_declarations {
-                if !view.alive.contains(&supporter) {
-                    view.alive.insert(supporter);
-                    view.kinds.insert(supporter, EntityKind::Agent);
-                    view.effective_places.insert(supporter, town);
-                    view.entities_at.get_mut(&town).unwrap().push(supporter);
-                }
-                if !view.alive.contains(&candidate) {
-                    view.alive.insert(candidate);
-                    view.kinds.insert(candidate, EntityKind::Agent);
-                    view.effective_places.insert(candidate, town);
-                    view.entities_at.get_mut(&town).unwrap().push(candidate);
-                }
-            }
-            for (supporter, candidate) in support_declarations {
-                view.support_declaration_beliefs.insert(
-                    (office, supporter),
-                    InstitutionalBeliefRead::Certain(Some(candidate)),
-                );
-            }
-        }
-
-        let mut evidence = BTreeSet::new();
-        evidence.insert(office);
-        // Add all entities as evidence so the snapshot includes them
-        for &e in &view.alive {
-            evidence.insert(e);
-        }
-
-        let snapshot = build_planning_snapshot(&view, actor, &evidence, &BTreeSet::from([town]), 1);
-        // Leak to get 'static lifetime for convenience in tests
-        let leaked = Box::leak(Box::new(snapshot));
-        let state = PlanningState::new(leaked);
-        (state, actor, office)
-    }
-
-    fn force_claim_office_state(
-        believed_controller: InstitutionalBeliefRead<(Option<EntityId>, bool)>,
-    ) -> (PlanningState<'static>, EntityId, EntityId) {
-        let actor = entity(1);
-        let office = entity(40);
-        let town = entity(10);
-
-        let mut view = TestBeliefView::default();
-        view.alive.extend([actor, office, town]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(office, EntityKind::Office);
-        view.kinds.insert(town, EntityKind::Place);
-        view.effective_places.insert(actor, town);
-        view.effective_places.insert(office, town);
-        view.entities_at.insert(town, vec![actor, office]);
-        view.office_data_map.insert(
-            office,
-            OfficeData {
-                title: "Warlord".to_string(),
-                seat: town,
-                jurisdiction: BTreeSet::from([town]),
-                succession_law: SuccessionLaw::Force,
-                eligibility_rules: Vec::new(),
-                succession_period_ticks: 1,
-                vacancy_since: Some(worldwake_core::Tick(0)),
-            },
-        );
-        view.force_controller_beliefs
-            .insert(office, believed_controller);
-
-        let evidence = BTreeSet::from([actor, office, town]);
-        let snapshot = build_planning_snapshot(&view, actor, &evidence, &BTreeSet::from([town]), 1);
-        let leaked = Box::leak(Box::new(snapshot));
-        let state = PlanningState::new(leaked);
-        (state, actor, office)
-    }
-
-    #[test]
-    fn claim_office_satisfied_when_uncontested_self_declaration() {
-        let actor = entity(1);
-        let office = entity(40);
-        // Actor has 1 self-declaration, no competitors
-        let (state, _, _) = claim_office_state(vec![(actor, actor)]);
-        let goal = GoalKind::ClaimOffice { office };
-        assert!(
-            goal.is_satisfied(&state),
-            "uncontested 1 self-declaration should satisfy ClaimOffice"
-        );
-    }
-
-    #[test]
-    fn claim_office_not_satisfied_when_tied() {
-        let actor = entity(1);
-        let rival = entity(2);
-        let office = entity(40);
-        // Actor has 1, rival has 1 → tie → not satisfied
-        let (state, _, _) = claim_office_state(vec![(actor, actor), (rival, rival)]);
-        let goal = GoalKind::ClaimOffice { office };
-        assert!(
-            !goal.is_satisfied(&state),
-            "tied support should NOT satisfy ClaimOffice"
-        );
-    }
-
-    #[test]
-    fn claim_office_not_satisfied_when_trailing() {
-        let actor = entity(1);
-        let rival = entity(2);
-        let supporter = entity(3);
-        let office = entity(40);
-        // Actor has 1, rival has 2 → trailing
-        let (state, _, _) =
-            claim_office_state(vec![(actor, actor), (rival, rival), (supporter, rival)]);
-        let goal = GoalKind::ClaimOffice { office };
-        assert!(
-            !goal.is_satisfied(&state),
-            "trailing support should NOT satisfy ClaimOffice"
-        );
-    }
-
-    #[test]
-    fn claim_office_satisfied_after_bribe_gives_majority() {
-        let actor = entity(1);
-        let rival = entity(2);
-        let bribed = entity(3);
-        let office = entity(40);
-        // Actor has 2 (self + bribed), rival has 1 → actor leads
-        let (state, _, _) =
-            claim_office_state(vec![(actor, actor), (bribed, actor), (rival, rival)]);
-        let goal = GoalKind::ClaimOffice { office };
-        assert!(
-            goal.is_satisfied(&state),
-            "actor with majority after bribe should satisfy ClaimOffice"
-        );
-    }
-
-    #[test]
-    fn claim_office_not_satisfied_with_zero_support() {
-        let office = entity(40);
-        // No declarations at all
-        let (state, _, _) = claim_office_state(vec![]);
-        let goal = GoalKind::ClaimOffice { office };
-        assert!(
-            !goal.is_satisfied(&state),
-            "zero support should NOT satisfy ClaimOffice"
-        );
-    }
-
-    #[test]
-    fn claim_office_force_law_satisfied_when_actor_is_uncontested_controller() {
-        let actor = entity(1);
-        let office = entity(40);
-        let (state, _, _) =
-            force_claim_office_state(InstitutionalBeliefRead::Certain((Some(actor), false)));
-        let goal = GoalKind::ClaimOffice { office };
-        assert!(goal.is_satisfied(&state));
-    }
-
-    #[test]
-    fn claim_office_force_law_not_satisfied_when_control_is_contested() {
-        let actor = entity(1);
-        let office = entity(40);
-        let (state, _, _) =
-            force_claim_office_state(InstitutionalBeliefRead::Certain((Some(actor), true)));
-        let goal = GoalKind::ClaimOffice { office };
-        assert!(!goal.is_satisfied(&state));
-    }
-
     #[test]
     fn claim_office_progress_barrier_still_active() {
         let office = entity(40);
@@ -10023,18 +7254,6 @@ mod tests {
                 worldwake_core::PerceptionSource::DirectObservation,
             )
         }
-    }
-
-    fn remember_entity(
-        view: &mut TestBeliefView,
-        actor: EntityId,
-        entity: EntityId,
-        belief: BelievedEntityState,
-    ) {
-        view.known_entity_beliefs
-            .entry(actor)
-            .or_default()
-            .push((entity, belief));
     }
 
     fn set_office_jurisdiction(
@@ -11577,12 +8796,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::MoveCargo,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::PickUpGroundLot,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -11698,12 +8918,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostBounty,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal
@@ -11771,12 +8992,13 @@ mod tests {
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: worldwake_sim::EffectSchema::empty(),
         };
         let semantics = PlannerOpSemantics {
             op_kind: PlannerOpKind::PostNotice,
             may_appear_mid_plan: false,
             is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::GoalModelFallback,
+            synthetic_cargo: PlannerSyntheticCargo::None,
         };
 
         let payload = goal

@@ -440,6 +440,7 @@ mod tests {
             binding_strictness: crate::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         }
     }
 
@@ -606,6 +607,7 @@ mod tests {
             binding_strictness: crate::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(
@@ -711,6 +713,7 @@ mod tests {
             binding_strictness: crate::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
         let mut handlers = ActionHandlerRegistry::new();
         handlers.register(ActionHandler::new(

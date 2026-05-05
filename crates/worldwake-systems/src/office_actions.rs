@@ -5,17 +5,18 @@ use std::num::NonZeroU32;
 use crate::commodity_support::{ensure_accessible_quantity, resolve_controlled_lots};
 use worldwake_core::{
     ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, CombatProfile, CommodityKind,
-    EligibilityRule, EntityId, EntityKind, EventTag, InstitutionalBeliefKey,
+    Discrepancy, EligibilityRule, EntityId, EntityKind, EventTag, InstitutionalBeliefKey,
     InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity,
     SuccessionLaw, VisibilitySpec, World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
-    ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, BribeActionPayload, CommitOutcome, DeclareSupportActionPayload,
-    DeterministicRng, DurationExpr, Interruptibility, PayloadEntityRole, Precondition,
-    PressForceClaimActionPayload, RuntimeBeliefView, TargetSpec, ThreatenActionPayload,
-    YieldForceClaimActionPayload,
+    ActionExecutionContext, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
+    ActionPayload, ActionProgress, ActionState, BribeActionPayload, CommitOutcome,
+    DeclareSupportActionPayload, DeterministicRng, DurationExpr, EffectEvaluationContext,
+    EffectMode, EffectPrecondition, EffectSchema, EffectSink, EffectStep, Interruptibility,
+    PayloadEntityRole, Precondition, PressForceClaimActionPayload, RuntimeBeliefView, TargetSpec,
+    ThreatenActionPayload, YieldForceClaimActionPayload, apply_effects_with_context,
 };
 
 pub fn register_office_actions(
@@ -174,6 +175,7 @@ fn bribe_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: office_effect_schema(EffectStep::Bribe),
     }
 }
 
@@ -222,6 +224,7 @@ fn threaten_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: office_effect_schema(EffectStep::Threaten),
     }
 }
 
@@ -246,6 +249,7 @@ fn declare_support_action_def(id: ActionDefId, handler: ActionHandlerId) -> Acti
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: office_effect_schema(EffectStep::DeclareSupport),
     }
 }
 
@@ -270,6 +274,7 @@ fn press_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> Ac
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: office_effect_schema(EffectStep::PressForceClaim),
     }
 }
 
@@ -294,6 +299,14 @@ fn yield_force_claim_action_def(id: ActionDefId, handler: ActionHandlerId) -> Ac
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: office_effect_schema(EffectStep::YieldForceClaim),
+    }
+}
+
+fn office_effect_schema(step: EffectStep) -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![step],
     }
 }
 
@@ -667,6 +680,17 @@ fn tick_bribe(
 fn commit_bribe(
     def: &ActionDef,
     instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_office_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_bribe_effect(
+    def: &ActionDef,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
@@ -729,6 +753,17 @@ fn tick_threaten(
 }
 
 fn commit_threaten(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_office_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_threaten_effect(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
@@ -794,6 +829,17 @@ fn tick_declare_support(
 }
 
 fn commit_declare_support(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_office_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_declare_support_effect(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
@@ -868,6 +914,17 @@ fn tick_press_force_claim(
 fn commit_press_force_claim(
     def: &ActionDef,
     instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_office_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_press_force_claim_effect(
+    def: &ActionDef,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
@@ -926,6 +983,17 @@ fn tick_yield_force_claim(
 fn commit_yield_force_claim(
     def: &ActionDef,
     instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_office_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_yield_force_claim_effect(
+    def: &ActionDef,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
@@ -950,6 +1018,190 @@ fn abort_yield_force_claim(
     _txn: &mut WorldTxn<'_>,
 ) -> Result<(), ActionError> {
     Ok(())
+}
+
+struct OfficeEffectSink<'txn, 'world, 'def, 'instance, 'context, 'log, 'rng> {
+    txn: &'txn mut WorldTxn<'world>,
+    def: &'def ActionDef,
+    instance: &'instance ActionInstance,
+    context: &'context ActionExecutionContext<'context>,
+    event_log: &'log worldwake_core::EventLog,
+    rng: &'rng mut DeterministicRng,
+    action_error: Option<ActionError>,
+}
+
+impl OfficeEffectSink<'_, '_, '_, '_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+
+    fn checked_instance(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<ActionInstance, Discrepancy> {
+        if actor != self.instance.actor || targets != self.instance.targets.as_slice() {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        let mut instance = self.instance.clone();
+        instance.payload = payload.clone();
+        Ok(instance)
+    }
+}
+
+impl EffectSink for OfficeEffectSink<'_, '_, '_, '_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn bribe(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let instance = self.checked_instance(actor, targets, payload)?;
+        apply_bribe_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn threaten(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let instance = self.checked_instance(actor, targets, payload)?;
+        apply_threaten_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn declare_support(
+        &mut self,
+        actor: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let targets = self.instance.targets.clone();
+        let instance = self.checked_instance(actor, &targets, payload)?;
+        apply_declare_support_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn press_force_claim(
+        &mut self,
+        actor: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let targets = self.instance.targets.clone();
+        let instance = self.checked_instance(actor, &targets, payload)?;
+        apply_press_force_claim_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn yield_force_claim(
+        &mut self,
+        actor: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let targets = self.instance.targets.clone();
+        let instance = self.checked_instance(actor, &targets, payload)?;
+        apply_yield_force_claim_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+}
+
+fn apply_office_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = OfficeEffectSink {
+        txn,
+        def,
+        instance,
+        context,
+        event_log,
+        rng,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
 }
 
 fn validate_agent_target_context(
@@ -1201,9 +1453,10 @@ mod tests {
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDefRegistry, ActionError,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
-        BribeActionPayload, DeclareSupportActionPayload, DeterministicRng, ExternalAbortReason,
-        PerAgentBeliefView, PressForceClaimActionPayload, SystemExecutionContext, SystemId,
-        ThreatenActionPayload, YieldForceClaimActionPayload, get_affordances,
+        BribeActionPayload, DeclareSupportActionPayload, DeterministicRng, EffectStep,
+        ExternalAbortReason, PerAgentBeliefView, PressForceClaimActionPayload,
+        SystemExecutionContext, SystemId, ThreatenActionPayload, YieldForceClaimActionPayload,
+        get_affordances,
     };
 
     fn pm(value: u16) -> Permille {
@@ -1570,6 +1823,26 @@ mod tests {
         assert_eq!(defs.get(ids[2]).unwrap().name, "declare_support");
         assert_eq!(defs.get(ids[3]).unwrap().name, "press_force_claim");
         assert_eq!(defs.get(ids[4]).unwrap().name, "yield_force_claim");
+        assert_eq!(
+            defs.get(ids[0]).unwrap().effect_schema.steps,
+            vec![EffectStep::Bribe]
+        );
+        assert_eq!(
+            defs.get(ids[1]).unwrap().effect_schema.steps,
+            vec![EffectStep::Threaten]
+        );
+        assert_eq!(
+            defs.get(ids[2]).unwrap().effect_schema.steps,
+            vec![EffectStep::DeclareSupport]
+        );
+        assert_eq!(
+            defs.get(ids[3]).unwrap().effect_schema.steps,
+            vec![EffectStep::PressForceClaim]
+        );
+        assert_eq!(
+            defs.get(ids[4]).unwrap().effect_schema.steps,
+            vec![EffectStep::YieldForceClaim]
+        );
         assert_eq!(
             defs.iter().map(|def| def.domain).collect::<Vec<_>>(),
             vec![

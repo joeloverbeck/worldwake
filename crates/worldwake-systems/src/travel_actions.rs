@@ -1,13 +1,15 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
     ActionDefId, BodyCostPerTick, EdgeExperience, EntityId, EntityKind, EventLog, EventTag,
-    EventView, GoalKind, Permille, Tick, TravelEdgeId, VisibilitySpec, WorldTxn,
-    build_believed_entity_state,
+    EventView, ExpectationId, GoalKind, Permille, Quantity, Tick, TravelEdgeId, VisibilitySpec,
+    WorldTxn, WoundCause, build_believed_entity_state,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
     ActionInstance, ActionPayload, ActionProgress, ActionState, CommitOutcome, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, Precondition, TargetSpec,
+    DeterministicRng, DurationExpr, EffectEvaluationContext, EffectMode, EffectPrecondition,
+    EffectSchema, EffectSink, EffectStep, Interruptibility, Precondition, TargetSpec,
+    apply_effects_with_context,
 };
 
 use crate::evidence_support::emit_evidence;
@@ -60,7 +62,15 @@ pub fn register_travel_actions(
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentRouteStep,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: travel_effect_schema(),
     })
+}
+
+fn travel_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::CompleteTravel],
+    }
 }
 
 fn travel_state(
@@ -265,14 +275,11 @@ fn tick_travel(
     Ok(ActionProgress::Continue)
 }
 
-fn commit_travel(
-    _def: &ActionDef,
+fn apply_travel_arrival(
     instance: &ActionInstance,
-    _context: &worldwake_sim::ActionExecutionContext<'_>,
     event_log: &worldwake_core::EventLog,
-    _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
-) -> Result<CommitOutcome, ActionError> {
+) -> Result<(), ActionError> {
     let (edge_id, origin, destination, departure_tick, _) = travel_state(instance)?;
     txn.clear_component_in_transit_on_edge(instance.actor)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
@@ -298,7 +305,7 @@ fn commit_travel(
     let hostile = had_combat_during_travel(event_log, instance.actor, departure_tick, current_tick);
     record_route_experience(txn, instance.actor, edge_id, current_tick, hostile)?;
     reinforce_exploration_arrival_belief(instance.actor, destination, current_tick, txn)?;
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 fn reinforce_exploration_arrival_belief(
@@ -355,6 +362,143 @@ fn reinforce_exploration_arrival_belief(
     txn.set_component_agent_belief_store(actor, beliefs)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     Ok(())
+}
+
+struct TravelEffectSink<'txn, 'world, 'instance, 'log> {
+    txn: &'txn mut WorldTxn<'world>,
+    instance: &'instance ActionInstance,
+    event_log: &'log EventLog,
+    action_error: Option<ActionError>,
+}
+
+impl TravelEffectSink<'_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> worldwake_core::Discrepancy {
+        self.action_error = Some(error);
+        worldwake_core::Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: worldwake_core::Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for TravelEffectSink<'_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(
+        &mut self,
+        _target: EntityId,
+        _cause: WoundCause,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: ExpectationId,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn complete_travel(&mut self, actor: EntityId) -> Result<(), worldwake_core::Discrepancy> {
+        if actor != self.instance.actor {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        apply_travel_arrival(self.instance, self.event_log, self.txn)
+            .map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_travel_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    event_log: &EventLog,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = TravelEffectSink {
+        txn,
+        instance,
+        event_log,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
+fn commit_travel(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    _context: &worldwake_sim::ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_travel_effect_schema(def, instance, event_log, txn)
 }
 
 fn abort_travel(
@@ -734,6 +878,7 @@ mod tests {
             def.duration,
             DurationExpr::TravelToTarget { target_index: 0 }
         );
+        assert_eq!(def.effect_schema.steps, vec![EffectStep::CompleteTravel]);
     }
 
     #[test]

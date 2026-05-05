@@ -1185,6 +1185,7 @@ mod tests {
             binding_strictness: crate::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
         registry.register(ActionDef {
             id: ActionDefId(1),
@@ -1206,6 +1207,7 @@ mod tests {
             binding_strictness: crate::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
         registry.register(ActionDef {
             id: ActionDefId(2),
@@ -1230,6 +1232,7 @@ mod tests {
             binding_strictness: crate::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
         registry
     }
@@ -1268,6 +1271,7 @@ mod tests {
             binding_strictness: crate::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
         registry.register(ActionDef {
             id: ActionDefId(4),
@@ -1301,6 +1305,7 @@ mod tests {
             binding_strictness: crate::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
         registry
     }
@@ -1355,6 +1360,7 @@ mod tests {
             binding_strictness,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         }
     }
 

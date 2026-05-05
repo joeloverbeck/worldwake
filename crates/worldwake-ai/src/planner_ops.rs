@@ -1,16 +1,13 @@
 use crate::{
-    GoalKey, GoalKind, GoalKindPlannerExt, GoalOffer, HypotheticalEntityId, PlanExpectation,
-    PlanGuard, PlanningEntityRef, PlanningState,
+    GoalKey, GoalKind, GoalOffer, HypotheticalEntityId, PlanExpectation, PlanGuard,
+    PlanningEntityRef, PlanningState,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use worldwake_core::{
-    ActionDefId, ActionDomain, BeliefClaimKey, EntityBeliefAspect, EntityId, EntityKind, Quantity,
-    SourceKey, Tick, load_per_unit,
+    ActionDefId, ActionDomain, BeliefClaimKey, EntityBeliefAspect, EntityId, SourceKey, Tick,
 };
-use worldwake_sim::{
-    ActionDef, ActionDefRegistry, ActionPayload, GoalBeliefView, MaterializationTag,
-};
+use worldwake_sim::{ActionDef, ActionDefRegistry, ActionPayload, MaterializationTag};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PlannerOpKind {
@@ -62,20 +59,14 @@ pub struct PlannerOpSemantics {
     pub op_kind: PlannerOpKind,
     pub may_appear_mid_plan: bool,
     pub is_materialization_barrier: bool,
-    pub transition_kind: PlannerTransitionKind,
+    pub synthetic_cargo: PlannerSyntheticCargo,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum PlannerTransitionKind {
-    GoalModelFallback,
-    ConsumeMatchingTargetCommodity,
-    PickUpGroundLot,
-    StealGroundLot,
-    PutDownGroundLot,
-    StoreStockIntoLocalFacility,
-    StageStoredStockForSale,
-    CollectFacilityStockToPossession,
-    UnstageDisplayedStock,
+pub enum PlannerSyntheticCargo {
+    None,
+    PickUp,
+    PutDown,
 }
 
 #[must_use]
@@ -156,13 +147,12 @@ const fn base_semantics(
     op_kind: PlannerOpKind,
     may_appear_mid_plan: bool,
     is_materialization_barrier: bool,
-    transition_kind: PlannerTransitionKind,
 ) -> PlannerOpSemantics {
     PlannerOpSemantics {
         op_kind,
         may_appear_mid_plan,
         is_materialization_barrier,
-        transition_kind,
+        synthetic_cargo: PlannerSyntheticCargo::None,
     }
 }
 
@@ -180,62 +170,28 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
         | PlannerOpKind::QueueForFacilityUse
         | PlannerOpKind::Heal
         | PlannerOpKind::StaffMarket
-        | PlannerOpKind::StockManagement => base_semantics(
-            op_kind,
-            true,
-            false,
-            match def.name.as_str() {
-                "store_stock" => PlannerTransitionKind::StoreStockIntoLocalFacility,
-                "stage_stock_for_sale" => PlannerTransitionKind::StageStoredStockForSale,
-                "collect_display_stock" => PlannerTransitionKind::CollectFacilityStockToPossession,
-                "unstage_stock" => PlannerTransitionKind::UnstageDisplayedStock,
-                _ => PlannerTransitionKind::GoalModelFallback,
-            },
-        ),
-        PlannerOpKind::Patrol => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-        ),
-        PlannerOpKind::Consume => base_semantics(
-            op_kind,
-            true,
-            false,
-            PlannerTransitionKind::ConsumeMatchingTargetCommodity,
-        ),
+        | PlannerOpKind::StockManagement
+        | PlannerOpKind::Consume => base_semantics(op_kind, true, false),
+        PlannerOpKind::Patrol => base_semantics(op_kind, false, false),
         PlannerOpKind::Trade
         | PlannerOpKind::Harvest
         | PlannerOpKind::Craft
-        | PlannerOpKind::Loot => base_semantics(
-            op_kind,
-            true,
-            true,
-            PlannerTransitionKind::GoalModelFallback,
-        ),
-        PlannerOpKind::MoveCargo => base_semantics(
-            op_kind,
-            true,
-            false,
-            match def.name.as_str() {
-                "pick_up" => PlannerTransitionKind::PickUpGroundLot,
-                "steal" => PlannerTransitionKind::StealGroundLot,
-                "put_down" => PlannerTransitionKind::PutDownGroundLot,
-                _ => PlannerTransitionKind::GoalModelFallback,
-            },
-        ),
-        PlannerOpKind::DropItem => base_semantics(
-            op_kind,
-            false,
-            true,
-            PlannerTransitionKind::PutDownGroundLot,
-        ),
-        PlannerOpKind::Bury => base_semantics(
-            op_kind,
-            false,
-            true,
-            PlannerTransitionKind::GoalModelFallback,
-        ),
+        | PlannerOpKind::Loot => base_semantics(op_kind, true, true),
+        PlannerOpKind::MoveCargo => {
+            let mut semantics = base_semantics(op_kind, true, false);
+            semantics.synthetic_cargo = match def.name.as_str() {
+                "pick_up" => PlannerSyntheticCargo::PickUp,
+                "put_down" => PlannerSyntheticCargo::PutDown,
+                _ => PlannerSyntheticCargo::None,
+            };
+            semantics
+        }
+        PlannerOpKind::DropItem => {
+            let mut semantics = base_semantics(op_kind, false, true);
+            semantics.synthetic_cargo = PlannerSyntheticCargo::PutDown;
+            semantics
+        }
+        PlannerOpKind::Bury => base_semantics(op_kind, false, true),
         PlannerOpKind::ClaimBounty
         | PlannerOpKind::WithdrawBounty
         | PlannerOpKind::PostBounty
@@ -265,12 +221,7 @@ fn semantics_for(def: &ActionDef, op_kind: PlannerOpKind) -> PlannerOpSemantics 
 fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemantics> {
     Some(match op_kind {
         PlannerOpKind::ConsultRecord | PlannerOpKind::Bribe | PlannerOpKind::Threaten => {
-            base_semantics(
-                op_kind,
-                true,
-                false,
-                PlannerTransitionKind::GoalModelFallback,
-            )
+            base_semantics(op_kind, true, false)
         }
         PlannerOpKind::Tell
         | PlannerOpKind::ClaimBounty
@@ -291,519 +242,8 @@ fn social_or_combat_semantics(op_kind: PlannerOpKind) -> Option<PlannerOpSemanti
         | PlannerOpKind::AskAboutPerson
         | PlannerOpKind::ReportMissing
         | PlannerOpKind::EscortToSafety
-        | PlannerOpKind::ReportFound => base_semantics(
-            op_kind,
-            false,
-            false,
-            PlannerTransitionKind::GoalModelFallback,
-        ),
+        | PlannerOpKind::ReportFound => base_semantics(op_kind, false, false),
         _ => return None,
-    })
-}
-
-#[must_use]
-pub struct HypotheticalTransition<'snapshot> {
-    pub targets: Vec<PlanningEntityRef>,
-    pub state: PlanningState<'snapshot>,
-    pub expected_materializations: Vec<ExpectedMaterialization>,
-}
-
-pub fn apply_hypothetical_transition<'snapshot>(
-    goal: &GoalOffer,
-    semantics: PlannerOpSemantics,
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-    payload_override: Option<&ActionPayload>,
-) -> Option<HypotheticalTransition<'snapshot>> {
-    match semantics.transition_kind {
-        PlannerTransitionKind::GoalModelFallback => Some(apply_goal_model_fallback_transition(
-            goal,
-            semantics,
-            state,
-            targets,
-            payload_override,
-        )),
-        PlannerTransitionKind::ConsumeMatchingTargetCommodity => {
-            apply_consume_matching_target_transition(goal, semantics, state, targets)
-        }
-        PlannerTransitionKind::PickUpGroundLot => {
-            let state =
-                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_pick_up_transition(state, targets, payload_override)
-        }
-        PlannerTransitionKind::StealGroundLot => {
-            let state =
-                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_steal_transition(state, targets)
-        }
-        PlannerTransitionKind::PutDownGroundLot => {
-            let state =
-                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_put_down_transition(state, targets)
-        }
-        PlannerTransitionKind::StoreStockIntoLocalFacility => {
-            let state =
-                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_store_stock_transition(state, targets)
-        }
-        PlannerTransitionKind::StageStoredStockForSale => {
-            let state =
-                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_stage_stock_transition(state, targets)
-        }
-        PlannerTransitionKind::CollectFacilityStockToPossession => {
-            let state =
-                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_collect_stock_transition(state, targets)
-        }
-        PlannerTransitionKind::UnstageDisplayedStock => {
-            let state =
-                apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override);
-            apply_unstage_stock_transition(state, targets)
-        }
-    }
-}
-
-fn apply_goal_model_fallback_state<'snapshot>(
-    goal: &GoalOffer,
-    semantics: PlannerOpSemantics,
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-    payload_override: Option<&ActionPayload>,
-) -> PlanningState<'snapshot> {
-    let authoritative_targets = authoritative_targets(targets).unwrap_or_default();
-    goal.key.kind.apply_planner_step(
-        state,
-        semantics.op_kind,
-        &authoritative_targets,
-        payload_override,
-    )
-}
-
-fn apply_goal_model_fallback_transition<'snapshot>(
-    goal: &GoalOffer,
-    semantics: PlannerOpSemantics,
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-    payload_override: Option<&ActionPayload>,
-) -> HypotheticalTransition<'snapshot> {
-    HypotheticalTransition {
-        targets: targets.to_vec(),
-        state: apply_goal_model_fallback_state(goal, semantics, state, targets, payload_override),
-        expected_materializations: Vec::new(),
-    }
-}
-
-fn apply_consume_matching_target_transition<'snapshot>(
-    goal: &GoalOffer,
-    semantics: PlannerOpSemantics,
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-) -> Option<HypotheticalTransition<'snapshot>> {
-    if !consume_transition_matches_goal(&goal.key.kind, &state, targets) {
-        return None;
-    }
-
-    Some(apply_goal_model_fallback_transition(
-        goal, semantics, state, targets, None,
-    ))
-}
-
-fn consume_transition_matches_goal(
-    goal_kind: &GoalKind,
-    state: &PlanningState<'_>,
-    targets: &[PlanningEntityRef],
-) -> bool {
-    match goal_kind {
-        GoalKind::ConsumeOwnedCommodity { commodity } => targets
-            .first()
-            .copied()
-            .and_then(|target| state.item_lot_commodity_ref(target))
-            .is_some_and(|target_commodity| target_commodity == *commodity),
-        _ => true,
-    }
-}
-
-fn apply_pick_up_transition<'snapshot>(
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-    payload_override: Option<&ActionPayload>,
-) -> Option<HypotheticalTransition<'snapshot>> {
-    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    let lot_ref = targets.first().copied()?;
-    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
-        return None;
-    }
-    if state.direct_possessor_ref(lot_ref).is_some() {
-        return None;
-    }
-    if state.effective_place_ref(lot_ref)? != state.effective_place_ref(actor_ref)? {
-        return None;
-    }
-    let commodity = state.item_lot_commodity_ref(lot_ref)?;
-    let quantity = state.commodity_quantity_ref(lot_ref, commodity);
-    if quantity == Quantity(0) {
-        return None;
-    }
-    let remaining_capacity = state.remaining_carry_capacity_ref(actor_ref)?.0;
-    let per_unit = load_per_unit(commodity).0;
-    if remaining_capacity < per_unit {
-        return None;
-    }
-
-    if let Some(requested_quantity) = payload_override
-        .and_then(ActionPayload::as_transport)
-        .map(|payload| payload.quantity)
-    {
-        let max_fit_quantity = Quantity(remaining_capacity / per_unit);
-        if requested_quantity == Quantity(0)
-            || requested_quantity > max_fit_quantity
-            || requested_quantity > quantity
-        {
-            return None;
-        }
-
-        if requested_quantity == quantity {
-            return Some(HypotheticalTransition {
-                targets: vec![lot_ref],
-                state: state.move_lot_ref_to_holder(
-                    lot_ref,
-                    actor_ref,
-                    commodity,
-                    requested_quantity,
-                ),
-                expected_materializations: Vec::new(),
-            });
-        }
-
-        let remaining_quantity = Quantity(quantity.0 - requested_quantity.0);
-        let mut state = state.set_quantity_ref(lot_ref, commodity, remaining_quantity);
-        let hypothetical_id = state.spawn_hypothetical_lot(EntityKind::ItemLot, commodity);
-        let hypothetical_ref = PlanningEntityRef::Hypothetical(hypothetical_id);
-        let actor_place = state.effective_place_ref(actor_ref);
-        state = state
-            .move_entity_ref(hypothetical_ref, actor_place?)
-            .set_quantity_ref(hypothetical_ref, commodity, requested_quantity)
-            .move_lot_ref_to_holder(hypothetical_ref, actor_ref, commodity, requested_quantity);
-
-        return Some(HypotheticalTransition {
-            targets: vec![lot_ref],
-            state,
-            expected_materializations: vec![ExpectedMaterialization {
-                tag: MaterializationTag::SplitOffLot,
-                hypothetical_id,
-            }],
-        });
-    }
-    if state.load_of_entity_ref(lot_ref)?.0 <= remaining_capacity {
-        return Some(HypotheticalTransition {
-            targets: vec![lot_ref],
-            state: state.move_lot_ref_to_holder(lot_ref, actor_ref, commodity, quantity),
-            expected_materializations: Vec::new(),
-        });
-    }
-
-    let moved_quantity = Quantity(remaining_capacity / per_unit);
-    if moved_quantity == Quantity(0) || moved_quantity.0 >= quantity.0 {
-        return None;
-    }
-    let remaining_quantity = Quantity(quantity.0 - moved_quantity.0);
-    let mut state = state.set_quantity_ref(lot_ref, commodity, remaining_quantity);
-    let hypothetical_id = state.spawn_hypothetical_lot(EntityKind::ItemLot, commodity);
-    let hypothetical_ref = PlanningEntityRef::Hypothetical(hypothetical_id);
-    let actor_place = state.effective_place_ref(actor_ref);
-    state = state
-        .move_entity_ref(hypothetical_ref, actor_place?)
-        .set_quantity_ref(hypothetical_ref, commodity, moved_quantity)
-        .move_lot_ref_to_holder(hypothetical_ref, actor_ref, commodity, moved_quantity);
-
-    Some(HypotheticalTransition {
-        targets: vec![lot_ref],
-        state,
-        expected_materializations: vec![ExpectedMaterialization {
-            tag: MaterializationTag::SplitOffLot,
-            hypothetical_id,
-        }],
-    })
-}
-
-fn apply_steal_transition<'snapshot>(
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-) -> Option<HypotheticalTransition<'snapshot>> {
-    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    let lot_ref = match targets.first().copied()? {
-        PlanningEntityRef::Authoritative(lot) => PlanningEntityRef::Authoritative(lot),
-        PlanningEntityRef::Hypothetical(_) => return None,
-    };
-    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
-        return None;
-    }
-    if state.direct_possessor_ref(lot_ref).is_some() {
-        return None;
-    }
-    if state.effective_place_ref(lot_ref)? != state.effective_place_ref(actor_ref)? {
-        return None;
-    }
-    let commodity = state.item_lot_commodity_ref(lot_ref)?;
-    let quantity = state.commodity_quantity_ref(lot_ref, commodity);
-    if quantity == Quantity(0) {
-        return None;
-    }
-    let remaining_capacity = state.remaining_carry_capacity_ref(actor_ref)?.0;
-    let per_unit = load_per_unit(commodity).0;
-    if quantity.0.saturating_mul(per_unit) > remaining_capacity {
-        return None;
-    }
-
-    Some(HypotheticalTransition {
-        targets: targets.to_vec(),
-        state: state.move_lot_ref_to_holder(lot_ref, actor_ref, commodity, quantity),
-        expected_materializations: Vec::new(),
-    })
-}
-
-fn apply_store_stock_transition<'snapshot>(
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-) -> Option<HypotheticalTransition<'snapshot>> {
-    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    let actor_place = state.effective_place_ref(actor_ref)?;
-    let stock_container = state
-        .merchandise_profile(state.snapshot().actor())
-        .and_then(|profile| profile.home_facility)
-        .filter(|facility| state.effective_place(*facility) == Some(actor_place))
-        .and_then(|facility| {
-            state
-                .can_control(state.snapshot().actor(), facility)
-                .then(|| state.stock_storage_policy(facility))
-                .flatten()
-        })
-        .map(|policy| PlanningEntityRef::Authoritative(policy.stock_container))
-        .or_else(|| {
-            state
-                .controlled_stock_containers_at_place(actor_ref, actor_place)
-                .into_iter()
-                .next()
-        })?;
-    let lot_ref = targets.first().copied()?;
-    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
-        return None;
-    }
-    if state.effective_place_ref(lot_ref)? != actor_place {
-        return None;
-    }
-    if state.direct_possessor_ref(lot_ref) != Some(actor_ref) {
-        return None;
-    }
-
-    Some(HypotheticalTransition {
-        targets: vec![lot_ref],
-        state: state.set_container_ref(lot_ref, stock_container),
-        expected_materializations: Vec::new(),
-    })
-}
-
-fn apply_stage_stock_transition<'snapshot>(
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-) -> Option<HypotheticalTransition<'snapshot>> {
-    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    let actor_place = state.effective_place_ref(actor_ref)?;
-    let lot_ref = targets.first().copied()?;
-    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
-        return None;
-    }
-    if state.effective_place_ref(lot_ref)? != actor_place {
-        return None;
-    }
-    if state.direct_possessor_ref(lot_ref).is_some() {
-        return None;
-    }
-    let stored_in = state.direct_container_ref(lot_ref)?;
-    let (facility, display_container) =
-        controlled_facility_for_stock_container(&state, actor_ref, actor_place, stored_in)?;
-    let seller = facility_controller_for_transition(&state, actor_ref, facility)?;
-
-    Some(HypotheticalTransition {
-        targets: vec![lot_ref],
-        state: state
-            .set_container_ref(lot_ref, display_container)
-            .set_sale_listing_ref(lot_ref, Some(seller)),
-        expected_materializations: Vec::new(),
-    })
-}
-
-fn apply_collect_stock_transition<'snapshot>(
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-) -> Option<HypotheticalTransition<'snapshot>> {
-    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    let actor_place = state.effective_place_ref(actor_ref)?;
-    let lot_ref = targets.first().copied()?;
-    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
-        return None;
-    }
-    if state.effective_place_ref(lot_ref)? != actor_place {
-        return None;
-    }
-    if state.direct_possessor_ref(lot_ref).is_some() {
-        return None;
-    }
-    let container = state.direct_container_ref(lot_ref)?;
-    let _ =
-        controlled_facility_for_any_storage_container(&state, actor_ref, actor_place, container)?;
-
-    Some(HypotheticalTransition {
-        targets: vec![lot_ref],
-        state: state
-            .set_possessor_ref(lot_ref, actor_ref)
-            .clear_sale_listing_ref(lot_ref),
-        expected_materializations: Vec::new(),
-    })
-}
-
-fn apply_unstage_stock_transition<'snapshot>(
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-) -> Option<HypotheticalTransition<'snapshot>> {
-    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    let actor_place = state.effective_place_ref(actor_ref)?;
-    let lot_ref = targets.first().copied()?;
-    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
-        return None;
-    }
-    if state.effective_place_ref(lot_ref)? != actor_place {
-        return None;
-    }
-    if state.direct_possessor_ref(lot_ref).is_some() {
-        return None;
-    }
-    let displayed_in = state.direct_container_ref(lot_ref)?;
-    let (_facility, stock_container) =
-        controlled_facility_for_display_container(&state, actor_ref, actor_place, displayed_in)?;
-
-    Some(HypotheticalTransition {
-        targets: vec![lot_ref],
-        state: state
-            .set_container_ref(lot_ref, stock_container)
-            .clear_sale_listing_ref(lot_ref),
-        expected_materializations: Vec::new(),
-    })
-}
-
-fn controlled_facility_for_stock_container(
-    state: &PlanningState<'_>,
-    actor_ref: PlanningEntityRef,
-    place: EntityId,
-    container: PlanningEntityRef,
-) -> Option<(EntityId, PlanningEntityRef)> {
-    let container = authoritative_container(container)?;
-    state
-        .snapshot()
-        .entities
-        .iter()
-        .find_map(|(facility, snapshot)| {
-            let policy = snapshot.facility.stock_storage_policy.as_ref()?;
-            (snapshot.spatial.effective_place == Some(place)
-                && policy.stock_container == container
-                && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
-            .then_some((
-                *facility,
-                PlanningEntityRef::Authoritative(policy.display_container?),
-            ))
-        })
-}
-
-fn controlled_facility_for_display_container(
-    state: &PlanningState<'_>,
-    actor_ref: PlanningEntityRef,
-    place: EntityId,
-    container: PlanningEntityRef,
-) -> Option<(EntityId, PlanningEntityRef)> {
-    let container = authoritative_container(container)?;
-    state
-        .snapshot()
-        .entities
-        .iter()
-        .find_map(|(facility, snapshot)| {
-            let policy = snapshot.facility.stock_storage_policy.as_ref()?;
-            (snapshot.spatial.effective_place == Some(place)
-                && policy.display_container == Some(container)
-                && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
-            .then_some((
-                *facility,
-                PlanningEntityRef::Authoritative(policy.stock_container),
-            ))
-        })
-}
-
-fn controlled_facility_for_any_storage_container(
-    state: &PlanningState<'_>,
-    actor_ref: PlanningEntityRef,
-    place: EntityId,
-    container: PlanningEntityRef,
-) -> Option<EntityId> {
-    let container = authoritative_container(container)?;
-    state
-        .snapshot()
-        .entities
-        .iter()
-        .find_map(|(facility, snapshot)| {
-            let policy = snapshot.facility.stock_storage_policy.as_ref()?;
-            (snapshot.spatial.effective_place == Some(place)
-                && (policy.stock_container == container
-                    || policy.display_container == Some(container))
-                && state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
-            .then_some(*facility)
-        })
-}
-
-fn authoritative_container(container: PlanningEntityRef) -> Option<EntityId> {
-    match container {
-        PlanningEntityRef::Authoritative(entity) => Some(entity),
-        PlanningEntityRef::Hypothetical(_) => None,
-    }
-}
-
-fn facility_controller_for_transition(
-    state: &PlanningState<'_>,
-    actor_ref: PlanningEntityRef,
-    facility: EntityId,
-) -> Option<EntityId> {
-    match actor_ref {
-        PlanningEntityRef::Authoritative(actor)
-            if state.can_control_ref(actor_ref, PlanningEntityRef::Authoritative(facility)) =>
-        {
-            Some(actor)
-        }
-        PlanningEntityRef::Authoritative(_) | PlanningEntityRef::Hypothetical(_) => None,
-    }
-}
-
-fn apply_put_down_transition<'snapshot>(
-    state: PlanningState<'snapshot>,
-    targets: &[PlanningEntityRef],
-) -> Option<HypotheticalTransition<'snapshot>> {
-    let actor_ref = PlanningEntityRef::Authoritative(state.snapshot().actor());
-    let lot_ref = targets.first().copied()?;
-    if state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot) {
-        return None;
-    }
-    if state.direct_possessor_ref(lot_ref) != Some(actor_ref) {
-        return None;
-    }
-    let place = state.effective_place_ref(actor_ref)?;
-    let commodity = state.item_lot_commodity_ref(lot_ref)?;
-    let quantity = state.commodity_quantity_ref(lot_ref, commodity);
-    if quantity == Quantity(0) {
-        return None;
-    }
-
-    Some(HypotheticalTransition {
-        targets: vec![lot_ref],
-        state: state.move_lot_ref_to_ground(lot_ref, place, commodity, quantity),
-        expected_materializations: Vec::new(),
     })
 }
 
@@ -871,9 +311,7 @@ pub fn planner_only_candidates(
     let actor_place = state.effective_place_ref(actor_ref);
     let put_down = semantics_table
         .iter()
-        .filter(|(_, semantics)| {
-            semantics.transition_kind == PlannerTransitionKind::PutDownGroundLot
-        })
+        .filter(|(_, semantics)| semantics.synthetic_cargo == PlannerSyntheticCargo::PutDown)
         .flat_map(|(def_id, _)| {
             state
                 .direct_possessions_ref(actor_ref)
@@ -890,9 +328,7 @@ pub fn planner_only_candidates(
         .collect::<Vec<_>>();
     let pick_up = semantics_table
         .iter()
-        .filter(|(_, semantics)| {
-            semantics.transition_kind == PlannerTransitionKind::PickUpGroundLot
-        })
+        .filter(|(_, semantics)| semantics.synthetic_cargo == PlannerSyntheticCargo::PickUp)
         .flat_map(|(def_id, _)| {
             actor_place
                 .into_iter()
@@ -1076,13 +512,12 @@ fn total_estimated_ticks(steps: &[PlannedStep]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExpectedMaterialization, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind,
-        PlannerOpSemantics, PlannerTransitionKind, apply_hypothetical_transition,
+        PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind, PlannerSyntheticCargo,
         authoritative_target, authoritative_targets, build_semantics_table, classify_action_def,
         planner_only_candidates, resolve_planning_targets_with, semantics_for,
     };
     use crate::{
-        CommodityPurpose, GoalKey, GoalKind, GoalOffer, HypotheticalEntityId, PlanningEntityRef,
+        CommodityPurpose, GoalKey, GoalKind, HypotheticalEntityId, PlanningEntityRef,
         PlanningState, build_planning_snapshot,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -1091,18 +526,16 @@ mod tests {
         AcquisitionQuantity, ActionDefId, ActionDomain, BeliefClaimKey, BodyCostPerTick,
         CommodityConsumableProfile, CommodityKind, DemandObservation, DriveThresholds,
         EntityBeliefAspect, EntityId, EntityKind, HomeostaticNeeds, InTransitOnEdge, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Permille, Quantity, RecipeId, ResourceSource,
-        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
-        load_per_unit,
+        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, TellTopic, Tick,
+        TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound, load_per_unit,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionPayload, BribeActionPayload,
         ConsultRecordActionPayload, ControlBeliefView, DeclareSupportActionPayload, DurationExpr,
-        EntityBeliefView, InventoryBeliefView, MaterializationTag, PressForceClaimActionPayload,
-        ProfileBeliefView, QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry,
-        RuntimeBeliefView, SpatialBeliefView, TellActionPayload, TemporalBeliefView,
-        ThreatenActionPayload, TradeActionPayload, TransportActionPayload,
-        YieldForceClaimActionPayload, estimate_duration_from_beliefs,
+        EntityBeliefView, PressForceClaimActionPayload, ProfileBeliefView,
+        QueueForFacilityUsePayload, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+        SpatialBeliefView, TellActionPayload, TemporalBeliefView, ThreatenActionPayload,
+        TradeActionPayload, YieldForceClaimActionPayload, estimate_duration_from_beliefs,
     };
     use worldwake_systems::build_full_action_registries;
 
@@ -1573,44 +1006,6 @@ mod tests {
         }
     }
 
-    fn pm(value: u16) -> Permille {
-        Permille::new(value).unwrap()
-    }
-
-    fn sample_snapshot() -> (PlanningState<'static>, EntityId, EntityId, EntityId) {
-        let actor = entity(1);
-        let town = entity(10);
-        let bread = entity(20);
-        let mut view = TestBeliefView::default();
-        view.alive.extend([actor, town, bread]);
-        view.kinds.insert(actor, EntityKind::Agent);
-        view.kinds.insert(town, EntityKind::Place);
-        view.kinds.insert(bread, EntityKind::ItemLot);
-        view.effective_places.insert(actor, town);
-        view.effective_places.insert(bread, town);
-        view.entities_at.insert(town, vec![actor, bread]);
-        view.lot_commodities.insert(bread, CommodityKind::Bread);
-        view.commodity_quantities
-            .insert((bread, CommodityKind::Bread), Quantity(1));
-        view.carry_capacities.insert(actor, LoadUnits(4));
-        view.entity_loads.insert(actor, LoadUnits(0));
-        view.entity_loads.insert(bread, LoadUnits(1));
-        view.needs.insert(
-            actor,
-            HomeostaticNeeds::new(pm(800), pm(0), pm(0), pm(0), pm(0)),
-        );
-        view.thresholds.insert(actor, DriveThresholds::default());
-        let snapshot = Box::leak(Box::new(build_planning_snapshot(
-            &view,
-            actor,
-            &BTreeSet::from([bread]),
-            &BTreeSet::from([town]),
-            1,
-        )));
-
-        (PlanningState::new(snapshot), actor, town, bread)
-    }
-
     fn pickup_snapshot(
         commodity: CommodityKind,
         quantity: Quantity,
@@ -1875,20 +1270,6 @@ mod tests {
             ("stage_stock_for_sale", PlannerOpKind::StockManagement),
             ("unstage_stock", PlannerOpKind::StockManagement),
         ];
-        let expected_transitions = [
-            ("tell", PlannerTransitionKind::GoalModelFallback),
-            ("eat", PlannerTransitionKind::ConsumeMatchingTargetCommodity),
-            (
-                "drink",
-                PlannerTransitionKind::ConsumeMatchingTargetCommodity,
-            ),
-            ("pick_up", PlannerTransitionKind::PickUpGroundLot),
-            ("steal", PlannerTransitionKind::StealGroundLot),
-            ("put_down", PlannerTransitionKind::PutDownGroundLot),
-            ("drop_item", PlannerTransitionKind::PutDownGroundLot),
-            ("post_bounty", PlannerTransitionKind::GoalModelFallback),
-            ("post_notice", PlannerTransitionKind::GoalModelFallback),
-        ];
         let unclassified = defs
             .iter()
             .filter(|def| !table.contains_key(&def.id))
@@ -1911,12 +1292,21 @@ mod tests {
             semantics_by_name.get("yield_force_claim").unwrap().op_kind,
             PlannerOpKind::YieldForceClaim
         );
-        for (name, transition_kind) in expected_transitions {
-            assert_eq!(
-                semantics_by_name.get(name).unwrap().transition_kind,
-                transition_kind
-            );
-        }
+        assert!(
+            semantics_by_name.get("pick_up").unwrap().synthetic_cargo
+                == PlannerSyntheticCargo::PickUp
+        );
+        assert!(
+            semantics_by_name.get("put_down").unwrap().synthetic_cargo
+                == PlannerSyntheticCargo::PutDown
+        );
+        assert!(
+            semantics_by_name.get("drop_item").unwrap().synthetic_cargo
+                == PlannerSyntheticCargo::PutDown
+        );
+        assert!(
+            semantics_by_name.get("steal").unwrap().synthetic_cargo == PlannerSyntheticCargo::None
+        );
         assert!(defs.iter().any(|def| {
             def.name.starts_with("harvest:")
                 && table.get(&def.id).unwrap().op_kind == PlannerOpKind::Harvest
@@ -2056,10 +1446,7 @@ mod tests {
         assert_eq!(tell_semantics.op_kind, PlannerOpKind::Tell);
         assert!(!tell_semantics.may_appear_mid_plan);
         assert!(!tell_semantics.is_materialization_barrier);
-        assert_eq!(
-            tell_semantics.transition_kind,
-            PlannerTransitionKind::GoalModelFallback
-        );
+        assert_eq!(tell_semantics.synthetic_cargo, PlannerSyntheticCargo::None);
     }
 
     #[test]
@@ -2080,10 +1467,7 @@ mod tests {
         assert_eq!(semantics.op_kind, PlannerOpKind::Patrol);
         assert!(!semantics.may_appear_mid_plan);
         assert!(!semantics.is_materialization_barrier);
-        assert_eq!(
-            semantics.transition_kind,
-            PlannerTransitionKind::GoalModelFallback
-        );
+        assert_eq!(semantics.synthetic_cargo, PlannerSyntheticCargo::None);
     }
 
     #[test]
@@ -2182,10 +1566,7 @@ mod tests {
         assert_eq!(semantics.op_kind, PlannerOpKind::DropItem);
         assert!(!semantics.may_appear_mid_plan);
         assert!(semantics.is_materialization_barrier);
-        assert_eq!(
-            semantics.transition_kind,
-            PlannerTransitionKind::PutDownGroundLot
-        );
+        assert_eq!(semantics.synthetic_cargo, PlannerSyntheticCargo::PutDown);
     }
 
     #[test]
@@ -2235,375 +1616,11 @@ mod tests {
             assert!(!semantics.may_appear_mid_plan, "{name}");
             assert!(!semantics.is_materialization_barrier, "{name}");
             assert_eq!(
-                semantics.transition_kind,
-                PlannerTransitionKind::GoalModelFallback,
+                semantics.synthetic_cargo,
+                PlannerSyntheticCargo::None,
                 "{name}"
             );
         }
-    }
-
-    #[test]
-    fn hypothetical_transition_preserves_goal_model_fallback_for_non_pickup_ops() {
-        let (state, actor, _town, bread) = sample_snapshot();
-        let goal = GoalOffer {
-            anchor: worldwake_core::OpportunityAnchor::None,
-            key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
-                commodity: CommodityKind::Bread,
-            }),
-            evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
-            obligation_source: None,
-            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
-            required_information_gaps: Vec::new(),
-            invalidators: Vec::new(),
-            learned_expectation_refs: Vec::new(),
-            acquisition_quantity: None,
-        };
-        let semantics = build_phase_two_registry()
-            .iter()
-            .find(|def| def.name == "eat")
-            .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
-            .unwrap();
-
-        let advanced = apply_hypothetical_transition(
-            &goal,
-            semantics,
-            state,
-            &[PlanningEntityRef::Authoritative(bread)],
-            None,
-        )
-        .unwrap()
-        .state;
-        let thresholds = advanced.drive_thresholds(actor).unwrap();
-
-        assert!(advanced.homeostatic_needs(actor).unwrap().hunger < thresholds.hunger.low());
-    }
-
-    #[test]
-    fn consume_transition_accepts_matching_target_commodity() {
-        let (state, actor, _place, lot) = sample_snapshot();
-        let semantics = build_phase_two_registry()
-            .iter()
-            .find(|def| def.name == "eat")
-            .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
-            .unwrap();
-        let goal = GoalOffer {
-            anchor: worldwake_core::OpportunityAnchor::None,
-            key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
-                commodity: CommodityKind::Bread,
-            }),
-            evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
-            obligation_source: None,
-            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
-            required_information_gaps: Vec::new(),
-            invalidators: Vec::new(),
-            learned_expectation_refs: Vec::new(),
-            acquisition_quantity: None,
-        };
-
-        let advanced = apply_hypothetical_transition(
-            &goal,
-            semantics,
-            state,
-            &[PlanningEntityRef::Authoritative(lot)],
-            None,
-        )
-        .unwrap()
-        .state;
-        let thresholds = advanced.drive_thresholds(actor).unwrap();
-
-        assert!(advanced.homeostatic_needs(actor).unwrap().hunger < thresholds.hunger.low());
-    }
-
-    #[test]
-    fn consume_transition_rejects_mismatched_target_commodity() {
-        let (state, _actor, _place, lot) =
-            pickup_snapshot(CommodityKind::Water, Quantity(1), LoadUnits(4));
-        let semantics = build_phase_two_registry()
-            .iter()
-            .find(|def| def.name == "drink")
-            .map(|def| build_semantics_table(&build_phase_two_registry())[&def.id])
-            .unwrap();
-        let goal = GoalOffer {
-            anchor: worldwake_core::OpportunityAnchor::None,
-            key: GoalKey::from(GoalKind::ConsumeOwnedCommodity {
-                commodity: CommodityKind::Bread,
-            }),
-            evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
-            obligation_source: None,
-            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
-            required_information_gaps: Vec::new(),
-            invalidators: Vec::new(),
-            learned_expectation_refs: Vec::new(),
-            acquisition_quantity: None,
-        };
-
-        assert!(apply_hypothetical_transition(&goal, semantics, state, &[lot], None).is_none());
-    }
-
-    #[test]
-    fn pick_up_transition_full_fit_moves_authoritative_lot_without_materialization() {
-        let (state, actor, _place, lot) =
-            pickup_snapshot(CommodityKind::Bread, Quantity(1), LoadUnits(4));
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::MoveCargo,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::PickUpGroundLot,
-        };
-        let goal = GoalOffer {
-            anchor: worldwake_core::OpportunityAnchor::None,
-            key: GoalKey::from(GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Bread,
-                purpose: CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
-            }),
-            evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
-            obligation_source: None,
-            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
-            required_information_gaps: Vec::new(),
-            invalidators: Vec::new(),
-            learned_expectation_refs: Vec::new(),
-            acquisition_quantity: None,
-        };
-
-        let advanced =
-            apply_hypothetical_transition(&goal, semantics, state, &[lot], None).unwrap();
-
-        assert_eq!(advanced.targets, vec![lot]);
-        assert!(advanced.expected_materializations.is_empty());
-        assert_eq!(
-            advanced.state.direct_possessor_ref(lot),
-            Some(PlanningEntityRef::Authoritative(actor))
-        );
-        assert_eq!(
-            advanced
-                .state
-                .commodity_quantity(actor, CommodityKind::Bread),
-            Quantity(1)
-        );
-    }
-
-    #[test]
-    fn pick_up_transition_partial_fit_creates_hypothetical_split_off_lot() {
-        let (state, actor, _place, lot) =
-            pickup_snapshot(CommodityKind::Water, Quantity(3), LoadUnits(4));
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::MoveCargo,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::PickUpGroundLot,
-        };
-        let goal = GoalOffer {
-            anchor: worldwake_core::OpportunityAnchor::None,
-            key: GoalKey::from(GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
-            }),
-            evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
-            obligation_source: None,
-            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
-            required_information_gaps: Vec::new(),
-            invalidators: Vec::new(),
-            learned_expectation_refs: Vec::new(),
-            acquisition_quantity: None,
-        };
-
-        let advanced =
-            apply_hypothetical_transition(&goal, semantics, state, &[lot], None).unwrap();
-        assert_eq!(advanced.targets, vec![lot]);
-        let split_off = match advanced.expected_materializations.as_slice() {
-            [
-                ExpectedMaterialization {
-                    tag: MaterializationTag::SplitOffLot,
-                    hypothetical_id,
-                },
-            ] => PlanningEntityRef::Hypothetical(*hypothetical_id),
-            _ => panic!("partial pickup should expose one split-off materialization"),
-        };
-
-        assert_eq!(
-            advanced
-                .state
-                .commodity_quantity_ref(lot, CommodityKind::Water),
-            Quantity(1)
-        );
-        assert_eq!(
-            advanced
-                .state
-                .commodity_quantity_ref(split_off, CommodityKind::Water),
-            Quantity(2)
-        );
-        assert_eq!(
-            advanced.state.direct_possessor_ref(split_off),
-            Some(PlanningEntityRef::Authoritative(actor))
-        );
-        assert_eq!(
-            advanced
-                .state
-                .commodity_quantity(actor, CommodityKind::Water),
-            Quantity(2)
-        );
-    }
-
-    #[test]
-    fn pick_up_transition_transport_payload_splits_exact_requested_quantity() {
-        let (state, actor, _place, lot) =
-            pickup_snapshot(CommodityKind::Bread, Quantity(3), LoadUnits(4));
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::MoveCargo,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::PickUpGroundLot,
-        };
-        let goal = GoalOffer {
-            anchor: worldwake_core::OpportunityAnchor::None,
-            key: GoalKey::from(GoalKind::MoveCargo {
-                commodity: CommodityKind::Bread,
-                destination: entity(99),
-            }),
-            evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
-            obligation_source: None,
-            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
-            required_information_gaps: Vec::new(),
-            invalidators: Vec::new(),
-            learned_expectation_refs: Vec::new(),
-            acquisition_quantity: None,
-        };
-
-        let advanced = apply_hypothetical_transition(
-            &goal,
-            semantics,
-            state,
-            &[lot],
-            Some(&ActionPayload::Transport(TransportActionPayload {
-                quantity: Quantity(1),
-            })),
-        )
-        .unwrap();
-        assert_eq!(advanced.targets, vec![lot]);
-        let split_off = match advanced.expected_materializations.as_slice() {
-            [
-                ExpectedMaterialization {
-                    tag: MaterializationTag::SplitOffLot,
-                    hypothetical_id,
-                },
-            ] => PlanningEntityRef::Hypothetical(*hypothetical_id),
-            _ => panic!("payload split pickup should expose one split-off materialization"),
-        };
-        assert_eq!(
-            advanced
-                .state
-                .commodity_quantity_ref(lot, CommodityKind::Bread),
-            Quantity(2)
-        );
-        assert_eq!(
-            advanced
-                .state
-                .commodity_quantity_ref(split_off, CommodityKind::Bread),
-            Quantity(1)
-        );
-        assert_eq!(
-            advanced.state.direct_possessor_ref(split_off),
-            Some(PlanningEntityRef::Authoritative(actor))
-        );
-        assert_eq!(
-            advanced
-                .state
-                .commodity_quantity(actor, CommodityKind::Bread),
-            Quantity(1)
-        );
-    }
-
-    #[test]
-    fn pick_up_transition_zero_fit_is_invalid() {
-        let (state, _actor, _place, lot) =
-            pickup_snapshot(CommodityKind::Water, Quantity(1), LoadUnits(1));
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::MoveCargo,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::PickUpGroundLot,
-        };
-        let goal = GoalOffer {
-            anchor: worldwake_core::OpportunityAnchor::None,
-            key: GoalKey::from(GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
-            }),
-            evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
-            obligation_source: None,
-            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
-            required_information_gaps: Vec::new(),
-            invalidators: Vec::new(),
-            learned_expectation_refs: Vec::new(),
-            acquisition_quantity: None,
-        };
-
-        assert!(apply_hypothetical_transition(&goal, semantics, state, &[lot], None).is_none());
-    }
-
-    #[test]
-    fn put_down_transition_moves_hypothetical_lot_to_ground_at_actor_place() {
-        let (mut state, actor, place, _lot) =
-            pickup_snapshot(CommodityKind::Water, Quantity(1), LoadUnits(4));
-        let hypothetical_id =
-            state.spawn_hypothetical_lot(EntityKind::ItemLot, CommodityKind::Water);
-        let hypothetical = PlanningEntityRef::Hypothetical(hypothetical_id);
-        state = state
-            .set_quantity_ref(hypothetical, CommodityKind::Water, Quantity(1))
-            .move_lot_ref_to_holder(
-                hypothetical,
-                PlanningEntityRef::Authoritative(actor),
-                CommodityKind::Water,
-                Quantity(1),
-            );
-        let semantics = PlannerOpSemantics {
-            op_kind: PlannerOpKind::MoveCargo,
-            may_appear_mid_plan: true,
-            is_materialization_barrier: false,
-            transition_kind: PlannerTransitionKind::PutDownGroundLot,
-        };
-        let goal = GoalOffer {
-            anchor: worldwake_core::OpportunityAnchor::None,
-            key: GoalKey::from(GoalKind::AcquireCommodity {
-                commodity: CommodityKind::Water,
-                purpose: CommodityPurpose::SelfConsume,
-                quantity: AcquisitionQuantity::single(),
-            }),
-            evidence_entities: BTreeSet::new(),
-            evidence_places: BTreeSet::new(),
-            obligation_source: None,
-            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
-            required_information_gaps: Vec::new(),
-            invalidators: Vec::new(),
-            learned_expectation_refs: Vec::new(),
-            acquisition_quantity: None,
-        };
-
-        let advanced =
-            apply_hypothetical_transition(&goal, semantics, state, &[hypothetical], None).unwrap();
-
-        assert_eq!(advanced.targets, vec![hypothetical]);
-        assert_eq!(advanced.state.direct_possessor_ref(hypothetical), None);
-        assert_eq!(
-            advanced.state.effective_place_ref(hypothetical),
-            Some(place)
-        );
-        assert_eq!(
-            advanced
-                .state
-                .commodity_quantity(actor, CommodityKind::Water),
-            Quantity(0)
-        );
     }
 
     #[test]
@@ -2675,9 +1692,6 @@ mod tests {
             !sem.is_materialization_barrier,
             "StaffMarket should NOT be a materialization barrier"
         );
-        assert_eq!(
-            sem.transition_kind,
-            PlannerTransitionKind::GoalModelFallback
-        );
+        assert_eq!(sem.synthetic_cargo, PlannerSyntheticCargo::None);
     }
 }

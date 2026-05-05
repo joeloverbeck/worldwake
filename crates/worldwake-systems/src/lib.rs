@@ -13,6 +13,7 @@ pub mod combat;
 mod commodity_support;
 pub mod consult_record_actions;
 mod contention_support;
+pub mod effect_sink_authoritative;
 pub mod epistemic_actions;
 pub mod escort_actions;
 pub mod evidence_decay;
@@ -60,6 +61,7 @@ pub use combat::{
     register_queue_for_corpse_use_action,
 };
 pub use consult_record_actions::register_consult_record_action;
+pub use effect_sink_authoritative::AuthoritativeEffectSink;
 pub use epistemic_actions::register_ask_witness_action;
 pub use escort_actions::register_escort_to_safety_action;
 pub use evidence_decay::evidence_decay_system;

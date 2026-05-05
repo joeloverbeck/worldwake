@@ -1128,6 +1128,7 @@ mod tests {
             binding_strictness: BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         }
     }
 
@@ -1690,6 +1691,7 @@ mod tests {
             binding_strictness: BindingStrictness::EquivalentWorkstationTagAtSamePlace,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
         let handlers = handler_registry(registry.len());
 
@@ -1872,6 +1874,7 @@ mod tests {
             binding_strictness: BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
 
         let affordances = get_affordances(&view, actor, &registry, &handlers);
@@ -1986,6 +1989,7 @@ mod tests {
             binding_strictness: BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: crate::EffectSchema::empty(),
         });
 
         let affordances = get_affordances(&view, actor, &registry, &handlers);

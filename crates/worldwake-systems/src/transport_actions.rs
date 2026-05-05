@@ -1,14 +1,16 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, ContentionGrant, ContentionPolicy, ContentionQueue, EntityId,
-    EntityKind, EventTag, Quantity, VisibilitySpec, WorldTxn, load_of_entity, load_per_unit,
+    ActionDefId, BodyCostPerTick, ContentionGrant, ContentionPolicy, ContentionQueue, Discrepancy,
+    EntityId, EntityKind, EventTag, Quantity, VisibilitySpec, WorldTxn, load_of_entity,
+    load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerRegistry,
     ActionInstance, ActionPayload, ActionProgress, CommitOutcome, Constraint, DeterministicRng,
-    DurationExpr, Interruptibility, Materialization, MaterializationTag, Precondition, TargetSpec,
-    TransportActionPayload,
+    DurationExpr, EffectEntityRef, EffectEvaluationContext, EffectMode, EffectPrecondition,
+    EffectSchema, EffectSink, EffectStep, Interruptibility, Materialization, MaterializationTag,
+    Precondition, TargetSpec, TransportActionPayload, apply_effects_with_context,
 };
 
 use crate::evidence_support::emit_evidence;
@@ -91,6 +93,7 @@ pub fn register_transport_actions(
             binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: transport_effect_schema(TransportEffectKind::PickUp),
         }),
         defs.register(ActionDef {
             id: put_down_id,
@@ -126,6 +129,7 @@ pub fn register_transport_actions(
             binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: transport_effect_schema(TransportEffectKind::PutDown),
         }),
         defs.register(ActionDef {
             id: drop_item_id,
@@ -161,6 +165,7 @@ pub fn register_transport_actions(
             binding_strictness: worldwake_sim::BindingStrictness::FungibleEquivalentCommodity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: transport_effect_schema(TransportEffectKind::DropItem),
         }),
         defs.register(ActionDef {
             id: steal_id,
@@ -200,8 +205,31 @@ pub fn register_transport_actions(
             binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
             guard_template: None,
             expectation_template: vec![],
+            effect_schema: transport_effect_schema(TransportEffectKind::Steal),
         }),
     ]
+}
+
+#[derive(Clone, Copy)]
+enum TransportEffectKind {
+    PickUp,
+    PutDown,
+    DropItem,
+    Steal,
+}
+
+fn transport_effect_schema(kind: TransportEffectKind) -> EffectSchema {
+    let target = EffectEntityRef::Target { index: 0 };
+    let step = match kind {
+        TransportEffectKind::PickUp => EffectStep::PickUp { target },
+        TransportEffectKind::PutDown => EffectStep::PutDown { target },
+        TransportEffectKind::DropItem => EffectStep::DropItem { target },
+        TransportEffectKind::Steal => EffectStep::Steal { target },
+    };
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![step],
+    }
 }
 
 fn require_transport_target(instance: &ActionInstance) -> Result<EntityId, ActionError> {
@@ -558,6 +586,152 @@ fn validate_steal(
     Ok(())
 }
 
+struct TransportEffectSink<'txn, 'world> {
+    txn: &'txn mut WorldTxn<'world>,
+    materializations: Vec<Materialization>,
+    action_error: Option<ActionError>,
+}
+
+impl TransportEffectSink<'_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for TransportEffectSink<'_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: worldwake_core::CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(
+        &mut self,
+        _target: EntityId,
+        _cause: worldwake_core::WoundCause,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: worldwake_core::ExpectationId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn pick_up(
+        &mut self,
+        actor: EntityId,
+        target: EntityId,
+        payload: &ActionPayload,
+        action_def_id: ActionDefId,
+    ) -> Result<Option<Materialization>, Discrepancy> {
+        let materialization = apply_pick_up(self.txn, actor, target, payload, action_def_id)
+            .map_err(|err| self.record_error(err))?;
+        if let Some(materialization) = materialization.clone() {
+            self.materializations.push(materialization);
+        }
+        Ok(materialization)
+    }
+
+    fn put_down(&mut self, actor: EntityId, target: EntityId) -> Result<(), Discrepancy> {
+        apply_put_down(self.txn, actor, target).map_err(|err| self.record_error(err))
+    }
+
+    fn drop_item(&mut self, actor: EntityId, target: EntityId) -> Result<(), Discrepancy> {
+        apply_put_down(self.txn, actor, target).map_err(|err| self.record_error(err))
+    }
+
+    fn steal(&mut self, actor: EntityId, target: EntityId) -> Result<(), Discrepancy> {
+        apply_steal(self.txn, actor, target).map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_transport_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = TransportEffectSink {
+        txn,
+        materializations: Vec::new(),
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: instance.def_id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => {}
+        Err(discrepancy) => return Err(sink.take_error(discrepancy)),
+    }
+    Ok(CommitOutcome {
+        materializations: sink.materializations,
+        trace: None,
+    })
+}
+
 fn start_pick_up(
     def: &ActionDef,
     instance: &mut ActionInstance,
@@ -584,32 +758,25 @@ fn commit_pick_up(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let target = require_transport_target(instance)?;
-    validate_pick_up(
-        txn,
-        instance.actor,
-        target,
-        requested_pick_up_quantity(&instance.payload)?,
-    )?;
-    claim_or_require_unique_item_pickup_grant(txn, instance.actor, target, def.id, false)?;
-    let moved_entity = execute_pick_up(
-        txn,
-        instance.actor,
-        target,
-        requested_pick_up_quantity(&instance.payload)?,
-    )?;
-    clear_unique_item_pickup_grant(txn, instance.actor, target, def.id, true)?;
-    if moved_entity == target {
-        Ok(CommitOutcome::empty())
-    } else {
-        Ok(CommitOutcome {
-            materializations: vec![Materialization {
-                tag: MaterializationTag::SplitOffLot,
-                entity: moved_entity,
-            }],
-            trace: None,
-        })
-    }
+    apply_transport_effect_schema(def, instance, txn)
+}
+
+fn apply_pick_up(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+    payload: &ActionPayload,
+    action_def_id: ActionDefId,
+) -> Result<Option<Materialization>, ActionError> {
+    let requested_quantity = requested_pick_up_quantity(payload)?;
+    validate_pick_up(txn, actor, target, requested_quantity)?;
+    claim_or_require_unique_item_pickup_grant(txn, actor, target, action_def_id, false)?;
+    let moved_entity = execute_pick_up(txn, actor, target, requested_quantity)?;
+    clear_unique_item_pickup_grant(txn, actor, target, action_def_id, true)?;
+    Ok((moved_entity != target).then_some(Materialization {
+        tag: MaterializationTag::SplitOffLot,
+        entity: moved_entity,
+    }))
 }
 
 fn start_put_down(
@@ -635,41 +802,40 @@ fn start_drop_item(
 }
 
 fn commit_put_down(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let target = require_transport_target(instance)?;
-    let actor_place = validate_put_down(txn, instance.actor, target)?;
+    apply_transport_effect_schema(def, instance, txn)
+}
+
+fn apply_put_down(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+) -> Result<(), ActionError> {
+    let actor_place = validate_put_down(txn, actor, target)?;
     txn.clear_possessor(target)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.set_ground_location(target, actor_place)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     ensure_unique_item_pickup_contention_components(txn, target)?;
     txn.add_target(target);
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 fn commit_drop_item(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let target = require_transport_target(instance)?;
-    let actor_place = validate_put_down(txn, instance.actor, target)?;
-    txn.clear_possessor(target)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    txn.set_ground_location(target, actor_place)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    ensure_unique_item_pickup_contention_components(txn, target)?;
-    txn.add_target(target);
-    Ok(CommitOutcome::empty())
+    apply_transport_effect_schema(def, instance, txn)
 }
 
 fn start_steal(
@@ -684,24 +850,31 @@ fn start_steal(
 }
 
 fn commit_steal(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let target = require_transport_target(instance)?;
-    validate_steal(txn, instance.actor, target)?;
+    apply_transport_effect_schema(def, instance, txn)
+}
+
+fn apply_steal(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+) -> Result<(), ActionError> {
+    validate_steal(txn, actor, target)?;
     let target_container = txn.direct_container(target);
-    let actor_place = txn.effective_place(instance.actor).ok_or_else(|| {
-        ActionError::PreconditionFailed(format!("actor {} has no place", instance.actor))
-    })?;
+    let actor_place = txn
+        .effective_place(actor)
+        .ok_or_else(|| ActionError::PreconditionFailed(format!("actor {actor} has no place")))?;
     if txn.get_component_stock_assignment(target).is_some() {
         let _ = txn.clear_component_stock_assignment(target);
         let _ = txn.clear_component_sale_listing(target);
     }
-    move_entity_to_direct_possession(txn, target, instance.actor, actor_place)?;
+    move_entity_to_direct_possession(txn, target, actor, actor_place)?;
     if let Some(container) = target_container {
         let current_tick = txn.tick();
         emit_evidence(
@@ -726,7 +899,7 @@ fn commit_steal(
         )
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     }
-    Ok(CommitOutcome::empty())
+    Ok(())
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1028,6 +1201,30 @@ mod tests {
         assert_eq!(steal.duration, DurationExpr::ActorTheftDisposition);
         assert_eq!(steal.visibility, VisibilitySpec::Hidden);
         assert!(steal.causal_event_tags.contains(&EventTag::Crime));
+        assert_eq!(
+            pick_up.effect_schema.steps,
+            vec![EffectStep::PickUp {
+                target: EffectEntityRef::Target { index: 0 },
+            }]
+        );
+        assert_eq!(
+            put_down.effect_schema.steps,
+            vec![EffectStep::PutDown {
+                target: EffectEntityRef::Target { index: 0 },
+            }]
+        );
+        assert_eq!(
+            drop_item.effect_schema.steps,
+            vec![EffectStep::DropItem {
+                target: EffectEntityRef::Target { index: 0 },
+            }]
+        );
+        assert_eq!(
+            steal.effect_schema.steps,
+            vec![EffectStep::Steal {
+                target: EffectEntityRef::Target { index: 0 },
+            }]
+        );
     }
 
     #[test]

@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 
 use crate::commodity_support::{ensure_accessible_quantity, resolve_controlled_lots};
 use worldwake_core::{
-    ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, CommodityKind, EligibilityRule,
-    EntityId, EntityKind, EventTag, InstitutionalBeliefKey, InstitutionalClaim,
+    ActionDefId, BelievedInstitutionalClaim, BodyCostPerTick, CommodityKind, Discrepancy,
+    EligibilityRule, EntityId, EntityKind, EventTag, InstitutionalBeliefKey, InstitutionalClaim,
     InstitutionalKnowledgeSource, JusticeDispositionProfile, PunishmentKind, Quantity, RecordData,
     RecordEntryId, RecordKind, SocialObservation, SocialObservationDetail, TheftFacts, ViolationId,
     ViolationKind, VisibilitySpec, World, WorldTxn,
@@ -12,10 +12,11 @@ use worldwake_core::{
 use worldwake_sim::action_payload::PunishActionPayload;
 use worldwake_sim::{
     AbortReason, AccuseActionPayload, ActionAbortRequestReason, ActionDef, ActionDefRegistry,
-    ActionError, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
-    ActionPayload, ActionProgress, ActionState, CommitOutcome, Constraint, DeterministicRng,
-    DurationExpr, Interruptibility, PerAgentBeliefView, Precondition, RuntimeBeliefView,
-    TargetSpec,
+    ActionError, ActionExecutionContext, ActionHandler, ActionHandlerId, ActionHandlerRegistry,
+    ActionInstance, ActionPayload, ActionProgress, ActionState, CommitOutcome, Constraint,
+    DeterministicRng, DurationExpr, EffectEvaluationContext, EffectMode, EffectPrecondition,
+    EffectSchema, EffectSink, EffectStep, Interruptibility, PerAgentBeliefView, Precondition,
+    RuntimeBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_accuse_action(
@@ -102,6 +103,7 @@ fn accuse_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: accuse_effect_schema(),
     }
 }
 
@@ -183,6 +185,26 @@ fn punishment_action_def(
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
+        effect_schema: punishment_effect_schema(name),
+    }
+}
+
+fn accuse_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::Accuse],
+    }
+}
+
+fn punishment_effect_schema(name: &str) -> EffectSchema {
+    let step = match name {
+        "fine" => EffectStep::Fine,
+        "exile" => EffectStep::Exile,
+        _ => unreachable!("unknown punishment action {name}"),
+    };
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![step],
     }
 }
 
@@ -484,6 +506,17 @@ fn tick_accuse(
 }
 
 fn commit_accuse(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_justice_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_accuse_effect(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
@@ -958,6 +991,17 @@ fn tick_punishment(
 fn commit_fine(
     def: &ActionDef,
     instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_justice_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_fine_effect(
+    def: &ActionDef,
+    instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
@@ -1007,6 +1051,17 @@ fn commit_fine(
 }
 
 fn commit_exile(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_justice_effect_schema(def, instance, context, event_log, rng, txn)
+}
+
+fn apply_exile_effect(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
@@ -1059,6 +1114,150 @@ fn commit_exile(
     Ok(CommitOutcome::empty())
 }
 
+struct JusticeEffectSink<'txn, 'world, 'def, 'instance, 'context, 'log, 'rng> {
+    txn: &'txn mut WorldTxn<'world>,
+    def: &'def ActionDef,
+    instance: &'instance ActionInstance,
+    context: &'context ActionExecutionContext<'context>,
+    event_log: &'log worldwake_core::EventLog,
+    rng: &'rng mut DeterministicRng,
+    action_error: Option<ActionError>,
+}
+
+impl JusticeEffectSink<'_, '_, '_, '_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for JusticeEffectSink<'_, '_, '_, '_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn accuse(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        if actor != self.instance.actor || targets != self.instance.targets.as_slice() {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        let mut instance = self.instance.clone();
+        instance.payload = payload.clone();
+        apply_accuse_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn fine(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        if actor != self.instance.actor || targets != self.instance.targets.as_slice() {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        let mut instance = self.instance.clone();
+        instance.payload = payload.clone();
+        apply_fine_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+
+    fn exile(
+        &mut self,
+        actor: EntityId,
+        targets: &[EntityId],
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        if actor != self.instance.actor || targets != self.instance.targets.as_slice() {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        let mut instance = self.instance.clone();
+        instance.payload = payload.clone();
+        apply_exile_effect(
+            self.def,
+            &instance,
+            self.context,
+            self.event_log,
+            self.rng,
+            self.txn,
+        )
+        .map(|_| ())
+        .map_err(|error| self.record_error(error))
+    }
+}
+
+fn apply_justice_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    context: &ActionExecutionContext<'_>,
+    event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = JusticeEffectSink {
+        txn,
+        def,
+        instance,
+        context,
+        event_log,
+        rng,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
 #[allow(clippy::unnecessary_wraps)]
 fn abort_punishment(
     _def: &ActionDef,
@@ -1088,7 +1287,7 @@ mod tests {
     use worldwake_sim::{
         AbortReason, AccuseActionPayload, ActionAbortRequestReason, ActionDefRegistry, ActionError,
         ActionHandlerRegistry, ActionInstance, ActionInstanceId, ActionPayload, ActionStatus,
-        DeterministicRng, ExternalAbortReason, PerAgentBeliefView, PunishActionPayload,
+        DeterministicRng, EffectStep, ExternalAbortReason, PerAgentBeliefView, PunishActionPayload,
         get_affordances,
     };
 
@@ -1537,6 +1736,7 @@ mod tests {
         assert_eq!(def.visibility, VisibilitySpec::SamePlace);
         assert!(def.causal_event_tags.contains(&EventTag::Crime));
         assert!(def.causal_event_tags.contains(&EventTag::Social));
+        assert_eq!(def.effect_schema.steps, vec![EffectStep::Accuse]);
     }
 
     #[test]
