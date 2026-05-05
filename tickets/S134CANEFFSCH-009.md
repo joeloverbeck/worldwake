@@ -22,7 +22,7 @@ S134 deliverable D5 requires migrating the institutional-action family — justi
    - **Visible-vacancy loss**: precondition on no-existing-officeholder for the contested office.
    - **Succession resolution**: institutional precondition.
    - **Office-holder mutation**: the step itself.
-4. Bounty/notice creation: `post_bounty` and `post_notice` create artifact entities with issuer, terms, reward source, proof requirements, location, expiration. Schema needs full artifact-creation semantics — likely uses `EffectStep::CreateEntity` (from ticket 007) or a more specific `CreateRecord` variant (from ticket 008).
+4. Bounty/notice creation: `post_bounty` and `post_notice` create artifact entities with issuer, terms, reward source, proof requirements, location, expiration. Ticket 007 did not add a generic `CreateEntity`; this ticket must reassess whether ticket 008 introduced a reusable record step or whether justice/office/artifact needs a category-owned artifact creation step.
 5. Existing focused/unit coverage:
    - Per-file `#[cfg(test)]` blocks
    - Goldens — `golden_accuse_*.rs`, `golden_fine_*.rs`, `golden_exile_*.rs`, `golden_office_*.rs`, `golden_bounty_*.rs`, `golden_post_notice_*.rs`. Enumerate during reassessment.
@@ -34,7 +34,7 @@ S134 deliverable D5 requires migrating the institutional-action family — justi
 
 1. Institutional-action declarative schemas align with FND-23 (Roles, Offices, and Institutions Are World State) and FND-25 (Social Artifacts Are First-Class) — every authoritative effect that a justice/office/artifact action produces becomes a typed schema step rather than handler-internal logic. Improves auditability for the political-claim closure surface (S133).
 2. `press_force_claim` schema preconditions must precisely match the closure boundary the existing handler asserts — per `docs/precision-rules.md` Rule 10, naming whether the closure is "support declaration / visible-vacancy loss / succession resolution / office-holder mutation". Schema preconditions encode the support-declaration and visible-vacancy-loss checks as `EffectPrecondition` variants; the office-holder-mutation is the step itself.
-3. Artifact-creation steps (`post_bounty`, `post_notice`) instantiate full artifact entities with all S25/FND-25 metadata (issuer, terms, reward source, proof requirements, expiration). The schema's `CreateEntity` (or `CreateRecord`) step's component-set must match the imperative handler's full initialization — bitwise-identical creation events.
+3. Artifact-creation steps (`post_bounty`, `post_notice`) instantiate full artifact entities with all S25/FND-25 metadata (issuer, terms, reward source, proof requirements, expiration). The schema's record/artifact-owned creation step's component-set must match the imperative handler's full initialization — bitwise-identical creation events.
 
 ## Verification Layers
 
@@ -62,7 +62,7 @@ S134 deliverable D5 requires migrating the institutional-action family — justi
 
 ### 3. Construct `EffectSchema` literals for 4 artifact actions
 
-- **post_bounty**: preconditions — actor's authority/treasury, place-suitability for posting. Steps — `CreateEntity { kind: Bounty, place, components: { issuer, terms, reward source, proof requirements, expiration } }`, `EmitEvent { tag: EventTag::BountyPosted }`.
+- **post_bounty**: preconditions — actor's authority/treasury, place-suitability for posting. Steps — record/artifact-owned creation step with `kind: Bounty`, place, issuer, terms, reward source, proof requirements, and expiration, plus `EmitEvent { tag: EventTag::BountyPosted }`.
 - **post_notice**: analogous to post_bounty for notice artifacts.
 - **claim_bounty**: preconditions — bounty-existence, proof-acceptance, `CoLocated` with bounty board. Steps — bounty-state mutation (claimed), reward transfer from issuer's treasury to claimant, `EmitEvent { tag: EventTag::BountyClaimed }`.
 - **withdraw_bounty**: preconditions — issuer-identity, bounty-existence. Steps — bounty-state mutation (withdrawn), reward refund, `EmitEvent { tag: EventTag::BountyWithdrawn }`.

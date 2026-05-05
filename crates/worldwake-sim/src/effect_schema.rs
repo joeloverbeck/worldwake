@@ -176,6 +176,9 @@ pub enum EffectStep {
     CompleteTrade,
     RecordStaffMarketDemand,
     CompleteEscortToSafety,
+    CompleteTravel,
+    AdvancePatrolRoute,
+    EstablishBanditCamp,
     PartialOnFailure {
         primary: Vec<EffectStep>,
         fallback: Vec<EffectStep>,
@@ -433,6 +436,27 @@ pub trait EffectSink {
     ) -> Result<(), Discrepancy> {
         Err(Discrepancy::ImproperPlanningState)
     }
+
+    fn complete_travel(&mut self, _actor: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn advance_patrol_route(
+        &mut self,
+        _actor: EntityId,
+        _target: EntityId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn establish_bandit_camp(
+        &mut self,
+        _actor: EntityId,
+        _target: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -677,6 +701,17 @@ fn apply_step(
         EffectStep::CompleteEscortToSafety => {
             let target = resolve_entity_ref(EffectEntityRef::Target { index: 0 }, context)?;
             sink.complete_escort_to_safety(context.actor, target, context.payload)?;
+        }
+        EffectStep::CompleteTravel => {
+            sink.complete_travel(context.actor)?;
+        }
+        EffectStep::AdvancePatrolRoute => {
+            let target = resolve_entity_ref(EffectEntityRef::Target { index: 0 }, context)?;
+            sink.advance_patrol_route(context.actor, target)?;
+        }
+        EffectStep::EstablishBanditCamp => {
+            let target = resolve_entity_ref(EffectEntityRef::Target { index: 0 }, context)?;
+            sink.establish_bandit_camp(context.actor, target, context.payload)?;
         }
         EffectStep::PartialOnFailure { primary, fallback } => {
             let checkpoint = sink.checkpoint();

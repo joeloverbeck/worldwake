@@ -1,13 +1,14 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, PatrolRoute, VisibilitySpec,
-    WorldTxn,
+    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, ExpectationId,
+    PatrolRoute, Quantity, VisibilitySpec, WorldTxn, WoundCause,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, CommitOutcome,
-    Constraint, DeterministicRng, DurationExpr, Interruptibility, Precondition, RuntimeBeliefView,
-    TargetSpec,
+    Constraint, DeterministicRng, DurationExpr, EffectEvaluationContext, EffectMode,
+    EffectPrecondition, EffectSchema, EffectSink, EffectStep, Interruptibility, Precondition,
+    RuntimeBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_patrol_action(
@@ -60,7 +61,14 @@ fn patrol_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentRouteStep,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: patrol_effect_schema(),
+    }
+}
+
+fn patrol_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::AdvancePatrolRoute],
     }
 }
 
@@ -166,36 +174,163 @@ fn tick_patrol(
     Ok(ActionProgress::Continue)
 }
 
+fn advance_patrol_route(
+    txn: &mut WorldTxn<'_>,
+    actor: EntityId,
+    target: EntityId,
+) -> Result<CommitOutcome, ActionError> {
+    txn.get_component_patrol_profile(actor).ok_or_else(|| {
+        ActionError::PreconditionFailed(format!("actor {actor} lacks PatrolProfile"))
+    })?;
+    let (mut route, waypoint) = patrol_route_and_waypoint(txn, actor)?;
+    if txn.effective_place(actor) != Some(target) {
+        return Err(ActionError::PreconditionFailed(format!(
+            "actor {actor} is not at patrol target {target}"
+        )));
+    }
+    if waypoint != target {
+        return Err(ActionError::PreconditionFailed(format!(
+            "patrol target {target} no longer matches current waypoint {waypoint} for actor {actor}"
+        )));
+    }
+    route.current_index = (route.current_index + 1) % route.assigned_places.len();
+    txn.set_component_patrol_route(actor, route)
+        .map_err(|err| ActionError::InternalError(err.to_string()))?;
+    Ok(CommitOutcome::empty())
+}
+
+struct PatrolEffectSink<'txn, 'world> {
+    txn: &'txn mut WorldTxn<'world>,
+    action_error: Option<ActionError>,
+}
+
+impl PatrolEffectSink<'_, '_> {
+    fn record_error(&mut self, error: ActionError) -> worldwake_core::Discrepancy {
+        self.action_error = Some(error);
+        worldwake_core::Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: worldwake_core::Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for PatrolEffectSink<'_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(
+        &mut self,
+        _target: EntityId,
+        _cause: WoundCause,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: ExpectationId,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), worldwake_core::Discrepancy> {
+        Err(worldwake_core::Discrepancy::ImproperPlanningState)
+    }
+
+    fn advance_patrol_route(
+        &mut self,
+        actor: EntityId,
+        target: EntityId,
+    ) -> Result<(), worldwake_core::Discrepancy> {
+        advance_patrol_route(self.txn, actor, target)
+            .map(|_| ())
+            .map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_patrol_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = PatrolEffectSink {
+        txn,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
 fn commit_patrol(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    txn.get_component_patrol_profile(instance.actor)
-        .ok_or_else(|| {
-            ActionError::PreconditionFailed(format!("actor {} lacks PatrolProfile", instance.actor))
-        })?;
-    let (mut route, waypoint) = patrol_route_and_waypoint(txn, instance.actor)?;
-    let target = patrol_target(instance)?;
-    if txn.effective_place(instance.actor) != Some(target) {
-        return Err(ActionError::PreconditionFailed(format!(
-            "actor {} is not at patrol target {target}",
-            instance.actor
-        )));
-    }
-    if waypoint != target {
-        return Err(ActionError::PreconditionFailed(format!(
-            "patrol target {target} no longer matches current waypoint {waypoint} for actor {}",
-            instance.actor
-        )));
-    }
-    route.current_index = (route.current_index + 1) % route.assigned_places.len();
-    txn.set_component_patrol_route(instance.actor, route)
-        .map_err(|err| ActionError::InternalError(err.to_string()))?;
-    Ok(CommitOutcome::empty())
+    apply_patrol_effect_schema(def, instance, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -343,6 +478,10 @@ mod tests {
         assert_eq!(def.visibility, VisibilitySpec::SamePlace);
         assert_eq!(def.causal_event_tags, BTreeSet::from([EventTag::Patrol]));
         assert_eq!(def.payload, ActionPayload::None);
+        assert_eq!(
+            def.effect_schema.steps,
+            vec![EffectStep::AdvancePatrolRoute]
+        );
     }
 
     #[test]

@@ -29,14 +29,14 @@ S134 deliverable D5 requires migrating the social/epistemic action family — `t
    - Conformance tests: `conformance_tell` (line 1129), `conformance_investigate` (line 1218) at `planner_conformance.rs`.
 6. `tell` is bilateral in a different sense than trade: speaker and listener both have belief mutations (speaker's "I told you X" memory, listener's "X (per source: speaker)" claim). Schema must encode both belief-write directions atomically.
 7. `consult_record` and `search_place` are read-mostly — they query authoritative records/places and write to the actor's belief state. Schemas: precondition on co-location with record/place, step asserting belief from observed content.
-8. `report_missing`/`report_found` create record artifacts (notices) at the place where the report is filed. Schema needs record-creation semantics — likely an `EffectStep::CreateRecord { kind, place, fields }` variant or via `CreateEntity` if records are first-class entities.
+8. `report_missing`/`report_found` create record artifacts (notices) at the place where the report is filed. Ticket 007 did not add a generic `CreateEntity`; this ticket must reassess the live record shape and add a social/record-owned schema step if report artifacts need category-specific creation semantics.
 9. Bitwise-identical event-log invariant: every `Tell`/`Witness`/`Investigate`/`SearchPlace`/`Report*` event emission and every belief-store mutation must have identical timing and payload pre- and post-ticket.
 
 ## Architecture Check
 
 1. Belief mutation as a first-class `EffectStep` variant aligns the authoritative belief-write path with the planner's hypothetical belief projection — currently both happen but in different code (handler bodies for authoritative, `apply_planner_step` for hypothetical via `GoalModelFallback`). Schema unification eliminates that drift surface.
 2. `EffectPrecondition::BeliefHeld` (from ticket 001) and the new `EffectStep::AssertBelief` (added here if needed) make the belief-flow surface explicit in the schema, improving introspection (FND-29) and matching FND-15's "Knowledge Is Acquired Locally and Travels Physically" — every belief mutation has a co-location precondition encoded declaratively.
-3. Record-creation semantics through `EffectStep::CreateRecord` (or `CreateEntity` for record entities) align with FND-25 (Social Artifacts Are First-Class) — records, notices, and reports become explicit schema outputs rather than handler-internal mutations.
+3. Record-creation semantics through `EffectStep::CreateRecord` or a more specific social/record-owned step align with FND-25 (Social Artifacts Are First-Class) — records, notices, and reports become explicit schema outputs rather than handler-internal mutations.
 
 ## Verification Layers
 
@@ -52,7 +52,7 @@ S134 deliverable D5 requires migrating the social/epistemic action family — `t
 
 If `effect_schema.rs` doesn't yet have:
 - `EffectStep::AssertBelief { agent, claim, value, source, freshness, credibility }` (or analog matching the current `AgentBeliefStore` write API)
-- `EffectStep::CreateRecord { kind, place, fields }` (if records are not entities) or rely on `CreateEntity` (from ticket 007)
+- `EffectStep::CreateRecord { kind, place, fields }` or a more specific report/social-record step matching the live artifact shape
 
 …add them in this ticket and implement the corresponding sink methods in both impls.
 

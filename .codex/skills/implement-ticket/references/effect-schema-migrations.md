@@ -21,6 +21,8 @@ The owning action module's authoritative sink should interpret those typed steps
 
 For staged category-owned steps, prefer adding default-rejecting methods to the shared sink trait and overriding them only in the local authoritative sink that owns execution. This keeps unsupported planner or generic paths explicit without forcing unrelated sinks to grow placeholder behavior.
 
+When several category-owned sinks would repeat the same unsupported-step boilerplate, search first for an existing rejecting adapter/helper or a narrow shared helper pattern. Add a bounded helper only if it reduces real duplication without widening the public API or coupling unrelated domains; otherwise record why local repetition was accepted to preserve category seams.
+
 Do not flatten branch-specific behavior into a generic need-delta, transfer, consume, produce, or similar abstraction just to satisfy a draft sketch.
 
 ## Reassessment Questions
