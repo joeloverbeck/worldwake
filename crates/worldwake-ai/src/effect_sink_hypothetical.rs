@@ -261,11 +261,43 @@ impl<'snapshot> HypotheticalEffectSink<'snapshot> {
             .snapshot()
             .entities
             .iter()
-            .find_map(|(_facility, snapshot)| {
+            .find_map(|(facility, snapshot)| {
                 let policy = snapshot.facility.stock_storage_policy.as_ref()?;
                 (snapshot.spatial.effective_place == Some(place)
-                    && policy.display_container == Some(container))
+                    && policy.display_container == Some(container)
+                    && self
+                        .state
+                        .can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility)))
                 .then_some(PlanningEntityRef::Authoritative(policy.stock_container))
+            })
+    }
+
+    fn controls_facility_for_lot_container(&self, actor: EntityId, lot: PlanningEntityRef) -> bool {
+        let actor_ref = PlanningEntityRef::Authoritative(actor);
+        let Some(place) = self.state.effective_place_ref(actor_ref) else {
+            return false;
+        };
+        let Some(container) = self.state.direct_container_ref(lot) else {
+            return false;
+        };
+        let container = match container {
+            PlanningEntityRef::Authoritative(entity) => entity,
+            PlanningEntityRef::Hypothetical(_) => return false,
+        };
+        self.state
+            .snapshot()
+            .entities
+            .iter()
+            .any(|(facility, snapshot)| {
+                let Some(policy) = snapshot.facility.stock_storage_policy.as_ref() else {
+                    return false;
+                };
+                snapshot.spatial.effective_place == Some(place)
+                    && (policy.stock_container == container
+                        || policy.display_container == Some(container))
+                    && self
+                        .state
+                        .can_control_ref(actor_ref, PlanningEntityRef::Authoritative(*facility))
             })
     }
 }
@@ -562,6 +594,9 @@ impl EffectSink for HypotheticalEffectSink<'_> {
     fn collect_display_stock(&mut self, actor: EntityId, lot: EntityId) -> Result<(), Discrepancy> {
         let actor_ref = PlanningEntityRef::Authoritative(actor);
         let lot_ref = PlanningEntityRef::Authoritative(lot);
+        if !self.controls_facility_for_lot_container(actor, lot_ref) {
+            return Err(Discrepancy::MissingObservation);
+        }
         self.update_state(|state| {
             state
                 .set_possessor_ref(lot_ref, actor_ref)
@@ -873,6 +908,9 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         let Some(office) = local_office_for_actor(&self.state, actor) else {
             return Ok(());
         };
+        if !office_vacancy_known(&self.state, office) {
+            return Ok(());
+        }
         let remaining = Quantity(current_qty.0.saturating_sub(bribe.offered_quantity.0));
         self.update_state(|state| {
             state
@@ -905,6 +943,9 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         let Some(office) = local_office_for_actor(&self.state, actor) else {
             return Ok(());
         };
+        if !office_vacancy_known(&self.state, office) {
+            return Ok(());
+        }
         self.update_state(|state| state.with_support_declaration(threaten.target, office, actor));
         Ok(())
     }
@@ -995,6 +1036,10 @@ fn local_office_for_actor(state: &PlanningState<'_>, actor: EntityId) -> Option<
         state.entity_kind_ref(PlanningEntityRef::Authoritative(*office)) == Some(EntityKind::Office)
             && state.snapshot().seat(*office) == Some(actor_place)
     })
+}
+
+fn office_vacancy_known(state: &PlanningState<'_>, office: EntityId) -> bool {
+    state.believed_office_holder(office) == InstitutionalBeliefRead::Certain(None)
 }
 
 fn actor_at_office_seat(state: &PlanningState<'_>, actor: EntityId, office: EntityId) -> bool {
