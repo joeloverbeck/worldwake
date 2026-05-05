@@ -8,17 +8,20 @@ use std::{
 };
 use worldwake_core::{
     ActionDefId, Blocker, BlockerKey, BlockingFact, BodyCostPerTick, CommodityKind, DemandMemory,
-    DemandObservation, DemandObservationReason, EntityId, EntityKind, EventTag, GoalKey, GoalKind,
-    MerchandiseProfile, Quantity, SourceKey, Tick, VisibilitySpec, WorldTxn, WoundList,
+    DemandObservation, DemandObservationReason, Discrepancy, EntityId, EntityKind, EventTag,
+    GoalKey, GoalKind, MerchandiseProfile, Quantity, SourceKey, Tick, VisibilitySpec, WorldTxn,
+    WoundList,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr, GoalBeliefView,
-    GuardTemplateSpec, Interruptibility, InvalidatorSpec, InventoryBeliefView, PayloadEntityRole,
-    PerAgentBeliefView, Precondition, ProfileBeliefView, RecipeRegistry, RequiredFactSpec,
-    RuntimeBeliefView, StaffMarketPayload, TargetSpec, TradeAcceptance, TradeActionPayload,
-    TradeRejectionReason, commodity_opportunity_score, evaluate_trade_bundle,
+    ActionProgress, ActionState, CommitOutcome, DeterministicRng, DurationExpr,
+    EffectEvaluationContext, EffectMode, EffectPrecondition, EffectSchema, EffectSink, EffectStep,
+    GoalBeliefView, GuardTemplateSpec, Interruptibility, InvalidatorSpec, InventoryBeliefView,
+    PayloadEntityRole, PerAgentBeliefView, Precondition, ProfileBeliefView, RecipeRegistry,
+    RequiredFactSpec, RuntimeBeliefView, StaffMarketPayload, TargetSpec, TradeAcceptance,
+    TradeActionPayload, TradeRejectionReason, apply_effects_with_context,
+    commodity_opportunity_score, evaluate_trade_bundle,
 };
 
 pub fn register_trade_action(
@@ -83,7 +86,14 @@ fn trade_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
             ],
         }),
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: trade_effect_schema(),
+    }
+}
+
+fn trade_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::CompleteTrade],
     }
 }
 
@@ -354,7 +364,6 @@ fn commit_trade(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = trade_payload(def, instance)?;
     let Some(ActionState::Trade {
         agreed_price: Some(agreed_price),
         ..
@@ -369,36 +378,187 @@ fn commit_trade(
             },
         ));
     };
-    let mut agreed_payload = payload.clone();
-    agreed_payload.offered_quantity = agreed_price;
-    let (counterparty, place, requested_commodity) =
-        validate_trade_context_for_negotiation(txn, instance, &agreed_payload)?;
-    execute_trade_transfers(txn, instance.actor, counterparty, &agreed_payload, place)?;
-    record_trade_observation(
+    apply_trade_effect_schema(def, instance, Some(agreed_price), txn)
+}
+
+struct TradeEffectSink<'txn, 'world, 'instance> {
+    txn: &'txn mut WorldTxn<'world>,
+    instance: &'instance ActionInstance,
+    agreed_price: Option<Quantity>,
+    action_error: Option<ActionError>,
+}
+
+impl TradeEffectSink<'_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for TradeEffectSink<'_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(
+        &mut self,
+        _target: EntityId,
+        _cause: worldwake_core::WoundCause,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: worldwake_core::ExpectationId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn complete_trade(
+        &mut self,
+        actor: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let payload = payload.as_trade().ok_or(Discrepancy::NoLegalBinding)?;
+        let agreed_price = self.agreed_price.ok_or(Discrepancy::NoLegalBinding)?;
+        let mut agreed_payload = payload.clone();
+        agreed_payload.offered_quantity = agreed_price;
+        let (counterparty, place, requested_commodity) =
+            validate_trade_context_for_negotiation(self.txn, self.instance, &agreed_payload)
+                .map_err(|err| self.record_error(err))?;
+        execute_trade_transfers(self.txn, actor, counterparty, &agreed_payload, place)
+            .map_err(|err| self.record_error(err))?;
+        record_trade_observation(
+            self.txn,
+            actor,
+            requested_commodity,
+            agreed_price,
+            place,
+            Some(counterparty),
+            DemandObservationReason::TradeAgreed,
+        );
+        record_trade_observation(
+            self.txn,
+            counterparty,
+            requested_commodity,
+            agreed_price,
+            place,
+            Some(actor),
+            DemandObservationReason::TradeAgreed,
+        );
+        let tick = self.txn.tick();
+        record_successful_source_acquisition(
+            self.txn,
+            actor,
+            trade_source_key(counterparty, requested_commodity),
+            tick,
+        )
+        .map_err(|err| self.record_error(err))
+    }
+
+    fn record_staff_market_demand(
+        &mut self,
+        actor: EntityId,
+        payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        let payload = payload
+            .as_staff_market()
+            .ok_or(Discrepancy::NoLegalBinding)?;
+        let commodity = payload.commodity;
+        if let Some(profile) = self.txn.get_component_merchandise_profile(actor)
+            && let Some(home_facility) = profile.home_facility
+            && let Some(place) = self.txn.effective_place(home_facility)
+            && staff_market_has_sellable_stock(self.txn, actor, home_facility, commodity)
+        {
+            record_unproductive_demand(self.txn, actor, commodity, place);
+            record_sell_blocked_intent(self.txn, actor, commodity, place);
+        }
+        Ok(())
+    }
+}
+
+fn apply_trade_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    agreed_price: Option<Quantity>,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = TradeEffectSink {
         txn,
-        instance.actor,
-        requested_commodity,
+        instance,
         agreed_price,
-        place,
-        Some(counterparty),
-        DemandObservationReason::TradeAgreed,
-    );
-    record_trade_observation(
-        txn,
-        counterparty,
-        requested_commodity,
-        agreed_price,
-        place,
-        Some(instance.actor),
-        DemandObservationReason::TradeAgreed,
-    );
-    record_successful_source_acquisition(
-        txn,
-        instance.actor,
-        trade_source_key(counterparty, requested_commodity),
-        txn.tick(),
-    )?;
-    Ok(CommitOutcome::empty())
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -1550,7 +1710,14 @@ fn staff_market_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionD
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: staff_market_effect_schema(),
+    }
+}
+
+fn staff_market_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::RecordStaffMarketDemand],
     }
 }
 
@@ -1688,20 +1855,8 @@ fn commit_staff_market(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
-    let payload = staff_market_payload(def, instance)?;
-    let commodity = payload.commodity;
-    // Presence-only: displayed listing state is staged/unstaged explicitly and
-    // reconciled by the trade system's validity sync.
-    // Record unproductive demand if displayed stock remains unsold.
-    if let Some(profile) = txn.get_component_merchandise_profile(instance.actor)
-        && let Some(home_facility) = profile.home_facility
-        && let Some(place) = txn.effective_place(home_facility)
-        && staff_market_has_sellable_stock(txn, instance.actor, home_facility, commodity)
-    {
-        record_unproductive_demand(txn, instance.actor, commodity, place);
-        record_sell_blocked_intent(txn, instance.actor, commodity, place);
-    }
-    Ok(CommitOutcome::empty())
+    let _ = staff_market_payload(def, instance)?;
+    apply_trade_effect_schema(def, instance, None, txn)
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -2142,6 +2297,11 @@ mod tests {
         let mut handlers = ActionHandlerRegistry::new();
         let def_id = register_trade_action(&mut defs, &mut handlers);
         let def = defs.get(def_id).expect("trade action should be registered");
+
+        assert_eq!(
+            def.effect_schema.steps,
+            vec![worldwake_sim::EffectStep::CompleteTrade]
+        );
 
         let guard = def
             .guard_template
@@ -4038,6 +4198,21 @@ mod tests {
 
     use super::register_staff_market_action;
     use worldwake_sim::StaffMarketPayload;
+
+    #[test]
+    fn register_staff_market_action_populates_effect_schema() {
+        let mut defs = ActionDefRegistry::new();
+        let mut handlers = ActionHandlerRegistry::new();
+        let def_id = register_staff_market_action(&mut defs, &mut handlers);
+        let def = defs
+            .get(def_id)
+            .expect("staff_market action should be registered");
+
+        assert_eq!(
+            def.effect_schema.steps,
+            vec![worldwake_sim::EffectStep::RecordStaffMarketDemand]
+        );
+    }
 
     struct StaffMarketHarness {
         world: World,

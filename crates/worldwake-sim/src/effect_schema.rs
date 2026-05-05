@@ -173,6 +173,9 @@ pub enum EffectStep {
     Steal {
         target: EffectEntityRef,
     },
+    CompleteTrade,
+    RecordStaffMarketDemand,
+    CompleteEscortToSafety,
     PartialOnFailure {
         primary: Vec<EffectStep>,
         fallback: Vec<EffectStep>,
@@ -403,6 +406,31 @@ pub trait EffectSink {
     }
 
     fn steal(&mut self, _actor: EntityId, _target: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn complete_trade(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn record_staff_market_demand(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn complete_escort_to_safety(
+        &mut self,
+        _actor: EntityId,
+        _target: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
         Err(Discrepancy::ImproperPlanningState)
     }
 }
@@ -639,6 +667,16 @@ fn apply_step(
         EffectStep::Steal { target } => {
             let target = resolve_entity_ref(*target, context)?;
             sink.steal(context.actor, target)?;
+        }
+        EffectStep::CompleteTrade => {
+            sink.complete_trade(context.actor, context.payload)?;
+        }
+        EffectStep::RecordStaffMarketDemand => {
+            sink.record_staff_market_demand(context.actor, context.payload)?;
+        }
+        EffectStep::CompleteEscortToSafety => {
+            let target = resolve_entity_ref(EffectEntityRef::Target { index: 0 }, context)?;
+            sink.complete_escort_to_safety(context.actor, target, context.payload)?;
         }
         EffectStep::PartialOnFailure { primary, fallback } => {
             let checkpoint = sink.checkpoint();

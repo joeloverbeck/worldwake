@@ -19,6 +19,8 @@ Prefer a typed category-specific step when the old commit branch carries any of 
 
 The owning action module's authoritative sink should interpret those typed steps. Generic or hypothetical sinks should reject unsupported category-owned steps clearly, normally with `Discrepancy::ImproperPlanningState`, until the planner/parity ticket owns them.
 
+For staged category-owned steps, prefer adding default-rejecting methods to the shared sink trait and overriding them only in the local authoritative sink that owns execution. This keeps unsupported planner or generic paths explicit without forcing unrelated sinks to grow placeholder behavior.
+
 Do not flatten branch-specific behavior into a generic need-delta, transfer, consume, produce, or similar abstraction just to satisfy a draft sketch.
 
 ## Reassessment Questions

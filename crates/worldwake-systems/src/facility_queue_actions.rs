@@ -1,14 +1,16 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, EntityId, EntityKind, EventTag, Permille, VisibilitySpec,
-    WorkstationMarker, WorkstationTag, World, WorldTxn,
+    ActionDefId, BodyCostPerTick, CommodityKind, Discrepancy, EntityId, EntityKind, EventTag,
+    ExpectationId, Permille, Quantity, VisibilitySpec, WorkstationMarker, WorkstationTag, World,
+    WorldTxn, WoundCause,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
     ActionHandlerRegistry, ActionInstance, ActionPayload, ActionProgress, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, Precondition, QueueForFacilityUsePayload,
-    TargetSpec,
+    DeterministicRng, DurationExpr, EffectActionRef, EffectEntityRef, EffectEvaluationContext,
+    EffectMode, EffectPrecondition, EffectSchema, EffectSink, EffectStep, Interruptibility,
+    Precondition, QueueForFacilityUsePayload, TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_queue_for_facility_use_action(
@@ -66,7 +68,18 @@ fn queue_for_facility_use_action_def(id: ActionDefId, handler: ActionHandlerId) 
         binding_strictness: worldwake_sim::BindingStrictness::EquivalentWorkstationTagAtSamePlace,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: queue_for_facility_use_effect_schema(),
+    }
+}
+
+fn queue_for_facility_use_effect_schema() -> EffectSchema {
+    EffectSchema {
+        preconditions: Vec::new(),
+        steps: vec![EffectStep::EnqueueContention {
+            actor: EffectEntityRef::Actor,
+            entity: EffectEntityRef::Target { index: 0 },
+            intended_action: EffectActionRef::PayloadQueueIntendedAction,
+        }],
     }
 }
 
@@ -244,13 +257,127 @@ fn commit_queue_for_facility_use(
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<worldwake_sim::CommitOutcome, ActionError> {
-    let payload = queue_payload(def, &instance.payload)?;
-    let facility = *instance
-        .targets
-        .first()
-        .ok_or(ActionError::InvalidTarget(instance.actor))?;
-    enqueue_for_contention(txn, instance.actor, facility, payload.intended_action)?;
-    Ok(worldwake_sim::CommitOutcome::empty())
+    let _ = queue_payload(def, &instance.payload)?;
+    apply_queue_effect_schema(def, instance, txn)
+}
+
+struct QueueEffectSink<'txn, 'world> {
+    txn: &'txn mut WorldTxn<'world>,
+    action_error: Option<ActionError>,
+}
+
+impl QueueEffectSink<'_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for QueueEffectSink<'_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_transfer(
+        &mut self,
+        _source: EntityId,
+        _dest: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_consume(
+        &mut self,
+        _source: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_produce(
+        &mut self,
+        _sink: EntityId,
+        _commodity: CommodityKind,
+        _quantity: Quantity,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_wound(&mut self, _target: EntityId, _cause: WoundCause) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn write_event(&mut self, _tag: EventTag) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn assert_expectation_fulfilled(
+        &mut self,
+        _expectation: ExpectationId,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consume_grant(&mut self, _grant: EntityId) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn enqueue_contention(
+        &mut self,
+        actor: EntityId,
+        entity: EntityId,
+        intended_action: ActionDefId,
+    ) -> Result<(), Discrepancy> {
+        enqueue_for_contention(self.txn, actor, entity, intended_action)
+            .map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_queue_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<worldwake_sim::CommitOutcome, ActionError> {
+    let mut sink = QueueEffectSink {
+        txn,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(worldwake_sim::CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -450,6 +577,14 @@ mod tests {
             BodyCostPerTick::new(pm(1), pm(1), pm(1), pm(1), pm(1))
         );
         assert_eq!(def.payload, ActionPayload::None);
+        assert_eq!(
+            def.effect_schema.steps,
+            vec![worldwake_sim::EffectStep::EnqueueContention {
+                actor: worldwake_sim::EffectEntityRef::Actor,
+                entity: worldwake_sim::EffectEntityRef::Target { index: 0 },
+                intended_action: worldwake_sim::EffectActionRef::PayloadQueueIntendedAction,
+            }]
+        );
     }
 
     #[test]
