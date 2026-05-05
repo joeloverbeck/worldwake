@@ -14,6 +14,7 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 ## Top Rules
 
 - Reassess against the live branch first. Do not implement the draft literally until the ticket/spec matches current code.
+- Before presenting any 1-3-1, load `references/mismatch-handling.md`. If the choice involves duplicate lawful state paths, duplicate transport paths, cache-vs-truth ambiguity, or another `FOUNDATIONS`-level boundary, evaluate the options against `docs/FOUNDATIONS.md` before naming the recommendation.
 - When the user approves a reassessment option or `FOUNDATIONS`-driven boundary reset, record the selected implementation boundary in the active ticket/spec before coding unless the user explicitly asked for analysis only.
 - If a narrow production fix lands but the drafted broader golden/E2E story is still false, follow `Mixed outcome: narrow fix landed, broader golden still false` below.
 - Prefer the strongest existing honest proof seam. Extend an existing focused unit/runtime/golden test instead of creating the drafted new file mechanically.
@@ -39,7 +40,9 @@ Before marking an active ticket `COMPLETED` or sending the final response:
   ```bash
   rg -n 'old phrase|generic `CreateEntity`|stale command' tickets/ specs/
   ```
+  Never put Markdown backticks in unquoted or double-quoted shell patterns; the shell can treat them as command substitution before `rg` runs.
 - Re-check `git status --short` and classify new or pre-existing dirty paths so the final summary does not attribute unrelated work to the ticket.
+  When untracked sibling tickets or specs were edited only for truth-sync, list them separately from source/test/generated files in closeout and use an explicit untracked-file whitespace check for each owned untracked Markdown file.
 
 Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here. Do not include a Cargo command inside any `multi_tool_use.parallel` bundle, even when the other bundled commands are read-only; run the Cargo command separately.
 
@@ -284,6 +287,8 @@ If implementation or focused test setup later disproves a remaining ticket/spec 
 ### 3. Handle mismatches explicitly
 
 Load `references/mismatch-handling.md` when reassessment exposes a contradiction, risky ticket/code divergence, or a user decision that requires 1-3-1.
+
+Before recommending one of the 1-3-1 options, run a `FOUNDATIONS` check over the choices. If the contradiction involves two possible canonical owners for the same fact, duplicate mutation/diff/transport paths, or a cache that could become truth, default the recommendation toward one canonical owner unless the spec proves the separate carrier is a real world artifact with its own lifecycle, observers, invalidators, and legal effects.
 
 When the user interrupts or redirects implementation with a request to reassess options against `docs/FOUNDATIONS.md`, pause source edits and treat the request as an architectural boundary check. State one concrete contradiction, offer three viable options with one recommendation, wait for approval when the choice materially changes scope, then patch the active ticket/spec with the selected boundary before coding.
 

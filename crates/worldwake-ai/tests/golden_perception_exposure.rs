@@ -292,6 +292,8 @@ fn run_observation_budget_priority(seed: Seed) -> ObservationBudgetBeliefObserva
 
     let perception_profile = PerceptionProfile {
         observation_budget: 12,
+        salience_policy: worldwake_core::SaliencePolicy::default(),
+        omission_log_capacity: worldwake_core::default_omission_log_capacity(),
         observation_fidelity: pm(1000),
         ..PerceptionProfile::default()
     };

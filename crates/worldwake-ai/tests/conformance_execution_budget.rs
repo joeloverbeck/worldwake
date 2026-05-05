@@ -85,6 +85,8 @@ fn configure_perception(h: &mut GoldenHarness, agent: EntityId) {
             claim_confidence_threshold: pm(50),
             observation_buffer_capacity: 64,
             observation_budget: 24,
+            salience_policy: worldwake_core::SaliencePolicy::default(),
+            omission_log_capacity: worldwake_core::default_omission_log_capacity(),
             need_salience_boost: pm(500),
             need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(875),

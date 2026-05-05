@@ -1464,6 +1464,8 @@ mod tests {
             claim_confidence_threshold: Permille::new(50).unwrap(),
             observation_buffer_capacity: 5,
             observation_budget: 24,
+            salience_policy: worldwake_core::SaliencePolicy::default(),
+            omission_log_capacity: worldwake_core::default_omission_log_capacity(),
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -3856,6 +3858,8 @@ mod tests {
                     claim_confidence_threshold: Permille::new(50).unwrap(),
                     observation_buffer_capacity: 5,
                     observation_budget: 24,
+                    salience_policy: worldwake_core::SaliencePolicy::default(),
+                    omission_log_capacity: worldwake_core::default_omission_log_capacity(),
                     need_salience_boost: Permille::new(500).unwrap(),
                     need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 },

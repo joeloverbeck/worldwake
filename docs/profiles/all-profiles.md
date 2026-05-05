@@ -266,7 +266,7 @@ Per-agent parameters controlling how obligation-class goals decay after repeated
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2554`
+**Source**: `crates/worldwake-core/src/belief.rs:2613`
 
 Per-agent parameters controlling belief retention and observation quality.
 
@@ -281,6 +281,8 @@ Per-agent parameters controlling belief retention and observation quality.
 | `claim_confidence_threshold` | `Permille` | Minimum confidence required for an entity belief claim to be retained. (default: `Permille::new(50).unwrap()`) |
 | `observation_buffer_capacity` | `u8` | Maximum number of pending observations buffered before processing. (default: `5`) |
 | `observation_budget` | `u8` | Maximum number of co-located entities observed per tick before salience filtering truncates. (default: `default_observation_budget()`) |
+| `salience_policy` | `SaliencePolicy` | Policy used to rank observation salience before budget truncation. (default: `SaliencePolicy::default()`) |
+| `omission_log_capacity` | `u8` | Maximum number of recent omitted observations retained in the agent's belief store. (default: `default_omission_log_capacity()`) |
 | `need_salience_boost` | `Permille` | Observation priority boost for entities relevant to the agent's current needs. (default: `Permille::new(500).unwrap()`) |
 | `need_salience_urgency_threshold` | `Permille` | Need pressure level above which the salience boost activates. (default: `Permille::new(500).unwrap()`) |
 
@@ -310,7 +312,7 @@ Per-agent experience-based route and source preference parameters.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2606`
+**Source**: `crates/worldwake-core/src/belief.rs:2677`
 
 Per-agent parameters controlling what information an agent relays and accepts.
 

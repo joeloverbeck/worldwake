@@ -776,6 +776,7 @@ mod tests {
             next_claim_id: crate::ClaimId(0),
             known_entities,
             social_observations: Vec::new(),
+            observation_omission_log: crate::ObservationOmissionLog::default(),
             told_beliefs: BTreeMap::new(),
             heard_beliefs: BTreeMap::new(),
             asked_witnesses: BTreeMap::new(),
@@ -817,6 +818,8 @@ mod tests {
             claim_confidence_threshold: Permille::new(50).unwrap(),
             observation_buffer_capacity: 5,
             observation_budget: 24,
+            salience_policy: crate::SaliencePolicy::default(),
+            omission_log_capacity: crate::default_omission_log_capacity(),
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }

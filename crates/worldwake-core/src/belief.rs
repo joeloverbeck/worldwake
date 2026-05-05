@@ -10,7 +10,7 @@ use crate::{
     social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum InstitutionalTellTopicKey {
@@ -49,12 +49,38 @@ pub struct AgentBeliefStore {
     pub next_claim_id: ClaimId,
     pub known_entities: BTreeMap<EntityId, BelievedEntityState>,
     pub social_observations: Vec<SocialObservation>,
+    #[serde(default)]
+    pub observation_omission_log: ObservationOmissionLog,
     pub told_beliefs: BTreeMap<TellMemoryKey, ToldBeliefMemory>,
     pub heard_beliefs: BTreeMap<TellMemoryKey, HeardBeliefMemory>,
     pub asked_witnesses: BTreeMap<AskWitnessMemoryKey, AskWitnessMemory>,
     #[serde(default)]
     pub place_visits: BTreeMap<EntityId, PlaceVisitRecord>,
     pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum SaliencePolicy {
+    #[default]
+    PriorityWithNeedBoost,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OmissionReason {
+    OverBudget { budget: u8, candidates_seen: u16 },
+    SalienceBelowFloor { policy: SaliencePolicy },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ObservationOmission {
+    pub omitted_entity: EntityId,
+    pub reason: OmissionReason,
+    pub observed_tick: Tick,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ObservationOmissionLog {
+    pub entries: VecDeque<ObservationOmission>,
 }
 
 /// Tracks an agent's visit history for a believed place.
@@ -1123,6 +1149,10 @@ pub struct BeliefStoreDiff {
     pub known_entities_removed: Vec<EntityId>,
     pub social_observations_added: Vec<SocialObservation>,
     pub social_observations_removed_count: u16,
+    #[serde(default)]
+    pub omission_log_added: Vec<ObservationOmission>,
+    #[serde(default)]
+    pub omission_log_removed_count: u16,
     pub told_beliefs_set: Vec<(TellMemoryKey, ToldBeliefMemory)>,
     pub told_beliefs_removed: Vec<TellMemoryKey>,
     pub heard_beliefs_set: Vec<(TellMemoryKey, HeardBeliefMemory)>,
@@ -1153,7 +1183,21 @@ impl BeliefStoreDiff {
         // Social observations are append-heavy with front eviction.
         // We record how many were removed from the front and which were added at the tail.
         let (social_observations_removed_count, social_observations_added) =
-            diff_social_observations(&before.social_observations, &after.social_observations);
+            diff_append_evict_slice(&before.social_observations, &after.social_observations);
+        let before_omissions: Vec<_> = before
+            .observation_omission_log
+            .entries
+            .iter()
+            .copied()
+            .collect();
+        let after_omissions: Vec<_> = after
+            .observation_omission_log
+            .entries
+            .iter()
+            .copied()
+            .collect();
+        let (omission_log_removed_count, omission_log_added) =
+            diff_append_evict_slice(&before_omissions, &after_omissions);
 
         let told_beliefs_set = diff_btree_map_set(&before.told_beliefs, &after.told_beliefs);
         let told_beliefs_removed =
@@ -1187,6 +1231,8 @@ impl BeliefStoreDiff {
             known_entities_removed,
             social_observations_added,
             social_observations_removed_count,
+            omission_log_added,
+            omission_log_removed_count,
             told_beliefs_set,
             told_beliefs_removed,
             heard_beliefs_set,
@@ -1230,6 +1276,17 @@ impl BeliefStoreDiff {
         result
             .social_observations
             .extend(self.social_observations_added);
+        let remove = self.omission_log_removed_count as usize;
+        if remove > 0 {
+            result
+                .observation_omission_log
+                .entries
+                .drain(..remove.min(result.observation_omission_log.entries.len()));
+        }
+        result
+            .observation_omission_log
+            .entries
+            .extend(self.omission_log_added);
 
         for key in &self.told_beliefs_removed {
             result.told_beliefs.remove(key);
@@ -1284,6 +1341,8 @@ impl BeliefStoreDiff {
             && self.known_entities_removed.is_empty()
             && self.social_observations_added.is_empty()
             && self.social_observations_removed_count == 0
+            && self.omission_log_added.is_empty()
+            && self.omission_log_removed_count == 0
             && self.told_beliefs_set.is_empty()
             && self.told_beliefs_removed.is_empty()
             && self.heard_beliefs_set.is_empty()
@@ -1330,10 +1389,10 @@ fn diff_btree_map_removed<K: Clone + Ord, V>(
 /// We diff by finding the longest common suffix between before and after,
 /// then recording how many were removed from the front and which were added
 /// at the tail.
-fn diff_social_observations(
-    before: &[SocialObservation],
-    after: &[SocialObservation],
-) -> (u16, Vec<SocialObservation>) {
+fn diff_append_evict_slice<T>(before: &[T], after: &[T]) -> (u16, Vec<T>)
+where
+    T: Copy + PartialEq,
+{
     // Observations are evicted from the front and added to the back.
     // The surviving entries from `before` appear as a prefix of `after`.
     // Find the longest suffix of `before` that matches a prefix of `after`.
@@ -2571,6 +2630,12 @@ pub struct PerceptionProfile {
     /// Maximum number of co-located entities observed per tick before salience filtering truncates.
     #[serde(default = "default_observation_budget")]
     pub observation_budget: u8,
+    /// Policy used to rank observation salience before budget truncation.
+    #[serde(default)]
+    pub salience_policy: SaliencePolicy,
+    /// Maximum number of recent omitted observations retained in the agent's belief store.
+    #[serde(default = "default_omission_log_capacity")]
+    pub omission_log_capacity: u8,
     /// Observation priority boost for entities relevant to the agent's current needs.
     pub need_salience_boost: Permille,
     /// Need pressure level above which the salience boost activates.
@@ -2581,6 +2646,10 @@ impl Component for PerceptionProfile {}
 
 fn default_observation_budget() -> u8 {
     24
+}
+
+pub fn default_omission_log_capacity() -> u8 {
+    16
 }
 
 impl Default for PerceptionProfile {
@@ -2595,6 +2664,8 @@ impl Default for PerceptionProfile {
             claim_confidence_threshold: Permille::new(50).unwrap(),
             observation_buffer_capacity: 5,
             observation_budget: default_observation_budget(),
+            salience_policy: SaliencePolicy::default(),
+            omission_log_capacity: default_omission_log_capacity(),
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -2762,13 +2833,14 @@ mod tests {
         AgentBeliefStore, AskWitnessMemory, AskWitnessMemoryKey, BeliefConfidencePolicy,
         BelievedActivity, BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry,
         BelievedEvidenceState, HeardBeliefDisposition, HeardBeliefMemory, MismatchKind,
-        ObservedEntitySnapshot, PerceptionProfile, PerceptionSource, PlaceVisitRecord,
-        RecipientKnowledgeStatus, SharedInstitutionalBelief, SharedTellState, SocialObservation,
+        ObservationOmission, ObservationOmissionLog, ObservedEntitySnapshot, OmissionReason,
+        PerceptionProfile, PerceptionSource, PlaceVisitRecord, RecipientKnowledgeStatus,
+        SaliencePolicy, SharedInstitutionalBelief, SharedTellState, SocialObservation,
         SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
         ToldBeliefMemory, belief_confidence, build_believed_entity_state,
-        build_observed_entity_snapshot, compute_activation, derive_entity_summary,
-        recipient_knowledge_status, salience_boost, share_equivalent, state_salience_boost,
-        to_shared_belief_snapshot,
+        build_observed_entity_snapshot, compute_activation, default_omission_log_capacity,
+        derive_entity_summary, recipient_knowledge_status, salience_boost, share_equivalent,
+        state_salience_boost, to_shared_belief_snapshot,
     };
     use crate::{
         ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
@@ -2806,6 +2878,8 @@ mod tests {
             claim_confidence_threshold: Permille::new(claim_confidence_threshold).unwrap(),
             observation_buffer_capacity,
             observation_budget: 24,
+            salience_policy: SaliencePolicy::default(),
+            omission_log_capacity: default_omission_log_capacity(),
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -6830,6 +6904,11 @@ mod tests {
         );
         assert_eq!(profile.observation_buffer_capacity, 5);
         assert_eq!(profile.observation_budget, 24);
+        assert_eq!(
+            profile.salience_policy,
+            SaliencePolicy::PriorityWithNeedBoost
+        );
+        assert_eq!(profile.omission_log_capacity, 16);
         assert_eq!(profile.need_salience_boost, Permille::new(500).unwrap());
         assert_eq!(
             profile.need_salience_urgency_threshold,
@@ -6848,11 +6927,20 @@ mod tests {
         let serialized = ron::to_string(&PerceptionProfile::default()).expect("serialize");
         let omitted = serialized
             .replace("observation_budget:24,", "")
-            .replace("observation_budget: 24,", "");
+            .replace("observation_budget: 24,", "")
+            .replace("salience_policy:PriorityWithNeedBoost,", "")
+            .replace("salience_policy: PriorityWithNeedBoost,", "")
+            .replace("omission_log_capacity:16,", "")
+            .replace("omission_log_capacity: 16,", "");
         let profile: PerceptionProfile = ron::from_str(&omitted)
-            .expect("deserialize perception profile without observation_budget");
+            .expect("deserialize perception profile without defaulted fields");
 
         assert_eq!(profile.observation_budget, 24);
+        assert_eq!(
+            profile.salience_policy,
+            SaliencePolicy::PriorityWithNeedBoost
+        );
+        assert_eq!(profile.omission_log_capacity, 16);
     }
 
     #[test]
@@ -6868,6 +6956,38 @@ mod tests {
     }
 
     #[test]
+    fn observation_omission_types_roundtrip_and_defaults_hold() {
+        let omission = ObservationOmission {
+            omitted_entity: entity(17),
+            reason: OmissionReason::OverBudget {
+                budget: 12,
+                candidates_seen: 30,
+            },
+            observed_tick: Tick(42),
+        };
+        let bytes = bincode::serialize(&omission).expect("serialize omission");
+        let restored: ObservationOmission = bincode::deserialize(&bytes).expect("deserialize");
+
+        assert_eq!(restored, omission);
+        assert_eq!(
+            SaliencePolicy::default(),
+            SaliencePolicy::PriorityWithNeedBoost
+        );
+        assert_eq!(
+            OmissionReason::SalienceBelowFloor {
+                policy: SaliencePolicy::default()
+            },
+            OmissionReason::SalienceBelowFloor {
+                policy: SaliencePolicy::PriorityWithNeedBoost
+            }
+        );
+        assert_eq!(
+            AgentBeliefStore::new().observation_omission_log,
+            ObservationOmissionLog::default()
+        );
+    }
+
+    #[test]
     fn belief_types_satisfy_component_and_serde_bounds() {
         assert_component_bounds::<AgentBeliefStore>();
         assert_component_bounds::<PerceptionProfile>();
@@ -6878,6 +6998,10 @@ mod tests {
         assert_serde_bounds::<BelievedEvidenceEntry>();
         assert_serde_bounds::<BelievedEvidenceState>();
         assert_serde_bounds::<MismatchKind>();
+        assert_serde_bounds::<ObservationOmission>();
+        assert_serde_bounds::<ObservationOmissionLog>();
+        assert_serde_bounds::<OmissionReason>();
+        assert_serde_bounds::<SaliencePolicy>();
         assert_serde_bounds::<SocialObservation>();
         assert_serde_bounds::<SocialObservationDetail>();
         assert_serde_bounds::<TellProfile>();
@@ -7685,6 +7809,17 @@ mod tests {
         }
     }
 
+    fn make_observation_omission(tick: Tick) -> ObservationOmission {
+        ObservationOmission {
+            omitted_entity: entity(tick.0 as u32),
+            reason: OmissionReason::OverBudget {
+                budget: 12,
+                candidates_seen: 30,
+            },
+            observed_tick: tick,
+        }
+    }
+
     fn make_tell_key(counterparty_slot: u32) -> TellMemoryKey {
         TellMemoryKey {
             counterparty: entity(counterparty_slot),
@@ -7841,6 +7976,39 @@ mod tests {
         let diff = BeliefStoreDiff::compute(&before, &after);
         assert_eq!(diff.social_observations_removed_count, 1);
         assert_eq!(diff.social_observations_added.len(), 2);
+        assert_eq!(diff.apply(&before), after);
+    }
+
+    #[test]
+    fn belief_store_diff_roundtrip_observation_omission_log() {
+        let mut before = AgentBeliefStore::new();
+        before
+            .observation_omission_log
+            .entries
+            .push_back(make_observation_omission(Tick(1)));
+        before
+            .observation_omission_log
+            .entries
+            .push_back(make_observation_omission(Tick(2)));
+        before
+            .observation_omission_log
+            .entries
+            .push_back(make_observation_omission(Tick(3)));
+
+        let mut after = before.clone();
+        after.observation_omission_log.entries.pop_front();
+        after
+            .observation_omission_log
+            .entries
+            .push_back(make_observation_omission(Tick(4)));
+        after
+            .observation_omission_log
+            .entries
+            .push_back(make_observation_omission(Tick(5)));
+
+        let diff = BeliefStoreDiff::compute(&before, &after);
+        assert_eq!(diff.omission_log_removed_count, 1);
+        assert_eq!(diff.omission_log_added.len(), 2);
         assert_eq!(diff.apply(&before), after);
     }
 
