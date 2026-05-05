@@ -44,3 +44,4 @@ If the landed schema uses category-owned steps instead of the draft's generic st
 - state whether planner hypothetical mode remains old-path or has parity
 - state whether persisted save shape changed
 - update active sibling tickets/spec text whose forward-looking handoff now falsely assumes generic step coverage
+- run a targeted stale-term scan over the active ticket, cited spec, and active sibling tickets for rejected generic sketch terms and old domain nouns, such as `AssertBelief`, `CreateRecord`, `EffectFact`, `record artifact`, `notice creation`, or the specific superseded step names from reassessment

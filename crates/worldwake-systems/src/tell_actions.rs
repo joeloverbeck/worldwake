@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use worldwake_core::{
     ActionDefId, AgentBeliefStore, BelievedInstitutionalClaim, BodyCostPerTick, CommunicationClass,
-    EntityId, EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory,
+    Discrepancy, EntityId, EntityKind, EventTag, HeardBeliefDisposition, HeardBeliefMemory,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, PerceptionProfile,
     PerceptionSource, Permille, RecipientKnowledgeStatus, SocialObservationDetail, TellMemoryKey,
     TellProfile, TellTopic, Tick, ToldBeliefMemory, ViolationKind, VisibilitySpec, World, WorldTxn,
@@ -16,8 +16,9 @@ use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CommitOutcome, CommitTraceData, Constraint, DeterministicRng,
-    DurationExpr, Interruptibility, PayloadEntityRole, Precondition, TargetSpec, TellActionPayload,
-    TellBeliefDeltaKind, TellCommitResult, TellCommitTrace, belief_chain_len,
+    DurationExpr, EffectEvaluationContext, EffectMode, EffectSink, EffectStep, Interruptibility,
+    PayloadEntityRole, Precondition, TargetSpec, TellActionPayload, TellBeliefDeltaKind,
+    TellCommitResult, TellCommitTrace, apply_effects_with_context, belief_chain_len,
     listener_aware_tell_topic_selection,
 };
 
@@ -76,7 +77,10 @@ fn tell_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDef {
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: worldwake_sim::EffectSchema {
+            preconditions: vec![],
+            steps: vec![EffectStep::CommitTell],
+        },
     }
 }
 
@@ -514,12 +518,105 @@ fn tell_trace(
     }))
 }
 
-#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
+struct TellEffectSink<'txn, 'world, 'def, 'instance, 'rng> {
+    txn: &'txn mut WorldTxn<'world>,
+    def: &'def ActionDef,
+    instance: &'instance ActionInstance,
+    rng: &'rng mut DeterministicRng,
+    outcome: CommitOutcome,
+    action_error: Option<ActionError>,
+}
+
+impl TellEffectSink<'_, '_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for TellEffectSink<'_, '_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &worldwake_sim::EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn commit_tell(
+        &mut self,
+        actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        if actor != self.instance.actor {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        self.outcome = apply_tell_commit(self.def, self.instance, self.rng, self.txn)
+            .map_err(|err| self.record_error(err))?;
+        Ok(())
+    }
+}
+
+fn apply_tell_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = TellEffectSink {
+        txn,
+        def,
+        instance,
+        rng,
+        outcome: CommitOutcome::empty(),
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(sink.outcome),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
 fn commit_tell(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
+    rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_tell_effect_schema(def, instance, rng, txn)
+}
+
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
+fn apply_tell_commit(
+    def: &ActionDef,
+    instance: &ActionInstance,
     rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {

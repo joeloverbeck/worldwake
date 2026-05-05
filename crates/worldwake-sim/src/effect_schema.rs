@@ -179,6 +179,14 @@ pub enum EffectStep {
     CompleteTravel,
     AdvancePatrolRoute,
     EstablishBanditCamp,
+    CommitTell,
+    ConsultRecord,
+    AskAboutPerson,
+    AskWitness,
+    SearchPlace,
+    Investigate,
+    ReportMissing,
+    ReportFound,
     PartialOnFailure {
         primary: Vec<EffectStep>,
         fallback: Vec<EffectStep>,
@@ -235,32 +243,53 @@ pub trait EffectSink {
         dest: EntityId,
         commodity: CommodityKind,
         quantity: Quantity,
-    ) -> Result<(), Discrepancy>;
+    ) -> Result<(), Discrepancy> {
+        let _ = (source, dest, commodity, quantity);
+        Err(Discrepancy::ImproperPlanningState)
+    }
 
     fn write_consume(
         &mut self,
         source: EntityId,
         commodity: CommodityKind,
         quantity: Quantity,
-    ) -> Result<(), Discrepancy>;
+    ) -> Result<(), Discrepancy> {
+        let _ = (source, commodity, quantity);
+        Err(Discrepancy::ImproperPlanningState)
+    }
 
     fn write_produce(
         &mut self,
         sink: EntityId,
         commodity: CommodityKind,
         quantity: Quantity,
-    ) -> Result<(), Discrepancy>;
+    ) -> Result<(), Discrepancy> {
+        let _ = (sink, commodity, quantity);
+        Err(Discrepancy::ImproperPlanningState)
+    }
 
-    fn write_wound(&mut self, target: EntityId, cause: WoundCause) -> Result<(), Discrepancy>;
+    fn write_wound(&mut self, target: EntityId, cause: WoundCause) -> Result<(), Discrepancy> {
+        let _ = (target, cause);
+        Err(Discrepancy::ImproperPlanningState)
+    }
 
-    fn write_event(&mut self, tag: EventTag) -> Result<(), Discrepancy>;
+    fn write_event(&mut self, tag: EventTag) -> Result<(), Discrepancy> {
+        let _ = tag;
+        Err(Discrepancy::ImproperPlanningState)
+    }
 
     fn assert_expectation_fulfilled(
         &mut self,
         expectation: ExpectationId,
-    ) -> Result<(), Discrepancy>;
+    ) -> Result<(), Discrepancy> {
+        let _ = expectation;
+        Err(Discrepancy::ImproperPlanningState)
+    }
 
-    fn consume_grant(&mut self, grant: EntityId) -> Result<(), Discrepancy>;
+    fn consume_grant(&mut self, grant: EntityId) -> Result<(), Discrepancy> {
+        let _ = grant;
+        Err(Discrepancy::ImproperPlanningState)
+    }
 
     fn set_combat_stance(
         &mut self,
@@ -453,6 +482,70 @@ pub trait EffectSink {
         &mut self,
         _actor: EntityId,
         _target: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn commit_tell(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn consult_record(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn ask_about_person(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn ask_witness(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn search_place(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn investigate(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn report_missing(
+        &mut self,
+        _actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn report_found(
+        &mut self,
+        _actor: EntityId,
         _payload: &ActionPayload,
     ) -> Result<(), Discrepancy> {
         Err(Discrepancy::ImproperPlanningState)
@@ -712,6 +805,30 @@ fn apply_step(
         EffectStep::EstablishBanditCamp => {
             let target = resolve_entity_ref(EffectEntityRef::Target { index: 0 }, context)?;
             sink.establish_bandit_camp(context.actor, target, context.payload)?;
+        }
+        EffectStep::CommitTell => {
+            sink.commit_tell(context.actor, context.payload)?;
+        }
+        EffectStep::ConsultRecord => {
+            sink.consult_record(context.actor, context.payload)?;
+        }
+        EffectStep::AskAboutPerson => {
+            sink.ask_about_person(context.actor, context.payload)?;
+        }
+        EffectStep::AskWitness => {
+            sink.ask_witness(context.actor, context.payload)?;
+        }
+        EffectStep::SearchPlace => {
+            sink.search_place(context.actor, context.payload)?;
+        }
+        EffectStep::Investigate => {
+            sink.investigate(context.actor, context.payload)?;
+        }
+        EffectStep::ReportMissing => {
+            sink.report_missing(context.actor, context.payload)?;
+        }
+        EffectStep::ReportFound => {
+            sink.report_found(context.actor, context.payload)?;
         }
         EffectStep::PartialOnFailure { primary, fallback } => {
             let checkpoint = sink.checkpoint();

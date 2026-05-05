@@ -3,12 +3,12 @@
 **Status**: PENDING
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — switches the planner's hypothetical evaluation to `apply_effects(..., Hypothetical)`, deletes `apply_hypothetical_transition`, `PlannerTransitionKind`, `GoalKindPlannerExt::apply_planner_step` and per-`GoalKind` impls, and replaces the dual-implementation conformance harness with three coverage tests
-**Deps**: archive/tickets/S134CANEFFSCH-003.md, archive/tickets/S134CANEFFSCH-004.md, archive/tickets/S134CANEFFSCH-005.md, archive/tickets/S134CANEFFSCH-006.md, archive/tickets/S134CANEFFSCH-007.md, S134CANEFFSCH-008, S134CANEFFSCH-009
+**Engine Changes**: Yes — switches the planner's hypothetical evaluation to `apply_effects(..., Hypothetical)` / `apply_effects_with_context(..., Hypothetical)` as needed by payload-bearing schemas, deletes `apply_hypothetical_transition`, `PlannerTransitionKind`, `GoalKindPlannerExt::apply_planner_step` and per-`GoalKind` impls, and replaces the dual-implementation conformance harness with three coverage tests
+**Deps**: archive/tickets/S134CANEFFSCH-003.md, archive/tickets/S134CANEFFSCH-004.md, archive/tickets/S134CANEFFSCH-005.md, archive/tickets/S134CANEFFSCH-006.md, archive/tickets/S134CANEFFSCH-007.md, archive/tickets/S134CANEFFSCH-008.md, tickets/S134CANEFFSCH-009.md
 
 ## Problem
 
-S134 deliverables D3, D4, and D6 land here as the unification trigger. After tickets 003–009, every `ActionDef` carries a real `EffectSchema` and every action handler delegates its commit to `apply_effects(..., Authoritative)`. This ticket flips the planner side: the single runtime call to `apply_hypothetical_transition` at `crates/worldwake-ai/src/search/transition.rs:154` is replaced with `apply_effects(..., Hypothetical)`, the now-dead 9-arm `PlannerTransitionKind` dispatch and the 14+ per-`GoalKind` `apply_planner_step` impls are deleted, and the 21 dual-implementation conformance tests in `planner_conformance.rs` are replaced with three taxonomic coverage tests. Combining the switch with the deletion and test rewrite avoids a transient dead-code state between landings (FND-28 — no backward-compatibility paths in live authority).
+S134 deliverables D3, D4, and D6 land here as the unification trigger. After tickets 003–009, every `ActionDef` carries a real `EffectSchema` and every action handler delegates its commit to `apply_effects(..., Authoritative)` or `apply_effects_with_context(..., Authoritative)` when payload/current-action context is required. This ticket flips the planner side: the single runtime call to `apply_hypothetical_transition` at `crates/worldwake-ai/src/search/transition.rs:154` is replaced with `apply_effects(..., Hypothetical)` / `apply_effects_with_context(..., Hypothetical)` as needed, the now-dead 9-arm `PlannerTransitionKind` dispatch and the 14+ per-`GoalKind` `apply_planner_step` impls are deleted, and the 21 dual-implementation conformance tests in `planner_conformance.rs` are replaced with three taxonomic coverage tests. Combining the switch with the deletion and test rewrite avoids a transient dead-code state between landings (FND-28 — no backward-compatibility paths in live authority).
 
 ## Assumption Reassessment (2026-05-04)
 
@@ -16,8 +16,8 @@ S134 deliverables D3, D4, and D6 land here as the unification trigger. After tic
 2. Single runtime call site to delete: `apply_hypothetical_transition` is called from `crates/worldwake-ai/src/search/transition.rs:154` (production) and 8 test-only sites in `crates/worldwake-ai/src/planner_ops.rs:2268, 2305, 2343, 2374, 2418, 2480, 2551, 2593`. The lib.rs re-export at `crates/worldwake-ai/src/lib.rs:116` also goes.
 3. `apply_planner_step` runtime usage: trait method at `goal_model.rs:54`, impl block starting `:1051`, ~14 test usages in the same file's `#[cfg(test)]` block (lines 6517, 6524, 6528, 6803–9402). The trait method is reached only via `PlannerTransitionKind::GoalModelFallback` arm at `planner_ops.rs:319` (`apply_goal_model_fallback_transition`); once `apply_hypothetical_transition` is deleted, `apply_planner_step` becomes unreachable from runtime code and is deleted alongside.
 4. Conformance tests: 21 tests in `crates/worldwake-ai/tests/planner_conformance.rs` (lines 232, 321, 389, 450, 511, 616, 681, 744, 834, 932, 993, 1129, 1218, 1327, 1459, 1569, 1655, 1726, 1832, 1908, 1976) each compare the planner's `apply_hypothetical_transition` output against the imperative authoritative handler's output. After this ticket, both paths consume the same schema — there is no dual implementation to compare. The 21 tests are replaced by 3 taxonomic coverage tests per spec D6.
-5. Hypothetical sink: ticket 002's `EffectSink` impl over `PlanningState` in `crates/worldwake-ai/src/effect_sink_hypothetical.rs` is the consumer of the planner-side `apply_effects` call. Confirm during reassessment that the sink covers every `EffectStep` variant introduced by tickets 003–009.
-6. Shared abstraction boundary under audit: the planner's hypothetical evaluation seam at `search/transition.rs:154`. Before this ticket: planner uses `apply_hypothetical_transition` over `PlannerTransitionKind` (delegating to per-`GoalKind` `apply_planner_step` for fallback cases). After: planner uses `apply_effects` over `ActionDef.effect_schema`. The planner's call signature changes to construct the hypothetical sink and pass `EffectMode::Hypothetical`.
+5. Hypothetical sink: ticket 002's `EffectSink` impl over `PlanningState` in `crates/worldwake-ai/src/effect_sink_hypothetical.rs` is the consumer of the planner-side schema evaluation call. Confirm during reassessment that the sink covers every `EffectStep` variant introduced by tickets 003–009.
+6. Shared abstraction boundary under audit: the planner's hypothetical evaluation seam at `search/transition.rs:154`. Before this ticket: planner uses `apply_hypothetical_transition` over `PlannerTransitionKind` (delegating to per-`GoalKind` `apply_planner_step` for fallback cases). After: planner evaluates `ActionDef.effect_schema` through the shared schema evaluator. The planner's call signature changes to construct the hypothetical sink and pass `EffectMode::Hypothetical`.
 7. Existing focused/unit coverage to extend or rewrite:
    - 21 conformance tests in `planner_conformance.rs` — replaced.
    - 14+ `apply_planner_step` tests in `goal_model.rs` `#[cfg(test)]` block — deleted (the trait method is gone).
@@ -32,7 +32,7 @@ S134 deliverables D3, D4, and D6 land here as the unification trigger. After tic
 
 ## Verification Layers
 
-1. Planner-side switch invariant → action trace + event-log delta: every golden in `crates/worldwake-ai/tests/golden_*.rs` produces bitwise-identical event logs to the pre-ticket baseline (the planner's hypothetical evaluation now goes through `apply_effects` but should produce identical hypothetical projections, which means identical plan selection, which means identical authoritative outcomes).
+1. Planner-side switch invariant → action trace + event-log delta: every golden in `crates/worldwake-ai/tests/golden_*.rs` produces bitwise-identical event logs to the pre-ticket baseline (the planner's hypothetical evaluation now goes through the shared schema evaluator but should produce identical hypothetical projections, which means identical plan selection, which means identical authoritative outcomes).
 2. Old-path deletion invariant → grep verification: post-ticket, `rg -n "apply_hypothetical_transition|PlannerTransitionKind|apply_planner_step" crates/` returns zero matches. Compile-time enforcement complements this — any missed deletion site fails to compile.
 3. Coverage-test invariants:
    - `every_actiondef_has_effect_schema()` → focused unit test asserting registry coverage.
@@ -42,7 +42,7 @@ S134 deliverables D3, D4, and D6 land here as the unification trigger. After tic
 
 ## What to Change
 
-### 1. Switch planner hypothetical evaluation to `apply_effects(..., Hypothetical)`
+### 1. Switch planner hypothetical evaluation to schema evaluation
 
 In `crates/worldwake-ai/src/search/transition.rs:154`, replace the call:
 
@@ -57,7 +57,17 @@ with:
 // AFTER
 let action_def = registry.get(action_def_id).expect("action def in registry");
 let mut sink = HypotheticalSink::new(state); // from worldwake-ai::effect_sink_hypothetical
-let outcome = apply_effects(&action_def.effect_schema, actor, &targets, &mut sink, EffectMode::Hypothetical);
+let outcome = apply_effects_with_context(
+    &action_def.effect_schema,
+    EffectEvaluationContext {
+        actor,
+        targets: &targets,
+        payload,
+        action_def_id,
+    },
+    &mut sink,
+    EffectMode::Hypothetical,
+);
 ```
 
 The exact local-variable names and the way the `HypotheticalSink` reads back the post-evaluation `PlanningState` overlay depend on ticket 002's sink shape — confirm during reassessment. Update `transition.rs`'s surrounding code to interpret the new `Result<EffectOutcome, Discrepancy>` shape correctly.
@@ -135,7 +145,7 @@ After the deletions:
 2. Bitwise-identical canonical state hash on `survival-baseline.ron`, `survival-scattered.ron`, `survival-contested.ron` over 1440 ticks pre- and post-ticket — the load-bearing unification regression check.
 3. Every `ActionDef` in the registry has a non-empty `EffectSchema` (asserted by `every_actiondef_has_effect_schema()`).
 4. Every `Discrepancy` variant is reachable from at least one schema's precondition (asserted by `every_discrepancy_variant_reachable_from_some_schema_precondition()`).
-5. The planner's hypothetical evaluation seam is `apply_effects(..., Hypothetical)` only — `crates/worldwake-ai/src/search/transition.rs` has no reference to the deleted symbols.
+5. The planner's hypothetical evaluation seam is `apply_effects(..., Hypothetical)` / `apply_effects_with_context(..., Hypothetical)` only — `crates/worldwake-ai/src/search/transition.rs` has no reference to the deleted symbols.
 
 ## Test Plan
 

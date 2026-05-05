@@ -1,15 +1,16 @@
 use std::collections::BTreeSet;
 use worldwake_core::{
-    ActionDefId, BodyCostPerTick, CommodityKind, EntityId, EntityKind, EventTag, PerceptionSource,
-    RecordedViolation, SocialObservation, SocialObservationDetail, TheftFacts, ViolationId,
-    ViolationKind, VisibilitySpec, World, WorldTxn, build_believed_entity_state,
+    ActionDefId, BodyCostPerTick, CommodityKind, Discrepancy, EntityId, EntityKind, EventTag,
+    PerceptionSource, RecordedViolation, SocialObservation, SocialObservationDetail, TheftFacts,
+    ViolationId, ViolationKind, VisibilitySpec, World, WorldTxn, build_believed_entity_state,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, CommitOutcome, Constraint, ControlBeliefView, DeterministicRng,
-    DurationExpr, Interruptibility, InvestigateActionPayload, PerAgentBeliefView, Precondition,
-    RuntimeBeliefView, SocialBeliefView, TargetSpec,
+    DurationExpr, EffectEvaluationContext, EffectMode, EffectSink, EffectStep, Interruptibility,
+    InvestigateActionPayload, PerAgentBeliefView, Precondition, RuntimeBeliefView,
+    SocialBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_investigate_action(
@@ -64,7 +65,10 @@ fn investigate_action_def(id: ActionDefId, handler: ActionHandlerId) -> ActionDe
         binding_strictness: worldwake_sim::BindingStrictness::AnyLegalTarget,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: worldwake_sim::EffectSchema {
+            preconditions: vec![],
+            steps: vec![EffectStep::Investigate],
+        },
     }
 }
 
@@ -117,11 +121,95 @@ fn tick_investigate(
 }
 
 fn commit_investigate(
-    _def: &ActionDef,
+    def: &ActionDef,
     instance: &ActionInstance,
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &worldwake_core::EventLog,
     _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_investigate_effect_schema(def, instance, txn)
+}
+
+struct InvestigateEffectSink<'txn, 'world, 'instance> {
+    txn: &'txn mut WorldTxn<'world>,
+    instance: &'instance ActionInstance,
+    action_error: Option<ActionError>,
+}
+
+impl InvestigateEffectSink<'_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for InvestigateEffectSink<'_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &worldwake_sim::EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn investigate(
+        &mut self,
+        actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        if actor != self.instance.actor {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        apply_investigate_commit(self.instance, self.txn)
+            .map(|_| ())
+            .map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_investigate_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = InvestigateEffectSink {
+        txn,
+        instance,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
+fn apply_investigate_commit(
+    instance: &ActionInstance,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let (violation_id, subject, place, commodity) = investigate_state(instance)?;

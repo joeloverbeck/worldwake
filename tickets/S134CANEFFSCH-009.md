@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Large
 **Engine Changes**: Yes — replaces empty-placeholder schemas with real `EffectSchema` literals across 13 justice/office/artifact actions and switches their commit handler bodies to `apply_effects(..., Authoritative)`
-**Deps**: archive/tickets/S134CANEFFSCH-001.md, archive/tickets/S134CANEFFSCH-002.md
+**Deps**: archive/tickets/S134CANEFFSCH-001.md, archive/tickets/S134CANEFFSCH-002.md, archive/tickets/S134CANEFFSCH-008.md
 
 ## Problem
 
@@ -22,7 +22,7 @@ S134 deliverable D5 requires migrating the institutional-action family — justi
    - **Visible-vacancy loss**: precondition on no-existing-officeholder for the contested office.
    - **Succession resolution**: institutional precondition.
    - **Office-holder mutation**: the step itself.
-4. Bounty/notice creation: `post_bounty` and `post_notice` create artifact entities with issuer, terms, reward source, proof requirements, location, expiration. Ticket 007 did not add a generic `CreateEntity`; this ticket must reassess whether ticket 008 introduced a reusable record step or whether justice/office/artifact needs a category-owned artifact creation step.
+4. Bounty/notice creation: `post_bounty` and `post_notice` create artifact entities with issuer, terms, reward source, proof requirements, location, expiration. Tickets 007 and 008 did not add a generic `CreateEntity` or reusable record step; this ticket must reassess whether justice/office/artifact needs category-owned artifact creation steps.
 5. Existing focused/unit coverage:
    - Per-file `#[cfg(test)]` blocks
    - Goldens — `golden_accuse_*.rs`, `golden_fine_*.rs`, `golden_exile_*.rs`, `golden_office_*.rs`, `golden_bounty_*.rs`, `golden_post_notice_*.rs`. Enumerate during reassessment.

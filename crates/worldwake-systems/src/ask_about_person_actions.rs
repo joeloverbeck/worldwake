@@ -1,16 +1,17 @@
 use std::collections::BTreeSet;
 
 use worldwake_core::{
-    ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BodyCostPerTick, EntityId, EntityKind,
-    EventLog, EventTag, ExpectationRecord, ExpectationState, LastSeenMemory, LastSeenProvenance,
-    LastSeenRecord, VisibilitySpec, World, WorldTxn, is_incapacitated,
+    ActionDefId, AskWitnessMemory, AskWitnessMemoryKey, BodyCostPerTick, Discrepancy, EntityId,
+    EntityKind, EventLog, EventTag, ExpectationRecord, ExpectationState, LastSeenMemory,
+    LastSeenProvenance, LastSeenRecord, VisibilitySpec, World, WorldTxn, is_incapacitated,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
     ActionProgress, ActionState, AskAboutPersonActionPayload, CommitOutcome, Constraint,
-    DeterministicRng, DurationExpr, Interruptibility, PerAgentBeliefView, Precondition,
-    RuntimeBeliefView, SocialBeliefView, TargetSpec,
+    DeterministicRng, DurationExpr, EffectEvaluationContext, EffectMode, EffectSink, EffectStep,
+    Interruptibility, PerAgentBeliefView, Precondition, RuntimeBeliefView, SocialBeliefView,
+    TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_ask_about_person_action(
@@ -66,7 +67,10 @@ fn ask_about_person_action_def(id: ActionDefId, handler: ActionHandlerId) -> Act
         binding_strictness: worldwake_sim::BindingStrictness::ExactIdentity,
         guard_template: None,
         expectation_template: vec![],
-        effect_schema: worldwake_sim::EffectSchema::empty(),
+        effect_schema: worldwake_sim::EffectSchema {
+            preconditions: vec![],
+            steps: vec![EffectStep::AskAboutPerson],
+        },
     }
 }
 
@@ -401,6 +405,93 @@ fn commit_ask_about_person(
     _context: &worldwake_sim::ActionExecutionContext<'_>,
     _event_log: &EventLog,
     _rng: &mut DeterministicRng,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    apply_ask_about_person_effect_schema(def, instance, txn)
+}
+
+struct AskAboutPersonEffectSink<'txn, 'world, 'def, 'instance> {
+    txn: &'txn mut WorldTxn<'world>,
+    def: &'def ActionDef,
+    instance: &'instance ActionInstance,
+    action_error: Option<ActionError>,
+}
+
+impl AskAboutPersonEffectSink<'_, '_, '_, '_> {
+    fn record_error(&mut self, error: ActionError) -> Discrepancy {
+        self.action_error = Some(error);
+        Discrepancy::PartialExecutionDrift
+    }
+
+    fn take_error(self, discrepancy: Discrepancy) -> ActionError {
+        self.action_error.unwrap_or_else(|| {
+            ActionError::PreconditionFailed(format!("effect schema failed: {discrepancy:?}"))
+        })
+    }
+}
+
+impl EffectSink for AskAboutPersonEffectSink<'_, '_, '_, '_> {
+    fn check_precondition(
+        &self,
+        _precondition: &worldwake_sim::EffectPrecondition,
+        _actor: EntityId,
+        _targets: &[EntityId],
+    ) -> Result<(), Discrepancy> {
+        Ok(())
+    }
+
+    fn checkpoint(&mut self) -> usize {
+        0
+    }
+
+    fn restore(&mut self, _checkpoint: usize) -> Result<(), Discrepancy> {
+        Err(Discrepancy::ImproperPlanningState)
+    }
+
+    fn ask_about_person(
+        &mut self,
+        actor: EntityId,
+        _payload: &ActionPayload,
+    ) -> Result<(), Discrepancy> {
+        if actor != self.instance.actor {
+            return Err(self.record_error(ActionError::InvalidTarget(actor)));
+        }
+        apply_ask_about_person_commit(self.def, self.instance, self.txn)
+            .map(|_| ())
+            .map_err(|err| self.record_error(err))
+    }
+}
+
+fn apply_ask_about_person_effect_schema(
+    def: &ActionDef,
+    instance: &ActionInstance,
+    txn: &mut WorldTxn<'_>,
+) -> Result<CommitOutcome, ActionError> {
+    let mut sink = AskAboutPersonEffectSink {
+        txn,
+        def,
+        instance,
+        action_error: None,
+    };
+    match apply_effects_with_context(
+        &def.effect_schema,
+        EffectEvaluationContext {
+            actor: instance.actor,
+            targets: &instance.targets,
+            payload: &instance.payload,
+            action_def_id: def.id,
+        },
+        &mut sink,
+        EffectMode::Authoritative,
+    ) {
+        Ok(_) => Ok(CommitOutcome::empty()),
+        Err(discrepancy) => Err(sink.take_error(discrepancy)),
+    }
+}
+
+fn apply_ask_about_person_commit(
+    def: &ActionDef,
+    instance: &ActionInstance,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
     let payload = ask_about_person_payload(def, &instance.payload)?;
