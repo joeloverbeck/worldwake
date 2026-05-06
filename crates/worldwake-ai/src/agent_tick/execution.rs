@@ -47,10 +47,12 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     let active_assumptions = jc
         .as_ref()
         .map_or_else(Vec::new, |frame| frame.assumptions.clone());
+    let active_plan = runtime.current_plan.clone();
     let assumption_refs = AssumptionRefContext::new(
         &active_assumptions,
         ctx.cognitive.decision_history_alternatives,
-    );
+    )
+    .with_plan(active_plan.as_ref());
     if !valid {
         let view = runtime_belief_view(
             agent,

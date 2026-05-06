@@ -293,6 +293,7 @@ pub(super) fn handle_current_step_failure(
     let active_assumptions = jc
         .as_ref()
         .map_or_else(Vec::new, |frame| frame.assumptions.clone());
+    let active_plan = runtime.current_plan.clone();
     let goal_key = active_goal.unwrap_or_else(|| {
         runtime
             .current_plan
@@ -338,7 +339,8 @@ pub(super) fn handle_current_step_failure(
         tick,
         &BlockerMemory::default(),
         blocked_memory,
-        AssumptionRefContext::new(&active_assumptions, cognitive.decision_history_alternatives),
+        AssumptionRefContext::new(&active_assumptions, cognitive.decision_history_alternatives)
+            .with_plan(active_plan.as_ref()),
     )?;
     persist_discrepancy_memory(
         world,
@@ -347,7 +349,8 @@ pub(super) fn handle_current_step_failure(
         tick,
         &DiscrepancyMemory::default(),
         discrepancy_memory,
-        AssumptionRefContext::new(&active_assumptions, cognitive.decision_history_alternatives),
+        AssumptionRefContext::new(&active_assumptions, cognitive.decision_history_alternatives)
+            .with_plan(active_plan.as_ref()),
     )?;
     Ok(replan_reason)
 }

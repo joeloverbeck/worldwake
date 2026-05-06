@@ -1034,7 +1034,11 @@ fn emit_plan_selection_events(
                     committed.motive_score,
                     max_alternatives,
                 ),
-                assumptions: assumptions_to_refs(assumptions, max_alternatives),
+                assumptions: assumptions_to_refs(
+                    assumptions,
+                    max_alternatives,
+                    Some(selected_plan),
+                ),
             }),
         );
     }
@@ -1051,7 +1055,7 @@ fn emit_plan_selection_events(
                 .len()
                 .try_into()
                 .expect("plan step count exceeds u16"),
-            assumptions: assumptions_to_refs(assumptions, max_alternatives),
+            assumptions: assumptions_to_refs(assumptions, max_alternatives, Some(selected_plan)),
         }),
     );
 }
@@ -3599,22 +3603,38 @@ mod tests {
                 kill_condition: crate::KillCondition::External,
             },
         ];
+        let first_place = entity(50);
+        let second_place = entity(51);
         let selected_plan = PlannedPlan::new(
             opportunity(selected_goal),
             selected_goal,
-            vec![PlannedStep {
-                def_id: ActionDefId(1),
-                targets: Vec::new(),
-                target_place: None,
-                payload_override: None,
-                op_kind: PlannerOpKind::Sleep,
-                estimated_ticks: 1,
-                is_materialization_barrier: false,
-                expected_materializations: Vec::new(),
-                guard: None,
-                expectations: Vec::new(),
-            }],
-            PlanTerminalKind::GoalSatisfied,
+            vec![
+                PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: vec![PlanningEntityRef::Authoritative(first_place)],
+                    target_place: Some(first_place),
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
+                },
+                PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: vec![PlanningEntityRef::Authoritative(second_place)],
+                    target_place: Some(second_place),
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
+                },
+            ],
+            PlanTerminalKind::ProgressBarrier,
         );
         let mut event_log = EventLog::new();
         let agent = entity(1);
@@ -3622,7 +3642,10 @@ mod tests {
         let frame = worldwake_core::IntentionFrame {
             goal: selected_goal,
             domain: worldwake_core::IntentionDomain::Generic,
-            assumptions: vec![FrameAssumption::NoCriticalThreat],
+            assumptions: vec![FrameAssumption::RouteExists {
+                from: first_place,
+                to: second_place,
+            }],
             state: worldwake_core::FrameState::Active,
             established_at: tick,
             last_progress_tick: None,
@@ -3671,8 +3694,11 @@ mod tests {
                     },
                 ],
                 assumptions: vec![worldwake_core::PlanAssumptionRef {
-                    assumption: FrameAssumption::NoCriticalThreat,
-                    introduced_at_step: 0,
+                    assumption: FrameAssumption::RouteExists {
+                        from: first_place,
+                        to: second_place,
+                    },
+                    introduced_at_step: 1,
                 }],
             }))
         );
@@ -3681,10 +3707,13 @@ mod tests {
             Some(&DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                 agent,
                 goal_key: selected_goal,
-                plan_step_count: 1,
+                plan_step_count: 2,
                 assumptions: vec![worldwake_core::PlanAssumptionRef {
-                    assumption: FrameAssumption::NoCriticalThreat,
-                    introduced_at_step: 0,
+                    assumption: FrameAssumption::RouteExists {
+                        from: first_place,
+                        to: second_place,
+                    },
+                    introduced_at_step: 1,
                 }],
             }))
         );

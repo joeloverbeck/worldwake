@@ -5024,6 +5024,7 @@ fn emit_replan_triggered_carries_active_frame_assumptions() {
         },
         &assumptions,
         1,
+        None,
     );
 
     let events = event_log.events_by_tag(EventTag::ReplanTriggered);
@@ -5044,6 +5045,61 @@ fn emit_replan_triggered_carries_active_frame_assumptions() {
         }
         other => panic!("unexpected payload: {other:?}"),
     }
+}
+
+#[test]
+fn assumption_refs_record_nonzero_source_step_from_plan() {
+    let first_place = entity(10);
+    let second_place = entity(11);
+    let goal_key = GoalKey::from(GoalKind::Sleep);
+    let plan = PlannedPlan::new(
+        OpportunityKey {
+            goal_key,
+            anchor: OpportunityAnchor::Place(second_place),
+        },
+        goal_key,
+        vec![
+            PlannedStep {
+                def_id: ActionDefId(1),
+                targets: vec![PlanningEntityRef::Authoritative(first_place)],
+                target_place: Some(first_place),
+                payload_override: None,
+                op_kind: PlannerOpKind::Travel,
+                estimated_ticks: 1,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
+            },
+            PlannedStep {
+                def_id: ActionDefId(1),
+                targets: vec![PlanningEntityRef::Authoritative(second_place)],
+                target_place: Some(second_place),
+                payload_override: None,
+                op_kind: PlannerOpKind::Travel,
+                estimated_ticks: 1,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
+            },
+        ],
+        PlanTerminalKind::ProgressBarrier,
+    );
+    let assumption = FrameAssumption::RouteExists {
+        from: first_place,
+        to: second_place,
+    };
+
+    assert_eq!(
+        AssumptionRefContext::new(&[assumption], 5)
+            .with_plan(Some(&plan))
+            .to_refs(),
+        vec![worldwake_core::PlanAssumptionRef {
+            assumption,
+            introduced_at_step: 1,
+        }]
+    );
 }
 
 #[test]

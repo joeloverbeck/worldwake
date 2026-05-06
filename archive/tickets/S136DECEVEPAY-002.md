@@ -16,7 +16,7 @@ This ticket lands the reorder so `update_frame_for_adopted_plan` and `populate_a
 
 1. `emit_plan_selection_events` at `planning.rs:1003` is called from two sites (`planning.rs:1692` — contested-commit path; `planning.rs:2083` — re-verify which secondary path this is at implementation time). After ticket 001, both sites construct `GoalCommittedPayload` / `PlanAdoptedPayload` with `assumptions: Vec::new()` placeholder; this ticket replaces both with real data sourced from `frame.assumptions`.
 2. `populate_assumptions` (called from `planning.rs:~1707`) populates `frame.assumptions: Vec<FrameAssumption>` from the active belief view (`refreshed_view`) at `tick`. The reorder must keep `populate_assumptions` reading the same `refreshed_view` snapshot and tick — no new belief queries (preserves spec design goal #2).
-3. `IntentionFrame.assumptions` lives at `crates/worldwake-core/src/intention_frame.rs:145` as `pub assumptions: Vec<FrameAssumption>`. Failure-path emission sites have access to the active frame through the local `current_frame` / `jc` runtime path or through memory-persistence calls that now receive `AssumptionRefContext`. `populate_assumptions` in `crates/worldwake-ai/src/agent_tick/frame.rs` does not currently record introducing-step provenance, so this ticket populates `introduced_at_step: 0` for all entries and opens follow-up ticket `tickets/S136DECEVEPAY-007.md`.
+3. `IntentionFrame.assumptions` lives at `crates/worldwake-core/src/intention_frame.rs:145` as `pub assumptions: Vec<FrameAssumption>`. Failure-path emission sites have access to the active frame through the local `current_frame` / `jc` runtime path or through memory-persistence calls that now receive `AssumptionRefContext`. `populate_assumptions` in `crates/worldwake-ai/src/agent_tick/frame.rs` does not currently record introducing-step provenance, so this ticket populates `introduced_at_step: 0` for all entries. Follow-up `archive/tickets/S136DECEVEPAY-007.md` later landed real step provenance.
 4. Existing test `emit_plan_selection_events_records_commit_then_adoption_with_truncation` (`planning.rs:3464`) covers the truncation behavior of `rejected_alternatives`. This ticket extends that test (or adds a sibling) to assert `assumptions` is populated on the produced `GoalCommittedPayload` and `PlanAdoptedPayload` when the agent has an active intention frame.
 5. Boundary under audit: the success-path emission ordering. Compared branches: pre-reorder (frame empty at emission) vs. post-reorder (frame populated). Divergence is purely in payload content — no behavioral change in plan adoption, plan selection, or downstream commit logic.
 
@@ -93,7 +93,7 @@ Each site has the active frame in scope via the runtime's intention-frame refere
 - `crates/worldwake-ai/src/agent_tick/observation.rs` (modify — `ExpectationMismatch` `assumptions` wire-up)
 - `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — `ReplanTriggered:497` `assumptions` wire-up)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — focused `BlockerRecorded` / `ReplanTriggered` assumptions coverage)
-- `tickets/S136DECEVEPAY-007.md` (new — step-provenance follow-up)
+- `archive/tickets/S136DECEVEPAY-007.md` (completed step-provenance follow-up)
 
 ## Out of Scope
 
@@ -146,7 +146,7 @@ Landed the D5 reorder in both `plan_and_validate_next_step` paths: prepared fram
 
 Added shared `AssumptionRefContext` / `assumptions_to_refs` conversion in `agent_tick::mod` and wired active-frame assumptions into `ReplanTriggered`, `BlockerRecorded`, and `ExpectationMismatch` emission paths. `SourceExpectationFailurePayload` remains unchanged per spec D4.
 
-Deviation: `FrameAssumption` still carries no source-step provenance, so every emitted `PlanAssumptionRef` uses `introduced_at_step: 0`. Follow-up `tickets/S136DECEVEPAY-007.md` owns real step provenance.
+Deviation: `FrameAssumption` still carried no source-step provenance in this ticket, so every emitted `PlanAssumptionRef` used `introduced_at_step: 0`. Follow-up `archive/tickets/S136DECEVEPAY-007.md` later landed real step provenance.
 
 ## Verification Result
 

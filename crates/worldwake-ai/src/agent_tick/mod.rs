@@ -85,12 +85,10 @@ struct AgentTickDriverState {
 }
 
 /// Convert active-frame assumptions into the bounded event-log payload shape.
-///
-/// `FrameAssumption` does not currently store the plan step that introduced
-/// each assumption, so S136DECEVEPAY-007 owns threading real step provenance.
 pub(super) fn assumptions_to_refs(
     assumptions: &[FrameAssumption],
     cap: u8,
+    plan: Option<&crate::PlannedPlan>,
 ) -> Vec<PlanAssumptionRef> {
     assumptions
         .iter()
@@ -98,7 +96,7 @@ pub(super) fn assumptions_to_refs(
         .copied()
         .map(|assumption| PlanAssumptionRef {
             assumption,
-            introduced_at_step: 0,
+            introduced_at_step: assumption_introduced_at_step(assumption, plan),
         })
         .collect()
 }
@@ -107,6 +105,7 @@ pub(super) fn assumptions_to_refs(
 pub(super) struct AssumptionRefContext<'a> {
     pub(super) assumptions: &'a [FrameAssumption],
     pub(super) max_assumptions: u8,
+    pub(super) plan: Option<&'a crate::PlannedPlan>,
 }
 
 impl<'a> AssumptionRefContext<'a> {
@@ -114,18 +113,64 @@ impl<'a> AssumptionRefContext<'a> {
         Self {
             assumptions,
             max_assumptions,
+            plan: None,
         }
     }
 
-    pub(super) fn from_frame(frame: Option<&'a IntentionFrame>, max_assumptions: u8) -> Self {
+    pub(super) const fn with_plan(mut self, plan: Option<&'a crate::PlannedPlan>) -> Self {
+        self.plan = plan;
+        self
+    }
+
+    pub(super) fn from_frame(
+        frame: Option<&'a IntentionFrame>,
+        max_assumptions: u8,
+        plan: Option<&'a crate::PlannedPlan>,
+    ) -> Self {
         Self::new(
             frame.map_or(&[][..], |frame| frame.assumptions.as_slice()),
             max_assumptions,
         )
+        .with_plan(plan)
     }
 
     pub(super) fn to_refs(self) -> Vec<PlanAssumptionRef> {
-        assumptions_to_refs(self.assumptions, self.max_assumptions)
+        assumptions_to_refs(self.assumptions, self.max_assumptions, self.plan)
+    }
+}
+
+fn assumption_introduced_at_step(
+    assumption: FrameAssumption,
+    plan: Option<&crate::PlannedPlan>,
+) -> u8 {
+    let Some(plan) = plan else {
+        return 0;
+    };
+    plan.steps
+        .iter()
+        .position(|step| step_introduces_assumption(step, assumption))
+        .map_or(0, |index| {
+            u8::try_from(index).expect("assumption source step index exceeds u8")
+        })
+}
+
+fn step_introduces_assumption(step: &crate::PlannedStep, assumption: FrameAssumption) -> bool {
+    match assumption {
+        FrameAssumption::RouteExists { to, .. } => {
+            step.op_kind == crate::PlannerOpKind::Travel
+                && step.targets.first().copied().and_then(authoritative_target) == Some(to)
+        }
+        FrameAssumption::CommodityAvailableAt {
+            commodity: _,
+            place,
+        } => step.op_kind != crate::PlannerOpKind::Travel && step.target_place == Some(place),
+        FrameAssumption::TargetAlive(target) => step
+            .targets
+            .iter()
+            .copied()
+            .filter_map(authoritative_target)
+            .any(|candidate| candidate == target),
+        FrameAssumption::NoCriticalThreat | FrameAssumption::NeedSafeUntilTick { .. } => false,
     }
 }
 
@@ -444,6 +489,7 @@ pub(super) fn process_overdue_plan_step_expectations(
                 assumption_refs: AssumptionRefContext::from_frame(
                     current_frame,
                     ctx.cognitive.decision_history_alternatives,
+                    Some(plan),
                 ),
             },
         );
@@ -541,6 +587,7 @@ fn emit_replan_triggered(
     reason: ReplanReason,
     assumptions: &[FrameAssumption],
     max_assumptions: u8,
+    plan: Option<&crate::PlannedPlan>,
 ) {
     emit_decision_event(
         event_log,
@@ -554,7 +601,7 @@ fn emit_replan_triggered(
             decisive_beliefs: Vec::new(),
             decisive_records: Vec::new(),
             decisive_world_observations: Vec::new(),
-            assumptions: assumptions_to_refs(assumptions, max_assumptions),
+            assumptions: assumptions_to_refs(assumptions, max_assumptions, plan),
         }),
     );
 }
@@ -1030,6 +1077,7 @@ fn process_agent(
                 .as_ref()
                 .map_or(&[][..], |frame| frame.assumptions.as_slice()),
             cognitive.decision_history_alternatives,
+            runtime.current_plan.as_ref(),
         );
     }
     current_agenda_state.committed = current_active_goal.clone();
@@ -1127,6 +1175,7 @@ fn process_agent(
                         cognitive.structural_block_ticks,
                         assumption,
                     );
+                    let plan_for_assumption_refs = runtime.current_plan.clone();
                     let _ = persist_expectation_store_update(
                         ctx.world,
                         ctx.event_log,
@@ -1154,6 +1203,7 @@ fn process_agent(
                                 .as_ref()
                                 .map_or(&[][..], |frame| frame.assumptions.as_slice()),
                             cognitive.decision_history_alternatives,
+                            plan_for_assumption_refs.as_ref(),
                         );
                     }
                 }
@@ -1209,6 +1259,7 @@ fn process_agent(
                 .as_ref()
                 .map_or(&[][..], |frame| frame.assumptions.as_slice()),
             cognitive.decision_history_alternatives,
+            runtime.current_plan.as_ref(),
         );
     }
     emit_candidate_decision_events(
@@ -1447,6 +1498,7 @@ fn process_agent(
                     .as_ref()
                     .map_or(&[][..], |frame| frame.assumptions.as_slice()),
                 cognitive.decision_history_alternatives,
+                runtime.current_plan.as_ref(),
             );
         }
         current_agenda_state.committed = current_active_goal.clone();
@@ -1923,6 +1975,7 @@ fn process_agent(
         &original_facility_intents,
         &current_facility_intents,
     )?;
+    let final_plan_for_assumption_refs = runtime.current_plan.clone();
     finalize_agent_tick(
         ctx.world,
         ctx.event_log,
@@ -1945,6 +1998,7 @@ fn process_agent(
         AssumptionRefContext::from_frame(
             current_frame.as_ref(),
             cognitive.decision_history_alternatives,
+            final_plan_for_assumption_refs.as_ref(),
         ),
     )?;
 

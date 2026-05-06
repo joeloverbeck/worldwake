@@ -694,6 +694,7 @@ pub(super) fn reconcile_in_flight_state(
                 assumption_refs: AssumptionRefContext::from_frame(
                     jc.as_ref(),
                     ctx.cognitive.decision_history_alternatives,
+                    runtime.current_plan.as_ref(),
                 ),
                 ..ExpectationMismatchContext::default()
             },
