@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 37
-- Files contributing `golden_*` tests: 37
-- Total `golden_*` tests: 178
+- Golden test files: 38
+- Files contributing `golden_*` tests: 38
+- Total `golden_*` tests: 182
 
 ## Per-File Inventory
 
@@ -16,6 +16,7 @@ Do not hand-edit it.
 | `golden_activation_decay.rs` | 6 |
 | `golden_ai_decisions.rs` | 15 |
 | `golden_decision_history_events.rs` | 1 |
+| `golden_decision_payload.rs` | 4 |
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 16 |
 | `golden_final_integration.rs` | 2 |
@@ -81,6 +82,13 @@ Do not hand-edit it.
 ### `golden_decision_history_events.rs`
 
 - `survival_baseline_emits_goal_commit_and_plan_adoption_in_order`
+
+### `golden_decision_payload.rs`
+
+- `golden_decision_payload_goal_committed_records_rejected_drink_and_assumptions`
+- `golden_decision_payload_replan_triggered_records_stale_belief_and_assumptions`
+- `golden_decision_payload_expectation_mismatch_records_assumption_and_observation`
+- `golden_decision_payload_source_expectation_failure_records_source_observation_only`
 
 ### `golden_experience_preferences.rs`
 

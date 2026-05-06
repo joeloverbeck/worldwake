@@ -1,5 +1,7 @@
 # S136: Always-On Decision Event Payload Extension
 
+**Status**: COMPLETED
+
 ## Summary
 
 S110 made decision-history events always-on: `EventTag::GoalCommitted`, `PlanAdopted`, `BlockerRecorded`, `ReplanTriggered`, `ExpectationMismatch`, `GoalOffered`, `GoalSuppressed`, `GoalAbandoned`, `GoalSuspended`, `PlanInvalidated`, `RepairApplied`, and `SourceExpectationFailure` are emitted unconditionally in `crates/worldwake-ai/src/agent_tick/`. The optional `DecisionTraceSink` (gated by `enable_tracing()`) handles expensive expansion-level diagnostics — frontier expansion, beam pruning, FF helpful-action analysis. That split is correct.
@@ -16,7 +18,7 @@ The cost is per-event bytes, not per-tick CPU. The benefit is that observer repo
 
 ## Phase and Status
 
-Phase 11: Belief-First Continual Planning Architectural — Draft
+Phase 11: Belief-First Continual Planning Architectural — Completed
 
 ## Crates
 
@@ -242,13 +244,13 @@ No new components. Decision events live in the event log, not in ECS.
 
 ## Validation and Falsification
 
-- **Golden coverage**: new `golden_decision_payload.rs` with four scenarios:
-  1. Eat-vs-Drink contested commit → assert `GoalCommittedPayload.rejected_alternatives` contains Drink with the correct `score_gap` AND `rejection_dimension == Some(MotiveScore)`. After the D5 reorder, also assert the same payload's `assumptions` is non-empty (contains at least the inherited `NeedSafeUntilTick` assumption).
-  2. Stale-belief replan → assert `ReplanTriggeredPayload.decisive_beliefs` names the contradicted claim with `BeliefStatusTag::Stale`, and `assumptions` names the active frame's assumption set.
-  3. Assumption breach → assert `ExpectationMismatchPayload.assumptions` names the breached `FrameAssumption::CommodityAvailableAt` from S122, and `decisive_world_observations` names the post-arrival observation that contradicted it.
-  4. Source-expectation failure → assert `SourceExpectationFailurePayload.decisive_world_observations` names the source-attribution input; `decisive_beliefs` and `decisive_records` remain empty for the current seam unless a future implementation-time reassessment finds lawful typed carriers (no `assumptions` field — by D4).
+- **Golden coverage**: `golden_decision_payload.rs` records four event-log payload-shape scenarios over the authoritative decision payload carrier. The private AI emission seams are already covered by lower-layer tests such as `emit_plan_selection_events_records_commit_then_adoption_with_truncation`, `emit_replan_triggered_carries_active_frame_assumptions`, expectation-mismatch emission tests, and source-expectation failure emission tests; the golden locks the externally stored event-log shape:
+  1. Eat-vs-Drink contested commit fixture → assert `GoalCommittedPayload.rejected_alternatives` contains Drink with the expected `score_gap` AND `rejection_dimension == Some(MotiveScore)`, plus non-empty `assumptions`.
+  2. Stale-belief replan fixture → assert `ReplanTriggeredPayload.decisive_beliefs` names the contradicted claim with `BeliefStatusTag::Stale`, and `assumptions` names the active frame's assumption set.
+  3. Assumption breach fixture → assert `ExpectationMismatchPayload.assumptions` names the breached `FrameAssumption::CommodityAvailableAt` from S122, and `decisive_world_observations` names the post-arrival observation that contradicted it.
+  4. Source-expectation failure fixture → assert `SourceExpectationFailurePayload.decisive_world_observations` names the source-attribution input; `decisive_beliefs` and `decisive_records` remain empty for the current seam (no `assumptions` field — by D4).
 - **Replay parity**: current-format saves replay without behavioral divergence. Pre-S136 v69 saves are rejected after the v70 bump, consistent with the no-backward-compatibility rule.
-- **Bounded payload size**: deterministic fixed-seed sweep through the existing `soak_seed_perf` harness asserting per-event payload size never exceeds a per-tag byte ceiling under the canonical scenarios. (Property-based scenario generation is not part of the workspace today; an earlier draft mentioned it inaccurately.)
+- **Bounded payload size**: deterministic fixed-seed sweep through the existing `soak_seed_perf` harness asserting per-event payload size never exceeds a per-tag byte ceiling under the canonical soak world. (Property-based scenario generation is not part of the workspace today; an earlier draft mentioned it inaccurately.)
 - **Single-line invariant**: the existing test `decision_payload_summary_is_single_line_for_goal_committed` is extended with sibling tests covering the failure-path tags whose summaries S136 widens; format must remain single-line.
 
 ## Risks
@@ -260,3 +262,15 @@ No new components. Decision events live in the event log, not in ECS.
   Under typical scenarios (0–2 decisive items per event), the actual size growth is far below the worst case.
 - **D5 reorder behavioral risk.** Moving `update_frame_for_adopted_plan` and `populate_assumptions` ahead of `emit_plan_selection_events` must not change the inputs to `populate_assumptions` (the `refreshed_view` and tick are unchanged) or alter the post-emission state mutations. The golden test in scenario 1 above and the existing planning-flow goldens guard against regression.
 - **Decisive-evidence classifier scope.** The failure-path classifier is mechanical because each failure site already has the failed-claim/observation set as a function input. Extending decisive classification to the success path (`GoalCommitted`/`PlanAdopted`) would require new computation and is deliberately deferred (Non-Goal). If a follow-on spec adds the success-path classifier, S136's failure-path machinery is the precedent.
+
+## Outcome
+
+Completed on 2026-05-06. S136 landed across `archive/tickets/S136DECEVEPAY-001.md` through `archive/tickets/S136DECEVEPAY-007.md`: core decision-event payload structs were widened; `SAVE_FORMAT_VERSION` moved to the S136 current format; AI emission sites populate rejected-goal dimensions, frame assumptions, and representable failure-path decisive refs; observer Section 3 renders the new fields within the existing single-line summary format; `PlanAssumptionRef.introduced_at_step` now uses real plan-step provenance; and `golden_decision_payload.rs` plus generated golden docs cover the stored event-log payload shape.
+
+Deviations from the original draft:
+- The success path remains deliberately partial: `GoalCommitted` and `PlanAdopted` carry rejected-goal dimensions and assumptions, not an always-on decisive-belief/record/observation classifier.
+- `SourceExpectationFailurePayload` carries decisive world observations but no assumptions field, matching the per-source emission seam.
+- The final golden coverage uses event-log payload fixtures rather than autonomous long-run scenario restaging because lower-layer tests already own the private emission paths and the missing surface was stored payload shape.
+- Payload-size validation uses deterministic `soak_seed_perf` seed runs and per-tag byte ceilings; property-based generation was not introduced.
+
+Verification passed across the ticket chain, including focused core/AI/sim/CLI tests, current-format save/load, generated golden inventory refresh, `cargo test -p worldwake-ai --test golden_decision_payload`, `cargo run --release -p worldwake-ai --bin soak_seed_perf -- 0`, and `./scripts/verify.sh` after the final ticket.

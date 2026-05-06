@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 141
-- Contributing golden test files: 34
-- Associated tests: 173
+- Scenario blocks: 145
+- Contributing golden test files: 35
+- Associated tests: 177
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -141,6 +141,54 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: when top-priority need (thirst) has no viable plan, agent falls back to next-best addressable need (hunger) instead of going idle indefinitely.
 
 **Cross-system chain**: unsatisfiable top need -> planner exhausts thirst-relief candidates -> falls back to hunger-relief -> agent eats or sleeps.
+
+### Scenario 384: S136 Decision Payload Eat Commitment Records Drink Rejection
+
+- Source: `golden_decision_payload.rs:74`
+- Systems: AI, EventLog
+- GoalKinds: ConsumeOwnedCommodity
+- ActionDomains: DecisionHistory
+- Principles: P3, P20, P21
+
+**Setup**: fixture isolates the contested self-care decision payload: no travel, acquisition, or source-failure branch is included because this scenario proves the already-emitted commitment event shape.
+
+**Proves**: GoalCommitted payloads preserve the rejected Drink alternative with MotiveScore provenance and the active frame's assumptions.
+
+### Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim
+
+- Source: `golden_decision_payload.rs:123`
+- Systems: AI, EventLog
+- GoalKinds: ConsumeOwnedCommodity
+- ActionDomains: DecisionHistory
+- Principles: P15, P16, P21
+
+**Setup**: fixture isolates the replan payload after stale-belief detection; no rival goal branches are staged because the contract is the emitted ReplanTriggered causal reference set.
+
+**Proves**: ReplanTriggered payloads carry the contradicted stale belief ref and the active frame assumptions.
+
+### Scenario 386: S136 Decision Payload Commodity Assumption Breach Records Observation
+
+- Source: `golden_decision_payload.rs:174`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: DecisionHistory
+- Principles: P7, P17, P21
+
+**Setup**: fixture isolates the post-arrival commodity-absence breach; purchase, harvest, and substitute-source branches are excluded so the payload is about the breached CommodityAvailableAt assumption only.
+
+**Proves**: ExpectationMismatch payloads carry the breached CommodityAvailableAt assumption and the local observation that contradicted it.
+
+### Scenario 387: S136 Decision Payload Source Failure Records Source Observation
+
+- Source: `golden_decision_payload.rs:233`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: DecisionHistory
+- Principles: P7, P15, P29A
+
+**Setup**: fixture isolates a concrete-source depletion incident; no belief or record carrier is staged because the live source-expectation seam only carries the source observation address.
+
+**Proves**: SourceExpectationFailure payloads carry source-attribution observation refs while belief and record refs remain empty.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 

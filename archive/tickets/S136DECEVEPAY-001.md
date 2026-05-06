@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `worldwake-core::decision_event_payload`, `worldwake-sim::save_load`
-**Deps**: spec `specs/S136-decision-event-payload-extension.md` (D1, D2, D3, D4, D7)
+**Deps**: spec `archive/specs/S136-decision-event-payload-extension.md` (D1, D2, D3, D4, D7)
 
 ## Problem
 
