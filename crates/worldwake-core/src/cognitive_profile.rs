@@ -92,8 +92,6 @@ pub struct CognitiveProfile {
     pub initial_cooldown_ticks: u32,
     /// Maximum cooldown ticks after repeated failures (exponential backoff cap).
     pub max_cooldown_ticks: u32,
-    /// Maximum entities included per place in the planner's world snapshot.
-    pub max_snapshot_entities_per_place: u16,
     /// Maximum depth of landmark chain extraction during tactical planning.
     /// Higher values produce more landmarks for better search guidance at
     /// increased extraction cost. 0 disables landmarks.
@@ -140,7 +138,6 @@ impl Default for CognitiveProfile {
             survey_memory_retention_ticks: default_survey_memory_retention_ticks(),
             initial_cooldown_ticks: 4,
             max_cooldown_ticks: 64,
-            max_snapshot_entities_per_place: 50,
             landmark_extraction_depth: 4,
             use_ff_heuristic: default_use_ff_heuristic(),
             decision_history_alternatives: default_decision_history_alternatives(),
@@ -282,7 +279,6 @@ mod tests {
         assert_eq!(profile.survey_memory_retention_ticks, 300);
         assert_eq!(profile.initial_cooldown_ticks, 4);
         assert_eq!(profile.max_cooldown_ticks, 64);
-        assert_eq!(profile.max_snapshot_entities_per_place, 50);
         assert_eq!(profile.landmark_extraction_depth, 4);
         assert!(profile.use_ff_heuristic);
         assert_eq!(profile.decision_history_alternatives, 5);
@@ -319,7 +315,6 @@ mod tests {
             survey_memory_retention_ticks: 240,
             initial_cooldown_ticks: 6,
             max_cooldown_ticks: 72,
-            max_snapshot_entities_per_place: 75,
             landmark_extraction_depth: 5,
             use_ff_heuristic: false,
             decision_history_alternatives: 8,

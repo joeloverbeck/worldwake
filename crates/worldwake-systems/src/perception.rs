@@ -4,10 +4,11 @@ use worldwake_core::{
     ComponentDelta, ComponentKind, ComponentValue, EntityId, EntityKind, EventLog, EventPayload,
     EventTag, EventView, EvidenceRef, GoalKind, HypothesisKind, InstitutionalBeliefKey,
     InstitutionalClaim, InstitutionalKnowledgeSource, MismatchKind, NoticeTopic,
-    ObservationContext, PendingEvent, PerceptionSource, Permille, Quantity, RelationDelta,
-    RelationValue, ReliabilityRecord, SocialObservation, SocialObservationDetail,
-    SocialObservationKind, SourceKey, SourceReliability, StateDelta, SurveyRecord, TheftFacts,
-    VisibilitySpec, WitnessData, World, WorldTxn, build_believed_entity_state,
+    ObservationContext, ObservationOmission, OmissionReason, PendingEvent, PerceptionSource,
+    Permille, Quantity, RelationDelta, RelationValue, ReliabilityRecord, SocialObservation,
+    SocialObservationDetail, SocialObservationKind, SourceKey, SourceReliability, StateDelta,
+    SurveyRecord, TheftFacts, VisibilitySpec, WitnessData, World, WorldTxn,
+    build_believed_entity_state,
 };
 use worldwake_core::{DecisionEventPayload, SurveyRecordedPayload};
 use worldwake_sim::{
@@ -26,6 +27,7 @@ struct DirectLocalObservationBatch {
     place: EntityId,
     observed_snapshots: BTreeMap<EntityId, worldwake_core::BelievedEntityState>,
     noticed_missing_subjects: BTreeSet<EntityId>,
+    omitted_observations: Vec<ObservationOmission>,
 }
 
 #[derive(Copy, Clone)]
@@ -498,6 +500,9 @@ fn observe_passive_local_entities(
             if !batch.observed_snapshots.is_empty() || doctrine_changed {
                 store_changed = true;
             }
+            if !batch.omitted_observations.is_empty() {
+                store_changed = true;
+            }
             batches.insert(agent, batch);
         }
 
@@ -662,7 +667,22 @@ fn collect_direct_local_observation_batch(
         .collect::<Vec<_>>();
     prioritized_entities
         .sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
-    prioritized_entities.truncate(usize::from(profile.observation_budget));
+    let candidate_count = prioritized_entities.len();
+    let budget = usize::from(profile.observation_budget);
+    let candidates_seen = u16::try_from(candidate_count).unwrap_or(u16::MAX);
+    let omitted_observations = prioritized_entities
+        .iter()
+        .skip(budget)
+        .map(|(_, entity)| ObservationOmission {
+            omitted_entity: *entity,
+            reason: OmissionReason::OverBudget {
+                budget: profile.observation_budget,
+                candidates_seen,
+            },
+            observed_tick: tick,
+        })
+        .collect::<Vec<_>>();
+    prioritized_entities.truncate(budget);
 
     for (_, entity) in prioritized_entities {
         if !passes_observation_check(observation_fidelity, rng) {
@@ -700,7 +720,10 @@ fn collect_direct_local_observation_batch(
         noticed_missing_subjects.insert(*subject);
     }
 
-    if observed_snapshots.is_empty() && noticed_missing_subjects.is_empty() {
+    if observed_snapshots.is_empty()
+        && noticed_missing_subjects.is_empty()
+        && omitted_observations.is_empty()
+    {
         return None;
     }
 
@@ -708,6 +731,7 @@ fn collect_direct_local_observation_batch(
         place,
         observed_snapshots,
         noticed_missing_subjects,
+        omitted_observations,
     })
 }
 
@@ -768,6 +792,14 @@ fn apply_direct_local_observation_batch(
 
     for subject in &batch.noticed_missing_subjects {
         emit_discovery_event(event_log, context, *subject, MismatchKind::EntityMissing);
+    }
+
+    for omission in &batch.omitted_observations {
+        store.observation_omission_log.entries.push_back(*omission);
+    }
+    while store.observation_omission_log.entries.len() > usize::from(profile.omission_log_capacity)
+    {
+        store.observation_omission_log.entries.pop_front();
     }
 
     if !batch.observed_snapshots.is_empty() {
@@ -1424,8 +1456,8 @@ mod tests {
         EvidenceRef, ExplorationMotivation, FrameState, GoalKey, GoalKind, GroundComfortTag,
         HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey, InstitutionalClaim,
         InstitutionalKnowledgeSource, IntentionDomain, IntentionFrame, LoadUnits, MismatchKind,
-        NoticeContent, NoticeTopic, ObservedEntitySnapshot, OfficeForceState, PendingEvent,
-        PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
+        NoticeContent, NoticeTopic, ObservedEntitySnapshot, OfficeForceState, OmissionReason,
+        PendingEvent, PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
         ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace,
         Quantity, RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource,
         RewardSource, SaleListing, SceneEvidence, Seed, ShelterTag, SleepQualityProfile,
@@ -3010,6 +3042,364 @@ mod tests {
             waste_lots[..7].to_vec(),
             "same-priority waste lots should be selected by lowest EntityId"
         );
+    }
+
+    #[test]
+    fn passive_local_observation_records_overbudget_omissions() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, waste_lots) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, HomeostaticNeeds::new_sated())
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 12;
+            observer_profile.omission_log_capacity = 30;
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            let waste_lots = (0..30)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Waste, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, waste_lots)
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let needs = world
+            .get_component_homeostatic_needs(observer)
+            .copied()
+            .unwrap();
+        let mut store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut rng = DeterministicRng::new(Seed([0x63; 32]));
+        let batch = super::collect_direct_local_observation_batch(
+            &world,
+            observer,
+            place,
+            &colocated_entities,
+            Tick(2),
+            1000,
+            &mut rng,
+            &store,
+            needs,
+            &observer_profile,
+        )
+        .expect("budget truncation should produce a batch");
+        let mut event_log = EventLog::new();
+        super::apply_direct_local_observation_batch(
+            &mut event_log,
+            super::DiscoveryContext {
+                tick: Tick(2),
+                observer,
+                place: Some(place),
+            },
+            &mut store,
+            &batch,
+            &observer_profile,
+            needs,
+        );
+
+        let observed_non_place_count = store
+            .known_entities
+            .keys()
+            .filter(|entity| **entity != place)
+            .count();
+        assert_eq!(observed_non_place_count, 12);
+        let omitted = store
+            .observation_omission_log
+            .entries
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(omitted.len(), 18);
+        assert_eq!(
+            omitted
+                .iter()
+                .map(|entry| entry.omitted_entity)
+                .collect::<Vec<_>>(),
+            waste_lots[12..].to_vec()
+        );
+        assert!(omitted.iter().all(|entry| {
+            entry.reason
+                == OmissionReason::OverBudget {
+                    budget: 12,
+                    candidates_seen: 30,
+                }
+                && entry.observed_tick == Tick(2)
+        }));
+    }
+
+    #[test]
+    fn passive_local_observation_omission_log_evicts_fifo() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, waste_lots) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, HomeostaticNeeds::new_sated())
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 10;
+            observer_profile.omission_log_capacity = 5;
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            let waste_lots = (0..30)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Waste, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, waste_lots)
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let needs = world
+            .get_component_homeostatic_needs(observer)
+            .copied()
+            .unwrap();
+        let mut store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut rng = DeterministicRng::new(Seed([0x64; 32]));
+        let batch = super::collect_direct_local_observation_batch(
+            &world,
+            observer,
+            place,
+            &colocated_entities,
+            Tick(2),
+            1000,
+            &mut rng,
+            &store,
+            needs,
+            &observer_profile,
+        )
+        .expect("budget truncation should produce a batch");
+        let mut event_log = EventLog::new();
+        super::apply_direct_local_observation_batch(
+            &mut event_log,
+            super::DiscoveryContext {
+                tick: Tick(2),
+                observer,
+                place: Some(place),
+            },
+            &mut store,
+            &batch,
+            &observer_profile,
+            needs,
+        );
+
+        let retained = store
+            .observation_omission_log
+            .entries
+            .iter()
+            .map(|entry| entry.omitted_entity)
+            .collect::<Vec<_>>();
+        assert_eq!(retained, waste_lots[25..].to_vec());
+    }
+
+    #[test]
+    fn passive_local_observation_omissions_keep_stable_order_across_ticks() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let (observer, waste_lots) = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, HomeostaticNeeds::new_sated())
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 12;
+            observer_profile.omission_log_capacity = 100;
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            let waste_lots = (0..30)
+                .map(|_| {
+                    let lot = txn
+                        .create_item_lot(CommodityKind::Waste, Quantity(1))
+                        .unwrap();
+                    txn.set_ground_location(lot, place).unwrap();
+                    lot
+                })
+                .collect::<Vec<_>>();
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            (observer, waste_lots)
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let needs = world
+            .get_component_homeostatic_needs(observer)
+            .copied()
+            .unwrap();
+        let mut store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut event_log = EventLog::new();
+        for tick in 2..5 {
+            let mut rng = DeterministicRng::new(Seed([tick as u8; 32]));
+            let batch = super::collect_direct_local_observation_batch(
+                &world,
+                observer,
+                place,
+                &colocated_entities,
+                Tick(tick),
+                1000,
+                &mut rng,
+                &store,
+                needs,
+                &observer_profile,
+            )
+            .expect("budget truncation should produce a batch");
+            super::apply_direct_local_observation_batch(
+                &mut event_log,
+                super::DiscoveryContext {
+                    tick: Tick(tick),
+                    observer,
+                    place: Some(place),
+                },
+                &mut store,
+                &batch,
+                &observer_profile,
+                needs,
+            );
+        }
+
+        for tick in 2..5 {
+            let omitted_for_tick = store
+                .observation_omission_log
+                .entries
+                .iter()
+                .filter(|entry| entry.observed_tick == Tick(tick))
+                .map(|entry| entry.omitted_entity)
+                .collect::<Vec<_>>();
+            assert_eq!(omitted_for_tick, waste_lots[12..].to_vec());
+        }
+    }
+
+    #[test]
+    fn passive_local_observation_omissions_are_disjoint_from_known_entities() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let observer = {
+            let mut txn = new_txn(&mut world, 1);
+            let observer = txn.create_agent("Observer", ControlSource::Ai).unwrap();
+            txn.set_ground_location(observer, place).unwrap();
+            txn.set_component_agent_belief_store(observer, AgentBeliefStore::new())
+                .unwrap();
+            txn.set_component_homeostatic_needs(observer, HomeostaticNeeds::new_sated())
+                .unwrap();
+            let mut observer_profile = profile(1000);
+            observer_profile.observation_budget = 12;
+            observer_profile.omission_log_capacity = 100;
+            txn.set_component_perception_profile(observer, observer_profile)
+                .unwrap();
+
+            for _ in 0..30 {
+                let lot = txn
+                    .create_item_lot(CommodityKind::Waste, Quantity(1))
+                    .unwrap();
+                txn.set_ground_location(lot, place).unwrap();
+            }
+            let mut log = EventLog::new();
+            let _ = txn.commit(&mut log);
+            observer
+        };
+
+        let observer_profile = world
+            .get_component_perception_profile(observer)
+            .copied()
+            .unwrap();
+        let needs = world
+            .get_component_homeostatic_needs(observer)
+            .copied()
+            .unwrap();
+        let mut store = world
+            .get_component_agent_belief_store(observer)
+            .cloned()
+            .unwrap_or_default();
+        let colocated_entities = world.entities_effectively_at(place);
+        let mut event_log = EventLog::new();
+        for tick in 2..7 {
+            let mut rng = DeterministicRng::new(Seed([tick as u8; 32]));
+            let batch = super::collect_direct_local_observation_batch(
+                &world,
+                observer,
+                place,
+                &colocated_entities,
+                Tick(tick),
+                1000,
+                &mut rng,
+                &store,
+                needs,
+                &observer_profile,
+            )
+            .expect("budget truncation should produce a batch");
+            super::apply_direct_local_observation_batch(
+                &mut event_log,
+                super::DiscoveryContext {
+                    tick: Tick(tick),
+                    observer,
+                    place: Some(place),
+                },
+                &mut store,
+                &batch,
+                &observer_profile,
+                needs,
+            );
+        }
+
+        let known = store
+            .known_entities
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let omitted = store
+            .observation_omission_log
+            .entries
+            .iter()
+            .map(|entry| entry.omitted_entity)
+            .collect::<BTreeSet<_>>();
+        assert!(known.is_disjoint(&omitted));
     }
 
     #[test]

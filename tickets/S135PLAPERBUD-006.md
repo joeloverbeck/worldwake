@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Medium
 **Engine Changes**: No — observer-only (read-only consumer)
-**Deps**: `archive/tickets/S135PLAPERBUD-001.md`, S135PLAPERBUD-003
+**Deps**: `archive/tickets/S135PLAPERBUD-001.md`, `archive/tickets/S135PLAPERBUD-003.md`
 
 ## Problem
 

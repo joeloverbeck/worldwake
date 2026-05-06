@@ -45,7 +45,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - **Full attention model with stress, panic, occlusion-by-cover.** A four-axis `PerceptionBudget { max_observations, salience_policy, occlusion_policy, stress_penalty }` model is broader than S135's scope. S135 lands the *omission record* and the *single-budget collapse*; stress/occlusion/panic axes are deferred to a future spec when the underlying combat/lighting/crowd substrate exists.
 - **Cross-agent visibility into omissions.** Omission records are per-agent only. No `ShareBelief`-style propagation of "I missed seeing the dragon" to other agents.
 - **Reverse-replay of dropped entities.** Once dropped, the entity is not opportunistically re-perceived later in the same tick. The next tick's perception pass either includes it (budget allowing) or omits it again with a fresh record.
-- **Save-format break.** Omission records are ring-buffered transient state; they are persisted under the existing belief-store delta path with paired `omission_log_added` / `omission_log_removed` fields on `BeliefStoreDiff`. `SAVE_FORMAT_VERSION` increments by one.
+- **Save-format policy.** Omission records are ring-buffered transient state persisted under the existing belief-store delta path with paired `omission_log_added` / `omission_log_removed` fields on `BeliefStoreDiff`; ticket 001 bumped `SAVE_FORMAT_VERSION` for that substrate. Removing `CognitiveProfile.max_snapshot_entities_per_place` in ticket 003 also changes the serialized current `CognitiveProfile` component shape, so ticket 003 bumps `SAVE_FORMAT_VERSION` 67→68. Older versions remain rejected per the repo's no-backward-compatibility rule.
 
 ## FOUNDATIONS Alignment
 
@@ -115,7 +115,7 @@ pub struct ObservationOmissionLog {
 
 ### D3. `CognitiveProfile.max_snapshot_entities_per_place` removal
 
-Delete the field. Codebase analysis (workspace-wide grep): 1 active runtime read at `crates/worldwake-ai/src/agent_tick/planning.rs:546` (passed to `build_planning_snapshot_with_blocked_facility_uses` as the `max_per_place` argument); ~6 test-mock `CognitiveProfile` constructors in `worldwake-ai` (`failure_handling.rs:1906`, `decision_runtime.rs:452`, `goal_model.rs:2405`, `agent_tick/planning.rs:2416`, `agent_tick/tests.rs:200`, `search/tests.rs:84`); ~6 default-context references in core/CLI/sim (`cognitive_profile.rs` field/Default/tests, `delta.rs:622`, `scenario/types.rs:1537`). All sites are deletion-by-removal. The corresponding `max_per_place` parameter on `build_planning_snapshot_with_blocked_facility_uses` and the per-place `truncate(max_per_place)` at `planning_snapshot.rs:1264` are removed in the same change.
+Delete the field. Codebase analysis (workspace-wide grep): 1 active runtime read at `crates/worldwake-ai/src/agent_tick/planning.rs:546` (passed to `build_planning_snapshot_with_blocked_facility_uses` as the `max_per_place` argument); ~6 test-mock `CognitiveProfile` constructors in `worldwake-ai` (`failure_handling.rs:1906`, `decision_runtime.rs:452`, `goal_model.rs:2405`, `agent_tick/planning.rs:2416`, `agent_tick/tests.rs:200`, `search/tests.rs:84`); ~6 default-context references in core/CLI/sim (`cognitive_profile.rs` field/Default/tests, `delta.rs:622`, `scenario/types.rs:1537`). All sites are deletion-by-removal. The corresponding `max_per_place` parameter on `build_planning_snapshot_with_blocked_facility_uses` and the per-place `truncate(max_per_place)` at `planning_snapshot.rs:1264` are removed in the same change. Because `CognitiveProfile` is serialized in the current save format, this deletion bumps `SAVE_FORMAT_VERSION` 67→68.
 
 ### D4. Decision-trace annotation
 
@@ -184,7 +184,7 @@ No new `SystemFn`. The omission-record write happens inside `collect_direct_loca
 
 - `ObservationOmissionLog` — not a separate component. It is a field on `AgentBeliefStore` and is default-empty through `AgentBeliefStore::new()`. Runtime-only and scenario-exempt.
 - `PerceptionProfile` — already registered (S105). The two new fields ride the existing registration; no schema change.
-- `CognitiveProfile.max_snapshot_entities_per_place` — removed; no schema migration needed since the field is registry-data, not a stored component.
+- `CognitiveProfile.max_snapshot_entities_per_place` — removed; current save format bumped because `CognitiveProfile` is a serialized component.
 
 ## Cross-System Interactions
 

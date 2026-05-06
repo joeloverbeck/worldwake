@@ -1,9 +1,9 @@
 # S135PLAPERBUD-003: Remove planner snapshot per-place cap; integrate perception omission write
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
-**Engine Changes**: Yes — `planning_snapshot` truncation logic, perception batch write, scenario `CognitiveProfile` schema, RON fixtures
+**Engine Changes**: Yes — `planning_snapshot` truncation logic, perception batch write, scenario `CognitiveProfile` schema, RON fixtures, current save-format version
 **Deps**: `archive/tickets/S135PLAPERBUD-001.md`
 
 ## Problem
@@ -21,6 +21,7 @@ The double-cap that S135 was written to remove lives in two places: (a) `Cogniti
 5. Scenario `CognitiveProfile` definition at `crates/worldwake-cli/src/scenario/types.rs:1537` currently carries `max_snapshot_entities_per_place: 50` as a default literal. Removing the field but leaving `max_snapshot_entities_per_place: 50` in 11 RON fixtures will cause deserialization failures (verify `CognitiveProfile`'s serde mode during reassessment — `#[serde(deny_unknown_fields)]` is the assumed default). Fixture cleanups land atomically in this ticket.
 6. `scripts/profile_docs.py` regenerates `docs/profiles/all-profiles.md` from `CognitiveProfile`; the field deletion requires a regen.
 7. The perception omission-write path mutates `AgentBeliefStore.observation_omission_log` via the existing `BeliefStoreDiff` paired-field path (`omission_log_added` / `omission_log_removed_count`) added in ticket 001, so the existing event-log delta compaction handles the new fields without a separate ticket.
+8. Live save-shape reassessment corrected the ticket-001 handoff: `CognitiveProfile` is a persisted component, so removing `max_snapshot_entities_per_place` changes the current save format. This ticket bumps `SAVE_FORMAT_VERSION` 67→68; older versions remain rejected per the repo's no-backward-compatibility rule.
 
 ## Architecture Check
 
@@ -33,9 +34,10 @@ The double-cap that S135 was written to remove lives in two places: (a) `Cogniti
 
 1. Per-place cap is gone from runtime → focused unit test asserting `CognitiveProfile` no longer has `max_snapshot_entities_per_place` (compile-time invariant via removed field).
 2. Perception write generates `ObservationOmission` records when the budget truncation fires → focused unit test in `perception.rs` cfg-test block: setup 30 entities co-located with an agent whose `observation_budget = 12`, run `collect_direct_local_observation_batch`, assert 18 `ObservationOmission { reason: OmissionReason::OverBudget { budget: 12, candidates_seen: 30 }, .. }` records appended to the agent's `ObservationOmissionLog`.
-3. Snapshot construction consumes full belief set → focused unit test in `planning_snapshot.rs` (or its tests/) confirming the snapshot's per-place entity count matches `belief_store.known_entity_beliefs` filtered to the place, with no truncation.
+3. Snapshot construction consumes full belief set → focused unit test in `planning_snapshot.rs` confirming the snapshot's per-place entity count matches `AgentBeliefStore.known_entities` filtered to the place, with no truncation.
 4. RON fixtures and scenario `CognitiveProfile` no longer carry the deleted field → fixture deserialization succeeds (compile-time and `cargo test -p worldwake-cli` runtime check).
 5. Determinism: omission entries emit in `BTreeMap`-stable order with FIFO ring-buffer eviction → focused unit test exercising 20 dropped entities against `omission_log_capacity = 5`.
+6. Save/load current-format boundary → focused save-load test verifies `SAVE_FORMAT_VERSION = 68` after the serialized `CognitiveProfile` shape changed.
 
 ## What to Change
 
@@ -89,6 +91,7 @@ Run `python3 scripts/profile_docs.py --write`. Commit the regenerated `docs/prof
 - `crates/worldwake-ai/src/failure_handling.rs` (modify) — line 1906-1907 mock removal
 - `crates/worldwake-ai/src/search/tests.rs` (modify) — line 84-85 mock removal
 - `crates/worldwake-core/src/delta.rs` (modify) — line 622 test removal
+- `crates/worldwake-sim/src/save_load.rs` (modify) — current save-format version bump 67→68
 - `crates/worldwake-cli/src/scenario/types.rs` (modify) — line 1537 scenario default literal
 - `crates/worldwake-cli/tests/fixtures/observer_anomalies/stuck_detector_wash_travel_cycle.ron` (modify)
 - `crates/worldwake-cli/tests/fixtures/observer_anomalies/acute_thirst_spike.ron` (modify)
@@ -123,17 +126,18 @@ Run `python3 scripts/profile_docs.py --write`. Commit the regenerated `docs/prof
 2. `build_planning_snapshot_with_blocked_facility_uses` no longer takes a `max_per_place` parameter (compile-time invariant).
 3. Whenever perception's `truncate(observation_budget)` drops entities, `ObservationOmissionLog` receives one `OmissionReason::OverBudget` entry per dropped entity, in `BTreeMap`-stable order (sorted by `omitted_entity` ascending).
 4. `ObservationOmissionLog` ring buffer respects `omission_log_capacity` with FIFO eviction (oldest entries evicted first).
-5. Workspace builds cleanly with no `max_snapshot_entities_per_place` references anywhere.
-6. **Negative invariant**: an agent's `ObservationOmissionLog` never contains an entity that is also in their `BeliefStore.known_entity_beliefs` for the same tick.
+5. Workspace source, RON fixtures, and generated profile docs build cleanly with no live `max_snapshot_entities_per_place` surface.
+6. **Negative invariant**: an agent's `ObservationOmissionLog` never contains an entity that is also in their `BeliefStore.known_entities` for the same tick.
+7. `SAVE_FORMAT_VERSION = 68` is the only version that round-trips post-ticket.
 
 ## Test Plan
 
 ### New/Modified Tests
 
-1. `crates/worldwake-systems/src/perception.rs` cfg-test block — new test: agent with `observation_budget = 12`, 30 co-located non-agent entities, run `collect_direct_local_observation_batch` for one tick, assert 18 `ObservationOmission { reason: OmissionReason::OverBudget { budget: 12, candidates_seen: 30 }, .. }` entries appended to the agent's `ObservationOmissionLog` and `BeliefStore.known_entity_beliefs.len() == 12`.
+1. `crates/worldwake-systems/src/perception.rs` cfg-test block — new test: agent with `observation_budget = 12`, 30 co-located non-agent entities, run `collect_direct_local_observation_batch` for one tick, assert 18 `ObservationOmission { reason: OmissionReason::OverBudget { budget: 12, candidates_seen: 30 }, .. }` entries appended to the agent's `ObservationOmissionLog` and `BeliefStore.known_entities` contains 12 non-place observed entities.
 2. `crates/worldwake-systems/src/perception.rs` cfg-test block — new test: 20 dropped entities against `omission_log_capacity = 5`, assert ring-buffer FIFO eviction (last 5 entries retained, first 15 evicted).
 3. `crates/worldwake-systems/src/perception.rs` cfg-test block — new test: `BTreeMap`-stable insertion order across multiple ticks (assert deterministic entry ordering by `omitted_entity` ascending within each tick).
-4. `crates/worldwake-systems/src/perception.rs` cfg-test block — negative-invariant test: assert `ObservationOmissionLog ∩ BeliefStore.known_entity_beliefs == ∅` after running for 5 ticks.
+4. `crates/worldwake-systems/src/perception.rs` cfg-test block — negative-invariant test: assert `ObservationOmissionLog ∩ BeliefStore.known_entities == ∅` after running for 5 ticks.
 5. Existing tests in `perception.rs` cfg-test block (line 1407+) — verify still pass with no behavioral change beyond the new omission-log side effect.
 6. `crates/worldwake-ai/tests/golden_perception_exposure.rs::golden_observation_budget_prioritizes_agents_and_facilities_over_waste`:606 — verify still passes.
 
@@ -145,3 +149,33 @@ Run `python3 scripts/profile_docs.py --write`. Commit the regenerated `docs/prof
 4. `cargo build --workspace`
 5. `python3 scripts/profile_docs.py --write`; `python3 scripts/profile_docs.py > /tmp/worldwake-profile-docs-current.md`; `cmp -s /tmp/worldwake-profile-docs-current.md docs/profiles/all-profiles.md`
 6. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-06.
+
+- Removed `CognitiveProfile.max_snapshot_entities_per_place` from the core profile, scenario defaults, explicit test/mock construction sites, RON fixtures, and generated profile docs.
+- Removed the planner snapshot per-place cap parameter and truncate call; `PlanningSnapshot` now consumes the full filtered believed entity set for each included place.
+- Wired perception over-budget truncation to append `ObservationOmission { reason: OmissionReason::OverBudget { .. } }` entries through `AgentBeliefStore.observation_omission_log`, with FIFO eviction by `PerceptionProfile.omission_log_capacity`.
+- Added focused perception tests for over-budget writes, FIFO eviction, multi-tick stable omission ordering, and omission/known-entity disjointness, plus snapshot tests proving all believed entities remain present.
+- Bumped `SAVE_FORMAT_VERSION` 67→68 because removing a field from serialized `CognitiveProfile` changes the current save shape.
+
+## Deviations
+
+- The draft said no S135 ticket after 001 would bump the save format. Live persisted-shape reassessment showed `CognitiveProfile` is serialized, so this ticket owns the 67→68 bump.
+- The over-budget write records the priority-sorted dropped tail. The focused tests assert deterministic `EntityId` order where all candidates have equal priority; mixed-priority ordering remains the live salience order followed by `EntityId` tie-breaks.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib perception -- --list`.
+- Passed `cargo test -p worldwake-systems --lib perception`.
+- Passed `cargo test -p worldwake-systems --lib perception` after adding the post-review multi-tick stable-order test.
+- Passed `cargo test -p worldwake-ai --lib planning_snapshot -- --list`.
+- Passed `cargo test -p worldwake-ai --lib planning_snapshot`.
+- Passed `cargo test -p worldwake-ai --test golden_perception_exposure`.
+- Passed `cargo test -p worldwake-sim --lib save_load`.
+- Passed `cargo test -p worldwake-cli`.
+- Passed `cargo build --workspace`.
+- Passed `python3 scripts/profile_docs.py --write` with existing profile doc-comment warnings, then `python3 scripts/profile_docs.py > /tmp/worldwake-profile-docs-current.md` and `cmp -s /tmp/worldwake-profile-docs-current.md docs/profiles/all-profiles.md`.
+- Passed `./scripts/verify.sh`, whose live gates are `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
+- Passed `./scripts/verify.sh` again after adding the post-review multi-tick stable-order test.

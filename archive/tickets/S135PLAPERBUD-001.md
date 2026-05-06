@@ -185,7 +185,7 @@ Run `python3 scripts/profile_docs.py --write` and commit the regenerated `docs/p
 4. `python3 scripts/profile_docs.py --write`; `python3 scripts/profile_docs.py > /tmp/worldwake-profile-docs-current.md`; `cmp -s /tmp/worldwake-profile-docs-current.md docs/profiles/all-profiles.md`
 5. `./scripts/verify.sh`
 
-Merge note: Ticket 001 bumps `SAVE_FORMAT_VERSION` 66→67. No other ticket in S135PLAPERBUD bumps the version — D3's perception-write integration writes through the existing `BeliefStoreDiff` paired fields added here.
+Merge note: Ticket 001 bumps `SAVE_FORMAT_VERSION` 66→67 for the omission-log substrate. Later live reassessment in ticket 003 corrected the handoff: removing `CognitiveProfile.max_snapshot_entities_per_place` changes the serialized current `CognitiveProfile` component shape, so ticket 003 bumps `SAVE_FORMAT_VERSION` 67→68.
 
 ## Outcome
 

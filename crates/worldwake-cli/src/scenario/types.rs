@@ -1534,7 +1534,6 @@ mod tests {
                         structural_block_ticks: 200,
                         initial_cooldown_ticks: 4,
                         max_cooldown_ticks: 64,
-                        max_snapshot_entities_per_place: 50,
                         landmark_extraction_depth: 3,
                     ),
                     agenda_profile: (

@@ -81,8 +81,6 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         survey_memory_retention_ticks: CognitiveProfile::default().survey_memory_retention_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
-        max_snapshot_entities_per_place: CognitiveProfile::default()
-            .max_snapshot_entities_per_place,
         landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         decision_history_alternatives: CognitiveProfile::default().decision_history_alternatives,
@@ -5494,7 +5492,6 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         &blocked,
         Tick(3),
         goal.key.kind.relevant_op_kinds(),
-        u16::MAX,
     );
     let queue_def = fixture
         .registry
@@ -5573,7 +5570,6 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         &blocked,
         Tick(3),
         goal.key.kind.relevant_op_kinds(),
-        u16::MAX,
     );
     let queue_def = fixture
         .registry
@@ -5709,7 +5705,6 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         &blocked,
         Tick(3),
         goal.key.kind.relevant_op_kinds(),
-        u16::MAX,
     );
 
     let plan = search_plan(

@@ -619,7 +619,7 @@ S136 (independent)
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
-- [ ] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
+- [x] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
 - [ ] Always-on decision events carry `decisive_*` references for every commit/replan/blocker on `survival-baseline.ron`
 - [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`
 - [ ] Opportunity compiler golden proves desperate-agent steal opportunity emission and salience-weighted ranking

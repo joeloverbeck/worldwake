@@ -121,7 +121,6 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `survey_memory_retention_ticks` | `u64` | Ticks a survey record remains ranking-relevant before expiring. (default: `default_survey_memory_retention_ticks()`) |
 | `initial_cooldown_ticks` | `u32` | Base cooldown ticks after a goal fails before the agent retries it. (default: `4`) |
 | `max_cooldown_ticks` | `u32` | Maximum cooldown ticks after repeated failures (exponential backoff cap). (default: `64`) |
-| `max_snapshot_entities_per_place` | `u16` | Maximum entities included per place in the planner's world snapshot. (default: `50`) |
 | `landmark_extraction_depth` | `u8` | Maximum depth of landmark chain extraction during tactical planning. Higher values produce more landmarks for better search guidance at increased extraction cost. 0 disables landmarks. (default: `4`) |
 | `use_ff_heuristic` | `bool` | Whether this agent uses the FF-style relaxed-plan heuristic for tactical search guidance. (default: `default_use_ff_heuristic()`) |
 | `decision_history_alternatives` | `u8` | Maximum number of rejected alternatives recorded in decision history events. (default: `default_decision_history_alternatives()`) |
