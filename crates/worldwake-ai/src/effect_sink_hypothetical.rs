@@ -97,6 +97,23 @@ impl<'snapshot> HypotheticalEffectSink<'snapshot> {
         self.update_state(|state| state.with_homeostatic_needs(actor, needs));
     }
 
+    fn missing_observation_for(&self, actor: EntityId, target: EntityId) -> Discrepancy {
+        if self.state.snapshot().entities.contains_key(&target) {
+            return Discrepancy::MissingObservation;
+        }
+
+        worldwake_sim::GoalBeliefView::observation_omission_log(&self.state, actor)
+            .and_then(|log| {
+                log.entries
+                    .iter()
+                    .rev()
+                    .find(|entry| entry.omitted_entity == target)
+            })
+            .map_or(Discrepancy::MissingObservation, |entry| {
+                Discrepancy::Omission(entry.reason)
+            })
+    }
+
     fn apply_pick_up(
         &mut self,
         actor: EntityId,
@@ -105,6 +122,11 @@ impl<'snapshot> HypotheticalEffectSink<'snapshot> {
     ) -> Result<Option<Materialization>, Discrepancy> {
         let actor_ref = PlanningEntityRef::Authoritative(actor);
         let lot_ref = PlanningEntityRef::Authoritative(target);
+        if self.state.entity_kind_ref(lot_ref).is_none()
+            || self.state.effective_place_ref(lot_ref).is_none()
+        {
+            return Err(self.missing_observation_for(actor, target));
+        }
         if self.state.entity_kind_ref(lot_ref) != Some(EntityKind::ItemLot)
             || self.state.direct_possessor_ref(lot_ref).is_some()
             || self.state.effective_place_ref(lot_ref) != self.state.effective_place_ref(actor_ref)
@@ -114,7 +136,7 @@ impl<'snapshot> HypotheticalEffectSink<'snapshot> {
         let commodity = self
             .state
             .item_lot_commodity_ref(lot_ref)
-            .ok_or(Discrepancy::MissingObservation)?;
+            .ok_or_else(|| self.missing_observation_for(actor, target))?;
         let quantity = self.state.commodity_quantity_ref(lot_ref, commodity);
         if quantity == Quantity(0) {
             return Err(Discrepancy::MissingObservation);
@@ -179,7 +201,7 @@ impl<'snapshot> HypotheticalEffectSink<'snapshot> {
         let actor_ref = PlanningEntityRef::Authoritative(actor);
         let lot_ref = PlanningEntityRef::Authoritative(target);
         if self.state.direct_possessor_ref(lot_ref) != Some(actor_ref) {
-            return Err(Discrepancy::MissingObservation);
+            return Err(self.missing_observation_for(actor, target));
         }
         let place = self
             .state
@@ -188,7 +210,7 @@ impl<'snapshot> HypotheticalEffectSink<'snapshot> {
         let commodity = self
             .state
             .item_lot_commodity_ref(lot_ref)
-            .ok_or(Discrepancy::MissingObservation)?;
+            .ok_or_else(|| self.missing_observation_for(actor, target))?;
         let quantity = self.state.commodity_quantity_ref(lot_ref, commodity);
         self.update_state(|state| {
             state.move_lot_ref_to_ground(lot_ref, place, commodity, quantity)
@@ -202,7 +224,7 @@ impl<'snapshot> HypotheticalEffectSink<'snapshot> {
         let commodity = self
             .state
             .item_lot_commodity_ref(lot_ref)
-            .ok_or(Discrepancy::MissingObservation)?;
+            .ok_or_else(|| self.missing_observation_for(actor, target))?;
         let quantity = self.state.commodity_quantity_ref(lot_ref, commodity);
         if quantity == Quantity(0) {
             return Err(Discrepancy::MissingObservation);
@@ -309,7 +331,7 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         actor_entity: EntityId,
         targets: &[EntityId],
     ) -> Result<(), Discrepancy> {
-        let ok = match precondition {
+        match precondition {
             EffectPrecondition::TargetMatchesSlot {
                 slot_index,
                 shape: TargetSpec::SpecificEntity(expected),
@@ -322,11 +344,16 @@ impl EffectSink for HypotheticalEffectSink<'_> {
             EffectPrecondition::CoLocated { actor, target } => {
                 let actor = resolve_entity_ref(*actor, actor_entity, targets)?;
                 let target = resolve_entity_ref(*target, actor_entity, targets)?;
-                self.state
+                let colocated = self
+                    .state
                     .effective_place_ref(PlanningEntityRef::Authoritative(actor))
                     == self
                         .state
-                        .effective_place_ref(PlanningEntityRef::Authoritative(target))
+                        .effective_place_ref(PlanningEntityRef::Authoritative(target));
+                if !colocated {
+                    return Err(self.missing_observation_for(actor_entity, target));
+                }
+                true
             }
             EffectPrecondition::QuantityAvailable {
                 source,
@@ -334,7 +361,10 @@ impl EffectSink for HypotheticalEffectSink<'_> {
                 min,
             } => {
                 let source = resolve_entity_ref(*source, actor_entity, targets)?;
-                self.quantity_available(source, *commodity, *min)
+                if !self.quantity_available(source, *commodity, *min) {
+                    return Err(self.missing_observation_for(actor_entity, source));
+                }
+                true
             }
             EffectPrecondition::ContentionGrantHeld { actor, affordance } => {
                 let actor = resolve_entity_ref(*actor, actor_entity, targets)?;
@@ -343,9 +373,9 @@ impl EffectSink for HypotheticalEffectSink<'_> {
                     .facility_grant(affordance)
                     .is_some_and(|grant| grant.actor == actor)
             }
-        };
-
-        ok.then_some(()).ok_or(Discrepancy::MissingObservation)
+        }
+        .then_some(())
+        .ok_or(Discrepancy::MissingObservation)
     }
 
     fn checkpoint(&mut self) -> usize {
@@ -497,7 +527,7 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         let commodity = self
             .state
             .item_lot_commodity_ref(PlanningEntityRef::Authoritative(target))
-            .ok_or(Discrepancy::MissingObservation)?;
+            .ok_or_else(|| self.missing_observation_for(actor, target))?;
         let _ = actor;
         self.update_state(|state| state.consume_commodity(commodity));
         Ok(())
@@ -595,7 +625,7 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         let actor_ref = PlanningEntityRef::Authoritative(actor);
         let lot_ref = PlanningEntityRef::Authoritative(lot);
         if !self.controls_facility_for_lot_container(actor, lot_ref) {
-            return Err(Discrepancy::MissingObservation);
+            return Err(self.missing_observation_for(actor, lot));
         }
         self.update_state(|state| {
             state
@@ -609,7 +639,7 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         let lot_ref = PlanningEntityRef::Authoritative(lot);
         let display_container = self
             .display_container_for_lot(actor, lot_ref)
-            .ok_or(Discrepancy::MissingObservation)?;
+            .ok_or_else(|| self.missing_observation_for(actor, lot))?;
         self.update_state(|state| {
             state
                 .set_container_ref(lot_ref, display_container)
@@ -622,7 +652,7 @@ impl EffectSink for HypotheticalEffectSink<'_> {
         let lot_ref = PlanningEntityRef::Authoritative(lot);
         let stock_container = self
             .stock_container_for_lot(actor, lot_ref)
-            .ok_or(Discrepancy::MissingObservation)?;
+            .ok_or_else(|| self.missing_observation_for(actor, lot))?;
         self.update_state(|state| {
             state
                 .set_container_ref(lot_ref, stock_container)
@@ -764,7 +794,7 @@ impl EffectSink for HypotheticalEffectSink<'_> {
             .as_declare_support()
             .ok_or(Discrepancy::NoLegalBinding)?;
         if !actor_at_office_seat(&self.state, actor, payload.office) {
-            return Err(Discrepancy::MissingObservation);
+            return Err(self.missing_observation_for(actor, payload.office));
         }
         self.update_state(|state| {
             state.with_support_declaration(actor, payload.office, payload.candidate)
@@ -959,7 +989,7 @@ impl EffectSink for HypotheticalEffectSink<'_> {
             .as_press_force_claim()
             .ok_or(Discrepancy::NoLegalBinding)?;
         if !actor_at_office_seat(&self.state, actor, payload.office) {
-            return Err(Discrepancy::MissingObservation);
+            return Err(self.missing_observation_for(actor, payload.office));
         }
         self.update_state(|mut state| {
             state.override_force_controller_belief(
@@ -1049,4 +1079,125 @@ fn actor_at_office_seat(state: &PlanningState<'_>, actor: EntityId, office: Enti
             .seat(office)
             .is_some_and(|seat| seat == actor_place)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HypotheticalEffectSink;
+    use crate::{PlanningSnapshot, PlanningState};
+    use std::collections::VecDeque;
+    use worldwake_core::{
+        ActionDefId, AgentBeliefStore, Discrepancy, EntityId, ObservationOmission,
+        ObservationOmissionLog, OmissionReason, Tick,
+    };
+    use worldwake_sim::{ActionPayload, EffectSink};
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn sink_with_store(
+        actor: EntityId,
+        store: AgentBeliefStore,
+        present_entities: &[EntityId],
+    ) -> HypotheticalEffectSink<'static> {
+        let snapshot = Box::leak(Box::new(PlanningSnapshot::for_effect_sink_test(
+            actor,
+            store,
+            present_entities,
+        )));
+        HypotheticalEffectSink::new(PlanningState::new(snapshot))
+    }
+
+    #[test]
+    fn pick_up_omitted_target_returns_omission_discrepancy() {
+        let actor = entity(1);
+        let omitted = entity(2);
+        let reason = OmissionReason::OverBudget {
+            budget: 5,
+            candidates_seen: 10,
+        };
+        let store = AgentBeliefStore {
+            observation_omission_log: ObservationOmissionLog {
+                entries: VecDeque::from([ObservationOmission {
+                    omitted_entity: omitted,
+                    reason,
+                    observed_tick: Tick(7),
+                }]),
+            },
+            ..AgentBeliefStore::default()
+        };
+        let mut sink = sink_with_store(actor, store, &[]);
+
+        assert_eq!(
+            sink.pick_up(actor, omitted, &ActionPayload::None, ActionDefId(1)),
+            Err(Discrepancy::Omission(reason))
+        );
+    }
+
+    #[test]
+    fn pick_up_never_observed_target_returns_missing_observation() {
+        let actor = entity(1);
+        let target = entity(2);
+        let mut sink = sink_with_store(actor, AgentBeliefStore::default(), &[]);
+
+        assert_eq!(
+            sink.pick_up(actor, target, &ActionPayload::None, ActionDefId(1)),
+            Err(Discrepancy::MissingObservation)
+        );
+    }
+
+    #[test]
+    fn pick_up_non_snapshot_actor_returns_missing_observation() {
+        let actor = entity(1);
+        let snapshot_actor = entity(2);
+        let omitted = entity(3);
+        let store = AgentBeliefStore {
+            observation_omission_log: ObservationOmissionLog {
+                entries: VecDeque::from([ObservationOmission {
+                    omitted_entity: omitted,
+                    reason: OmissionReason::OverBudget {
+                        budget: 5,
+                        candidates_seen: 10,
+                    },
+                    observed_tick: Tick(7),
+                }]),
+            },
+            ..AgentBeliefStore::default()
+        };
+        let mut sink = sink_with_store(snapshot_actor, store, &[]);
+
+        assert_eq!(
+            sink.pick_up(actor, omitted, &ActionPayload::None, ActionDefId(1)),
+            Err(Discrepancy::MissingObservation)
+        );
+    }
+
+    #[test]
+    fn pick_up_target_present_in_snapshot_returns_missing_observation() {
+        let actor = entity(1);
+        let target = entity(2);
+        let store = AgentBeliefStore {
+            observation_omission_log: ObservationOmissionLog {
+                entries: VecDeque::from([ObservationOmission {
+                    omitted_entity: target,
+                    reason: OmissionReason::OverBudget {
+                        budget: 5,
+                        candidates_seen: 10,
+                    },
+                    observed_tick: Tick(7),
+                }]),
+            },
+            ..AgentBeliefStore::default()
+        };
+        let mut sink = sink_with_store(actor, store, &[target]);
+
+        assert_eq!(
+            sink.pick_up(actor, target, &ActionPayload::None, ActionDefId(1)),
+            Err(Discrepancy::MissingObservation)
+        );
+    }
 }

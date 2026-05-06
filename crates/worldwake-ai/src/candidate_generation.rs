@@ -6591,6 +6591,7 @@ mod tests {
                     next_claim_id: worldwake_core::ClaimId(0),
                     known_entities,
                     social_observations,
+                    observation_omission_log: worldwake_core::ObservationOmissionLog::default(),
                     told_beliefs: BTreeMap::new(),
                     heard_beliefs: BTreeMap::new(),
                     asked_witnesses: BTreeMap::new(),

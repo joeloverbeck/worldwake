@@ -17,25 +17,26 @@ use crate::{
     build_planning_snapshot_with_blocked_facility_uses, build_semantics_table,
 };
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 use std::num::NonZeroU32;
 use worldwake_core::{
-    AcquisitionQuantity, ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState,
-    BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, Blocker, BlockerKey,
-    BlockerMemory, BlockingFact, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms,
+    AcquisitionQuantity, ActionDefId, AgentBeliefStore, ArtifactKind, ArtifactPostingContext,
+    ArtifactState, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, Blocker,
+    BlockerKey, BlockerMemory, BlockingFact, BodyCostPerTick, BodyPart, BountyTarget, BountyTerms,
     CarryCapacity, CauseRef, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
     CommodityKind, ContentionGrant, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
     DemandMemory, DemandObservation, DemandObservationReason, DeprivationExposure, DeprivationKind,
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget,
     HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, NoticeTopic, PatrolProfile, PatrolRoute,
-    PerceptionSource, Permille, Place, PlaceTag, PortfolioSlotWeights, ProofRequirement,
-    PrototypePlace, Quantity, RecipeId, RecordedViolation, ResourceSource, RewardSource,
-    TheftDispositionProfile, Tick, TickRange, Topology, TradeDispositionProfile, TravelEdge,
-    TravelEdgeId, UniqueItemKind, ViolationDispositionProfile, ViolationId, ViolationKind,
-    VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, WorkstationTag, World,
-    WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state, build_prototype_world,
-    prototype_place_entity, test_utils::sample_trade_disposition_profile,
+    MerchandiseProfile, MetabolismProfile, NoticeTopic, ObservationOmission,
+    ObservationOmissionLog, OmissionReason, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+    Place, PlaceTag, PortfolioSlotWeights, ProofRequirement, PrototypePlace, Quantity, RecipeId,
+    RecordedViolation, ResourceSource, RewardSource, TellTopic, TheftDispositionProfile, Tick,
+    TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
+    ViolationDispositionProfile, ViolationId, ViolationKind, VisibilitySpec, WashBasinState,
+    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
+    build_believed_entity_state, build_prototype_world, prototype_place_entity,
+    test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, CombatBeliefView, ControlBeliefView,
@@ -81,8 +82,6 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         survey_memory_retention_ticks: CognitiveProfile::default().survey_memory_retention_ticks,
         initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
         max_cooldown_ticks: reasoning.max_cooldown_ticks,
-        max_snapshot_entities_per_place: CognitiveProfile::default()
-            .max_snapshot_entities_per_place,
         landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         decision_history_alternatives: CognitiveProfile::default().decision_history_alternatives,
@@ -382,6 +381,7 @@ struct TestBeliefView {
     violation_profiles: BTreeMap<EntityId, ViolationDispositionProfile>,
     active_violation_records: BTreeMap<EntityId, Vec<RecordedViolation>>,
     known_entity_beliefs: BTreeMap<EntityId, Vec<(EntityId, BelievedEntityState)>>,
+    belief_stores: BTreeMap<EntityId, AgentBeliefStore>,
     epistemic_profiles: BTreeMap<EntityId, EpistemicDispositionProfile>,
     stock_storage_policies: BTreeMap<EntityId, worldwake_core::StockStoragePolicy>,
 }
@@ -425,6 +425,7 @@ impl Default for TestBeliefView {
             violation_profiles: BTreeMap::new(),
             active_violation_records: BTreeMap::new(),
             known_entity_beliefs: BTreeMap::new(),
+            belief_stores: BTreeMap::new(),
             epistemic_profiles: BTreeMap::new(),
             stock_storage_policies: BTreeMap::new(),
         }
@@ -534,6 +535,9 @@ impl worldwake_sim::SocialBeliefView for TestBeliefView {
             .get(&agent)
             .cloned()
             .unwrap_or_default()
+    }
+    fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
+        self.belief_stores.get(&agent)
     }
     fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {
         worldwake_core::BeliefConfidencePolicy::default()
@@ -5494,7 +5498,6 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         &blocked,
         Tick(3),
         goal.key.kind.relevant_op_kinds(),
-        u16::MAX,
     );
     let queue_def = fixture
         .registry
@@ -5573,7 +5576,6 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         &blocked,
         Tick(3),
         goal.key.kind.relevant_op_kinds(),
-        u16::MAX,
     );
     let queue_def = fixture
         .registry
@@ -5709,7 +5711,6 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         &blocked,
         Tick(3),
         goal.key.kind.relevant_op_kinds(),
-        u16::MAX,
     );
 
     let plan = search_plan(
@@ -11672,7 +11673,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
     let mut root_candidates = candidates
         .iter()
         .map(|candidate| {
-            root_candidate_trace_from_candidate(candidate, &registry, &semantics_table)
+            root_candidate_trace_from_candidate(candidate, &registry, &semantics_table, None)
         })
         .collect::<Vec<_>>();
 
@@ -13006,6 +13007,88 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
             && omission.reason
                 == crate::decision_trace::RootOperatorOmissionReason::NoMatchingActionDef
     }));
+}
+
+#[test]
+fn search_trace_annotates_root_candidate_with_omitted_anchor_reason() {
+    let actor = entity(1);
+    let town = entity(10);
+    let listener = entity(20);
+    let subject = entity(21);
+    let reason = OmissionReason::OverBudget {
+        budget: 5,
+        candidates_seen: 12,
+    };
+    let mut view = TestBeliefView::default();
+    view.alive.extend([actor, town, listener]);
+    view.kinds.insert(actor, EntityKind::Agent);
+    view.kinds.insert(town, EntityKind::Place);
+    view.kinds.insert(listener, EntityKind::Agent);
+    view.effective_places.insert(actor, town);
+    view.effective_places.insert(listener, town);
+    view.entities_at.insert(town, vec![actor]);
+    view.belief_stores.insert(
+        actor,
+        AgentBeliefStore {
+            observation_omission_log: ObservationOmissionLog {
+                entries: VecDeque::from([ObservationOmission {
+                    omitted_entity: listener,
+                    reason,
+                    observed_tick: Tick(7),
+                }]),
+            },
+            ..AgentBeliefStore::default()
+        },
+    );
+
+    let (registry, handlers) = build_registry();
+    let goal = GoalOffer {
+        anchor: worldwake_core::OpportunityAnchor::Entity(listener),
+        key: GoalKey::from(GoalKind::ShareBelief {
+            listener,
+            topic: TellTopic::EntityBelief { subject },
+            communication_class: worldwake_core::CommunicationClass::Gossip,
+        }),
+        evidence_entities: BTreeSet::new(),
+        evidence_places: BTreeSet::from([town]),
+        obligation_source: None,
+        commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+        required_information_gaps: Vec::new(),
+        invalidators: Vec::new(),
+        learned_expectation_refs: Vec::new(),
+        acquisition_quantity: None,
+    };
+    let snapshot =
+        build_planning_snapshot(&view, actor, &BTreeSet::new(), &BTreeSet::from([town]), 0);
+    let mut expansions = Vec::new();
+
+    let _result = search_plan(
+        &snapshot,
+        &goal,
+        &build_semantics_table(&registry),
+        &registry,
+        &handlers,
+        &ProfileFixture::default(),
+        &RecipeRegistry::new(),
+        &BlockerMemory::default(),
+        Tick(7),
+        None,
+        Some(&mut expansions),
+    );
+
+    let root = expansions
+        .iter()
+        .find(|summary| summary.depth == 0)
+        .expect("root expansion summary should be recorded");
+    let tell_candidate = root
+        .root_candidates
+        .iter()
+        .find(|candidate| {
+            candidate.op_kind == Some(PlannerOpKind::Tell)
+                && candidate.authoritative_targets == vec![listener]
+        })
+        .expect("synthesized tell candidate should be traced");
+    assert_eq!(tell_candidate.omitted_anchor, Some(reason));
 }
 
 #[test]

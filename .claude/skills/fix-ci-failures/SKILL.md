@@ -63,7 +63,7 @@ Hard requirement: every failure must reproduce locally before fixing.
 2. Confirm the failure signature matches what CI reported.
 3. If the failure does not reproduce locally despite a clean checkout and matching toolchain (`rustup show` should match `1.93.0`), escalate per Step 5. Do not proceed with a hypothesis-driven fix.
 
-`./scripts/verify.sh` matches CI exactly (it runs `cargo fmt --all -- --check`, `cargo test --workspace`, `cargo clippy --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings` in order). Use it as the canonical local gate, but run the narrowest class-specific repro first to avoid rebuilds.
+`./scripts/verify.sh` matches CI exactly (it runs `cargo fmt --all -- --check`, `cargo test --workspace`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check` in order). Use it as the canonical local gate, but run the narrowest class-specific repro first to avoid rebuilds.
 
 ### 5. Diagnose and decide
 
@@ -72,7 +72,8 @@ Once the failure reproduces:
 1. Read the failed test, lint, or assertion in the codebase. Trace to root cause.
 2. For golden test failures: consult [docs/debugging-traces.md](../../../docs/debugging-traces.md). Goldens are authoritative — the bug is in production code unless evidence proves the golden's contract is itself stale (in which case CLAUDE.md's `Authoritative-To-AI Impact Rule` applies).
 3. For any fix touching engine architecture, planner pipelines, action validation, or component registration: re-read the relevant sections of [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md).
-4. TDD discipline (per CLAUDE.md): never adapt tests to fix bugs. For real bugs, the failing test is already the regression proof.
+4. When the failure is a regression and the branch has multiple commits since `main` (or since the last green CI run), consider bisecting via `git worktree add /tmp/<name>-bisect <commit-sha>` to isolate the introducing commit before deep code-reading. Run the narrowest local repro at each candidate commit. Worktrees are cheaper than `git checkout` and keep your main working tree clean.
+5. TDD discipline (per CLAUDE.md): never adapt tests to fix bugs. For real bugs, the failing test is already the regression proof.
 
 Apply 1-3-1 (1 problem, 3 options, 1 recommendation) and stop for user direction when:
 
@@ -127,6 +128,7 @@ When the run produced multiple failures:
 - **Each class = one commit.** Cleaner history; bisectable. Stage files explicitly per commit (`git add <path>`, never `git add -A` or `git add .`).
 - **Cascading failures get one commit.** If a single root-cause fix resolves several failing tests, that's one commit.
 - **Independent classes get separate commits**, even when pushed together.
+- **Multiple independent root causes within one class:** prefer one commit per root cause if the diffs are cleanly separable; combine into one commit only when the root causes share architectural origin (e.g., both lost in the same migration). Bisectability and revertability are the deciding criteria.
 - **Single push at the end** of the multi-commit sequence. The diff-approval gate in Step 10 covers all commits at once.
 
 ### 10. Present the diff and request approval
@@ -165,6 +167,7 @@ After push:
 1. Locate the new run for the latest commit:
    - `gh run list --branch <branch> --limit 1` to identify the run ID, or
    - `gh run watch <run-id>` to stream status until completion.
+   - If `gh run watch` exits or stalls before the run reaches a terminal state (e.g., upstream API 5xx, exit-without-conclusion), fall back to polling: `until gh run view <run-id> --json status --jq '.status' | grep -q completed; do sleep 30; done`, then re-check the conclusion via `gh run view <run-id> --json conclusion --jq '.conclusion'`.
 2. Report the final status:
    - **Green ✓**: report success and stop.
    - **Red ✗**: summarize the new failures (which jobs, which signatures). Do not auto-loop into another fix-push cycle.

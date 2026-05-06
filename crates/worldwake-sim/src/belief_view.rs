@@ -17,13 +17,14 @@ use worldwake_core::{
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
     JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LatrineFullness, LoadUnits,
     MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-    OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceDirtiness, PlaceTag, PlaceTagSet,
-    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
-    RecordedViolation, ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource,
-    RightKind, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
-    StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
+    ObservationOmissionLog, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceDirtiness,
+    PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
+    RecordData, RecordKind, RecordedViolation, ResourceExtractionQueues, ResourceSource,
+    RewardEncumbrance, RewardSource, RightKind, RouteExperience, SleepQualityProfile,
+    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WashBasinState, WorkstationTag,
+    Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -289,6 +290,10 @@ pub trait GoalBeliefView {
     fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
         let _ = agent;
         None
+    }
+    fn observation_omission_log(&self, agent: EntityId) -> Option<&ObservationOmissionLog> {
+        self.agent_belief_store(agent)
+            .map(|store| &store.observation_omission_log)
     }
     fn known_social_observations(&self, agent: EntityId) -> Vec<SocialObservation> {
         let _ = agent;
@@ -2525,11 +2530,11 @@ mod tests {
         DriveEscalationProfile, DriveThresholds, EntityBeliefAspect, EntityBeliefClaim, EntityId,
         EntityKind, EventLog, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds,
         InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource,
-        LastProactiveExplorationTick, LatrineFullness, LoadUnits, OfficeData, PatrolProfile,
-        PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, Quantity, RecordData,
-        RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance, RewardReservation,
-        RewardSource, ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SuccessionLaw,
-        SurveyMemory, TheftFacts, Tick, UniqueItemKind, ViolationId, VisibilitySpec,
+        LastProactiveExplorationTick, LatrineFullness, LoadUnits, ObservationOmissionLog,
+        OfficeData, PatrolProfile, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
+        Quantity, RecordData, RecordEntryId, RecordKind, ResourceSource, RewardEncumbrance,
+        RewardReservation, RewardSource, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
+        SuccessionLaw, SurveyMemory, TheftFacts, Tick, UniqueItemKind, ViolationId, VisibilitySpec,
         WashBasinState, WitnessData, WorkstationTag, World, WorldTxn, build_prototype_world,
     };
 
@@ -3140,6 +3145,25 @@ mod tests {
 
         assert_eq!(GoalBeliefView::expectation_store(&view, agent), None);
         assert_eq!(GoalBeliefView::last_seen_memory(&view, agent), None);
+    }
+
+    #[test]
+    fn goal_belief_view_observation_omission_log_reads_agent_belief_store() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor = {
+            let mut txn = new_txn(&mut world, 1);
+            let actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            commit_txn(txn);
+            actor
+        };
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        assert_eq!(
+            GoalBeliefView::observation_omission_log(&view, actor),
+            Some(&ObservationOmissionLog::default())
+        );
     }
 
     #[test]

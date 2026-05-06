@@ -51,6 +51,9 @@ struct ObserverCli {
     /// Number of longest authored-critical windows to render in Section 10 (0 disables the section)
     #[arg(long, default_value_t = 3)]
     critical_window_top_n: usize,
+    /// Number of recent observation omissions to render per agent in Section 5
+    #[arg(long, default_value_t = 5)]
+    top_omissions: usize,
     /// Bypass scenario lint failures for ad-hoc debugging.
     #[arg(long)]
     ignore_lints: bool,
@@ -2754,6 +2757,95 @@ fn write_agenda_state_summary(
     writeln!(out).unwrap();
 }
 
+fn omission_reason_label(reason: worldwake_core::OmissionReason) -> &'static str {
+    match reason {
+        worldwake_core::OmissionReason::OverBudget { .. } => "OverBudget",
+        worldwake_core::OmissionReason::SalienceBelowFloor { .. } => "SalienceBelowFloor",
+    }
+}
+
+fn render_observation_omissions(
+    out: &mut String,
+    agents: &[(EntityId, String)],
+    world: &worldwake_core::World,
+    top_omissions: usize,
+) {
+    writeln!(out, "#### Top observation omissions\n").unwrap();
+    writeln!(
+        out,
+        "| Agent | OverBudget | SalienceBelowFloor | Top entries |"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "|-------|------------|--------------------|-------------|"
+    )
+    .unwrap();
+
+    for (agent_id, agent_name) in agents {
+        let Some(store) = world.get_component_agent_belief_store(*agent_id) else {
+            writeln!(
+                out,
+                "| {agent_name} ({agent_id}) | 0 | 0 | \u{2014} (no omissions recorded) |"
+            )
+            .unwrap();
+            continue;
+        };
+
+        let mut over_budget = 0usize;
+        let mut salience_below_floor = 0usize;
+        for entry in &store.observation_omission_log.entries {
+            match entry.reason {
+                worldwake_core::OmissionReason::OverBudget { .. } => over_budget += 1,
+                worldwake_core::OmissionReason::SalienceBelowFloor { .. } => {
+                    salience_below_floor += 1;
+                }
+            }
+        }
+
+        let mut entries = store
+            .observation_omission_log
+            .entries
+            .iter()
+            .collect::<Vec<_>>();
+        entries.sort_by(|a, b| {
+            b.observed_tick
+                .cmp(&a.observed_tick)
+                .then_with(|| a.omitted_entity.cmp(&b.omitted_entity))
+                .then_with(|| a.reason.cmp(&b.reason))
+        });
+
+        let top_entries = if entries.is_empty() {
+            "\u{2014} (no omissions recorded)".to_string()
+        } else if top_omissions == 0 {
+            String::new()
+        } else {
+            entries
+                .into_iter()
+                .take(top_omissions)
+                .map(|entry| {
+                    format!(
+                        "{} ({}) / {} / tick {}",
+                        entity_display_name(world, entry.omitted_entity),
+                        entry.omitted_entity,
+                        omission_reason_label(entry.reason),
+                        entry.observed_tick.0
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("<br>")
+        };
+
+        writeln!(
+            out,
+            "| {agent_name} ({agent_id}) | {over_budget} | {salience_below_floor} | {top_entries} |"
+        )
+        .unwrap();
+    }
+
+    writeln!(out).unwrap();
+}
+
 #[allow(clippy::too_many_arguments)]
 fn format_report(
     scenario_path: &str,
@@ -2773,6 +2865,7 @@ fn format_report(
     critical_window_section_enabled: bool,
     critical_window_reports: &[CriticalWindowReport],
     total_critical_window_count: usize,
+    top_omissions: usize,
 ) -> String {
     let mut out = String::new();
 
@@ -3133,6 +3226,8 @@ fn format_report(
         }
         writeln!(out).unwrap();
     }
+
+    render_observation_omissions(&mut out, agents, world, top_omissions);
 
     // Raw perception tail (last 50 events for detailed inspection)
     writeln!(out, "#### Raw Perception Trace (last 50 events)\n").unwrap();
@@ -4080,6 +4175,7 @@ fn main() {
         cli.critical_window_top_n > 0,
         &critical_window_reports,
         all_critical_window_reports.len(),
+        cli.top_omissions,
     );
 
     // Ensure parent directory exists
@@ -4117,6 +4213,8 @@ mod tests {
         primary_satisfied_need, recipe_usage_rows, render_decision_history_section,
         render_maintenance_rates_table, render_recipe_usage_table, unknown_location_entity_groups,
     };
+    use crate::ObserverCli;
+    use clap::Parser;
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
     use std::num::NonZeroU32;
@@ -4139,13 +4237,13 @@ mod tests {
         EmitterTag, EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload, EventTag,
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
-        GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, OpportunityAnchor,
-        PendingEvent, Permille, PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
-        PrototypePlace, Quantity, RecipeId, ResourceSource, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
-        WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
-        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
-        prototype_place_entity,
+        GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, ObservationOmission,
+        OmissionReason, OpportunityAnchor, PendingEvent, Permille, PlanAdoptedPayload,
+        PlanInvalidatedPayload, PlanInvalidationReason, PrototypePlace, Quantity, RecipeId,
+        ResourceSource, SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+        SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
         ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
@@ -4253,6 +4351,37 @@ mod tests {
         EntityId {
             slot,
             generation: 0,
+        }
+    }
+
+    fn world_with_omission_store(entries: Vec<ObservationOmission>) -> (World, EntityId) {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let agent = {
+            let mut txn = new_txn(&mut world, 0);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).expect("agent");
+            let mut store = txn
+                .get_component_agent_belief_store(agent)
+                .expect("belief store")
+                .clone();
+            for entry in entries {
+                store.observation_omission_log.entries.push_back(entry);
+            }
+            txn.set_component_agent_belief_store(agent, store)
+                .expect("set belief store");
+            commit_txn(txn);
+            agent
+        };
+        (world, agent)
+    }
+
+    fn over_budget_omission(slot: u32, tick: u64) -> ObservationOmission {
+        ObservationOmission {
+            omitted_entity: entity(slot),
+            reason: OmissionReason::OverBudget {
+                budget: 5,
+                candidates_seen: 12,
+            },
+            observed_tick: Tick(tick),
         }
     }
 
@@ -5321,6 +5450,7 @@ mod tests {
             false,
             &[],
             0,
+            5,
         );
 
         assert!(
@@ -5398,6 +5528,7 @@ mod tests {
             false,
             &[],
             0,
+            5,
         );
 
         assert!(report.contains("**Agenda state**: committed=Sleep, pending=1, suspended=1"));
@@ -5408,6 +5539,158 @@ mod tests {
         assert!(report.contains(
             "- MoveCargo { commodity: Bread, destination: EntityId { slot: 44, generation: 0 } } | expires at tick 25"
         ));
+    }
+
+    #[test]
+    fn observer_cli_parses_top_omissions_default_and_override() {
+        let default_cli = ObserverCli::parse_from(["worldwake-observer", "scenario.ron"]);
+        assert_eq!(default_cli.top_omissions, 5);
+
+        let override_cli =
+            ObserverCli::parse_from(["worldwake-observer", "scenario.ron", "--top-omissions", "3"]);
+        assert_eq!(override_cli.top_omissions, 3);
+    }
+
+    #[test]
+    fn format_report_renders_default_top_observation_omissions() {
+        let entries = (0..8)
+            .map(|i| over_budget_omission(100 + i, u64::from(i)))
+            .collect::<Vec<_>>();
+        let (world, agent) = world_with_omission_store(entries);
+        let registry = RecipeRegistry::new();
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Aster".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Aster".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+            5,
+        );
+
+        assert!(report.contains("#### Top observation omissions"));
+        assert!(report.contains("| Aster ("));
+        assert!(report.contains("| 8 | 0 |"));
+        assert_eq!(report.matches("/ OverBudget / tick").count(), 5);
+        assert!(report.contains("Unknown#107 (e107g0) / OverBudget / tick 7"));
+        assert!(report.contains("Unknown#103 (e103g0) / OverBudget / tick 3"));
+        assert!(!report.contains("Unknown#102 (e102g0) / OverBudget / tick 2"));
+    }
+
+    #[test]
+    fn format_report_renders_empty_observation_omissions_state() {
+        let (world, agent) = world_with_omission_store(Vec::new());
+        let registry = RecipeRegistry::new();
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Aster".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Aster".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+            5,
+        );
+
+        assert!(report.contains("\u{2014} (no omissions recorded)"));
+    }
+
+    #[test]
+    fn format_report_respects_top_omissions_override() {
+        let entries = (0..5)
+            .map(|i| over_budget_omission(120 + i, u64::from(i)))
+            .collect::<Vec<_>>();
+        let (world, agent) = world_with_omission_store(entries);
+        let registry = RecipeRegistry::new();
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Aster".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Aster".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+            3,
+        );
+
+        assert_eq!(report.matches("/ OverBudget / tick").count(), 3);
+        assert!(report.contains("Unknown#124 (e124g0) / OverBudget / tick 4"));
+        assert!(!report.contains("Unknown#121 (e121g0) / OverBudget / tick 1"));
+    }
+
+    #[test]
+    fn format_report_orders_observation_omissions_deterministically() {
+        let (world, agent) = world_with_omission_store(vec![
+            over_budget_omission(10, 4),
+            ObservationOmission {
+                omitted_entity: entity(9),
+                reason: OmissionReason::SalienceBelowFloor {
+                    policy: SaliencePolicy::PriorityWithNeedBoost,
+                },
+                observed_tick: Tick(4),
+            },
+        ]);
+        let registry = RecipeRegistry::new();
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Aster".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Aster".to_string(), false))]),
+            &[],
+            &EventLog::new(),
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            false,
+            &[],
+            0,
+            5,
+        );
+
+        let first = report
+            .find("(e9g0) / SalienceBelowFloor / tick 4")
+            .expect("entity 9 omission");
+        let second = report
+            .find("(e10g0) / OverBudget / tick 4")
+            .expect("entity 10 omission");
+        assert!(first < second);
+        assert!(report.contains("| 1 | 1 |"));
     }
 
     #[test]
@@ -5503,6 +5786,7 @@ mod tests {
             true,
             &[sample_critical_window_report(agent)],
             1,
+            5,
         );
 
         assert!(report.contains("## Section 10 — Critical Window Forensics"));
@@ -5541,6 +5825,7 @@ mod tests {
             true,
             &[],
             0,
+            5,
         );
 
         assert!(report.contains("## Section 10 — Critical Window Forensics"));
@@ -5570,6 +5855,7 @@ mod tests {
             false,
             &[],
             0,
+            5,
         );
 
         assert!(!report.contains("## Section 10 — Critical Window Forensics"));
@@ -5599,6 +5885,7 @@ mod tests {
             true,
             &[sample_critical_window_report(agent)],
             1,
+            5,
         );
 
         let section_8 = report

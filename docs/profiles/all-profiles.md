@@ -121,7 +121,6 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `survey_memory_retention_ticks` | `u64` | Ticks a survey record remains ranking-relevant before expiring. (default: `default_survey_memory_retention_ticks()`) |
 | `initial_cooldown_ticks` | `u32` | Base cooldown ticks after a goal fails before the agent retries it. (default: `4`) |
 | `max_cooldown_ticks` | `u32` | Maximum cooldown ticks after repeated failures (exponential backoff cap). (default: `64`) |
-| `max_snapshot_entities_per_place` | `u16` | Maximum entities included per place in the planner's world snapshot. (default: `50`) |
 | `landmark_extraction_depth` | `u8` | Maximum depth of landmark chain extraction during tactical planning. Higher values produce more landmarks for better search guidance at increased extraction cost. 0 disables landmarks. (default: `4`) |
 | `use_ff_heuristic` | `bool` | Whether this agent uses the FF-style relaxed-plan heuristic for tactical search guidance. (default: `default_use_ff_heuristic()`) |
 | `decision_history_alternatives` | `u8` | Maximum number of rejected alternatives recorded in decision history events. (default: `default_decision_history_alternatives()`) |
@@ -266,7 +265,7 @@ Per-agent parameters controlling how obligation-class goals decay after repeated
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2554`
+**Source**: `crates/worldwake-core/src/belief.rs:2613`
 
 Per-agent parameters controlling belief retention and observation quality.
 
@@ -281,6 +280,8 @@ Per-agent parameters controlling belief retention and observation quality.
 | `claim_confidence_threshold` | `Permille` | Minimum confidence required for an entity belief claim to be retained. (default: `Permille::new(50).unwrap()`) |
 | `observation_buffer_capacity` | `u8` | Maximum number of pending observations buffered before processing. (default: `5`) |
 | `observation_budget` | `u8` | Maximum number of co-located entities observed per tick before salience filtering truncates. (default: `default_observation_budget()`) |
+| `salience_policy` | `SaliencePolicy` | Policy used to rank observation salience before budget truncation. (default: `SaliencePolicy::default()`) |
+| `omission_log_capacity` | `u8` | Maximum number of recent omitted observations retained in the agent's belief store. (default: `default_omission_log_capacity()`) |
 | `need_salience_boost` | `Permille` | Observation priority boost for entities relevant to the agent's current needs. (default: `Permille::new(500).unwrap()`) |
 | `need_salience_urgency_threshold` | `Permille` | Need pressure level above which the salience boost activates. (default: `Permille::new(500).unwrap()`) |
 
@@ -310,7 +311,7 @@ Per-agent experience-based route and source preference parameters.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2606`
+**Source**: `crates/worldwake-core/src/belief.rs:2677`
 
 Per-agent parameters controlling what information an agent relays and accepts.
 

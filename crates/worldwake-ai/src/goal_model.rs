@@ -2402,8 +2402,6 @@ mod tests {
                 .survey_memory_retention_ticks,
             initial_cooldown_ticks: reasoning.initial_cooldown_ticks,
             max_cooldown_ticks: reasoning.max_cooldown_ticks,
-            max_snapshot_entities_per_place: CognitiveProfile::default()
-                .max_snapshot_entities_per_place,
             landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
             use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
             decision_history_alternatives: CognitiveProfile::default()

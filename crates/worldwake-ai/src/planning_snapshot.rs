@@ -483,7 +483,6 @@ impl PlanningSnapshot {
             travel_horizon,
             &BTreeSet::new(),
             SnapshotEntityFilter::unfiltered(),
-            u16::MAX,
         )
     }
 
@@ -497,7 +496,6 @@ impl PlanningSnapshot {
         travel_horizon: u8,
         blocked_facility_uses: &BTreeSet<(EntityId, ActionDefId)>,
         filter: SnapshotEntityFilter,
-        max_per_place: u16,
     ) -> Self {
         let included_places = collect_places(
             view,
@@ -514,7 +512,6 @@ impl PlanningSnapshot {
             evidence_entities,
             &included_places,
             filter,
-            max_per_place,
             &actor_known_entity_beliefs,
         );
         let mut entities: BTreeMap<EntityId, SnapshotEntity> = included_entities
@@ -661,6 +658,54 @@ impl PlanningSnapshot {
     #[must_use]
     pub fn actor(&self) -> EntityId {
         self.actor
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_effect_sink_test(
+        actor: EntityId,
+        actor_belief_store: AgentBeliefStore,
+        present_entities: &[EntityId],
+    ) -> Self {
+        let entities = present_entities
+            .iter()
+            .copied()
+            .map(|entity| (entity, SnapshotEntity::default()))
+            .collect();
+        let places = BTreeMap::new();
+        let shortest_travel_ticks = DistanceMatrix::new(&places);
+        let perceived_travel_costs = DistanceMatrix::new(&places);
+
+        Self {
+            actor,
+            current_tick: Tick(0),
+            actor_belief_store,
+            entities,
+            places,
+            blocked_facility_uses: BTreeSet::new(),
+            actor_known_entity_beliefs: BTreeMap::new(),
+            actor_known_social_observations: Vec::new(),
+            actor_known_institutional_beliefs: Vec::new(),
+            actor_told_beliefs: BTreeMap::new(),
+            actor_bandit_factions: Vec::new(),
+            actor_active_violation_records: Vec::new(),
+            actor_contested_offices: Vec::new(),
+            actor_loyalties: BTreeMap::new(),
+            actor_office_holder_beliefs: BTreeMap::new(),
+            actor_force_controller_beliefs: BTreeMap::new(),
+            office_certain_support_declarations: BTreeMap::new(),
+            office_support_declaration_beliefs: BTreeMap::new(),
+            actor_confidence_policy: BeliefConfidencePolicy::default(),
+            actor_claim_confidence_threshold: Permille::ZERO,
+            actor_tell_profile: None,
+            actor_epistemic_profile: None,
+            actor_consultation_speed_factor: None,
+            actor_expectation_store: None,
+            actor_last_seen_memory: None,
+            actor_bandit_flee_thresholds: BTreeMap::new(),
+            actor_bandit_establishment_ticks: BTreeMap::new(),
+            shortest_travel_ticks,
+            perceived_travel_costs,
+        }
     }
 
     /// Canonical seat place for an Office entity, captured from `OfficeData.seat`.
@@ -1155,7 +1200,6 @@ pub fn build_planning_snapshot_with_blocked_facility_uses(
     blocked_memory: &BlockerMemory,
     current_tick: Tick,
     relevant_ops: &[PlannerOpKind],
-    max_per_place: u16,
 ) -> PlanningSnapshot {
     PlanningSnapshot::build_with_blocked_facility_uses(
         view,
@@ -1165,7 +1209,6 @@ pub fn build_planning_snapshot_with_blocked_facility_uses(
         travel_horizon,
         &blocked_facility_uses(blocked_memory, current_tick),
         SnapshotEntityFilter::from_relevant_ops(relevant_ops),
-        max_per_place,
     )
 }
 
@@ -1226,7 +1269,6 @@ fn collect_entities(
     evidence_entities: &BTreeSet<EntityId>,
     included_places: &BTreeSet<EntityId>,
     filter: SnapshotEntityFilter,
-    max_per_place: u16,
     known_entity_beliefs: &BTreeMap<EntityId, BelievedEntityState>,
 ) -> BTreeSet<EntityId> {
     let mut included = BTreeSet::from([actor]);
@@ -1261,7 +1303,6 @@ fn collect_entities(
                 Reverse(*entity),
             )
         });
-        filtered.truncate(usize::from(max_per_place));
         included.extend(filtered);
     }
 
@@ -1800,7 +1841,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Travel],
-            u16::MAX,
         );
 
         assert!(!snapshot.entities.contains_key(&item));
@@ -1832,7 +1872,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Trade],
-            u16::MAX,
         );
 
         assert!(snapshot.entities.contains_key(&item));
@@ -1864,7 +1903,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Travel],
-            u16::MAX,
         );
 
         assert!(!snapshot.entities.contains_key(&corpse));
@@ -1896,7 +1934,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Loot],
-            u16::MAX,
         );
 
         assert!(snapshot.entities.contains_key(&corpse));
@@ -1941,7 +1978,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Travel],
-            u16::MAX,
         );
 
         assert!(!snapshot.entities.contains_key(&record));
@@ -1975,7 +2011,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::ConsultRecord],
-            u16::MAX,
         );
 
         assert!(snapshot.entities.contains_key(&record));
@@ -2007,14 +2042,13 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::ReportFound],
-            u16::MAX,
         );
 
         assert!(snapshot.entities.contains_key(&record));
     }
 
     #[test]
-    fn snapshot_per_place_cap_limits_entities() {
+    fn snapshot_includes_all_believed_entities_at_place() {
         let actor = entity(1);
         let place = entity(10);
 
@@ -2045,7 +2079,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Trade],
-            50,
         );
 
         let item_count = snapshot
@@ -2053,11 +2086,11 @@ mod tests {
             .keys()
             .filter(|entity| view.kinds.get(entity) == Some(&EntityKind::ItemLot))
             .count();
-        assert_eq!(item_count, 50);
+        assert_eq!(item_count, 60);
     }
 
     #[test]
-    fn snapshot_per_place_cap_prefers_recent_and_tiebreaks_by_entity_id() {
+    fn snapshot_without_per_place_cap_keeps_older_believed_entities() {
         let actor = entity(1);
         let place = entity(10);
         let older = entity(20);
@@ -2095,13 +2128,12 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Trade],
-            2,
         );
 
         assert!(snapshot.entities.contains_key(&newer));
         assert!(snapshot.entities.contains_key(&tied_higher));
-        assert!(!snapshot.entities.contains_key(&tied_lower));
-        assert!(!snapshot.entities.contains_key(&older));
+        assert!(snapshot.entities.contains_key(&tied_lower));
+        assert!(snapshot.entities.contains_key(&older));
     }
 
     #[test]
@@ -2130,7 +2162,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Travel],
-            u16::MAX,
         );
 
         assert!(snapshot.entities.contains_key(&evidence_item));
@@ -2291,7 +2322,6 @@ mod tests {
             &BlockerMemory::default(),
             Tick(0),
             &[PlannerOpKind::Travel],
-            u16::MAX,
         );
 
         assert!(snapshot.entities.contains_key(&other_agent));

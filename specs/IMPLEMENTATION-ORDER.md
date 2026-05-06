@@ -574,7 +574,7 @@ Phase 11 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S134 (completed, archived)    S135 (independent)            S140 (independent)            S142 (independent)
+S134 (completed, archived)    S135 (completed, archived)    S140 (independent)            S142 (independent)
    │                                                                                            
    └── S138 (hard dep on S134)
          │
@@ -593,9 +593,9 @@ S136 (independent)
 
 **Completed Wave 1 substrate**:
 - **S134**: Canonical Effect Schema for ActionDef — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. Planner forward model now uses simulator action schemas via declarative `EffectSchema` per `ActionDef`; `apply_hypothetical_transition` parallel dispatch was removed.
+- **S135**: Planner Snapshot Perception Budget and Observation Omission — completed and archived at `archive/specs/S135-planner-perception-budget.md`. Removed the planner-side `max_snapshot_entities_per_place` cap, added typed per-agent omission records and observer rendering, surfaced omission attribution through decision traces and hypothetical revalidation, and landed scenarios 381-383 in `golden_perception_omission.rs`.
 
 **Remaining Wave 1** (parallel, no hard deps):
-- **S135**: Planner Snapshot Perception Budget and Observation Omission — collapse `max_snapshot_entities_per_place` into S105's `observation_budget` with explicit `ObservationOmission` records.
 - **S136**: Always-On Decision Event Payload Extension — extend always-on decision events with `top_rejected_goals`, `decisive_beliefs`, `decisive_records`, `decisive_world_observations`, `assumptions`.
 - **S140**: Multi-Axis Artifact Lifecycle — five-axis lifecycle (existence/visibility/legal_effect/credibility/actionability) replacing single-enum `ArtifactState`. FND-25A direct compliance.
 - **S142**: Contention Event Inspectability — `EventTag::ContentionResolved` with typed `ContentionResolutionRule` and per-claimant outcome.
@@ -619,7 +619,7 @@ S136 (independent)
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
-- [ ] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
+- [x] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
 - [ ] Always-on decision events carry `decisive_*` references for every commit/replan/blocker on `survival-baseline.ron`
 - [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`
 - [ ] Opportunity compiler golden proves desperate-agent steal opportunity emission and salience-weighted ranking

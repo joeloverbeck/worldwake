@@ -2,6 +2,10 @@
 
 Project-specific patterns for reassess-spec. When a spec proposes one of the triggers below, verify the corresponding integration points exist in the spec. Flag missing items as HIGH Issues.
 
+## Pattern Triggers Map to Deliverables, Not Prose Only
+
+When any of the patterns below trigger, every named integration point must appear as an itemized deliverable (D-section) in the spec's `## Deliverables` section. Prose-only references in Summary, Design Goals, Cross-System Interactions, or FOUNDATIONS Alignment do not substitute. Flag the missing deliverable as a HIGH Issue with the pattern's integration-point list as the recommendation.
+
 ## New GoalKind Variant
 
 **Trigger**: Spec adds a variant to `GoalKind` in `crates/worldwake-core/src/goal.rs`.
@@ -24,12 +28,12 @@ Project-specific patterns for reassess-spec. When a spec proposes one of the tri
 1. `component_schema.rs` — registration with insert/get accessors
 2. `AgentDef` — field in `crates/worldwake-cli/src/scenario/types.rs`
 3. `spawn_agent()` — set_component call in `crates/worldwake-cli/src/scenario/mod.rs`
-4. Universal vs. role-specific classification (per `docs/spec-drafting-rules.md` section 5)
-5. `Default` impl if universal
-6. `*Def` wrapper type if component contains `EntityId` references
+4. Classification — one of (a) scenario-authorable universal, (b) scenario-authorable role-specific, or (c) runtime-only / scenario-exempt (analogous to `ActiveGoal`, `IntentionFrame`, `WoundList`). Per `docs/spec-drafting-rules.md` Section 5. For (c), the component still requires `component_schema.rs` registration and `create_agent()` insertion with a default-empty value, but **no** `AgentDef` field, **no** `*Def` wrapper, and **no** `spawn_agent()` `set_component_*` call.
+5. `Default` impl if (a) or (c)
+6. `*Def` wrapper type if (a) or (b) and the component contains `EntityId` references
 7. **Core-residence constraint**: the component struct itself MUST be defined in `worldwake-core`. The `with_component_schema_entries!` macro at `crates/worldwake-core/src/component_schema.rs:3` references types via `crate::TypeName`, so components defined in `worldwake-sim`, `worldwake-systems`, `worldwake-ai`, or `worldwake-cli` cannot be registered through this path. Specs that propose a new component outside core must either (a) relocate the type to core, (b) reframe it as ai-layer per-agent runtime state (follows `AgentDecisionRuntime` precedent at `crates/worldwake-ai/src/decision_runtime.rs:151`, stored in `runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>` at `crates/worldwake-ai/src/agent_tick/mod.rs:70`, and explicitly tested as not-a-component at `decision_runtime.rs:438`), or (c) split — define a scenario-authorable profile component in core and keep the runtime-generated state in ai. Flag any crate-list claim that puts the component struct outside core while still asserting `EntityKind::Agent` registration as a CRITICAL Issue.
 
-**Note**: Runtime-only components (not scenario-definable, always start at defaults) still require `component_schema.rs` registration and `create_agent()` insertion. The only exempt items are transient local variables that are never stored as ECS components. If the spec calls it a "component" and proposes `create_agent()` insertion, registration is mandatory.
+**Note**: The only items exempt from `component_schema.rs` registration are transient local variables that are never stored as ECS components. If the spec calls it a "component" and proposes `create_agent()` insertion, registration is mandatory regardless of classification (a)/(b)/(c).
 
 ## New Component on EntityKind::Place
 
@@ -199,3 +203,22 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 4. For the hook ordering: when a substrate's grant/promotion mutates state, identify which fields the hook needs to read BEFORE the mutation (e.g., `queued_at` from a waiter that's about to be removed) and call out the read-before-mutate ordering in the deliverable.
 
 **Flag as HIGH Issue**: Spec hooks one substrate while its motivating scenario or stated coverage spans others. The named hook will never fire for the unhooked scenarios — the spec is internally inconsistent even though every named symbol resolves.
+
+## Discrepancy as Failure-Attribution Surface
+
+**Trigger**: Spec proposes a new failure mode that an action handler, revalidation path, or planner step can encounter and attribute (typed cause for "this didn't work because…").
+
+**Three options for surfacing the failure**:
+
+1. **As a `Discrepancy` enum variant** (`crates/worldwake-core/src/discrepancy.rs:8`) — first-class typed surface. Constraints: (a) `Discrepancy` derives `Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize`, so any payload type the new variant carries must derive `Copy` and the rest of the bounds; (b) workspace-wide exhaustive-match audit (~145 `Discrepancy` use sites at the time of writing — most are construction `Err(Discrepancy::X)` sites in `effect_sink_hypothetical.rs`, `needs_actions.rs`, `search_actions.rs`; the genuinely-exhaustive `match d { ... }` sites are the subset requiring new arms); (c) `Ord` ordering decision for the new variant.
+2. **As a trace-only annotation** on `RootCandidateTrace` (`crates/worldwake-ai/src/decision_trace.rs`), `ActionTraceSink`, `DecisionTraceSink`, or another decision sink — surfaces the cause for debug/observer inspection without extending the typed failure taxonomy. No exhaustive-match cost. Use when the failure does not need to alter handler control flow or replan logic.
+3. **Reuse an existing `Discrepancy` variant** — if `MissingObservation`, `BeliefStale`, `BeliefContradicted`, `SourceInvalidated`, etc. already cover the semantic case, the spec should not introduce a new variant. The new failure mode can still surface specifics through trace annotation alongside the reused variant.
+
+**Verify the spec addresses**:
+
+1. Which of (1)/(2)/(3) the spec is choosing — explicitly. A spec that mentions `Discrepancy` in prose without naming the choice has a missing design decision.
+2. For option (1): a deliverable section enumerates the variant addition, payload type and its `Copy` derive, and the exhaustive-match audit scope.
+3. For option (2): a deliverable section names the trace surface and the field/variant added there.
+4. For option (3): the spec acknowledges the reuse and (where applicable) names the existing variant.
+
+**Flag as Issue**: Spec writes failure attribution into prose without committing to one of (1)/(2)/(3), or proposes a new `Discrepancy` variant without enumerating the deliverable per "Pattern Triggers Map to Deliverables, Not Prose Only" (top of file).

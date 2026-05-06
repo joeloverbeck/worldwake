@@ -18,6 +18,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 - If the concern is still an unmet deliverable of the reviewed ticket, block archival and return ownership to that ticket; do not create a follow-up.
 - If archival is blocked after the ticket already says `COMPLETED`, leave the active ticket truthful by adding a `Post-ticket review blocker` note or applying a factual status correction that matches the repo's active-ticket convention.
 - Prefer a `Post-ticket review blocker` note when the repo has no clear reopened/in-progress status convention for completed tickets, or when the implementation is mostly complete but one handoff/proof seam must resume. Change the status only when the active-ticket convention defines an unambiguous non-completed state for resumed work or when `COMPLETED` would materially mislead downstream planning even with the blocker note.
+- If the blocker requires production code, tests, source-golden metadata, or other forbidden edits for this review skill, stop after making the ticket truthful and hand the work back to the implementation workflow. Resume archive readiness only after the user explicitly resumes that seam and the required proof passes.
 
 ## Workflow
 
@@ -53,13 +54,17 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
    - Name the exact active ticket that remains unarchived, the concrete implementation seam to resume, and the proof or handoff section that must be corrected. Do not create a follow-up ticket when the concern is still owned by that active ticket; resume under the implementation workflow instead.
    - Before reporting the blocker, perform only the minimal adjacent-ticket/spec check needed to confirm the concern is still owned by the reviewed ticket rather than an already-active sibling or spec. Once ownership is confirmed, skip full follow-up-ticket creation and archival-maintenance sweeps for that blocked pass.
    - If the ticket status or closeout now overstates completion, make the active ticket truthful before reporting: add a concise `Post-ticket review blocker` note naming the blocker and required resume seam, or apply a factual status correction when the repository's active-ticket convention makes the correct status unambiguous.
-   - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up.
+   - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up. Inspect generated detail/index fields for complete prose, especially `Setup`, `Proves`, and `Cross-system chain`; a generated file can pass `--check-docs` while still publishing truncated first-line fragments from wrapped source metadata.
    - For golden tickets, compare executable assertions against the exact ticket, source-golden, and roadmap wording. Distinguish `contains both steps` from an ordered sequence, `eventually commits` from a claimed lifecycle boundary, candidate emission from selected goal, and selected goal from selected executable plan. If the prose claims ordering, provenance, timing, or lifecycle specificity that the assertions do not prove, block archival as an incomplete proof surface.
    - When a previously completed ticket was left unarchived until a later reconciliation/disposition ticket clarified its live contract, re-read the older ticket's `Outcome`, `Verification Result`, and any remaining blocker wording against that newer archived disposition before archiving the older ticket.
 5. If already archived, validate the archived handoff content rather than reopening.
 6. Do not revise the ticket's problem statement, scope, or acceptance criteria except for factual completion notes required by archival mechanics.
 7. If archival readiness is ambiguous, apply the 1-3-1 rule.
-8. Archive if ready. If a prior review pass blocked archival, treat this pass as the authoritative handoff step only after remaining in-scope implementation has landed.
+8. Archive if ready. If a prior review pass blocked archival, treat this pass as the authoritative handoff step only after remaining in-scope implementation has landed. Before moving the ticket after a resolved blocker:
+   - remove or supersede any `Post-ticket review blocker` note that would now be false
+   - update `Outcome` / `Verification Result` with the blocker-resolution change and proof
+   - reread the completed ticket from the changed closeout section through EOF
+   - run cheap markdown/diff hygiene for the review-edited ticket and any generated docs touched by the resumed seam
 9. After moving the ticket, inspect `git status` for both the archived path and the original active path. Record which post-archive state occurred, and mention it explicitly in the report:
    - tracked rename / move into the archive path
    - tracked deletion at the active path plus untracked archive file

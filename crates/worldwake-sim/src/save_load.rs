@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 66;
+pub const SAVE_FORMAT_VERSION: u32 = 69;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -206,15 +206,16 @@ mod tests {
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
         GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
         GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, LatrineFullness, MaterializationTag, MetabolismProfile, PendingEvent,
-        PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanInvalidatedPayload,
-        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary,
-        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        RewardEncumbrance, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
-        SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec, WakeCondition,
-        WakeReason, WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        LastSeenRecord, LatrineFullness, MaterializationTag, MetabolismProfile,
+        ObservationOmission, OmissionReason, PendingEvent, PerceptionSource, PlaceDirtiness,
+        PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
+        PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary, RepairAppliedPayload,
+        RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId, RewardEncumbrance, Seed,
+        ShelterTag, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+        SleepQualityProfile, SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange,
+        UniqueItemKind, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -444,6 +445,17 @@ mod tests {
             confidence: worldwake_core::Permille::new(1000).unwrap(),
             refuted_at_tick: Some(Tick(18)),
         });
+        beliefs
+            .observation_omission_log
+            .entries
+            .push_back(ObservationOmission {
+                omitted_entity: target,
+                reason: OmissionReason::OverBudget {
+                    budget: 12,
+                    candidates_seen: 30,
+                },
+                observed_tick: Tick(4),
+            });
         let mut belief_txn = new_txn(&mut world, Tick(3), CauseRef::Bootstrap);
         belief_txn
             .set_component_agent_belief_store(actor, beliefs)
@@ -1010,7 +1022,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 66);
+        assert_eq!(SAVE_FORMAT_VERSION, 69);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1126,6 +1138,17 @@ mod tests {
         assert_eq!(restored_claims[1].claim_id, ClaimId(2));
         assert_eq!(restored_claims[1].refuted_at_tick, Some(Tick(18)));
         assert_eq!(restored_belief.next_claim_id, ClaimId(3));
+        assert_eq!(
+            restored_belief.observation_omission_log.entries.front(),
+            Some(&ObservationOmission {
+                omitted_entity: target,
+                reason: OmissionReason::OverBudget {
+                    budget: 12,
+                    candidates_seen: 30,
+                },
+                observed_tick: Tick(4),
+            })
+        );
         let restored_belief_place = restored_summary.last_known_place.unwrap();
         let restored_expectation_store = restored
             .world()

@@ -67,7 +67,7 @@ pub(crate) fn classify_rejection(
     };
 
     match reason {
-        Discrepancy::MissingObservation => {
+        Discrepancy::MissingObservation | Discrepancy::Omission(_) => {
             let place = offer_anchor_place(offer).or_else(|| {
                 offer_anchor_entity(offer).and_then(|entity| beliefs.effective_place(entity))
             });

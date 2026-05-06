@@ -9,8 +9,8 @@ use std::fmt::Write as _;
 use worldwake_core::{
     ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameAssumption,
     FrameClearReason, GoalKey, HypothesisKind, InstitutionalClaim, InstitutionalKnowledgeSource,
-    IntentionDomainTag, OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
-    PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
+    IntentionDomainTag, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute,
+    PerceptionSource, Permille, PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, BindingStrictness, ResolvedRequestTrace,
@@ -791,6 +791,7 @@ pub struct RootCandidateTrace {
     pub planner_only: bool,
     pub payload_status: RootCandidatePayloadStatus,
     pub outcome: RootCandidateOutcome,
+    pub omitted_anchor: Option<OmissionReason>,
 }
 
 /// Final per-expansion status for one candidate after all pre-successor filters.
@@ -4456,6 +4457,7 @@ mod tests {
                                     dependency: PlannerDurationDependency::ActorTradeDisposition,
                                 },
                             ),
+                            omitted_anchor: None,
                         }],
                         root_omissions: vec![RootOperatorOmissionTrace {
                             op_kind: PlannerOpKind::PressForceClaim,
