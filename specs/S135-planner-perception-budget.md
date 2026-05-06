@@ -19,7 +19,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - `worldwake-core` — extends `PerceptionProfile` (`belief.rs:2554`) with `salience_policy: SaliencePolicy` (typed enum, default `PriorityWithNeedBoost`) and `omission_log_capacity: u8` (default 16), both `#[serde(default)]` for back-compat with existing scenarios. Adds new types `ObservationOmission`, `ObservationOmissionLog`, `OmissionReason`, `SaliencePolicy`. Stores `ObservationOmissionLog` as a field on `AgentBeliefStore`, not as a separate component, so omission facts have one canonical belief-store path. Adds `Discrepancy::Omission(OmissionReason)` variant. Removes `CognitiveProfile.max_snapshot_entities_per_place`. Adds paired `omission_log_added` / `omission_log_removed` fields to `BeliefStoreDiff` (`belief.rs:1120`) for delta-compaction parity with the other belief-store sub-stores.
 - `worldwake-systems` — perception batch helper (`collect_direct_local_observation_batch` at `perception.rs:639`) records an omission entry whenever an entity is dropped from the per-place observation due to budget or salience floor. Existing truncation logic already uses S105's deterministic priority — S135 adds the omission write alongside the existing `truncate(observation_budget)` call.
 - `worldwake-sim` — adds a `GoalBeliefView` accessor for `ObservationOmissionLog` so the AI crate can read the log without violating FND-26 (no direct cross-crate calls); backed by the existing `agent_belief_store` read surface and the live blanket `GoalBeliefView` implementation.
-- `worldwake-ai` — `crates/worldwake-ai/src/agent_tick/planning.rs:546` and the snapshot construction path consume the agent's accumulated belief observations directly (the per-place cap argument is removed). `RootCandidateTrace` (`decision_trace.rs:786`) gains `omitted_anchor: Option<OmissionReason>` populated when a synthesized root candidate's anchor is in the agent's `ObservationOmissionLog` rather than belief store. Hypothetical-effect-sink revalidation paths (`effect_sink_hypothetical.rs`) gain support for emitting `Discrepancy::Omission(reason)` when revalidation fails because of an omitted entity.
+- `worldwake-ai` — `crates/worldwake-ai/src/agent_tick/planning.rs:546` and the snapshot construction path consume the agent's accumulated belief observations directly (the per-place cap argument is removed). `RootCandidateTrace` (`decision_trace.rs:786`) gains `omitted_anchor: Option<OmissionReason>` populated from `search/candidates.rs` when a synthesized root candidate's anchor is absent from the planning snapshot and present in the agent's `ObservationOmissionLog`. Hypothetical-effect-sink revalidation paths (`effect_sink_hypothetical.rs`) gain support for emitting `Discrepancy::Omission(reason)` when revalidation fails because of an omitted entity.
 - `worldwake-cli` — `PerceptionProfile` deserialization on `AgentDef.perception_profile` (`scenario/types.rs:447`) gains the two new fields automatically through `#[serde(default)]`. Observer's "Perception Trace Summary" sub-section (`observer.rs:3091`, inside Section 5 "Raw Event Sample") gains a per-agent top-K omissions block grouped by `OmissionReason` discriminant. Default K=5; override via new `--top-omissions <K>` CLI flag.
 
 ## Dependencies
@@ -119,14 +119,13 @@ Delete the field. Codebase analysis (workspace-wide grep): 1 active runtime read
 
 ### D4. Decision-trace annotation
 
-`crates/worldwake-ai/src/decision_trace.rs::RootCandidateTrace` (line 786) gains:
+`crates/worldwake-ai/src/decision_trace.rs::RootCandidateTrace` (line 786) gains an in-memory diagnostic field:
 
 ```rust
-#[serde(default)]
 pub omitted_anchor: Option<OmissionReason>,
 ```
 
-populated when the planner discards a synthesized root candidate because its anchor entity is in the agent's `ObservationOmissionLog` rather than the belief store.
+populated from the root trace construction path in `crates/worldwake-ai/src/search/candidates.rs` when a root candidate's anchor entity is absent from the planning snapshot and present in the agent's `ObservationOmissionLog`. `RootCandidateTrace` is not currently a serde-persisted carrier, so this field does not require a save-format bump or serde default proof.
 
 ### D5. `GoalBeliefView` accessor for `ObservationOmissionLog`
 

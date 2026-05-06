@@ -6,7 +6,8 @@ use crate::planner_ops::{PlannerOpKind, planner_only_candidates};
 use crate::{GoalKindPlannerExt, GoalOffer, PlannerOpSemantics, PlanningEntityRef, PlanningState};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, BlockerMemory, ContentionStatus, EntityId, GoalKind, OpportunityAnchor, Tick,
+    ActionDefId, BlockerMemory, ContentionStatus, EntityId, GoalKind, OmissionReason,
+    OpportunityAnchor, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionHandlerRegistry, ActionPayload, Affordance, EconomicBeliefView,
@@ -139,6 +140,7 @@ pub(super) fn root_candidate_trace_from_candidate(
     candidate: &SearchCandidate,
     registry: &ActionDefRegistry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    omitted_anchor: Option<OmissionReason>,
 ) -> crate::decision_trace::RootCandidateTrace {
     crate::decision_trace::RootCandidateTrace {
         def_id: candidate.def_id,
@@ -152,6 +154,7 @@ pub(super) fn root_candidate_trace_from_candidate(
         planner_only: candidate.planner_only,
         payload_status: root_candidate_payload_status(candidate.payload_override.as_ref(), None),
         outcome: crate::decision_trace::RootCandidateOutcome::Expanded,
+        omitted_anchor,
     }
 }
 
@@ -317,9 +320,15 @@ pub(super) fn search_candidates_with_expansion_trace(
             &mut expansion_candidates,
             expansion_candidate_trace_from_candidate(&candidate, registry, semantics_table),
         );
+        let omitted_anchor = omitted_anchor_for_candidate(goal, &node.state, &candidate);
         let trace_index = push_root_candidate_trace(
             &mut root_candidates,
-            root_candidate_trace_from_candidate(&candidate, registry, semantics_table),
+            root_candidate_trace_from_candidate(
+                &candidate,
+                registry,
+                semantics_table,
+                omitted_anchor,
+            ),
         );
 
         if let Some((facility, intended_action)) =
@@ -459,6 +468,32 @@ pub(super) fn search_candidates_with_expansion_trace(
         filtered.push(candidate);
     }
     filtered
+}
+
+fn omitted_anchor_for_candidate(
+    goal: &GoalOffer,
+    state: &PlanningState<'_>,
+    candidate: &SearchCandidate,
+) -> Option<OmissionReason> {
+    let anchor = match goal.anchor {
+        OpportunityAnchor::Entity(entity) => Some(entity),
+        OpportunityAnchor::Place(_) | OpportunityAnchor::None => {
+            candidate.authoritative_targets.first().copied()
+        }
+    }?;
+    if state
+        .entity_kind_ref(PlanningEntityRef::Authoritative(anchor))
+        .is_some()
+    {
+        return None;
+    }
+    let actor = state.snapshot().actor();
+    worldwake_sim::GoalBeliefView::observation_omission_log(state, actor)?
+        .entries
+        .iter()
+        .rev()
+        .find(|entry| entry.omitted_entity == anchor)
+        .map(|entry| entry.reason)
 }
 
 fn candidate_matches_opportunity_anchor(
