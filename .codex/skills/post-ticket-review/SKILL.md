@@ -56,6 +56,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
    - If the ticket status or closeout now overstates completion, make the active ticket truthful before reporting: add a concise `Post-ticket review blocker` note naming the blocker and required resume seam, or apply a factual status correction when the repository's active-ticket convention makes the correct status unambiguous.
    - For golden tickets, also check generated-doc spillover explicitly: confirm the regenerated golden inventory/docs touched the expected owning scenario surfaces, and note any broader generated churn that needs explanation or follow-up. Inspect generated detail/index fields for complete prose, especially `Setup`, `Proves`, and `Cross-system chain`; a generated file can pass `--check-docs` while still publishing truncated first-line fragments from wrapped source metadata.
    - For golden tickets, compare executable assertions against the exact ticket, source-golden, and roadmap wording. Distinguish `contains both steps` from an ordered sequence, `eventually commits` from a claimed lifecycle boundary, candidate emission from selected goal, and selected goal from selected executable plan. If the prose claims ordering, provenance, timing, or lifecycle specificity that the assertions do not prove, block archival as an incomplete proof surface.
+   - When the completed ticket's closeout explicitly narrowed a proof seam, decide whether that narrowed seam still satisfies the ticket's corrected acceptance criteria. Archive only if it does; if the remaining broader contract is real but no longer owned by the completed ticket, create or update a follow-up and truth-sync any active spec prose that still implies the broader contract already landed.
    - When a previously completed ticket was left unarchived until a later reconciliation/disposition ticket clarified its live contract, re-read the older ticket's `Outcome`, `Verification Result`, and any remaining blocker wording against that newer archived disposition before archiving the older ticket.
 5. If already archived, validate the archived handoff content rather than reopening.
 6. Do not revise the ticket's problem statement, scope, or acceptance criteria except for factual completion notes required by archival mechanics.
@@ -69,6 +70,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
    - tracked rename / move into the archive path
    - tracked deletion at the active path plus untracked archive file
 10. Re-read the archived ticket after the move and fix any purely mechanical path fallout caused by relocation (for example relative markdown links in `Deps`, archive-ticket references, or other moved-path links inside the archived file). Also sweep archived sibling tickets for unambiguous links that still point at the just-moved active path and rewrite those as archival mechanics when no ownership judgment is required. Treat these edits as archival mechanics, not scope changes.
+11. If rereading the archived ticket exposes stale verification or handoff wording, factual corrections to archived `Outcome`, `Verification Result`, `Verification Layers`, or similar proof-surface sections are allowed when they only make the archived proof truthful. Do not use this allowance to rewrite the ticket's problem statement, original scope, or acceptance criteria after archival.
 
 ### 3. Establish the review surface
 
@@ -154,6 +156,7 @@ When a new ticket is warranted:
 6. Name exact files, symbols, abstraction boundaries, invariants, and proof surfaces.
 7. Keep bounded to one coherent concern.
 8. After creating a new ticket, verify it with a direct file read and `git status --short`; plain `git diff` and `git diff --stat` do not show untracked ticket contents.
+   - For a newly created untracked ticket, run `git diff --check --no-index -- /dev/null <ticket>` or an equivalent whitespace check. `git diff --no-index` may exit `1` solely because the files differ; treat no output as clean and treat emitted `--check` diagnostics as failure.
 9. For markdown-only review edits, run `git diff --check -- <review-edited-files>` before reporting.
 
 Set fields using evidence, not placeholders:

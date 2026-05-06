@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 38
-- Files contributing `golden_*` tests: 38
-- Total `golden_*` tests: 182
+- Golden test files: 39
+- Files contributing `golden_*` tests: 39
+- Total `golden_*` tests: 187
 
 ## Per-File Inventory
 
@@ -15,6 +15,7 @@ Do not hand-edit it.
 |------|------------------|
 | `golden_activation_decay.rs` | 6 |
 | `golden_ai_decisions.rs` | 15 |
+| `golden_artifact_lifecycle.rs` | 5 |
 | `golden_decision_history_events.rs` | 1 |
 | `golden_decision_payload.rs` | 4 |
 | `golden_experience_preferences.rs` | 3 |
@@ -78,6 +79,14 @@ Do not hand-edit it.
 - `golden_fallback_to_addressable_need_when_top_need_unsatisfiable`
 - `golden_loot_refuses_substitute_corpse_after_remote_travel_commitment`
 - `golden_consume_pipeline_rebinds_pick_up_after_remote_lot_change`
+
+### `golden_artifact_lifecycle.rs`
+
+- `bounty_fulfilled_emits_legal_effect_and_actionability_cascade`
+- `warrant_revoked_blocks_subsequent_planner_emission`
+- `expired_bounty_retains_posted_visibility_with_closed_actionability`
+- `suspended_legal_effect_restores_on_resolution_event`
+- `refuted_false_rumor_cascades_to_closed_actionability_via_credibility_handler`
 
 ### `golden_decision_history_events.rs`
 

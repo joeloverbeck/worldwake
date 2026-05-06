@@ -1,9 +1,9 @@
 # S140ARTLIFAXE-006: Golden artifact lifecycle E2E + no-shim regression guard
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
-**Engine Changes**: No new engine code. Adds `crates/worldwake-ai/tests/golden_artifact_lifecycle.rs` (5 scenarios), supporting `.ron` scenario files, and `scripts/check_no_artifact_state.sh` regression grep guard wired into `scripts/verify.sh`.
+**Engine Changes**: No new engine code. Adds `crates/worldwake-ai/tests/golden_artifact_lifecycle.rs` (5 programmatic/hybrid golden scenarios) and `scripts/check_no_artifact_state.sh` regression grep guard wired into `scripts/verify.sh`.
 **Deps**: archive/tickets/S140ARTLIFAXE-001.md, archive/tickets/S140ARTLIFAXE-002.md, archive/tickets/S140ARTLIFAXE-003.md, archive/tickets/S140ARTLIFAXE-004.md, archive/tickets/S140ARTLIFAXE-005.md
 
 ## Problem
@@ -15,7 +15,7 @@ After 001-005 land, the architecture is in place but no E2E golden proves the co
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. After 001-005 land: `ArtifactHeader` carries 5 axis fields, `EventTag::ArtifactTransition` is emitted, `artifact_lifecycle_system` runs 5 ordered stages with event-driven cross-axis cascades, `Discrepancy::ArtifactNotActionable` is recorded at the planner gate, decision-trace renders axis values, and the observer renders Section 11. The only remaining work is E2E golden coverage and the symbol-absence regression guard. Existing golden infrastructure: `crates/worldwake-ai/tests/golden_*.rs` files (per `cargo test -p worldwake-ai -- --list`); `scripts/check_active_goal_removed.sh` precedent at the workspace root; `scripts/verify.sh` already invokes precedent guards in fixed order.
-2. Spec Validation section names the 5 scenarios. The grep guard is named in spec D-section "Validation and Falsification" → "No-shim regression". Per `docs/golden-e2e-testing.md`, golden tests assert end-to-end behavior with action-trace and event-log delta surfaces; they are the canonical E2E proof surface.
+2. Spec Validation section names the 5 scenarios. The grep guard is named in spec D-section "Validation and Falsification" -> "No-shim regression". Per `docs/golden-e2e-testing.md`, golden tests assert end-to-end behavior with action-trace and event-log delta surfaces; they are the canonical E2E proof surface.
 3. **Cross-system shared abstraction boundary**: The boundary under audit is the full action-commit → lifecycle-cascade → planner-gate chain. Each golden scenario exercises a distinct slice of that chain.
 5. **Live `GoalKind` under test**: `GoalKind::FulfillBounty` (for bounty-fulfilled and revoked-warrant scenarios; the warrant scenario uses notice-flavored institutional artifacts that participate in the same axis lifecycle). Operator surface: the existing claim_bounty/withdraw_bounty action paths post-002. Affordances: post-001 reads of `actionability` axis.
 6. **AI-regression layer**: Golden E2E coverage. Each scenario uses the full `agent_tick` integration harness (full action registries required for the action-commit handlers), not the local needs-only harness.
@@ -35,8 +35,8 @@ After 001-005 land, the architecture is in place but no E2E golden proves the co
 1. Bounty fulfilled scenario → action trace (commit_claim_bounty), event-log delta (legal_effect Fulfilled + actionability Closed cascade in same tick, treasury reward release per S125), authoritative state (post-tick `ArtifactHeader` axis values).
 2. Warrant revoked scenario → event-log delta (legal_effect Revoked + actionability Closed cascade), planner refusal via decision trace (Discrepancy::ArtifactNotActionable at next planner tick).
 3. Expired-but-still-posted bounty scenario → event-log delta (legal_effect Expired emitted by lifecycle_system, actionability Closed cascade, visibility Posted preserved).
-4. Suspended legal effect scenario → event-log delta (legal_effect Active → Suspended, restoration on resolution event).
-5. False rumor refuted scenario → event-log delta (credibility Credible → Refuted from evidence-against event, actionability Closed via stage-5 cascade observing the credibility transition).
+4. Suspended legal effect scenario → explicit legal-effect transition payloads (Active → Suspended → Active), append-only event-log deltas, and no spurious actionability closure.
+5. False rumor refuted scenario → explicit credibility transition payload (Credible → Refuted) plus actionability Closed via stage-5 cascade observing the credibility transition.
 6. No-shim regression guard → CI command output (`scripts/check_no_artifact_state.sh` exit code 0 + zero matches reported).
 
 ## What to Change
@@ -55,7 +55,7 @@ Each test loads or constructs a scenario, runs the simulation forward enough tic
 
 ### 2. Add supporting `.ron` scenario fixtures (if needed)
 
-If any of the 5 scenarios are best authored declaratively, add minimal `.ron` files under `scenarios/` (e.g., `scenarios/golden-artifact-lifecycle-bounty-fulfilled.ron`). For tests that require non-default axis state (suspended, refuted), use the unified `ArtifactDef` from archive/tickets/S140ARTLIFAXE-004.md with explicit axis fields. Tests that can be expressed programmatically (constructing artifacts inline) skip this step.
+Reassessment found no authored `.ron` fixture was warranted for this ticket. The five proofs are isolated programmatic/hybrid golden scenarios because that is the strongest honest seam for the current substrate: action-backed bounty flows use the live action lifecycle, planner proof uses live candidate generation, and the suspended/refuted branches inject explicit transition payloads because the corresponding domain source events are not yet authored as scenario inputs. No `scenarios/*` file or `docs/scenario-roadmap.md` registration was needed.
 
 ### 3. Add `scripts/check_no_artifact_state.sh`
 
@@ -72,12 +72,14 @@ Per `tickets/README.md`, run `python3 scripts/golden_inventory.py --write --chec
 ## Files to Touch
 
 - `crates/worldwake-ai/tests/golden_artifact_lifecycle.rs` (new — 5 golden tests)
-- Likely: `scenarios/golden-artifact-lifecycle-*.ron` (new — scenario fixtures, count discovered during implementation; some scenarios may stay programmatic)
 - `scripts/check_no_artifact_state.sh` (new — grep guard, executable)
 - `scripts/verify.sh` (modify — wire guard invocation in fixed order)
+- `docs/generated/golden-coverage-matrix.md` (regenerate)
 - `docs/generated/golden-e2e-inventory.md` (regenerate via `scripts/golden_inventory.py`)
 - `docs/generated/golden-scenario-index.md` (regenerate)
-- `docs/generated/golden-scenario-details/` (regenerate — per-file detail)
+- `docs/generated/golden-scenario-details/artifact-lifecycle.md` (new generated detail page)
+- `docs/generated/golden-scenario-details/decision-payload.md` (generated source-line reference refresh)
+- `docs/generated/golden-scenario-details/experience-preferences.md` (generated source-line reference refresh)
 
 ## Out of Scope
 
@@ -92,7 +94,7 @@ Per `tickets/README.md`, run `python3 scripts/golden_inventory.py --write --chec
 1. `cargo test -p worldwake-ai --test golden_artifact_lifecycle` — all 5 golden tests pass.
 2. `bash scripts/check_no_artifact_state.sh` — exits 0; zero matches in `crates/`.
 3. `scripts/verify.sh` — full CI gate passes (includes the new guard).
-4. `python3 scripts/golden_inventory.py --check-docs` — confirms generated docs are in sync with the new tests.
+4. `python3 scripts/golden_inventory.py --write --check-docs` — confirms generated docs are in sync with the new tests.
 5. Existing suite: `cargo test --workspace`.
 
 ### Invariants
@@ -115,3 +117,29 @@ Per `tickets/README.md`, run `python3 scripts/golden_inventory.py --write --chec
 3. `python3 scripts/golden_inventory.py --write --check-docs`
 4. `cargo test --workspace`
 5. `scripts/verify.sh` (full CI gate; the new guard runs in order)
+
+## Outcome
+
+Completed on 2026-05-06.
+Outcome amended: 2026-05-06.
+
+- Added `crates/worldwake-ai/tests/golden_artifact_lifecycle.rs` with five golden scenario blocks covering bounty fulfillment, revoked warrant planner blocking, expired-but-posted bounty visibility, suspended legal-effect restoration, and refuted-rumor actionability closure.
+- Added `scripts/check_no_artifact_state.sh` and wired it into `scripts/verify.sh` after the existing active-goal removal guard.
+- Regenerated the golden inventory docs, including the new `docs/generated/golden-scenario-details/artifact-lifecycle.md` page. The generator also refreshed source-line references in existing generated detail pages.
+
+## Deviations
+
+- No authored `.ron` scenarios were added. The current live proof surface is better served by programmatic/hybrid golden fixtures, so no `scenarios/*` file or `docs/scenario-roadmap.md` registration changed.
+- The suspended legal-effect and refuted-rumor cases use explicit lifecycle transition events inside the golden fixture because the live scenario authoring substrate does not yet expose dedicated domain source events for those two branches.
+- This supersedes the drafted "resolution event" / "evidence-against event" wording for those two cases: the archived proof is lifecycle-handler behavior after explicit transition payloads, not domain-source event authoring.
+- Post-ticket review created `tickets/S140ARTLIFAXE-007.md` to own source-event-backed suspension/refutation lifecycle transitions and the remaining S140 spec truth-sync for those branches.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --test golden_artifact_lifecycle -- --list`.
+- Passed `cargo test -p worldwake-ai --test golden_artifact_lifecycle`.
+- Passed `bash scripts/check_no_artifact_state.sh`.
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+- Passed `./scripts/verify.sh`.
+
+Post-`verify.sh` edits were limited to this non-generated ticket Markdown closeout; final hygiene used targeted stale-claim scans and diff whitespace checks.
