@@ -1,6 +1,6 @@
 # S140: Multi-Axis Artifact Lifecycle
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -17,11 +17,11 @@ Sale listings are explicitly out of scope for this spec. They are a separate sub
 
 ## Phase and Status
 
-Phase 11: Belief-First Continual Planning Architectural — Draft
+Phase 11: Belief-First Continual Planning Architectural — COMPLETED
 
 ## Crates
 
-- `worldwake-core` — refactors `ArtifactHeader` to embed five typed axis fields. Adds `ArtifactExistence`, `ArtifactVisibility`, `ArtifactLegalEffect`, `ArtifactCredibility`, `ArtifactActionability` enums plus the supporting payload enums `DestructionCause`, `SuspensionReason`, `RevocationReason`, `ProofKind`, `BlockerReason`, `CloseCause`. Adds `AxisName`, `ArtifactAxisValue`, and `ArtifactTransitionPayload`. Adds `Discrepancy::ArtifactNotActionable`. `ArtifactState` (the prior single-enum) is removed. `BelievedArtifactState` (carried by `EntityBeliefClaim::ArtifactState` at `crates/worldwake-core/src/entity_belief_claim.rs:42`) is migrated to a per-axis representation. `SAVE_FORMAT_VERSION` increments from 70 across the S140 migration; the persisted transition-payload carrier added in S140ARTLIFAXE-002 bumps the live format to 72, and the persisted artifact-actionability discrepancy shape in S140ARTLIFAXE-003 bumps the live format to 73.
+- `worldwake-core` — refactors `ArtifactHeader` to embed five typed axis fields. Adds `ArtifactExistence`, `ArtifactVisibility`, `ArtifactLegalEffect`, `ArtifactCredibility`, `ArtifactActionability` enums plus the supporting payload enums `DestructionCause`, `SuspensionReason`, `RevocationReason`, `ProofKind`, `BlockerReason`, `CloseCause`. Adds `AxisName`, `ArtifactAxisValue`, and `ArtifactTransitionPayload`. Adds `Discrepancy::ArtifactNotActionable`. `ArtifactState` (the prior single-enum) is removed. `BelievedArtifactState` (carried by `EntityBeliefClaim::ArtifactState` at `crates/worldwake-core/src/entity_belief_claim.rs:42`) is migrated to a per-axis representation. `SAVE_FORMAT_VERSION` increments from 70 across the S140 migration; the persisted transition-payload carrier added in S140ARTLIFAXE-002 bumps the live format to 72, the persisted artifact-actionability discrepancy shape in S140ARTLIFAXE-003 bumps the live format to 73, and the artifact-addressed `InstitutionalClaim::ArtifactCredibilityRefutation` carrier added in S140ARTLIFAXE-008 bumps the live format to 74.
 - `worldwake-sim` — `EventTag::ArtifactTransition` added. Decode and replay paths updated.
 - `worldwake-systems` — `crates/worldwake-systems/src/artifact_lifecycle.rs` extended with per-axis transition handlers. `crates/worldwake-systems/src/artifact_actions.rs` (which contains the existing `register_post_bounty_action`, `register_post_notice_action`, `register_withdraw_bounty_action`, `register_claim_bounty_action` registrations and their commit handlers) emits per-axis transitions in place of the flat-state writes at lines 1193, 1293, 1382, 1497. Justice-subsystem accusation handling in `crates/worldwake-systems/src/justice_actions.rs` participates only if and to the extent that accusations are landed as artifacts in this spec — the spec scopes that explicitly under "Accusation participation" below.
 - `worldwake-ai` — planner reads `actionability` not `existence` when evaluating "can I act on this artifact?" A revoked warrant still exists and is visible but is non-actionable. Decision-trace surfaces axis values for artifacts referenced by ranked candidates. The single existing artifact-state gate (`candidate_generation.rs:650`) is migrated; no new gates are introduced for goal kinds that did not previously filter on `ArtifactState`.
@@ -185,7 +185,7 @@ A single `EventTag::ArtifactTransition` covers all five axes. Decoding inspects 
 
 1. `existence` (handles `Destroyed` terminal state — short-circuits the rest).
 2. `legal_effect` (handles `Expired` ← TTL, `Revoked` ← withdrawal/revocation transition events, `Fulfilled` ← bounty-fulfillment events from `commit_claim_bounty` at `artifact_actions.rs:1434`, and source-event-backed `Suspended` / restoration from `InstitutionalClaim::ForceControl { contested }` record events wired by S140ARTLIFAXE-007).
-3. `credibility` (S140ARTLIFAXE-006 proves the lower lifecycle cascade from explicit credibility transition payloads; source-event-backed `Disputed` ← contradicting-testimony events and `Refuted` ← evidence-against events remain future-owned by tickets/S140ARTLIFAXE-008.md after S140ARTLIFAXE-007 reassessed that live S63 case/evidence carriers do not yet address artifact lifecycle).
+3. `credibility` (S140ARTLIFAXE-008 wires source-event-backed `Refuted` transitions from artifact-addressed `InstitutionalClaim::ArtifactCredibilityRefutation` record events. Source-event-backed `Disputed` ← contradicting-testimony events and the full S63 case/alibi/exoneration workflow remain future-owned outside this bounded carrier.)
 4. `visibility` (handles `Posted` ← post events, `Hidden` ← unstaging events, `WidelyKnown` ← rumor-saturation events).
 5. `actionability` (handles `Closed` ← downstream consequence of legal_effect or credibility transitions emitted by stages 2-3 in this same tick, `Blocked` ← jurisdiction-conflict events, `AwaitingProof` ← proof-pending events).
 
@@ -270,7 +270,7 @@ The section header text and section number are committed to. Section 5 ("Raw Eve
 7. **Lifecycle states and transitions (FND-30 #12).** Direct compliance — this is the spec's central concern. Each axis enumerates its states and transitions, and the lifecycle handlers in D3 enumerate the events that move them.
 8. **Temporal resolution and tie-breaking (FND-30 #13).** Per-axis transition handlers run in a fixed order within `artifact_lifecycle_system` (existence, legal_effect, credibility, visibility, actionability). Within an axis, ties are broken by `BTreeMap`-stable iteration over transition events. This makes the per-tick transition sequence deterministic across replays.
 9. **Causal records and event identities (FND-30 #16).** `EventTag::ArtifactTransition` events carry `(artifact, axis, prior, new, cause_event, at)` so post-hoc inspection can reconstruct both the causal path (cause_event chain) and the knowledge path (perception observations of the transition). FND-29A append-only history is preserved.
-10. **Save/load and replay (FND-30 #18).** `SAVE_FORMAT_VERSION` increments from 70 across S140; S140ARTLIFAXE-002 further bumps the live format to 72 when `ArtifactTransitionPayload` becomes persisted event-log payload data, and S140ARTLIFAXE-003 bumps the live format to 73 when `Discrepancy::ArtifactNotActionable` and closed-cause `BlockerReason` variants become persisted. `BelievedArtifactState` is migrated alongside `ArtifactState`. No save-format shim is provided (FND-28); pre-S140 saves cannot be loaded by post-S140 binaries. Replay determinism depends on the per-axis handler ordering documented in #8.
+10. **Save/load and replay (FND-30 #18).** `SAVE_FORMAT_VERSION` increments from 70 across S140; S140ARTLIFAXE-002 further bumps the live format to 72 when `ArtifactTransitionPayload` becomes persisted event-log payload data, S140ARTLIFAXE-003 bumps the live format to 73 when `Discrepancy::ArtifactNotActionable` and closed-cause `BlockerReason` variants become persisted, and S140ARTLIFAXE-008 bumps the live format to 74 when the artifact-addressed `InstitutionalClaim::ArtifactCredibilityRefutation` record carrier becomes persisted. `BelievedArtifactState` is migrated alongside `ArtifactState`. No save-format shim is provided (FND-28); pre-S140 saves cannot be loaded by post-S140 binaries. Replay determinism depends on the per-axis handler ordering documented in #8.
 
 Declarations 1, 2, 3, 6, 7, 10, 14, 17 are addressed implicitly by the spec body or are not relevant to this system extension (S140 introduces no new actions, no new scarce capacities, no new boundary processes, no new agent-local learning, and no new validation falsifiers beyond those already enumerated in the Validation section).
 
@@ -302,15 +302,41 @@ Not applicable — artifact lifecycle is per-artifact-class state, not per-agent
   2. Warrant revoked → expects `legal_effect: Active → Revoked`, `actionability: Actionable → Closed`, planner refusal of candidates anchored on it via `Discrepancy::ArtifactNotActionable`.
   3. Expired-but-still-posted bounty → expects `legal_effect: Expired`, `visibility: Posted` retained, `actionability: Closed`.
   4. Suspended legal effect under jurisdiction conflict → expects `legal_effect: Active → Suspended`, restoration on resolution. S140ARTLIFAXE-007 wires this branch to source `InstitutionalClaim::ForceControl { contested }` record events and updates the golden fixture to prove the source-backed path.
-  5. False rumor refuted via contradicting evidence → expects `credibility: Credible → Refuted`, `actionability: Actionable → Closed`, `existence: Exists` retained for audit. S140ARTLIFAXE-006 proves the lower lifecycle cascade without depending on accusations being landed as artifacts; tickets/S140ARTLIFAXE-008.md owns replacing the explicit transition fixture with a source-event-backed refutation path after the S63-style case/evidence carriers can lawfully address artifact lifecycle.
+  5. False rumor refuted via contradicting evidence → expects `credibility: Credible → Refuted`, `actionability: Actionable → Closed`, `existence: Exists` retained for audit. S140ARTLIFAXE-008 replaces the explicit transition fixture with a source-event-backed path through artifact-addressed `InstitutionalClaim::ArtifactCredibilityRefutation` record events; full S63 case/evidence adjudication remains outside this bounded carrier.
 - **Scenario-author migration parity**: every committed `.ron` scenario produces identical run-time behavior post-S140. Today, no scenario authors `notices:`, so this check reduces to confirming the renamed `artifacts:` field's defaults reproduce the historical `ArtifactState::Active` shape (`Exists | Posted | Active | Credible | Actionable`) when no axis fields are declared. This is a boundary normalization (FND-13), not engine-layer back-compat.
-- **Save-state migration**: distinct from scenario-author parity. Pre-S140 saves are explicitly not loadable post-S140; the `SAVE_FORMAT_VERSION` bump from 70, the later live bump to 72 for persisted transition payloads, and the live bump to 73 for the persisted artifact-actionability discrepancy shape are verified by the existing version-check path (`crates/worldwake-sim/src/save_load.rs`).
+- **Save-state migration**: distinct from scenario-author parity. Pre-S140 saves are explicitly not loadable post-S140; the `SAVE_FORMAT_VERSION` bump from 70, the later live bump to 72 for persisted transition payloads, the live bump to 73 for the persisted artifact-actionability discrepancy shape, and the live bump to 74 for the persisted artifact-credibility-refutation record carrier are verified by the existing version-check path (`crates/worldwake-sim/src/save_load.rs`).
 - **No-shim regression**: a grep guard asserts that the exact symbol `ArtifactState` appears nowhere in `crates/` post-S140 (excluding `BelievedArtifactState` which is renamed via D5 and carries no surviving `ArtifactState` substring after the variant rename). The guard greps the exact word boundary `\bArtifactState\b`.
 
 ## Risks
 
 - **Migration breadth.** The 125-site `ArtifactState` reference set spans every layer of the workspace plus tests. Mitigation: D4 commits to the migration as scope; `/spec-to-tickets` is expected to split D4 across crate-bounded tickets so each can be implemented and reviewed independently.
-- **Save-format break.** `SAVE_FORMAT_VERSION` increments from 70 across S140 and reaches 73 once transition payloads and artifact-actionability discrepancy records are persisted; no shim. Mitigation: any committed save fixtures that need to round-trip get fresh-generation tickets alongside the migration.
+- **Save-format break.** `SAVE_FORMAT_VERSION` increments from 70 across S140 and reaches 74 once transition payloads, artifact-actionability discrepancy records, and the artifact-credibility-refutation record carrier are persisted; no shim. Mitigation: any committed save fixtures that need to round-trip get fresh-generation tickets alongside the migration.
 - **Per-axis handler ordering.** Cross-axis effects must be deterministic across replays. Mitigation: the five-stage ordering above is fixed and tested via golden 1; tie-breaking within an axis is by `BTreeMap`-stable iteration over transition events.
 - **`Copy` removal on `ArtifactHeader`.** `BTreeSet<EntityId>` payload on `Private` and `Disputed` forces dropping `ArtifactHeader`'s `Copy` derive. Mitigation: D1 includes the consumer-migration audit; the existing 1:1 ratio of struct copies to clones is small enough to migrate inline.
 - **Scenario rename ergonomics.** Renaming `notices:` to `artifacts:` plus `NoticeDef` to `ArtifactDef` will affect any downstream scenario tooling. Mitigation: zero `.ron` files use the field today, so the rename is an engine-side rename without scenario-authoring fallout.
+
+## Outcome
+
+Completed on 2026-05-06.
+
+- Implemented across archived tickets `S140ARTLIFAXE-001` through `S140ARTLIFAXE-008`.
+- Replaced the flat `ArtifactState` model with five typed artifact lifecycle axes on `ArtifactHeader`, migrated belief/read surfaces, scenario authoring, observer rendering, planner actionability gating, transition payload persistence, and generated golden documentation.
+- Added append-only `ArtifactTransition` provenance with deterministic lifecycle-stage ordering and source-backed legal-effect suspension/restoration through `InstitutionalClaim::ForceControl { contested }` record events.
+- Added source-backed credibility refutation through the bounded artifact-addressed `InstitutionalClaim::ArtifactCredibilityRefutation { artifact, evidence, effective_tick }` record carrier, then moved Scenario 392 from explicit transition injection to that source-backed path.
+- Bumped `SAVE_FORMAT_VERSION` through the S140 chain to 74 for the persisted artifact lifecycle, discrepancy, transition-payload, and institutional-claim shapes.
+
+Deviations:
+
+- Accusations were not promoted to `ArtifactHeader`; S140 remains scoped to artifacts already using the social-artifact substrate.
+- The full S63 case/alibi/exoneration workflow and source-event-backed `Disputed` credibility branch remain outside this completed S140 slice. The landed refutation path is intentionally the minimal artifact-addressed institutional record carrier required for lifecycle provenance.
+- FOUNDATIONS Scenario G is not claimed as an end-to-end justice/witness chain by S140 alone; S140 supplies the artifact lifecycle axis substrate and source-backed refutation seam.
+
+Verification results:
+
+- `cargo test -p worldwake-core --lib institutional`
+- `cargo test -p worldwake-systems --lib artifact_lifecycle`
+- `cargo test -p worldwake-ai --test golden_artifact_lifecycle`
+- `cargo test -p worldwake-sim --lib save_load`
+- `cargo test -p worldwake-sim --lib institutional_knowledge_trace`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `./scripts/verify.sh`

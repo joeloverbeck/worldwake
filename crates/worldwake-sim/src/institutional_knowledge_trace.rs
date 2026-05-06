@@ -68,6 +68,9 @@ pub enum InstitutionalBeliefReadSummary {
     CrimeCaseClaims {
         claims: Vec<InstitutionalClaim>,
     },
+    ArtifactCredibilityClaims {
+        claims: Vec<InstitutionalClaim>,
+    },
     MissingPersonStatusCertain {
         status: MissingPersonReportStatus,
     },
@@ -318,6 +321,21 @@ pub fn summarize_institutional_read(
                 InstitutionalBeliefReadSummary::CrimeCaseClaims { claims }
             }
         }
+        InstitutionalBeliefKey::ArtifactCredibilityOf { artifact } => {
+            let claims = store
+                .institutional_beliefs
+                .get(&InstitutionalBeliefKey::ArtifactCredibilityOf { artifact })
+                .into_iter()
+                .flatten()
+                .map(|belief| belief.claim)
+                .collect::<Vec<_>>();
+
+            if claims.is_empty() {
+                InstitutionalBeliefReadSummary::Unknown
+            } else {
+                InstitutionalBeliefReadSummary::ArtifactCredibilityClaims { claims }
+            }
+        }
         InstitutionalBeliefKey::MissingPersonStatus { subject } => {
             match store.believed_missing_person_status(subject) {
                 InstitutionalBeliefRead::Unknown => InstitutionalBeliefReadSummary::Unknown,
@@ -362,6 +380,9 @@ fn institutional_belief_key(claim: worldwake_core::InstitutionalClaim) -> Instit
             accused,
             violation_id,
         },
+        worldwake_core::InstitutionalClaim::ArtifactCredibilityRefutation { artifact, .. } => {
+            InstitutionalBeliefKey::ArtifactCredibilityOf { artifact }
+        }
         worldwake_core::InstitutionalClaim::MissingPersonStatus { subject, .. } => {
             InstitutionalBeliefKey::MissingPersonStatus { subject }
         }

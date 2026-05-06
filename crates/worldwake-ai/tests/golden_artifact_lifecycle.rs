@@ -185,6 +185,28 @@ fn force_control_source_event(
     txn.commit(log)
 }
 
+fn artifact_refutation_source_event(
+    world: &mut World,
+    log: &mut EventLog,
+    record: EntityId,
+    artifact: EntityId,
+    evidence: EntityId,
+    tick: Tick,
+) -> worldwake_core::EventId {
+    let mut txn = new_txn(world, tick.0);
+    txn.append_record_entry(
+        record,
+        InstitutionalClaim::ArtifactCredibilityRefutation {
+            artifact,
+            evidence,
+            effective_tick: tick,
+        },
+    )
+    .unwrap();
+    txn.add_tag(EventTag::Social);
+    txn.commit(log)
+}
+
 fn action_id(defs: &ActionDefRegistry, name: &str) -> worldwake_core::ActionDefId {
     defs.iter()
         .find(|def| def.name == name)
@@ -286,56 +308,6 @@ fn transition_payloads(
             )
         })
         .collect()
-}
-
-fn transition(
-    world: &mut World,
-    log: &mut EventLog,
-    artifact: EntityId,
-    axis: AxisName,
-    new: ArtifactAxisValue,
-    tick: Tick,
-) {
-    let mut header = world
-        .get_component_artifact_header(artifact)
-        .cloned()
-        .expect("artifact should have header");
-    let prior = match axis {
-        AxisName::LegalEffect => {
-            let prior = ArtifactAxisValue::LegalEffect(header.legal_effect);
-            let ArtifactAxisValue::LegalEffect(new_value) = new else {
-                panic!("legal-effect transition requires legal-effect payload");
-            };
-            header.legal_effect = new_value;
-            prior
-        }
-        AxisName::Credibility => {
-            let prior = ArtifactAxisValue::Credibility(header.credibility.clone());
-            let ArtifactAxisValue::Credibility(new_value) = new else {
-                panic!("credibility transition requires credibility payload");
-            };
-            header.credibility = new_value;
-            prior
-        }
-        _ => panic!("test fixture only transitions legal effect or credibility"),
-    };
-    let now = match axis {
-        AxisName::LegalEffect => ArtifactAxisValue::LegalEffect(header.legal_effect),
-        AxisName::Credibility => ArtifactAxisValue::Credibility(header.credibility.clone()),
-        _ => unreachable!(),
-    };
-    let mut txn = new_txn(world, tick.0);
-    txn.set_artifact_transition_payload(ArtifactTransitionPayload {
-        artifact,
-        axis,
-        prior,
-        new: now,
-        cause_event: Some(log.next_id()),
-        at: tick,
-    });
-    txn.set_component_artifact_header(artifact, header).unwrap();
-    txn.add_target(artifact);
-    commit_txn(txn, log);
 }
 
 fn assert_artifact_header_event(log: &EventLog, artifact: EntityId) {
@@ -694,33 +666,27 @@ fn suspended_legal_effect_restores_on_resolution_event() {
 // ActionDomains: Artifact
 // Places: VillageSquare
 // Principles: 15, 16, 18
-// Setup: a posted bounty receives an explicit credibility refutation event.
-//   No legal-effect closure is authored, so the actionability close must come
-//   from the credibility transition path.
-// Proves: the lifecycle actionability stage observes same-tick credibility
-//   refutation and emits the Closed/Refuted transition as a separate event.
-// Chain: ArtifactTransition(Credibility::Refuted) ->
-//   artifact_lifecycle_system -> ArtifactTransition(Actionability::Closed).
+// Setup: a posted bounty receives an artifact-addressed credibility
+//   refutation record entry with a concrete evidence entity. No legal-effect
+//   closure is authored.
+// Proves: the lifecycle credibility stage converts the record source into a
+//   Credibility::Refuted transition, and actionability closes from that same
+//   append-only transition.
+// Chain: ArtifactCredibilityRefutation record event ->
+//   ArtifactTransition(Credibility::Refuted) ->
+//   ArtifactTransition(Actionability::Closed).
 #[test]
 fn refuted_false_rumor_cascades_to_closed_actionability_via_credibility_handler() {
     let mut world = World::new(build_prototype_world()).unwrap();
     let issuer = actor(&mut world, "issuer", SQUARE);
     let evidence = actor(&mut world, "evidence witness", SQUARE);
     let target = actor(&mut world, "target", SQUARE);
+    let record = record(&mut world, issuer, SQUARE, RecordKind::CrimeRegister);
     let bounty = bounty(&mut world, issuer, target, None);
     let mut log = EventLog::new();
 
-    transition(
-        &mut world,
-        &mut log,
-        bounty,
-        AxisName::Credibility,
-        ArtifactAxisValue::Credibility(ArtifactCredibility::Refuted {
-            refuted_at: Tick(11),
-            evidence,
-        }),
-        Tick(11),
-    );
+    let source_event =
+        artifact_refutation_source_event(&mut world, &mut log, record, bounty, evidence, Tick(11));
     run_lifecycle(&mut world, &mut log, Tick(11));
 
     let header = world.get_component_artifact_header(bounty).unwrap();
@@ -741,6 +707,7 @@ fn refuted_false_rumor_cascades_to_closed_actionability_via_credibility_handler(
     let transitions = transition_payloads(&log);
     assert_eq!(transitions.len(), 2);
     assert_eq!(transitions[0].1.axis, AxisName::Credibility);
+    assert_eq!(transitions[0].1.cause_event, Some(source_event));
     assert_eq!(transitions[1].1.axis, AxisName::Actionability);
     assert_eq!(transitions[1].1.cause_event, Some(transitions[0].0));
 }

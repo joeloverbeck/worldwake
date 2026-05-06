@@ -65,6 +65,11 @@ pub enum InstitutionalClaim {
         punishment: PunishmentKind,
         effective_tick: Tick,
     },
+    ArtifactCredibilityRefutation {
+        artifact: EntityId,
+        evidence: EntityId,
+        effective_tick: Tick,
+    },
     MissingPersonStatus {
         subject: EntityId,
         reporter: EntityId,
@@ -212,6 +217,9 @@ pub enum InstitutionalBeliefKey {
         accused: EntityId,
         violation_id: ViolationId,
     },
+    ArtifactCredibilityOf {
+        artifact: EntityId,
+    },
     MissingPersonStatus {
         subject: EntityId,
     },
@@ -320,6 +328,14 @@ mod tests {
                 commodity: CommodityKind::Coin,
                 amount: Quantity(9),
             },
+            effective_tick: Tick(effective_tick),
+        }
+    }
+
+    fn artifact_refutation_claim(effective_tick: u64) -> InstitutionalClaim {
+        InstitutionalClaim::ArtifactCredibilityRefutation {
+            artifact: entity(50),
+            evidence: entity(51),
             effective_tick: Tick(effective_tick),
         }
     }
@@ -472,6 +488,9 @@ mod tests {
                 accused: entity(5),
                 violation_id: ViolationId(9),
             },
+            InstitutionalBeliefKey::ArtifactCredibilityOf {
+                artifact: entity(9),
+            },
             InstitutionalBeliefKey::MissingPersonStatus { subject: entity(8) },
         ];
 
@@ -490,6 +509,9 @@ mod tests {
                 InstitutionalBeliefKey::CrimeCase {
                     accused: entity(5),
                     violation_id: ViolationId(9),
+                },
+                InstitutionalBeliefKey::ArtifactCredibilityOf {
+                    artifact: entity(9),
                 },
                 InstitutionalBeliefKey::MissingPersonStatus { subject: entity(8) },
             ]
@@ -571,24 +593,29 @@ mod tests {
     fn accusation_and_verdict_roundtrip_through_bincode() {
         let accusation = accusation_claim(13);
         let verdict = verdict_claim(21);
+        let artifact_refutation = artifact_refutation_claim(22);
         let missing = missing_person_claim(
             MissingPersonReportStatus::FoundWounded {
                 at_place: entity(46),
             },
-            22,
+            23,
         );
 
         let accusation_bytes = bincode::serialize(&accusation).unwrap();
         let verdict_bytes = bincode::serialize(&verdict).unwrap();
+        let artifact_refutation_bytes = bincode::serialize(&artifact_refutation).unwrap();
         let missing_bytes = bincode::serialize(&missing).unwrap();
 
         let accusation_roundtrip: InstitutionalClaim =
             bincode::deserialize(&accusation_bytes).unwrap();
         let verdict_roundtrip: InstitutionalClaim = bincode::deserialize(&verdict_bytes).unwrap();
+        let artifact_refutation_roundtrip: InstitutionalClaim =
+            bincode::deserialize(&artifact_refutation_bytes).unwrap();
         let missing_roundtrip: InstitutionalClaim = bincode::deserialize(&missing_bytes).unwrap();
 
         assert_eq!(accusation_roundtrip, accusation);
         assert_eq!(verdict_roundtrip, verdict);
+        assert_eq!(artifact_refutation_roundtrip, artifact_refutation);
         assert_eq!(missing_roundtrip, missing);
     }
 

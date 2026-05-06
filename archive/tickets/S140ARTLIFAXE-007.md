@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `artifact_lifecycle_system` source-event stages, event/source-carrier integration where live carriers exist, focused lifecycle/golden proof updates
-**Deps**: archive/tickets/S140ARTLIFAXE-006.md, specs/S140-artifact-lifecycle-axes.md, specs/S63-contested-evidence-warrants.md
+**Deps**: archive/tickets/S140ARTLIFAXE-006.md, archive/specs/S140-artifact-lifecycle-axes.md, specs/S63-contested-evidence-warrants.md
 
 ## Problem
 
@@ -20,7 +20,7 @@ That is an honest E2E lifecycle proof, but it is not the full S140 source-event 
 2. `crates/worldwake-systems/src/artifact_lifecycle.rs` called `credibility_stage()` and `visibility_stage()`, but those stages were empty. The legal-effect stage handled TTL expiry only; action commits already emitted fulfillment/revocation transition payloads and actionability observed those payloads.
 3. Live source-carrier reassessment found one lawful source-event subset: `InstitutionalClaim::ForceControl { contested }` entries appended through `RecordData` component deltas can suspend and restore artifacts issued by or under that office because they identify the concrete office whose legal authority is contested/resolved.
 4. Live refutation reassessment found no lawful source carrier yet. `SceneEvidence` entries do not address an artifact; belief contradiction/status carriers are reader projections, not authoritative artifact lifecycle sources; live justice records have accusations and guilty verdicts but no S63 `CaseRecord`, exoneration, contested evidence, alibi, or case revision carrier.
-5. `tickets/S140ARTLIFAXE-008.md` now owns source-event-backed credibility refutation after the S63-style case/evidence carrier can lawfully address an artifact lifecycle axis.
+5. `archive/tickets/S140ARTLIFAXE-008.md` now records the completed source-event-backed credibility refutation slice through the bounded artifact-addressed institutional record carrier.
 6. **Shared abstraction boundary**: domain source event or authoritative case/evidence state -> `artifact_lifecycle_system` per-axis transition payload -> event-log append-only `ArtifactTransition` -> actionability cascade.
 7. **Ordering layer**: event-log ordering within the artifact lifecycle system. Source events, axis transitions, and actionability cascades remain distinct events.
 8. **Scenario isolation**: the updated suspended/restored golden isolates one `ForceControl` contested/resolved source branch. The full FOUNDATIONS Scenario G AskWitness / wrongful-accusation chain remains out of scope until S63 substrate exists.
@@ -37,7 +37,7 @@ That is an honest E2E lifecycle proof, but it is not the full S140 source-event 
 2. `InstitutionalClaim::ForceControl { contested: false }` source event -> focused system test proving a jurisdiction suspension restores to `ArtifactLegalEffect::Active { expires_at }` with `cause_event`.
 3. Axis transition -> event-log delta assertions proving `prior`, `new`, `axis`, `cause_event`, and tick ordering.
 4. Golden surface -> `golden_artifact_lifecycle.rs` suspended/restored scenario proves the source-backed branch and generated docs mirror the source chain.
-5. Refutation source-event coverage -> deferred to `tickets/S140ARTLIFAXE-008.md`; current explicit transition fixture remains lower-lifecycle proof only.
+5. Refutation source-event coverage -> completed by `archive/tickets/S140ARTLIFAXE-008.md`; this ticket's explicit transition fixture remained lower-lifecycle proof only at the time of S140ARTLIFAXE-007.
 
 ## What to Change
 
@@ -62,22 +62,22 @@ Add or update focused tests for source-event-to-transition behavior. If an S140 
 
 ### 4. Truth-sync S140 when a branch remains future-owned
 
-If one or more branches still lack lawful source carriers, update `specs/S140-artifact-lifecycle-axes.md` to say which branch remains future-owned and cite the owning spec or follow-up ticket. Do not leave S140 implying that empty lifecycle stages already handle those source events.
+If one or more branches still lack lawful source carriers, update `archive/specs/S140-artifact-lifecycle-axes.md` to say which branch remains future-owned and cite the owning spec or follow-up ticket. Do not leave S140 implying that empty lifecycle stages already handle those source events.
 
 ## Files to Touch
 
 - `crates/worldwake-systems/src/artifact_lifecycle.rs` (modify — source-event stages)
 - `crates/worldwake-ai/tests/golden_artifact_lifecycle.rs` (modify — suspended/restored fixture moves from explicit transition payload to source-backed `ForceControl` events)
 - `docs/generated/golden-scenario-index.md` and `docs/generated/golden-scenario-details/artifact-lifecycle.md` (regenerate)
-- `specs/S140-artifact-lifecycle-axes.md` (truth-sync source-event ownership)
-- `tickets/S140ARTLIFAXE-008.md` (new — refutation source-event follow-up)
+- `archive/specs/S140-artifact-lifecycle-axes.md` (truth-sync source-event ownership)
+- `archive/tickets/S140ARTLIFAXE-008.md` (later completed — refutation source-event follow-up)
 
 ## Out of Scope
 
 - Full FOUNDATIONS Scenario G AskWitness / wrongful-accusation / exoneration chain unless the live S63 substrate already provides the necessary source carriers.
 - Promoting accusations to `ArtifactHeader`; S140 explicitly left that to a future spec.
 - Replacing the explicit-transition lifecycle unit tests that still prove the lower transition/cascade seam.
-- Source-event-backed credibility refutation; this is now owned by `tickets/S140ARTLIFAXE-008.md`.
+- Source-event-backed credibility refutation; this was later completed by `archive/tickets/S140ARTLIFAXE-008.md`.
 
 ## Acceptance Criteria
 
@@ -114,11 +114,11 @@ Completed on 2026-05-06.
 - Wired `artifact_lifecycle_system` legal-effect handling to same-tick `InstitutionalClaim::ForceControl { contested }` source events from `RecordData` deltas. Contested office control now emits `ArtifactLegalEffect::Suspended { reason: JurisdictionDispute }`; a resolved force-control claim restores jurisdiction suspensions to `Active { expires_at }`.
 - Added focused lifecycle tests for source-backed suspension and restoration, including `cause_event` assertions against the originating record event.
 - Updated the S140 suspended/restored golden fixture from explicit legal-effect transition injection to source-backed `ForceControl` record events, then regenerated the generated golden scenario detail and index pages.
-- Truth-synced `specs/S140-artifact-lifecycle-axes.md` to name the live source-backed suspension path and created `tickets/S140ARTLIFAXE-008.md` for future source-backed credibility refutation.
+- Truth-synced `archive/specs/S140-artifact-lifecycle-axes.md` to name the live source-backed suspension path and created the follow-up later archived at `archive/tickets/S140ARTLIFAXE-008.md` for source-backed credibility refutation.
 
 ## Deviations
 
-- The refuted-rumor golden remains an explicit `ArtifactTransitionPayload` fixture. Live `SceneEvidence`, belief contradiction/status projection, and current justice accusation/verdict records do not yet provide an artifact-addressed case/evidence source carrier, so source-backed credibility refutation is deferred to `tickets/S140ARTLIFAXE-008.md`.
+- At S140ARTLIFAXE-007 completion, the refuted-rumor golden remained an explicit `ArtifactTransitionPayload` fixture. Live `SceneEvidence`, belief contradiction/status projection, and current justice accusation/verdict records did not yet provide an artifact-addressed case/evidence source carrier, so source-backed credibility refutation was deferred to the follow-up later archived at `archive/tickets/S140ARTLIFAXE-008.md`.
 - No core event payload or save-format shape changed; the implementation derives source events from existing persisted `EventRecord`/`RecordData` component deltas.
 
 ## Verification Result

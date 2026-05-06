@@ -119,7 +119,7 @@ Completed on 2026-05-06.
 - Kept candidate generation side-effect-free: non-actionable `FulfillBounty` artifacts now return pending discrepancy records, and the read phase records them into `DiscrepancyMemory` for the existing finalizer and `BlockerRecorded` event path.
 - Added artifact-axis snapshots to candidate evidence and ranked-goal trace summaries, with summary/dump rendering of existence, visibility, legal effect, credibility, and actionability for ranked artifact-backed candidates.
 - Bumped `SAVE_FORMAT_VERSION` from 72 to 73 and extended save/load coverage for the persisted artifact-actionability discrepancy shape.
-- Truth-synced `specs/S140-artifact-lifecycle-axes.md` for the expanded `BlockerReason` variants, live format version 73, and the pending-record/read-phase persistence path.
+- Truth-synced `archive/specs/S140-artifact-lifecycle-axes.md` for the expanded `BlockerReason` variants, live format version 73, and the pending-record/read-phase persistence path.
 
 ## Deviations
 

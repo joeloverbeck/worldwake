@@ -38,6 +38,9 @@ enum InstitutionalTellTopicKey {
         accused: EntityId,
         violation_id: crate::ViolationId,
     },
+    ArtifactCredibility {
+        artifact: EntityId,
+    },
     MissingPersonStatus {
         subject: EntityId,
     },
@@ -1506,6 +1509,9 @@ fn institutional_tell_topic_key(claim: InstitutionalClaim) -> InstitutionalTellT
             accused,
             violation_id,
         },
+        InstitutionalClaim::ArtifactCredibilityRefutation { artifact, .. } => {
+            InstitutionalTellTopicKey::ArtifactCredibility { artifact }
+        }
         InstitutionalClaim::MissingPersonStatus { subject, .. } => {
             InstitutionalTellTopicKey::MissingPersonStatus { subject }
         }
@@ -1539,6 +1545,7 @@ fn institutional_claim_effective_tick(claim: InstitutionalClaim) -> Tick {
         | InstitutionalClaim::SupportDeclaration { effective_tick, .. }
         | InstitutionalClaim::Accusation { effective_tick, .. }
         | InstitutionalClaim::Verdict { effective_tick, .. }
+        | InstitutionalClaim::ArtifactCredibilityRefutation { effective_tick, .. }
         | InstitutionalClaim::MissingPersonStatus { effective_tick, .. } => effective_tick,
     }
 }
@@ -1843,6 +1850,7 @@ pub fn institutional_claim_subject_entity(claim: InstitutionalClaim) -> EntityId
         | InstitutionalClaim::MissingPersonStatus {
             subject: accused, ..
         } => accused,
+        InstitutionalClaim::ArtifactCredibilityRefutation { artifact, .. } => artifact,
     }
 }
 
@@ -2082,6 +2090,18 @@ fn institutional_claim_same_content(left: InstitutionalClaim, right: Institution
                 && left_violation_id == right_violation_id
                 && left_punishment == right_punishment
         }
+        (
+            InstitutionalClaim::ArtifactCredibilityRefutation {
+                artifact: left_artifact,
+                evidence: left_evidence,
+                ..
+            },
+            InstitutionalClaim::ArtifactCredibilityRefutation {
+                artifact: right_artifact,
+                evidence: right_evidence,
+                ..
+            },
+        ) => left_artifact == right_artifact && left_evidence == right_evidence,
         (
             InstitutionalClaim::MissingPersonStatus {
                 subject: left_subject,

@@ -5,7 +5,7 @@ description: "Implement or reassess a Worldwake ticket. Use when asked to work f
 
 # Worldwake Ticket Implementation
 
-Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, and any ticket-linked specs or docs before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. If that doc does not cover the exact planner boundary under audit, record the gap and fall back to the landed implementation/spec/ticket chain instead of treating the contract as unknowable. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase. Do not stop at intermediate reassessment or partial fallout; continue until the ticket is completed, fully verified, or blocked by a user decision that requires 1-3-1.
+Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), the target ticket, every ticket-linked spec/doc, and every spec/doc explicitly cited by the user before editing code. For planner-root, snapshot-completeness, or planner-traceability work, also read [docs/planner-contracts.md](../../../docs/planner-contracts.md) before finalizing the reassessment. If that doc does not cover the exact planner boundary under audit, record the gap and fall back to the landed implementation/spec/ticket chain instead of treating the contract as unknowable. Reassess first, then implement — do not treat a ticket as mechanically executable until its assumptions match the current codebase. Do not stop at intermediate reassessment or partial fallout; continue until the ticket is completed, fully verified, or blocked by a user decision that requires 1-3-1.
 
 When several reassessment branches seem applicable at once, use this priority order before coding: prove the live branch first; if the drafted premise is false, rewrite the ticket/spec immediately; if the live branch still supports a narrower complete slice inside the ticket's stated domain, finish that slice and create/update a follow-up ticket for the disproved remainder; use 1-3-1 only when the remaining boundary change is architecturally ambiguous, materially expands scope, or needs a user decision. Follow the canonical mixed-outcome branch in `Mixed outcome: narrow fix landed, broader golden still false` below. `references/mismatch-handling.md` is supplemental guidance for that flow and does not override the explicit mixed-outcome and narrowing rules in this skill.
 
@@ -64,6 +64,7 @@ For CLI smoke checks where the ticket drafts a Cargo command piped to a read-onl
 
 - Start by deciding whether the ticket is really implementation work, validation-suite work, golden/observer proof work, or shared-surface migration work.
 - For shared enum/payload variant tickets, first classify the owner enum/payload, any sibling event/tag or re-export surface that must stay in lockstep, and the likely exhaustive consumer families (observer/CLI/report/render/test fixtures). Treat the migration as more than an owner-file edit even when the first patch lands in one crate. When a ticket pairs an `EventTag` with a decision/event payload enum, sweep each carrier independently: tag membership may be non-exhaustive while `DecisionEventPayload` or report payload renderers still have exhaustive observer/bin/report matches such as `src/bin/observer.rs`.
+  For new `InstitutionalClaim` variants, load `references/reassessment-checks.md` and use its institutional-claim variant checklist before coding.
   For shared payload widening, use a compact first pass before coding: identify the owner type, persisted save/load carrier and required `SAVE_FORMAT_VERSION` decision, render/report/CLI consumers, Debug-derived snapshot fixtures, inventory arrays/count assertions, crate-root re-export namespace collisions, every existing derive or size-sensitive lint bound on the widened enum or carrier plus nested payload types needed to satisfy those bounds, and any active sibling ticket or spec handoff text whose baseline becomes false after the new payload shape lands. When a semantic type name already exists through multiple module paths or crate-root re-exports, verify the real owner module and prefer that owner-module import in implementation and tests instead of trusting the shortest re-export path.
   When a ticket requires an `EventTag` "with payload" or an event-log transition event whose payload must be inspectable later, verify the full live event carrier chain before coding: `EventPayload`, `PendingEvent`, `EventRecord`, `EventView`, `WorldTxn`, save/load, and observer/report consumers. A tag plus payload type is not enough if no persisted event field carries that payload.
   When a shared payload or tag conversion crosses crate-owned types, verify the dependency direction before accepting the drafted conversion site. Put the conversion in the crate that can lawfully name both types, and truth-sync active tickets/specs when the draft names a dependency-inverting crate.
@@ -136,7 +137,7 @@ For tickets that clearly fit the small/local fast path, the fast-path instructio
 ### 1. Load the ticket context
 
 1. Read the target ticket file.
-2. Read every directly relevant reference (specs, docs, code symbols, test files).
+2. Read every directly relevant reference (specs, docs, code symbols, test files), including any specs/docs explicitly named by the user even when the ticket does not link them.
 3. When the user supplies a glob, shorthand, or obvious near-match typo, confirm the exact live file path before reading or relying on it.
    If the invocation includes extra positional tokens or path-like hints after the ticket path, resolve the first live ticket path first, then treat the remaining tokens as optional reference hints unless they clearly resolve to another ticket or a worktree root.
    If the only live match changes the numbered ticket/spec family, announce the resolved path before coding; if more than one plausible numbered-family match exists, use 1-3-1 before proceeding.
@@ -163,139 +164,7 @@ When a shared value-type ticket makes trait, identity, or keying claims, verify 
 
 Load `references/reassessment-checks.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md` and `references/reassessment-golden-observer-report.md`.
 
-For AI candidate-generation tickets whose acceptance criteria mention diagnostics, name the full visibility chain before coding: the local diagnostic carrier, any exported decision-trace carrier, the omission/reason taxonomy, and the focused test that proves the externally visible trace path. Do not treat a local diagnostic record as sufficient evidence when the ticket's proof surface is a public trace, report, or debugging view. When the ticket says candidate generation should "record" a discrepancy, blocker, or memory update, first inspect whether the generator is side-effect-free and whether the live write path is a pending-record, read-phase, or finalizer persistence seam.
-
-For idle-window or stuck-window goldens where an agent remains idle while needs or pressures rise, classify the first failing boundary before tuning scenarios or weakening assertions. Check, in order, whether the AI tick ran; whether candidate generation produced candidates; whether ranking filtered them into `zero_motive` or suppression; whether discrepancy memory blocked the relevant goal, place, target, or action; whether search attempted a plan; whether a plan was selected; whether an action was active or queued; and whether the authoritative scheduler/action trace shows a lifecycle failure.
-
-When a trace, report, or UI ticket names multiple carriers, columns, panes, or externally visible surfaces, prove each named surface independently before closeout. Avoid aggregate assertions such as "decision OR action exists" or membership-only checks when the acceptance criteria require distinct carriers to be populated or rendered.
-
-When a ticket or spec claims that a value will appear in an evidence summary, trace record, diagnostic payload, or that existing infrastructure will "pick it up automatically", verify the exact live carrier type before coding. Confirm whether the carrier can represent the claimed field without lossy mapping; if not, rewrite the ticket/spec to the strongest honest seam, such as an anchor-driven or trait-read contract, before implementing the behavior.
-
-When a ticket or spec says "decision history", "decision trace", "observer", or "debug log" for the proof surface, classify the exact carrier before coding: append-only `DecisionEventPayload`, in-memory `DecisionOutcome` / `PlanningPipelineTrace`, `DecisionTraceSink::dump_agent()` debug output, or CLI observer report rendering. Do not assume a field on `RankedGoalSummary` or another planning trace carrier is visible through observer Section 3 or `decision_payload_summary`; if the live event payload cannot carry the field, narrow the ticket/spec to the strongest honest trace/debug seam or explicitly make payload widening current-ticket scope before implementation.
-
-#### Golden, observer, and report tickets
-
-Load `references/reassessment-golden-observer-report.md` when a ticket's proof surface is a golden, observer fixture, generated report, roadmap summary, or other read-only companion. Keep this top-level section to routing and ownership; put detailed scenario-isolation, fixture-truthing, renderer, event-log fixture, generated-report, and proof-seam case law in that reference.
-
-#### Mixed AI/runtime synthesis and trade arithmetic
-
-When a mixed AI/runtime ticket can synthesize the same payload family or opening offer through both planner fallback and authoritative affordance/runtime code, compare those constructors up front and treat parity across those generation paths as current-ticket scope rather than fixing only one side by default.
-
-When a trade or bundle ticket is motivated by one side of the payload arithmetic (for example a corrected opening offer or higher seller price), inspect the full live trade shape before writing new proofs or closeout language: offered quantity, requested quantity, and the actual committed transfer amount may narrow the truthful contract from “full lot” to “unit purchase” or another smaller lawful seam.
-
-#### Canonical write ownership and authoritative sync
-
-When the ticket is about canonical write ownership, ID allocation, counter integrity, or another “one lawful writer” contract, classify every cited write site before editing: `production writer`, `same-crate test helper`, `fixture/sample payload`, or `already inert`. Do not preserve a drafted production-scope claim if live reassessment shows some cited sites are only test setup or fixtures; correct the ticket first, then decide whether those helper sites still need migration as consistency fallout.
-
-When a live system already prunes or clears an authoritative derived surface when it becomes invalid, check that same sync seam first for the lawful restoration path when the surface becomes valid again. Prefer extending that existing authoritative reconciliation boundary before moving ownership into AI actions, planner restaging, or golden-only scaffolding.
-
-#### Shared struct / field additions and removals
-
-For additive shared struct/component field tickets, load `references/shared-field-migration.md`. Before the first focused proof, run one repo-wide pre-sweep for exact explicit literals (`Type {`), public constructors (`Type::new(`), helper builders, and destructuring patterns on the changed type. Classify those sites by ownership and construction style up front instead of letting compile fallout discover constructor or destructuring updates piecemeal. If the changed type derives serde or is reachable from scenario/authored input, also sweep `scenarios/`, checked-in fixture inputs, and the relevant load/report/generator tests before the first focused proof so authored-input fallout is not left to broad workspace verification.
-
-For component-schema and staged-substrate details, use the `schema-only / staged substrate` preflight in `references/ticket-classification.md` and the registry checks in `references/reassessment-checks.md` instead of keeping case law here.
-
-#### Event, trace, and payload carrier tickets
-
-For event, trace, and payload carrier tickets, use the detailed carrier checks in `references/reassessment-checks.md`: verify the live canonical carrier, conditional emission path, representability of payload causes, subset provenance, and adjacent substrates before broadening scope.
-If an event-driven cascade must observe same-tick events, inspect all scheduler phases before choosing the implementation boundary. A system may need both a pre-action pass for admission-time invariants and a canonical post-action pass for same-tick cascade visibility; if you add or duplicate a pass, expect and update focused system-count/order assertions as current-ticket fallout.
-
-#### Action definition metadata changes
-
-When a ticket changes `ActionDef` metadata rather than only handler internals, classify the changed metadata as a shared contract before coding. For `DurationExpr`, `Interruptibility`, binding strictness, payload defaults, preconditions, targets, reservation requirements, visibility, causal tags, `effect_schema`, or another registry-time field, sweep the corresponding planner duration contracts, belief-view duration resolution, affordance/candidate assumptions, conformance tests, action registry inventory tests, event/tag assertions, and explicit `ActionDef { ... }` fixtures before closeout. Treat downstream AI or harness fallout as current-ticket scope when it follows directly from the changed action-definition contract.
-
-For effect-schema category migrations, load `references/effect-schema-migrations.md`. At top level: classify whether each new `EffectStep` is genuinely generic or category-owned before adding it, and do not flatten category-specific aftermath into a generic abstraction just to satisfy a draft sketch.
-
-When a ticket claims a wire-format, serialization, or round-trip invariant for a named inner record type, verify whether the canonical persisted seam on the live branch is actually an enclosing save/load carrier or state object. If the outer persisted seam is the real contract, prove the invariant through that harness and rewrite the ticket's implementation/proof wording before coding instead of forcing a lower-level test path that bypasses the actual persisted boundary.
-
-#### Belief / planner snapshot tickets
-
-For belief-barrier or snapshot-admission tickets, explicitly classify each planner-visible carrier under audit as `authoritative local`, `belief-backed remote`, `explicit evidence`, or `out of scope` before changing code, so remote omniscience can be removed without accidentally stripping lawful local visibility.
-
-When a planner, belief, or target-synthesis ticket is explicitly audit-then-fix, finish the live row inventory before patching code. If the audited rows differ from the draft examples, update `Engine Changes`, `Files to Touch`, `Acceptance Criteria`, `New/Modified Tests`, and any audit-artifact scope first so every newly included row has a planned disposition: `already safe`, `fixed with focused proof`, `fixed with shared proof rationale`, or `out of scope`.
-
-#### Rewrite rules when reassessment disproves the draft
-
-For golden E2E tickets, explicitly decide whether reassessment disproved the ticket's invariant or only disproved the drafted proof seam. If the invariant still holds but live replanning, control flow, or timing removes the authored autonomous observation window, rewrite the ticket/spec to the strongest honest proof seam before coding instead of treating the whole contract as false.
-
-If reassessment first shows the drafted carrier is wrong and then shows the scenario never reaches that failure boundary at all, do a second-pass rewrite from “wrong carrier” to “wrong branch”: rename the ticket/test to the first actually reachable live contract and update acceptance wording before implementing.
-
-When reassessment or the first focused proof shows a mixed outcome — a narrow production bug inside the ticket's stated domain is real and fixable, but the drafted higher-level golden/E2E premise still does not hold afterward — keep those two conclusions separate and follow `Mixed outcome: narrow fix landed, broader golden still false` above.
-
-When a first-pass ticket/spec rewrite itself later proves too strong under focused live evidence, do not treat that rewritten boundary as sacred. If the live branch still supports a narrower complete slice that honestly resolves the real contradiction the ticket owns, rewrite the active ticket/spec again to that narrower boundary and finish it rather than forcing the stronger rewrite through or leaving the ticket artificially incomplete.
-
-#### Bind abstract domain language to live carriers
-
-When a ticket or spec uses generic domain language such as “affordance presence”, “local support”, or “relevant local state”, bind that phrase to the exact live carrier before coding. If the branch uses concrete place tags, workstation markers, item lots, resource sources, or another existing convention rather than a dedicated helper/type named in the prose, record that narrowing and implement against the live carrier instead of inventing a new abstraction by default.
-
-When a theft, custody, or facility-stock ticket is motivated by “missing” or “unavailable” local goods, classify the contradiction before coding as one of: absent from place, absent from lawful control path, or absent from authoritative stock path. If the lot is still co-located and locally observable but no longer lawfully controllable by the owner, do not force the ticket back into a pure place-absence story; reassess the owner boundary across violation detection, investigation, accusation, and scenario authoring first.
-
-When a ticket or spec includes a function sketch that reads through `GoalBeliefView` or another actor-facing belief trait, verify whether any required methods are actor-scoped before accepting an actor-free signature. If the live trait requires an explicit actor or another carrier the sketch omitted, correct the ticket/spec and helper signature before implementation instead of smuggling the missing context in later.
-
-When adding actor-scoped belief-view accessors for physical state, separate stable authored profiles from dynamic current state. Stable authored profiles may follow a broader known-entity precedent only when live code proves that contract. Dynamic state such as dirtiness, fullness, stock, occupancy, or current capacity must default for remote or merely known targets unless the live belief store has an explicit propagated carrier; a known remote entity is not an authoritative current-state read.
-
-When adding a method to a trait or read surface, search sibling traits in the same consumer bound set for the same method name, even when the arity differs. If another lawful provider exists, sweep dot-call sites and use explicit trait qualification at sites that must continue to call the older provider. When a module already has many trait-backed dot calls and the new read uses one method from a broad facade trait, prefer a fully qualified call such as `TraitName::method(&receiver, ...)` over importing the facade trait into scope; this keeps existing dot-call resolution stable and avoids introducing ambiguity fallout solely from the import.
-
-When a ticket is primarily about categorization, slotting, family membership, or another classifier boundary, compare the drafted category members and exclusions against the live grouping surfaces already used by ranking, policy, dispatch, suppression, or other same-domain classifiers. If the ticket/spec omits a currently live member, includes a stale one, or splits a family differently from those surfaces, correct the ticket before coding instead of hard-coding a new local taxonomy by default.
-
-When a ticket maps a parameterized aspect, tag, enum payload, or claim family to a need, motive, actionability class, or opportunity class, validate the parameter against the live semantic owner before coding. For example, `ResourceAvailable(commodity)` should be checked against the commodity's concrete profile/effect helpers before treating it as relevant to hunger, thirst, medicine, fuel, or another need. Add or update a negative focused proof for a value that carries the same broad aspect but does not satisfy the current need or class, so the new predicate does not silently become "any member of this aspect family".
-
-When a ticket introduces a local ordering, ranking, slot-selection, or weighted-score rule, explicitly check whether a stronger live global priority contract already gates that branch (for example `GoalPriorityClass`, priority bands, interrupt policy, or another higher-tier carrier). If the drafted local ordering would bypass or weaken that existing contract, rewrite the ticket/spec before coding instead of letting the new score path silently outrank the real global priority boundary.
-
-#### Shared renames, visibility, and grep-count claims
-
-For shared renames of types, modules, or schema-generated accessor families, do not trust the drafted file list until you have run a repo-wide sweep for the old symbol/module/accessor names across all workspace crates. Treat downstream import sites, CLI/report consumers, golden harnesses, and other compile consumers as current-ticket fallout even when the ticket only named the defining crate plus first-order readers.
-
-When a golden or observer ticket targets a CLI/report pipeline that currently exists only under `src/bin/*` with no callable public helper, treat the compiled binary itself as a potentially honest E2E seam during reassessment. In that case, prefer an integration test that drives `env!("CARGO_BIN_EXE_<name>")` with temp inputs/outputs over inventing a new public helper just to satisfy the draft.
-
-When a report or observer ticket inserts a new section into output that already uses numbered headings or section-boundary extractors, check immediately whether the change is truly output-additive or whether it also renumbers later sections and shifts downstream snapshot boundaries. Treat that heading/boundary fallout as current-ticket scope, update existing fixtures/tests accordingly, and correct any stale “strictly additive” ticket wording before closeout.
-
-When a ticket wires validation into `spawn_scenario`, `load_scenario_file`, or another shared authored-input/load boundary, sweep not only `scenarios/` but also any test fixtures, observer scenarios, or golden `.ron` files that pass through the same boundary. If broadened verification then fails on one of those same-domain fixture inputs, treat the minimal fixture fix or justified override as current-ticket fallout when the ticket's required test target depends on it.
-
-When a golden belief/read-model ticket proves behavior through a live envelope, projection, or derived belief-view surface, verify that the chosen golden harness seeding helper populates the same substrate the production read actually uses. If the live read derives from claim/provenance storage but the helper only seeds summary snapshots or another narrower cache, patch the fixture to seed the lawful substrate directly before trusting the regression.
-
-For Rust `compile_fail`, privacy, or accessor-fence tickets, verify the exact external symbol path and failure mode before trusting the drafted snippet. Confirm whether the doctest is compiled as an external crate, whether a referenced symbol is actually re-exported from the crate root or only reachable through a module path, and whether the snippet would fail open independently for each intended visibility leak rather than only when multiple symbols change together. If private-type semantics make a drafted field-access regression impossible to prove in the stated form, rewrite the ticket/spec to the strongest honest boundary before coding.
-
-When a ticket demotes visibility on an existing field, function, helper, or type, do not trust a drafted “zero blast radius” claim without a live sweep. Re-check current readers/importers across the workspace, classify them as same-crate production, same-package tests, or sibling-crate consumers, and rewrite the ticket's reassessment or acceptance text immediately if the reader count or boundary claim has drifted.
-
-When a ticket cites grep-based counts or “zero matches” claims in `Problem`, `Assumption Reassessment`, or `Verification Layers`, rerun the exact live grep before implementation and again during closeout if the claim is central to the boundary being changed. If the count has drifted, update the ticket immediately instead of preserving the stale fact and only correcting it in conversation.
-
-When a ticket cites exact grep-derived line numbers as implementation candidates, inspect each cited context before coding and classify the hit as `production owner`, `test fixture`, `docs/prose`, or `stale/no-change`. If the cited production ownership is false, rewrite the ticket to the real live seam before patching source instead of carrying stale line-number evidence into the implementation plan.
-
-When searching Markdown prose, ticket text, or generated docs for literal code spans, quote the shell pattern safely. Prefer single-quoted `rg` patterns, or escape Markdown backticks, so the shell does not treat the search text as command substitution.
-
-#### Proof seam rebinding when the draft is impossible
-
-When a ticket or spec names a focused proof seam, test, or registration-count check that does not actually exist on the live branch, stop and rebind the proof plan to the nearest honest live seam before coding or closeout. Prefer the current manifest/registration site, constructor or delta inventory, macro-expansion-backed compile surface, or existing round-trip/runtime harness that really owns the invariant, then rewrite the ticket's verification wording to match instead of preserving the stale proof name.
-
-When a ticket requires a method or API behavior whose semantics are not actually representable from the drafted stored fields yet (for example retention/expiry behavior without expiry metadata, or a derived classifier without the needed source inputs), treat that as a reassessment mismatch. Update the ticket first, then land the narrowest honest placeholder semantics the live shape can support instead of inventing unsupported state just to satisfy the drafted method list.
-
-When a ticket's requested function signature, helper parameters, or owned input surface cannot represent a distinction the drafted invariant relies on (for example self vs. other, local vs. remote, or per-anchor classification without the needed carrier), treat that as a reassessment mismatch immediately. Rewrite the ticket/spec to the strongest honest boundary before coding instead of smuggling in extra context, guessing hidden state, or silently broadening the implementation contract.
-
-#### Helper reuse and new-file discipline
-
-When a small staged helper/module ticket probes, classifies, or prefilters behavior that is already modeled elsewhere in the same domain, sweep the existing helper surfaces first (for example ranking, dispatch, blocker matching, affordance enumeration, or synthesized-target helpers). Prefer reusing the live helper contract or narrowing the ticket to that seam instead of re-deriving a parallel local interpretation inside the new file by default.
-
-When a ticket drafts a new file or module and the live branch already has a same-name or clearly same-domain module elsewhere in the crate, stop before creating the file and classify the canonical ownership seam first. Do not follow the drafted file sketch mechanically when the live branch already centralizes that domain under a different module boundary.
-
-When a drafted new sibling module needs access to private internals from an existing owner file, decide the visibility boundary before coding: keep the implementation in the owner file, extract a narrow internal helper, or expose only the minimum `pub(crate)` surface needed by the sibling module. Record the chosen blast radius in the active ticket, and keep public crate API unchanged unless the ticket explicitly owns public surface expansion.
-
-When a ticket makes an existing module start consuming a trait method that already has a meaningful default implementation, sweep the local test doubles/stubs/mocks for that trait before trusting focused regressions. If the new proof depends on that method, verify the doubles override it honestly rather than silently inheriting the default `None`/empty/stale placeholder path and failing at the harness seam instead of the production seam.
-
-When a ticket mostly adds a new file plus a small declaration/edit in a large existing file (for example `pub mod ...;`, enum registration, or a one-line export), treat the existing file as a fragile edit surface: confirm the expected declaration layout before patching, then immediately re-read the touched header/section after editing to confirm the file skeleton is still intact before moving on to verification.
-
-When a small/local helper-extraction ticket asks to move existing inline logic into a helper, enumerate the exact live branches currently inlined before editing. If the ticket names an extra semantic branch that is not present in the inline code, rewrite the ticket before coding and mark that branch as future-owned instead of adding new behavior during a preservation refactor.
-
-When a ticket extends an existing per-tick maintenance pass with another local iteration pass, prefer the live system's existing update shape over the ticket's inline sketch when they differ. Typical safe shapes are immutable collection followed by transactional application, or apply-time rereads when shared-source staleness matters. Add focused proof for stale-prune, fresh-retain/no-op, idempotence when meaningful, and the emitted mutation shape when the existing system records events.
-When the expected no-op is "do not write this optional/lazily-created component entry," assert the semantic absence of the inserted key or row. Do not require the component itself to exist unless reassessment has verified the specific fixture path seeds it universally.
-
-When a small/local UI, visualizer, or read-model test asserts rows or state derived from a scenario, verify whether the asserted state exists immediately after load or only after deterministic simulation advancement. If the fixture must advance first, encode that advancement in the focused test and record the temporal proof boundary in ticket closeout instead of treating a tick-0 absence as a missing implementation.
-
-When a visualizer or read-only UI snapshot derives values through AI/belief helpers, enumerate the required lawful read context before coding: agent belief store, current tick, scheduler active actions, action definitions, recipe registry when the helper needs recipes, and any runtime trace or profile carrier that affects the derived value. If the live UI cannot supply a required context, either thread that read-only context into the snapshot path or rebind the ticket/proof to the strongest honest value; do not silently compute a plausible-looking substitute from unrelated fields.
-
-#### Second-pass correction
-
-If implementation or focused test setup later disproves a remaining ticket/spec subclaim that survived the initial reassessment, stop and do a second-pass correction before final verification. Update the active ticket/spec to the strongest honest live seam immediately instead of leaving that mismatch implicit until closeout.
+Detailed domain-specific reassessment case law lives in `references/reassessment-checks.md` and the other references named by the ticket shape. Keep this Step 2 section to universal reassessment obligations; load the relevant reference instead of expanding the top-level workflow.
 
 ### 3. Handle mismatches explicitly
 

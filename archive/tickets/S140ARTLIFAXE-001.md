@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `ArtifactHeader` shape, `ArtifactState` removal, `EventTag::ArtifactTransition` addition, `BelievedArtifactState` restructure, `EntityBeliefClaim::ArtifactState` → `EntityBeliefClaim::Artifact` rename, `SAVE_FORMAT_VERSION` 70→71, all workspace consumer migrations
-**Deps**: specs/S140-artifact-lifecycle-axes.md (D1, D2, D4, D5; partial D3 for mechanical mutation-site substitution)
+**Deps**: archive/specs/S140-artifact-lifecycle-axes.md (D1, D2, D4, D5; partial D3 for mechanical mutation-site substitution)
 
 ## Problem
 

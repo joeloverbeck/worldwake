@@ -28,7 +28,7 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
     // can add sources inside the same ordered shell.
     existence_stage();
     legal_effect_stage(world, event_log, tick)?;
-    credibility_stage();
+    credibility_stage(world, event_log, tick)?;
     visibility_stage();
     actionability_stage(world, event_log, tick)?;
 
@@ -103,7 +103,18 @@ fn legal_effect_stage(
     Ok(())
 }
 
-fn credibility_stage() {}
+fn credibility_stage(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+) -> Result<(), SystemError> {
+    let source_events = artifact_refutation_source_events_at_tick(event_log, tick);
+    for source in source_events {
+        apply_artifact_refutation_source_event(world, event_log, tick, source)?;
+    }
+
+    Ok(())
+}
 
 fn visibility_stage() {}
 
@@ -177,6 +188,13 @@ struct ForceControlSourceEvent {
     contested: bool,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct ArtifactRefutationSourceEvent {
+    event_id: EventId,
+    artifact: EntityId,
+    evidence: EntityId,
+}
+
 fn force_control_source_events_at_tick(
     event_log: &EventLog,
     tick: Tick,
@@ -222,6 +240,60 @@ fn new_force_control_claims(event_id: EventId, delta: &StateDelta) -> Vec<ForceC
                 event_id,
                 office,
                 contested,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn artifact_refutation_source_events_at_tick(
+    event_log: &EventLog,
+    tick: Tick,
+) -> Vec<ArtifactRefutationSourceEvent> {
+    event_log
+        .events_at_tick(tick)
+        .iter()
+        .filter_map(|event_id| event_log.get(*event_id).map(|record| (*event_id, record)))
+        .flat_map(|(event_id, record)| {
+            record
+                .state_deltas()
+                .iter()
+                .flat_map(move |delta| new_artifact_refutation_claims(event_id, delta))
+        })
+        .collect()
+}
+
+fn new_artifact_refutation_claims(
+    event_id: EventId,
+    delta: &StateDelta,
+) -> Vec<ArtifactRefutationSourceEvent> {
+    let StateDelta::Component(ComponentDelta::Set {
+        before,
+        after: ComponentValue::RecordData(after),
+        ..
+    }) = delta
+    else {
+        return Vec::new();
+    };
+    let before_len = before
+        .as_ref()
+        .and_then(|value| match value {
+            ComponentValue::RecordData(before) => Some(before.entries.len()),
+            _ => None,
+        })
+        .unwrap_or(0);
+
+    after
+        .entries
+        .iter()
+        .skip(before_len)
+        .filter_map(|entry| match entry.claim {
+            InstitutionalClaim::ArtifactCredibilityRefutation {
+                artifact, evidence, ..
+            } => Some(ArtifactRefutationSourceEvent {
+                event_id,
+                artifact,
+                evidence,
             }),
             _ => None,
         })
@@ -300,6 +372,62 @@ fn apply_force_control_source_event(
     Ok(())
 }
 
+fn apply_artifact_refutation_source_event(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+    source: ArtifactRefutationSourceEvent,
+) -> Result<(), SystemError> {
+    let Some(mut header) = world
+        .get_component_artifact_header(source.artifact)
+        .cloned()
+    else {
+        return Ok(());
+    };
+    if matches!(header.credibility, ArtifactCredibility::Refuted { .. }) {
+        return Ok(());
+    }
+
+    let prior = header.credibility.clone();
+    let new = ArtifactCredibility::Refuted {
+        refuted_at: tick,
+        evidence: source.evidence,
+    };
+    header.credibility = new.clone();
+
+    let place = world.effective_place(source.artifact);
+    let mut txn = WorldTxn::new(
+        world,
+        tick,
+        CauseRef::Event(source.event_id),
+        None,
+        place,
+        VisibilitySpec::SamePlace,
+        WitnessData::default(),
+    );
+    set_transition_payload(
+        &mut txn,
+        ArtifactTransitionPayload {
+            artifact: source.artifact,
+            axis: AxisName::Credibility,
+            prior: ArtifactAxisValue::Credibility(prior),
+            new: ArtifactAxisValue::Credibility(new),
+            cause_event: Some(source.event_id),
+            at: tick,
+        },
+    );
+    txn.add_tag(EventTag::System)
+        .add_tag(EventTag::Social)
+        .add_tag(EventTag::WorldMutation)
+        .add_target(source.artifact)
+        .add_target(source.evidence);
+    txn.set_component_artifact_header(source.artifact, header)
+        .map_err(|error| SystemError::new(error.to_string()))?;
+    let _ = txn.commit(event_log);
+
+    Ok(())
+}
+
 fn artifact_authority_matches(header: &worldwake_core::ArtifactHeader, office: EntityId) -> bool {
     header.issuing_authority == Some(office) || header.jurisdiction == Some(office)
 }
@@ -342,10 +470,10 @@ fn close_cause_for_transition(payload: &ArtifactTransitionPayload) -> Option<Clo
 mod tests {
     use super::artifact_lifecycle_system;
     use worldwake_core::{
-        ArtifactActionability, ArtifactAxisValue, ArtifactHeader, ArtifactKind,
-        ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, BountyTarget, BountyTerms,
-        CauseRef, CloseCause, CommodityKind, ControlSource, EntityKind, EventLog, EventTag,
-        EventView, InstitutionalClaim, NoticeContent, NoticeTopic, ProofRequirement,
+        ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactHeader,
+        ArtifactKind, ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, BountyTarget,
+        BountyTerms, CauseRef, CloseCause, CommodityKind, ControlSource, EntityKind, EventLog,
+        EventTag, EventView, InstitutionalClaim, NoticeContent, NoticeTopic, ProofRequirement,
         PrototypePlace, Quantity, RecordData, RecordKind, RewardEncumbrance, RewardReservation,
         RewardSource, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
         build_prototype_world, prototype_place_entity, social_artifact::SuspensionReason,
@@ -524,6 +652,28 @@ mod tests {
         )
         .unwrap();
         txn.add_tag(EventTag::Social).add_tag(EventTag::Control);
+        txn.commit(log)
+    }
+
+    fn append_artifact_refutation_claim(
+        world: &mut World,
+        log: &mut EventLog,
+        tick: u64,
+        record: worldwake_core::EntityId,
+        artifact: worldwake_core::EntityId,
+        evidence: worldwake_core::EntityId,
+    ) -> worldwake_core::EventId {
+        let mut txn = new_txn(world, tick);
+        txn.append_record_entry(
+            record,
+            InstitutionalClaim::ArtifactCredibilityRefutation {
+                artifact,
+                evidence,
+                effective_tick: Tick(tick),
+            },
+        )
+        .unwrap();
+        txn.add_tag(EventTag::Social);
         txn.commit(log)
     }
 
@@ -782,6 +932,69 @@ mod tests {
                 expires_at: Some(Tick(20)),
             })
         );
+    }
+
+    #[test]
+    fn artifact_refutation_source_event_refutes_and_closes_artifact() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let issuer = spawn_agent_at(&mut world, 52, square);
+        let evidence = spawn_agent_at(&mut world, 53, square);
+        let record = create_record(&mut world, 2, square, issuer, RecordKind::CrimeRegister);
+        let office = {
+            let mut txn = new_txn(&mut world, 1);
+            let office = txn.create_office("Market Warden").unwrap();
+            commit_txn(txn);
+            office
+        };
+        let artifact = post_institutional_bounty(&mut world, 3, square, office, None);
+        let mut log = EventLog::new();
+        let source_event =
+            append_artifact_refutation_claim(&mut world, &mut log, 7, record, artifact, evidence);
+        let mut rng = DeterministicRng::new(Seed([13; 32]));
+
+        artifact_lifecycle_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &std::collections::BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(7),
+            system_id: SystemId::ArtifactLifecycle,
+        })
+        .unwrap();
+
+        let header = world.get_component_artifact_header(artifact).unwrap();
+        assert_eq!(
+            header.credibility,
+            ArtifactCredibility::Refuted {
+                refuted_at: Tick(7),
+                evidence,
+            }
+        );
+        assert_eq!(
+            header.actionability,
+            ArtifactActionability::Closed {
+                closed_at: Tick(7),
+                cause: CloseCause::Refuted,
+            }
+        );
+        let transition_ids = log.events_by_tag(EventTag::ArtifactTransition);
+        assert_eq!(transition_ids.len(), 2);
+        let transitions = transition_payloads(&log);
+        assert_eq!(transitions[0].axis, AxisName::Credibility);
+        assert_eq!(transitions[0].cause_event, Some(source_event));
+        assert_eq!(
+            transitions[0].new,
+            ArtifactAxisValue::Credibility(ArtifactCredibility::Refuted {
+                refuted_at: Tick(7),
+                evidence,
+            })
+        );
+        assert_eq!(transitions[1].axis, AxisName::Actionability);
+        assert_eq!(transitions[1].cause_event, Some(transition_ids[0]));
     }
 
     #[test]

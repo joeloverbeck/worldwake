@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 388: S140 Bounty Fulfillment Closes Actionability
 
-- Source: `golden_artifact_lifecycle.rs:361`
+- Source: `golden_artifact_lifecycle.rs:333`
 - Systems: ArtifactActions, ArtifactLifecycle, EventLog
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 389: S140 Revoked Bounty Blocks Planner Emission
 
-- Source: `golden_artifact_lifecycle.rs:460`
+- Source: `golden_artifact_lifecycle.rs:432`
 - Systems: ArtifactActions, ArtifactLifecycle, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -43,7 +43,7 @@ Scenarios: 5
 
 ### Scenario 390: S140 Expired Bounty Remains Posted But Closed
 
-- Source: `golden_artifact_lifecycle.rs:578`
+- Source: `golden_artifact_lifecycle.rs:550`
 - Systems: ArtifactLifecycle, EventLog
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 391: S140 Suspended Legal Effect Restores Without Closing
 
-- Source: `golden_artifact_lifecycle.rs:623`
+- Source: `golden_artifact_lifecycle.rs:595`
 - Systems: ArtifactLifecycle, EventLog
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -79,7 +79,7 @@ Scenarios: 5
 
 ### Scenario 392: S140 Refuted False Rumor Closes Actionability
 
-- Source: `golden_artifact_lifecycle.rs:691`
+- Source: `golden_artifact_lifecycle.rs:663`
 - Systems: ArtifactLifecycle, EventLog
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -89,8 +89,8 @@ Scenarios: 5
 - Replay tests: None
 - All tests: `refuted_false_rumor_cascades_to_closed_actionability_via_credibility_handler`
 
-**Setup**: a posted bounty receives an explicit credibility refutation event. No legal-effect closure is authored, so the actionability close must come from the credibility transition path.
+**Setup**: a posted bounty receives an artifact-addressed credibility refutation record entry with a concrete evidence entity. No legal-effect closure is authored.
 
-**Proves**: the lifecycle actionability stage observes same-tick credibility refutation and emits the Closed/Refuted transition as a separate event.
+**Proves**: the lifecycle credibility stage converts the record source into a Credibility::Refuted transition, and actionability closes from that same append-only transition.
 
-**Cross-system chain**: ArtifactTransition(Credibility::Refuted) -> artifact_lifecycle_system -> ArtifactTransition(Actionability::Closed).
+**Cross-system chain**: ArtifactCredibilityRefutation record event -> ArtifactTransition(Credibility::Refuted) -> ArtifactTransition(Actionability::Closed).

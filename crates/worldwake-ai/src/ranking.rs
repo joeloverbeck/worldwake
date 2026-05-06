@@ -1454,6 +1454,10 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                             effective_tick, ..
                         }
                         | worldwake_core::InstitutionalClaim::Verdict { effective_tick, .. }
+                        | worldwake_core::InstitutionalClaim::ArtifactCredibilityRefutation {
+                            effective_tick,
+                            ..
+                        }
                         | worldwake_core::InstitutionalClaim::MissingPersonStatus {
                             effective_tick,
                             ..
@@ -2680,7 +2684,8 @@ fn institutional_claim_priority(claim: &worldwake_core::InstitutionalClaim) -> u
         worldwake_core::InstitutionalClaim::FactionMembership { .. } => 4,
         worldwake_core::InstitutionalClaim::Accusation { .. } => 5,
         worldwake_core::InstitutionalClaim::Verdict { .. } => 6,
-        worldwake_core::InstitutionalClaim::MissingPersonStatus { .. } => 7,
+        worldwake_core::InstitutionalClaim::ArtifactCredibilityRefutation { .. } => 7,
+        worldwake_core::InstitutionalClaim::MissingPersonStatus { .. } => 8,
     }
 }
 

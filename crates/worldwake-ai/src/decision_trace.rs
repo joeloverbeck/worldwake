@@ -2378,6 +2378,14 @@ fn format_institutional_claim(claim: &InstitutionalClaim) -> String {
             "Verdict(accused={accused:?}, violation_id={violation_id:?}, punishment={punishment:?}, tick={})",
             effective_tick.0
         ),
+        InstitutionalClaim::ArtifactCredibilityRefutation {
+            artifact,
+            evidence,
+            effective_tick,
+        } => format!(
+            "ArtifactCredibilityRefutation(artifact={artifact:?}, evidence={evidence:?}, tick={})",
+            effective_tick.0
+        ),
         InstitutionalClaim::MissingPersonStatus {
             subject,
             reporter,

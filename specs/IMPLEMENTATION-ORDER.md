@@ -574,7 +574,7 @@ Phase 11 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S134 (completed, archived)    S135 (completed, archived)    S140 (independent)            S142 (independent)
+S134 (completed, archived)    S135 (completed, archived)    S140 (completed, archived)    S142 (independent)
    │                                                                                            
    └── S138 (hard dep on S134)
          │
@@ -595,9 +595,9 @@ S136 (completed, archived)
 - **S134**: Canonical Effect Schema for ActionDef — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. Planner forward model now uses simulator action schemas via declarative `EffectSchema` per `ActionDef`; `apply_hypothetical_transition` parallel dispatch was removed.
 - **S135**: Planner Snapshot Perception Budget and Observation Omission — completed and archived at `archive/specs/S135-planner-perception-budget.md`. Removed the planner-side `max_snapshot_entities_per_place` cap, added typed per-agent omission records and observer rendering, surfaced omission attribution through decision traces and hypothetical revalidation, and landed scenarios 381-383 in `golden_perception_omission.rs`.
 - **S136**: Always-On Decision Event Payload Extension — completed and archived at `archive/specs/S136-decision-event-payload-extension.md`. Implemented across the archived `S136DECEVEPAY-001` through `S136DECEVEPAY-007` ticket chain: always-on decision payloads now carry rejected-goal comparison dimensions, failure-path decisive refs, frame assumptions with step provenance, observer single-line summaries, replay/save-load coverage, and generated golden payload-shape coverage plus deterministic payload-size soak enforcement.
+- **S140**: Multi-Axis Artifact Lifecycle — completed and archived at `archive/specs/S140-artifact-lifecycle-axes.md`. Replaced flat `ArtifactState` with five typed lifecycle axes, added append-only `ArtifactTransition` provenance, migrated planner actionability gating, scenario authoring, observer output, save/load shape through version 74, and landed artifact-lifecycle goldens 388-392 including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation.
 
 **Remaining Wave 1** (parallel, no hard deps):
-- **S140**: Multi-Axis Artifact Lifecycle — five-axis lifecycle (existence/visibility/legal_effect/credibility/actionability) replacing single-enum `ArtifactState`. FND-25A direct compliance.
 - **S142**: Contention Event Inspectability — `EventTag::ContentionResolved` with typed `ContentionResolutionRule` and per-claimant outcome.
 
 **Wave 2** (after Wave 1):
@@ -623,7 +623,7 @@ S136 (completed, archived)
 - [x] S136 always-on decision payload extension landed: rejected-goal dimensions, failure-path `decisive_*` refs, frame assumptions with step provenance, observer summaries, replay/save-load coverage, golden payload-shape coverage, and payload-size soak enforcement
 - [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`
 - [ ] Opportunity compiler golden proves desperate-agent steal opportunity emission and salience-weighted ranking
-- [ ] Multi-axis artifact lifecycle proves FOUNDATIONS Scenario G (false rumor → wrongful accusation → contested evidence → exoneration) end-to-end
+- [x] S140 multi-axis artifact lifecycle core goldens prove the five axis paths, including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation; full Scenario G justice/witness/case-chain coverage remains owned outside S140.
 - [ ] Motive-source parity regression: every existing 1440-tick survival golden produces identical `motive_score` values pre/post-S141
 - [ ] Contention-resolution events emit at every grant-issuance site under `survival-contested.ron`
 - [ ] FOUNDATIONS Scenario C (stored gold robbery): owner-believes-gold-present → `InspectContainer` → mismatch → robbery report producible end-to-end
