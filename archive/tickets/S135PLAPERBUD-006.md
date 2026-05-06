@@ -1,6 +1,6 @@
 # S135PLAPERBUD-006: Observer perception summary omission rendering
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: LOW
 **Effort**: Medium
 **Engine Changes**: No — observer-only (read-only consumer)
@@ -15,15 +15,15 @@ Per S135 D6, the observer's "Perception Trace Summary" sub-section inside Sectio
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. Observer "### Perception Trace Summary" sub-heading lives at `crates/worldwake-cli/src/bin/observer.rs:3091` inside Section 5 "## Section 5 — Raw Event Sample" (`observer.rs:2981`). The total observer file is 6509+ lines. Existing perception rendering shows per-agent event bins (observed counts, entity tallies) over 100-tick windows.
-2. `--top-omissions` CLI flag does not currently exist (validated during S135 reassessment). The observer's `Cli` struct carries other top-N flags (e.g., `--top-stuck-windows`, `--top-critical-windows` per the file's command-line arg parsing area near top). Match the existing convention.
-3. Shared abstraction boundary under audit: the observer's read-only consumption of `AgentBeliefStore.observation_omission_log` snapshots replayed from the event log via the existing `BeliefStoreDiff` reconstruction path (added in ticket 001's paired-field extension). No simulation state mutation; no AI-side logic change. This matches the "Read-Only Tooling Consumer" pattern documented in `.claude/skills/reassess-spec/references/worldwake-validation-patterns.md`.
+2. `--top-omissions` CLI flag did not exist before implementation. The observer's `ObserverCli` struct already carried the top-N-style `--critical-window-top-n` flag; the new flag follows that Clap derive convention.
+3. Shared abstraction boundary under audit: the observer's read-only consumption of `AgentBeliefStore.observation_omission_log` from the current simulated world after normal tick/delta application. No simulation state mutation; no AI-side logic change.
 4. Existing observer tests in `observer.rs` cfg-test block: `assert!(out.contains("## Section 3 — Decision History"));` and similar at lines 5422, 5508, 5510, 5546, 5575, 5605. Add new assertions for the omission block in the same style.
 
 ## Architecture Check
 
 1. The new rendering is purely additive — the existing "### Perception Trace Summary" sub-heading is preserved, and the omissions block appears after the existing per-agent event bins as a sub-block. No regression risk to existing observer output.
-2. CLI flag follows the existing top-N convention: `--top-omissions <K>` with default 5, matching the `--top-critical-windows` style. Clap derive plus `#[arg(long, default_value_t = 5)]`.
-3. The aggregation reads `ObservationOmissionLog` through the event-log delta replay path (no direct world-state reads). Per the "Read-Only Tooling Consumer" pattern, this matches the existing observer architecture (e.g., the perception trace already replays through events).
+2. CLI flag follows the existing top-N convention: `--top-omissions <K>` with default 5, matching the observer's Clap derive style. Clap derive plus `#[arg(long, default_value_t = 5)]`.
+3. The aggregation reads `ObservationOmissionLog` from the observer's current simulated world state, matching the existing Section 6 belief-summary read path. The renderer is read-only and does not mutate simulation state.
 4. Determinism: top-K entries must be ordered by `observed_tick` descending with `BTreeMap`-stable tie-break (sorted by `omitted_entity` ascending). This matches S135 Goal 5's determinism requirement.
 
 ## Verification Layers
@@ -31,21 +31,21 @@ Per S135 D6, the observer's "Perception Trace Summary" sub-section inside Sectio
 1. The new top-K block renders correctly with non-empty omission logs → focused unit test in `observer.rs` cfg-test block (named-render output assertion).
 2. The new block is absent (or shows "no omissions") when every agent's log is empty → focused unit test.
 3. Existing observer Section 5 output is unchanged for runs where no entities are dropped → existing observer cfg-test sufficient.
-4. CLI flag parsing works → focused unit test on `Cli` struct parsing (or run `--help` and grep for the flag).
+4. CLI flag parsing works → focused unit test on `ObserverCli` struct parsing and `--help` grep for the flag.
 5. **Single-layer ticket** — observer is a read-only diagnostic surface. No simulation state mutation, so no decision-trace or action-trace layer mapping needed. The proof surface is the observer's rendered output.
 
 ## What to Change
 
 ### 1. Add `--top-omissions` CLI flag
 
-In `crates/worldwake-cli/src/bin/observer.rs`, locate the `Cli` struct (likely near top of file with `clap::Parser` derive). Add:
+In `crates/worldwake-cli/src/bin/observer.rs`, locate the `ObserverCli` struct near the top of the file with `clap::Parser` derive. Add:
 
 ```rust
 #[arg(long, default_value_t = 5)]
 top_omissions: usize,
 ```
 
-Match the visibility and field-naming convention of sibling top-N flags (search for `top_critical_windows`, `top_stuck_windows`, etc. in the same struct).
+Match the visibility and field-naming convention of sibling top-N flags in the same struct.
 
 ### 2. Render top-K omissions per agent
 
@@ -73,7 +73,7 @@ If `cli.top_omissions` exceeds an agent's entries count, render only the availab
 
 ## Files to Touch
 
-- `crates/worldwake-cli/src/bin/observer.rs` (modify) — `Cli` struct extension and Section 5 sub-block rendering
+- `crates/worldwake-cli/src/bin/observer.rs` (modify) — `ObserverCli` struct extension and Section 5 sub-block rendering
 
 ## Out of Scope
 
@@ -104,10 +104,30 @@ If `cli.top_omissions` exceeds an agent's entries count, render only the availab
 1. `crates/worldwake-cli/src/bin/observer.rs` cfg-test block — new test: synthesized run with one agent and 8 dropped entities, render observer output, assert "Top observation omissions" block contains 5 entries (top-K capped at default 5), `OverBudget` count of 8, `SalienceBelowFloor` count of 0.
 2. `crates/worldwake-cli/src/bin/observer.rs` cfg-test block — new test: run with no dropped entities, assert the omissions block reads `— (no omissions recorded)` for every agent.
 3. `crates/worldwake-cli/src/bin/observer.rs` cfg-test block — new test: `--top-omissions 3` overrides default; assert the block shows 3 entries.
-4. `crates/worldwake-cli/src/bin/observer.rs` cfg-test block — new test: deterministic ordering — two agents with identical omission counts but different `(observed_tick, omitted_entity)` pairs render in stable order across re-runs.
+4. `crates/worldwake-cli/src/bin/observer.rs` cfg-test block — new test: deterministic ordering — two omissions with identical `observed_tick` and different `omitted_entity` values render in stable order.
 
 ### Commands
 
 1. `cargo test -p worldwake-cli --bin observer`
 2. `cargo run -p worldwake-cli --bin observer -- --help | grep top-omissions`
 3. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-06.
+
+- Added `--top-omissions <K>` to the observer CLI with default `5`.
+- Added a `#### Top observation omissions` table under Section 5 `### Perception Trace Summary`, preserving the existing per-agent event-bin rendering and listing per-agent `OverBudget` / `SalienceBelowFloor` counts plus deterministic top entries.
+- Added focused observer-bin coverage for default top-K rendering, empty-state rendering, explicit top-K override, deterministic same-tick ordering, and CLI parsing.
+
+## Deviations
+
+- Reassessment corrected the read boundary from an independent event-log replay claim to the live observer boundary: rendering reads the current simulated world's `AgentBeliefStore.observation_omission_log` after normal tick/delta application.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer`.
+- Passed `cargo run -p worldwake-cli --bin observer -- --help | grep top-omissions`.
+- Passed `cargo build --workspace`.
+- Passed `./scripts/verify.sh` covering `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.
+- Passed `git diff --check` after final ticket/spec prose edits.

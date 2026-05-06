@@ -25,7 +25,7 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Leave active ticket status non-completed until the last executable gate required for the final source diff has passed. Make `Status: COMPLETED` one of the final ticket edits, except when a provisional verification note explicitly names the remaining gates.
 - Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.
 
-Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail.
+Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail. When adding new guidance after a session, prefer placing specialized case law in the relevant `references/*.md` file and adding only a compact routing note here unless the rule is a global hard stop.
 
 ## Mandatory Closeout Checklist
 
@@ -35,8 +35,8 @@ Before marking an active ticket `COMPLETED` or sending the final response:
 - If the final ticket/spec `Test Plan`, `Acceptance Criteria`, or `Verification Result` still names `./scripts/verify.sh`, inspect the live script and either run it, run every live gate it wraps and record that the wrapper itself was not run, or rewrite the ticket to remove the wrapper with a stated reason. Do not claim wrapper-equivalent proof unless every live wrapper gate was covered.
 - If any proof-counted command is still running or cannot be polled to a completed exit status, do not edit `Status` or final verification claims yet.
 - Before `Status: COMPLETED`, remove or rewrite any unrun draft command list that could be mistaken for observed verification.
-- Use this closeout order when an active ticket will be completed: completed proof commands, final `Verification Result`, `Status: COMPLETED`, Markdown/diff hygiene, then `git status --short`.
-- Run Markdown/diff hygiene after final ticket/spec edits, normally `git diff --check`. For untracked owned Markdown, use an explicit untracked-file whitespace check. When final edits after executable verification are limited to non-generated ticket/spec prose, record `git diff --check` as the post-edit proof and rerun executable gates only if source, generated artifacts, scenarios, tests, or executable behavior changed.
+- Use this closeout order when an active ticket will be completed: completed proof commands, final `Verification Result`, `Status: COMPLETED`, final ticket/spec prose, Markdown/diff hygiene, then `git status --short`.
+- Run Markdown/diff hygiene after final ticket/spec edits, normally `git diff --check`. For untracked owned Markdown, use an explicit untracked-file whitespace check. When final edits after executable verification are limited to non-generated ticket/spec prose, record `git diff --check` as the post-edit proof and rerun executable gates only if source, generated artifacts, scenarios, tests, or executable behavior changed. To avoid self-invalidating closeout churn, finalize the ticket's `Verification Result` before the last `git diff --check`; if adding the hygiene result to the ticket would itself create another prose edit, report that final hygiene command in the response rather than reopening the ticket.
 - Run targeted stale-claim scans over touched tickets/specs/sibling handoffs for disproved commands, old ownership claims, superseded helper names, and rejected implementation sketches. Quote Markdown code spans safely with single-quoted shell patterns, for example:
   ```bash
   rg -n 'old phrase|generic `CreateEntity`|stale command' tickets/ specs/
@@ -52,6 +52,10 @@ Before any Cargo command:
 - Do not bundle it with `rg`, `sed`, `git status`, `git diff`, or any other read-only helper command.
 - Poll or wait for any known in-flight Cargo session before starting another one.
 - If `cargo test ... -- --list` returns several tests for a shared family/prefix, do not append `--exact` to that same prefix. Either run the family filter without `--exact` and record the nonzero test set, or run each concrete listed test name exactly.
+
+For CLI smoke checks where the ticket drafts a Cargo command piped to a read-only filter, such as `cargo run ... -- --help | grep flag-name`, keep the Cargo execution itself unambiguous. Prefer one of these proof shapes:
+- Run the Cargo command alone and inspect or relay the relevant output line.
+- If you keep the drafted shell pipeline for fidelity, treat it as a CLI smoke/output check rather than a Cargo concurrency pattern: run it alone, never inside `multi_tool_use.parallel`, and do not start another Cargo command until it exits.
 
 ## Quick Routing
 

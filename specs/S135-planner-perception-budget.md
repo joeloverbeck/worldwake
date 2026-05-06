@@ -20,7 +20,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - `worldwake-systems` — perception batch helper (`collect_direct_local_observation_batch` at `perception.rs:639`) records an omission entry whenever an entity is dropped from the per-place observation due to budget or salience floor. Existing truncation logic already uses S105's deterministic priority — S135 adds the omission write alongside the existing `truncate(observation_budget)` call.
 - `worldwake-sim` — adds a `GoalBeliefView` accessor for `ObservationOmissionLog` so the AI crate can read the log without violating FND-26 (no direct cross-crate calls); backed by the existing `agent_belief_store` read surface and the live blanket `GoalBeliefView` implementation.
 - `worldwake-ai` — `crates/worldwake-ai/src/agent_tick/planning.rs:546` and the snapshot construction path consume the agent's accumulated belief observations directly (the per-place cap argument is removed). `RootCandidateTrace` (`decision_trace.rs:786`) gains `omitted_anchor: Option<OmissionReason>` populated from `search/candidates.rs` when a synthesized root candidate's anchor is absent from the planning snapshot and present in the agent's `ObservationOmissionLog`. Hypothetical-effect-sink revalidation paths (`effect_sink_hypothetical.rs`) gain support for emitting `Discrepancy::Omission(reason)` when revalidation fails because of an omitted entity.
-- `worldwake-cli` — `PerceptionProfile` deserialization on `AgentDef.perception_profile` (`scenario/types.rs:447`) gains the two new fields automatically through `#[serde(default)]`. Observer's "Perception Trace Summary" sub-section (`observer.rs:3091`, inside Section 5 "Raw Event Sample") gains a per-agent top-K omissions block grouped by `OmissionReason` discriminant. Default K=5; override via new `--top-omissions <K>` CLI flag.
+- `worldwake-cli` — `PerceptionProfile` deserialization on `AgentDef.perception_profile` (`scenario/types.rs:447`) gains the two new fields automatically through `#[serde(default)]`. Observer's "Perception Trace Summary" sub-section (`observer.rs:3091`, inside Section 5 "Raw Event Sample") gains a per-agent top-K omissions block grouped by `OmissionReason` discriminant. Default K=5; override via new `--top-omissions <K>` CLI flag. The observer reads the current simulated world's belief store after normal tick/delta application.
 
 ## Dependencies
 
@@ -139,7 +139,7 @@ Backed by the existing `agent_belief_store` read surface (reading the nested log
 
 ### D6. Observer "Perception Trace Summary" extension
 
-Inside `crates/worldwake-cli/src/bin/observer.rs` Section 5 "Raw Event Sample", the existing "### Perception Trace Summary" sub-heading (line 3091) gains a per-agent top-K omissions block grouped by `OmissionReason` discriminant (`OverBudget` vs. `SalienceBelowFloor`). Default K=5; override via new `--top-omissions <K>` CLI flag (added to the observer's `Cli` struct alongside its other top-N flags). The omission block reads `ObservationOmissionLog` snapshots replayed from the event log via the existing `BeliefStoreDiff` reconstruction path.
+Inside `crates/worldwake-cli/src/bin/observer.rs` Section 5 "Raw Event Sample", the existing "### Perception Trace Summary" sub-heading (line 3091) gains a per-agent top-K omissions block grouped by `OmissionReason` discriminant (`OverBudget` vs. `SalienceBelowFloor`). Default K=5; override via new `--top-omissions <K>` CLI flag (added to the observer's `ObserverCli` struct alongside its other top-N flags). The omission block reads `ObservationOmissionLog` from the current simulated world's `AgentBeliefStore` after normal tick/delta application.
 
 ### D7. `Discrepancy::Omission(OmissionReason)` enum variant
 
@@ -190,7 +190,7 @@ No new `SystemFn`. The omission-record write happens inside `collect_direct_loca
 - **Systems → Core**: perception (`worldwake-systems`) writes `AgentBeliefStore.observation_omission_log` through the existing belief-store delta path (`BeliefStoreDiff` paired fields).
 - **Sim → Core**: `GoalBeliefView::observation_omission_log` accessor (new) reads the log from `AgentBeliefStore` through the existing `agent_belief_store` read surface and live blanket trait implementation.
 - **AI → Sim**: planner reads accumulated beliefs directly (no re-truncation) via existing `GoalBeliefView` accessors; trace annotation and hypothetical-effect-sink revalidation read `ObservationOmissionLog` via the new accessor.
-- **CLI → AI/Core**: observer reads `ObservationOmissionLog` via the existing event-log replay surface (no direct call into the AI crate's runtime).
+- **CLI → AI/Core**: observer reads `ObservationOmissionLog` from the current simulated world's core belief-store component (no direct call into the AI crate's runtime).
 
 No direct cross-system calls (FND-26).
 
