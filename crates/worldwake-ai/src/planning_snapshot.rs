@@ -660,6 +660,54 @@ impl PlanningSnapshot {
         self.actor
     }
 
+    #[cfg(test)]
+    pub(crate) fn for_effect_sink_test(
+        actor: EntityId,
+        actor_belief_store: AgentBeliefStore,
+        present_entities: &[EntityId],
+    ) -> Self {
+        let entities = present_entities
+            .iter()
+            .copied()
+            .map(|entity| (entity, SnapshotEntity::default()))
+            .collect();
+        let places = BTreeMap::new();
+        let shortest_travel_ticks = DistanceMatrix::new(&places);
+        let perceived_travel_costs = DistanceMatrix::new(&places);
+
+        Self {
+            actor,
+            current_tick: Tick(0),
+            actor_belief_store,
+            entities,
+            places,
+            blocked_facility_uses: BTreeSet::new(),
+            actor_known_entity_beliefs: BTreeMap::new(),
+            actor_known_social_observations: Vec::new(),
+            actor_known_institutional_beliefs: Vec::new(),
+            actor_told_beliefs: BTreeMap::new(),
+            actor_bandit_factions: Vec::new(),
+            actor_active_violation_records: Vec::new(),
+            actor_contested_offices: Vec::new(),
+            actor_loyalties: BTreeMap::new(),
+            actor_office_holder_beliefs: BTreeMap::new(),
+            actor_force_controller_beliefs: BTreeMap::new(),
+            office_certain_support_declarations: BTreeMap::new(),
+            office_support_declaration_beliefs: BTreeMap::new(),
+            actor_confidence_policy: BeliefConfidencePolicy::default(),
+            actor_claim_confidence_threshold: Permille::ZERO,
+            actor_tell_profile: None,
+            actor_epistemic_profile: None,
+            actor_consultation_speed_factor: None,
+            actor_expectation_store: None,
+            actor_last_seen_memory: None,
+            actor_bandit_flee_thresholds: BTreeMap::new(),
+            actor_bandit_establishment_ticks: BTreeMap::new(),
+            shortest_travel_ticks,
+            perceived_travel_costs,
+        }
+    }
+
     /// Canonical seat place for an Office entity, captured from `OfficeData.seat`.
     #[must_use]
     pub(crate) fn seat(&self, office: EntityId) -> Option<EntityId> {

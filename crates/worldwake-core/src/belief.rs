@@ -59,13 +59,13 @@ pub struct AgentBeliefStore {
     pub institutional_beliefs: BTreeMap<InstitutionalBeliefKey, Vec<BelievedInstitutionalClaim>>,
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum SaliencePolicy {
     #[default]
     PriorityWithNeedBoost,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum OmissionReason {
     OverBudget { budget: u8, candidates_seen: u16 },
     SalienceBelowFloor { policy: SaliencePolicy },

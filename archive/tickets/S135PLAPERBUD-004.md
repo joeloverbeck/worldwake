@@ -1,6 +1,6 @@
 # S135PLAPERBUD-004: Discrepancy::Omission variant and revalidation wiring
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `Discrepancy` enum, hypothetical effect-sink revalidation
@@ -16,9 +16,10 @@ Per S135 Goal 7, when an action handler revalidates against an entity the agent'
 
 1. `Discrepancy` enum lives at `crates/worldwake-core/src/discrepancy.rs:8` with 11 unit-only variants; derives `Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize`. `OmissionReason` (added by ticket 001) derives `Copy` and the same compatible bounds, so `Discrepancy::Omission(OmissionReason)` payload variant preserves all existing derives.
 2. Workspace-wide `Discrepancy` use sites: ~145. Most are construction `Err(Discrepancy::X)` sites in `crates/worldwake-ai/src/effect_sink_hypothetical.rs`, `crates/worldwake-systems/src/needs_actions.rs`, `crates/worldwake-systems/src/search_actions.rs`. Genuinely-exhaustive `match d { ... }` arm sites are the subset requiring new arms — confirmed match site at `crates/worldwake-ai/src/failure_handling.rs:1468` (`Discrepancy::BeliefStale => cognitive.stale_belief_backoff_ticks,` and surrounding arms). The exhaustive-match audit must enumerate every such site (via `rg 'match\s+\w+\s*\{[^}]*Discrepancy::' crates/`) and add the new arm.
-3. Existing focused tests on `effect_sink_hypothetical.rs` revalidation paths exist in the file's own cfg-test block (validate during implementation by greping `#[cfg(test)]` and `#[test]` boundaries within the file). Existing tests that assert `Err(Discrepancy::MissingObservation)` are candidates for assertion-update or new-test addition: preserve the originals where the entity is genuinely unknown (not omitted), and add new tests where the entity is in `ObservationOmissionLog`.
+3. Live reassessment found no existing `effect_sink_hypothetical.rs` cfg-test block. This ticket adds the focused local tests needed for the new attribution helper while preserving the generic `MissingObservation` path for entities absent from `ObservationOmissionLog`.
 4. Shared abstraction boundary under audit: the typed failure taxonomy carried by `Result<_, Discrepancy>` across handler revalidation, hypothetical effect-sink, and AI replan/recovery paths. The new variant must be addable without breaking ranking-sensitive `Ord`-derived arithmetic in `failure_handling.rs::compute_backoff_for_discrepancy` (or the equivalently-named function around line 1468).
 5. AI-side reads of `ObservationOmissionLog` route through `GoalBeliefView::observation_omission_log` (added in ticket 002).
+6. The live omission substrate stores present entries in a bounded ring buffer but has no profile-backed activation-age threshold available to hypothetical revalidation. This ticket therefore treats an entry as attributable while it is present in the log; adding age-based attribution decay would require a separate profile-backed design instead of a hardcoded threshold.
 
 ## Architecture Check
 
@@ -52,11 +53,9 @@ For any other exhaustive match sites discovered during the workspace grep, add t
 
 In `crates/worldwake-ai/src/effect_sink_hypothetical.rs`, for each site that currently emits `Err(Discrepancy::MissingObservation)` because an expected entity is absent from the agent's belief store (sites at lines 112, 117, 120, 125, 165, 182, 187, 191, 205, 208, 348, 367, 500, etc., per `rg 'Discrepancy::MissingObservation' crates/worldwake-ai/src/effect_sink_hypothetical.rs`):
 
-1. Consult `view.observation_omission_log(agent)` (ticket 002's accessor).
-2. If the missing entity has an entry in the log within an activation-fresh tick window (use the same activation horizon the surrounding revalidation logic already references — likely `S101`'s `entity_activation_threshold` proxy), emit `Err(Discrepancy::Omission(entry.reason))` instead.
+1. Consult `GoalBeliefView::observation_omission_log(agent)` through the planning state (ticket 002's accessor).
+2. If the missing entity has an entry in the current bounded log, emit `Err(Discrepancy::Omission(entry.reason))` instead.
 3. Otherwise preserve the existing `MissingObservation` return.
-
-The "recent" threshold matches the activation-decay window (S101) — entries older than that horizon are stale and treated as plain missing observation (the agent has had time to re-perceive or forget).
 
 ### 4. Update existing tests
 
@@ -92,25 +91,51 @@ In `failure_handling.rs` cfg-test block (or the file owning the backoff arithmet
 ### Invariants
 
 1. `Discrepancy` retains `Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize` derives (compile-time invariant).
-2. Revalidation against an entity in `ObservationOmissionLog` (within activation horizon) returns `Err(Discrepancy::Omission(reason))`, where `reason` matches the log entry's `OmissionReason`.
+2. Revalidation against an entity absent from the current planning snapshot but present in `ObservationOmissionLog` returns `Err(Discrepancy::Omission(reason))`, where `reason` matches the log entry's `OmissionReason`.
 3. Revalidation against an entity never observed returns `Err(Discrepancy::MissingObservation)` unchanged.
-4. Revalidation against an entity in the log but past the activation horizon returns `Err(Discrepancy::MissingObservation)` (the omission is too stale to attribute).
-5. Every exhaustive match on `Discrepancy` in the workspace accounts for `Omission` (compile-time invariant).
+4. Every exhaustive match on `Discrepancy` in the workspace accounts for `Omission` (compile-time invariant).
+5. Adding the persisted `Discrepancy` variant bumps the current save format; older versions remain rejected with no compatibility shim.
 
 ## Test Plan
 
 ### New/Modified Tests
 
 1. `crates/worldwake-core/src/discrepancy.rs` cfg-test block — new test: `Discrepancy::Omission(OmissionReason::OverBudget { budget: 5, candidates_seen: 10 })` round-trips through serde; `Ord` ordering places `Omission` after `NeedHorizonExceeded`.
-2. `crates/worldwake-ai/src/effect_sink_hypothetical.rs` cfg-test block — new test: agent with `ObservationOmissionLog` entry for entity X (within activation horizon), attempt hypothetical revalidation against X, assert `Err(Discrepancy::Omission(reason))` with the entry's `OmissionReason`.
-3. `crates/worldwake-ai/src/effect_sink_hypothetical.rs` cfg-test block — new test: agent with empty omission log, attempt revalidation against unknown entity, assert `Err(Discrepancy::MissingObservation)` unchanged.
-4. `crates/worldwake-ai/src/effect_sink_hypothetical.rs` cfg-test block — new test: agent with a stale omission entry (past activation horizon), attempt revalidation, assert `Err(Discrepancy::MissingObservation)` (not `Omission`).
-5. `crates/worldwake-ai/src/failure_handling.rs` cfg-test block — new test for the new match arm's backoff value at line 1468.
+2. `crates/worldwake-ai/src/effect_sink_hypothetical.rs` cfg-test block — new test: agent with `ObservationOmissionLog` entry for entity X, attempt `EffectSink::pick_up` revalidation against X, assert `Err(Discrepancy::Omission(reason))` with the entry's `OmissionReason`.
+3. `crates/worldwake-ai/src/effect_sink_hypothetical.rs` cfg-test block — new test: agent with empty omission log, attempt `EffectSink::pick_up` revalidation against unknown entity, assert `Err(Discrepancy::MissingObservation)` unchanged.
+4. `crates/worldwake-ai/src/failure_handling.rs` cfg-test block — new test for the new match arm's backoff value at line 1468.
 
 ### Commands
 
 1. `cargo test -p worldwake-core --lib discrepancy`
-2. `cargo test -p worldwake-ai --lib`
-3. `cargo build --workspace`
-4. `cargo clippy --workspace --all-targets -- -D warnings`
-5. `./scripts/verify.sh`
+2. `cargo test -p worldwake-ai --lib effect_sink_hypothetical`
+3. `cargo test -p worldwake-ai --lib failure_handling`
+4. `cargo test -p worldwake-ai --lib`
+5. `cargo build --workspace`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-06.
+
+- Added `Discrepancy::Omission(OmissionReason)` and preserved the existing copy/serde/order bounds by deriving `Ord` / `PartialOrd` on `OmissionReason` and `SaliencePolicy`.
+- Wired hypothetical effect-sink missing-entity attribution through the planning actor's belief-store omission log, limited to targets absent from the current planning snapshot.
+- Added focused effect-sink API-path coverage through `EffectSink::pick_up` for omitted targets, never-observed targets, non-snapshot actors, and targets already present in the planning snapshot.
+- Updated AI recovery surfaces so omission discrepancies share `MissingObservation` TTL/reobservation behavior and agenda revival classification.
+- Bumped `SAVE_FORMAT_VERSION` 68→69 because the persisted `Discrepancy` enum gained a payload variant.
+
+## Deviations
+
+- Live reassessment found no existing `effect_sink_hypothetical.rs` cfg-test block; this ticket added one.
+- The drafted activation-horizon freshness rule was not implemented because the live omission log has no profile-backed age threshold. Attribution lasts while the entry remains present in the bounded log and the entity is absent from the current snapshot.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core --lib discrepancy`
+- Passed `cargo test -p worldwake-ai --lib effect_sink_hypothetical`
+- Passed `cargo test -p worldwake-ai --lib failure_handling`
+- Passed `cargo test -p worldwake-ai --lib agenda_manager`
+- Passed `cargo test -p worldwake-ai --lib`
+- Passed `cargo test -p worldwake-sim --lib save_load`
+- Passed `cargo build --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

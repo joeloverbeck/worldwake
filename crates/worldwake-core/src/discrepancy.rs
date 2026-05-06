@@ -1,5 +1,6 @@
 use crate::{
-    BeliefClaimKey, BlockerKey, CommodityKind, Component, EntityId, HomeostaticNeedId, Tick,
+    BeliefClaimKey, BlockerKey, CommodityKind, Component, EntityId, HomeostaticNeedId,
+    OmissionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -33,6 +34,9 @@ pub enum Discrepancy {
         need: HomeostaticNeedId,
         projected_breach_tick: Tick,
     },
+    /// The agent could not revalidate against an entity that perception had
+    /// dropped from the belief store under the given salience-budget reason.
+    Omission(OmissionReason),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -98,7 +102,7 @@ mod tests {
     use super::{Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory};
     use crate::{
         ActionDefId, BeliefClaimKey, BlockerKey, CommodityKind, EntityBeliefAspect, EntityId,
-        GoalKind, Tick,
+        GoalKind, OmissionReason, SaliencePolicy, Tick,
         test_utils::{entity_id, sample_goal_key},
         traits::Component,
     };
@@ -165,6 +169,32 @@ mod tests {
         let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, discrepancy);
+    }
+
+    #[test]
+    fn discrepancy_omission_roundtrips_through_bincode() {
+        let discrepancy = Discrepancy::Omission(OmissionReason::OverBudget {
+            budget: 5,
+            candidates_seen: 10,
+        });
+
+        let bytes = bincode::serialize(&discrepancy).unwrap();
+        let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, discrepancy);
+    }
+
+    #[test]
+    fn discrepancy_omission_orders_after_existing_variants() {
+        let need_horizon = Discrepancy::NeedHorizonExceeded {
+            need: crate::HomeostaticNeedId::Hunger,
+            projected_breach_tick: Tick(50),
+        };
+        let omission = Discrepancy::Omission(OmissionReason::SalienceBelowFloor {
+            policy: SaliencePolicy::PriorityWithNeedBoost,
+        });
+
+        assert!(omission > need_horizon);
     }
 
     #[test]

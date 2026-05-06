@@ -1021,6 +1021,7 @@ fn derive_discrepancy_clearing(
         discrepancy,
         Discrepancy::BeliefStale
             | Discrepancy::BeliefContradicted
+            | Discrepancy::Omission(_)
             | Discrepancy::MissingObservation
     );
     if target_reobservation_resolves && let Some(target) = blocker_key.target {
@@ -1470,7 +1471,9 @@ fn discrepancy_ttl(discrepancy: Discrepancy, cognitive: &CognitiveProfile) -> u3
             cognitive.contradicted_belief_backoff_ticks
         }
         Discrepancy::ImproperPlanningState => cognitive.improper_state_backoff_ticks,
-        Discrepancy::MissingObservation => cognitive.missing_observation_backoff_ticks,
+        Discrepancy::MissingObservation | Discrepancy::Omission(_) => {
+            cognitive.missing_observation_backoff_ticks
+        }
         Discrepancy::NoLegalBinding => cognitive.no_legal_binding_backoff_ticks,
         Discrepancy::NoWillingCounterparty => cognitive.counterparty_refusal_backoff_ticks,
         Discrepancy::RouteUnknown => cognitive.route_unknown_backoff_ticks,
@@ -1500,8 +1503,8 @@ mod tests {
         ContentionIntents, DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
         DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
         HomeostaticNeeds, InTransitOnEdge, IntentionDomain, IntentionFrame, LoadUnits,
-        MerchandiseProfile, MetabolismProfile, Quantity, RecipeId, ResourceSource, Tick, TickRange,
-        TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
+        MerchandiseProfile, MetabolismProfile, OmissionReason, Quantity, RecipeId, ResourceSource,
+        Tick, TickRange, TradeDispositionProfile, UniqueItemKind, WorkstationTag, Wound,
     };
     use worldwake_sim::{
         AbortReason, ActionAbortRequestReason, ActionDuration, ActionPayload, ActionStartFailure,
@@ -3497,6 +3500,16 @@ mod tests {
             20
         );
         assert_eq!(
+            discrepancy_ttl(
+                Discrepancy::Omission(OmissionReason::OverBudget {
+                    budget: 5,
+                    candidates_seen: 10,
+                }),
+                &cognitive
+            ),
+            20
+        );
+        assert_eq!(
             discrepancy_ttl(Discrepancy::NoLegalBinding, &cognitive),
             120
         );
@@ -3541,6 +3554,16 @@ mod tests {
         );
         assert_eq!(
             discrepancy_ttl(Discrepancy::MissingObservation, &cognitive),
+            14
+        );
+        assert_eq!(
+            discrepancy_ttl(
+                Discrepancy::Omission(OmissionReason::OverBudget {
+                    budget: 5,
+                    candidates_seen: 10,
+                }),
+                &cognitive
+            ),
             14
         );
         assert_eq!(discrepancy_ttl(Discrepancy::NoLegalBinding, &cognitive), 15);
@@ -3853,6 +3876,10 @@ mod tests {
         for discrepancy in [
             Discrepancy::BeliefStale,
             Discrepancy::BeliefContradicted,
+            Discrepancy::Omission(OmissionReason::OverBudget {
+                budget: 5,
+                candidates_seen: 10,
+            }),
             Discrepancy::MissingObservation,
         ] {
             assert_eq!(
@@ -3878,6 +3905,10 @@ mod tests {
             Discrepancy::RouteUnknown,
             Discrepancy::NoLegalBinding,
             Discrepancy::NoWillingCounterparty,
+            Discrepancy::Omission(OmissionReason::OverBudget {
+                budget: 5,
+                candidates_seen: 10,
+            }),
             Discrepancy::MissingObservation,
         ] {
             assert_eq!(

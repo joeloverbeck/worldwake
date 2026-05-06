@@ -68,7 +68,7 @@ New file at `crates/worldwake-ai/tests/golden_perception_omission.rs`. Three tes
 
 #### Test 3: `golden_perception_omission_revalidation_typed_reason`
 
-- Setup: agent with `omission_log_capacity: 16`. Pre-populate `ObservationOmissionLog` with one entry for entity X (within activation horizon). Configure the agent with a goal whose action handler revalidates against X (likely a `SatisfyNeed` goal whose target requires X).
+- Setup: agent with `omission_log_capacity: 16`. Pre-populate `ObservationOmissionLog` with one current bounded-log entry for entity X while X is absent from the planning snapshot. Configure the agent with a goal whose action handler revalidates against X (likely a `SatisfyNeed` goal whose target requires X).
 - Run for 1 tick.
 - Assertions:
   - Action lifecycle (action-trace surface) returns `Err(Discrepancy::Omission(reason))` matching the log entry's reason at the revalidation site
