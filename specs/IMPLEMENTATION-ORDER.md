@@ -584,7 +584,7 @@ S134 (completed, archived)    S135 (completed, archived)    S140 (independent)  
          │
          └── (S139 also soft deps on S138)
 
-S136 (independent)
+S136 (completed, archived)
    │
    └── S141 (soft dep on S136)
 ```
@@ -594,9 +594,9 @@ S136 (independent)
 **Completed Wave 1 substrate**:
 - **S134**: Canonical Effect Schema for ActionDef — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. Planner forward model now uses simulator action schemas via declarative `EffectSchema` per `ActionDef`; `apply_hypothetical_transition` parallel dispatch was removed.
 - **S135**: Planner Snapshot Perception Budget and Observation Omission — completed and archived at `archive/specs/S135-planner-perception-budget.md`. Removed the planner-side `max_snapshot_entities_per_place` cap, added typed per-agent omission records and observer rendering, surfaced omission attribution through decision traces and hypothetical revalidation, and landed scenarios 381-383 in `golden_perception_omission.rs`.
+- **S136**: Always-On Decision Event Payload Extension — completed and archived at `archive/specs/S136-decision-event-payload-extension.md`. Implemented across the archived `S136DECEVEPAY-001` through `S136DECEVEPAY-007` ticket chain: always-on decision payloads now carry rejected-goal comparison dimensions, failure-path decisive refs, frame assumptions with step provenance, observer single-line summaries, replay/save-load coverage, and generated golden payload-shape coverage plus deterministic payload-size soak enforcement.
 
 **Remaining Wave 1** (parallel, no hard deps):
-- **S136**: Always-On Decision Event Payload Extension — extend always-on decision events with `top_rejected_goals`, `decisive_beliefs`, `decisive_records`, `decisive_world_observations`, `assumptions`.
 - **S140**: Multi-Axis Artifact Lifecycle — five-axis lifecycle (existence/visibility/legal_effect/credibility/actionability) replacing single-enum `ArtifactState`. FND-25A direct compliance.
 - **S142**: Contention Event Inspectability — `EventTag::ContentionResolved` with typed `ContentionResolutionRule` and per-claimant outcome.
 
@@ -604,11 +604,11 @@ S136 (independent)
 - **S138**: Affordance-to-Opportunity Compiler with Effect-Schema Indexing — bottom-up opportunity compiler driven by `EffectSchemaIndex`; `relevant_ops` becomes hint, effect-schema becomes authority. Folds in PR-7, PR-13, PR-20.
   - hard dependency S134 is satisfied (for `EffectSchemaIndex`)
 - **S141**: Motive Source Ledger and Desire Tokens — `MotiveSource` enum on `GoalOffer`; `motive_score` becomes derived view over per-agent state references. FND-3 direct compliance.
-  - soft depends on S136 (for `decisive_motive_sources` payload integration)
+  - S136 soft dependency is satisfied (for `decisive_motive_sources` payload integration)
 
 **Wave 3** (after Wave 2):
 - **S137**: Plan Causal Links and Localized Repair Search — extend `PlanGuard` with `CausalLink` provenance; `PlanRepairContext` localized repair before full replan; per-`Discrepancy` `ClearingCondition`. Folds in PR-15.
-  - S134 soft dependency is satisfied (repair benefits from queryable effect-schema); still soft depends on S136 (repair-applied payload integration), S138 (rebind-target consumes opportunity output)
+  - S134 and S136 soft dependencies are satisfied (repair benefits from queryable effect-schema; repair-applied payload integration can reuse S136 decisive-ref families); still soft depends on S138 (rebind-target consumes opportunity output)
 - **S139**: Epistemic Sensing Subgoals — Ask Witness and Inspect Container — discrete `GoalKind::AskWitness` and `GoalKind::InspectContainer` with `EpistemicProfile`. Required for FOUNDATIONS Scenarios C and G end-to-end.
   - soft depends on S137 (`RepairKind::InsertVerification` splices these), S138 (opportunity compiler emits witness/container anchors)
 
@@ -620,7 +620,7 @@ S136 (independent)
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
 - [x] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
-- [ ] Always-on decision events carry `decisive_*` references for every commit/replan/blocker on `survival-baseline.ron`
+- [x] S136 always-on decision payload extension landed: rejected-goal dimensions, failure-path `decisive_*` refs, frame assumptions with step provenance, observer summaries, replay/save-load coverage, golden payload-shape coverage, and payload-size soak enforcement
 - [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`
 - [ ] Opportunity compiler golden proves desperate-agent steal opportunity emission and salience-weighted ranking
 - [ ] Multi-axis artifact lifecycle proves FOUNDATIONS Scenario G (false rumor → wrongful accusation → contested evidence → exoneration) end-to-end

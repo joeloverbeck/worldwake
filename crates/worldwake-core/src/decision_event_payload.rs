@@ -1,8 +1,8 @@
 use crate::{
-    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy, EntityId,
-    ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey, HomeostaticNeedId,
-    HypothesisKind, MaterializationTag, MismatchDetail, OpportunityKey, Permille,
-    SleepRecoveryModifier, SuspensionReason, Tick, WakeCondition,
+    ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy,
+    EntityBeliefAspect, EntityId, ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey,
+    HomeostaticNeedId, HypothesisKind, MaterializationTag, MismatchDetail, OpportunityKey,
+    Permille, SleepRecoveryModifier, SuspensionReason, Tick, WakeCondition,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -158,6 +158,8 @@ pub struct GoalCommittedPayload {
     pub goal_key: GoalKey,
     pub motive_score: u32,
     pub rejected_alternatives: Vec<RejectedAlternativeSummary>,
+    #[serde(default)]
+    pub assumptions: Vec<PlanAssumptionRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -165,6 +167,24 @@ pub struct RejectedAlternativeSummary {
     pub goal_key: GoalKey,
     pub rejection_reason: GoalRejectionReason,
     pub score_gap: i32,
+    #[serde(default)]
+    pub rejection_dimension: Option<RankedGoalComparisonDimensionTag>,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum RankedGoalComparisonDimensionTag {
+    PriorityClass,
+    SubstitutePreferenceOrder,
+    MotiveScore,
+    SourceComposite,
+    Feasibility,
+    GoalSpecificity,
+    OpportunityStrength,
+    ShareBeliefTopicOrder,
+    GoalKindOrder,
+    CommodityKey,
+    EntityKey,
+    PlaceKey,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -215,6 +235,8 @@ pub struct PlanAdoptedPayload {
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub plan_step_count: u16,
+    #[serde(default)]
+    pub assumptions: Vec<PlanAssumptionRef>,
 }
 
 /// Frozen belief-envelope metadata captured at the moment a belief-driven
@@ -234,6 +256,32 @@ pub enum BeliefStatusTag {
     Stale,
     Disputed,
     Contradicted,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct BeliefRef {
+    pub claim_key: BeliefClaimKey,
+    pub claim_held_at_tick: Tick,
+    pub status: BeliefStatusTag,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct RecordRef {
+    pub record_entity: EntityId,
+    pub recorded_at_tick: Tick,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ObservationRef {
+    pub observed_entity: EntityId,
+    pub aspect: EntityBeliefAspect,
+    pub observed_tick: Tick,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct PlanAssumptionRef {
+    pub assumption: FrameAssumption,
+    pub introduced_at_step: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -294,6 +342,14 @@ pub struct ExpectationMismatchPayload {
     pub expected_materializations: Vec<MaterializationTag>,
     pub expectation_kind: Option<ExpectationKindTag>,
     pub mismatch_detail: Option<MismatchDetail>,
+    #[serde(default)]
+    pub decisive_beliefs: Vec<BeliefRef>,
+    #[serde(default)]
+    pub decisive_records: Vec<RecordRef>,
+    #[serde(default)]
+    pub decisive_world_observations: Vec<ObservationRef>,
+    #[serde(default)]
+    pub assumptions: Vec<PlanAssumptionRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -306,6 +362,12 @@ pub struct SourceExpectationFailurePayload {
     pub cause: ExpectationFailureCauseTag,
     pub detected_at_tick: Tick,
     pub attribution_outcome: SourceAttributionOutcomeTag,
+    #[serde(default)]
+    pub decisive_beliefs: Vec<BeliefRef>,
+    #[serde(default)]
+    pub decisive_records: Vec<RecordRef>,
+    #[serde(default)]
+    pub decisive_world_observations: Vec<ObservationRef>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -363,6 +425,14 @@ pub struct ReplanTriggeredPayload {
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub reason: ReplanReason,
+    #[serde(default)]
+    pub decisive_beliefs: Vec<BeliefRef>,
+    #[serde(default)]
+    pub decisive_records: Vec<RecordRef>,
+    #[serde(default)]
+    pub decisive_world_observations: Vec<ObservationRef>,
+    #[serde(default)]
+    pub assumptions: Vec<PlanAssumptionRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -404,18 +474,27 @@ pub struct BlockerRecordedPayload {
     pub expires_tick: Tick,
     #[serde(default)]
     pub belief_snapshot: Option<BeliefSnapshot>,
+    #[serde(default)]
+    pub decisive_beliefs: Vec<BeliefRef>,
+    #[serde(default)]
+    pub decisive_records: Vec<RecordRef>,
+    #[serde(default)]
+    pub decisive_world_observations: Vec<ObservationRef>,
+    #[serde(default)]
+    pub assumptions: Vec<PlanAssumptionRef>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ActionInterruptReasonTag, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
-        DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary,
+        ActionInterruptReasonTag, BeliefRef, BeliefSnapshot, BeliefStatusTag,
+        BlockerRecordedPayload, DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary,
         ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationMismatchPayload,
         GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload,
         GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
-        OpportunityExpectationKindTag, PlanAdoptedPayload, PlanInvalidatedPayload,
-        PlanInvalidationReason, PursuitInvalidationReasonTag, RejectedAlternativeSummary,
+        ObservationRef, OpportunityExpectationKindTag, PlanAdoptedPayload, PlanAssumptionRef,
+        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
+        RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload,
         SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SourceAttributionOutcomeTag,
         SourceExpectationFailurePayload, SourceKeyPayload, SurveyRecordedPayload, WakeReason,
@@ -478,6 +557,9 @@ mod tests {
             cause: ExpectationFailureCauseTag::SourceDepletedLocally,
             detected_at_tick: Tick(33),
             attribution_outcome: SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+            decisive_beliefs: Vec::new(),
+            decisive_records: Vec::new(),
+            decisive_world_observations: Vec::new(),
         }
     }
 
@@ -497,6 +579,11 @@ mod tests {
                     goal_key: sample_goal_key(),
                     rejection_reason: GoalRejectionReason::LowerMotive,
                     score_gap: 17,
+                    rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
+                }],
+                assumptions: vec![PlanAssumptionRef {
+                    assumption: FrameAssumption::NoCriticalThreat,
+                    introduced_at_step: 0,
                 }],
             }),
             DecisionEventPayload::GoalSuspended(GoalSuspendedPayload {
@@ -566,6 +653,10 @@ mod tests {
                 agent: entity_id(6, 0),
                 goal_key: sample_goal_key(),
                 plan_step_count: 3,
+                assumptions: vec![PlanAssumptionRef {
+                    assumption: FrameAssumption::NoCriticalThreat,
+                    introduced_at_step: 0,
+                }],
             }),
             DecisionEventPayload::PlanInvalidated(PlanInvalidatedPayload {
                 agent: entity_id(7, 0),
@@ -582,6 +673,10 @@ mod tests {
                 expected_materializations: vec![MaterializationTag::SplitOffLot],
                 expectation_kind: None,
                 mismatch_detail: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
             DecisionEventPayload::ExpectationMismatch(ExpectationMismatchPayload {
                 agent: entity_id(9, 1),
@@ -592,6 +687,10 @@ mod tests {
                 mismatch_detail: Some(MismatchDetail::GuardInvalidator(
                     InvalidatorTag::TargetMoved,
                 )),
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
             DecisionEventPayload::SourceExpectationFailure(
                 sample_source_expectation_failure_payload(),
@@ -611,6 +710,10 @@ mod tests {
                         assumption: FrameAssumption::NoCriticalThreat,
                     },
                 },
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
             DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
                 agent: entity_id(13, 0),
@@ -619,6 +722,10 @@ mod tests {
                 blocking_fact: Some(BlockingFact::TargetGone),
                 expires_tick: Tick(99),
                 belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         ]
     }
@@ -633,6 +740,11 @@ mod tests {
         assert_value_bounds::<GoalSuppressedPayload>();
         assert_value_bounds::<GoalCommittedPayload>();
         assert_value_bounds::<RejectedAlternativeSummary>();
+        assert_copy_value_bounds::<RankedGoalComparisonDimensionTag>();
+        assert_copy_value_bounds::<BeliefRef>();
+        assert_copy_value_bounds::<RecordRef>();
+        assert_copy_value_bounds::<ObservationRef>();
+        assert_copy_value_bounds::<PlanAssumptionRef>();
         assert_copy_value_bounds::<GoalRejectionReason>();
         assert_value_bounds::<GoalSuspendedPayload>();
         assert_value_bounds::<GoalAbandonedPayload>();
@@ -675,6 +787,10 @@ mod tests {
             expected_materializations: vec![MaterializationTag::SplitOffLot],
             expectation_kind: None,
             mismatch_detail: None,
+            decisive_beliefs: Vec::new(),
+            decisive_records: Vec::new(),
+            decisive_world_observations: Vec::new(),
+            assumptions: Vec::new(),
         };
         let populated = ExpectationMismatchPayload {
             agent: entity_id(21, 0),
@@ -688,6 +804,27 @@ mod tests {
                     place: entity_id(23, 0),
                 },
             }),
+            decisive_beliefs: vec![BeliefRef {
+                claim_key: BeliefClaimKey {
+                    subject: entity_id(22, 0),
+                    aspect: EntityBeliefAspect::Location,
+                },
+                claim_held_at_tick: Tick(40),
+                status: BeliefStatusTag::Contradicted,
+            }],
+            decisive_records: vec![RecordRef {
+                record_entity: entity_id(24, 0),
+                recorded_at_tick: Tick(41),
+            }],
+            decisive_world_observations: vec![ObservationRef {
+                observed_entity: entity_id(22, 0),
+                aspect: EntityBeliefAspect::Location,
+                observed_tick: Tick(42),
+            }],
+            assumptions: vec![PlanAssumptionRef {
+                assumption: FrameAssumption::TargetAlive(entity_id(22, 0)),
+                introduced_at_step: 1,
+            }],
         };
 
         let encoded_empty = bincode::serialize(&empty).expect("empty payload should serialize");
@@ -767,6 +904,10 @@ mod tests {
             blocking_fact: Some(BlockingFact::NoKnownPath),
             expires_tick: Tick(33),
             belief_snapshot: Some(sample_belief_snapshot()),
+            decisive_beliefs: Vec::new(),
+            decisive_records: Vec::new(),
+            decisive_world_observations: Vec::new(),
+            assumptions: Vec::new(),
         };
 
         let bytes = bincode::serialize(&payload).unwrap();
@@ -784,6 +925,10 @@ mod tests {
             blocking_fact: Some(BlockingFact::NoKnownPath),
             expires_tick: Tick(33),
             belief_snapshot: None,
+            decisive_beliefs: Vec::new(),
+            decisive_records: Vec::new(),
+            decisive_world_observations: Vec::new(),
+            assumptions: Vec::new(),
         };
 
         let bytes = bincode::serialize(&payload).unwrap();

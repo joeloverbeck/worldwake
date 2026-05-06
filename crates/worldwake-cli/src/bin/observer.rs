@@ -418,6 +418,24 @@ fn format_decision_evidence_counts(payload: &worldwake_core::EvidenceSummary) ->
         .join(",")
 }
 
+fn append_decisive_counts(
+    summary: &mut String,
+    beliefs: usize,
+    records: usize,
+    observations: usize,
+) {
+    if beliefs > 0 || records > 0 || observations > 0 {
+        write!(summary, " decisive=B{beliefs} R{records} O{observations}")
+            .expect("write to string");
+    }
+}
+
+fn append_assumption_count(summary: &mut String, assumptions: usize) {
+    if assumptions > 0 {
+        write!(summary, " assume={assumptions}").expect("write to string");
+    }
+}
+
 fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
     match payload {
         DecisionEventPayload::GoalOffered(inner) => format!(
@@ -429,12 +447,23 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
         DecisionEventPayload::GoalSuppressed(inner) => {
             format!("goal={:?} reason={:?}", inner.goal_key.kind, inner.reason)
         }
-        DecisionEventPayload::GoalCommitted(inner) => format!(
-            "goal={:?} motive={} alts={}",
-            inner.goal_key.kind,
-            inner.motive_score,
-            inner.rejected_alternatives.len()
-        ),
+        DecisionEventPayload::GoalCommitted(inner) => {
+            let mut summary = format!(
+                "goal={:?} motive={} alts={}",
+                inner.goal_key.kind,
+                inner.motive_score,
+                inner.rejected_alternatives.len()
+            );
+            if let Some(dimension) = inner
+                .rejected_alternatives
+                .first()
+                .and_then(|alternative| alternative.rejection_dimension)
+            {
+                write!(summary, " dim={dimension:?}").expect("write to string");
+            }
+            append_assumption_count(&mut summary, inner.assumptions.len());
+            summary
+        }
         DecisionEventPayload::GoalSuspended(inner) => {
             format!("goal={:?} reason={:?}", inner.goal_key.kind, inner.reason)
         }
@@ -470,48 +499,87 @@ fn decision_payload_summary(payload: &DecisionEventPayload) -> String {
             inner.final_fatigue.value()
         ),
         DecisionEventPayload::PlanAdopted(inner) => {
-            format!(
+            let mut summary = format!(
                 "goal={:?} steps={}",
                 inner.goal_key.kind, inner.plan_step_count
-            )
+            );
+            append_assumption_count(&mut summary, inner.assumptions.len());
+            summary
         }
         DecisionEventPayload::PlanInvalidated(inner) => format!(
             "goal={:?} reason={}",
             inner.goal_key.kind,
             format_plan_invalidation_reason(&inner.reason)
         ),
-        DecisionEventPayload::ExpectationMismatch(inner) => format!(
-            "goal={:?} step={} expected={:?}",
-            inner.goal_key.kind, inner.step_index, inner.expected_materializations
-        ),
-        DecisionEventPayload::SourceExpectationFailure(inner) => format!(
-            "opportunity={:?} source={:?}:{:?} phase={:?} cause={:?} outcome={:?}",
-            inner.opportunity.goal_key.kind,
-            inner.source.entity,
-            inner.source.commodity,
-            inner.phase,
-            inner.cause,
-            inner.attribution_outcome
-        ),
+        DecisionEventPayload::ExpectationMismatch(inner) => {
+            let mut summary = format!(
+                "goal={:?} step={} expected={:?}",
+                inner.goal_key.kind, inner.step_index, inner.expected_materializations
+            );
+            append_decisive_counts(
+                &mut summary,
+                inner.decisive_beliefs.len(),
+                inner.decisive_records.len(),
+                inner.decisive_world_observations.len(),
+            );
+            append_assumption_count(&mut summary, inner.assumptions.len());
+            summary
+        }
+        DecisionEventPayload::SourceExpectationFailure(inner) => {
+            let mut summary = format!(
+                "opportunity={:?} source={:?}:{:?} phase={:?} cause={:?} outcome={:?}",
+                inner.opportunity.goal_key.kind,
+                inner.source.entity,
+                inner.source.commodity,
+                inner.phase,
+                inner.cause,
+                inner.attribution_outcome
+            );
+            append_decisive_counts(
+                &mut summary,
+                inner.decisive_beliefs.len(),
+                inner.decisive_records.len(),
+                inner.decisive_world_observations.len(),
+            );
+            summary
+        }
         DecisionEventPayload::RepairApplied(inner) => format!(
             "goal={:?} step={} kind={:?} target={:?}",
             inner.goal_key.kind, inner.step_index, inner.repair_kind, inner.substitute_target
         ),
-        DecisionEventPayload::ReplanTriggered(inner) => format!(
-            "goal={:?} reason={}",
-            inner.goal_key.kind,
-            format_replan_reason(&inner.reason)
-        ),
+        DecisionEventPayload::ReplanTriggered(inner) => {
+            let mut summary = format!(
+                "goal={:?} reason={}",
+                inner.goal_key.kind,
+                format_replan_reason(&inner.reason)
+            );
+            append_decisive_counts(
+                &mut summary,
+                inner.decisive_beliefs.len(),
+                inner.decisive_records.len(),
+                inner.decisive_world_observations.len(),
+            );
+            append_assumption_count(&mut summary, inner.assumptions.len());
+            summary
+        }
         DecisionEventPayload::BlockerRecorded(inner) => {
             let class = match (inner.discrepancy, inner.blocking_fact) {
                 (Some(discrepancy), None) => format!("Discrepancy({discrepancy:?})"),
                 (None, Some(blocking_fact)) => format!("BlockingFact({blocking_fact:?})"),
                 _ => "Unclassified".to_string(),
             };
-            format!(
+            let mut summary = format!(
                 "key={:?} class={} expires={}",
                 inner.blocker_key, class, inner.expires_tick.0
-            )
+            );
+            append_decisive_counts(
+                &mut summary,
+                inner.decisive_beliefs.len(),
+                inner.decisive_records.len(),
+                inner.decisive_world_observations.len(),
+            );
+            append_assumption_count(&mut summary, inner.assumptions.len());
+            summary
         }
         DecisionEventPayload::WasteCreated(inner) => format!(
             "place={} waste_lot={} source={:?} place_dirtiness_delta={}",
@@ -4231,16 +4299,18 @@ mod tests {
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, AgentBeliefStore, BeliefClaimKey, BelievedEntityState,
-        BlockerKey, BlockerRecordedPayload, BodyCostPerTick, CauseRef, CommodityKind,
-        CommodityPurpose, ControlSource, DeadAt, DeathCause, DecisionEventPayload, DriveThresholds,
-        EmitterTag, EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload, EventTag,
-        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
-        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
-        GoalSwitchReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile, ObservationOmission,
+        AcquisitionQuantity, ActionDefId, AgentBeliefStore, BeliefClaimKey, BeliefRef,
+        BeliefStatusTag, BelievedEntityState, BlockerKey, BlockerRecordedPayload, BodyCostPerTick,
+        CauseRef, CommodityKind, CommodityPurpose, ControlSource, DeadAt, DeathCause,
+        DecisionEventPayload, DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId,
+        EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, GoalAbandonReason,
+        GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
+        GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
+        HomeostaticNeedId, KnownRecipes, MetabolismProfile, ObservationOmission, ObservationRef,
         OmissionReason, OpportunityAnchor, PendingEvent, Permille, PlanAdoptedPayload,
-        PlanInvalidatedPayload, PlanInvalidationReason, PrototypePlace, Quantity, RecipeId,
-        ResourceSource, SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+        PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason, PrototypePlace,
+        Quantity, RankedGoalComparisonDimensionTag, RecipeId, RecordRef, ResourceSource,
+        SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
         SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
         WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
@@ -4352,6 +4422,43 @@ mod tests {
             slot,
             generation: 0,
         }
+    }
+
+    fn assumption_ref(step: u8) -> PlanAssumptionRef {
+        PlanAssumptionRef {
+            assumption: FrameAssumption::NoCriticalThreat,
+            introduced_at_step: step,
+        }
+    }
+
+    fn belief_ref(subject: EntityId) -> BeliefRef {
+        BeliefRef {
+            claim_key: BeliefClaimKey {
+                subject,
+                aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+            },
+            claim_held_at_tick: Tick(14),
+            status: BeliefStatusTag::Stale,
+        }
+    }
+
+    fn record_ref(record_entity: EntityId) -> RecordRef {
+        RecordRef {
+            record_entity,
+            recorded_at_tick: Tick(15),
+        }
+    }
+
+    fn observation_ref(observed_entity: EntityId) -> ObservationRef {
+        ObservationRef {
+            observed_entity,
+            aspect: EntityBeliefAspect::ResourceAvailable(CommodityKind::Bread),
+            observed_tick: Tick(16),
+        }
+    }
+
+    fn assert_single_line(summary: &str) {
+        assert!(!summary.contains('\n'), "summary must stay single-line");
     }
 
     fn world_with_omission_store(entries: Vec<ObservationOmission>) -> (World, EntityId) {
@@ -4471,7 +4578,9 @@ mod tests {
                     goal_key: acquire_goal,
                     rejection_reason: GoalRejectionReason::LowerMotive,
                     score_gap: 17,
+                    rejection_dimension: None,
                 }],
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -4508,6 +4617,7 @@ mod tests {
                 agent,
                 goal_key: acquire_goal,
                 plan_step_count: 3,
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -4539,6 +4649,10 @@ mod tests {
                 expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
                 expectation_kind: None,
                 mismatch_detail: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -4565,6 +4679,10 @@ mod tests {
                 reason: worldwake_core::ReplanReason::ActionInterrupted {
                     reason: worldwake_core::ActionInterruptReasonTag::Reprioritized,
                 },
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -4584,6 +4702,10 @@ mod tests {
                 blocking_fact: None,
                 expires_tick: Tick(99),
                 belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -5742,7 +5864,7 @@ mod tests {
 
     #[test]
     fn decision_payload_summary_is_single_line_for_goal_committed() {
-        let summary =
+        let populated =
             decision_payload_summary(&DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
@@ -5755,11 +5877,277 @@ mod tests {
                     }),
                     rejection_reason: GoalRejectionReason::LowerMotive,
                     score_gap: 17,
+                    rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
                 }],
+                assumptions: vec![assumption_ref(1), assumption_ref(2)],
             }));
 
-        assert_eq!(summary, "goal=Sleep motive=420 alts=1");
-        assert!(!summary.contains('\n'));
+        assert_eq!(
+            populated,
+            "goal=Sleep motive=420 alts=1 dim=MotiveScore assume=2"
+        );
+        assert_single_line(&populated);
+
+        let empty =
+            decision_payload_summary(&DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                motive_score: 420,
+                rejected_alternatives: vec![worldwake_core::RejectedAlternativeSummary {
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
+                    }),
+                    rejection_reason: GoalRejectionReason::LowerMotive,
+                    score_gap: 17,
+                    rejection_dimension: None,
+                }],
+                assumptions: Vec::new(),
+            }));
+
+        assert_eq!(empty, "goal=Sleep motive=420 alts=1");
+        assert_single_line(&empty);
+        assert!(!empty.contains(" dim="));
+        assert!(!empty.contains(" assume="));
+    }
+
+    #[test]
+    fn decision_payload_summary_is_single_line_for_plan_adopted() {
+        let populated =
+            decision_payload_summary(&DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                plan_step_count: 3,
+                assumptions: vec![assumption_ref(1)],
+            }));
+
+        assert_eq!(populated, "goal=Sleep steps=3 assume=1");
+        assert_single_line(&populated);
+
+        let empty =
+            decision_payload_summary(&DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::Sleep),
+                plan_step_count: 3,
+                assumptions: Vec::new(),
+            }));
+
+        assert_eq!(empty, "goal=Sleep steps=3");
+        assert_single_line(&empty);
+        assert!(!empty.contains(" assume="));
+    }
+
+    #[test]
+    fn decision_payload_summary_is_single_line_for_blocker_recorded() {
+        let populated = decision_payload_summary(&DecisionEventPayload::BlockerRecorded(
+            BlockerRecordedPayload {
+                agent: entity(1),
+                blocker_key: BlockerKey {
+                    goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
+                    place: Some(entity(9)),
+                    target: Some(entity(2)),
+                    action_def: Some(ActionDefId(6)),
+                },
+                discrepancy: Some(worldwake_core::Discrepancy::BeliefStale),
+                blocking_fact: None,
+                expires_tick: Tick(99),
+                belief_snapshot: None,
+                decisive_beliefs: vec![belief_ref(entity(2))],
+                decisive_records: vec![record_ref(entity(3))],
+                decisive_world_observations: vec![
+                    observation_ref(entity(4)),
+                    observation_ref(entity(5)),
+                ],
+                assumptions: vec![assumption_ref(1)],
+            },
+        ));
+
+        assert!(populated.contains("decisive=B1 R1 O2"));
+        assert!(populated.contains("assume=1"));
+        assert_single_line(&populated);
+
+        let empty = decision_payload_summary(&DecisionEventPayload::BlockerRecorded(
+            BlockerRecordedPayload {
+                agent: entity(1),
+                blocker_key: BlockerKey {
+                    goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
+                    place: Some(entity(9)),
+                    target: Some(entity(2)),
+                    action_def: Some(ActionDefId(6)),
+                },
+                discrepancy: Some(worldwake_core::Discrepancy::BeliefStale),
+                blocking_fact: None,
+                expires_tick: Tick(99),
+                belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
+            },
+        ));
+
+        assert_single_line(&empty);
+        assert!(!empty.contains(" decisive="));
+        assert!(!empty.contains(" assume="));
+    }
+
+    #[test]
+    fn decision_payload_summary_is_single_line_for_replan_triggered() {
+        let populated = decision_payload_summary(&DecisionEventPayload::ReplanTriggered(
+            worldwake_core::ReplanTriggeredPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
+                reason: worldwake_core::ReplanReason::ActionInterrupted {
+                    reason: worldwake_core::ActionInterruptReasonTag::Reprioritized,
+                },
+                decisive_beliefs: vec![belief_ref(entity(2))],
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: vec![assumption_ref(1), assumption_ref(2)],
+            },
+        ));
+
+        assert!(populated.contains("decisive=B1 R0 O0"));
+        assert!(populated.contains("assume=2"));
+        assert_single_line(&populated);
+
+        let empty = decision_payload_summary(&DecisionEventPayload::ReplanTriggered(
+            worldwake_core::ReplanTriggeredPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::Patrol { place: entity(9) }),
+                reason: worldwake_core::ReplanReason::ActionInterrupted {
+                    reason: worldwake_core::ActionInterruptReasonTag::Reprioritized,
+                },
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
+            },
+        ));
+
+        assert_single_line(&empty);
+        assert!(!empty.contains(" decisive="));
+        assert!(!empty.contains(" assume="));
+    }
+
+    #[test]
+    fn decision_payload_summary_is_single_line_for_expectation_mismatch() {
+        let populated = decision_payload_summary(&DecisionEventPayload::ExpectationMismatch(
+            worldwake_core::ExpectationMismatchPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                }),
+                step_index: 2,
+                expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
+                expectation_kind: None,
+                mismatch_detail: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: vec![record_ref(entity(3))],
+                decisive_world_observations: vec![observation_ref(entity(4))],
+                assumptions: vec![assumption_ref(1)],
+            },
+        ));
+
+        assert!(populated.contains("decisive=B0 R1 O1"));
+        assert!(populated.contains("assume=1"));
+        assert_single_line(&populated);
+
+        let empty = decision_payload_summary(&DecisionEventPayload::ExpectationMismatch(
+            worldwake_core::ExpectationMismatchPayload {
+                agent: entity(1),
+                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                }),
+                step_index: 2,
+                expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
+                expectation_kind: None,
+                mismatch_detail: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
+            },
+        ));
+
+        assert_single_line(&empty);
+        assert!(!empty.contains(" decisive="));
+        assert!(!empty.contains(" assume="));
+    }
+
+    #[test]
+    fn decision_payload_summary_is_single_line_for_source_expectation_failure() {
+        let populated = decision_payload_summary(&DecisionEventPayload::SourceExpectationFailure(
+            worldwake_core::SourceExpectationFailurePayload {
+                agent: entity(1),
+                opportunity: worldwake_core::OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
+                    }),
+                    anchor: OpportunityAnchor::Entity(entity(8)),
+                },
+                source: worldwake_core::SourceKeyPayload {
+                    entity: entity(8),
+                    commodity: CommodityKind::Bread,
+                },
+                expectation_kind:
+                    worldwake_core::OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+                phase: worldwake_core::ExpectationFailurePhaseTag::Observation,
+                cause: worldwake_core::ExpectationFailureCauseTag::SourceDepletedLocally,
+                detected_at_tick: Tick(44),
+                attribution_outcome:
+                    worldwake_core::SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: vec![
+                    observation_ref(entity(8)),
+                    observation_ref(entity(9)),
+                ],
+            },
+        ));
+
+        assert!(populated.contains("decisive=B0 R0 O2"));
+        assert_single_line(&populated);
+        assert!(!populated.contains(" assume="));
+
+        let empty = decision_payload_summary(&DecisionEventPayload::SourceExpectationFailure(
+            worldwake_core::SourceExpectationFailurePayload {
+                agent: entity(1),
+                opportunity: worldwake_core::OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
+                    }),
+                    anchor: OpportunityAnchor::Entity(entity(8)),
+                },
+                source: worldwake_core::SourceKeyPayload {
+                    entity: entity(8),
+                    commodity: CommodityKind::Bread,
+                },
+                expectation_kind:
+                    worldwake_core::OpportunityExpectationKindTag::AcquireCommodityFromConcreteSource,
+                phase: worldwake_core::ExpectationFailurePhaseTag::Observation,
+                cause: worldwake_core::ExpectationFailureCauseTag::SourceDepletedLocally,
+                detected_at_tick: Tick(44),
+                attribution_outcome:
+                    worldwake_core::SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+            },
+        ));
+
+        assert_single_line(&empty);
+        assert!(!empty.contains(" decisive="));
+        assert!(!empty.contains(" assume="));
     }
 
     #[test]

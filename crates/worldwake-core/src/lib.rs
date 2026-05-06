@@ -155,14 +155,15 @@ pub use crime::{
     PunishmentFineTraceFacts, PunishmentKind, TheftDispositionProfile, TheftFacts,
 };
 pub use decision_event_payload::{
-    ActionInterruptReasonTag, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
+    ActionInterruptReasonTag, BeliefRef, BeliefSnapshot, BeliefStatusTag, BlockerRecordedPayload,
     DecisionEventPayload, EmitterTag, EvidenceKindTag, EvidenceSummary, ExpectationFailureCauseTag,
     ExpectationFailurePhaseTag, ExpectationMismatchPayload, GoalAbandonReason,
     GoalAbandonedPayload, GoalCommittedPayload, GoalOfferedPayload, GoalRejectionReason,
-    GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, OpportunityExpectationKindTag,
-    PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
-    PursuitInvalidationReasonTag, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind,
-    ReplanReason, ReplanTriggeredPayload, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+    GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason, ObservationRef,
+    OpportunityExpectationKindTag, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
+    PlanInvalidationReason, PursuitInvalidationReasonTag, RankedGoalComparisonDimensionTag,
+    RecordRef, RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+    ReplanTriggeredPayload, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
     SourceAttributionOutcomeTag, SourceExpectationFailurePayload, SourceKeyPayload,
     SurveyRecordedPayload, WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
 };

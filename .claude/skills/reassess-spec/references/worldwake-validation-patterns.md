@@ -115,6 +115,24 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 2. Derive compatibility — new variant fields satisfy existing derives
 3. `#[allow(clippy::large_enum_variant)]` — check if new variant is significantly larger than existing ones
 
+## Core-Side Mirror Enum Pattern
+
+**Trigger**: Spec proposes a new core-resident type (struct or enum) whose field types reference an enum defined in a higher crate (`worldwake-sim`, `worldwake-systems`, `worldwake-ai`, or `worldwake-cli`). Because `worldwake-core` cannot depend on higher crates, the referenced enum must either be relocated to core or surfaced through a core-side `*Tag` mirror with a single conversion site.
+
+**Precedent**: `BeliefStatus` lives in `crates/worldwake-sim/src/belief_view.rs:40` (sim crate). Its core-side mirror `BeliefStatusTag` is defined at `crates/worldwake-core/src/decision_event_payload.rs:231` with `Copy, Clone, Debug, Eq, Ord, PartialOrd, Hash, Serialize, Deserialize` derives. The conversion `BeliefStatus → BeliefStatusTag` is a single match table at `crates/worldwake-sim/src/save_load.rs:1368-1372`. Other core-resident payloads (e.g., `BeliefSnapshot.status` at `decision_event_payload.rs:225`) reference the `Tag` form, not the sim form.
+
+**Verify the spec addresses**:
+
+1. **Mirror placement**: the proposed `*Tag` enum is defined in `worldwake-core` alongside other historical-record mirrors (typically in `decision_event_payload.rs` or a sibling module), not in the same crate as the source enum.
+2. **Mechanical equivalence**: the mirror's variants are 1:1 with the source enum's variants — same names, same arity. The mirror is not allowed to introduce semantic differences (no narrowing, no merging, no renaming) — it is a serialization shim, not a domain abstraction.
+3. **Derive requirements**: the mirror derives `Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize` (matching `BeliefStatusTag`). If the source enum carries non-`Copy` payload, the spec must explain how the mirror handles it (typically by mirroring only the discriminant and citing the source for the payload).
+4. **Single conversion site**: the `Source → Tag` conversion lives in exactly one file (typically `crates/worldwake-sim/src/save_load.rs` parallel to the existing `BeliefStatus` table). The reverse direction (`Tag → Source`) is provided only if a higher-crate consumer needs to lift the historical record back into the live enum — most reassessments never need this, and the spec should not propose it speculatively.
+5. **No double-truth**: the spec must not propose using both `Source` and `Tag` forms in the same authoritative state. The mirror is the historical/serialized form; the source enum is the live form. Per FND-28, two live authoritative representations of the same fact may not coexist.
+
+**Flag as Issue**: spec proposes a core-resident type whose field types resolve to a non-core enum without naming the mirror; spec proposes a mirror with semantic differences from the source (variant rename, merge, narrowing); spec proposes the mirror in a non-core crate; spec proposes a `Tag → Source` conversion without naming a consumer that requires it.
+
+**Recommendation framing**: when this pattern triggers and the spec hasn't acknowledged it, the recommendation should cite the `BeliefStatusTag` precedent and propose a parallel mirror (e.g., `RankedGoalComparisonDimensionTag`, `GoalKindTag`) following its derives and conversion-site convention. Do not recommend relocating the source enum to core unless the source enum is also referenced by core-resident *non-historical* state — that is a much larger blast-radius change.
+
 ## Existing Variant Payload Widening
 
 **Trigger**: Spec proposes widening an existing enum variant's payload — e.g., turning a unit variant `Foo::Bar` into a payload-bearing `Foo::Bar(NewType)`, or adding a field to an existing tuple/struct variant. The variant already exists; the change is to its shape, not its presence.

@@ -43,8 +43,8 @@ use worldwake_sim::{
 
 use super::frame::plan_completion_tick_for_adoption;
 use super::{
-    current_step, emit_decision_event, populate_assumptions, runtime_belief_view,
-    update_frame_for_adopted_plan,
+    assumptions_to_refs, current_step, emit_decision_event, populate_assumptions,
+    runtime_belief_view, update_frame_for_adopted_plan,
 };
 
 #[derive(Clone, Debug)]
@@ -928,6 +928,37 @@ fn score_gap(committed_motive: u32, rejected_motive: u32) -> i32 {
     gap.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
+fn ranked_goal_comparison_dimension_tag(
+    dimension: crate::ranking::RankedGoalComparisonDimension,
+) -> worldwake_core::RankedGoalComparisonDimensionTag {
+    use crate::ranking::RankedGoalComparisonDimension as Source;
+    use worldwake_core::RankedGoalComparisonDimensionTag as Tag;
+
+    match dimension {
+        Source::PriorityClass => Tag::PriorityClass,
+        Source::SubstitutePreferenceOrder => Tag::SubstitutePreferenceOrder,
+        Source::MotiveScore => Tag::MotiveScore,
+        Source::SourceComposite => Tag::SourceComposite,
+        Source::Feasibility => Tag::Feasibility,
+        Source::GoalSpecificity => Tag::GoalSpecificity,
+        Source::OpportunityStrength => Tag::OpportunityStrength,
+        Source::ShareBeliefTopicOrder => Tag::ShareBeliefTopicOrder,
+        Source::GoalKindOrder => Tag::GoalKindOrder,
+        Source::CommodityKey => Tag::CommodityKey,
+        Source::EntityKey => Tag::EntityKey,
+        Source::PlaceKey => Tag::PlaceKey,
+    }
+}
+
+fn rejection_dimension(
+    rejected: &AgendaEntry,
+    committed: Option<&AgendaEntry>,
+) -> Option<worldwake_core::RankedGoalComparisonDimensionTag> {
+    let committed = committed?;
+    crate::ranking::explain_ranked_goal_order(rejected, committed)
+        .map(|comparison| ranked_goal_comparison_dimension_tag(comparison.decisive_dimension))
+}
+
 pub(super) fn build_rejected_alternatives(
     ranked_candidates: &OrderedRanked<'_>,
     portfolio: &Portfolio,
@@ -936,13 +967,17 @@ pub(super) fn build_rejected_alternatives(
     max_alternatives: u8,
 ) -> Vec<worldwake_core::RejectedAlternativeSummary> {
     #[derive(Clone, Copy)]
-    struct RejectedGoal {
+    struct RejectedGoal<'a> {
         goal_key: worldwake_core::GoalKey,
         motive_score: u32,
         rejection_reason: worldwake_core::GoalRejectionReason,
+        entry: &'a AgendaEntry,
     }
 
     let mut rejected_by_goal = BTreeMap::<worldwake_core::GoalKey, RejectedGoal>::new();
+    let committed_entry = ranked_candidates
+        .iter()
+        .find(|candidate| candidate.offer.key == committed_goal);
     for slot in portfolio.slots.values() {
         if matches!(
             slot.feasibility,
@@ -954,6 +989,7 @@ pub(super) fn build_rejected_alternatives(
                     goal_key: slot.ranked.offer.key,
                     motive_score: slot.ranked.motive_score,
                     rejection_reason: worldwake_core::GoalRejectionReason::FeasibilityProbeFailed,
+                    entry: &slot.ranked,
                 },
             );
         }
@@ -972,12 +1008,14 @@ pub(super) fn build_rejected_alternatives(
                 ) && candidate.motive_score > existing.motive_score
                 {
                     existing.motive_score = candidate.motive_score;
+                    existing.entry = candidate;
                 }
             })
             .or_insert(RejectedGoal {
                 goal_key: candidate.offer.key,
                 motive_score: candidate.motive_score,
                 rejection_reason: worldwake_core::GoalRejectionReason::LowerMotive,
+                entry: candidate,
             });
     }
 
@@ -995,6 +1033,7 @@ pub(super) fn build_rejected_alternatives(
             goal_key: rejected.goal_key,
             rejection_reason: rejected.rejection_reason,
             score_gap: score_gap(committed_motive, rejected.motive_score),
+            rejection_dimension: rejection_dimension(rejected.entry, committed_entry),
         })
         .collect()
 }
@@ -1009,7 +1048,9 @@ fn emit_plan_selection_events(
     current_goal_before_selection: Option<worldwake_core::GoalKey>,
     selected_plan: &PlannedPlan,
     max_alternatives: u8,
+    prepared_frame: Option<&IntentionFrame>,
 ) {
+    let assumptions = prepared_frame.map_or(&[][..], |frame| frame.assumptions.as_slice());
     if current_goal_before_selection != Some(selected_plan.goal) {
         let committed = ranked_candidates
             .iter()
@@ -1031,6 +1072,11 @@ fn emit_plan_selection_events(
                     committed.motive_score,
                     max_alternatives,
                 ),
+                assumptions: assumptions_to_refs(
+                    assumptions,
+                    max_alternatives,
+                    Some(selected_plan),
+                ),
             }),
         );
     }
@@ -1047,6 +1093,7 @@ fn emit_plan_selection_events(
                 .len()
                 .try_into()
                 .expect("plan step count exceeds u16"),
+            assumptions: assumptions_to_refs(assumptions, max_alternatives, Some(selected_plan)),
         }),
     );
 }
@@ -1685,20 +1732,11 @@ pub(super) fn plan_and_validate_next_step(
                             } else {
                                 None
                             },
+                            cognitive.decision_history_alternatives,
                         );
                     }
                     let refreshed_view =
                         runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
-                    emit_plan_selection_events(
-                        event_log,
-                        tick,
-                        agent,
-                        ranked_candidates,
-                        &plans.portfolio,
-                        active_goal_key,
-                        &selected_plan,
-                        cognitive.decision_history_alternatives,
-                    );
                     let mut prepared_frame =
                         update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
                     if let Some(frame) = prepared_frame.as_mut() {
@@ -1712,6 +1750,17 @@ pub(super) fn plan_and_validate_next_step(
                             completion_tick,
                         );
                     }
+                    emit_plan_selection_events(
+                        event_log,
+                        tick,
+                        agent,
+                        ranked_candidates,
+                        &plans.portfolio,
+                        active_goal_key,
+                        &selected_plan,
+                        cognitive.decision_history_alternatives,
+                        prepared_frame.as_ref(),
+                    );
                     let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                         .expect("plan adoption expects actor to have an effective place");
                     adopt_selected_plan(
@@ -2076,10 +2125,18 @@ pub(super) fn plan_and_validate_next_step_traced(
                         } else {
                             None
                         },
+                        cognitive.decision_history_alternatives,
                     );
                 }
                 let refreshed_view =
                     runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+                let mut prepared_frame =
+                    update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+                if let Some(frame) = prepared_frame.as_mut() {
+                    let completion_tick = plan_completion_tick_for_adoption(&selected_plan, tick);
+                    frame.assumptions =
+                        populate_assumptions(frame, agent, &refreshed_view, tick, completion_tick);
+                }
                 emit_plan_selection_events(
                     event_log,
                     tick,
@@ -2089,6 +2146,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                     current_goal_before_selection,
                     &selected_plan,
                     cognitive.decision_history_alternatives,
+                    prepared_frame.as_ref(),
                 );
                 let selected_goal = selected_plan.goal;
                 let selected_opportunity = selected_plan.opportunity;
@@ -2141,13 +2199,6 @@ pub(super) fn plan_and_validate_next_step_traced(
                     });
                 }
 
-                let mut prepared_frame =
-                    update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
-                if let Some(frame) = prepared_frame.as_mut() {
-                    let completion_tick = plan_completion_tick_for_adoption(&selected_plan, tick);
-                    frame.assumptions =
-                        populate_assumptions(frame, agent, &refreshed_view, tick, completion_tick);
-                }
                 let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                     .expect("plan adoption expects actor to have an effective place");
                 adopt_selected_plan(
@@ -2324,9 +2375,9 @@ mod tests {
         DecisionEventPayload, EntityId, EventLog, EventTag, EventView, ExecutionBudget,
         FrameAssumption, GoalCommittedPayload, GoalRejectionReason, HomeostaticNeeds,
         MerchandiseProfile, PerceptionSource, Permille, Place, PlanAdoptedPayload, Quantity,
-        RepairKind, SourceKey, Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec,
-        WitnessData, WorkstationTag, World, WorldTxn, build_believed_entity_state,
-        build_prototype_world,
+        RankedGoalComparisonDimensionTag, RepairKind, SourceKey, Tick, Topology, TravelEdge,
+        TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
+        build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -3592,26 +3643,55 @@ mod tests {
                 kill_condition: crate::KillCondition::External,
             },
         ];
+        let first_place = entity(50);
+        let second_place = entity(51);
         let selected_plan = PlannedPlan::new(
             opportunity(selected_goal),
             selected_goal,
-            vec![PlannedStep {
-                def_id: ActionDefId(1),
-                targets: Vec::new(),
-                target_place: None,
-                payload_override: None,
-                op_kind: PlannerOpKind::Sleep,
-                estimated_ticks: 1,
-                is_materialization_barrier: false,
-                expected_materializations: Vec::new(),
-                guard: None,
-                expectations: Vec::new(),
-            }],
-            PlanTerminalKind::GoalSatisfied,
+            vec![
+                PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: vec![PlanningEntityRef::Authoritative(first_place)],
+                    target_place: Some(first_place),
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
+                },
+                PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: vec![PlanningEntityRef::Authoritative(second_place)],
+                    target_place: Some(second_place),
+                    payload_override: None,
+                    op_kind: PlannerOpKind::Travel,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
+                },
+            ],
+            PlanTerminalKind::ProgressBarrier,
         );
         let mut event_log = EventLog::new();
         let agent = entity(1);
         let tick = Tick(9);
+        let frame = worldwake_core::IntentionFrame {
+            goal: selected_goal,
+            domain: worldwake_core::IntentionDomain::Generic,
+            assumptions: vec![FrameAssumption::RouteExists {
+                from: first_place,
+                to: second_place,
+            }],
+            state: worldwake_core::FrameState::Active,
+            established_at: tick,
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 3,
+        };
 
         super::emit_plan_selection_events(
             &mut event_log,
@@ -3624,6 +3704,7 @@ mod tests {
             None,
             &selected_plan,
             2,
+            Some(&frame),
         );
 
         let tick_events = event_log.events_at_tick(tick);
@@ -3643,13 +3724,22 @@ mod tests {
                         goal_key: runner_up,
                         rejection_reason: GoalRejectionReason::LowerMotive,
                         score_gap: 10,
+                        rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
                     },
                     worldwake_core::RejectedAlternativeSummary {
                         goal_key: third,
                         rejection_reason: GoalRejectionReason::LowerMotive,
                         score_gap: 30,
+                        rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
                     },
                 ],
+                assumptions: vec![worldwake_core::PlanAssumptionRef {
+                    assumption: FrameAssumption::RouteExists {
+                        from: first_place,
+                        to: second_place,
+                    },
+                    introduced_at_step: 1,
+                }],
             }))
         );
         assert_eq!(
@@ -3657,8 +3747,89 @@ mod tests {
             Some(&DecisionEventPayload::PlanAdopted(PlanAdoptedPayload {
                 agent,
                 goal_key: selected_goal,
-                plan_step_count: 1,
+                plan_step_count: 2,
+                assumptions: vec![worldwake_core::PlanAssumptionRef {
+                    assumption: FrameAssumption::RouteExists {
+                        from: first_place,
+                        to: second_place,
+                    },
+                    introduced_at_step: 1,
+                }],
             }))
+        );
+    }
+
+    #[test]
+    fn build_rejected_alternatives_records_decisive_dimensions() {
+        let selected_goal = GoalKey::from(GoalKind::Sleep);
+        let lower_motive_goal = GoalKey::from(GoalKind::Relieve);
+        let lower_feasibility_goal = GoalKey::from(GoalKind::Wash);
+        let selected = ranked_goal(GoalOffer {
+            key: selected_goal,
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        });
+        let mut lower_motive = ranked_goal(GoalOffer {
+            key: lower_motive_goal,
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        });
+        lower_motive.motive_score = 80;
+        let mut lower_feasibility = ranked_goal(GoalOffer {
+            key: lower_feasibility_goal,
+            anchor: OpportunityAnchor::None,
+            evidence_entities: BTreeSet::new(),
+            evidence_places: BTreeSet::new(),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity: None,
+        });
+        lower_feasibility.feasibility = FeasibilityHint::Uncertain;
+        let ranked_candidates = vec![selected, lower_feasibility, lower_motive];
+
+        let rejected = super::build_rejected_alternatives(
+            &ordered(&ranked_candidates),
+            &Portfolio {
+                slots: BTreeMap::new(),
+            },
+            selected_goal,
+            100,
+            4,
+        );
+
+        assert_eq!(
+            rejected,
+            vec![
+                worldwake_core::RejectedAlternativeSummary {
+                    goal_key: lower_feasibility_goal,
+                    rejection_reason: GoalRejectionReason::LowerMotive,
+                    score_gap: 0,
+                    rejection_dimension: Some(RankedGoalComparisonDimensionTag::Feasibility),
+                },
+                worldwake_core::RejectedAlternativeSummary {
+                    goal_key: lower_motive_goal,
+                    rejection_reason: GoalRejectionReason::LowerMotive,
+                    score_gap: 20,
+                    rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
+                },
+            ]
         );
     }
 
@@ -3935,11 +4106,13 @@ mod tests {
                     goal_key: survival_goal,
                     rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
                     score_gap: -300,
+                    rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
                 },
                 worldwake_core::RejectedAlternativeSummary {
                     goal_key: commitment_goal,
                     rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
                     score_gap: -200,
+                    rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
                 },
             ]
         );

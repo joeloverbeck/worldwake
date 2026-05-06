@@ -24,7 +24,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - S112 (Portfolio Planning) — completed. The portfolio's three slots (Survival/Commitment/Economic) are aggregations over motive-source classes; S141 makes the aggregation explicit.
 - S115 (Agenda Manager) — completed. `AgendaEntry` extended with `desire_token: DesireToken`.
 - S123 (Preference Ordering Authority) — completed. `compare_ranked_goals` remains the single comparator. S141 changes its *internals* (read motive sources, derive score), not its identity.
-- S136 (Decision Event Payload Extension) — Phase 11 sibling. Soft dependency: `decisive_motive_sources: SmallVec<MotiveSourceRef, 4>` joins the always-on payload if S136 lands first; if S141 lands first, S136 amends to include this field.
+- S136 (Decision Event Payload Extension) — completed and archived at `archive/specs/S136-decision-event-payload-extension.md`. Soft dependency satisfied: because S136 landed first, S141 owns adding `decisive_motive_sources: SmallVec<MotiveSourceRef, 4>` to the always-on payload.
 - S107, S130, S131 (existing learning state) — `LearnedOpportunityMemory`, `SurveyMemory`, `SourceReliability` continue to feed motive contributions; S141 does not duplicate them.
 
 ## Design Goals

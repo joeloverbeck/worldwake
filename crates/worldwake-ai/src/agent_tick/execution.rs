@@ -3,8 +3,9 @@ use super::observation::{
     ExpectationMismatchContext, emit_expectation_mismatch, update_runtime_observation_snapshot,
 };
 use super::{
-    AgentTickContext, emit_decision_event, handle_recoverable_travel_step_blockage,
-    runtime_belief_view,
+    AgentTickContext, AssumptionRefContext, decisive_evidence_from_blocker,
+    decisive_evidence_from_discrepancy_entry, decisive_evidence_from_replan_reason,
+    emit_decision_event, handle_recoverable_travel_step_blockage, runtime_belief_view,
 };
 use crate::failure_handling::exact_target_belief_discrepancy;
 use crate::plan_step_expectations::{
@@ -44,6 +45,15 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     step: &PlannedStep,
     valid: bool,
 ) -> Result<(), TickInputError> {
+    let active_assumptions = jc
+        .as_ref()
+        .map_or_else(Vec::new, |frame| frame.assumptions.clone());
+    let active_plan = runtime.current_plan.clone();
+    let assumption_refs = AssumptionRefContext::new(
+        &active_assumptions,
+        ctx.cognitive.decision_history_alternatives,
+    )
+    .with_plan(active_plan.as_ref());
     if !valid {
         let view = runtime_belief_view(
             agent,
@@ -115,6 +125,8 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 ExpectationMismatchContext {
                     expectation_kind,
                     mismatch_detail,
+                    assumption_refs,
+                    max_decisive_evidence: ctx.cognitive.decision_history_alternatives,
                 },
             );
         }
@@ -133,6 +145,11 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             plan_invalidation_reason,
         )?;
         if let Some(goal_key) = active_goal {
+            let decisive = decisive_evidence_from_replan_reason(
+                &replan_reason,
+                tick,
+                ctx.cognitive.decision_history_alternatives,
+            );
             emit_decision_event(
                 ctx.event_log,
                 tick,
@@ -142,6 +159,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                     agent,
                     goal_key,
                     reason: replan_reason,
+                    decisive_beliefs: decisive.beliefs,
+                    decisive_records: decisive.records,
+                    decisive_world_observations: decisive.world_observations,
+                    assumptions: assumption_refs.to_refs(),
                 }),
             );
         }
@@ -198,6 +219,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 original_learned_opportunity_memory,
                 learned_opportunity_memory,
                 runtime,
+                assumption_refs,
             );
         }
         let replan_reason = handle_current_step_failure(
@@ -215,6 +237,11 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             None,
         )?;
         if let Some(goal_key) = active_goal {
+            let decisive = decisive_evidence_from_replan_reason(
+                &replan_reason,
+                tick,
+                ctx.cognitive.decision_history_alternatives,
+            );
             emit_decision_event(
                 ctx.event_log,
                 tick,
@@ -224,6 +251,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                     agent,
                     goal_key,
                     reason: replan_reason,
+                    decisive_beliefs: decisive.beliefs,
+                    decisive_records: decisive.records,
+                    decisive_world_observations: decisive.world_observations,
+                    assumptions: assumption_refs.to_refs(),
                 }),
             );
         }
@@ -246,6 +277,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             original_learned_opportunity_memory,
             learned_opportunity_memory,
             runtime,
+            assumption_refs,
         );
     };
 
@@ -284,6 +316,7 @@ pub(super) fn finalize_agent_tick(
     original_learned_opportunity_memory: &LearnedOpportunityMemory,
     learned_opportunity_memory: &LearnedOpportunityMemory,
     runtime: &mut AgentDecisionRuntime,
+    assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
     persist_blocked_memory(
         world,
@@ -292,6 +325,7 @@ pub(super) fn finalize_agent_tick(
         tick,
         original_blocked,
         blocked_memory,
+        assumption_refs,
     )?;
     persist_discrepancy_memory(
         world,
@@ -300,6 +334,7 @@ pub(super) fn finalize_agent_tick(
         tick,
         original_discrepancy_memory,
         discrepancy_memory,
+        assumption_refs,
     )?;
     persist_violation_memory(
         world,
@@ -412,6 +447,7 @@ pub(super) fn persist_blocked_memory(
     tick: Tick,
     before: &BlockerMemory,
     after: &BlockerMemory,
+    assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
     let changed_entries = after
         .intents
@@ -441,6 +477,7 @@ pub(super) fn persist_blocked_memory(
         .map_err(|error| TickInputError::new(error.to_string()))?;
     let _ = txn.commit(event_log);
     for blocker in changed_entries {
+        let decisive = decisive_evidence_from_blocker(&blocker, assumption_refs.max_assumptions);
         emit_decision_event(
             event_log,
             tick,
@@ -453,6 +490,10 @@ pub(super) fn persist_blocked_memory(
                 blocking_fact: Some(blocker.blocking_fact),
                 expires_tick: blocker.expires_tick,
                 belief_snapshot: None,
+                decisive_beliefs: decisive.beliefs,
+                decisive_records: decisive.records,
+                decisive_world_observations: decisive.world_observations,
+                assumptions: assumption_refs.to_refs(),
             }),
         );
     }
@@ -466,6 +507,7 @@ pub(super) fn persist_discrepancy_memory(
     tick: Tick,
     before: &DiscrepancyMemory,
     after: &DiscrepancyMemory,
+    assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
     let changed_entries = after
         .entries
@@ -496,6 +538,8 @@ pub(super) fn persist_discrepancy_memory(
     let _ = txn.commit(event_log);
     for entry in changed_entries {
         let belief_snapshot = belief_snapshot_for_discrepancy_entry(world, agent, tick, &entry);
+        let decisive =
+            decisive_evidence_from_discrepancy_entry(&entry, assumption_refs.max_assumptions);
         emit_decision_event(
             event_log,
             tick,
@@ -508,6 +552,10 @@ pub(super) fn persist_discrepancy_memory(
                 blocking_fact: None,
                 expires_tick: entry.expires_tick,
                 belief_snapshot,
+                decisive_beliefs: decisive.beliefs,
+                decisive_records: decisive.records,
+                decisive_world_observations: decisive.world_observations,
+                assumptions: assumption_refs.to_refs(),
             }),
         );
     }

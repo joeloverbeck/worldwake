@@ -108,6 +108,19 @@ See `references/worldwake-validation-patterns.md` for additional project-specifi
 
 Verify proposed functions' parameter/return types are accessible from the target crate. Check `Cargo.toml` dependencies. Flag violations of workspace layering (`core -> sim -> systems -> ai -> cli`).
 
+## 3.7A Workspace-External Dependency Check
+
+For specs that mention type names suggesting external (non-workspace) crates — e.g., `SmallVec`, `IndexMap`, `IndexSet`, `Cow`, `Bytes`, `DashMap`, `Arc`-wrappers from non-`std` crates, `tokio::*`, `crossbeam::*`, `parking_lot::*`, `rayon::*`, anything else that is not `std`, not `serde`, not `bincode`, not `rand_chacha`, and not `blake3` — grep all workspace `Cargo.toml` files (`crates/*/Cargo.toml` and the workspace root `Cargo.toml`) for the crate name to confirm whether it is currently a dependency.
+
+If the crate is absent, flag as a HIGH Issue with two routing options:
+
+- **(a) Add the crate as an explicit deliverable**. The spec must commit to a Cargo.toml addition with version, features, and rationale. Note that `worldwake-core` is the most dependency-restricted crate (currently `serde`, `bincode`, `blake3` only) — adding any external crate to core has higher review weight than to higher crates.
+- **(b) Substitute the workspace-native equivalent**. Common substitutions: `Vec<T>` + per-agent soft-cap (e.g., `cognitive.decision_history_alternatives`) replaces `SmallVec<T, N>`; `BTreeMap`/`BTreeSet` replaces `IndexMap`/`IndexSet`/`DashMap` (also satisfies the determinism invariant per CLAUDE.md); `&[T]` borrows replace `Cow<[T]>`. Cite the existing precedent in the codebase when proposing the substitution.
+
+The check is independent of the spec's claimed crate row. A spec that says `worldwake-cli` extends an observer feature with `IndexMap` still triggers this check even though `worldwake-cli` already has plenty of dependencies — the question is whether `IndexMap` itself is in the workspace, not whether *some* external crate is.
+
+**Skip condition**: the type name resolves to a workspace-native synonym defined elsewhere in the codebase (e.g., a project-local `SmallSet` wrapper). Grep the codebase for `pub struct <TypeName>` or `pub type <TypeName>` to rule this out before flagging.
+
 ## 3.8 Upstream Spec References
 
 Grep active specs in `specs/` **and archived specs in `archive/specs/`** for references to this spec's deliverables. Note affected specs.

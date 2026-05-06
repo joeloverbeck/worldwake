@@ -11,8 +11,9 @@ use worldwake_ai::perf_telemetry::{
     SOAK_SEED_PERF_TELEMETRY_CONFIG,
 };
 use worldwake_core::{
-    CauseRef, CommodityKind, EventId, EventView, Permille, Seed, hash_event_log, hash_world,
-    total_authoritative_commodity_quantity, verify_authoritative_conservation,
+    CauseRef, CommodityKind, DecisionEventPayload, EventId, EventView, Permille, Seed,
+    hash_event_log, hash_world, total_authoritative_commodity_quantity,
+    verify_authoritative_conservation,
 };
 
 struct SoakRunResult {
@@ -21,9 +22,16 @@ struct SoakRunResult {
     world_hash: String,
     event_log_hash: String,
     event_count: usize,
+    max_decision_payload_bytes: BTreeMap<&'static str, usize>,
 }
 
 const TOTAL_TICKS: u64 = 10080;
+const GOAL_COMMITTED_BYTE_CEILING: usize = 2048;
+const PLAN_ADOPTED_BYTE_CEILING: usize = 1024;
+const BLOCKER_RECORDED_BYTE_CEILING: usize = 4096;
+const REPLAN_TRIGGERED_BYTE_CEILING: usize = 4096;
+const EXPECTATION_MISMATCH_BYTE_CEILING: usize = 4096;
+const SOURCE_EXPECTATION_FAILURE_BYTE_CEILING: usize = 3072;
 
 fn nanos_to_micros(nanos: u128) -> u128 {
     nanos / 1_000
@@ -51,6 +59,65 @@ fn emit_window(label: &str, summary: PlanningWindowSummary) {
         "{label}_planning_avg_us={}",
         summary.average_duration_nanos().map_or(0, nanos_to_micros)
     );
+}
+
+fn decision_payload_tag(payload: &DecisionEventPayload) -> &'static str {
+    match payload {
+        DecisionEventPayload::GoalOffered(_) => "GoalOffered",
+        DecisionEventPayload::GoalSuppressed(_) => "GoalSuppressed",
+        DecisionEventPayload::GoalCommitted(_) => "GoalCommitted",
+        DecisionEventPayload::PlanAdopted(_) => "PlanAdopted",
+        DecisionEventPayload::BlockerRecorded(_) => "BlockerRecorded",
+        DecisionEventPayload::GoalAbandoned(_) => "GoalAbandoned",
+        DecisionEventPayload::GoalSuspended(_) => "GoalSuspended",
+        DecisionEventPayload::PlanInvalidated(_) => "PlanInvalidated",
+        DecisionEventPayload::RepairApplied(_) => "RepairApplied",
+        DecisionEventPayload::ExpectationMismatch(_) => "ExpectationMismatch",
+        DecisionEventPayload::SourceExpectationFailure(_) => "SourceExpectationFailure",
+        DecisionEventPayload::SleepEpisodeStarted(_) => "SleepEpisodeStarted",
+        DecisionEventPayload::SleepEpisodeEnded(_) => "SleepEpisodeEnded",
+        DecisionEventPayload::WashFacilityUsed(_) => "WashFacilityUsed",
+        DecisionEventPayload::WasteCreated(_) => "WasteCreated",
+        DecisionEventPayload::ReplanTriggered(_) => "ReplanTriggered",
+        DecisionEventPayload::SurveyRecorded(_) => "SurveyRecorded",
+    }
+}
+
+fn decision_payload_byte_ceiling(payload: &DecisionEventPayload) -> Option<usize> {
+    match payload {
+        DecisionEventPayload::GoalCommitted(_) => Some(GOAL_COMMITTED_BYTE_CEILING),
+        DecisionEventPayload::PlanAdopted(_) => Some(PLAN_ADOPTED_BYTE_CEILING),
+        DecisionEventPayload::BlockerRecorded(_) => Some(BLOCKER_RECORDED_BYTE_CEILING),
+        DecisionEventPayload::ReplanTriggered(_) => Some(REPLAN_TRIGGERED_BYTE_CEILING),
+        DecisionEventPayload::ExpectationMismatch(_) => Some(EXPECTATION_MISMATCH_BYTE_CEILING),
+        DecisionEventPayload::SourceExpectationFailure(_) => {
+            Some(SOURCE_EXPECTATION_FAILURE_BYTE_CEILING)
+        }
+        _ => None,
+    }
+}
+
+fn assert_decision_payload_size(
+    payload: &DecisionEventPayload,
+    event_id: EventId,
+    tick: worldwake_core::Tick,
+    max_decision_payload_bytes: &mut BTreeMap<&'static str, usize>,
+) {
+    let tag = decision_payload_tag(payload);
+    let bytes = bincode::serialize(payload)
+        .expect("decision payload should serialize during soak size sweep")
+        .len();
+    max_decision_payload_bytes
+        .entry(tag)
+        .and_modify(|max| *max = (*max).max(bytes))
+        .or_insert(bytes);
+
+    if let Some(ceiling) = decision_payload_byte_ceiling(payload) {
+        assert!(
+            bytes <= ceiling,
+            "{tag} decision payload for event {event_id:?} at tick {tick:?} serialized to {bytes} bytes, exceeding ceiling {ceiling}"
+        );
+    }
 }
 
 fn parse_seed_arg() -> Result<u8, String> {
@@ -99,6 +166,7 @@ fn run_one_seed(seed: Seed) -> SoakRunResult {
     let initial_world_hash = hash_world(&h.world).expect("T30 soak world should hash");
     let mut prev_tick = h.scheduler.current_tick();
     let mut last_checked_event = 0u64;
+    let mut max_decision_payload_bytes = BTreeMap::new();
 
     for _ in 0..TOTAL_TICKS {
         h.step_once();
@@ -172,6 +240,14 @@ fn run_one_seed(seed: Seed) -> SoakRunResult {
                     }
                     CauseRef::SystemTick(_) | CauseRef::Bootstrap | CauseRef::ExternalInput(_) => {}
                 }
+                if let Some(payload) = record.decision_payload() {
+                    assert_decision_payload_size(
+                        payload,
+                        event_id,
+                        current_tick,
+                        &mut max_decision_payload_bytes,
+                    );
+                }
             }
         }
         last_checked_event = log_len;
@@ -191,6 +267,7 @@ fn run_one_seed(seed: Seed) -> SoakRunResult {
         world_hash: format!("{final_world_hash:?}"),
         event_log_hash: format!("{event_log_hash:?}"),
         event_count: h.event_log.len(),
+        max_decision_payload_bytes,
     }
 }
 
@@ -213,4 +290,7 @@ fn main() {
     );
     println!("world_hash={}", result.world_hash);
     println!("event_log_hash={}", result.event_log_hash);
+    for (tag, bytes) in result.max_decision_payload_bytes {
+        println!("max_decision_payload_bytes_{tag}={bytes}");
+    }
 }

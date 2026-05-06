@@ -8,10 +8,11 @@ use super::planning::{
     determine_selected_plan_source, plan_and_validate_next_step, summarize_plan_replacement,
 };
 use super::{
-    AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
-    committed_action_for_step, effective_goal_switch_margin,
-    handle_recoverable_travel_step_blockage, invalidate_committed_source_after_reliability_failure,
-    persist_blocked_memory, persist_discrepancy_memory, plan_and_validate_next_step_traced,
+    AgentTickDriver, AssumptionRefContext, advance_completed_step,
+    apply_step_materialization_bindings, committed_action_for_step, effective_goal_switch_margin,
+    emit_replan_triggered, handle_recoverable_travel_step_blockage,
+    invalidate_committed_source_after_reliability_failure, persist_blocked_memory,
+    persist_discrepancy_memory, plan_and_validate_next_step_traced,
     record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
     update_exploration_counter_for_adopted_goal, update_frame_for_adopted_plan,
 };
@@ -3257,6 +3258,7 @@ fn overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy() {
             .runtime_by_agent
             .get_mut(&harness.actor)
             .expect("runtime should exist"),
+        None,
         &mut blocked_memory,
         &mut discrepancy_memory,
         harness.actor,
@@ -3280,6 +3282,38 @@ fn overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy() {
                 expected_materializations: Vec::new(),
                 expectation_kind: Some(ExpectationKindTag::State),
                 mismatch_detail: Some(MismatchDetail::StateUnmet { predicate }),
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: match predicate {
+                    StatePredicate::ActorHoldsCommodity { kind, .. } => {
+                        vec![worldwake_core::ObservationRef {
+                            observed_entity: harness.actor,
+                            aspect: worldwake_core::EntityBeliefAspect::Inventory(kind),
+                            observed_tick: Tick(7),
+                        }]
+                    }
+                    StatePredicate::CommodityAtPlaceAtLeast { place, kind, .. } => {
+                        vec![worldwake_core::ObservationRef {
+                            observed_entity: place,
+                            aspect: worldwake_core::EntityBeliefAspect::Inventory(kind),
+                            observed_tick: Tick(7),
+                        }]
+                    }
+                    StatePredicate::EntityAtPlace { entity, .. } => {
+                        vec![worldwake_core::ObservationRef {
+                            observed_entity: entity,
+                            aspect: worldwake_core::EntityBeliefAspect::Location,
+                            observed_tick: Tick(7),
+                        }]
+                    }
+                    StatePredicate::ClaimEstablished { claim } =>
+                        vec![worldwake_core::ObservationRef {
+                            observed_entity: claim.subject,
+                            aspect: claim.aspect,
+                            observed_tick: Tick(7),
+                        }],
+                },
+                assumptions: Vec::new(),
             }
         ))
     );
@@ -3372,6 +3406,7 @@ fn overdue_plan_step_expectation_expires_when_plan_moved_on() {
             .runtime_by_agent
             .get_mut(&harness.actor)
             .expect("runtime should exist"),
+        None,
         &mut blocked_memory,
         &mut discrepancy_memory,
         harness.actor,
@@ -3502,6 +3537,7 @@ fn overdue_plan_step_expectation_classifies_discrepancy_per_kind() {
                 .runtime_by_agent
                 .get_mut(&harness.actor)
                 .expect("runtime should exist"),
+            None,
             &mut blocked_memory,
             &mut discrepancy_memory,
             harness.actor,
@@ -3625,6 +3661,7 @@ fn overdue_plan_step_expectation_processes_after_sim_marks_record_overdue() {
             .runtime_by_agent
             .get_mut(&harness.actor)
             .expect("runtime should exist"),
+        None,
         &mut blocked_memory,
         &mut discrepancy_memory,
         harness.actor,
@@ -4909,6 +4946,7 @@ fn persist_blocked_memory_skips_empty_unchanged_state() {
         Tick(2),
         &BlockerMemory::default(),
         &BlockerMemory::default(),
+        AssumptionRefContext::new(&[], 5),
     )
     .unwrap();
 
@@ -4924,19 +4962,23 @@ fn persist_blocked_memory_commits_changed_component() {
     let agent = {
         let mut txn = new_txn(&mut world, 1);
         let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+        let target = txn.create_agent("Target", ControlSource::Ai).unwrap();
         txn.set_ground_location(agent, place).unwrap();
+        txn.set_ground_location(target, place).unwrap();
         let _ = txn.commit(&mut event_log);
-        agent
+        (agent, target)
     };
+    let (agent, target) = agent;
     let mut blocked = BlockerMemory::default();
+    let assumptions = vec![FrameAssumption::NoCriticalThreat];
     blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
             place: None,
-            target: None,
+            target: Some(target),
             action_def: None,
         },
-        blocking_fact: BlockingFact::NoKnownPath,
+        blocking_fact: BlockingFact::TargetGone,
         diagnostic_context: None,
         observed_tick: Tick(2),
         expires_tick: Tick(7),
@@ -4951,6 +4993,7 @@ fn persist_blocked_memory_commits_changed_component() {
         Tick(2),
         &BlockerMemory::default(),
         &blocked,
+        AssumptionRefContext::new(&assumptions, 5),
     )
     .unwrap();
 
@@ -4968,15 +5011,141 @@ fn persist_blocked_memory_commits_changed_component() {
                 blocker_key: BlockerKey {
                     goal_key: GoalKey::from(GoalKind::Sleep),
                     place: None,
-                    target: None,
+                    target: Some(target),
                     action_def: None,
                 },
                 discrepancy: None,
-                blocking_fact: Some(BlockingFact::NoKnownPath),
+                blocking_fact: Some(BlockingFact::TargetGone),
                 expires_tick: Tick(7),
                 belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: vec![worldwake_core::ObservationRef {
+                    observed_entity: target,
+                    aspect: worldwake_core::EntityBeliefAspect::Alive,
+                    observed_tick: Tick(2),
+                }],
+                assumptions: vec![worldwake_core::PlanAssumptionRef {
+                    assumption: FrameAssumption::NoCriticalThreat,
+                    introduced_at_step: 0,
+                }],
             }
         ))
+    );
+}
+
+#[test]
+fn emit_replan_triggered_carries_active_frame_assumptions() {
+    let mut event_log = EventLog::new();
+    let agent = entity(1);
+    let goal_key = GoalKey::from(GoalKind::Sleep);
+    let claim_key = worldwake_core::BeliefClaimKey {
+        subject: entity(9),
+        aspect: worldwake_core::EntityBeliefAspect::Location,
+    };
+    let assumptions = vec![
+        FrameAssumption::NoCriticalThreat,
+        FrameAssumption::NeedSafeUntilTick {
+            need: HomeostaticNeedId::Fatigue,
+            until_tick: Tick(20),
+        },
+    ];
+
+    emit_replan_triggered(
+        &mut event_log,
+        Tick(2),
+        agent,
+        goal_key,
+        worldwake_core::ReplanReason::PlanInvalidated {
+            reason: worldwake_core::PlanInvalidationReason::BeliefUpdate { claim_key },
+        },
+        &assumptions,
+        1,
+        None,
+    );
+
+    let events = event_log.events_by_tag(EventTag::ReplanTriggered);
+    assert_eq!(events.len(), 1);
+    let payload = event_log
+        .get(events[0])
+        .and_then(|record| record.decision_payload())
+        .expect("replan event should carry payload");
+    match payload {
+        DecisionEventPayload::ReplanTriggered(payload) => {
+            assert_eq!(
+                payload.assumptions,
+                vec![worldwake_core::PlanAssumptionRef {
+                    assumption: FrameAssumption::NoCriticalThreat,
+                    introduced_at_step: 0,
+                }]
+            );
+            assert_eq!(
+                payload.decisive_beliefs,
+                vec![worldwake_core::BeliefRef {
+                    claim_key,
+                    claim_held_at_tick: Tick(2),
+                    status: worldwake_core::BeliefStatusTag::Probable,
+                }]
+            );
+            assert!(payload.decisive_records.is_empty());
+            assert!(payload.decisive_world_observations.is_empty());
+        }
+        other => panic!("unexpected payload: {other:?}"),
+    }
+}
+
+#[test]
+fn assumption_refs_record_nonzero_source_step_from_plan() {
+    let first_place = entity(10);
+    let second_place = entity(11);
+    let goal_key = GoalKey::from(GoalKind::Sleep);
+    let plan = PlannedPlan::new(
+        OpportunityKey {
+            goal_key,
+            anchor: OpportunityAnchor::Place(second_place),
+        },
+        goal_key,
+        vec![
+            PlannedStep {
+                def_id: ActionDefId(1),
+                targets: vec![PlanningEntityRef::Authoritative(first_place)],
+                target_place: Some(first_place),
+                payload_override: None,
+                op_kind: PlannerOpKind::Travel,
+                estimated_ticks: 1,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
+            },
+            PlannedStep {
+                def_id: ActionDefId(1),
+                targets: vec![PlanningEntityRef::Authoritative(second_place)],
+                target_place: Some(second_place),
+                payload_override: None,
+                op_kind: PlannerOpKind::Travel,
+                estimated_ticks: 1,
+                is_materialization_barrier: false,
+                expected_materializations: Vec::new(),
+                guard: None,
+                expectations: Vec::new(),
+            },
+        ],
+        PlanTerminalKind::ProgressBarrier,
+    );
+    let assumption = FrameAssumption::RouteExists {
+        from: first_place,
+        to: second_place,
+    };
+
+    assert_eq!(
+        AssumptionRefContext::new(&[assumption], 5)
+            .with_plan(Some(&plan))
+            .to_refs(),
+        vec![worldwake_core::PlanAssumptionRef {
+            assumption,
+            introduced_at_step: 1,
+        }]
     );
 }
 
@@ -5014,6 +5183,7 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
         Tick(2),
         &DiscrepancyMemory::default(),
         &discrepancy_memory,
+        AssumptionRefContext::new(&[], 5),
     )
     .unwrap();
 
@@ -5035,6 +5205,10 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
                 blocking_fact: None,
                 expires_tick: Tick(9),
                 belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }
         ))
     );
@@ -5085,6 +5259,7 @@ fn persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrep
         Tick(80),
         &DiscrepancyMemory::default(),
         &discrepancy_memory,
+        AssumptionRefContext::new(&[], 5),
     )
     .unwrap();
 
@@ -5098,7 +5273,9 @@ fn persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrep
         .expect("expected blocker recorded payload");
     match payload {
         DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
-            belief_snapshot, ..
+            belief_snapshot,
+            decisive_beliefs,
+            ..
         }) => {
             assert_eq!(
                 *belief_snapshot,
@@ -5107,6 +5284,17 @@ fn persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrep
                     status: worldwake_core::BeliefStatusTag::Stale,
                     acquired_tick: expected.acquired_tick,
                 })
+            );
+            assert_eq!(
+                *decisive_beliefs,
+                vec![worldwake_core::BeliefRef {
+                    claim_key: worldwake_core::BeliefClaimKey {
+                        subject: target,
+                        aspect: worldwake_core::EntityBeliefAspect::Location,
+                    },
+                    claim_held_at_tick: Tick(80),
+                    status: worldwake_core::BeliefStatusTag::Stale,
+                }]
             );
         }
         other => panic!("unexpected payload: {other:?}"),
@@ -5978,6 +6166,10 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
                 mismatch_detail: Some(MismatchDetail::GuardInvalidator(
                     InvalidatorTag::TargetMoved,
                 )),
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }
         )),
         "guard-breach start failure should emit the same-tick expectation mismatch payload before replan"
@@ -6430,6 +6622,7 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
             entity: source_b,
             commodity: CommodityKind::Apple,
         }),
+        5,
     );
 
     let updated = harness
@@ -6499,6 +6692,15 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
                 cause: ExpectationFailureCauseTag::SourceDepletedLocally,
                 detected_at_tick: Tick(20),
                 attribution_outcome: SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: vec![worldwake_core::ObservationRef {
+                    observed_entity: source_a,
+                    aspect: worldwake_core::EntityBeliefAspect::ResourceAvailable(
+                        CommodityKind::Apple,
+                    ),
+                    observed_tick: Tick(20),
+                }],
             }),
             DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
                 agent: harness.actor,
@@ -6515,6 +6717,15 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
                 cause: ExpectationFailureCauseTag::SourceDepletedLocally,
                 detected_at_tick: Tick(20),
                 attribution_outcome: SourceAttributionOutcomeTag::CoalescedDuplicate,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: vec![worldwake_core::ObservationRef {
+                    observed_entity: source_a,
+                    aspect: worldwake_core::EntityBeliefAspect::ResourceAvailable(
+                        CommodityKind::Apple,
+                    ),
+                    observed_tick: Tick(20),
+                }],
             }),
             DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
                 agent: harness.actor,
@@ -6532,6 +6743,15 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
                 detected_at_tick: Tick(20),
                 attribution_outcome:
                     SourceAttributionOutcomeTag::SourceInvalidatedFrameReconsidered,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: vec![worldwake_core::ObservationRef {
+                    observed_entity: source_b,
+                    aspect: worldwake_core::EntityBeliefAspect::ResourceAvailable(
+                        CommodityKind::Apple,
+                    ),
+                    observed_tick: Tick(20),
+                }],
             }),
         ]
     );
