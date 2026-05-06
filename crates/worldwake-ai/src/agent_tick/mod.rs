@@ -499,6 +499,10 @@ fn emit_replan_triggered(
             agent,
             goal_key,
             reason,
+            decisive_beliefs: Vec::new(),
+            decisive_records: Vec::new(),
+            decisive_world_observations: Vec::new(),
+            assumptions: Vec::new(),
         }),
     );
 }
@@ -572,6 +576,9 @@ fn source_expectation_failure_payload(
         cause: map_expectation_failure_cause_tag(incident.cause),
         detected_at_tick: incident.detected_at_tick,
         attribution_outcome,
+        decisive_beliefs: Vec::new(),
+        decisive_records: Vec::new(),
+        decisive_world_observations: Vec::new(),
     }
 }
 

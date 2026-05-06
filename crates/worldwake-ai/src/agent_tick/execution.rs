@@ -142,6 +142,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                     agent,
                     goal_key,
                     reason: replan_reason,
+                    decisive_beliefs: Vec::new(),
+                    decisive_records: Vec::new(),
+                    decisive_world_observations: Vec::new(),
+                    assumptions: Vec::new(),
                 }),
             );
         }
@@ -224,6 +228,10 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                     agent,
                     goal_key,
                     reason: replan_reason,
+                    decisive_beliefs: Vec::new(),
+                    decisive_records: Vec::new(),
+                    decisive_world_observations: Vec::new(),
+                    assumptions: Vec::new(),
                 }),
             );
         }
@@ -453,6 +461,10 @@ pub(super) fn persist_blocked_memory(
                 blocking_fact: Some(blocker.blocking_fact),
                 expires_tick: blocker.expires_tick,
                 belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         );
     }
@@ -508,6 +520,10 @@ pub(super) fn persist_discrepancy_memory(
                 blocking_fact: None,
                 expires_tick: entry.expires_tick,
                 belief_snapshot,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         );
     }

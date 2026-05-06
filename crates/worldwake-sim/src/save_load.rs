@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 69;
+pub const SAVE_FORMAT_VERSION: u32 = 70;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -197,25 +197,26 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, ActionDomain, AgentBeliefStore, BeliefClaimKey,
-        BeliefSnapshot, BeliefStatusTag, BelievedActivity, BelievedEntityState, BlockerKey,
-        BlockerRecordedPayload, BlockingFact, BodyCostPerTick, CauseRef, ClaimId, ClaimValue,
-        CommodityKind, CommodityPurpose, ControlSource, DecisionEventPayload, Discrepancy,
-        EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload,
-        EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
-        ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
-        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
-        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
-        GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, LatrineFullness, MaterializationTag, MetabolismProfile,
-        ObservationOmission, OmissionReason, PendingEvent, PerceptionSource, PlaceDirtiness,
-        PlanAdoptedPayload, PlanInvalidatedPayload, PlanInvalidationReason,
-        PursuitInvalidationReasonTag, Quantity, RejectedAlternativeSummary, RepairAppliedPayload,
-        RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId, RewardEncumbrance, Seed,
-        ShelterTag, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SleepQualityProfile, SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange,
-        UniqueItemKind, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_prototype_world,
+        BeliefRef, BeliefSnapshot, BeliefStatusTag, BelievedActivity, BelievedEntityState,
+        BlockerKey, BlockerRecordedPayload, BlockingFact, BodyCostPerTick, CauseRef, ClaimId,
+        ClaimValue, CommodityKind, CommodityPurpose, ControlSource, DecisionEventPayload,
+        Discrepancy, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog,
+        EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
+        ExpectationId, ExpectationMismatchPayload, ExpectationRecord, ExpectationState,
+        ExpectationStore, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey,
+        GoalKind, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
+        GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag, HomeostaticNeedId,
+        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, MaterializationTag,
+        MetabolismProfile, ObservationOmission, ObservationRef, OmissionReason, PendingEvent,
+        PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
+        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
+        RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
+        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
+        RewardEncumbrance, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
+        SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec, WakeCondition,
+        WakeReason, WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
+        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -857,6 +858,11 @@ mod tests {
                         goal_key: trade_goal,
                         rejection_reason: GoalRejectionReason::LowerMotive,
                         score_gap: 17,
+                        rejection_dimension: Some(RankedGoalComparisonDimensionTag::MotiveScore),
+                    }],
+                    assumptions: vec![PlanAssumptionRef {
+                        assumption: worldwake_core::FrameAssumption::NoCriticalThreat,
+                        introduced_at_step: 0,
                     }],
                 }),
             ),
@@ -938,6 +944,10 @@ mod tests {
                     agent: actor,
                     goal_key: trade_goal,
                     plan_step_count: 3,
+                    assumptions: vec![PlanAssumptionRef {
+                        assumption: worldwake_core::FrameAssumption::TargetAlive(target),
+                        introduced_at_step: 1,
+                    }],
                 }),
             ),
             (
@@ -962,6 +972,24 @@ mod tests {
                     expected_materializations: vec![MaterializationTag::SplitOffLot],
                     expectation_kind: None,
                     mismatch_detail: None,
+                    decisive_beliefs: vec![BeliefRef {
+                        claim_key,
+                        claim_held_at_tick: Tick(14),
+                        status: BeliefStatusTag::Stale,
+                    }],
+                    decisive_records: vec![RecordRef {
+                        record_entity: office,
+                        recorded_at_tick: Tick(15),
+                    }],
+                    decisive_world_observations: vec![ObservationRef {
+                        observed_entity: target,
+                        aspect: EntityBeliefAspect::Inventory(CommodityKind::Bread),
+                        observed_tick: Tick(16),
+                    }],
+                    assumptions: vec![PlanAssumptionRef {
+                        assumption: worldwake_core::FrameAssumption::NoCriticalThreat,
+                        introduced_at_step: 0,
+                    }],
                 }),
             ),
             (
@@ -984,6 +1012,17 @@ mod tests {
                             reason: PursuitInvalidationReasonTag::PlaceChanged,
                         },
                     },
+                    decisive_beliefs: vec![BeliefRef {
+                        claim_key,
+                        claim_held_at_tick: Tick(14),
+                        status: BeliefStatusTag::Stale,
+                    }],
+                    decisive_records: Vec::new(),
+                    decisive_world_observations: Vec::new(),
+                    assumptions: vec![PlanAssumptionRef {
+                        assumption: worldwake_core::FrameAssumption::TargetAlive(target),
+                        introduced_at_step: 1,
+                    }],
                 }),
             ),
             (
@@ -999,6 +1038,17 @@ mod tests {
                         status: BeliefStatusTag::Probable,
                         acquired_tick: Tick(18),
                     }),
+                    decisive_beliefs: vec![BeliefRef {
+                        claim_key,
+                        claim_held_at_tick: Tick(18),
+                        status: BeliefStatusTag::Probable,
+                    }],
+                    decisive_records: Vec::new(),
+                    decisive_world_observations: Vec::new(),
+                    assumptions: vec![PlanAssumptionRef {
+                        assumption: worldwake_core::FrameAssumption::NoCriticalThreat,
+                        introduced_at_step: 0,
+                    }],
                 }),
             ),
         ]
@@ -1022,7 +1072,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 69);
+        assert_eq!(SAVE_FORMAT_VERSION, 70);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]

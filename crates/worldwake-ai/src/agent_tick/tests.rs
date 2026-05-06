@@ -3280,6 +3280,10 @@ fn overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy() {
                 expected_materializations: Vec::new(),
                 expectation_kind: Some(ExpectationKindTag::State),
                 mismatch_detail: Some(MismatchDetail::StateUnmet { predicate }),
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }
         ))
     );
@@ -4975,6 +4979,10 @@ fn persist_blocked_memory_commits_changed_component() {
                 blocking_fact: Some(BlockingFact::NoKnownPath),
                 expires_tick: Tick(7),
                 belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }
         ))
     );
@@ -5035,6 +5043,10 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
                 blocking_fact: None,
                 expires_tick: Tick(9),
                 belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }
         ))
     );
@@ -5978,6 +5990,10 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
                 mismatch_detail: Some(MismatchDetail::GuardInvalidator(
                     InvalidatorTag::TargetMoved,
                 )),
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }
         )),
         "guard-breach start failure should emit the same-tick expectation mismatch payload before replan"
@@ -6499,6 +6515,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
                 cause: ExpectationFailureCauseTag::SourceDepletedLocally,
                 detected_at_tick: Tick(20),
                 attribution_outcome: SourceAttributionOutcomeTag::SourceReliabilityDecremented,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
             }),
             DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
                 agent: harness.actor,
@@ -6515,6 +6534,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
                 cause: ExpectationFailureCauseTag::SourceDepletedLocally,
                 detected_at_tick: Tick(20),
                 attribution_outcome: SourceAttributionOutcomeTag::CoalescedDuplicate,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
             }),
             DecisionEventPayload::SourceExpectationFailure(SourceExpectationFailurePayload {
                 agent: harness.actor,
@@ -6532,6 +6554,9 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
                 detected_at_tick: Tick(20),
                 attribution_outcome:
                     SourceAttributionOutcomeTag::SourceInvalidatedFrameReconsidered,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
             }),
         ]
     );

@@ -995,6 +995,7 @@ pub(super) fn build_rejected_alternatives(
             goal_key: rejected.goal_key,
             rejection_reason: rejected.rejection_reason,
             score_gap: score_gap(committed_motive, rejected.motive_score),
+            rejection_dimension: None,
         })
         .collect()
 }
@@ -1031,6 +1032,7 @@ fn emit_plan_selection_events(
                     committed.motive_score,
                     max_alternatives,
                 ),
+                assumptions: Vec::new(),
             }),
         );
     }
@@ -1047,6 +1049,7 @@ fn emit_plan_selection_events(
                 .len()
                 .try_into()
                 .expect("plan step count exceeds u16"),
+            assumptions: Vec::new(),
         }),
     );
 }
@@ -3643,13 +3646,16 @@ mod tests {
                         goal_key: runner_up,
                         rejection_reason: GoalRejectionReason::LowerMotive,
                         score_gap: 10,
+                        rejection_dimension: None,
                     },
                     worldwake_core::RejectedAlternativeSummary {
                         goal_key: third,
                         rejection_reason: GoalRejectionReason::LowerMotive,
                         score_gap: 30,
+                        rejection_dimension: None,
                     },
                 ],
+                assumptions: Vec::new(),
             }))
         );
         assert_eq!(
@@ -3658,6 +3664,7 @@ mod tests {
                 agent,
                 goal_key: selected_goal,
                 plan_step_count: 1,
+                assumptions: Vec::new(),
             }))
         );
     }
@@ -3935,11 +3942,13 @@ mod tests {
                     goal_key: survival_goal,
                     rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
                     score_gap: -300,
+                    rejection_dimension: None,
                 },
                 worldwake_core::RejectedAlternativeSummary {
                     goal_key: commitment_goal,
                     rejection_reason: GoalRejectionReason::FeasibilityProbeFailed,
                     score_gap: -200,
+                    rejection_dimension: None,
                 },
             ]
         );

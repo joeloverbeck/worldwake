@@ -4471,7 +4471,9 @@ mod tests {
                     goal_key: acquire_goal,
                     rejection_reason: GoalRejectionReason::LowerMotive,
                     score_gap: 17,
+                    rejection_dimension: None,
                 }],
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -4508,6 +4510,7 @@ mod tests {
                 agent,
                 goal_key: acquire_goal,
                 plan_step_count: 3,
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -4539,6 +4542,10 @@ mod tests {
                 expected_materializations: vec![worldwake_core::MaterializationTag::SplitOffLot],
                 expectation_kind: None,
                 mismatch_detail: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -4565,6 +4572,10 @@ mod tests {
                 reason: worldwake_core::ReplanReason::ActionInterrupted {
                     reason: worldwake_core::ActionInterruptReasonTag::Reprioritized,
                 },
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -4584,6 +4595,10 @@ mod tests {
                 blocking_fact: None,
                 expires_tick: Tick(99),
                 belief_snapshot: None,
+                decisive_beliefs: Vec::new(),
+                decisive_records: Vec::new(),
+                decisive_world_observations: Vec::new(),
+                assumptions: Vec::new(),
             }),
         );
         emit_decision_event(
@@ -5755,7 +5770,9 @@ mod tests {
                     }),
                     rejection_reason: GoalRejectionReason::LowerMotive,
                     score_gap: 17,
+                    rejection_dimension: None,
                 }],
+                assumptions: Vec::new(),
             }));
 
         assert_eq!(summary, "goal=Sleep motive=420 alts=1");

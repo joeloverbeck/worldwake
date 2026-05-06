@@ -132,6 +132,10 @@ pub(super) fn emit_expectation_mismatch(
                 .collect(),
             expectation_kind: context.expectation_kind,
             mismatch_detail: context.mismatch_detail,
+            decisive_beliefs: Vec::new(),
+            decisive_records: Vec::new(),
+            decisive_world_observations: Vec::new(),
+            assumptions: Vec::new(),
         }),
     );
 }
@@ -1209,6 +1213,10 @@ mod tests {
                     expected_materializations: vec![MaterializationTag::SplitOffLot],
                     expectation_kind: None,
                     mismatch_detail: None,
+                    decisive_beliefs: Vec::new(),
+                    decisive_records: Vec::new(),
+                    decisive_world_observations: Vec::new(),
+                    assumptions: Vec::new(),
                 }
             )
         );
