@@ -13,6 +13,7 @@ Use this branch whenever focused live proof confirms a real narrow production fi
    If diagnosis reveals multiple non-overlapping remaining contradictions, create one follow-up ticket per causal owner / proof seam rather than one umbrella successor ticket.
    If the first broadened repro after a narrow fix still fails and reveals another earlier causal owner, stop scenario/golden tuning immediately, split or land that earlier owner first, and only then return to the broader scenario proof.
 6. During closeout, record the split explicitly: landed narrow boundary, focused and broadened commands, concrete reason the broader premise stayed false, and the follow-up owner.
+   For multi-scenario golden suites, label each scenario's proof seam separately in the active ticket/spec and generated docs: which scenarios now use source-backed events or traces, which remain explicit fixture/lifecycle proof, and which follow-up owns each remaining explicit or missing source-backed branch.
 7. If you added a temporary exploratory golden/test only to prove or disprove the stronger end state, remove or rewrite it before final verification when that stronger contract remains false.
    Apply the same cleanup rule to temporary exploratory scenario, fixture, or config edits used only for diagnosis.
    When the narrower seam survives in the same golden/test file, rename or narrow the remaining test names, assertions, metadata comments, and nearby roadmap prose so they describe only the landed seam rather than the disproved broader ending.

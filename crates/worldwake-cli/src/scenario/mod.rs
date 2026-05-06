@@ -12,18 +12,19 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    ArtifactHeader, ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy,
-    BelievedInstitutionalClaim, CarryCapacity, CauseRef, Container, ContentionQueue, ControlSource,
-    DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
-    InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
-    LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
-    LatrineFullness, LoadUnits, MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData,
-    OfficeForceProfile, OfficeForceState, PatrolRoute, Place, PlaceDirtiness,
-    ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData, RecordKind,
-    ResourceExtractionQueues, ResourceSource, Seed, SleepQualityProfile, SocialObservation,
-    SocialObservationDetail, SurveyMemory, Tick, Topology, TravelEdge, TravelEdgeId,
-    VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
+    ArtifactActionability, ArtifactCredibility, ArtifactExistence, ArtifactHeader, ArtifactKind,
+    ArtifactLegalEffect, ArtifactVisibility, BanditCamp, BanditFactionPolicy,
+    BelievedInstitutionalClaim, BountyTarget, BountyTerms, CarryCapacity, CauseRef, Container,
+    ContentionQueue, ControlSource, DeprivationExposure, EligibilityRule, EntityId, EntityKind,
+    EventLog, ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    ExpectationStore, ExplorationProfile, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, KnownRecipes, LastProactiveExplorationTick, LastSeenMemory,
+    LastSeenProvenance, LastSeenRecord, LatrineFullness, LoadUnits, MerchandiseProfile, Name,
+    NoticeContent, NoticeTopic, OfficeData, OfficeForceProfile, OfficeForceState, PatrolRoute,
+    Place, PlaceDirtiness, ProductionOutputOwner, ProductionOutputOwnershipPolicy, RecordData,
+    RecordKind, ResourceExtractionQueues, ResourceSource, RewardSource, Seed, SleepQualityProfile,
+    SocialObservation, SocialObservationDetail, SurveyMemory, Tick, Topology, TravelEdge,
+    TravelEdgeId, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker, World, WorldTxn,
     default_commodity_decay_map, hash_world, load_per_unit,
 };
 use worldwake_sim::{
@@ -320,8 +321,8 @@ fn spawn_entities(
         spawn_office(&mut txn, office_def, names, &mut facility_locations)?;
     }
 
-    for notice_def in &def.notices {
-        spawn_notice(&mut txn, notice_def, names)?;
+    for artifact_def in &def.artifacts {
+        spawn_artifact(&mut txn, artifact_def, names)?;
     }
 
     apply_agent_expectation_stores(&mut txn, def, names)?;
@@ -952,40 +953,195 @@ fn spawn_office(
     Ok(())
 }
 
-fn spawn_notice(
+fn spawn_artifact(
     txn: &mut WorldTxn<'_>,
-    notice_def: &types::NoticeDef,
+    artifact_def: &types::ArtifactDef,
     names: &BTreeMap<String, EntityId>,
 ) -> Result<(), ScenarioError> {
-    let issuer = resolve_name(names, &notice_def.issuer, "notice issuer")?;
-    let location = resolve_name(names, &notice_def.location, "notice location")?;
-    let issuing_authority = notice_def
+    let issuer = resolve_name(names, &artifact_def.issuer, "artifact issuer")?;
+    let location = resolve_name(names, &artifact_def.location, "artifact location")?;
+    let issuing_authority = artifact_def
         .issuing_authority
         .as_ref()
-        .map(|name| resolve_name(names, name, "notice issuing_authority"))
+        .map(|name| resolve_name(names, name, "artifact issuing_authority"))
         .transpose()?;
-    let jurisdiction = notice_def
+    let jurisdiction = artifact_def
         .jurisdiction
         .as_ref()
-        .map(|name| resolve_name(names, name, "notice jurisdiction"))
+        .map(|name| resolve_name(names, name, "artifact jurisdiction"))
         .transpose()?;
-    let topic = notice_topic_from_def(&notice_def.topic, names)?;
+    let artifact_kind = artifact_kind_from_def(&artifact_def.kind);
 
     let artifact = txn.create_entity(EntityKind::SocialArtifact);
-    txn.set_component_artifact_header(
-        artifact,
-        ArtifactHeader {
-            kind: ArtifactKind::Notice,
-            issuer,
-            issuing_authority,
-            created_at: Tick(0),
-            expires_at: notice_def.expires_at.map(Tick),
-            state: ArtifactState::Active,
-            jurisdiction,
-        },
-    )?;
-    txn.set_component_notice_content(artifact, NoticeContent { topic })?;
+    let mut header = ArtifactHeader::posted_active(
+        artifact_kind,
+        issuer,
+        issuing_authority,
+        Tick(0),
+        artifact_def.expires_at.map(Tick),
+        jurisdiction,
+        location,
+    );
+    apply_artifact_axis_overrides(&mut header, artifact_def, names, location)?;
+    txn.set_component_artifact_header(artifact, header)?;
+
+    match (&artifact_def.kind, &artifact_def.payload) {
+        (types::ArtifactKindDef::Notice, types::ArtifactPayloadDef::Notice(topic)) => {
+            let topic = notice_topic_from_def(topic, names)?;
+            txn.set_component_notice_content(artifact, NoticeContent { topic })?;
+        }
+        (types::ArtifactKindDef::Bounty, types::ArtifactPayloadDef::Bounty(terms)) => {
+            let terms = bounty_terms_from_def(terms, names)?;
+            txn.set_component_bounty_terms(artifact, terms)?;
+        }
+        (kind, payload) => {
+            return Err(ScenarioError::Validation(format!(
+                "artifact kind {kind:?} cannot use payload {payload:?}"
+            )));
+        }
+    }
+
     txn.set_ground_location(artifact, location)?;
+    Ok(())
+}
+
+fn artifact_kind_from_def(kind: &types::ArtifactKindDef) -> ArtifactKind {
+    match kind {
+        types::ArtifactKindDef::Notice => ArtifactKind::Notice,
+        types::ArtifactKindDef::Bounty => ArtifactKind::Bounty,
+    }
+}
+
+fn apply_artifact_axis_overrides(
+    header: &mut ArtifactHeader,
+    artifact_def: &types::ArtifactDef,
+    names: &BTreeMap<String, EntityId>,
+    default_place: EntityId,
+) -> Result<(), ScenarioError> {
+    if let Some(existence) = &artifact_def.existence {
+        header.existence = match existence {
+            types::ArtifactExistenceDef::Exists => types::default_artifact_existence(),
+            types::ArtifactExistenceDef::Destroyed {
+                destroyed_at,
+                cause,
+            } => ArtifactExistence::Destroyed {
+                destroyed_at: Tick(*destroyed_at),
+                cause: *cause,
+            },
+        };
+    }
+    if let Some(visibility) = &artifact_def.visibility {
+        header.visibility = match visibility {
+            types::ArtifactVisibilityDef::Hidden => ArtifactVisibility::Hidden,
+            types::ArtifactVisibilityDef::Private { audience } => {
+                let mut resolved = BTreeSet::new();
+                for name in audience {
+                    resolved.insert(resolve_name(names, name, "artifact private audience")?);
+                }
+                ArtifactVisibility::Private { audience: resolved }
+            }
+            types::ArtifactVisibilityDef::Posted { place } => ArtifactVisibility::Posted {
+                place: resolve_name(names, place, "artifact posted visibility place")?,
+            },
+            types::ArtifactVisibilityDef::WidelyKnown => ArtifactVisibility::WidelyKnown,
+        };
+    } else {
+        header.visibility = ArtifactVisibility::Posted {
+            place: default_place,
+        };
+    }
+    if let Some(legal_effect) = &artifact_def.legal_effect {
+        header.legal_effect = match legal_effect {
+            types::ArtifactLegalEffectDef::None => ArtifactLegalEffect::None,
+            types::ArtifactLegalEffectDef::Active { expires_at } => {
+                types::default_artifact_legal_effect(*expires_at)
+            }
+            types::ArtifactLegalEffectDef::Suspended {
+                reason,
+                suspended_at,
+            } => ArtifactLegalEffect::Suspended {
+                reason: *reason,
+                suspended_at: Tick(*suspended_at),
+            },
+            types::ArtifactLegalEffectDef::Expired { expired_at } => ArtifactLegalEffect::Expired {
+                expired_at: Tick(*expired_at),
+            },
+            types::ArtifactLegalEffectDef::Revoked {
+                revoked_at,
+                by,
+                reason,
+            } => ArtifactLegalEffect::Revoked {
+                revoked_at: Tick(*revoked_at),
+                by: resolve_name(names, by, "artifact legal_effect revoked by")?,
+                reason: *reason,
+            },
+            types::ArtifactLegalEffectDef::Fulfilled {
+                fulfilled_at,
+                by,
+                evidence,
+            } => ArtifactLegalEffect::Fulfilled {
+                fulfilled_at: Tick(*fulfilled_at),
+                by: resolve_name(names, by, "artifact legal_effect fulfilled by")?,
+                evidence: resolve_name(
+                    names,
+                    evidence,
+                    "artifact legal_effect fulfilled evidence",
+                )?,
+            },
+        };
+    }
+    if let Some(credibility) = &artifact_def.credibility {
+        header.credibility = match credibility {
+            types::ArtifactCredibilityDef::Credible => types::default_artifact_credibility(),
+            types::ArtifactCredibilityDef::Disputed {
+                disputed_at,
+                contradicting,
+            } => {
+                let mut resolved = BTreeSet::new();
+                for name in contradicting {
+                    resolved.insert(resolve_name(
+                        names,
+                        name,
+                        "artifact credibility contradicting",
+                    )?);
+                }
+                ArtifactCredibility::Disputed {
+                    disputed_at: Tick(*disputed_at),
+                    contradicting: resolved,
+                }
+            }
+            types::ArtifactCredibilityDef::Refuted {
+                refuted_at,
+                evidence,
+            } => ArtifactCredibility::Refuted {
+                refuted_at: Tick(*refuted_at),
+                evidence: resolve_name(names, evidence, "artifact credibility evidence")?,
+            },
+            types::ArtifactCredibilityDef::Unknown => ArtifactCredibility::Unknown,
+        };
+    }
+    if let Some(actionability) = &artifact_def.actionability {
+        header.actionability = match actionability {
+            types::ArtifactActionabilityDef::Actionable => ArtifactActionability::Actionable,
+            types::ArtifactActionabilityDef::AwaitingProof { required_proof } => {
+                ArtifactActionability::AwaitingProof {
+                    required_proof: *required_proof,
+                }
+            }
+            types::ArtifactActionabilityDef::Blocked { reason, since } => {
+                ArtifactActionability::Blocked {
+                    reason: *reason,
+                    since: Tick(*since),
+                }
+            }
+            types::ArtifactActionabilityDef::Closed { closed_at, cause } => {
+                ArtifactActionability::Closed {
+                    closed_at: Tick(*closed_at),
+                    cause: *cause,
+                }
+            }
+        };
+    }
     Ok(())
 }
 
@@ -1007,6 +1163,42 @@ fn notice_topic_from_def(
             })
         }
     }
+}
+
+fn bounty_terms_from_def(
+    terms: &types::BountyTermsDef,
+    names: &BTreeMap<String, EntityId>,
+) -> Result<BountyTerms, ScenarioError> {
+    let target = match &terms.target {
+        types::BountyTargetDef::EliminateEntity { target } => BountyTarget::EliminateEntity {
+            target: resolve_name(names, target, "bounty target entity")?,
+        },
+        types::BountyTargetDef::DeliverCommodity {
+            commodity,
+            quantity,
+            destination,
+        } => BountyTarget::DeliverCommodity {
+            commodity: *commodity,
+            quantity: *quantity,
+            destination: resolve_name(names, destination, "bounty delivery destination")?,
+        },
+    };
+    let reward_source = match &terms.reward_source {
+        types::RewardSourceDef::InstitutionalTreasury { treasury_entity } => {
+            RewardSource::InstitutionalTreasury {
+                treasury_entity: resolve_name(names, treasury_entity, "bounty reward treasury")?,
+            }
+        }
+    };
+
+    Ok(BountyTerms {
+        target,
+        proof_requirement: terms.proof_requirement,
+        reward_commodity: terms.reward_commodity,
+        reward_quantity: terms.reward_quantity,
+        reward_source,
+        claim_place: resolve_name(names, &terms.claim_place, "bounty claim place")?,
+    })
 }
 
 fn expectation_store_from_def(
@@ -1360,7 +1552,7 @@ mod tests {
             agents: vec![minimal_agent("Alice", "Village", ControlSource::Human)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1699,15 +1891,21 @@ mod tests {
             agents: vec![minimal_agent("Herald", "Square", ControlSource::Human)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![NoticeDef {
+            artifacts: vec![ArtifactDef {
+                kind: ArtifactKindDef::Notice,
                 issuer: "Herald".into(),
                 location: "Square".into(),
                 issuing_authority: None,
                 expires_at: Some(18),
                 jurisdiction: Some("Square".into()),
-                topic: NoticeTopicDef::ThreatWarning {
+                payload: ArtifactPayloadDef::Notice(NoticeTopicDef::ThreatWarning {
                     place: "Square".into(),
-                },
+                }),
+                existence: None,
+                visibility: None,
+                legal_effect: None,
+                credibility: None,
+                actionability: None,
             }],
             items: vec![],
             facilities: vec![],
@@ -1742,20 +1940,210 @@ mod tests {
 
         assert_eq!(
             world.get_component_artifact_header(notice),
-            Some(&ArtifactHeader {
-                kind: ArtifactKind::Notice,
-                issuer: herald,
-                issuing_authority: None,
-                created_at: Tick(0),
-                expires_at: Some(Tick(18)),
-                state: ArtifactState::Active,
-                jurisdiction: Some(square),
-            })
+            Some(&ArtifactHeader::posted_active(
+                ArtifactKind::Notice,
+                herald,
+                None,
+                Tick(0),
+                Some(Tick(18)),
+                Some(square),
+                square,
+            ))
         );
         assert_eq!(
             world.get_component_notice_content(notice),
             Some(&NoticeContent {
                 topic: NoticeTopic::ThreatWarning { place: square },
+            })
+        );
+    }
+
+    #[test]
+    fn test_spawn_artifact_axis_defaults_match_migration_map() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Square".into(),
+                tags: vec![PlaceTag::Village],
+                visibility_profile: None,
+                sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
+            }],
+            edges: vec![],
+            agents: vec![minimal_agent("Herald", "Square", ControlSource::Human)],
+            bandit_camps: Vec::new(),
+            offices: vec![],
+            artifacts: vec![ArtifactDef {
+                kind: ArtifactKindDef::Notice,
+                issuer: "Herald".into(),
+                location: "Square".into(),
+                issuing_authority: None,
+                expires_at: None,
+                jurisdiction: None,
+                payload: ArtifactPayloadDef::Notice(NoticeTopicDef::OfficeVacancy {
+                    office: "Herald".into(),
+                }),
+                existence: None,
+                visibility: None,
+                legal_effect: None,
+                credibility: None,
+                actionability: None,
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            hostilities: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let artifact = world
+            .query_artifact_header()
+            .next()
+            .map(|(entity, _)| entity)
+            .expect("scenario should spawn an artifact");
+        let header = world.get_component_artifact_header(artifact).unwrap();
+
+        assert_eq!(header.existence, worldwake_core::ArtifactExistence::Exists);
+        assert_eq!(
+            header.visibility,
+            worldwake_core::ArtifactVisibility::Posted {
+                place: EntityId {
+                    slot: 0,
+                    generation: 0,
+                },
+            }
+        );
+        assert_eq!(
+            header.legal_effect,
+            worldwake_core::ArtifactLegalEffect::Active { expires_at: None }
+        );
+        assert_eq!(
+            header.credibility,
+            worldwake_core::ArtifactCredibility::Credible
+        );
+        assert_eq!(
+            header.actionability,
+            worldwake_core::ArtifactActionability::Actionable
+        );
+    }
+
+    #[test]
+    fn test_spawn_bounty_artifact_from_scenario() {
+        let def = ScenarioDef {
+            seed: 1,
+            places: vec![PlaceDef {
+                name: "Square".into(),
+                tags: vec![PlaceTag::Village],
+                visibility_profile: None,
+                sleep_quality: None,
+                place_dirtiness: None,
+                latrine_fullness: None,
+            }],
+            edges: vec![],
+            agents: vec![
+                minimal_agent("Issuer", "Square", ControlSource::Human),
+                minimal_agent("Target", "Square", ControlSource::Ai),
+            ],
+            bandit_camps: Vec::new(),
+            offices: vec![],
+            artifacts: vec![ArtifactDef {
+                kind: ArtifactKindDef::Bounty,
+                issuer: "Issuer".into(),
+                location: "Square".into(),
+                issuing_authority: None,
+                expires_at: Some(30),
+                jurisdiction: None,
+                payload: ArtifactPayloadDef::Bounty(BountyTermsDef {
+                    target: BountyTargetDef::EliminateEntity {
+                        target: "Target".into(),
+                    },
+                    proof_requirement: worldwake_core::ProofRequirement::PhysicalEvidence,
+                    reward_commodity: worldwake_core::items::CommodityKind::Coin,
+                    reward_quantity: Quantity(7),
+                    reward_source: RewardSourceDef::InstitutionalTreasury {
+                        treasury_entity: "Issuer".into(),
+                    },
+                    claim_place: "Square".into(),
+                }),
+                existence: None,
+                visibility: None,
+                legal_effect: None,
+                credibility: None,
+                actionability: None,
+            }],
+            items: vec![],
+            facilities: vec![],
+            resource_sources: vec![],
+            hostilities: vec![],
+            commodity_decay: None,
+            survival_health_contract: None,
+            compaction_interval: 0,
+            scenario_lint_overrides: BTreeMap::new(),
+            harvest_trace_retention_ticks: None,
+        };
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let square = EntityId {
+            slot: 0,
+            generation: 0,
+        };
+        let issuer = world
+            .entities_with_name_and_agent_data()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|name| name.0 == "Issuer")
+            })
+            .expect("scenario should spawn bounty issuer");
+        let target = world
+            .entities_with_name_and_agent_data()
+            .find(|entity| {
+                world
+                    .get_component_name(*entity)
+                    .is_some_and(|name| name.0 == "Target")
+            })
+            .expect("scenario should spawn bounty target");
+        let bounty = world
+            .entities_effectively_at(square)
+            .into_iter()
+            .find(|entity| {
+                world
+                    .get_component_artifact_header(*entity)
+                    .is_some_and(|header| header.kind == ArtifactKind::Bounty)
+            })
+            .expect("scenario should spawn a bounty artifact at the square");
+
+        assert_eq!(
+            world.get_component_artifact_header(bounty),
+            Some(&ArtifactHeader::posted_active(
+                ArtifactKind::Bounty,
+                issuer,
+                None,
+                Tick(0),
+                Some(Tick(30)),
+                None,
+                square,
+            ))
+        );
+        assert_eq!(
+            world.get_component_bounty_terms(bounty),
+            Some(&BountyTerms {
+                target: BountyTarget::EliminateEntity { target },
+                proof_requirement: worldwake_core::ProofRequirement::PhysicalEvidence,
+                reward_commodity: worldwake_core::items::CommodityKind::Coin,
+                reward_quantity: Quantity(7),
+                reward_source: RewardSource::InstitutionalTreasury {
+                    treasury_entity: issuer,
+                },
+                claim_place: square,
             })
         );
     }
@@ -1790,7 +2178,7 @@ mod tests {
             ],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1944,7 +2332,7 @@ mod tests {
             ],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -1996,7 +2384,7 @@ mod tests {
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2037,7 +2425,7 @@ mod tests {
             agents: vec![minimal_agent("Alice", "Town", ControlSource::Ai)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2083,7 +2471,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2128,7 +2516,7 @@ mod tests {
             agents: vec![minimal_agent("Scout", "Forest", ControlSource::Ai)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2248,7 +2636,7 @@ mod tests {
             agents: vec![minimal_agent("Trader", "Market", ControlSource::Ai)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![ItemDef {
                 commodity: CommodityKind::Apple,
                 quantity: Quantity(10),
@@ -2306,7 +2694,7 @@ mod tests {
             agents: vec![minimal_agent("Warrior", "Camp", ControlSource::Human)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![ItemDef {
                 commodity: CommodityKind::Sword,
                 quantity: Quantity(1),
@@ -2372,7 +2760,7 @@ mod tests {
             agents: vec![],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2438,7 +2826,7 @@ mod tests {
             agents: vec![],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2503,7 +2891,7 @@ mod tests {
             agents: vec![minimal_agent("Lost", "Nowhere", ControlSource::Ai)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2556,7 +2944,7 @@ mod tests {
             agents: vec![],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Forge Bench".into()),
@@ -2640,7 +3028,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -2697,7 +3085,7 @@ mod tests {
             agents: vec![],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("North Orchard".into()),
@@ -2772,7 +3160,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Village Well".into()),
@@ -2865,7 +3253,7 @@ mod tests {
             agents: vec![minimal_agent("Merchant", "Market", ControlSource::Ai)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Merchant Stall".into()),
@@ -2948,7 +3336,7 @@ mod tests {
             agents: vec![],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![FacilityDef {
                 name: Some("Village Well".into()),
@@ -3013,7 +3401,7 @@ mod tests {
             agents: vec![minimal_agent("Bot", "Void", ControlSource::Ai)],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3060,7 +3448,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3183,7 +3571,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3237,7 +3625,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3311,7 +3699,7 @@ mod tests {
                 eligibility_rules: Vec::new(),
                 treasury: None,
             }],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3367,7 +3755,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3491,7 +3879,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3561,7 +3949,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3620,7 +4008,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3725,7 +4113,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3842,7 +4230,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3887,7 +4275,7 @@ mod tests {
                 eligibility_rules: vec![],
                 treasury: None,
             }],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],
@@ -3977,7 +4365,7 @@ mod tests {
                     container_name: None,
                 }),
             }],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

@@ -186,6 +186,7 @@ pub fn synthetic_ranked_goal_summary(
         source_composite: None,
         feasibility: worldwake_ai::FeasibilityHint::Likely,
         acquisition_quantity: None,
+        artifact_axes: None,
     }
 }
 

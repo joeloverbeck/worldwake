@@ -245,7 +245,7 @@ mod tests {
             edges: vec![],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             agents: vec![AgentDef {
                 name: "Aster".into(),
                 location: "Village".into(),
@@ -375,7 +375,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

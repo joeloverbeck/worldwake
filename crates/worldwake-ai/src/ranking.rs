@@ -1454,6 +1454,10 @@ fn social_pressure_for_topic(context: &RankingContext<'_>, topic: TellTopic) -> 
                             effective_tick, ..
                         }
                         | worldwake_core::InstitutionalClaim::Verdict { effective_tick, .. }
+                        | worldwake_core::InstitutionalClaim::ArtifactCredibilityRefutation {
+                            effective_tick,
+                            ..
+                        }
                         | worldwake_core::InstitutionalClaim::MissingPersonStatus {
                             effective_tick,
                             ..
@@ -2680,7 +2684,8 @@ fn institutional_claim_priority(claim: &worldwake_core::InstitutionalClaim) -> u
         worldwake_core::InstitutionalClaim::FactionMembership { .. } => 4,
         worldwake_core::InstitutionalClaim::Accusation { .. } => 5,
         worldwake_core::InstitutionalClaim::Verdict { .. } => 6,
-        worldwake_core::InstitutionalClaim::MissingPersonStatus { .. } => 7,
+        worldwake_core::InstitutionalClaim::ArtifactCredibilityRefutation { .. } => 7,
+        worldwake_core::InstitutionalClaim::MissingPersonStatus { .. } => 8,
     }
 }
 
@@ -2740,16 +2745,18 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::{NonZeroU16, NonZeroU32};
     use worldwake_core::{
-        AcquisitionQuantity, ActionDomain, ArtifactKind, ArtifactPostingContext, ArtifactState,
-        BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState, BelievedBountyTerms,
-        BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick, BodyPart, BountyTarget,
-        BountyTerms, CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
-        CommodityValuationProfile, DemandObservation, DemandObservationReason, DeprivationExposure,
-        DeprivationKind, DiversificationProfile, DriveEscalationParams, DriveEscalationProfile,
-        DriveThresholds, EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile,
-        ExpectationBasis, ExpectationId, ExpectationRecord, ExpectationState, ExpectationStore,
-        GoalRejectionReason, GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
-        InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
+        AcquisitionQuantity, ActionDomain, ArtifactActionability, ArtifactCredibility,
+        ArtifactExistence, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
+        ArtifactVisibility, BeliefConfidencePolicy, BelievedActivity, BelievedArtifactState,
+        BelievedBountyTerms, BelievedEntityState, BelievedInstitutionalClaim, BodyCostPerTick,
+        BodyPart, BountyTarget, BountyTerms, CombatProfile, CommodityConsumableProfile,
+        CommodityKind, CommodityPurpose, CommodityValuationProfile, DemandObservation,
+        DemandObservationReason, DeprivationExposure, DeprivationKind, DiversificationProfile,
+        DriveEscalationParams, DriveEscalationProfile, DriveThresholds, EffectiveRight, EntityId,
+        EntityKind, EpistemicDispositionProfile, ExpectationBasis, ExpectationId,
+        ExpectationRecord, ExpectationState, ExpectationStore, GoalRejectionReason,
+        GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind, InTransitOnEdge,
+        InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
         MetabolismProfile, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
         ObligationSatiationProfile, OfficeData, OpportunityAnchor, OpportunityKey, PatrolProfile,
@@ -3682,9 +3689,13 @@ mod tests {
             believed_activity: None,
             believed_artifact: Some(BelievedArtifactState {
                 kind: ArtifactKind::Bounty,
-                state: ArtifactState::Active,
                 issuer,
                 expires_at: None,
+                existence: ArtifactExistence::Exists,
+                visibility: ArtifactVisibility::Posted { place: claim_place },
+                legal_effect: ArtifactLegalEffect::Active { expires_at: None },
+                credibility: ArtifactCredibility::Credible,
+                actionability: ArtifactActionability::Actionable,
                 bounty_terms: Some(BelievedBountyTerms {
                     target,
                     reward_commodity: CommodityKind::Coin,

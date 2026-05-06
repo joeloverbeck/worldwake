@@ -762,6 +762,7 @@ mod tests {
                         source_composite: None,
                         feasibility: crate::FeasibilityHint::Likely,
                         acquisition_quantity: None,
+                        artifact_axes: None,
                     }],
                     top_ranked_comparison: None,
                     suppressed: Vec::new(),

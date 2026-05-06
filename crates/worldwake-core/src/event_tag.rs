@@ -49,6 +49,7 @@ pub enum EventTag {
     WasteCreated,
     WashFacilityUsed,
     SurveyRecorded,
+    ArtifactTransition,
 }
 
 #[cfg(test)]
@@ -61,7 +62,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 44] = [
+    const ALL_EVENT_TAGS: [EventTag; 45] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -106,6 +107,7 @@ mod tests {
         EventTag::WasteCreated,
         EventTag::WashFacilityUsed,
         EventTag::SurveyRecorded,
+        EventTag::ArtifactTransition,
     ];
 
     #[test]
@@ -115,10 +117,11 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 44);
+        assert_eq!(ALL_EVENT_TAGS.len(), 45);
         assert!(ALL_EVENT_TAGS.contains(&EventTag::WasteCreated));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::WashFacilityUsed));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::SurveyRecorded));
+        assert!(ALL_EVENT_TAGS.contains(&EventTag::ArtifactTransition));
     }
 
     #[test]

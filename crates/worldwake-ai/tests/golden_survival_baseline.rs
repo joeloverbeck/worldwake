@@ -484,7 +484,7 @@ fn survival_contract_guard_rejects_missing_authored_contract() {
         agents: vec![],
         bandit_camps: Vec::new(),
         offices: vec![],
-        notices: vec![],
+        artifacts: vec![],
         items: vec![],
         facilities: vec![],
         resource_sources: vec![],

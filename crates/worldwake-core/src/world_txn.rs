@@ -1,3 +1,4 @@
+use crate::ArtifactTransitionPayload;
 use crate::{
     ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
     EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LoadUnits,
@@ -27,6 +28,7 @@ pub struct WorldTxn<'w> {
     visibility: VisibilitySpec,
     witness_data: WitnessData,
     decision_payload: Option<DecisionEventPayload>,
+    artifact_transition_payload: Option<ArtifactTransitionPayload>,
     deltas: Vec<StateDelta>,
     evidence: Vec<EvidenceRef>,
     pending_provenance_event_links: Vec<PendingProvenanceEventLink>,
@@ -102,6 +104,7 @@ impl<'w> WorldTxn<'w> {
             visibility,
             witness_data,
             decision_payload: None,
+            artifact_transition_payload: None,
             deltas: Vec::new(),
             evidence: Vec::new(),
             pending_provenance_event_links: Vec::new(),
@@ -180,6 +183,7 @@ impl<'w> WorldTxn<'w> {
             witness_data: self.witness_data,
             tags: self.tags,
             decision_payload: self.decision_payload,
+            artifact_transition_payload: self.artifact_transition_payload,
         })
     }
 
@@ -205,6 +209,15 @@ impl<'w> WorldTxn<'w> {
 
     pub fn set_decision_payload(&mut self, payload: DecisionEventPayload) -> &mut Self {
         self.decision_payload = Some(payload);
+        self
+    }
+
+    pub fn set_artifact_transition_payload(
+        &mut self,
+        payload: ArtifactTransitionPayload,
+    ) -> &mut Self {
+        self.tags.insert(EventTag::ArtifactTransition);
+        self.artifact_transition_payload = Some(payload);
         self
     }
 

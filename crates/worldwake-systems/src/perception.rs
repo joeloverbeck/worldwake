@@ -852,7 +852,7 @@ fn internalize_notice_beliefs(
     let Some(artifact) = snapshot.believed_artifact.as_ref() else {
         return;
     };
-    if artifact.state != worldwake_core::ArtifactState::Active {
+    if artifact.actionability != worldwake_core::ArtifactActionability::Actionable {
         return;
     }
 
@@ -915,6 +915,9 @@ fn institutional_belief_key(claim: InstitutionalClaim) -> InstitutionalBeliefKey
             accused,
             violation_id,
         },
+        InstitutionalClaim::ArtifactCredibilityRefutation { artifact, .. } => {
+            InstitutionalBeliefKey::ArtifactCredibilityOf { artifact }
+        }
         InstitutionalClaim::MissingPersonStatus { subject, .. } => {
             InstitutionalBeliefKey::MissingPersonStatus { subject }
         }
@@ -1029,6 +1032,7 @@ fn emit_discovery_event(
         },
         tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
         decision_payload: None,
+        artifact_transition_payload: None,
     }));
 }
 
@@ -1446,25 +1450,26 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::{NonZeroU8, NonZeroU32};
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactHeader, ArtifactKind, ArtifactState,
-        BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity,
-        BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
-        BountyTarget, BountyTerms, CauseRef, CognitiveProfile, CommodityKind, ComponentDelta,
-        ComponentKind, ComponentValue, Container, ContentionGrant, ContentionQueue,
-        ContentionWaiter, ControlSource, DeadAt, DecisionEventPayload, DisturbanceKind,
-        EntityBeliefAspect, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceKind,
-        EvidenceRef, ExplorationMotivation, FrameState, GoalKey, GoalKind, GroundComfortTag,
-        HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, IntentionDomain, IntentionFrame, LoadUnits, MismatchKind,
-        NoticeContent, NoticeTopic, ObservedEntitySnapshot, OfficeForceState, OmissionReason,
-        PendingEvent, PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace,
-        Quantity, RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource,
-        RewardSource, SaleListing, SceneEvidence, Seed, ShelterTag, SleepQualityProfile,
-        SleepRecoveryModifier, SocialObservationDetail, SocialObservationKind, SourceKey,
-        StateDelta, StockAssignment, StockAssignmentKind, SurveyRecordedPayload, TheftFacts, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        build_observed_entity_snapshot, build_prototype_world, prototype_place_entity,
+        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactActionability, ArtifactHeader,
+        ArtifactKind, ArtifactLegalEffect, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
+        BelievedActivity, BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry,
+        BelievedEvidenceState, BountyTarget, BountyTerms, CauseRef, CognitiveProfile,
+        CommodityKind, ComponentDelta, ComponentKind, ComponentValue, Container, ContentionGrant,
+        ContentionQueue, ContentionWaiter, ControlSource, DeadAt, DecisionEventPayload,
+        DisturbanceKind, EntityBeliefAspect, EntityKind, EventLog, EventPayload, EventTag,
+        EventView, EvidenceKind, EvidenceRef, ExplorationMotivation, FrameState, GoalKey, GoalKind,
+        GroundComfortTag, HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomain, IntentionFrame,
+        LoadUnits, MismatchKind, NoticeContent, NoticeTopic, ObservedEntitySnapshot,
+        OfficeForceState, OmissionReason, PendingEvent, PerceptionProfile, PerceptionSource,
+        Permille, PlaceVisibilityProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        ProofRequirement, PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue,
+        ReliabilityRecord, ResourceSource, RewardSource, SaleListing, SceneEvidence, Seed,
+        ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SocialObservationDetail,
+        SocialObservationKind, SourceKey, StateDelta, StockAssignment, StockAssignmentKind,
+        SurveyRecordedPayload, TheftFacts, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, build_observed_entity_snapshot, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -1569,6 +1574,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
     }
 
@@ -2822,6 +2828,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3534,6 +3541,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Trade]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([3; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3606,6 +3614,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([5; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3675,6 +3684,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social, EventTag::Transfer]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([6; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3750,6 +3760,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Crime, EventTag::Transfer]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([0x41; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3828,6 +3839,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Political]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([7; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3910,6 +3922,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social, EventTag::Coercion]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -3988,6 +4001,7 @@ mod tests {
             },
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([9; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4057,6 +4071,7 @@ mod tests {
             },
             tags: BTreeSet::from([EventTag::Social]),
             decision_payload: None,
+            artifact_transition_payload: None,
         });
 
         assert_eq!(
@@ -4086,6 +4101,7 @@ mod tests {
             },
             tags: BTreeSet::from([EventTag::Social, EventTag::Transfer]),
             decision_payload: None,
+            artifact_transition_payload: None,
         });
         assert_eq!(
             social_kind(&obligation_pending),
@@ -4109,6 +4125,7 @@ mod tests {
             },
             tags: BTreeSet::from([EventTag::Social, EventTag::Coercion]),
             decision_payload: None,
+            artifact_transition_payload: None,
         });
         assert_eq!(
             social_kind(&coercion_pending),
@@ -4166,6 +4183,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([4; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -4274,6 +4292,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([8; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -5739,6 +5758,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([20; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -5834,6 +5854,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([21; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -5931,6 +5952,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([22; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -6030,6 +6052,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let _ = event_log.emit(PendingEvent::from_payload(EventPayload {
             tick: Tick(3),
@@ -6045,6 +6068,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([24; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -6172,6 +6196,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         let mut rng = DeterministicRng::new(Seed([23; 32]));
         let action_defs = ActionDefRegistry::new();
@@ -6284,15 +6309,15 @@ mod tests {
                 .unwrap();
             txn.set_component_artifact_header(
                 artifact,
-                ArtifactHeader {
-                    kind: ArtifactKind::Bounty,
+                ArtifactHeader::posted_active(
+                    ArtifactKind::Bounty,
                     issuer,
-                    issuing_authority: None,
-                    created_at: Tick(1),
-                    expires_at: Some(Tick(8)),
-                    state: ArtifactState::Active,
-                    jurisdiction: None,
-                },
+                    None,
+                    Tick(1),
+                    Some(Tick(8)),
+                    None,
+                    place,
+                ),
             )
             .unwrap();
             txn.set_component_bounty_terms(
@@ -6339,7 +6364,13 @@ mod tests {
             .clone()
             .unwrap();
         assert_eq!(belief.kind, ArtifactKind::Bounty);
-        assert_eq!(belief.state, ArtifactState::Active);
+        assert_eq!(belief.actionability, ArtifactActionability::Actionable);
+        assert_eq!(
+            belief.legal_effect,
+            ArtifactLegalEffect::Active {
+                expires_at: Some(Tick(8))
+            }
+        );
         assert_eq!(belief.issuer, issuer);
         assert_eq!(belief.expires_at, Some(Tick(8)));
         assert_eq!(
@@ -6374,15 +6405,15 @@ mod tests {
                 .unwrap();
             txn.set_component_artifact_header(
                 artifact,
-                ArtifactHeader {
-                    kind: ArtifactKind::Notice,
+                ArtifactHeader::posted_active(
+                    ArtifactKind::Notice,
                     issuer,
-                    issuing_authority: None,
-                    created_at: Tick(1),
-                    expires_at: None,
-                    state: ArtifactState::Active,
-                    jurisdiction: None,
-                },
+                    None,
+                    Tick(1),
+                    None,
+                    None,
+                    place,
+                ),
             )
             .unwrap();
             txn.set_component_notice_content(
@@ -6465,15 +6496,15 @@ mod tests {
                 .unwrap();
             txn.set_component_artifact_header(
                 artifact,
-                ArtifactHeader {
-                    kind: ArtifactKind::Notice,
+                ArtifactHeader::posted_active(
+                    ArtifactKind::Notice,
                     issuer,
-                    issuing_authority: None,
-                    created_at: Tick(1),
-                    expires_at: None,
-                    state: ArtifactState::Active,
-                    jurisdiction: None,
-                },
+                    None,
+                    Tick(1),
+                    None,
+                    None,
+                    place,
+                ),
             )
             .unwrap();
             txn.set_component_notice_content(

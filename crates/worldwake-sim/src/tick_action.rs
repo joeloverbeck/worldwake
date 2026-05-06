@@ -395,6 +395,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::System]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
     }
 

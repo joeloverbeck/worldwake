@@ -7,7 +7,7 @@ Scenarios: 4
 
 ### Scenario 384: S136 Decision Payload Eat Commitment Records Drink Rejection
 
-- Source: `golden_decision_payload.rs:74`
+- Source: `golden_decision_payload.rs:75`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -22,7 +22,7 @@ Scenarios: 4
 
 ### Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim
 
-- Source: `golden_decision_payload.rs:123`
+- Source: `golden_decision_payload.rs:124`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -37,7 +37,7 @@ Scenarios: 4
 
 ### Scenario 386: S136 Decision Payload Commodity Assumption Breach Records Observation
 
-- Source: `golden_decision_payload.rs:174`
+- Source: `golden_decision_payload.rs:175`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -52,7 +52,7 @@ Scenarios: 4
 
 ### Scenario 387: S136 Decision Payload Source Failure Records Source Observation
 
-- Source: `golden_decision_payload.rs:233`
+- Source: `golden_decision_payload.rs:234`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory

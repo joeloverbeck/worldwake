@@ -10,6 +10,9 @@ cargo test --workspace
 echo "[verify] bash scripts/check_active_goal_removed.sh"
 bash scripts/check_active_goal_removed.sh
 
+echo "[verify] bash scripts/check_no_artifact_state.sh"
+bash scripts/check_no_artifact_state.sh
+
 echo "[verify] cargo clippy --workspace"
 cargo clippy --workspace
 

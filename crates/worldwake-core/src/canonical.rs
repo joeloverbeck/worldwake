@@ -126,6 +126,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: std::collections::BTreeSet::from([EventTag::System]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
         log
     }
@@ -279,6 +280,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: std::collections::BTreeSet::from([EventTag::System]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
 
         assert_ne!(

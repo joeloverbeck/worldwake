@@ -1,8 +1,8 @@
 //! Immutable append-only event payloads.
 
 use crate::{
-    CauseRef, DecisionEventPayload, EventTag, MismatchKind, ObservedEntitySnapshot, StateDelta,
-    VisibilitySpec, WitnessData, WoundId,
+    ArtifactTransitionPayload, CauseRef, DecisionEventPayload, EventTag, MismatchKind,
+    ObservedEntitySnapshot, StateDelta, VisibilitySpec, WitnessData, WoundId,
 };
 use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ pub trait EventView {
     fn witness_data(&self) -> &WitnessData;
     fn tags(&self) -> &BTreeSet<EventTag>;
     fn decision_payload(&self) -> Option<&DecisionEventPayload>;
+    fn artifact_transition_payload(&self) -> Option<&ArtifactTransitionPayload>;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -57,6 +58,7 @@ pub struct EventPayload {
     pub witness_data: WitnessData,
     pub tags: BTreeSet<EventTag>,
     pub decision_payload: Option<DecisionEventPayload>,
+    pub artifact_transition_payload: Option<ArtifactTransitionPayload>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -117,6 +119,10 @@ impl EventView for PendingEvent {
     fn decision_payload(&self) -> Option<&DecisionEventPayload> {
         self.payload.decision_payload.as_ref()
     }
+
+    fn artifact_transition_payload(&self) -> Option<&ArtifactTransitionPayload> {
+        self.payload.artifact_transition_payload.as_ref()
+    }
 }
 
 impl EventView for EventRecord {
@@ -170,6 +176,10 @@ impl EventView for EventRecord {
 
     fn decision_payload(&self) -> Option<&DecisionEventPayload> {
         self.payload.decision_payload.as_ref()
+    }
+
+    fn artifact_transition_payload(&self) -> Option<&ArtifactTransitionPayload> {
+        self.payload.artifact_transition_payload.as_ref()
     }
 }
 
@@ -289,6 +299,7 @@ mod tests {
             },
             tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
             decision_payload: None,
+            artifact_transition_payload: None,
         });
 
         assert_eq!(pending.payload.tick, Tick(9));
@@ -340,6 +351,7 @@ mod tests {
             },
             tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
             decision_payload: None,
+            artifact_transition_payload: None,
         })
         .into_record(EventId(4));
 
@@ -379,6 +391,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
             decision_payload: None,
+            artifact_transition_payload: None,
         })
         .into_record(EventId(0));
 
@@ -438,6 +451,7 @@ mod tests {
             },
             tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
             decision_payload: None,
+            artifact_transition_payload: None,
         });
 
         let bytes = bincode::serialize(&pending).unwrap();
@@ -520,6 +534,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Discovery]),
             decision_payload: None,
+            artifact_transition_payload: None,
         });
 
         assert_eq!(
@@ -591,6 +606,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Discovery]),
             decision_payload: None,
+            artifact_transition_payload: None,
         });
 
         assert_eq!(
@@ -659,6 +675,7 @@ mod tests {
                 witness_data: WitnessData::default(),
                 tags: BTreeSet::from([EventTag::Discovery]),
                 decision_payload: None,
+                artifact_transition_payload: None,
             },
         );
 
@@ -718,6 +735,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::WorldMutation]),
             decision_payload: None,
+            artifact_transition_payload: None,
         });
 
         let bytes = bincode::serialize(&pending).unwrap();
@@ -776,6 +794,7 @@ mod tests {
                 },
                 tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
                 decision_payload: None,
+                artifact_transition_payload: None,
             },
         );
 
@@ -831,6 +850,7 @@ mod tests {
                 },
                 tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
                 decision_payload: None,
+                artifact_transition_payload: None,
             },
         );
 
@@ -877,6 +897,46 @@ mod tests {
                     )]),
                 },
             })),
+            artifact_transition_payload: None,
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: EventPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn event_payload_roundtrips_with_artifact_transition_payload() {
+        let payload = EventPayload {
+            tick: Tick(30),
+            cause: CauseRef::SystemTick(Tick(30)),
+            actor_id: None,
+            action_name: None,
+            target_ids: vec![entity(2)],
+            evidence: Vec::new(),
+            place_id: Some(entity(3)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::ArtifactTransition]),
+            decision_payload: None,
+            artifact_transition_payload: Some(crate::ArtifactTransitionPayload {
+                artifact: entity(2),
+                axis: crate::AxisName::Actionability,
+                prior: crate::ArtifactAxisValue::Actionability(
+                    crate::ArtifactActionability::Actionable,
+                ),
+                new: crate::ArtifactAxisValue::Actionability(
+                    crate::ArtifactActionability::Closed {
+                        closed_at: Tick(30),
+                        cause: crate::CloseCause::LegalEffectExpired,
+                    },
+                ),
+                cause_event: Some(EventId(7)),
+                at: Tick(30),
+            }),
         };
 
         let bytes = bincode::serialize(&payload).unwrap();

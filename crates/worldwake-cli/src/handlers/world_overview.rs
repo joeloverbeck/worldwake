@@ -226,7 +226,7 @@ mod tests {
             ],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             agents: vec![
                 AgentDef {
                     name: "Kael".into(),
@@ -401,7 +401,7 @@ mod tests {
             agents: vec![],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

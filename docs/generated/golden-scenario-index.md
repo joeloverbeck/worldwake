@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 145
-- Contributing golden test files: 35
-- Associated tests: 177
+- Scenario blocks: 150
+- Contributing golden test files: 36
+- Associated tests: 182
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -142,9 +142,84 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: unsatisfiable top need -> planner exhausts thirst-relief candidates -> falls back to hunger-relief -> agent eats or sleeps.
 
+### Scenario 388: S140 Bounty Fulfillment Closes Actionability
+
+- Source: `golden_artifact_lifecycle.rs:333`
+- Systems: ArtifactActions, ArtifactLifecycle, EventLog
+- GoalKinds: FulfillBounty
+- ActionDomains: Artifact
+- Places: VillageSquare
+- Principles: 4, 8, 12, 18
+
+**Setup**: programmatic fixture isolates a single posted bounty, one claimant, personal reward funds, and a dead target. Rival revocation and expiry branches are excluded so the only legal-effect transition is fulfillment.
+
+**Proves**: `claim_bounty` commits the Fulfilled legal-effect transition, the lifecycle pass observes that transition in the same tick, and actionability closes through a second append-only artifact transition.
+
+**Cross-system chain**: claim_bounty commit -> ArtifactTransition(LegalEffect::Fulfilled) -> artifact_lifecycle_system -> ArtifactTransition(Actionability::Closed).
+
+### Scenario 389: S140 Revoked Bounty Blocks Planner Emission
+
+- Source: `golden_artifact_lifecycle.rs:432`
+- Systems: ArtifactActions, ArtifactLifecycle, AI
+- GoalKinds: FulfillBounty
+- ActionDomains: Artifact
+- Places: VillageSquare
+- Principles: 14, 18, 20
+
+**Setup**: an issuer withdraws a single bounty after a claimant has observed it; the claimant's belief is refreshed from the post-revocation artifact.
+
+**Proves**: revocation emits the legal-effect/actionability cascade, and the public AI candidate surface no longer emits FulfillBounty for the closed artifact while the artifact itself remains visible and inspectable.
+
+**Cross-system chain**: withdraw_bounty commit -> ArtifactTransition(LegalEffect::Revoked) -> artifact_lifecycle_system -> closed believed artifact -> no FulfillBounty.
+
+### Scenario 390: S140 Expired Bounty Remains Posted But Closed
+
+- Source: `golden_artifact_lifecycle.rs:550`
+- Systems: ArtifactLifecycle, EventLog
+- GoalKinds: FulfillBounty
+- ActionDomains: Artifact
+- Places: VillageSquare
+- Principles: 7, 18, 20
+
+**Setup**: one posted bounty reaches its explicit expiration tick. No claimant, withdrawal, or fulfillment path is present.
+
+**Proves**: expiry closes legal effect and actionability while preserving posted visibility, so the record remains inspectable as a closed artifact.
+
+**Cross-system chain**: expiration tick -> ArtifactTransition(LegalEffect::Expired) -> ArtifactTransition(Actionability::Closed) with visibility unchanged.
+
+### Scenario 391: S140 Suspended Legal Effect Restores Without Closing
+
+- Source: `golden_artifact_lifecycle.rs:595`
+- Systems: ArtifactLifecycle, EventLog
+- GoalKinds: FulfillBounty
+- ActionDomains: Artifact
+- Places: VillageSquare
+- Principles: 18, 21, 26
+
+**Setup**: an office force-control record first becomes contested, then resolves. The bounty is issued by that office so the record events are lawful source carriers for jurisdiction suspension/restoration. No closure cause is emitted.
+
+**Proves**: source-backed Suspended and restored Active legal-effect transitions remain append-only and do not create a spurious actionability closure.
+
+**Cross-system chain**: ForceControl(contested) record event -> artifact_lifecycle_system -> ArtifactTransition(LegalEffect::Suspended) -> ForceControl(resolved) record event -> ArtifactTransition(LegalEffect::Active).
+
+### Scenario 392: S140 Refuted False Rumor Closes Actionability
+
+- Source: `golden_artifact_lifecycle.rs:663`
+- Systems: ArtifactLifecycle, EventLog
+- GoalKinds: FulfillBounty
+- ActionDomains: Artifact
+- Places: VillageSquare
+- Principles: 15, 16, 18
+
+**Setup**: a posted bounty receives an artifact-addressed credibility refutation record entry with a concrete evidence entity. No legal-effect closure is authored.
+
+**Proves**: the lifecycle credibility stage converts the record source into a Credibility::Refuted transition, and actionability closes from that same append-only transition.
+
+**Cross-system chain**: ArtifactCredibilityRefutation record event -> ArtifactTransition(Credibility::Refuted) -> ArtifactTransition(Actionability::Closed).
+
 ### Scenario 384: S136 Decision Payload Eat Commitment Records Drink Rejection
 
-- Source: `golden_decision_payload.rs:74`
+- Source: `golden_decision_payload.rs:75`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -156,7 +231,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim
 
-- Source: `golden_decision_payload.rs:123`
+- Source: `golden_decision_payload.rs:124`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -168,7 +243,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 386: S136 Decision Payload Commodity Assumption Breach Records Observation
 
-- Source: `golden_decision_payload.rs:174`
+- Source: `golden_decision_payload.rs:175`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -180,7 +255,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 387: S136 Decision Payload Source Failure Records Source Observation
 
-- Source: `golden_decision_payload.rs:233`
+- Source: `golden_decision_payload.rs:234`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -192,7 +267,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
-- Source: `golden_experience_preferences.rs:545`
+- Source: `golden_experience_preferences.rs:546`
 - Systems: Travel, learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -204,7 +279,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `golden_experience_preferences.rs:569`
+- Source: `golden_experience_preferences.rs:570`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -216,7 +291,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `golden_experience_preferences.rs:590`
+- Source: `golden_experience_preferences.rs:591`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production

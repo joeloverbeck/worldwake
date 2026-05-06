@@ -17,6 +17,8 @@ macro_rules! define_system_ids {
             /// - `Needs` runs first so deprivation and wound pressure are visible before economic systems act.
             /// - `Production` runs before `Trade` so newly created goods exist before market exchange.
             /// - `Trade` runs before `Combat` so economic resolution happens before violence mutates the world.
+            /// - `ArtifactLifecycle` also runs after action progression so same-tick artifact
+            ///   transition events emitted by action commits can cascade through lifecycle axes.
             /// - `Combat` runs before `BanditCamp` so combat deaths can contribute to same-tick camp abandonment.
             /// - `BanditCamp` runs before `Contention` so abandonment is visible before later world-state systems.
             /// - `Contention` runs before `Politics` so completed exclusive actions can free resources before political resolution.
@@ -114,6 +116,7 @@ impl SystemManifest {
             SystemId::Production,
             SystemId::Trade,
             SystemId::Combat,
+            SystemId::ArtifactLifecycle,
             SystemId::BanditCamp,
             SystemId::Contention,
             SystemId::Politics,
@@ -132,6 +135,8 @@ impl SystemManifest {
     /// These systems run before input drain and action admission for the tick.
     /// They exist for world-state transitions whose timing must be authoritative
     /// before any same-tick action can begin.
+    /// `ArtifactLifecycle` also appears in the canonical post-action order so
+    /// action-commit transition events can cascade in the same tick.
     pub fn pre_action() -> Self {
         Self::new([SystemId::ArtifactLifecycle])
             .expect("pre-action system order must not contain duplicates")
@@ -280,6 +285,7 @@ mod tests {
                 SystemId::Production,
                 SystemId::Trade,
                 SystemId::Combat,
+                SystemId::ArtifactLifecycle,
                 SystemId::BanditCamp,
                 SystemId::Contention,
                 SystemId::Politics,

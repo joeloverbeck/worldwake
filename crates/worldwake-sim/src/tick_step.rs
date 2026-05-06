@@ -928,6 +928,7 @@ fn emit_end_of_tick_marker(event_log: &mut EventLog, tick: Tick) {
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([EventTag::System]),
         decision_payload: None,
+        artifact_transition_payload: None,
     }));
 }
 
@@ -1502,7 +1503,7 @@ mod tests {
                 actions_started: 0,
                 actions_completed: 0,
                 actions_aborted: 0,
-                systems_ran: crate::SystemId::ALL.len() as u32,
+                systems_ran: expected_system_order().len() as u32,
                 events_emitted_count: 1,
             }
         );
@@ -3286,16 +3287,17 @@ mod tests {
         .unwrap();
 
         let log = hook_log().lock().unwrap().clone();
-        assert_eq!(log.systems, expected_system_order());
+        let expected_order = expected_system_order();
+        assert_eq!(log.systems, expected_order);
         let mut expected_active_action_counts = vec![0];
-        expected_active_action_counts.extend(vec![1; crate::SystemId::ALL.len() - 1]);
+        expected_active_action_counts.extend(vec![1; expected_order.len() - 1]);
         assert_eq!(
             log.system_active_action_counts,
             expected_active_action_counts
         );
         assert_eq!(
             log.system_def_counts,
-            vec![defs.iter().count(); crate::SystemId::ALL.len()]
+            vec![defs.iter().count(); expected_order.len()]
         );
     }
 
@@ -3387,7 +3389,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.systems_ran, crate::SystemId::ALL.len() as u32);
+        assert_eq!(result.systems_ran, expected_system_order().len() as u32);
         assert_eq!(
             world.get_component_dead_at(actor),
             Some(&DeadAt {

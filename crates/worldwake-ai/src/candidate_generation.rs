@@ -2,12 +2,13 @@ use crate::{
     ExpectationFailureCause, ExpectationFailurePhase, GoalOffer,
     OpportunityExpectationFailureIncident, PlannedPlan,
     decision_trace::{
-        BanditCandidateOmission, BanditCandidateOmissionReason, BanditGoalFamily,
-        CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
-        CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, DesireFullyBlocked,
-        PoliticalCandidateOmission, PoliticalCandidateOmissionReason, PoliticalGoalFamily,
-        PursuitDiagnostic, PursuitOmissionReason, SocialCandidateOmission,
-        ViolationDetectionOmission, ViolationDetectionOmissionReason,
+        ArtifactAxisSnapshot, BanditCandidateOmission, BanditCandidateOmissionReason,
+        BanditGoalFamily, CandidateEvidenceContributor, CandidateEvidenceExclusion,
+        CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
+        CandidateLegalityTrace, DesireFullyBlocked, PoliticalCandidateOmission,
+        PoliticalCandidateOmissionReason, PoliticalGoalFamily, PursuitDiagnostic,
+        PursuitOmissionReason, SocialCandidateOmission, ViolationDetectionOmission,
+        ViolationDetectionOmissionReason,
     },
     derive_danger_pressure,
     enterprise::{
@@ -28,17 +29,18 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
     AcquisitionQuantity, ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
     BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
-    CommodityPurpose, DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule,
-    EmitterTag, EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExplorationMotivation,
-    ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, HomeostaticNeedId,
-    HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement,
-    PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData,
-    RecordEntryId, RecordKind, RightKind, SocialObservation, SocialObservationDetail, TellTopic,
-    TheftFacts, Tick, TradeCategory, UtilityProfile, ViolationId, ViolationKind, ViolationMemory,
-    WorkstationTag, classify_communication, current_institutional_belief_topics, load_per_unit,
+    CommodityPurpose, Discrepancy, DiscrepancyClearing, DiscrepancyMemory, DiversificationProfile,
+    DriveThresholds, EligibilityRule, EmitterTag, EntityId, EntityKind, EvidenceKindTag,
+    EvidenceSummary, ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason,
+    HomeostaticNeedId, HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey,
+    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
+    OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
+    ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
+    Quantity, RecordData, RecordEntryId, RecordKind, RightKind, SocialObservation,
+    SocialObservationDetail, TellTopic, TheftFacts, Tick, TradeCategory, UtilityProfile,
+    ViolationId, ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
+    current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -137,6 +139,7 @@ impl EvidenceTrace {
             knowledge_path: self.knowledge_path,
             legality: self.legality,
             pursuit: self.pursuit,
+            artifact_axes: None,
         }
     }
 }
@@ -196,6 +199,10 @@ pub(crate) struct CandidateGenerationResult {
     /// in the agent's [`ViolationMemory`] by the caller. Generation itself is
     /// side-effect-free; the caller applies these after the read phase.
     pub pending_violations: Vec<PendingViolationRecord>,
+    /// Discrepancies detected during candidate generation that should be
+    /// recorded by the caller. Generation itself is side-effect-free; the
+    /// caller applies these after the read phase.
+    pub pending_discrepancies: Vec<PendingDiscrepancyRecord>,
     /// Locally observed familiar sources that proved depleted and should count
     /// as failed source attempts once the read phase persists memory updates.
     pub pending_source_reliability_failures: Vec<OpportunityExpectationFailureIncident>,
@@ -211,6 +218,14 @@ pub(crate) struct PendingViolationRecord {
     pub kind: ViolationKind,
     pub observed_tick: Tick,
     pub ttl: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PendingDiscrepancyRecord {
+    pub blocker_key: worldwake_core::BlockerKey,
+    pub discrepancy: Discrepancy,
+    pub observed_tick: Tick,
+    pub clearing_condition: DiscrepancyClearing,
 }
 
 fn evidence_summary(kinds: &[(EvidenceKindTag, u16)]) -> EvidenceSummary {
@@ -349,6 +364,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_discrepancies: Vec::new(),
             pending_source_reliability_failures: Vec::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
@@ -356,6 +372,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
 
     let mut candidates = Vec::new();
     let mut diagnostics = CandidateGenerationDiagnostics::default();
+    let mut pending_discrepancies = Vec::new();
     let mut pending_acquisition_exhaustion_resets = BTreeSet::new();
     let needs = view.homeostatic_needs(agent);
     let thresholds = view.drive_thresholds(agent);
@@ -379,7 +396,12 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     emit_production_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
     emit_enterprise_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_disposal_candidates(&mut candidates, &mut diagnostics, &ctx);
-    emit_bounty_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_bounty_candidates(
+        &mut candidates,
+        &mut diagnostics,
+        &mut pending_discrepancies,
+        &ctx,
+    );
     emit_artifact_posting_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_crime_candidates(&mut candidates, &mut diagnostics, &ctx);
@@ -433,6 +455,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         candidates,
         diagnostics,
         pending_violations,
+        pending_discrepancies,
         pending_source_reliability_failures,
         pending_acquisition_exhaustion_resets,
     }
@@ -635,6 +658,7 @@ fn emit_enterprise_candidates(
 fn emit_bounty_candidates(
     candidates: &mut Vec<GoalOffer>,
     diagnostics: &mut CandidateGenerationDiagnostics,
+    pending_discrepancies: &mut Vec<PendingDiscrepancyRecord>,
     ctx: &GenerationContext<'_>,
 ) {
     let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
@@ -646,9 +670,25 @@ fn emit_bounty_candidates(
         let Some(terms) = artifact.bounty_terms.as_ref() else {
             continue;
         };
-        if artifact.kind != worldwake_core::ArtifactKind::Bounty
-            || artifact.state != worldwake_core::ArtifactState::Active
-        {
+        if artifact.kind != worldwake_core::ArtifactKind::Bounty {
+            continue;
+        }
+        if let Some(reason) = artifact_not_actionable_reason(artifact.actionability) {
+            let goal_key = GoalKey::from(GoalKind::FulfillBounty { bounty: *bounty });
+            pending_discrepancies.push(PendingDiscrepancyRecord {
+                blocker_key: worldwake_core::BlockerKey {
+                    goal_key,
+                    place: None,
+                    target: Some(*bounty),
+                    action_def: None,
+                },
+                discrepancy: Discrepancy::ArtifactNotActionable {
+                    artifact: *bounty,
+                    reason,
+                },
+                observed_tick: ctx.current_tick,
+                clearing_condition: DiscrepancyClearing::ReobservationOf { target: *bounty },
+            });
             continue;
         }
 
@@ -705,6 +745,7 @@ fn emit_bounty_candidates(
                     evidence,
                     trace,
                 );
+                record_artifact_axis_trace(diagnostics, *bounty, artifact);
             }
             worldwake_core::BountyTarget::DeliverCommodity {
                 commodity,
@@ -769,9 +810,66 @@ fn emit_bounty_candidates(
                     evidence,
                     trace,
                 );
+                record_artifact_axis_trace(diagnostics, *bounty, artifact);
             }
         }
     }
+}
+
+fn artifact_not_actionable_reason(
+    actionability: worldwake_core::ArtifactActionability,
+) -> Option<worldwake_core::BlockerReason> {
+    match actionability {
+        worldwake_core::ArtifactActionability::Actionable => None,
+        worldwake_core::ArtifactActionability::AwaitingProof { .. } => {
+            Some(worldwake_core::BlockerReason::AwaitingAdjudication)
+        }
+        worldwake_core::ArtifactActionability::Blocked { reason, .. } => Some(reason),
+        worldwake_core::ArtifactActionability::Closed { cause, .. } => {
+            Some(blocker_reason_for_close_cause(cause))
+        }
+    }
+}
+
+fn blocker_reason_for_close_cause(
+    cause: worldwake_core::CloseCause,
+) -> worldwake_core::BlockerReason {
+    match cause {
+        worldwake_core::CloseCause::BountyFulfilled => {
+            worldwake_core::BlockerReason::BountyFulfilled
+        }
+        worldwake_core::CloseCause::LegalEffectExpired => {
+            worldwake_core::BlockerReason::LegalEffectExpired
+        }
+        worldwake_core::CloseCause::Revoked => worldwake_core::BlockerReason::LegalEffectRevoked,
+        worldwake_core::CloseCause::Adjudicated => worldwake_core::BlockerReason::Adjudicated,
+        worldwake_core::CloseCause::Refuted => worldwake_core::BlockerReason::Refuted,
+    }
+}
+
+fn record_artifact_axis_trace(
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    artifact: EntityId,
+    state: &worldwake_core::BelievedArtifactState,
+) {
+    let opportunity = OpportunityKey {
+        goal_key: GoalKey::from(GoalKind::FulfillBounty { bounty: artifact }),
+        anchor: OpportunityAnchor::Entity(artifact),
+    };
+    let snapshot = ArtifactAxisSnapshot::from_believed_artifact(artifact, state);
+    diagnostics
+        .evidence
+        .entry(opportunity)
+        .and_modify(|existing| existing.artifact_axes = Some(snapshot.clone()))
+        .or_insert(CandidateEvidenceTrace {
+            opportunity,
+            contributors: Vec::new(),
+            exclusions: Vec::new(),
+            knowledge_path: KnowledgePath::default(),
+            legality: None,
+            pursuit: None,
+            artifact_axes: Some(snapshot),
+        });
 }
 
 fn emit_artifact_posting_candidates(
@@ -5203,6 +5301,22 @@ fn merge_candidate_evidence_trace(
             "candidate legality provenance diverged for one grounded goal"
         );
     }
+    if existing.pursuit.is_none() {
+        existing.pursuit = incoming.pursuit;
+    } else {
+        debug_assert!(
+            incoming.pursuit.is_none() || existing.pursuit == incoming.pursuit,
+            "candidate pursuit provenance diverged for one grounded goal"
+        );
+    }
+    if existing.artifact_axes.is_none() {
+        existing.artifact_axes.clone_from(&incoming.artifact_axes);
+    } else {
+        debug_assert!(
+            incoming.artifact_axes.is_none() || existing.artifact_axes == incoming.artifact_axes,
+            "candidate artifact-axis provenance diverged for one grounded goal"
+        );
+    }
 }
 
 /// Record an omission trace for a pursuit candidate where `pursuit_target_belief`
@@ -5236,6 +5350,7 @@ fn emit_pursuit_omission_trace(
             max_travel_ticks: profile.max_pursuit_travel_ticks.get(),
             omission: Some(omission),
         }),
+        artifact_axes: None,
     };
     diagnostics
         .evidence
@@ -5279,6 +5394,7 @@ fn emit_pursuit_omission_trace_with_belief(
             max_travel_ticks: profile.max_pursuit_travel_ticks.get(),
             omission: Some(omission),
         }),
+        artifact_axes: None,
     };
     diagnostics
         .evidence
@@ -6315,14 +6431,15 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AcquisitionQuantity, AgentBeliefStore, ArtifactKind, ArtifactPostingContext,
-        ArtifactPostingProfile, ArtifactState, BelievedArtifactState, BelievedBountyTerms,
+        AcquisitionQuantity, AgentBeliefStore, ArtifactActionability, ArtifactCredibility,
+        ArtifactExistence, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
+        ArtifactPostingProfile, ArtifactVisibility, BelievedArtifactState, BelievedBountyTerms,
         BelievedEntityState, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
-        BlockingFact, BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
-        DemandObservation, DemandObservationReason, Discrepancy, DiscrepancyEntry,
-        DiscrepancyMemory, DisposalProfile, DiversificationProfile, DriveThresholds,
-        EffectiveRight, EligibilityRule, EmitterTag, EntityId, EntityKind,
+        BlockerReason, BlockingFact, BodyPart, BountyTarget, BountyTerms, CloseCause,
+        CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
+        CommodityPurpose, CommunicationClass, DemandObservation, DemandObservationReason,
+        Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
+        DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag, EntityId, EntityKind,
         EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis, ExpectationId,
         ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
         ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, GroundComfortTag,
@@ -7889,9 +8006,20 @@ mod tests {
         issuer: EntityId,
         claim_place: EntityId,
         target: BountyTarget,
-        state: ArtifactState,
+        actionability: ArtifactActionability,
         reward_quantity: u32,
     ) -> BelievedEntityState {
+        let legal_effect = match actionability {
+            ArtifactActionability::Actionable => ArtifactLegalEffect::Active { expires_at: None },
+            ArtifactActionability::Closed { closed_at, .. } => ArtifactLegalEffect::Fulfilled {
+                fulfilled_at: closed_at,
+                by: issuer,
+                evidence: claim_place,
+            },
+            ArtifactActionability::AwaitingProof { .. } | ArtifactActionability::Blocked { .. } => {
+                ArtifactLegalEffect::Active { expires_at: None }
+            }
+        };
         BelievedEntityState {
             believed_kind: None,
             last_known_place: Some(claim_place),
@@ -7904,9 +8032,13 @@ mod tests {
             believed_activity: None,
             believed_artifact: Some(BelievedArtifactState {
                 kind: ArtifactKind::Bounty,
-                state,
                 issuer,
                 expires_at: None,
+                existence: ArtifactExistence::Exists,
+                visibility: ArtifactVisibility::Posted { place: claim_place },
+                legal_effect,
+                credibility: ArtifactCredibility::Credible,
+                actionability,
                 bounty_terms: Some(BelievedBountyTerms {
                     target,
                     reward_commodity: CommodityKind::Coin,
@@ -7948,7 +8080,7 @@ mod tests {
                         issuer,
                         square,
                         BountyTarget::EliminateEntity { target },
-                        ArtifactState::Active,
+                        ArtifactActionability::Actionable,
                         250,
                     ),
                 ),
@@ -8014,7 +8146,10 @@ mod tests {
                     issuer,
                     square,
                     BountyTarget::EliminateEntity { target },
-                    ArtifactState::Fulfilled,
+                    ArtifactActionability::Closed {
+                        closed_at: Tick(5),
+                        cause: CloseCause::BountyFulfilled,
+                    },
                     250,
                 ),
             )],
@@ -8037,6 +8172,26 @@ mod tests {
                 bounty: fulfilled_bounty,
             }
         ));
+        assert_eq!(result.pending_discrepancies.len(), 1);
+        let pending = result.pending_discrepancies[0];
+        assert_eq!(
+            pending.discrepancy,
+            Discrepancy::ArtifactNotActionable {
+                artifact: fulfilled_bounty,
+                reason: BlockerReason::BountyFulfilled,
+            }
+        );
+        assert_eq!(
+            pending.blocker_key,
+            BlockerKey {
+                goal_key: GoalKey::from(GoalKind::FulfillBounty {
+                    bounty: fulfilled_bounty,
+                }),
+                place: None,
+                target: Some(fulfilled_bounty),
+                action_def: None,
+            }
+        );
     }
 
     #[test]
@@ -8073,7 +8228,7 @@ mod tests {
                             quantity: Quantity(3),
                             destination: claim_place,
                         },
-                        ArtifactState::Active,
+                        ArtifactActionability::Actionable,
                         250,
                     ),
                 ),
@@ -8152,7 +8307,7 @@ mod tests {
                             quantity: Quantity(3),
                             destination: claim_place,
                         },
-                        ArtifactState::Active,
+                        ArtifactActionability::Actionable,
                         250,
                     ),
                 ),

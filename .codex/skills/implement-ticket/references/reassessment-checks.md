@@ -33,6 +33,9 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - Error, trace, request, and report carriers that store embedded enums by value
 - Save/load version boundaries and `SAVE_FORMAT_VERSION` gates
 - Crate-root re-exports and downstream imports for new shared types
+- Crate-root namespace collisions before re-exporting new shared types, especially generic names such as `Status`, `State`, `Reason`, `Cause`, and `SuspensionReason`
+- Existing same-name types that differ by semantic owner module; if a crate-root re-export names a different domain enum or struct than the ticket needs, import the owner module path directly in source and tests
+- Hand-maintained inventory arrays, static count assertions, and representative enum/tag membership tests that will not fail until broad verification
 - CLI handlers, diagnostic bins, renderers, and inspect/output code that read moved fields directly
 - When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates.
 - When a flat internal carrier becomes nested or decomposed into sub-structs, sweep both the type name and moved field names across the owning crate.
@@ -50,6 +53,15 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - When adding persisted fields, make focused save tests populate those exact new fields with non-default values and assert after roundtrip.
 - When introducing new persisted components alongside a temporary legacy carrier, keep the runtime boundary honest within the live current format.
 - When a staged migration moves consumers off a legacy carrier but a later ticket owns removing it, classify remaining references by surface: production reads, test-only helpers, public re-exports, setup fixtures. Eliminate production reads within the current ticket's boundary.
+
+**InstitutionalClaim variant checklist:**
+- Treat new `InstitutionalClaim` variants as shared persisted enum migrations, not only core-local additions.
+- Decide and record the matching `InstitutionalBeliefKey` topic before coding so tell, consult-record, perception, and trace paths do not silently collapse distinct claims.
+- Sweep belief helpers in `worldwake-core` for topic grouping, effective tick ranking, subject/entity mapping, same-content comparison, serde/bincode bounds, ordering tests, and roundtrip fixtures.
+- Sweep cross-crate institutional consumers: `tell_actions`, `consult_record_actions`, `perception`, `institutional_knowledge_trace`, `social_relay`, AI ranking priority, and decision-trace formatting.
+- Check `SAVE_FORMAT_VERSION` because `RecordData`, `BelievedInstitutionalClaim`, and institutional read summaries are persisted through save/runtime carriers.
+- Add focused proof at the source event or record-consultation seam that exercises the new claim by value, plus a save/load or bincode proof when the ticket changes persisted shape.
+- Truth-sync active specs/tickets that describe the institutional claim family, source-event ownership, or save-version baseline.
 
 ## Helper, math, and default validation
 
