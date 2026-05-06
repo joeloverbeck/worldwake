@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None (test-only; soak harness extension)
-**Deps**: S136DECEVEPAY-002, S136DECEVEPAY-003, S136DECEVEPAY-004
+**Deps**: archive/tickets/S136DECEVEPAY-002.md, tickets/S136DECEVEPAY-003.md, tickets/S136DECEVEPAY-004.md, tickets/S136DECEVEPAY-007.md
 
 ## Problem
 
@@ -27,6 +27,7 @@ Plus a deterministic fixed-seed payload-size sweep through the existing `soak_se
 3. The soak harness at `crates/worldwake-ai/src/bin/soak_seed_perf.rs` is a deterministic seed-based performance profiler. The payload-size sweep extends it (or adds a parallel binary) to record per-event payload byte size across ticks and assert per-tag ceilings. Per-tag ceilings derive from the worst-case table in the spec's Risks section: with `cognitive.decision_history_alternatives = 5`, `BlockerRecordedPayload` / `ReplanTriggeredPayload` / `ExpectationMismatchPayload` are the largest (gain 4 Vecs of cap 5). Compute exact ceilings at implementation time using `bincode::serialize(payload).unwrap().len()` on representative worst-case fixtures and bake the values as constants in the sweep.
 4. Existing golden tests on payload field shape: none today — the field set didn't exist before ticket 001. This ticket establishes the contract. Verify test names against `cargo test -p worldwake-ai -- --list | grep golden_` before committing assertion paths.
 5. Scenario isolation (per `docs/precision-rules.md` Rule 8): each of the four scenarios isolates a single causal branch. Document the lawful competing affordances each scenario excludes from setup. For example, scenario 2 (stale-belief replan) excludes alternative goals that would lead to a non-replan outcome (those would obscure the `ReplanTriggered` emission). Document each exclusion explicitly in the golden's setup comments.
+6. `archive/tickets/S136DECEVEPAY-002.md` intentionally emits `introduced_at_step: 0` until real provenance exists. `tickets/S136DECEVEPAY-007.md` owns that provenance, so this golden ticket depends on 007 and must not pin the ticket-002 fallback value as the final S136 contract.
 
 ## Architecture Check
 
@@ -52,7 +53,7 @@ Add `crates/worldwake-ai/tests/golden_decision_payload.rs` (or extend existing s
 - Asserts the new payload fields carry the expected typed addresses or counts:
   - **Scenario 1** (Eat-vs-Drink): assert `rejected_alternatives` contains a Drink entry with the expected `score_gap` and `rejection_dimension == Some(RankedGoalComparisonDimensionTag::MotiveScore)`. Assert `assumptions.len() >= 1` (post-reorder from ticket 002).
   - **Scenario 2** (stale-belief replan): assert `decisive_beliefs` contains a `BeliefRef` with `status == BeliefStatusTag::Stale` and the contradicted claim key. Assert `assumptions` names the active frame's set.
-  - **Scenario 3** (assumption breach): assert `assumptions` contains `PlanAssumptionRef { assumption: FrameAssumption::CommodityAvailableAt { ... }, ... }`. Assert `decisive_world_observations` contains the post-arrival observation that contradicted the assumption.
+  - **Scenario 3** (assumption breach): assert `assumptions` contains `PlanAssumptionRef { assumption: FrameAssumption::CommodityAvailableAt { ... }, introduced_at_step: <real provenance> }` after ticket 007 lands. Assert `decisive_world_observations` contains the post-arrival observation that contradicted the assumption.
   - **Scenario 4** (source-expectation failure): assert `decisive_*` carries the source-attribution input. Assert `assumptions` is NOT present in the payload (compile-time enforced by ticket 001's struct shape).
 - Documents the lawful competing affordances excluded from setup per `docs/precision-rules.md` Rule 8.
 

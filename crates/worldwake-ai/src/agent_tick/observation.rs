@@ -25,9 +25,9 @@ use crate::{
 use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 
 use super::{
-    AgentTickContext, advance_completed_step, apply_step_materialization_bindings,
-    committed_action_for_step, current_step, emit_decision_event, handle_current_step_failure,
-    plan_finished, runtime_belief_view,
+    AgentTickContext, AssumptionRefContext, advance_completed_step,
+    apply_step_materialization_bindings, committed_action_for_step, current_step,
+    emit_decision_event, handle_current_step_failure, plan_finished, runtime_belief_view,
 };
 
 #[derive(Clone, Copy)]
@@ -101,10 +101,21 @@ pub(crate) struct ReadPhaseResult {
         std::collections::BTreeSet<worldwake_core::HomeostaticNeedId>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) struct ExpectationMismatchContext {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ExpectationMismatchContext<'a> {
     pub(super) expectation_kind: Option<ExpectationKindTag>,
     pub(super) mismatch_detail: Option<MismatchDetail>,
+    pub(super) assumption_refs: AssumptionRefContext<'a>,
+}
+
+impl Default for ExpectationMismatchContext<'_> {
+    fn default() -> Self {
+        Self {
+            expectation_kind: None,
+            mismatch_detail: None,
+            assumption_refs: AssumptionRefContext::new(&[], 0),
+        }
+    }
 }
 
 pub(super) fn emit_expectation_mismatch(
@@ -114,7 +125,7 @@ pub(super) fn emit_expectation_mismatch(
     goal_key: worldwake_core::GoalKey,
     step_index: usize,
     step: &PlannedStep,
-    context: ExpectationMismatchContext,
+    context: ExpectationMismatchContext<'_>,
 ) {
     emit_decision_event(
         event_log,
@@ -135,7 +146,7 @@ pub(super) fn emit_expectation_mismatch(
             decisive_beliefs: Vec::new(),
             decisive_records: Vec::new(),
             decisive_world_observations: Vec::new(),
-            assumptions: Vec::new(),
+            assumptions: context.assumption_refs.to_refs(),
         }),
     );
 }
@@ -679,7 +690,13 @@ pub(super) fn reconcile_in_flight_state(
             goal_key,
             runtime.current_step_index,
             &step,
-            ExpectationMismatchContext::default(),
+            ExpectationMismatchContext {
+                assumption_refs: AssumptionRefContext::from_frame(
+                    jc.as_ref(),
+                    ctx.cognitive.decision_history_alternatives,
+                ),
+                ..ExpectationMismatchContext::default()
+            },
         );
         let invalidation_reason = PlanInvalidationReason::ExpectationMismatch {
             step_index: runtime
@@ -970,6 +987,7 @@ pub(super) fn unique_item_signature(
 
 #[cfg(test)]
 mod tests {
+    use super::super::AssumptionRefContext;
     use super::{
         ExpectationMismatchContext, emit_expectation_mismatch,
         pending_local_source_reliability_failures, reinstate_current_plan_candidate,
@@ -984,9 +1002,9 @@ mod tests {
     use std::collections::BTreeSet;
     use worldwake_core::{
         AcquisitionQuantity, ActionDefId, CauseRef, CommodityKind, ControlSource,
-        DecisionEventPayload, EntityId, EventLog, EventTag, EventView, GoalKey, GoalKind,
-        MaterializationTag, OpportunityAnchor, Quantity, ResourceSource, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn, build_prototype_world,
+        DecisionEventPayload, EntityId, EventLog, EventTag, EventView, FrameAssumption, GoalKey,
+        GoalKind, HomeostaticNeedId, MaterializationTag, OpportunityAnchor, Quantity,
+        ResourceSource, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::PerAgentBeliefView;
 
@@ -1194,7 +1212,16 @@ mod tests {
             goal_key,
             5,
             &step,
-            ExpectationMismatchContext::default(),
+            ExpectationMismatchContext {
+                assumption_refs: AssumptionRefContext::new(
+                    &[FrameAssumption::NeedSafeUntilTick {
+                        need: HomeostaticNeedId::Fatigue,
+                        until_tick: Tick(20),
+                    }],
+                    5,
+                ),
+                ..ExpectationMismatchContext::default()
+            },
         );
 
         let events = event_log.events_by_tag(EventTag::ExpectationMismatch);
@@ -1216,7 +1243,13 @@ mod tests {
                     decisive_beliefs: Vec::new(),
                     decisive_records: Vec::new(),
                     decisive_world_observations: Vec::new(),
-                    assumptions: Vec::new(),
+                    assumptions: vec![worldwake_core::PlanAssumptionRef {
+                        assumption: FrameAssumption::NeedSafeUntilTick {
+                            need: HomeostaticNeedId::Fatigue,
+                            until_tick: Tick(20),
+                        },
+                        introduced_at_step: 0,
+                    }],
                 }
             )
         );

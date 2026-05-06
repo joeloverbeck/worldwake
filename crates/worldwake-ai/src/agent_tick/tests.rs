@@ -8,10 +8,11 @@ use super::planning::{
     determine_selected_plan_source, plan_and_validate_next_step, summarize_plan_replacement,
 };
 use super::{
-    AgentTickDriver, advance_completed_step, apply_step_materialization_bindings,
-    committed_action_for_step, effective_goal_switch_margin,
-    handle_recoverable_travel_step_blockage, invalidate_committed_source_after_reliability_failure,
-    persist_blocked_memory, persist_discrepancy_memory, plan_and_validate_next_step_traced,
+    AgentTickDriver, AssumptionRefContext, advance_completed_step,
+    apply_step_materialization_bindings, committed_action_for_step, effective_goal_switch_margin,
+    emit_replan_triggered, handle_recoverable_travel_step_blockage,
+    invalidate_committed_source_after_reliability_failure, persist_blocked_memory,
+    persist_discrepancy_memory, plan_and_validate_next_step_traced,
     record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
     update_exploration_counter_for_adopted_goal, update_frame_for_adopted_plan,
 };
@@ -3257,6 +3258,7 @@ fn overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy() {
             .runtime_by_agent
             .get_mut(&harness.actor)
             .expect("runtime should exist"),
+        None,
         &mut blocked_memory,
         &mut discrepancy_memory,
         harness.actor,
@@ -3376,6 +3378,7 @@ fn overdue_plan_step_expectation_expires_when_plan_moved_on() {
             .runtime_by_agent
             .get_mut(&harness.actor)
             .expect("runtime should exist"),
+        None,
         &mut blocked_memory,
         &mut discrepancy_memory,
         harness.actor,
@@ -3506,6 +3509,7 @@ fn overdue_plan_step_expectation_classifies_discrepancy_per_kind() {
                 .runtime_by_agent
                 .get_mut(&harness.actor)
                 .expect("runtime should exist"),
+            None,
             &mut blocked_memory,
             &mut discrepancy_memory,
             harness.actor,
@@ -3629,6 +3633,7 @@ fn overdue_plan_step_expectation_processes_after_sim_marks_record_overdue() {
             .runtime_by_agent
             .get_mut(&harness.actor)
             .expect("runtime should exist"),
+        None,
         &mut blocked_memory,
         &mut discrepancy_memory,
         harness.actor,
@@ -4913,6 +4918,7 @@ fn persist_blocked_memory_skips_empty_unchanged_state() {
         Tick(2),
         &BlockerMemory::default(),
         &BlockerMemory::default(),
+        AssumptionRefContext::new(&[], 5),
     )
     .unwrap();
 
@@ -4933,6 +4939,7 @@ fn persist_blocked_memory_commits_changed_component() {
         agent
     };
     let mut blocked = BlockerMemory::default();
+    let assumptions = vec![FrameAssumption::NoCriticalThreat];
     blocked.record(Blocker {
         blocker_key: BlockerKey {
             goal_key: GoalKey::from(GoalKind::Sleep),
@@ -4955,6 +4962,7 @@ fn persist_blocked_memory_commits_changed_component() {
         Tick(2),
         &BlockerMemory::default(),
         &blocked,
+        AssumptionRefContext::new(&assumptions, 5),
     )
     .unwrap();
 
@@ -4982,10 +4990,60 @@ fn persist_blocked_memory_commits_changed_component() {
                 decisive_beliefs: Vec::new(),
                 decisive_records: Vec::new(),
                 decisive_world_observations: Vec::new(),
-                assumptions: Vec::new(),
+                assumptions: vec![worldwake_core::PlanAssumptionRef {
+                    assumption: FrameAssumption::NoCriticalThreat,
+                    introduced_at_step: 0,
+                }],
             }
         ))
     );
+}
+
+#[test]
+fn emit_replan_triggered_carries_active_frame_assumptions() {
+    let mut event_log = EventLog::new();
+    let agent = entity(1);
+    let goal_key = GoalKey::from(GoalKind::Sleep);
+    let assumptions = vec![
+        FrameAssumption::NoCriticalThreat,
+        FrameAssumption::NeedSafeUntilTick {
+            need: HomeostaticNeedId::Fatigue,
+            until_tick: Tick(20),
+        },
+    ];
+
+    emit_replan_triggered(
+        &mut event_log,
+        Tick(2),
+        agent,
+        goal_key,
+        worldwake_core::ReplanReason::PlanInvalidated {
+            reason: worldwake_core::PlanInvalidationReason::AssumptionFailed {
+                assumption: FrameAssumption::NoCriticalThreat,
+            },
+        },
+        &assumptions,
+        1,
+    );
+
+    let events = event_log.events_by_tag(EventTag::ReplanTriggered);
+    assert_eq!(events.len(), 1);
+    let payload = event_log
+        .get(events[0])
+        .and_then(|record| record.decision_payload())
+        .expect("replan event should carry payload");
+    match payload {
+        DecisionEventPayload::ReplanTriggered(payload) => {
+            assert_eq!(
+                payload.assumptions,
+                vec![worldwake_core::PlanAssumptionRef {
+                    assumption: FrameAssumption::NoCriticalThreat,
+                    introduced_at_step: 0,
+                }]
+            );
+        }
+        other => panic!("unexpected payload: {other:?}"),
+    }
 }
 
 #[test]
@@ -5022,6 +5080,7 @@ fn persist_discrepancy_memory_emits_blocker_recorded_for_discrepancy_entries() {
         Tick(2),
         &DiscrepancyMemory::default(),
         &discrepancy_memory,
+        AssumptionRefContext::new(&[], 5),
     )
     .unwrap();
 
@@ -5097,6 +5156,7 @@ fn persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrep
         Tick(80),
         &DiscrepancyMemory::default(),
         &discrepancy_memory,
+        AssumptionRefContext::new(&[], 5),
     )
     .unwrap();
 

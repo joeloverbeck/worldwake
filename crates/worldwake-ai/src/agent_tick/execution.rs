@@ -3,8 +3,8 @@ use super::observation::{
     ExpectationMismatchContext, emit_expectation_mismatch, update_runtime_observation_snapshot,
 };
 use super::{
-    AgentTickContext, emit_decision_event, handle_recoverable_travel_step_blockage,
-    runtime_belief_view,
+    AgentTickContext, AssumptionRefContext, emit_decision_event,
+    handle_recoverable_travel_step_blockage, runtime_belief_view,
 };
 use crate::failure_handling::exact_target_belief_discrepancy;
 use crate::plan_step_expectations::{
@@ -44,6 +44,13 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     step: &PlannedStep,
     valid: bool,
 ) -> Result<(), TickInputError> {
+    let active_assumptions = jc
+        .as_ref()
+        .map_or_else(Vec::new, |frame| frame.assumptions.clone());
+    let assumption_refs = AssumptionRefContext::new(
+        &active_assumptions,
+        ctx.cognitive.decision_history_alternatives,
+    );
     if !valid {
         let view = runtime_belief_view(
             agent,
@@ -115,6 +122,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 ExpectationMismatchContext {
                     expectation_kind,
                     mismatch_detail,
+                    assumption_refs,
                 },
             );
         }
@@ -145,7 +153,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                     decisive_beliefs: Vec::new(),
                     decisive_records: Vec::new(),
                     decisive_world_observations: Vec::new(),
-                    assumptions: Vec::new(),
+                    assumptions: assumption_refs.to_refs(),
                 }),
             );
         }
@@ -202,6 +210,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 original_learned_opportunity_memory,
                 learned_opportunity_memory,
                 runtime,
+                assumption_refs,
             );
         }
         let replan_reason = handle_current_step_failure(
@@ -231,7 +240,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                     decisive_beliefs: Vec::new(),
                     decisive_records: Vec::new(),
                     decisive_world_observations: Vec::new(),
-                    assumptions: Vec::new(),
+                    assumptions: assumption_refs.to_refs(),
                 }),
             );
         }
@@ -254,6 +263,7 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
             original_learned_opportunity_memory,
             learned_opportunity_memory,
             runtime,
+            assumption_refs,
         );
     };
 
@@ -292,6 +302,7 @@ pub(super) fn finalize_agent_tick(
     original_learned_opportunity_memory: &LearnedOpportunityMemory,
     learned_opportunity_memory: &LearnedOpportunityMemory,
     runtime: &mut AgentDecisionRuntime,
+    assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
     persist_blocked_memory(
         world,
@@ -300,6 +311,7 @@ pub(super) fn finalize_agent_tick(
         tick,
         original_blocked,
         blocked_memory,
+        assumption_refs,
     )?;
     persist_discrepancy_memory(
         world,
@@ -308,6 +320,7 @@ pub(super) fn finalize_agent_tick(
         tick,
         original_discrepancy_memory,
         discrepancy_memory,
+        assumption_refs,
     )?;
     persist_violation_memory(
         world,
@@ -420,6 +433,7 @@ pub(super) fn persist_blocked_memory(
     tick: Tick,
     before: &BlockerMemory,
     after: &BlockerMemory,
+    assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
     let changed_entries = after
         .intents
@@ -464,7 +478,7 @@ pub(super) fn persist_blocked_memory(
                 decisive_beliefs: Vec::new(),
                 decisive_records: Vec::new(),
                 decisive_world_observations: Vec::new(),
-                assumptions: Vec::new(),
+                assumptions: assumption_refs.to_refs(),
             }),
         );
     }
@@ -478,6 +492,7 @@ pub(super) fn persist_discrepancy_memory(
     tick: Tick,
     before: &DiscrepancyMemory,
     after: &DiscrepancyMemory,
+    assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
     let changed_entries = after
         .entries
@@ -523,7 +538,7 @@ pub(super) fn persist_discrepancy_memory(
                 decisive_beliefs: Vec::new(),
                 decisive_records: Vec::new(),
                 decisive_world_observations: Vec::new(),
-                assumptions: Vec::new(),
+                assumptions: assumption_refs.to_refs(),
             }),
         );
     }

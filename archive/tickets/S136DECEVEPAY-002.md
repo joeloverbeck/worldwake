@@ -1,6 +1,6 @@
 # S136DECEVEPAY-002: Reorder emit_plan_selection_events + populate assumptions at all 5 emission sites
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai::agent_tick::planning::emit_plan_selection_events` flow reordering; assumptions wire-up at failure-path emission sites in `execution`, `observation`, and `mod`
@@ -16,7 +16,7 @@ This ticket lands the reorder so `update_frame_for_adopted_plan` and `populate_a
 
 1. `emit_plan_selection_events` at `planning.rs:1003` is called from two sites (`planning.rs:1692` — contested-commit path; `planning.rs:2083` — re-verify which secondary path this is at implementation time). After ticket 001, both sites construct `GoalCommittedPayload` / `PlanAdoptedPayload` with `assumptions: Vec::new()` placeholder; this ticket replaces both with real data sourced from `frame.assumptions`.
 2. `populate_assumptions` (called from `planning.rs:~1707`) populates `frame.assumptions: Vec<FrameAssumption>` from the active belief view (`refreshed_view`) at `tick`. The reorder must keep `populate_assumptions` reading the same `refreshed_view` snapshot and tick — no new belief queries (preserves spec design goal #2).
-3. `IntentionFrame.assumptions` lives at `crates/worldwake-core/src/intention_frame.rs:145` as `pub assumptions: Vec<FrameAssumption>`. Failure-path emission sites have access to the active frame via the runtime's intention-frame reference. The converter from `Vec<FrameAssumption>` to `Vec<PlanAssumptionRef>` adds `introduced_at_step`. **Verify at implementation time**: whether `populate_assumptions` already records the introducing step (e.g., via the plan's step index when the assumption was synthesized) or whether step provenance must be added in this ticket. If the source data does not currently carry step provenance, populate `introduced_at_step: 0` for all entries in this ticket and open a follow-up traceability ticket to thread step provenance through `populate_assumptions`. Cite the follow-up ticket ID in the converter's doc-comment.
+3. `IntentionFrame.assumptions` lives at `crates/worldwake-core/src/intention_frame.rs:145` as `pub assumptions: Vec<FrameAssumption>`. Failure-path emission sites have access to the active frame through the local `current_frame` / `jc` runtime path or through memory-persistence calls that now receive `AssumptionRefContext`. `populate_assumptions` in `crates/worldwake-ai/src/agent_tick/frame.rs` does not currently record introducing-step provenance, so this ticket populates `introduced_at_step: 0` for all entries and opens follow-up ticket `tickets/S136DECEVEPAY-007.md`.
 4. Existing test `emit_plan_selection_events_records_commit_then_adoption_with_truncation` (`planning.rs:3464`) covers the truncation behavior of `rejected_alternatives`. This ticket extends that test (or adds a sibling) to assert `assumptions` is populated on the produced `GoalCommittedPayload` and `PlanAdoptedPayload` when the agent has an active intention frame.
 5. Boundary under audit: the success-path emission ordering. Compared branches: pre-reorder (frame empty at emission) vs. post-reorder (frame populated). Divergence is purely in payload content — no behavioral change in plan adoption, plan selection, or downstream commit logic.
 
@@ -68,13 +68,13 @@ Update `emit_plan_selection_events`'s signature to accept `Option<&IntentionFram
 
 ### 2. `FrameAssumption` → `PlanAssumptionRef` converter
 
-Define a helper `assumptions_to_refs(&[FrameAssumption], cap: usize) -> Vec<PlanAssumptionRef>` in `crates/worldwake-ai/src/agent_tick/planning.rs` (or a sibling submodule if it grows). Cap the output at `cognitive.decision_history_alternatives` (matching the existing `rejected_alternatives` cap discipline at `planning.rs:991`).
+Define shared `AssumptionRefContext` / `assumptions_to_refs(&[FrameAssumption], cap: u8) -> Vec<PlanAssumptionRef>` helpers in `crates/worldwake-ai/src/agent_tick/mod.rs`. Cap the output at `cognitive.decision_history_alternatives` (matching the existing `rejected_alternatives` cap discipline at `planning.rs:991`).
 
 `introduced_at_step` source: per Assumption Reassessment item 3, if `populate_assumptions` does not currently carry step provenance, populate `introduced_at_step: 0` and document the limitation in a doc-comment naming the follow-up traceability ticket.
 
 ### 3. Failure-path emission site wire-up
 
-Replace each `assumptions: Vec::new()` placeholder from ticket 001 with `assumptions: assumptions_to_refs(&frame.assumptions, cap)` at:
+Replace each `assumptions: Vec::new()` placeholder from ticket 001 with `assumptions: AssumptionRefContext::...to_refs()` at:
 
 - `crates/worldwake-ai/src/agent_tick/execution.rs:140, 222` — `ReplanTriggered` emissions.
 - `crates/worldwake-ai/src/agent_tick/execution.rs:448, 503` — `BlockerRecorded` emissions.
@@ -87,10 +87,13 @@ Each site has the active frame in scope via the runtime's intention-frame refere
 
 ## Files to Touch
 
-- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — reorder, signature change, success-path wiring, converter helper)
+- `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — reorder, signature change, success-path wiring)
+- `crates/worldwake-ai/src/agent_tick/active_action.rs` (modify — thread active-frame assumptions into failure memory persistence)
 - `crates/worldwake-ai/src/agent_tick/execution.rs` (modify — `BlockerRecorded` and `ReplanTriggered` `assumptions` wire-up)
 - `crates/worldwake-ai/src/agent_tick/observation.rs` (modify — `ExpectationMismatch` `assumptions` wire-up)
 - `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — `ReplanTriggered:497` `assumptions` wire-up)
+- `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — focused `BlockerRecorded` / `ReplanTriggered` assumptions coverage)
+- `tickets/S136DECEVEPAY-007.md` (new — step-provenance follow-up)
 
 ## Out of Scope
 
@@ -122,12 +125,43 @@ Each site has the active frame in scope via the runtime's intention-frame refere
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/src/agent_tick/planning.rs::tests::emit_plan_selection_events_records_commit_then_adoption_with_truncation` — extend with `assumptions` assertion.
-2. `crates/worldwake-ai/src/agent_tick/execution.rs::tests` — new focused units for `BlockerRecorded` and `ReplanTriggered` `assumptions` wire-up.
+2. `crates/worldwake-ai/src/agent_tick/tests.rs` — focused units for `BlockerRecorded` and `ReplanTriggered` `assumptions` wire-up.
 3. `crates/worldwake-ai/src/agent_tick/observation.rs::tests` — new focused unit for `ExpectationMismatch` `assumptions` wire-up.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai planning::tests::emit_plan_selection_events_records_commit_then_adoption_with_truncation`
-2. `cargo test -p worldwake-ai agent_tick::`
-3. `cargo test -p worldwake-ai`
-4. `./scripts/verify.sh`
+1. `cargo test -p worldwake-ai --lib agent_tick::planning::tests::emit_plan_selection_events_records_commit_then_adoption_with_truncation -- --exact`
+2. `cargo test -p worldwake-ai --lib agent_tick::tests::persist_blocked_memory_commits_changed_component -- --exact`
+3. `cargo test -p worldwake-ai --lib agent_tick::tests::emit_replan_triggered_carries_active_frame_assumptions -- --exact`
+4. `cargo test -p worldwake-ai --lib agent_tick::observation::tests::emit_expectation_mismatch_records_expected_tags_and_step_index -- --exact`
+5. `cargo test -p worldwake-ai agent_tick::`
+6. `cargo test -p worldwake-ai`
+7. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-06.
+
+Landed the D5 reorder in both `plan_and_validate_next_step` paths: prepared frames are now updated and populated from the same `refreshed_view` before `emit_plan_selection_events`, and both `GoalCommittedPayload` and `PlanAdoptedPayload` receive bounded `PlanAssumptionRef` values from the populated frame.
+
+Added shared `AssumptionRefContext` / `assumptions_to_refs` conversion in `agent_tick::mod` and wired active-frame assumptions into `ReplanTriggered`, `BlockerRecorded`, and `ExpectationMismatch` emission paths. `SourceExpectationFailurePayload` remains unchanged per spec D4.
+
+Deviation: `FrameAssumption` still carries no source-step provenance, so every emitted `PlanAssumptionRef` uses `introduced_at_step: 0`. Follow-up `tickets/S136DECEVEPAY-007.md` owns real step provenance.
+
+## Verification Result
+
+Passed on 2026-05-06:
+
+1. `cargo test -p worldwake-ai --lib emit_plan_selection_events_records_commit_then_adoption_with_truncation -- --list`
+2. `cargo test -p worldwake-ai --lib agent_tick::planning::tests::emit_plan_selection_events_records_commit_then_adoption_with_truncation -- --exact`
+3. `cargo test -p worldwake-ai --lib persist_blocked_memory_commits_changed_component -- --list`
+4. `cargo test -p worldwake-ai --lib agent_tick::tests::persist_blocked_memory_commits_changed_component -- --exact`
+5. `cargo test -p worldwake-ai --lib assumptions -- --list`
+6. `cargo test -p worldwake-ai --lib agent_tick::tests::emit_replan_triggered_carries_active_frame_assumptions -- --exact`
+7. `cargo test -p worldwake-ai --lib emit_expectation_mismatch_records_expected_tags_and_step_index -- --list`
+8. `cargo test -p worldwake-ai --lib agent_tick::observation::tests::emit_expectation_mismatch_records_expected_tags_and_step_index -- --exact`
+9. `cargo test -p worldwake-ai agent_tick::`
+10. `cargo fmt --all`
+11. `cargo test -p worldwake-ai`
+12. `./scripts/verify.sh`
+13. `cargo run -p worldwake-cli --bin scenario-coverage -- --check`

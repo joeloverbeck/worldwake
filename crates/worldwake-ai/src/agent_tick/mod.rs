@@ -57,14 +57,14 @@ use worldwake_core::FrameClearReason;
 use worldwake_core::{
     ActionDefId, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
     DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
-    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, GoalAbandonReason,
+    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, FrameAssumption, GoalAbandonReason,
     GoalAbandonedPayload, GoalOfferedPayload, GoalSuppressedPayload, GoalSuspendedPayload,
     GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick, LearnedOpportunityMemory,
     OpportunityAnchor, OpportunityEntry, OpportunityExpectationKindTag, PendingEvent,
-    PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag,
-    RepairAppliedPayload, RepairEntry, RepairKey, RepairKind, RepairMemory, ReplanReason,
-    ReplanTriggeredPayload, SourceAttributionOutcomeTag, SourceExpectationFailurePayload,
-    SourceKeyPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+    PursuitInvalidationReasonTag, RepairAppliedPayload, RepairEntry, RepairKey, RepairKind,
+    RepairMemory, ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
+    SourceExpectationFailurePayload, SourceKeyPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -82,6 +82,51 @@ pub struct AgentTickDriver {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct AgentTickDriverState {
     runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
+}
+
+/// Convert active-frame assumptions into the bounded event-log payload shape.
+///
+/// `FrameAssumption` does not currently store the plan step that introduced
+/// each assumption, so S136DECEVEPAY-007 owns threading real step provenance.
+pub(super) fn assumptions_to_refs(
+    assumptions: &[FrameAssumption],
+    cap: u8,
+) -> Vec<PlanAssumptionRef> {
+    assumptions
+        .iter()
+        .take(usize::from(cap))
+        .copied()
+        .map(|assumption| PlanAssumptionRef {
+            assumption,
+            introduced_at_step: 0,
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct AssumptionRefContext<'a> {
+    pub(super) assumptions: &'a [FrameAssumption],
+    pub(super) max_assumptions: u8,
+}
+
+impl<'a> AssumptionRefContext<'a> {
+    pub(super) const fn new(assumptions: &'a [FrameAssumption], max_assumptions: u8) -> Self {
+        Self {
+            assumptions,
+            max_assumptions,
+        }
+    }
+
+    pub(super) fn from_frame(frame: Option<&'a IntentionFrame>, max_assumptions: u8) -> Self {
+        Self::new(
+            frame.map_or(&[][..], |frame| frame.assumptions.as_slice()),
+            max_assumptions,
+        )
+    }
+
+    pub(super) fn to_refs(self) -> Vec<PlanAssumptionRef> {
+        assumptions_to_refs(self.assumptions, self.max_assumptions)
+    }
 }
 
 impl AgentTickDriver {
@@ -329,6 +374,7 @@ fn overdue_mismatch_detail(
 pub(super) fn process_overdue_plan_step_expectations(
     ctx: &mut AgentTickContext<'_>,
     runtime: &mut AgentDecisionRuntime,
+    current_frame: Option<&IntentionFrame>,
     blocked_memory: &mut worldwake_core::BlockerMemory,
     discrepancy_memory: &mut worldwake_core::DiscrepancyMemory,
     agent: EntityId,
@@ -395,6 +441,10 @@ pub(super) fn process_overdue_plan_step_expectations(
             ExpectationMismatchContext {
                 expectation_kind: Some(kind_tag),
                 mismatch_detail: overdue_mismatch_detail(&step, kind_tag),
+                assumption_refs: AssumptionRefContext::from_frame(
+                    current_frame,
+                    ctx.cognitive.decision_history_alternatives,
+                ),
             },
         );
 
@@ -489,6 +539,8 @@ fn emit_replan_triggered(
     agent: EntityId,
     goal_key: worldwake_core::GoalKey,
     reason: ReplanReason,
+    assumptions: &[FrameAssumption],
+    max_assumptions: u8,
 ) {
     emit_decision_event(
         event_log,
@@ -502,7 +554,7 @@ fn emit_replan_triggered(
             decisive_beliefs: Vec::new(),
             decisive_records: Vec::new(),
             decisive_world_observations: Vec::new(),
-            assumptions: Vec::new(),
+            assumptions: assumptions_to_refs(assumptions, max_assumptions),
         }),
     );
 }
@@ -968,7 +1020,17 @@ fn process_agent(
         emit_plan_invalidated(ctx.event_log, tick, agent, goal_key, reason);
     }
     if let Some((goal_key, reason)) = reconciliation.replan_trigger.clone() {
-        emit_replan_triggered(ctx.event_log, tick, agent, goal_key, reason);
+        emit_replan_triggered(
+            ctx.event_log,
+            tick,
+            agent,
+            goal_key,
+            reason,
+            current_frame
+                .as_ref()
+                .map_or(&[][..], |frame| frame.assumptions.as_slice()),
+            cognitive.decision_history_alternatives,
+        );
     }
     current_agenda_state.committed = current_active_goal.clone();
     if let Some(summary) = reconciliation.completed_plan
@@ -988,6 +1050,7 @@ fn process_agent(
     process_overdue_plan_step_expectations(
         ctx,
         runtime,
+        current_frame.as_ref(),
         &mut blocked_memory,
         &mut discrepancy_memory,
         agent,
@@ -1087,6 +1150,10 @@ fn process_agent(
                             agent,
                             goal_key,
                             ReplanReason::PlanInvalidated { reason },
+                            current_frame
+                                .as_ref()
+                                .map_or(&[][..], |frame| frame.assumptions.as_slice()),
+                            cognitive.decision_history_alternatives,
                         );
                     }
                 }
@@ -1138,6 +1205,10 @@ fn process_agent(
             agent,
             goal_key,
             ReplanReason::PlanInvalidated { reason },
+            current_frame
+                .as_ref()
+                .map_or(&[][..], |frame| frame.assumptions.as_slice()),
+            cognitive.decision_history_alternatives,
         );
     }
     emit_candidate_decision_events(
@@ -1372,6 +1443,10 @@ fn process_agent(
                 ReplanReason::ActionInterrupted {
                     reason: worldwake_core::ActionInterruptReasonTag::Reprioritized,
                 },
+                current_frame
+                    .as_ref()
+                    .map_or(&[][..], |frame| frame.assumptions.as_slice()),
+                cognitive.decision_history_alternatives,
             );
         }
         current_agenda_state.committed = current_active_goal.clone();
@@ -1867,6 +1942,10 @@ fn process_agent(
         &original_learned_opportunity_memory,
         &learned_opportunity_memory,
         runtime,
+        AssumptionRefContext::from_frame(
+            current_frame.as_ref(),
+            cognitive.decision_history_alternatives,
+        ),
     )?;
 
     Ok(outcome_trace.map(|outcome| AgentDecisionTrace {

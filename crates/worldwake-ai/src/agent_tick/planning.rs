@@ -43,8 +43,8 @@ use worldwake_sim::{
 
 use super::frame::plan_completion_tick_for_adoption;
 use super::{
-    current_step, emit_decision_event, populate_assumptions, runtime_belief_view,
-    update_frame_for_adopted_plan,
+    assumptions_to_refs, current_step, emit_decision_event, populate_assumptions,
+    runtime_belief_view, update_frame_for_adopted_plan,
 };
 
 #[derive(Clone, Debug)]
@@ -1010,7 +1010,9 @@ fn emit_plan_selection_events(
     current_goal_before_selection: Option<worldwake_core::GoalKey>,
     selected_plan: &PlannedPlan,
     max_alternatives: u8,
+    prepared_frame: Option<&IntentionFrame>,
 ) {
+    let assumptions = prepared_frame.map_or(&[][..], |frame| frame.assumptions.as_slice());
     if current_goal_before_selection != Some(selected_plan.goal) {
         let committed = ranked_candidates
             .iter()
@@ -1032,7 +1034,7 @@ fn emit_plan_selection_events(
                     committed.motive_score,
                     max_alternatives,
                 ),
-                assumptions: Vec::new(),
+                assumptions: assumptions_to_refs(assumptions, max_alternatives),
             }),
         );
     }
@@ -1049,7 +1051,7 @@ fn emit_plan_selection_events(
                 .len()
                 .try_into()
                 .expect("plan step count exceeds u16"),
-            assumptions: Vec::new(),
+            assumptions: assumptions_to_refs(assumptions, max_alternatives),
         }),
     );
 }
@@ -1692,16 +1694,6 @@ pub(super) fn plan_and_validate_next_step(
                     }
                     let refreshed_view =
                         runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
-                    emit_plan_selection_events(
-                        event_log,
-                        tick,
-                        agent,
-                        ranked_candidates,
-                        &plans.portfolio,
-                        active_goal_key,
-                        &selected_plan,
-                        cognitive.decision_history_alternatives,
-                    );
                     let mut prepared_frame =
                         update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
                     if let Some(frame) = prepared_frame.as_mut() {
@@ -1715,6 +1707,17 @@ pub(super) fn plan_and_validate_next_step(
                             completion_tick,
                         );
                     }
+                    emit_plan_selection_events(
+                        event_log,
+                        tick,
+                        agent,
+                        ranked_candidates,
+                        &plans.portfolio,
+                        active_goal_key,
+                        &selected_plan,
+                        cognitive.decision_history_alternatives,
+                        prepared_frame.as_ref(),
+                    );
                     let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                         .expect("plan adoption expects actor to have an effective place");
                     adopt_selected_plan(
@@ -2083,6 +2086,13 @@ pub(super) fn plan_and_validate_next_step_traced(
                 }
                 let refreshed_view =
                     runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
+                let mut prepared_frame =
+                    update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
+                if let Some(frame) = prepared_frame.as_mut() {
+                    let completion_tick = plan_completion_tick_for_adoption(&selected_plan, tick);
+                    frame.assumptions =
+                        populate_assumptions(frame, agent, &refreshed_view, tick, completion_tick);
+                }
                 emit_plan_selection_events(
                     event_log,
                     tick,
@@ -2092,6 +2102,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                     current_goal_before_selection,
                     &selected_plan,
                     cognitive.decision_history_alternatives,
+                    prepared_frame.as_ref(),
                 );
                 let selected_goal = selected_plan.goal;
                 let selected_opportunity = selected_plan.opportunity;
@@ -2144,13 +2155,6 @@ pub(super) fn plan_and_validate_next_step_traced(
                     });
                 }
 
-                let mut prepared_frame =
-                    update_frame_for_adopted_plan(jc.as_ref(), &selected_plan, tick, runtime);
-                if let Some(frame) = prepared_frame.as_mut() {
-                    let completion_tick = plan_completion_tick_for_adoption(&selected_plan, tick);
-                    frame.assumptions =
-                        populate_assumptions(frame, agent, &refreshed_view, tick, completion_tick);
-                }
                 let current_place = SpatialBeliefView::effective_place(&refreshed_view, agent)
                     .expect("plan adoption expects actor to have an effective place");
                 adopt_selected_plan(
@@ -3615,6 +3619,16 @@ mod tests {
         let mut event_log = EventLog::new();
         let agent = entity(1);
         let tick = Tick(9);
+        let frame = worldwake_core::IntentionFrame {
+            goal: selected_goal,
+            domain: worldwake_core::IntentionDomain::Generic,
+            assumptions: vec![FrameAssumption::NoCriticalThreat],
+            state: worldwake_core::FrameState::Active,
+            established_at: tick,
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 3,
+        };
 
         super::emit_plan_selection_events(
             &mut event_log,
@@ -3627,6 +3641,7 @@ mod tests {
             None,
             &selected_plan,
             2,
+            Some(&frame),
         );
 
         let tick_events = event_log.events_at_tick(tick);
@@ -3655,7 +3670,10 @@ mod tests {
                         rejection_dimension: None,
                     },
                 ],
-                assumptions: Vec::new(),
+                assumptions: vec![worldwake_core::PlanAssumptionRef {
+                    assumption: FrameAssumption::NoCriticalThreat,
+                    introduced_at_step: 0,
+                }],
             }))
         );
         assert_eq!(
@@ -3664,7 +3682,10 @@ mod tests {
                 agent,
                 goal_key: selected_goal,
                 plan_step_count: 1,
-                assumptions: Vec::new(),
+                assumptions: vec![worldwake_core::PlanAssumptionRef {
+                    assumption: FrameAssumption::NoCriticalThreat,
+                    introduced_at_step: 0,
+                }],
             }))
         );
     }
