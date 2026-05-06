@@ -1,6 +1,6 @@
 # S140ARTLIFAXE-005: Observer Section 11 — Artifact Lifecycle
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None — observer-side rendering only; reads existing `ArtifactHeader` axis fields (post-001) and decoded `ArtifactTransition` events (post-001/002)
@@ -14,7 +14,7 @@ After 001 and 002 land, every artifact in the run carries 5 axis values plus an 
 
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
-1. `crates/worldwake-cli/src/bin/observer.rs` currently has Sections 1-10 (verified at reassess via `grep "## Section" observer.rs`). The most-recent section is `## Section 10 — Critical Window Forensics` at line 858. After 001 lands, `ArtifactHeader` carries 5 axis fields readable directly; after 002 lands, `EventTag::ArtifactTransition` events are emitted and decodable for the per-axis history view.
+1. `crates/worldwake-cli/src/bin/observer.rs` had Sections 1-10 before this ticket. The most-recent pre-existing section is `## Section 10 — Critical Window Forensics`; this ticket adds Section 11 immediately after that section's optional emission block. After 001, `ArtifactHeader` carries 5 axis fields readable directly; after 002, `EventTag::ArtifactTransition` events are emitted and decodable for the per-axis history view.
 2. Spec deliverable D8 specifies the section header text (`## Section 11 — Artifact Lifecycle`), the per-artifact rendering format, and that existing sections are not renumbered.
 3. **Cross-system shared abstraction boundary**: The boundary under audit is the observer's read interface (consuming public APIs from `worldwake-core` and `worldwake-sim` per the "Read-Only Tooling Consumer" pattern). No engine code is added; the observer reads `ArtifactHeader` via component getters and decodes `ArtifactTransition` events via the event-log scan path used by other sections.
 6. **AI-regression layer**: N/A — this ticket is observer-only (no engine change, no AI behavior change). Per `docs/precision-rules.md` Rule 3, the verification layer for tooling-only specs is the headless render test on the CLI surface.
@@ -37,11 +37,11 @@ After 001 and 002 land, every artifact in the run carries 5 axis values plus an 
 
 ### 1. Add Section 11 emission in `observer.rs`
 
-Insert a new `writeln!(out, "## Section 11 — Artifact Lifecycle\n")` block after the existing Section 10 emission (line 858 pre-001/002; pin during implementation).
+Insert a new `writeln!(out, "## Section 11 — Artifact Lifecycle\n")` block after the existing Section 10 optional emission block.
 
 ### 2. Iterate artifacts referenced in the run
 
-Use the artifact enumeration approach from existing observer sections (likely an iteration over `World::entities_with_name_and_artifact_data()` or analogous; pin during implementation by examining how Sections 5/6 enumerate). For each artifact, read `ArtifactHeader` via the component getter and render the 5 axis values per the spec's example format:
+Use the public observer read seam: collect artifact IDs from `World::query_artifact_header()` and from `EventLog::events_by_tag(EventTag::ArtifactTransition)`, read current state through `World::get_component_artifact_header()`, and decode transition payloads with `EventView::artifact_transition_payload()`. For each artifact, read `ArtifactHeader` via the component getter and render the 5 axis values per the spec's example format:
 
 ```
 Bounty B7 (issued tick 100, by office Watch, place TownSq)
@@ -55,7 +55,7 @@ Bounty B7 (issued tick 100, by office Watch, place TownSq)
 
 ### 3. Render the axis-transition timeline
 
-Scan the event log for `EventTag::ArtifactTransition` events filtered by `artifact == <current artifact id>`. Render the count (`axis history: N transitions`). Optionally extend with a per-transition listing if the spec example warrants — start with the count line and add a `--verbose` axis-history listing only if implementation cost is small.
+Scan the event log for `EventTag::ArtifactTransition` events filtered by `artifact == <current artifact id>`. Render the count (`axis history: N transitions`) and deterministic per-transition timeline rows.
 
 ### 4. Add a render test
 
@@ -64,7 +64,7 @@ Construct a small fixture (programmatic, not a `.ron` scenario) with one bounty 
 ## Files to Touch
 
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — add Section 11 emission)
-- Likely: `crates/worldwake-cli/src/bin/observer.rs` test module or a sibling integration test (modify — render-test fixture)
+- `crates/worldwake-cli/src/bin/observer.rs` test module (modify — render-test fixture)
 
 ## Out of Scope
 
@@ -100,6 +100,30 @@ Construct a small fixture (programmatic, not a `.ron` scenario) with one bounty 
 
 ### Commands
 
+0. `cargo test -p worldwake-cli --bin observer section_11 -- --list`
 1. `cargo test -p worldwake-cli --bin observer`
 2. `cargo test --workspace`
-3. `scripts/verify.sh`
+3. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-06.
+
+- Added observer Section 11 (`## Section 11 — Artifact Lifecycle`) after Section 10 in `crates/worldwake-cli/src/bin/observer.rs`.
+- The section builds a deterministic artifact set from live `ArtifactHeader` components plus decoded `EventTag::ArtifactTransition` payloads, renders all five current axis values, and lists the per-artifact transition count plus per-transition timeline rows.
+- Added bin-local render coverage for Section 11 insertion/axis rendering and transition-history count/timeline rendering.
+- No engine, AI, scenario, or save/load behavior changed.
+
+## Deviations
+
+- The live observer has no `World::entities_with_name_and_artifact_data()` helper; the landed implementation uses the public `query_artifact_header()`, `get_component_artifact_header()`, `EventLog::events_by_tag(EventTag::ArtifactTransition)`, and `EventView::artifact_transition_payload()` surfaces instead.
+- The section renders an empty-state message (`No artifact lifecycle records.`) when no artifact header or transition reference exists.
+- The implementation includes per-transition timeline rows by default; no CLI flag was added.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer section_11 -- --list` (listed `tests::section_11_artifact_lifecycle_renders_axis_state` and `tests::section_11_renders_axis_transition_count`).
+- Passed `cargo test -p worldwake-cli --bin observer section_11`.
+- Passed `cargo test -p worldwake-cli --bin observer`.
+- Passed `cargo test --workspace`.
+- Passed `./scripts/verify.sh` after final source edits; live wrapper gates were `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`.

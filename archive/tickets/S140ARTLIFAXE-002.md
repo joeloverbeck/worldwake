@@ -81,7 +81,7 @@ Update inline tests in `artifact_lifecycle.rs` and `artifact_actions.rs` to asse
 
 - New axis enums, new event-tag variant, transition payload type — landed by S140ARTLIFAXE-001.
 - `Discrepancy::ArtifactNotActionable` and decision-trace axis surfacing — covered by S140ARTLIFAXE-003.
-- Observer rendering of transition history — covered by S140ARTLIFAXE-005.
+- Observer rendering of transition history — covered by archive/tickets/S140ARTLIFAXE-005.md.
 - E2E goldens — covered by S140ARTLIFAXE-006.
 - New transition trigger sources outside the existing TTL/fulfill/withdraw/destroy paths (e.g., suspension by jurisdiction conflict, refutation by evidence-against) are scaffolded as stage handlers in this ticket but their event-source emitters are landed when their domains arrive — this ticket is the cascade plumbing, not new lifecycle triggers beyond what already exists.
 

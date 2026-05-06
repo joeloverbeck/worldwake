@@ -241,7 +241,7 @@ pub enum ArtifactPayloadDef {
 
 ### D8. Observer Section 11 — Artifact Lifecycle
 
-Add a new section to `crates/worldwake-cli/src/bin/observer.rs` after the existing Section 10 ("Critical Window Forensics" at line 858). Sections 1-10 are currently in use; Section 11 is unused and is the appropriate identifier. The new section iterates artifacts referenced in the run and renders per-axis state plus an axis-transition timeline:
+Add a new section to `crates/worldwake-cli/src/bin/observer.rs` after the existing Section 10 ("Critical Window Forensics") optional emission block. Sections 1-10 are currently in use; Section 11 is the appropriate identifier. The new section iterates artifacts referenced in the run and renders per-axis state plus an axis-transition timeline:
 
 ```
 ## Section 11 — Artifact Lifecycle

@@ -71,7 +71,7 @@ Add unit tests for the `Discrepancy::ArtifactNotActionable` recording and the de
 
 - Broadening the actionability gate to other `GoalKind` variants (`Accuse`, `PunishAccused`, `PostBounty`, `PostNotice`) — explicit Non-Goal in spec D6.
 - New scoring/priority adjustments based on axis values — ranking is unchanged.
-- Observer rendering of axis values — covered by S140ARTLIFAXE-005.
+- Observer rendering of axis values — covered by archive/tickets/S140ARTLIFAXE-005.md.
 - Discrepancy variant additions for axes outside actionability (e.g., a "credibility too low" discrepancy for ranking suppression) — not in spec scope.
 - Authoritative-to-AI Impact Rule sub-points 1, 2, 4–7 — this ticket's gate change is a candidate-emission filter substitution (not a precondition or `validate_*` change), so the rule's full 7-point checklist is N/A. The relevant point is `generate_candidates` (point 2), exercised by existing AI-side coverage at this ticket and by the spec's Validation goldens at S140ARTLIFAXE-006.
 

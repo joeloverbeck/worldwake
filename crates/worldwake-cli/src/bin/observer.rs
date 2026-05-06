@@ -23,10 +23,10 @@ use worldwake_ai::{
 use worldwake_cli::display::entity_display_name;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario_ignoring_lints};
 use worldwake_core::{
-    ActionInterruptReasonTag, AgentBeliefStore, CommodityKind, DeadAt, DeathCause,
-    DecisionEventPayload, EntityId, EntityKind, EventId, EventView, GoalAbandonReason,
-    HomeostaticNeedId, KnownRecipes, MetabolismProfile, PlaceTag, PlanInvalidationReason, Quantity,
-    RecipeId, ReplanReason, Tick, WorkstationTag,
+    ActionInterruptReasonTag, AgentBeliefStore, ArtifactAxisValue, ArtifactHeader, AxisName,
+    CommodityKind, DeadAt, DeathCause, DecisionEventPayload, EntityId, EntityKind, EventId,
+    EventTag, EventView, GoalAbandonReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile,
+    PlaceTag, PlanInvalidationReason, Quantity, RecipeId, ReplanReason, Tick, WorkstationTag,
 };
 use worldwake_sim::{
     ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
@@ -976,6 +976,252 @@ fn format_critical_window_forensics(
                 format_frame_exhaustion(frame.exhaustion_state.as_ref()),
                 format_frame_blocker(frame.blocker_summary.as_ref()),
                 format_local_survival_state_summary(world, &frame.local_authoritative_summary),
+            )
+            .unwrap();
+        }
+        writeln!(out).unwrap();
+    }
+}
+
+fn artifact_label(
+    world: &worldwake_core::World,
+    artifact: EntityId,
+    header: &ArtifactHeader,
+) -> String {
+    format!("{:?} {}", header.kind, entity_display_name(world, artifact))
+}
+
+fn format_entity_ref(world: &worldwake_core::World, entity: EntityId) -> String {
+    format!("{} ({})", entity_display_name(world, entity), entity)
+}
+
+fn format_artifact_axis_value(world: &worldwake_core::World, value: &ArtifactAxisValue) -> String {
+    match value {
+        ArtifactAxisValue::Existence(value) => match value {
+            worldwake_core::ArtifactExistence::Exists => "Exists".to_string(),
+            worldwake_core::ArtifactExistence::Destroyed {
+                destroyed_at,
+                cause,
+            } => format!("Destroyed (t={}, cause: {cause:?})", destroyed_at.0),
+        },
+        ArtifactAxisValue::Visibility(value) => match value {
+            worldwake_core::ArtifactVisibility::Hidden => "Hidden".to_string(),
+            worldwake_core::ArtifactVisibility::Private { audience } => {
+                let audience = audience
+                    .iter()
+                    .map(|entity| format_entity_ref(world, *entity))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("Private (audience: {audience})")
+            }
+            worldwake_core::ArtifactVisibility::Posted { place } => {
+                format!("Posted (place: {})", format_entity_ref(world, *place))
+            }
+            worldwake_core::ArtifactVisibility::WidelyKnown => "WidelyKnown".to_string(),
+        },
+        ArtifactAxisValue::LegalEffect(value) => match value {
+            worldwake_core::ArtifactLegalEffect::None => "None".to_string(),
+            worldwake_core::ArtifactLegalEffect::Active { expires_at } => expires_at.map_or_else(
+                || "Active".to_string(),
+                |tick| format!("Active (expires t={})", tick.0),
+            ),
+            worldwake_core::ArtifactLegalEffect::Suspended {
+                reason,
+                suspended_at,
+            } => format!("Suspended (t={}, reason: {reason:?})", suspended_at.0),
+            worldwake_core::ArtifactLegalEffect::Expired { expired_at } => {
+                format!("Expired (t={})", expired_at.0)
+            }
+            worldwake_core::ArtifactLegalEffect::Revoked {
+                revoked_at,
+                by,
+                reason,
+            } => format!(
+                "Revoked (t={}, by {}, reason: {reason:?})",
+                revoked_at.0,
+                format_entity_ref(world, *by)
+            ),
+            worldwake_core::ArtifactLegalEffect::Fulfilled {
+                fulfilled_at,
+                by,
+                evidence,
+            } => format!(
+                "Fulfilled (t={}, by {}, evidence {})",
+                fulfilled_at.0,
+                format_entity_ref(world, *by),
+                format_entity_ref(world, *evidence)
+            ),
+        },
+        ArtifactAxisValue::Credibility(value) => match value {
+            worldwake_core::ArtifactCredibility::Credible => "Credible".to_string(),
+            worldwake_core::ArtifactCredibility::Disputed {
+                disputed_at,
+                contradicting,
+            } => {
+                let contradicting = contradicting
+                    .iter()
+                    .map(|entity| format_entity_ref(world, *entity))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "Disputed (t={}, contradicting: {contradicting})",
+                    disputed_at.0
+                )
+            }
+            worldwake_core::ArtifactCredibility::Refuted {
+                refuted_at,
+                evidence,
+            } => format!(
+                "Refuted (t={}, evidence {})",
+                refuted_at.0,
+                format_entity_ref(world, *evidence)
+            ),
+            worldwake_core::ArtifactCredibility::Unknown => "Unknown".to_string(),
+        },
+        ArtifactAxisValue::Actionability(value) => match value {
+            worldwake_core::ArtifactActionability::Actionable => "Actionable".to_string(),
+            worldwake_core::ArtifactActionability::AwaitingProof { required_proof } => {
+                format!("AwaitingProof (required: {required_proof:?})")
+            }
+            worldwake_core::ArtifactActionability::Blocked { reason, since } => {
+                format!("Blocked (since t={}, reason: {reason:?})", since.0)
+            }
+            worldwake_core::ArtifactActionability::Closed { closed_at, cause } => {
+                format!("Closed (t={}, cause: {cause:?})", closed_at.0)
+            }
+        },
+    }
+}
+
+fn axis_name_label(axis: AxisName) -> &'static str {
+    match axis {
+        AxisName::Existence => "existence",
+        AxisName::Visibility => "visibility",
+        AxisName::LegalEffect => "legal_effect",
+        AxisName::Credibility => "credibility",
+        AxisName::Actionability => "actionability",
+    }
+}
+
+fn render_artifact_lifecycle_section(
+    out: &mut String,
+    world: &worldwake_core::World,
+    event_log: &worldwake_core::EventLog,
+) {
+    writeln!(out, "## Section 11 — Artifact Lifecycle\n").unwrap();
+
+    let mut artifact_ids = world
+        .query_artifact_header()
+        .map(|(artifact, _)| artifact)
+        .collect::<BTreeSet<_>>();
+    for event_id in event_log.events_by_tag(EventTag::ArtifactTransition) {
+        let Some(payload) = event_log
+            .get(*event_id)
+            .and_then(EventView::artifact_transition_payload)
+        else {
+            continue;
+        };
+        artifact_ids.insert(payload.artifact);
+    }
+
+    if artifact_ids.is_empty() {
+        writeln!(out, "No artifact lifecycle records.\n").unwrap();
+        return;
+    }
+
+    for artifact in artifact_ids {
+        let header = world.get_component_artifact_header(artifact);
+        if let Some(header) = header {
+            let issuer = format_entity_ref(world, header.issuer);
+            let authority = header.issuing_authority.map_or_else(
+                || format!(", by {issuer}"),
+                |entity| format!(", by office {}", format_entity_ref(world, entity)),
+            );
+            let place = match &header.visibility {
+                worldwake_core::ArtifactVisibility::Posted { place } => {
+                    format!(", place {}", format_entity_ref(world, *place))
+                }
+                _ => String::new(),
+            };
+            writeln!(
+                out,
+                "{} (issued tick {}{}{})",
+                artifact_label(world, artifact, header),
+                header.created_at.0,
+                authority,
+                place
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "  existence: {}",
+                format_artifact_axis_value(
+                    world,
+                    &ArtifactAxisValue::Existence(header.existence.clone())
+                )
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "  visibility: {}",
+                format_artifact_axis_value(
+                    world,
+                    &ArtifactAxisValue::Visibility(header.visibility.clone())
+                )
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "  legal_effect: {}",
+                format_artifact_axis_value(
+                    world,
+                    &ArtifactAxisValue::LegalEffect(header.legal_effect)
+                )
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "  credibility: {}",
+                format_artifact_axis_value(
+                    world,
+                    &ArtifactAxisValue::Credibility(header.credibility.clone())
+                )
+            )
+            .unwrap();
+            writeln!(
+                out,
+                "  actionability: {}",
+                format_artifact_axis_value(
+                    world,
+                    &ArtifactAxisValue::Actionability(header.actionability)
+                )
+            )
+            .unwrap();
+        } else {
+            writeln!(out, "Artifact {artifact} (not present in final world)").unwrap();
+        }
+
+        let transitions = event_log
+            .events_by_tag(EventTag::ArtifactTransition)
+            .iter()
+            .filter_map(|event_id| {
+                let record = event_log.get(*event_id)?;
+                let payload = record.artifact_transition_payload()?;
+                (payload.artifact == artifact).then_some((event_id, payload))
+            })
+            .collect::<Vec<_>>();
+
+        writeln!(out, "  axis history: {} transitions", transitions.len()).unwrap();
+        for (event_id, payload) in transitions {
+            writeln!(
+                out,
+                "    - event {} t={}: {}: {} -> {} cause={:?}",
+                event_id.0,
+                payload.at.0,
+                axis_name_label(payload.axis),
+                format_artifact_axis_value(world, &payload.prior),
+                format_artifact_axis_value(world, &payload.new),
+                payload.cause_event
             )
             .unwrap();
         }
@@ -3797,6 +4043,8 @@ fn format_report(
         );
     }
 
+    render_artifact_lifecycle_section(&mut out, world, event_log);
+
     out
 }
 
@@ -4278,8 +4526,9 @@ mod tests {
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
         format_death_cause, format_report, need_high_threshold, post_travel_affordance_snapshots,
-        primary_satisfied_need, recipe_usage_rows, render_decision_history_section,
-        render_maintenance_rates_table, render_recipe_usage_table, unknown_location_entity_groups,
+        primary_satisfied_need, recipe_usage_rows, render_artifact_lifecycle_section,
+        render_decision_history_section, render_maintenance_rates_table, render_recipe_usage_table,
+        unknown_location_entity_groups,
     };
     use crate::ObserverCli;
     use clap::Parser;
@@ -4299,9 +4548,11 @@ mod tests {
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, AgentBeliefStore, BeliefClaimKey, BeliefRef,
-        BeliefStatusTag, BelievedEntityState, BlockerKey, BlockerRecordedPayload, BodyCostPerTick,
-        CauseRef, CommodityKind, CommodityPurpose, ControlSource, DeadAt, DeathCause,
+        AcquisitionQuantity, ActionDefId, AgentBeliefStore, ArtifactActionability,
+        ArtifactAxisValue, ArtifactHeader, ArtifactKind, ArtifactLegalEffect,
+        ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef, BeliefStatusTag,
+        BelievedEntityState, BlockerKey, BlockerRecordedPayload, BodyCostPerTick, CauseRef,
+        CloseCause, CommodityKind, CommodityPurpose, ControlSource, DeadAt, DeathCause,
         DecisionEventPayload, DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId,
         EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, GoalAbandonReason,
         GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
@@ -4515,6 +4766,110 @@ mod tests {
             decision_payload: Some(payload),
             artifact_transition_payload: None,
         }));
+    }
+
+    fn emit_artifact_transition_event(
+        log: &mut EventLog,
+        tick: u64,
+        artifact: EntityId,
+        axis: AxisName,
+        prior: ArtifactAxisValue,
+        new: ArtifactAxisValue,
+    ) {
+        let _ = log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(tick),
+            cause: CauseRef::SystemTick(Tick(tick)),
+            actor_id: None,
+            action_name: None,
+            target_ids: vec![artifact],
+            evidence: Vec::new(),
+            place_id: None,
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::ArtifactTransition]),
+            decision_payload: None,
+            artifact_transition_payload: Some(ArtifactTransitionPayload {
+                artifact,
+                axis,
+                prior,
+                new,
+                cause_event: None,
+                at: Tick(tick),
+            }),
+        }));
+    }
+
+    fn world_with_fulfilled_bounty_artifact() -> (World, EntityId, EventLog) {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let (issuer, hunter) = {
+            let mut txn = new_txn(&mut world, 1);
+            let issuer = txn.create_agent("Watch Clerk", ControlSource::Ai).unwrap();
+            txn.set_ground_location(issuer, place).unwrap();
+            let hunter = txn
+                .create_agent("Hunter Theron", ControlSource::Ai)
+                .unwrap();
+            txn.set_ground_location(hunter, place).unwrap();
+            commit_txn(txn);
+            (issuer, hunter)
+        };
+        let artifact = {
+            let mut txn = new_txn(&mut world, 5);
+            let artifact = txn.create_entity(EntityKind::SocialArtifact);
+            let mut header = ArtifactHeader::posted_active(
+                ArtifactKind::Bounty,
+                issuer,
+                None,
+                Tick(5),
+                Some(Tick(50)),
+                Some(place),
+                place,
+            );
+            header.legal_effect = ArtifactLegalEffect::Fulfilled {
+                fulfilled_at: Tick(20),
+                by: hunter,
+                evidence: entity(99),
+            };
+            header.actionability = ArtifactActionability::Closed {
+                closed_at: Tick(20),
+                cause: CloseCause::BountyFulfilled,
+            };
+            txn.set_component_artifact_header(artifact, header).unwrap();
+            txn.set_ground_location(artifact, place).unwrap();
+            commit_txn(txn);
+            artifact
+        };
+
+        let mut log = EventLog::new();
+        emit_artifact_transition_event(
+            &mut log,
+            20,
+            artifact,
+            AxisName::LegalEffect,
+            ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Active {
+                expires_at: Some(Tick(50)),
+            }),
+            ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Fulfilled {
+                fulfilled_at: Tick(20),
+                by: hunter,
+                evidence: entity(99),
+            }),
+        );
+        emit_artifact_transition_event(
+            &mut log,
+            20,
+            artifact,
+            AxisName::Actionability,
+            ArtifactAxisValue::Actionability(ArtifactActionability::Actionable),
+            ArtifactAxisValue::Actionability(ArtifactActionability::Closed {
+                closed_at: Tick(20),
+                cause: CloseCause::BountyFulfilled,
+            }),
+        );
+
+        (world, artifact, log)
     }
 
     fn sample_decision_event_log(agent: EntityId, target: EntityId) -> EventLog {
@@ -6284,6 +6639,62 @@ mod tests {
             .find("## Section 10 — Critical Window Forensics")
             .expect("section 9");
         assert!(section_8 < section_9);
+    }
+
+    #[test]
+    fn section_11_artifact_lifecycle_renders_axis_state() {
+        let (world, _artifact, log) = world_with_fulfilled_bounty_artifact();
+        let registry = RecipeRegistry::new();
+        let agent = entity(1);
+        let report = format_report(
+            "scenario.ron",
+            7,
+            10,
+            &[(agent, "Guard Theron".to_string())],
+            &[],
+            &BTreeMap::from([(agent, AgentStats::new("Guard Theron".to_string(), false))]),
+            &[],
+            &log,
+            &ActionTraceSink::new(),
+            &PerceptionTraceSink::new(),
+            &registry,
+            &world,
+            &AgentTickDriver::new(),
+            &[],
+            true,
+            &[sample_critical_window_report(agent)],
+            1,
+            5,
+        );
+
+        let section_10 = report
+            .find("## Section 10 — Critical Window Forensics")
+            .expect("section 10");
+        let section_11 = report
+            .find("## Section 11 — Artifact Lifecycle")
+            .expect("section 11");
+        assert!(section_10 < section_11);
+        assert!(report.contains("Bounty "));
+        assert!(report.contains("issued tick 5, by Watch Clerk"));
+        assert!(report.contains("  existence: Exists"));
+        assert!(report.contains("  visibility: Posted"));
+        assert!(report.contains("  legal_effect: Fulfilled (t=20, by Hunter Theron"));
+        assert!(report.contains("  credibility: Credible"));
+        assert!(report.contains("  actionability: Closed (t=20, cause: BountyFulfilled)"));
+    }
+
+    #[test]
+    fn section_11_renders_axis_transition_count() {
+        let (world, _artifact, log) = world_with_fulfilled_bounty_artifact();
+        let mut out = String::new();
+
+        render_artifact_lifecycle_section(&mut out, &world, &log);
+
+        assert!(out.contains("axis history: 2 transitions"));
+        assert!(out.contains("legal_effect: Active (expires t=50) -> Fulfilled"));
+        assert!(out.contains("actionability: Actionable -> Closed"));
+        assert!(out.contains("event 0 t=20: legal_effect"));
+        assert!(out.contains("Bounty "));
     }
 
     #[test]

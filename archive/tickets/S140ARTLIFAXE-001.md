@@ -127,7 +127,7 @@ Update inline tests in `social_artifact.rs, artifact_lifecycle.rs, artifact_acti
 - `artifact_lifecycle_system` 5-stage refactor and event-driven cross-axis cascades — covered by S140ARTLIFAXE-002.
 - `Discrepancy::ArtifactNotActionable` variant addition and decision-trace axis surfacing — covered by S140ARTLIFAXE-003.
 - Unified `ArtifactDef` scenario authoring (`NoticeDef` rename + payload sum type) — covered by S140ARTLIFAXE-004.
-- Observer Section 11 (Artifact Lifecycle) rendering — covered by S140ARTLIFAXE-005.
+- Observer Section 11 (Artifact Lifecycle) rendering — covered by archive/tickets/S140ARTLIFAXE-005.md.
 - E2E goldens and `\bArtifactState\b` regression grep guard — covered by S140ARTLIFAXE-006.
 - `SaleListing` migration into the artifact taxonomy — explicit Non-Goal in spec.
 - Promoting accusations to `ArtifactHeader`-backed artifacts — explicit Non-Goal in spec.
