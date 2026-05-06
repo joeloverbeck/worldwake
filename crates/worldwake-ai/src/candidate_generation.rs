@@ -647,7 +647,7 @@ fn emit_bounty_candidates(
             continue;
         };
         if artifact.kind != worldwake_core::ArtifactKind::Bounty
-            || artifact.state != worldwake_core::ArtifactState::Active
+            || artifact.actionability != worldwake_core::ArtifactActionability::Actionable
         {
             continue;
         }
@@ -6315,14 +6315,15 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AcquisitionQuantity, AgentBeliefStore, ArtifactKind, ArtifactPostingContext,
-        ArtifactPostingProfile, ArtifactState, BelievedArtifactState, BelievedBountyTerms,
+        AcquisitionQuantity, AgentBeliefStore, ArtifactActionability, ArtifactCredibility,
+        ArtifactExistence, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
+        ArtifactPostingProfile, ArtifactVisibility, BelievedArtifactState, BelievedBountyTerms,
         BelievedEntityState, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
-        BlockingFact, BodyPart, BountyTarget, BountyTerms, CognitiveProfile, CombatProfile,
-        CommodityConsumableProfile, CommodityKind, CommodityPurpose, CommunicationClass,
-        DemandObservation, DemandObservationReason, Discrepancy, DiscrepancyEntry,
-        DiscrepancyMemory, DisposalProfile, DiversificationProfile, DriveThresholds,
-        EffectiveRight, EligibilityRule, EmitterTag, EntityId, EntityKind,
+        BlockingFact, BodyPart, BountyTarget, BountyTerms, CloseCause, CognitiveProfile,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        CommunicationClass, DemandObservation, DemandObservationReason, Discrepancy,
+        DiscrepancyEntry, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
+        DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag, EntityId, EntityKind,
         EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis, ExpectationId,
         ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
         ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason, GroundComfortTag,
@@ -7889,9 +7890,20 @@ mod tests {
         issuer: EntityId,
         claim_place: EntityId,
         target: BountyTarget,
-        state: ArtifactState,
+        actionability: ArtifactActionability,
         reward_quantity: u32,
     ) -> BelievedEntityState {
+        let legal_effect = match actionability {
+            ArtifactActionability::Actionable => ArtifactLegalEffect::Active { expires_at: None },
+            ArtifactActionability::Closed { closed_at, .. } => ArtifactLegalEffect::Fulfilled {
+                fulfilled_at: closed_at,
+                by: issuer,
+                evidence: claim_place,
+            },
+            ArtifactActionability::AwaitingProof { .. } | ArtifactActionability::Blocked { .. } => {
+                ArtifactLegalEffect::Active { expires_at: None }
+            }
+        };
         BelievedEntityState {
             believed_kind: None,
             last_known_place: Some(claim_place),
@@ -7904,9 +7916,13 @@ mod tests {
             believed_activity: None,
             believed_artifact: Some(BelievedArtifactState {
                 kind: ArtifactKind::Bounty,
-                state,
                 issuer,
                 expires_at: None,
+                existence: ArtifactExistence::Exists,
+                visibility: ArtifactVisibility::Posted { place: claim_place },
+                legal_effect,
+                credibility: ArtifactCredibility::Credible,
+                actionability,
                 bounty_terms: Some(BelievedBountyTerms {
                     target,
                     reward_commodity: CommodityKind::Coin,
@@ -7948,7 +7964,7 @@ mod tests {
                         issuer,
                         square,
                         BountyTarget::EliminateEntity { target },
-                        ArtifactState::Active,
+                        ArtifactActionability::Actionable,
                         250,
                     ),
                 ),
@@ -8014,7 +8030,10 @@ mod tests {
                     issuer,
                     square,
                     BountyTarget::EliminateEntity { target },
-                    ArtifactState::Fulfilled,
+                    ArtifactActionability::Closed {
+                        closed_at: Tick(5),
+                        cause: CloseCause::BountyFulfilled,
+                    },
                     250,
                 ),
             )],
@@ -8073,7 +8092,7 @@ mod tests {
                             quantity: Quantity(3),
                             destination: claim_place,
                         },
-                        ArtifactState::Active,
+                        ArtifactActionability::Actionable,
                         250,
                     ),
                 ),
@@ -8152,7 +8171,7 @@ mod tests {
                             quantity: Quantity(3),
                             destination: claim_place,
                         },
-                        ArtifactState::Active,
+                        ArtifactActionability::Actionable,
                         250,
                     ),
                 ),

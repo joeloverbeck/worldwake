@@ -1,7 +1,7 @@
 use crate::reward_encumbrance_support::release_bounty_reward;
 use worldwake_core::{
-    ArtifactKind, ArtifactState, CauseRef, EntityKind, EventTag, RewardSource, VisibilitySpec,
-    WitnessData, WorldTxn,
+    ArtifactActionability, ArtifactKind, ArtifactLegalEffect, CauseRef, CloseCause, EntityKind,
+    EventTag, RewardSource, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -21,11 +21,11 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
     let expiring = world
         .query_artifact_header()
         .filter_map(|(artifact, header)| {
-            (header.state == ArtifactState::Active
+            (matches!(header.legal_effect, ArtifactLegalEffect::Active { .. })
                 && header
                     .expires_at
                     .is_some_and(|expires_at| tick >= expires_at))
-            .then_some((artifact, *header))
+            .then_some((artifact, header.clone()))
         })
         .collect::<Vec<_>>();
 
@@ -40,7 +40,12 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         );
-        header.state = ArtifactState::Expired;
+        header.legal_effect = ArtifactLegalEffect::Expired { expired_at: tick };
+        // S140-001 placeholder, replaced by S140ARTLIFAXE-002.
+        header.actionability = ArtifactActionability::Closed {
+            closed_at: tick,
+            cause: CloseCause::LegalEffectExpired,
+        };
         txn.add_tag(EventTag::System)
             .add_tag(EventTag::Social)
             .add_tag(EventTag::WorldMutation)
@@ -65,11 +70,11 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
 mod tests {
     use super::artifact_lifecycle_system;
     use worldwake_core::{
-        ArtifactHeader, ArtifactKind, ArtifactState, BountyTarget, BountyTerms, CauseRef,
-        CommodityKind, ControlSource, EntityKind, EventLog, EventTag, NoticeContent, NoticeTopic,
-        ProofRequirement, PrototypePlace, Quantity, RewardEncumbrance, RewardReservation,
-        RewardSource, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
-        build_prototype_world, prototype_place_entity,
+        ArtifactActionability, ArtifactHeader, ArtifactKind, ArtifactLegalEffect, BountyTarget,
+        BountyTerms, CauseRef, CloseCause, CommodityKind, ControlSource, EntityKind, EventLog,
+        EventTag, NoticeContent, NoticeTopic, ProofRequirement, PrototypePlace, Quantity,
+        RewardEncumbrance, RewardReservation, RewardSource, Seed, Tick, VisibilitySpec,
+        WitnessData, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -115,15 +120,15 @@ mod tests {
         let artifact = txn.create_entity(worldwake_core::EntityKind::SocialArtifact);
         txn.set_component_artifact_header(
             artifact,
-            ArtifactHeader {
-                kind: ArtifactKind::Notice,
+            ArtifactHeader::posted_active(
+                ArtifactKind::Notice,
                 issuer,
-                issuing_authority: None,
-                created_at: Tick(tick),
+                None,
+                Tick(tick),
                 expires_at,
-                state: ArtifactState::Active,
-                jurisdiction: None,
-            },
+                None,
+                place,
+            ),
         )
         .unwrap();
         txn.set_component_notice_content(
@@ -151,15 +156,15 @@ mod tests {
         let artifact = txn.create_entity(EntityKind::SocialArtifact);
         txn.set_component_artifact_header(
             artifact,
-            ArtifactHeader {
-                kind: ArtifactKind::Bounty,
+            ArtifactHeader::posted_active(
+                ArtifactKind::Bounty,
                 issuer,
-                issuing_authority: Some(office),
-                created_at: Tick(tick),
+                Some(office),
+                Tick(tick),
                 expires_at,
-                state: ArtifactState::Active,
-                jurisdiction: Some(place),
-            },
+                Some(place),
+                place,
+            ),
         )
         .unwrap();
         txn.set_component_bounty_terms(
@@ -212,8 +217,23 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_artifact_header(artifact).unwrap().state,
-            ArtifactState::Expired
+            world
+                .get_component_artifact_header(artifact)
+                .unwrap()
+                .legal_effect,
+            ArtifactLegalEffect::Expired {
+                expired_at: Tick(5)
+            }
+        );
+        assert_eq!(
+            world
+                .get_component_artifact_header(artifact)
+                .unwrap()
+                .actionability,
+            ArtifactActionability::Closed {
+                closed_at: Tick(5),
+                cause: CloseCause::LegalEffectExpired,
+            }
         );
         assert_eq!(log.events_by_tag(EventTag::WorldMutation).len(), 1);
     }
@@ -240,8 +260,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_artifact_header(artifact).unwrap().state,
-            ArtifactState::Active
+            world
+                .get_component_artifact_header(artifact)
+                .unwrap()
+                .actionability,
+            ArtifactActionability::Actionable
         );
         assert!(log.is_empty());
     }
@@ -268,8 +291,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_artifact_header(artifact).unwrap().state,
-            ArtifactState::Active
+            world
+                .get_component_artifact_header(artifact)
+                .unwrap()
+                .actionability,
+            ArtifactActionability::Actionable
         );
         assert!(log.is_empty());
     }
@@ -303,8 +329,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            world.get_component_artifact_header(bounty).unwrap().state,
-            ArtifactState::Expired
+            world
+                .get_component_artifact_header(bounty)
+                .unwrap()
+                .legal_effect,
+            ArtifactLegalEffect::Expired {
+                expired_at: Tick(5)
+            }
         );
         assert!(!world.has_component_reward_encumbrance(office));
         assert_eq!(log.events_by_tag(EventTag::WorldMutation).len(), 1);

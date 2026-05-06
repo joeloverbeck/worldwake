@@ -852,7 +852,7 @@ fn internalize_notice_beliefs(
     let Some(artifact) = snapshot.believed_artifact.as_ref() else {
         return;
     };
-    if artifact.state != worldwake_core::ArtifactState::Active {
+    if artifact.actionability != worldwake_core::ArtifactActionability::Actionable {
         return;
     }
 
@@ -1446,25 +1446,26 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::{NonZeroU8, NonZeroU32};
     use worldwake_core::{
-        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactHeader, ArtifactKind, ArtifactState,
-        BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy, BelievedActivity,
-        BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
-        BountyTarget, BountyTerms, CauseRef, CognitiveProfile, CommodityKind, ComponentDelta,
-        ComponentKind, ComponentValue, Container, ContentionGrant, ContentionQueue,
-        ContentionWaiter, ControlSource, DeadAt, DecisionEventPayload, DisturbanceKind,
-        EntityBeliefAspect, EntityKind, EventLog, EventPayload, EventTag, EventView, EvidenceKind,
-        EvidenceRef, ExplorationMotivation, FrameState, GoalKey, GoalKind, GroundComfortTag,
-        HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey, InstitutionalClaim,
-        InstitutionalKnowledgeSource, IntentionDomain, IntentionFrame, LoadUnits, MismatchKind,
-        NoticeContent, NoticeTopic, ObservedEntitySnapshot, OfficeForceState, OmissionReason,
-        PendingEvent, PerceptionProfile, PerceptionSource, Permille, PlaceVisibilityProfile,
-        ProductionOutputOwner, ProductionOutputOwnershipPolicy, ProofRequirement, PrototypePlace,
-        Quantity, RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource,
-        RewardSource, SaleListing, SceneEvidence, Seed, ShelterTag, SleepQualityProfile,
-        SleepRecoveryModifier, SocialObservationDetail, SocialObservationKind, SourceKey,
-        StateDelta, StockAssignment, StockAssignmentKind, SurveyRecordedPayload, TheftFacts, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        build_observed_entity_snapshot, build_prototype_world, prototype_place_entity,
+        ActionDefId, ActionDomain, AgentBeliefStore, ArtifactActionability, ArtifactHeader,
+        ArtifactKind, ArtifactLegalEffect, BanditCamp, BanditFactionPolicy, BeliefConfidencePolicy,
+        BelievedActivity, BelievedContentionState, BelievedEntityState, BelievedEvidenceEntry,
+        BelievedEvidenceState, BountyTarget, BountyTerms, CauseRef, CognitiveProfile,
+        CommodityKind, ComponentDelta, ComponentKind, ComponentValue, Container, ContentionGrant,
+        ContentionQueue, ContentionWaiter, ControlSource, DeadAt, DecisionEventPayload,
+        DisturbanceKind, EntityBeliefAspect, EntityKind, EventLog, EventPayload, EventTag,
+        EventView, EvidenceKind, EvidenceRef, ExplorationMotivation, FrameState, GoalKey, GoalKind,
+        GroundComfortTag, HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey,
+        InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomain, IntentionFrame,
+        LoadUnits, MismatchKind, NoticeContent, NoticeTopic, ObservedEntitySnapshot,
+        OfficeForceState, OmissionReason, PendingEvent, PerceptionProfile, PerceptionSource,
+        Permille, PlaceVisibilityProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
+        ProofRequirement, PrototypePlace, Quantity, RelationDelta, RelationKind, RelationValue,
+        ReliabilityRecord, ResourceSource, RewardSource, SaleListing, SceneEvidence, Seed,
+        ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SocialObservationDetail,
+        SocialObservationKind, SourceKey, StateDelta, StockAssignment, StockAssignmentKind,
+        SurveyRecordedPayload, TheftFacts, Tick, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, build_observed_entity_snapshot, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionHandlerId, ActionInstance,
@@ -6284,15 +6285,15 @@ mod tests {
                 .unwrap();
             txn.set_component_artifact_header(
                 artifact,
-                ArtifactHeader {
-                    kind: ArtifactKind::Bounty,
+                ArtifactHeader::posted_active(
+                    ArtifactKind::Bounty,
                     issuer,
-                    issuing_authority: None,
-                    created_at: Tick(1),
-                    expires_at: Some(Tick(8)),
-                    state: ArtifactState::Active,
-                    jurisdiction: None,
-                },
+                    None,
+                    Tick(1),
+                    Some(Tick(8)),
+                    None,
+                    place,
+                ),
             )
             .unwrap();
             txn.set_component_bounty_terms(
@@ -6339,7 +6340,13 @@ mod tests {
             .clone()
             .unwrap();
         assert_eq!(belief.kind, ArtifactKind::Bounty);
-        assert_eq!(belief.state, ArtifactState::Active);
+        assert_eq!(belief.actionability, ArtifactActionability::Actionable);
+        assert_eq!(
+            belief.legal_effect,
+            ArtifactLegalEffect::Active {
+                expires_at: Some(Tick(8))
+            }
+        );
         assert_eq!(belief.issuer, issuer);
         assert_eq!(belief.expires_at, Some(Tick(8)));
         assert_eq!(
@@ -6374,15 +6381,15 @@ mod tests {
                 .unwrap();
             txn.set_component_artifact_header(
                 artifact,
-                ArtifactHeader {
-                    kind: ArtifactKind::Notice,
+                ArtifactHeader::posted_active(
+                    ArtifactKind::Notice,
                     issuer,
-                    issuing_authority: None,
-                    created_at: Tick(1),
-                    expires_at: None,
-                    state: ArtifactState::Active,
-                    jurisdiction: None,
-                },
+                    None,
+                    Tick(1),
+                    None,
+                    None,
+                    place,
+                ),
             )
             .unwrap();
             txn.set_component_notice_content(
@@ -6465,15 +6472,15 @@ mod tests {
                 .unwrap();
             txn.set_component_artifact_header(
                 artifact,
-                ArtifactHeader {
-                    kind: ArtifactKind::Notice,
+                ArtifactHeader::posted_active(
+                    ArtifactKind::Notice,
                     issuer,
-                    issuing_authority: None,
-                    created_at: Tick(1),
-                    expires_at: None,
-                    state: ArtifactState::Active,
-                    jurisdiction: None,
-                },
+                    None,
+                    Tick(1),
+                    None,
+                    None,
+                    place,
+                ),
             )
             .unwrap();
             txn.set_component_notice_content(

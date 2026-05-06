@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use golden_harness::*;
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, types::ScenarioDef};
 use worldwake_core::{
-    ArtifactKind, ArtifactState, BountyTarget, BountyTerms, CommodityKind, DriveThresholds,
+    ArtifactActionability, ArtifactKind, BountyTarget, BountyTerms, CommodityKind, DriveThresholds,
     EntityId, InstitutionalClaim, PunishmentKind, Quantity, RecordKind, RewardReservation,
     RewardSource, SocialObservationDetail, Tick, ViolationKind,
     institutional::MissingPersonReportStatus,
@@ -326,7 +326,7 @@ fn run_survival_justice() -> JusticeObservation {
                             .get_component_artifact_header(*artifact)
                             .is_some_and(|header| {
                                 header.kind == ArtifactKind::Bounty
-                                    && header.state == ArtifactState::Active
+                                    && header.actionability == ArtifactActionability::Actionable
                                     && header.issuer == merchant
                             })
                             && matches!(

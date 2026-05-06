@@ -255,8 +255,11 @@ pub use sleep_episode::{
     WakeCondition,
 };
 pub use social_artifact::{
-    ArtifactHeader, ArtifactKind, ArtifactPostingContext, ArtifactPostingProfile, ArtifactState,
-    BountyTarget, BountyTerms, NoticeContent, NoticeTopic, ProofRequirement, RewardSource,
+    ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactExistence,
+    ArtifactHeader, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
+    ArtifactPostingProfile, ArtifactTransitionPayload, ArtifactVisibility, AxisName, BlockerReason,
+    BountyTarget, BountyTerms, CloseCause, DestructionCause, NoticeContent, NoticeTopic, ProofKind,
+    ProofRequirement, RevocationReason, RewardSource,
 };
 pub use survey_memory::{SurveyMemory, SurveyRecord};
 pub use topology::{

@@ -12,10 +12,10 @@ use std::path::Path;
 
 use types::ScenarioDef;
 use worldwake_core::{
-    ArtifactHeader, ArtifactKind, ArtifactState, BanditCamp, BanditFactionPolicy,
-    BelievedInstitutionalClaim, CarryCapacity, CauseRef, Container, ContentionQueue, ControlSource,
-    DeprivationExposure, EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis,
-    ExpectationOutcome, ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
+    ArtifactHeader, ArtifactKind, BanditCamp, BanditFactionPolicy, BelievedInstitutionalClaim,
+    CarryCapacity, CauseRef, Container, ContentionQueue, ControlSource, DeprivationExposure,
+    EligibilityRule, EntityId, EntityKind, EventLog, ExpectationBasis, ExpectationOutcome,
+    ExpectationRecord, ExpectationState, ExpectationStore, ExplorationProfile,
     InstitutionalBeliefKey, InstitutionalClaim, InstitutionalKnowledgeSource, KnownRecipes,
     LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
     LatrineFullness, LoadUnits, MerchandiseProfile, Name, NoticeContent, NoticeTopic, OfficeData,
@@ -974,15 +974,15 @@ fn spawn_notice(
     let artifact = txn.create_entity(EntityKind::SocialArtifact);
     txn.set_component_artifact_header(
         artifact,
-        ArtifactHeader {
-            kind: ArtifactKind::Notice,
+        ArtifactHeader::posted_active(
+            ArtifactKind::Notice,
             issuer,
             issuing_authority,
-            created_at: Tick(0),
-            expires_at: notice_def.expires_at.map(Tick),
-            state: ArtifactState::Active,
+            Tick(0),
+            notice_def.expires_at.map(Tick),
             jurisdiction,
-        },
+            location,
+        ),
     )?;
     txn.set_component_notice_content(artifact, NoticeContent { topic })?;
     txn.set_ground_location(artifact, location)?;
@@ -1742,15 +1742,15 @@ mod tests {
 
         assert_eq!(
             world.get_component_artifact_header(notice),
-            Some(&ArtifactHeader {
-                kind: ArtifactKind::Notice,
-                issuer: herald,
-                issuing_authority: None,
-                created_at: Tick(0),
-                expires_at: Some(Tick(18)),
-                state: ArtifactState::Active,
-                jurisdiction: Some(square),
-            })
+            Some(&ArtifactHeader::posted_active(
+                ArtifactKind::Notice,
+                herald,
+                None,
+                Tick(0),
+                Some(Tick(18)),
+                Some(square),
+                square,
+            ))
         );
         assert_eq!(
             world.get_component_notice_content(notice),

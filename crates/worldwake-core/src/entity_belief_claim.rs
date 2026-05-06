@@ -24,11 +24,12 @@ pub enum EntityBeliefAspect {
     ResourceAvailable(CommodityKind),
     ContentionState,
     WashBasinState,
-    ArtifactState,
+    Artifact,
     Courage,
     Evidence,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ClaimValue {
     Place(Option<EntityId>),
@@ -39,7 +40,7 @@ pub enum ClaimValue {
     ResourceSource(Option<ResourceSource>),
     ContentionState(Option<BelievedContentionState>),
     WashBasinState(Option<WashBasinState>),
-    ArtifactState(Option<BelievedArtifactState>),
+    Artifact(Option<BelievedArtifactState>),
     Courage(Option<Permille>),
     WoundSnapshot(Vec<Wound>),
     EvidenceState(Option<BelievedEvidenceState>),

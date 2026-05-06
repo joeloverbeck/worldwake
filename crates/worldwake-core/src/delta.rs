@@ -277,9 +277,9 @@ mod tests {
     };
     use crate::{
         AcquisitionExhaustionTracker, ActionDefId, AgendaProfile, AgentBeliefStore, AgentData,
-        ArtifactHeader, ArtifactKind, ArtifactPostingProfile, ArtifactState, BanditCamp,
-        BanditFactionPolicy, BeliefConfidencePolicy, BelievedEntityState, BodyPart, BountyTarget,
-        BountyTerms, CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
+        ArtifactHeader, ArtifactKind, ArtifactPostingProfile, BanditCamp, BanditFactionPolicy,
+        BeliefConfidencePolicy, BelievedEntityState, BodyPart, BountyTarget, BountyTerms,
+        CarryCapacity, CognitiveProfile, CombatProfile, CombatStance, CommodityKind,
         CommunicationProfile, Container, ContentionIntents, ContentionPolicy, ContentionQueue,
         ControlSource, DeadAt, DeprivationExposure, DeprivationKind, DisposalProfile,
         DiversificationProfile, DriveEscalationProfile, DriveThresholds, EntityId, EntityKind,
@@ -453,15 +453,15 @@ mod tests {
                 }],
                 next_entry_id: 1,
             }),
-            ComponentValue::ArtifactHeader(ArtifactHeader {
-                kind: ArtifactKind::Bounty,
-                issuer: entity(37),
-                issuing_authority: Some(entity(38)),
-                created_at: Tick(10),
-                expires_at: Some(Tick(25)),
-                state: ArtifactState::Active,
-                jurisdiction: Some(entity(39)),
-            }),
+            ComponentValue::ArtifactHeader(ArtifactHeader::posted_active(
+                ArtifactKind::Bounty,
+                entity(37),
+                Some(entity(38)),
+                Tick(10),
+                Some(Tick(25)),
+                Some(entity(39)),
+                entity(42),
+            )),
             ComponentValue::BountyTerms(BountyTerms {
                 target: BountyTarget::EliminateEntity { target: entity(40) },
                 proof_requirement: ProofRequirement::PhysicalEvidence,

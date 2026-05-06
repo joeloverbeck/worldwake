@@ -33,6 +33,8 @@ When shared types, serialized carriers, or persisted components change, sweep th
 - Error, trace, request, and report carriers that store embedded enums by value
 - Save/load version boundaries and `SAVE_FORMAT_VERSION` gates
 - Crate-root re-exports and downstream imports for new shared types
+- Crate-root namespace collisions before re-exporting new shared types, especially generic names such as `Status`, `State`, `Reason`, `Cause`, and `SuspensionReason`
+- Hand-maintained inventory arrays, static count assertions, and representative enum/tag membership tests that will not fail until broad verification
 - CLI handlers, diagnostic bins, renderers, and inspect/output code that read moved fields directly
 - When a new shared type is defined under a submodule, verify the actual public import path before patching downstream crates.
 - When a flat internal carrier becomes nested or decomposed into sub-structs, sweep both the type name and moved field names across the owning crate.

@@ -7,7 +7,10 @@ use crate::{
     InstitutionalClaim, InstitutionalKnowledgeSource, Permille, Quantity, ResourceSource,
     TheftFacts, Tick, WashBasinState, WorkstationTag, World, Wound,
     institutional::MissingPersonReportStatus,
-    social_artifact::{ArtifactKind, ArtifactState, BountyTarget, NoticeTopic},
+    social_artifact::{
+        ArtifactActionability, ArtifactCredibility, ArtifactExistence, ArtifactKind,
+        ArtifactLegalEffect, ArtifactVisibility, BountyTarget, NoticeTopic,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -1066,8 +1069,8 @@ fn entity_claims_for_snapshot(
         || prior_summary.is_some_and(|prior| prior.believed_artifact.is_some())
     {
         claims.push((
-            EntityBeliefAspect::ArtifactState,
-            ClaimValue::ArtifactState(snapshot.believed_artifact.clone()),
+            EntityBeliefAspect::Artifact,
+            ClaimValue::Artifact(snapshot.believed_artifact.clone()),
         ));
     }
     if snapshot.last_known_courage.is_some()
@@ -1620,9 +1623,13 @@ pub struct BelievedBountyTerms {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BelievedArtifactState {
     pub kind: ArtifactKind,
-    pub state: ArtifactState,
     pub issuer: EntityId,
     pub expires_at: Option<Tick>,
+    pub existence: ArtifactExistence,
+    pub visibility: ArtifactVisibility,
+    pub legal_effect: ArtifactLegalEffect,
+    pub credibility: ArtifactCredibility,
+    pub actionability: ArtifactActionability,
     pub bounty_terms: Option<BelievedBountyTerms>,
     pub notice_topic: Option<NoticeTopic>,
     pub observed_tick: Tick,
@@ -2177,9 +2184,13 @@ pub fn build_believed_artifact_state(
 
     Some(BelievedArtifactState {
         kind: header.kind,
-        state: header.state,
         issuer: header.issuer,
         expires_at: header.expires_at,
+        existence: header.existence.clone(),
+        visibility: header.visibility.clone(),
+        legal_effect: header.legal_effect,
+        credibility: header.credibility.clone(),
+        actionability: header.actionability,
         bounty_terms,
         notice_topic,
         observed_tick,
@@ -2324,7 +2335,7 @@ pub fn derive_entity_summary(
             (EntityBeliefAspect::WashBasinState, ClaimValue::WashBasinState(state)) => {
                 summary.wash_basin_state = *state;
             }
-            (EntityBeliefAspect::ArtifactState, ClaimValue::ArtifactState(artifact)) => {
+            (EntityBeliefAspect::Artifact, ClaimValue::Artifact(artifact)) => {
                 summary.believed_artifact.clone_from(artifact);
             }
             (EntityBeliefAspect::Courage, ClaimValue::Courage(courage)) => {
@@ -7231,15 +7242,15 @@ mod tests {
         world
             .insert_component_artifact_header(
                 artifact,
-                crate::ArtifactHeader {
-                    kind: crate::ArtifactKind::Bounty,
+                crate::ArtifactHeader::posted_active(
+                    crate::ArtifactKind::Bounty,
                     issuer,
-                    issuing_authority: None,
-                    created_at: Tick(2),
-                    expires_at: Some(Tick(7)),
-                    state: crate::ArtifactState::Active,
-                    jurisdiction: None,
-                },
+                    None,
+                    Tick(2),
+                    Some(Tick(7)),
+                    None,
+                    place,
+                ),
             )
             .unwrap();
         world
@@ -7261,9 +7272,15 @@ mod tests {
             snapshot.artifact_state,
             Some(BelievedArtifactState {
                 kind: crate::ArtifactKind::Bounty,
-                state: crate::ArtifactState::Active,
                 issuer,
                 expires_at: Some(Tick(7)),
+                existence: crate::ArtifactExistence::Exists,
+                visibility: crate::ArtifactVisibility::Posted { place },
+                legal_effect: crate::ArtifactLegalEffect::Active {
+                    expires_at: Some(Tick(7)),
+                },
+                credibility: crate::ArtifactCredibility::Credible,
+                actionability: crate::ArtifactActionability::Actionable,
                 bounty_terms: Some(BelievedBountyTerms {
                     target: crate::BountyTarget::EliminateEntity { target: issuer },
                     reward_commodity: CommodityKind::Coin,
@@ -7340,15 +7357,15 @@ mod tests {
         world
             .insert_component_artifact_header(
                 artifact,
-                crate::ArtifactHeader {
-                    kind: crate::ArtifactKind::Notice,
+                crate::ArtifactHeader::posted_active(
+                    crate::ArtifactKind::Notice,
                     issuer,
-                    issuing_authority: None,
-                    created_at: Tick(2),
-                    expires_at: Some(Tick(8)),
-                    state: crate::ArtifactState::Active,
-                    jurisdiction: None,
-                },
+                    None,
+                    Tick(2),
+                    Some(Tick(8)),
+                    None,
+                    place,
+                ),
             )
             .unwrap();
         world
@@ -7372,9 +7389,15 @@ mod tests {
             believed.believed_artifact,
             Some(BelievedArtifactState {
                 kind: crate::ArtifactKind::Notice,
-                state: crate::ArtifactState::Active,
                 issuer,
                 expires_at: Some(Tick(8)),
+                existence: crate::ArtifactExistence::Exists,
+                visibility: crate::ArtifactVisibility::Posted { place },
+                legal_effect: crate::ArtifactLegalEffect::Active {
+                    expires_at: Some(Tick(8)),
+                },
+                credibility: crate::ArtifactCredibility::Credible,
+                actionability: crate::ArtifactActionability::Actionable,
                 bounty_terms: None,
                 notice_topic: Some(NoticeTopic::OfficeVacancy { office }),
                 observed_tick: Tick(12),

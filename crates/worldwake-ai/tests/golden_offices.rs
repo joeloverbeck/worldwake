@@ -2246,7 +2246,8 @@ fn run_vacancy_notice_political_uptake(seed: Seed) -> (StateHash, StateHash) {
                 .and_then(|belief| belief.believed_artifact.as_ref())
                 .is_some_and(|artifact_state| {
                     artifact_state.kind == worldwake_core::ArtifactKind::Notice
-                        && artifact_state.state == worldwake_core::ArtifactState::Active
+                        && artifact_state.actionability
+                            == worldwake_core::ArtifactActionability::Actionable
                         && artifact_state.notice_topic
                             == Some(NoticeTopic::OfficeVacancy { office })
                 })

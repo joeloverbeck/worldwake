@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{PlanningSnapshot, derive_danger_pressure};
 use worldwake_core::{
-    ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy, BelievedArtifactState,
-    BelievedEntityState, EntityId, NoticeTopic, Permille, SocialObservation, SocialObservationKind,
-    Tick, belief_confidence,
+    ActionDomain, ArtifactActionability, ArtifactKind, BeliefConfidencePolicy,
+    BelievedArtifactState, BelievedEntityState, EntityId, NoticeTopic, Permille, SocialObservation,
+    SocialObservationKind, Tick, belief_confidence,
 };
 use worldwake_sim::GoalBeliefView;
 
@@ -61,7 +61,7 @@ fn place_threat_estimate_from_memory(
                 artifact,
                 BelievedArtifactState {
                     kind: ArtifactKind::Notice,
-                    state: ArtifactState::Active,
+                    actionability: ArtifactActionability::Actionable,
                     notice_topic: Some(NoticeTopic::ThreatWarning {
                         place: warned_place
                     }),
@@ -216,7 +216,8 @@ mod tests {
     use super::{perceived_direct_travel_cost_from_memory, route_threat_estimate_from_memory};
     use std::collections::BTreeMap;
     use worldwake_core::{
-        ActionDomain, ArtifactKind, ArtifactState, BeliefConfidencePolicy, BelievedActivity,
+        ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence, ArtifactKind,
+        ArtifactLegalEffect, ArtifactVisibility, BeliefConfidencePolicy, BelievedActivity,
         BelievedArtifactState, BelievedEntityState, BodyPart, EntityId, NoticeTopic,
         PerceptionSource, SocialObservation, SocialObservationDetail, Tick, Wound, WoundCause,
         WoundId,
@@ -294,9 +295,13 @@ mod tests {
             believed_activity: None,
             believed_artifact: Some(BelievedArtifactState {
                 kind: ArtifactKind::Notice,
-                state: ArtifactState::Active,
                 issuer: entity(41),
                 expires_at: None,
+                existence: ArtifactExistence::Exists,
+                visibility: ArtifactVisibility::Posted { place: entity(40) },
+                legal_effect: ArtifactLegalEffect::Active { expires_at: None },
+                credibility: ArtifactCredibility::Credible,
+                actionability: ArtifactActionability::Actionable,
                 bounty_terms: None,
                 notice_topic: Some(NoticeTopic::ThreatWarning { place }),
                 observed_tick,

@@ -12,10 +12,11 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use worldwake_core::{
-    AcquisitionQuantity, ActionDefId, ArtifactKind, ArtifactState, BountyTarget, CommodityKind,
-    CommodityPurpose, EntityId, EpistemicSubject, ExecutionBudget, GoalKey, GoalKind,
-    InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS, Permille,
-    PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick, WorkstationTag, belief_confidence,
+    AcquisitionQuantity, ActionDefId, ArtifactActionability, ArtifactKind, BountyTarget,
+    CommodityKind, CommodityPurpose, EntityId, EpistemicSubject, ExecutionBudget, GoalKey,
+    GoalKind, InstitutionalBeliefRead, LoadUnits, MultiplierPermille, OUTDOOR_RELIEF_TAGS,
+    Permille, PlaceTag, Quantity, RecordKind, SuccessionLaw, Tick, WorkstationTag,
+    belief_confidence,
 };
 use worldwake_sim::{
     AccuseActionPayload, ActionDef, ActionPayload, AskAboutPersonActionPayload, AskWitnessPayload,
@@ -1188,7 +1189,8 @@ impl GoalKindPlannerExt for GoalKind {
             GoalKind::BuryCorpse { corpse, .. } => state.direct_container(*corpse).is_some(),
             GoalKind::FulfillBounty { bounty } => believed_bounty_artifact_state(state, *bounty)
                 .is_some_and(|artifact| {
-                    artifact.kind == ArtifactKind::Bounty && artifact.state != ArtifactState::Active
+                    artifact.kind == ArtifactKind::Bounty
+                        && artifact.actionability != ArtifactActionability::Actionable
                 }),
             GoalKind::SupportCandidateForOffice { office, candidate } => {
                 state.effective_support_declaration(actor, *office) == Some(*candidate)
@@ -2336,19 +2338,20 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::ActionDomain;
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, ArtifactKind, ArtifactPostingContext, ArtifactState,
-        AskWitnessMemory, AskWitnessMemoryKey, BelievedArtifactState, BelievedBountyTerms,
-        BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory, BodyCostPerTick,
-        BountyTarget, BountyTerms, CognitiveProfile, CombatProfile, CommodityConsumableProfile,
-        CommodityKind, DemandObservation, DemandObservationReason, DeprivationExposure,
-        DisposalProfile, DriveEscalationProfile, DriveThresholds, EntityId, EntityKind,
-        EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget, HomeostaticNeedId,
-        HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead, InstitutionalClaim,
-        InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile, MetabolismProfile,
-        NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind, Quantity, RecipeId,
-        RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw, TellTopic, Tick,
-        TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId, VisibilitySpec,
-        WashBasinState, WorkstationTag, Wound,
+        AcquisitionQuantity, ActionDefId, ArtifactActionability, ArtifactCredibility,
+        ArtifactExistence, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
+        ArtifactVisibility, AskWitnessMemory, AskWitnessMemoryKey, BelievedArtifactState,
+        BelievedBountyTerms, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
+        BodyCostPerTick, BountyTarget, BountyTerms, CloseCause, CognitiveProfile, CombatProfile,
+        CommodityConsumableProfile, CommodityKind, DemandObservation, DemandObservationReason,
+        DeprivationExposure, DisposalProfile, DriveEscalationProfile, DriveThresholds, EntityId,
+        EntityKind, EpistemicDispositionProfile, EpistemicSubject, ExecutionBudget,
+        HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefRead,
+        InstitutionalClaim, InstitutionalKnowledgeSource, LoadUnits, MerchandiseProfile,
+        MetabolismProfile, NoticeTopic, OfficeData, Permille, ProofRequirement, PunishmentKind,
+        Quantity, RecipeId, RecordEntryId, RecordKind, ResourceSource, RewardSource, SuccessionLaw,
+        TellTopic, Tick, TickRange, TradeDispositionProfile, UniqueItemKind, ViolationId,
+        VisibilitySpec, WashBasinState, WorkstationTag, Wound,
         test_utils::{entity_id, sample_trade_disposition_profile},
     };
 
@@ -2364,6 +2367,44 @@ mod tests {
     use worldwake_systems::build_full_action_registries;
 
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
+
+    fn believed_bounty_artifact(
+        issuer: EntityId,
+        claim_place: EntityId,
+        target: BountyTarget,
+        actionability: ArtifactActionability,
+        observed_tick: Tick,
+    ) -> BelievedArtifactState {
+        let legal_effect = match actionability {
+            ArtifactActionability::Actionable => ArtifactLegalEffect::Active { expires_at: None },
+            ArtifactActionability::Closed { closed_at, .. } => ArtifactLegalEffect::Fulfilled {
+                fulfilled_at: closed_at,
+                by: issuer,
+                evidence: claim_place,
+            },
+            ArtifactActionability::AwaitingProof { .. } | ArtifactActionability::Blocked { .. } => {
+                ArtifactLegalEffect::Active { expires_at: None }
+            }
+        };
+        BelievedArtifactState {
+            kind: ArtifactKind::Bounty,
+            issuer,
+            expires_at: None,
+            existence: ArtifactExistence::Exists,
+            visibility: ArtifactVisibility::Posted { place: claim_place },
+            legal_effect,
+            credibility: ArtifactCredibility::Credible,
+            actionability,
+            bounty_terms: Some(BelievedBountyTerms {
+                target,
+                reward_commodity: CommodityKind::Coin,
+                reward_quantity: Quantity(20),
+                claim_place,
+            }),
+            notice_topic: None,
+            observed_tick,
+        }
+    }
 
     fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         CognitiveProfile {
@@ -8260,22 +8301,18 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
-                    believed_artifact: Some(BelievedArtifactState {
-                        kind: ArtifactKind::Bounty,
-                        state: ArtifactState::Fulfilled,
+                    believed_artifact: Some(believed_bounty_artifact(
                         issuer,
-                        expires_at: None,
-                        bounty_terms: Some(BelievedBountyTerms {
-                            target: BountyTarget::EliminateEntity {
-                                target: entity_id(5, 0),
-                            },
-                            reward_commodity: CommodityKind::Coin,
-                            reward_quantity: Quantity(20),
-                            claim_place,
-                        }),
-                        notice_topic: None,
-                        observed_tick: Tick(1),
-                    }),
+                        claim_place,
+                        BountyTarget::EliminateEntity {
+                            target: entity_id(5, 0),
+                        },
+                        ArtifactActionability::Closed {
+                            closed_at: Tick(1),
+                            cause: CloseCause::BountyFulfilled,
+                        },
+                        Tick(1),
+                    )),
                     believed_contention: None,
                     believed_evidence: None,
                     ..BelievedEntityState::single_observation_defaults(
@@ -8329,20 +8366,13 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
-                    believed_artifact: Some(BelievedArtifactState {
-                        kind: ArtifactKind::Bounty,
-                        state: ArtifactState::Active,
+                    believed_artifact: Some(believed_bounty_artifact(
                         issuer,
-                        expires_at: None,
-                        bounty_terms: Some(BelievedBountyTerms {
-                            target: BountyTarget::EliminateEntity { target },
-                            reward_commodity: CommodityKind::Coin,
-                            reward_quantity: Quantity(20),
-                            claim_place,
-                        }),
-                        notice_topic: None,
-                        observed_tick: Tick(1),
-                    }),
+                        claim_place,
+                        BountyTarget::EliminateEntity { target },
+                        ArtifactActionability::Actionable,
+                        Tick(1),
+                    )),
                     believed_contention: None,
                     believed_evidence: None,
                     ..BelievedEntityState::single_observation_defaults(
@@ -8573,24 +8603,17 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
-                    believed_artifact: Some(BelievedArtifactState {
-                        kind: ArtifactKind::Bounty,
-                        state: ArtifactState::Active,
+                    believed_artifact: Some(believed_bounty_artifact(
                         issuer,
-                        expires_at: None,
-                        bounty_terms: Some(BelievedBountyTerms {
-                            target: BountyTarget::DeliverCommodity {
-                                commodity: CommodityKind::Bread,
-                                quantity: Quantity(3),
-                                destination,
-                            },
-                            reward_commodity: CommodityKind::Coin,
-                            reward_quantity: Quantity(20),
-                            claim_place,
-                        }),
-                        notice_topic: None,
-                        observed_tick: Tick(1),
-                    }),
+                        claim_place,
+                        BountyTarget::DeliverCommodity {
+                            commodity: CommodityKind::Bread,
+                            quantity: Quantity(3),
+                            destination,
+                        },
+                        ArtifactActionability::Actionable,
+                        Tick(1),
+                    )),
                     believed_contention: None,
                     believed_evidence: None,
                     ..BelievedEntityState::single_observation_defaults(
@@ -8652,24 +8675,17 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
-                    believed_artifact: Some(BelievedArtifactState {
-                        kind: ArtifactKind::Bounty,
-                        state: ArtifactState::Active,
+                    believed_artifact: Some(believed_bounty_artifact(
                         issuer,
-                        expires_at: None,
-                        bounty_terms: Some(BelievedBountyTerms {
-                            target: BountyTarget::DeliverCommodity {
-                                commodity: CommodityKind::Bread,
-                                quantity: Quantity(3),
-                                destination,
-                            },
-                            reward_commodity: CommodityKind::Coin,
-                            reward_quantity: Quantity(20),
-                            claim_place,
-                        }),
-                        notice_topic: None,
-                        observed_tick: Tick(1),
-                    }),
+                        claim_place,
+                        BountyTarget::DeliverCommodity {
+                            commodity: CommodityKind::Bread,
+                            quantity: Quantity(3),
+                            destination,
+                        },
+                        ArtifactActionability::Actionable,
+                        Tick(1),
+                    )),
                     believed_contention: None,
                     believed_evidence: None,
                     ..BelievedEntityState::single_observation_defaults(
@@ -8737,24 +8753,17 @@ mod tests {
                     wounds: Vec::new(),
                     last_known_courage: None,
                     believed_activity: None,
-                    believed_artifact: Some(BelievedArtifactState {
-                        kind: ArtifactKind::Bounty,
-                        state: ArtifactState::Active,
+                    believed_artifact: Some(believed_bounty_artifact(
                         issuer,
-                        expires_at: None,
-                        bounty_terms: Some(BelievedBountyTerms {
-                            target: BountyTarget::DeliverCommodity {
-                                commodity: CommodityKind::Bread,
-                                quantity: Quantity(3),
-                                destination,
-                            },
-                            reward_commodity: CommodityKind::Coin,
-                            reward_quantity: Quantity(20),
-                            claim_place,
-                        }),
-                        notice_topic: None,
-                        observed_tick: Tick(1),
-                    }),
+                        claim_place,
+                        BountyTarget::DeliverCommodity {
+                            commodity: CommodityKind::Bread,
+                            quantity: Quantity(3),
+                            destination,
+                        },
+                        ArtifactActionability::Actionable,
+                        Tick(1),
+                    )),
                     believed_contention: None,
                     believed_evidence: None,
                     ..BelievedEntityState::single_observation_defaults(
