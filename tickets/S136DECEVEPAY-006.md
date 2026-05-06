@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None (test-only; soak harness extension)
-**Deps**: archive/tickets/S136DECEVEPAY-002.md, tickets/S136DECEVEPAY-003.md, tickets/S136DECEVEPAY-004.md, archive/tickets/S136DECEVEPAY-007.md
+**Deps**: archive/tickets/S136DECEVEPAY-002.md, archive/tickets/S136DECEVEPAY-003.md, tickets/S136DECEVEPAY-004.md, archive/tickets/S136DECEVEPAY-007.md
 
 ## Problem
 

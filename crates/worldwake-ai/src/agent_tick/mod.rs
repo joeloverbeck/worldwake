@@ -579,6 +579,7 @@ fn emit_plan_invalidated(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_replan_triggered(
     event_log: &mut worldwake_core::EventLog,
     tick: Tick,
