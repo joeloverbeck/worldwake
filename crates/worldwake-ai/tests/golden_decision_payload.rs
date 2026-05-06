@@ -48,6 +48,7 @@ fn emit_decision_payload(tag: EventTag, payload: DecisionEventPayload) -> Decisi
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([tag]),
         decision_payload: Some(payload),
+        artifact_transition_payload: None,
     }));
 
     event_log

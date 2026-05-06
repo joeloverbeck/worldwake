@@ -1,6 +1,6 @@
 # S140ARTLIFAXE-002: artifact_lifecycle_system 5-stage refactor + event-driven cross-axis cascades
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `artifact_lifecycle_system` per-axis stage refactor; replaces ticket 001's placeholder cross-axis writes with `EventTag::ArtifactTransition` emissions read by later handler stages within the same tick
@@ -18,9 +18,11 @@ Ticket 001 lands the per-axis fields on `ArtifactHeader` and migrates all consum
 2. Spec deliverable D3 names the 5 stages and the cross-axis observation pattern. Spec Design Goal 8 mandates event-driven cross-axis flow; spec Non-Goal 3 ("no auto-derivation") rules out direct cross-axis writes from any handler.
 3. **Cross-system shared abstraction boundary**: The boundary under audit is the contract between action commit handlers (which write the proximate axis directly and emit the transition event) and `artifact_lifecycle_system`'s actionability stage (which reads emitted events from earlier-stage handlers within the same tick and writes the cascaded axis). Both sides live in `worldwake-systems`, but the contract itself is the event-log surface — the action handler does not call the lifecycle handler; the event log mediates.
 4. **Information-path refactor stance**: For the same fact "this bounty was fulfilled and is therefore closed", the pre-002 path was direct cross-axis writes at the action commit handler (placeholder from 001). The canonical post-002 path is: action handler writes legal_effect + emits transition event → lifecycle_system stage 5 (actionability) reads the event and writes actionability + emits its own transition event. The placeholder direct-write is removed in this ticket; there is no temporary mixed-state coexistence after 002.
+5. **Persisted event payload carrier**: Ticket 001 added `ArtifactTransitionPayload` and `EventTag::ArtifactTransition`, but live `EventPayload` had no field capable of storing the payload required by this ticket's `(artifact, axis, prior, new, cause_event, at)` acceptance criteria. This ticket therefore widens `EventPayload` with an optional artifact-transition payload and bumps `SAVE_FORMAT_VERSION` from 71 to 72 per FND-28.
+6. **Schedule discrepancy resolved in-scope**: Live `SystemManifest::pre_action()` runs `ArtifactLifecycle` before action progress, which preserves TTL-before-admission behavior but cannot observe action commit events from the same tick. This ticket keeps that pre-action pass and also adds `ArtifactLifecycle` to the canonical post-action manifest after `Combat`, so action-commit legal-effect events cascade to actionability in the same tick.
 7. **Ordering layer**: The cross-axis cascade depends on action lifecycle ordering (action commit emits the legal_effect event) followed by event-log ordering within the same tick (actionability stage observes events emitted earlier in the tick). The spec's Risk 2 calls this out as the determinism contract. Verify that the existing system schedule places `artifact_lifecycle_system` after action commit within the tick — pin the schedule via `grep -rn "artifact_lifecycle_system" crates/worldwake-sim/` during implementation.
 8. **Heuristic-removal discipline**: Removing 001's placeholder cross-axis writes does not remove a heuristic; it removes a transient compile-bridge. The substrate the placeholder stood in for is the lifecycle_system's actionability stage, which this ticket introduces.
-13. **Adjacent contradictions**: If implementation discovers that `artifact_lifecycle_system` runs *before* action commit in the current schedule (so emitted events are not visible until next tick), classify the discrepancy as a required consequence of D3 rather than a separate ticket — adjust the schedule or use an in-tick event-buffer pattern; document the choice in the ticket completion notes.
+9. **Adjacent contradictions**: If implementation discovers that `artifact_lifecycle_system` runs *before* action commit in the current schedule (so emitted events are not visible until next tick), classify the discrepancy as a required consequence of D3 rather than a separate ticket — adjust the schedule or use an in-tick event-buffer pattern; document the choice in the ticket completion notes.
 
 ## Architecture Check
 
@@ -70,7 +72,10 @@ Update inline tests in `artifact_lifecycle.rs` and `artifact_actions.rs` to asse
 
 - `crates/worldwake-systems/src/artifact_lifecycle.rs` (modify — 5-stage handler refactor + cascade observation)
 - `crates/worldwake-systems/src/artifact_actions.rs` (modify — replace 4 placeholder cross-axis-write sites with proximate-axis-write + event emission)
-- Likely: `crates/worldwake-sim/src/scheduler.rs` or `crates/worldwake-sim/src/system_dispatch.rs` (modify — confirm or adjust handler order); pin during implementation via `grep -rn "artifact_lifecycle_system" crates/worldwake-sim/`
+- `crates/worldwake-sim/src/system_manifest.rs` (modify — keep the pre-action lifecycle pass and add a canonical post-action lifecycle pass)
+- `crates/worldwake-sim/src/tick_step.rs` (modify — scheduler-order tests account for the intentional duplicate lifecycle pass)
+- `crates/worldwake-core/src/event_record.rs`, `crates/worldwake-core/src/world_txn.rs`, `crates/worldwake-sim/src/save_load.rs` (modify — persisted artifact-transition event payload carrier and save-format version 72)
+- EventPayload literal fallout in nearby tests and helpers across `crates/worldwake-ai`, `crates/worldwake-cli`, `crates/worldwake-core`, `crates/worldwake-sim`, and `crates/worldwake-systems`.
 
 ## Out of Scope
 
@@ -85,8 +90,8 @@ Update inline tests in `artifact_lifecycle.rs` and `artifact_actions.rs` to asse
 ### Tests That Must Pass
 
 1. `cargo test -p worldwake-systems --lib artifact_lifecycle` — TTL-expiry test asserts both legal_effect transition event AND cascaded actionability transition event in the same tick.
-2. `cargo test -p worldwake-systems --lib artifact_actions claim_bounty_transfers_reward_and_fulfills_bounty` — emits legal_effect Fulfilled event from commit handler; lifecycle handler emits actionability Closed cascade in same tick.
-3. `cargo test -p worldwake-systems --lib artifact_actions withdraw_bounty_releases_encumbrance_without_transfer` — emits legal_effect Revoked event; lifecycle handler emits actionability Closed cascade.
+2. `cargo test -p worldwake-systems --lib artifact_actions::tests::claim_bounty_transfers_reward_and_fulfills_bounty -- --exact` — emits legal_effect Fulfilled event from commit handler; lifecycle handler emits actionability Closed cascade in same tick.
+3. `cargo test -p worldwake-systems --lib artifact_actions::tests::withdraw_bounty_releases_encumbrance_without_transfer -- --exact` — emits legal_effect Revoked event; lifecycle handler emits actionability Closed cascade.
 4. New test: cascade event ordering — within a single tick, the actionability transition's `cause_event` field references the legal_effect transition's event ID.
 5. Existing suite: `cargo test --workspace`.
 
@@ -109,6 +114,35 @@ Update inline tests in `artifact_lifecycle.rs` and `artifact_actions.rs` to asse
 
 ### Commands
 
-1. `cargo test -p worldwake-systems --lib artifact_lifecycle artifact_actions -- --nocapture`
-2. `cargo test --workspace`
-3. `scripts/verify.sh`
+1. `cargo test -p worldwake-systems --lib artifact_lifecycle`
+2. `cargo test -p worldwake-systems --lib artifact_actions`
+3. `cargo test -p worldwake-sim`
+4. `cargo test -p worldwake-core --lib event_record::tests::event_payload_roundtrips_with_artifact_transition_payload -- --exact`
+5. `cargo test -p worldwake-sim --lib save_load::tests::save_to_bytes_roundtrip_preserves_artifact_transition_payloads -- --exact`
+6. `rg -n "S140-001 placeholder" crates/worldwake-systems/src/artifact_actions.rs crates/worldwake-systems/src/artifact_lifecycle.rs` (expect zero matches)
+7. `cargo test --workspace`
+8. `scripts/verify.sh`
+
+## Outcome
+
+Completed: 2026-05-06
+
+- Refactored `artifact_lifecycle_system` into the fixed stage shell `existence -> legal_effect -> credibility -> visibility -> actionability`. TTL expiry now writes only the legal-effect axis first, emits an `ArtifactTransition`, then the actionability stage closes the artifact from the transition event.
+- Removed action-commit placeholder cross-axis writes for claim and withdraw bounty. Commit handlers now write only the proximate legal-effect axis and attach the legal-effect transition payload to the commit event; the post-action lifecycle pass emits the same-tick actionability cascade with `cause_event` pointing at the legal-effect transition event.
+- Resolved the live schedule discrepancy by preserving the existing pre-action lifecycle pass for TTL-before-admission behavior and adding `ArtifactLifecycle` to the canonical post-action manifest after `Combat`.
+- Added a persisted `EventPayload::artifact_transition_payload` carrier plus `WorldTxn::set_artifact_transition_payload()`, and bumped `SAVE_FORMAT_VERSION` from 71 to 72 because transition payloads now round-trip through save/load.
+
+## Verification Result (2026-05-06)
+
+- PASS: `cargo test -p worldwake-core --lib event_record::tests::event_payload_roundtrips_with_artifact_transition_payload -- --exact`
+- PASS: `cargo test -p worldwake-systems --lib artifact_lifecycle`
+- PASS: `cargo test -p worldwake-systems --lib artifact_actions::tests::claim_bounty_transfers_reward_and_fulfills_bounty -- --exact`
+- PASS: `cargo test -p worldwake-systems --lib artifact_actions::tests::withdraw_bounty_releases_encumbrance_without_transfer -- --exact`
+- PASS: `cargo test -p worldwake-systems --lib artifact_actions`
+- PASS: `cargo test -p worldwake-sim --lib save_load::tests::save_to_bytes_roundtrip_preserves_artifact_transition_payloads -- --exact`
+- PASS: `cargo test -p worldwake-sim --lib system_manifest`
+- PASS: `cargo test -p worldwake-sim`
+- PASS: `cargo test --workspace`
+- PASS: `scripts/verify.sh`
+- PASS: `rg -n "S140-001 placeholder" crates/worldwake-systems/src/artifact_actions.rs crates/worldwake-systems/src/artifact_lifecycle.rs` returned zero matches.
+- PASS: `rg -n "\bArtifactState\b" crates -g "*.rs"` returned zero matches.

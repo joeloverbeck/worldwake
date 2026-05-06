@@ -363,6 +363,7 @@ mod tests {
                 witness_data: WitnessData::default(),
                 tags: std::collections::BTreeSet::from([worldwake_core::EventTag::System]),
                 decision_payload: None,
+                artifact_transition_payload: None,
             }));
 
         assert_eq!(state.scheduler().current_tick(), Tick(5));
@@ -469,6 +470,7 @@ mod tests {
                 witness_data: WitnessData::default(),
                 tags: std::collections::BTreeSet::from([worldwake_core::EventTag::System]),
                 decision_payload: None,
+                artifact_transition_payload: None,
             }));
 
         let mut changed_scheduler = original.clone();

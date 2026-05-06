@@ -6,10 +6,11 @@ use crate::reward_encumbrance_support::{
     release_bounty_reward, reserve_bounty_reward, unencumbered_reward_quantity,
 };
 use worldwake_core::{
-    ArtifactActionability, ArtifactHeader, ArtifactKind, ArtifactLegalEffect, BodyCostPerTick,
-    BountyTarget, BountyTerms, CloseCause, ContentionPolicy, ContentionQueue, Discrepancy,
-    EntityId, EntityKind, EventLog, EventTag, NoticeContent, NoticeTopic, Quantity,
-    RevocationReason, RewardSource, Tick, VisibilitySpec, World, WorldTxn,
+    ArtifactActionability, ArtifactAxisValue, ArtifactHeader, ArtifactKind, ArtifactLegalEffect,
+    ArtifactTransitionPayload, AxisName, BodyCostPerTick, BountyTarget, BountyTerms,
+    ContentionPolicy, ContentionQueue, Discrepancy, EntityId, EntityKind, EventLog, EventTag,
+    NoticeContent, NoticeTopic, Quantity, RevocationReason, RewardSource, Tick, VisibilitySpec,
+    World, WorldTxn,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -1276,7 +1277,7 @@ fn apply_withdraw_bounty_effect(
     _def: &ActionDef,
     instance: &ActionInstance,
     _context: &ActionExecutionContext<'_>,
-    _event_log: &EventLog,
+    event_log: &EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1291,16 +1292,21 @@ fn apply_withdraw_bounty_effect(
         release_bounty_reward(txn, treasury_entity, target)
             .map_err(|error| ActionError::InternalError(error.to_string()))?;
     }
-    header.legal_effect = ArtifactLegalEffect::Revoked {
+    let prior = header.legal_effect;
+    let new = ArtifactLegalEffect::Revoked {
         revoked_at: txn.tick(),
         by: instance.actor,
         reason: RevocationReason::IssuerWithdrawal,
     };
-    // S140-001 placeholder, replaced by S140ARTLIFAXE-002.
-    header.actionability = ArtifactActionability::Closed {
-        closed_at: txn.tick(),
-        cause: CloseCause::Revoked,
-    };
+    header.legal_effect = new;
+    txn.set_artifact_transition_payload(ArtifactTransitionPayload {
+        artifact: target,
+        axis: AxisName::LegalEffect,
+        prior: ArtifactAxisValue::LegalEffect(prior),
+        new: ArtifactAxisValue::LegalEffect(new),
+        cause_event: Some(event_log.next_id()),
+        at: txn.tick(),
+    });
     txn.set_component_artifact_header(target, header)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     txn.add_target(target);
@@ -1456,7 +1462,7 @@ fn apply_claim_bounty_effect(
     def: &ActionDef,
     instance: &ActionInstance,
     _context: &ActionExecutionContext<'_>,
-    _event_log: &EventLog,
+    event_log: &EventLog,
     _rng: &mut DeterministicRng,
     txn: &mut WorldTxn<'_>,
 ) -> Result<CommitOutcome, ActionError> {
@@ -1504,16 +1510,21 @@ fn apply_claim_bounty_effect(
         release_bounty_reward_or_error(txn, treasury_entity, target)?;
     }
 
-    header.legal_effect = ArtifactLegalEffect::Fulfilled {
+    let prior = header.legal_effect;
+    let new = ArtifactLegalEffect::Fulfilled {
         fulfilled_at: txn.tick(),
         by: instance.actor,
         evidence: target,
     };
-    // S140-001 placeholder, replaced by S140ARTLIFAXE-002.
-    header.actionability = ArtifactActionability::Closed {
-        closed_at: txn.tick(),
-        cause: CloseCause::BountyFulfilled,
-    };
+    header.legal_effect = new;
+    txn.set_artifact_transition_payload(ArtifactTransitionPayload {
+        artifact: target,
+        axis: AxisName::LegalEffect,
+        prior: ArtifactAxisValue::LegalEffect(prior),
+        new: ArtifactAxisValue::LegalEffect(new),
+        cause_event: Some(event_log.next_id()),
+        at: txn.tick(),
+    });
     txn.set_component_artifact_header(target, header)
         .map_err(|err| ActionError::InternalError(err.to_string()))?;
     clear_bounty_grant(txn, instance.actor, target, def.id)?;
@@ -1726,9 +1737,10 @@ mod tests {
     use super::{register_artifact_actions, register_post_bounty_action};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
-        AgentBeliefStore, BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
-        CauseRef, CommodityKind, Container, ContentionQueue, ControlSource, DeadAt, EventLog,
-        EventTag, LoadUnits, ObligationExecutionTracker, OfficeData, PerceptionSource,
+        AgentBeliefStore, ArtifactAxisValue, ArtifactTransitionPayload, AxisName,
+        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState, CauseRef, CloseCause,
+        CommodityKind, Container, ContentionQueue, ControlSource, DeadAt, EventLog, EventTag,
+        EventView, LoadUnits, ObligationExecutionTracker, OfficeData, PerceptionSource,
         ProofRequirement, PrototypePlace, Quantity, RecordData, RecordKind, Seed, SuccessionLaw,
         Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
         prototype_place_entity,
@@ -1757,6 +1769,36 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn run_artifact_lifecycle(world: &mut World, log: &mut EventLog, tick: u64) {
+        let mut rng = DeterministicRng::new(Seed([31; 32]));
+        crate::artifact_lifecycle::artifact_lifecycle_system(
+            worldwake_sim::SystemExecutionContext {
+                world,
+                event_log: log,
+                rng: &mut rng,
+                active_actions: &BTreeMap::new(),
+                action_defs: &ActionDefRegistry::new(),
+                politics_trace: None,
+                perception_trace: None,
+                tick: Tick(tick),
+                system_id: worldwake_sim::SystemId::ArtifactLifecycle,
+            },
+        )
+        .unwrap();
+    }
+
+    fn transition_payloads(log: &EventLog) -> Vec<ArtifactTransitionPayload> {
+        log.events_by_tag(EventTag::ArtifactTransition)
+            .iter()
+            .map(|event_id| {
+                log.get(*event_id)
+                    .and_then(EventView::artifact_transition_payload)
+                    .cloned()
+                    .expect("artifact transition event carries transition payload")
+            })
+            .collect()
     }
 
     fn spawn_agent_at(world: &mut World, name: &str, place: EntityId) -> EntityId {
@@ -2749,6 +2791,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        run_artifact_lifecycle(&mut world, &mut log, 7);
         assert_eq!(
             world
                 .get_component_artifact_header(bounty)
@@ -2759,6 +2802,38 @@ mod tests {
                 by: claimant,
                 evidence: bounty,
             }
+        );
+        assert_eq!(
+            world
+                .get_component_artifact_header(bounty)
+                .unwrap()
+                .actionability,
+            ArtifactActionability::Closed {
+                closed_at: Tick(7),
+                cause: CloseCause::BountyFulfilled,
+            }
+        );
+        let transition_ids = log.events_by_tag(EventTag::ArtifactTransition);
+        assert_eq!(transition_ids.len(), 2);
+        let transitions = transition_payloads(&log);
+        assert_eq!(transitions[0].axis, AxisName::LegalEffect);
+        assert_eq!(
+            transitions[0].new,
+            ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Fulfilled {
+                fulfilled_at: Tick(7),
+                by: claimant,
+                evidence: bounty,
+            })
+        );
+        assert_eq!(transitions[0].cause_event, Some(transition_ids[0]));
+        assert_eq!(transitions[1].axis, AxisName::Actionability);
+        assert_eq!(transitions[1].cause_event, Some(transition_ids[0]));
+        assert_eq!(
+            transitions[1].new,
+            ArtifactAxisValue::Actionability(ArtifactActionability::Closed {
+                closed_at: Tick(7),
+                cause: CloseCause::BountyFulfilled,
+            })
         );
         assert_eq!(
             world.controlled_commodity_quantity(claimant, CommodityKind::Coin),
@@ -2935,6 +3010,7 @@ mod tests {
         .unwrap();
 
         assert!(matches!(outcome, TickOutcome::Committed { .. }));
+        run_artifact_lifecycle(&mut world, &mut log, 6);
         assert_eq!(
             world
                 .get_component_artifact_header(bounty)
@@ -2945,6 +3021,38 @@ mod tests {
                 by: issuer,
                 reason: RevocationReason::IssuerWithdrawal,
             }
+        );
+        assert_eq!(
+            world
+                .get_component_artifact_header(bounty)
+                .unwrap()
+                .actionability,
+            ArtifactActionability::Closed {
+                closed_at: Tick(6),
+                cause: CloseCause::Revoked,
+            }
+        );
+        let transition_ids = log.events_by_tag(EventTag::ArtifactTransition);
+        assert_eq!(transition_ids.len(), 2);
+        let transitions = transition_payloads(&log);
+        assert_eq!(transitions[0].axis, AxisName::LegalEffect);
+        assert_eq!(
+            transitions[0].new,
+            ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Revoked {
+                revoked_at: Tick(6),
+                by: issuer,
+                reason: RevocationReason::IssuerWithdrawal,
+            })
+        );
+        assert_eq!(transitions[0].cause_event, Some(transition_ids[0]));
+        assert_eq!(transitions[1].axis, AxisName::Actionability);
+        assert_eq!(transitions[1].cause_event, Some(transition_ids[0]));
+        assert_eq!(
+            transitions[1].new,
+            ArtifactAxisValue::Actionability(ArtifactActionability::Closed {
+                closed_at: Tick(6),
+                cause: CloseCause::Revoked,
+            })
         );
         assert_eq!(
             world.controlled_commodity_quantity(office, CommodityKind::Coin),

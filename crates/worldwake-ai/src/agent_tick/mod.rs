@@ -624,6 +624,7 @@ pub(super) fn emit_decision_event(
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([tag]),
         decision_payload: Some(decision_payload),
+        artifact_transition_payload: None,
     }));
 }
 

@@ -727,6 +727,7 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([EventTag::WorldMutation]),
         decision_payload: None,
+        artifact_transition_payload: None,
     }));
 
     let recipes = RecipeRegistry::new();

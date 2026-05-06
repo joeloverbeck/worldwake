@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None — observer-side rendering only; reads existing `ArtifactHeader` axis fields (post-001) and decoded `ArtifactTransition` events (post-001/002)
-**Deps**: archive/tickets/S140ARTLIFAXE-001.md, S140ARTLIFAXE-002
+**Deps**: archive/tickets/S140ARTLIFAXE-001.md, archive/tickets/S140ARTLIFAXE-002.md
 
 ## Problem
 

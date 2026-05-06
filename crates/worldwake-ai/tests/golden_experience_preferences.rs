@@ -261,6 +261,7 @@ fn emit_combat_event(
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([EventTag::Combat]),
         decision_payload: None,
+        artifact_transition_payload: None,
     }));
 }
 

@@ -1,7 +1,9 @@
 use crate::reward_encumbrance_support::release_bounty_reward;
 use worldwake_core::{
-    ArtifactActionability, ArtifactKind, ArtifactLegalEffect, CauseRef, CloseCause, EntityKind,
-    EventTag, RewardSource, VisibilitySpec, WitnessData, WorldTxn,
+    ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactKind,
+    ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, CauseRef, CloseCause, EntityKind,
+    EventId, EventLog, EventTag, EventView, RewardSource, Tick, VisibilitySpec, WitnessData, World,
+    WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
 
@@ -18,6 +20,26 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
         system_id: _system_id,
     } = ctx;
 
+    // Fixed artifact-axis stage order:
+    // existence -> legal_effect -> credibility -> visibility -> actionability.
+    // Only stages with live transition sources are active today; later S140 slices
+    // can add sources inside the same ordered shell.
+    existence_stage();
+    legal_effect_stage(world, event_log, tick)?;
+    credibility_stage();
+    visibility_stage();
+    actionability_stage(world, event_log, tick)?;
+
+    Ok(())
+}
+
+fn existence_stage() {}
+
+fn legal_effect_stage(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+) -> Result<(), SystemError> {
     let expiring = world
         .query_artifact_header()
         .filter_map(|(artifact, header)| {
@@ -30,6 +52,8 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
         .collect::<Vec<_>>();
 
     for (artifact, mut header) in expiring {
+        let prior = header.legal_effect;
+        let new = ArtifactLegalEffect::Expired { expired_at: tick };
         let place = world.effective_place(artifact);
         let mut txn = WorldTxn::new(
             world,
@@ -40,12 +64,18 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
             VisibilitySpec::SamePlace,
             WitnessData::default(),
         );
-        header.legal_effect = ArtifactLegalEffect::Expired { expired_at: tick };
-        // S140-001 placeholder, replaced by S140ARTLIFAXE-002.
-        header.actionability = ArtifactActionability::Closed {
-            closed_at: tick,
-            cause: CloseCause::LegalEffectExpired,
-        };
+        header.legal_effect = new;
+        set_transition_payload(
+            &mut txn,
+            ArtifactTransitionPayload {
+                artifact,
+                axis: AxisName::LegalEffect,
+                prior: ArtifactAxisValue::LegalEffect(prior),
+                new: ArtifactAxisValue::LegalEffect(new),
+                cause_event: None,
+                at: tick,
+            },
+        );
         txn.add_tag(EventTag::System)
             .add_tag(EventTag::Social)
             .add_tag(EventTag::WorldMutation)
@@ -66,13 +96,115 @@ pub fn artifact_lifecycle_system(ctx: SystemExecutionContext<'_>) -> Result<(), 
     Ok(())
 }
 
+fn credibility_stage() {}
+
+fn visibility_stage() {}
+
+fn actionability_stage(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+) -> Result<(), SystemError> {
+    let transitions = legal_or_credibility_transitions_at_tick(event_log, tick);
+
+    for (cause_event, transition) in transitions {
+        let Some(close_cause) = close_cause_for_transition(&transition) else {
+            continue;
+        };
+        let artifact = transition.artifact;
+        let Some(mut header) = world.get_component_artifact_header(artifact).cloned() else {
+            continue;
+        };
+        if !matches!(header.actionability, ArtifactActionability::Actionable) {
+            continue;
+        }
+
+        let prior = header.actionability;
+        let new = ArtifactActionability::Closed {
+            closed_at: tick,
+            cause: close_cause,
+        };
+        header.actionability = new;
+
+        let place = world.effective_place(artifact);
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::Event(cause_event),
+            None,
+            place,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        set_transition_payload(
+            &mut txn,
+            ArtifactTransitionPayload {
+                artifact,
+                axis: AxisName::Actionability,
+                prior: ArtifactAxisValue::Actionability(prior),
+                new: ArtifactAxisValue::Actionability(new),
+                cause_event: Some(cause_event),
+                at: tick,
+            },
+        );
+        txn.add_tag(EventTag::System)
+            .add_tag(EventTag::Social)
+            .add_tag(EventTag::WorldMutation)
+            .add_target(artifact);
+        txn.set_component_artifact_header(artifact, header)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        let _ = txn.commit(event_log);
+    }
+
+    Ok(())
+}
+
+fn set_transition_payload(txn: &mut WorldTxn<'_>, payload: ArtifactTransitionPayload) {
+    txn.set_artifact_transition_payload(payload);
+}
+
+fn legal_or_credibility_transitions_at_tick(
+    event_log: &EventLog,
+    tick: Tick,
+) -> Vec<(EventId, ArtifactTransitionPayload)> {
+    event_log
+        .events_at_tick(tick)
+        .iter()
+        .filter_map(|event_id| {
+            let record = event_log.get(*event_id)?;
+            let payload = record.artifact_transition_payload()?;
+            matches!(payload.axis, AxisName::LegalEffect | AxisName::Credibility)
+                .then(|| (*event_id, payload.clone()))
+        })
+        .collect()
+}
+
+fn close_cause_for_transition(payload: &ArtifactTransitionPayload) -> Option<CloseCause> {
+    match &payload.new {
+        ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Fulfilled { .. }) => {
+            Some(CloseCause::BountyFulfilled)
+        }
+        ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Expired { .. }) => {
+            Some(CloseCause::LegalEffectExpired)
+        }
+        ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Revoked { .. }) => {
+            Some(CloseCause::Revoked)
+        }
+        ArtifactAxisValue::Credibility(ArtifactCredibility::Refuted { .. }) => {
+            Some(CloseCause::Refuted)
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::artifact_lifecycle_system;
     use worldwake_core::{
-        ArtifactActionability, ArtifactHeader, ArtifactKind, ArtifactLegalEffect, BountyTarget,
-        BountyTerms, CauseRef, CloseCause, CommodityKind, ControlSource, EntityKind, EventLog,
-        EventTag, NoticeContent, NoticeTopic, ProofRequirement, PrototypePlace, Quantity,
+        ArtifactActionability, ArtifactAxisValue, ArtifactHeader, ArtifactKind,
+        ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, BountyTarget, BountyTerms,
+        CauseRef, CloseCause, CommodityKind, ControlSource, EntityKind, EventLog, EventTag,
+        EventView, NoticeContent, NoticeTopic, ProofRequirement, PrototypePlace, Quantity,
         RewardEncumbrance, RewardReservation, RewardSource, Seed, Tick, VisibilitySpec,
         WitnessData, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
@@ -93,6 +225,18 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn transition_payloads(log: &EventLog) -> Vec<ArtifactTransitionPayload> {
+        log.events_by_tag(EventTag::ArtifactTransition)
+            .iter()
+            .map(|event_id| {
+                log.get(*event_id)
+                    .and_then(EventView::artifact_transition_payload)
+                    .cloned()
+                    .expect("artifact transition event carries transition payload")
+            })
+            .collect()
     }
 
     fn spawn_agent_at(
@@ -235,7 +379,26 @@ mod tests {
                 cause: CloseCause::LegalEffectExpired,
             }
         );
-        assert_eq!(log.events_by_tag(EventTag::WorldMutation).len(), 1);
+        let transition_ids = log.events_by_tag(EventTag::ArtifactTransition);
+        assert_eq!(transition_ids.len(), 2);
+        let transitions = transition_payloads(&log);
+        assert_eq!(transitions[0].axis, AxisName::LegalEffect);
+        assert_eq!(
+            transitions[0].new,
+            ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Expired {
+                expired_at: Tick(5)
+            })
+        );
+        assert_eq!(transitions[1].axis, AxisName::Actionability);
+        assert_eq!(transitions[1].cause_event, Some(transition_ids[0]));
+        assert_eq!(
+            transitions[1].new,
+            ArtifactAxisValue::Actionability(ArtifactActionability::Closed {
+                closed_at: Tick(5),
+                cause: CloseCause::LegalEffectExpired,
+            })
+        );
+        assert_eq!(log.events_by_tag(EventTag::WorldMutation).len(), 2);
     }
 
     #[test]
@@ -338,6 +501,7 @@ mod tests {
             }
         );
         assert!(!world.has_component_reward_encumbrance(office));
-        assert_eq!(log.events_by_tag(EventTag::WorldMutation).len(), 1);
+        assert_eq!(log.events_by_tag(EventTag::ArtifactTransition).len(), 2);
+        assert_eq!(log.events_by_tag(EventTag::WorldMutation).len(), 2);
     }
 }

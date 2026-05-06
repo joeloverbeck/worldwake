@@ -4513,6 +4513,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([tag]),
             decision_payload: Some(payload),
+            artifact_transition_payload: None,
         }));
     }
 

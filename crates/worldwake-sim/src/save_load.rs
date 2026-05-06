@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 71;
+pub const SAVE_FORMAT_VERSION: u32 = 72;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -196,10 +196,11 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, ActionDomain, AgentBeliefStore, BeliefClaimKey,
-        BeliefRef, BeliefSnapshot, BeliefStatusTag, BelievedActivity, BelievedEntityState,
-        BlockerKey, BlockerRecordedPayload, BlockingFact, BodyCostPerTick, CauseRef, ClaimId,
-        ClaimValue, CommodityKind, CommodityPurpose, ControlSource, DecisionEventPayload,
+        AcquisitionQuantity, ActionDefId, ActionDomain, AgentBeliefStore, ArtifactActionability,
+        ArtifactAxisValue, ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef,
+        BeliefSnapshot, BeliefStatusTag, BelievedActivity, BelievedEntityState, BlockerKey,
+        BlockerRecordedPayload, BlockingFact, BodyCostPerTick, CauseRef, ClaimId, ClaimValue,
+        CloseCause, CommodityKind, CommodityPurpose, ControlSource, DecisionEventPayload,
         Discrepancy, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog,
         EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
         ExpectationId, ExpectationMismatchPayload, ExpectationRecord, ExpectationState,
@@ -521,6 +522,7 @@ mod tests {
             witness_data: WitnessData::default(),
             tags: std::collections::BTreeSet::from([worldwake_core::EventTag::System]),
             decision_payload: None,
+            artifact_transition_payload: None,
         }));
 
         let mut scheduler = Scheduler::new_with_tick(Tick(3), SystemManifest::canonical());
@@ -784,6 +786,43 @@ mod tests {
                 witness_data: WitnessData::default(),
                 tags: std::collections::BTreeSet::from([tag]),
                 decision_payload: Some(payload),
+                artifact_transition_payload: None,
+            }));
+    }
+
+    fn append_artifact_transition_event(
+        state: &mut SimulationState,
+        tick: Tick,
+        artifact: EntityId,
+        cause_event: Option<worldwake_core::EventId>,
+    ) {
+        let _ = state
+            .event_log_mut()
+            .emit(PendingEvent::from_payload(EventPayload {
+                tick,
+                cause: CauseRef::SystemTick(tick),
+                actor_id: None,
+                action_name: None,
+                target_ids: vec![artifact],
+                evidence: Vec::new(),
+                place_id: None,
+                state_deltas: Vec::new(),
+                observed_entities: std::collections::BTreeMap::new(),
+                visibility: VisibilitySpec::Hidden,
+                witness_data: WitnessData::default(),
+                tags: std::collections::BTreeSet::from([EventTag::ArtifactTransition]),
+                decision_payload: None,
+                artifact_transition_payload: Some(ArtifactTransitionPayload {
+                    artifact,
+                    axis: AxisName::Actionability,
+                    prior: ArtifactAxisValue::Actionability(ArtifactActionability::Actionable),
+                    new: ArtifactAxisValue::Actionability(ArtifactActionability::Closed {
+                        closed_at: tick,
+                        cause: CloseCause::LegalEffectExpired,
+                    }),
+                    cause_event,
+                    at: tick,
+                }),
             }));
     }
 
@@ -1072,7 +1111,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 71);
+        assert_eq!(SAVE_FORMAT_VERSION, 72);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1410,6 +1449,35 @@ mod tests {
                 bincode::serialize(original).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn save_to_bytes_roundtrip_preserves_artifact_transition_payloads() {
+        let (mut state, _actor, target, _) = populated_state();
+        append_artifact_transition_event(
+            &mut state,
+            Tick(20),
+            target,
+            Some(worldwake_core::EventId(3)),
+        );
+
+        let bytes = save_to_bytes(&state, None).unwrap();
+        let (restored, runtime) = load_from_bytes(&bytes).unwrap();
+
+        assert_eq!(runtime, None);
+        assert_eq!(restored, state);
+
+        let event_id = restored
+            .event_log()
+            .events_by_tag(EventTag::ArtifactTransition)[0];
+        let payload = restored
+            .event_log()
+            .get(event_id)
+            .and_then(EventView::artifact_transition_payload)
+            .expect("artifact transition payload survives save/load");
+        assert_eq!(payload.artifact, target);
+        assert_eq!(payload.axis, AxisName::Actionability);
+        assert_eq!(payload.cause_event, Some(worldwake_core::EventId(3)));
     }
 
     #[test]

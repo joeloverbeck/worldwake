@@ -547,6 +547,7 @@ mod tests {
                 witness_data: WitnessData::default(),
                 tags: empty_tags(),
                 decision_payload: None,
+                artifact_transition_payload: None,
             },
         )
     }
