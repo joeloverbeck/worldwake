@@ -30,7 +30,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
   - `agent_tick/planning.rs::emit_plan_selection_events` — reorder so `update_frame_for_adopted_plan` and `populate_assumptions` run before the `GoalCommitted`/`PlanAdopted` emission, so the populated frame's assumption list is available at emission time.
   - `agent_tick/planning.rs::build_rejected_alternatives` (line 931) — populate the new `rejection_dimension` field from the `RankedGoalComparisonOutcome::decisive_dimension` already computed by ranking (`ranking.rs:2367`, `2587`).
   - Failure-path emission sites (`agent_tick/execution.rs` `BlockerRecorded` / `ReplanTriggered` emissions, `agent_tick/observation.rs` `ExpectationMismatch` emission, `agent_tick/mod.rs` `SourceExpectationFailure` emission) — populate `decisive_beliefs`, `decisive_records`, `decisive_world_observations` from typed failed-claim/observation inputs already in scope at each seam. Record refs remain empty on current paths that do not carry a record entity. `assumptions` populates from the active frame's `assumptions: Vec<FrameAssumption>` (`crates/worldwake-core/src/intention_frame.rs:145`).
-- `worldwake-cli` — observer Section 3 (Decision History) extends `decision_payload_summary` (`bin/observer.rs:421`) within the existing single-line table format, adding compact suffixes (e.g., `decisive=B2 R0 O1 assume=2 dim=MotiveScore`) to the affected event summaries. The single-line invariant enforced by the test at `observer.rs:5744` is preserved. Replay decoding handles the schema bump via `#[serde(default)]` zero-fill on the new fields.
+- `worldwake-cli` — observer Section 3 (Decision History) extends `decision_payload_summary` (`bin/observer.rs`) within the existing single-line table format, adding compact suffixes (e.g., `decisive=B2 R0 O1 assume=2 dim=MotiveScore`) to the affected event summaries. The single-line invariant enforced by `decision_payload_summary_is_single_line_for_goal_committed` and sibling tests is preserved. Replay decoding handles the schema bump via `#[serde(default)]` zero-fill on the new fields.
 
 ## Dependencies
 
@@ -58,7 +58,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - **Cross-tick aggregation of decisive evidence.** Each event carries the single tick's evidence. Patterns across ticks are observer-derived, not stored.
 - **Belief value embedding.** `BeliefRef` carries the address; the value at that address must be resolved from the per-tick belief store via replay. No value embedding (avoids payload bloat under contradiction-rich scenarios).
 - **New `RecordTopic` or `AssumptionSource` taxonomies.** Earlier drafts named these; they do not exist in the codebase. `RecordRef` carries `record_entity` + `recorded_at_tick` and resolves topic via the record's own state at replay time. `PlanAssumptionRef` carries the `FrameAssumption` itself (which is self-describing) plus `introduced_at_step`.
-- **Multi-line observer Section 3 rendering.** The existing single-line table format is preserved (enforced by the `decision_payload_summary_is_single_line_for_goal_committed` test at `observer.rs:5744`). Detailed multi-line rendering, if wanted, is a separate spec.
+- **Multi-line observer Section 3 rendering.** The existing single-line table format is preserved (enforced by the `decision_payload_summary_is_single_line_for_goal_committed` test and sibling suffix tests). Detailed multi-line rendering, if wanted, is a separate spec.
 - **`smallvec` workspace dependency.** S136 uses the existing `Vec<T>` + per-agent soft-cap pattern matching `rejected_alternatives`.
 
 ## FOUNDATIONS Alignment
@@ -203,7 +203,7 @@ In `crates/worldwake-sim/src/save_load.rs` (line 6), increment by one. Pre-S136 
 
 ### D8 — Observer Section 3 extension within existing format
 
-In `crates/worldwake-cli/src/bin/observer.rs::decision_payload_summary` (line 421), extend the per-tag summaries with compact suffixes for the new fields. The single-line invariant is preserved (see test at line 5744). Examples:
+In `crates/worldwake-cli/src/bin/observer.rs::decision_payload_summary`, extend the per-tag summaries with compact suffixes for the new fields. The single-line invariant is preserved by `decision_payload_summary_is_single_line_for_goal_committed` and sibling suffix tests. Examples:
 
 - `GoalCommitted`: `goal=Eat motive=18420 alts=2 dim=MotiveScore assume=2`
 - `BlockerRecorded`: `blocker=K reason=BeliefStale decisive=B2 R0 O1 assume=2`
@@ -249,7 +249,7 @@ No new components. Decision events live in the event log, not in ECS.
   4. Source-expectation failure → assert `SourceExpectationFailurePayload.decisive_world_observations` names the source-attribution input; `decisive_beliefs` and `decisive_records` remain empty for the current seam unless a future implementation-time reassessment finds lawful typed carriers (no `assumptions` field — by D4).
 - **Replay parity**: current-format saves replay without behavioral divergence. Pre-S136 v69 saves are rejected after the v70 bump, consistent with the no-backward-compatibility rule.
 - **Bounded payload size**: deterministic fixed-seed sweep through the existing `soak_seed_perf` harness asserting per-event payload size never exceeds a per-tag byte ceiling under the canonical scenarios. (Property-based scenario generation is not part of the workspace today; an earlier draft mentioned it inaccurately.)
-- **Single-line invariant**: the existing test `decision_payload_summary_is_single_line_for_goal_committed` (`observer.rs:5744`) is extended to cover the failure-path tags whose summaries S136 widens; format must remain single-line.
+- **Single-line invariant**: the existing test `decision_payload_summary_is_single_line_for_goal_committed` is extended with sibling tests covering the failure-path tags whose summaries S136 widens; format must remain single-line.
 
 ## Risks
 
