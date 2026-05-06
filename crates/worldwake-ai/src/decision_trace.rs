@@ -7,10 +7,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use worldwake_core::{
-    ActionDefId, ActionDomain, BlockerKey, BlockingFact, CommodityKind, EntityId, FrameAssumption,
-    FrameClearReason, GoalKey, HypothesisKind, InstitutionalClaim, InstitutionalKnowledgeSource,
-    IntentionDomainTag, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute,
-    PerceptionSource, Permille, PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
+    ActionDefId, ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
+    ArtifactLegalEffect, ArtifactVisibility, BelievedArtifactState, BlockerKey, BlockingFact,
+    CommodityKind, EntityId, FrameAssumption, FrameClearReason, GoalKey, HypothesisKind,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OmissionReason,
+    OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
+    PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionStartFailureReason, BindingStrictness, ResolvedRequestTrace,
@@ -184,6 +186,9 @@ impl DecisionOutcome {
                 let acquisition_quantity_suffix = selected_summary
                     .and_then(|summary| summary.acquisition_quantity)
                     .map_or_else(String::new, format_acquisition_quantity_summary);
+                let artifact_axis_suffix = selected_summary
+                    .and_then(|summary| summary.artifact_axes.as_ref())
+                    .map_or_else(String::new, format_artifact_axis_summary);
                 let ranking_suffix = planning
                     .candidates
                     .top_ranked_comparison
@@ -218,7 +223,7 @@ impl DecisionOutcome {
                         });
                 let dirty = planning.dirty.display_names();
                 format!(
-                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{source_composite_suffix}{competition_suffix}{acquisition_quantity_suffix}{ranking_suffix}{discrepancy_suffix}{frame_suffix}{patrol_suffix}"
+                    "PLAN (dirty: {dirty}): selected={selected}, selected_opportunity={selected_opportunity}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{same_goal_suffix}{replacement_suffix}{selected_provenance}{selected_feasibility}{source_reliability_suffix}{source_composite_suffix}{competition_suffix}{acquisition_quantity_suffix}{artifact_axis_suffix}{ranking_suffix}{discrepancy_suffix}{frame_suffix}{patrol_suffix}"
                 )
             }
         }
@@ -534,6 +539,33 @@ pub struct RankedGoalSummary {
     /// `horizon_ticks` to the decision-trace pipeline (FND-29) without
     /// affecting `GoalKey` identity (S127 Design Goal 9).
     pub acquisition_quantity: Option<worldwake_core::AcquisitionQuantity>,
+    /// Snapshot of the five social-artifact axes for an artifact referenced by
+    /// this ranked candidate, when the candidate is grounded on one.
+    pub artifact_axes: Option<ArtifactAxisSnapshot>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactAxisSnapshot {
+    pub artifact: EntityId,
+    pub existence: ArtifactExistence,
+    pub visibility: ArtifactVisibility,
+    pub legal_effect: ArtifactLegalEffect,
+    pub credibility: ArtifactCredibility,
+    pub actionability: ArtifactActionability,
+}
+
+impl ArtifactAxisSnapshot {
+    #[must_use]
+    pub fn from_believed_artifact(artifact: EntityId, state: &BelievedArtifactState) -> Self {
+        Self {
+            artifact,
+            existence: state.existence.clone(),
+            visibility: state.visibility.clone(),
+            legal_effect: state.legal_effect,
+            credibility: state.credibility.clone(),
+            actionability: state.actionability,
+        }
+    }
 }
 
 /// Records the competition discount applied to a ranked goal's motive score.
@@ -610,6 +642,8 @@ pub struct CandidateEvidenceTrace {
     /// Remote pursuit diagnostic: belief, confidence, route cost, and omission
     /// reason for pursuit candidates. Populated only when tracing is enabled.
     pub pursuit: Option<PursuitDiagnostic>,
+    /// Snapshot of social-artifact axes for candidates grounded on an artifact.
+    pub artifact_axes: Option<ArtifactAxisSnapshot>,
 }
 
 /// Goal-family-specific legality provenance for one generated candidate.
@@ -1344,6 +1378,7 @@ impl DecisionTraceSink {
                     if ranked.source_reliability_discount.is_some()
                         || ranked.source_composite.is_some()
                         || ranked.competition_discount.is_some()
+                        || ranked.artifact_axes.is_some()
                     {
                         let source_reliability_suffix = ranked
                             .source_reliability_discount
@@ -1357,12 +1392,17 @@ impl DecisionTraceSink {
                             .competition_discount
                             .as_ref()
                             .map_or_else(String::new, format_competition_discount_summary);
+                        let artifact_axis_suffix = ranked
+                            .artifact_axes
+                            .as_ref()
+                            .map_or_else(String::new, format_artifact_axis_summary);
                         eprintln!(
-                            "  Ranked: {}{}{}{}",
+                            "  Ranked: {}{}{}{}{}",
                             format_opportunity_key(ranked.opportunity),
                             source_reliability_suffix,
                             source_composite_suffix,
-                            competition_suffix
+                            competition_suffix,
+                            artifact_axis_suffix
                         );
                     }
                 }
@@ -1663,6 +1703,9 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
             let acquisition_quantity_suffix = selected_summary
                 .and_then(|summary| summary.acquisition_quantity)
                 .map_or_else(String::new, format_acquisition_quantity_summary);
+            let artifact_axis_suffix = selected_summary
+                .and_then(|summary| summary.artifact_axes.as_ref())
+                .map_or_else(String::new, format_artifact_axis_summary);
             let ranking = planning
                 .candidates
                 .top_ranked_comparison
@@ -1670,7 +1713,7 @@ fn format_outcome(outcome: &DecisionOutcome, action_defs: &ActionDefRegistry) ->
                 .map_or_else(String::new, format_ranked_goal_comparison_summary);
             let dirty = planning.dirty.display_names();
             let mut out = format!(
-                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition}{acquisition_quantity_suffix}{ranking}"
+                "PLAN (dirty: {dirty}): selected={selected}, source={provenance}, selected_plan={selected_plan}, candidates={candidates}, plans_found={plans_found}{selected_provenance}{selected_feasibility}{competition}{acquisition_quantity_suffix}{artifact_axis_suffix}{ranking}"
             );
             if let Some(ref aff) = planning.affordances {
                 let place_str = aff
@@ -1947,6 +1990,18 @@ fn format_acquisition_quantity_summary(quantity: worldwake_core::AcquisitionQuan
         quantity.desired_min.get(),
         quantity.desired_target.get(),
         quantity.horizon_ticks.get(),
+    )
+}
+
+fn format_artifact_axis_summary(snapshot: &ArtifactAxisSnapshot) -> String {
+    format!(
+        ", artifact_axes=artifact={:?} existence={:?} visibility={:?} legal_effect={:?} credibility={:?} actionability={:?}",
+        snapshot.artifact,
+        snapshot.existence,
+        snapshot.visibility,
+        snapshot.legal_effect,
+        snapshot.credibility,
+        snapshot.actionability
     )
 }
 
@@ -2447,6 +2502,98 @@ mod tests {
         assert!(rendered.contains("Apple"), "{rendered}");
     }
 
+    #[test]
+    fn planning_summary_renders_ranked_artifact_axis_snapshot() {
+        let artifact = entity(44);
+        let goal = GoalKey::new(GoalKind::FulfillBounty { bounty: artifact });
+        let opportunity = OpportunityKey {
+            goal_key: goal,
+            anchor: OpportunityAnchor::Entity(artifact),
+        };
+        let trace = AgentDecisionTrace {
+            agent: entity(1),
+            tick: Tick(8),
+            outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
+                affordances: None,
+                dirty: crate::DirtySet::default(),
+                plan_continued: false,
+                candidates: CandidateTrace {
+                    generated: vec![opportunity],
+                    evidence: Vec::new(),
+                    fully_blocked_desires: Vec::new(),
+                    places_reachable: 0,
+                    places_after_belief_filter: 0,
+                    ranked: vec![RankedGoalSummary {
+                        opportunity,
+                        priority_class: crate::GoalPriorityClass::Medium,
+                        motive_score: 500,
+                        provenance: None,
+                        source_reliability_discount: None,
+                        competition_discount: None,
+                        source_composite: None,
+                        feasibility: FeasibilityHint::Likely,
+                        acquisition_quantity: None,
+                        artifact_axes: Some(ArtifactAxisSnapshot {
+                            artifact,
+                            existence: worldwake_core::ArtifactExistence::Exists,
+                            visibility: worldwake_core::ArtifactVisibility::Posted {
+                                place: entity(9),
+                            },
+                            legal_effect: worldwake_core::ArtifactLegalEffect::Active {
+                                expires_at: Some(Tick(99)),
+                            },
+                            credibility: worldwake_core::ArtifactCredibility::Credible,
+                            actionability: worldwake_core::ArtifactActionability::Actionable,
+                        }),
+                    }],
+                    top_ranked_comparison: None,
+                    suppressed: Vec::new(),
+                    damped: Vec::new(),
+                    zero_motive: Vec::new(),
+                    omitted_political: Vec::new(),
+                    omitted_bandit: Vec::new(),
+                    omitted_social: Vec::new(),
+                    omitted_violation_detection: Vec::new(),
+                },
+                planning: PlanSearchTrace {
+                    attempts: Vec::new(),
+                    same_goal_trace: None,
+                },
+                selection: SelectionTrace {
+                    selected_opportunity: Some(opportunity),
+                    selected_plan: None,
+                    selected_plan_source: Some(SelectedPlanSource::SearchSelection),
+                    goal_switch: None,
+                    previous_goal: None,
+                    plan_replacement: None,
+                    snapshot_continuation: None,
+                },
+                portfolio: None,
+                execution: ExecutionTrace {
+                    enqueued_step: None,
+                    revalidation_passed: None,
+                    failure: None,
+                },
+                action_start_failures: Vec::new(),
+                discrepancy_trace: Vec::new(),
+                exhaustion_snapshot: Vec::new(),
+                frame_transition: None,
+                patrol_route: PatrolRouteSnapshotTrace::default(),
+                selected_patrol_anchor: None,
+                pursuit_invalidation: None,
+            })),
+        };
+
+        let rendered = trace.outcome.summary();
+
+        assert!(rendered.contains("artifact_axes=artifact="), "{rendered}");
+        assert!(rendered.contains("existence=Exists"), "{rendered}");
+        assert!(rendered.contains("visibility=Posted"), "{rendered}");
+        assert!(rendered.contains("legal_effect=Active"), "{rendered}");
+        assert!(rendered.contains("credibility=Credible"), "{rendered}");
+        assert!(rendered.contains("actionability=Actionable"), "{rendered}");
+    }
+
     fn dead_trace(agent: EntityId, tick: Tick) -> AgentDecisionTrace {
         AgentDecisionTrace {
             agent,
@@ -2724,6 +2871,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 },
                 RankedGoalSummary {
                     opportunity: default_opportunity(GoalKey::from(&outranked_goal)),
@@ -2735,6 +2883,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 },
             ],
             Some(GoalKey::from(&selected_goal)),
@@ -3060,6 +3209,7 @@ mod tests {
                 source_composite: None,
                 feasibility: FeasibilityHint::Uncertain,
                 acquisition_quantity: None,
+                artifact_axes: None,
             }],
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SearchSelection),
@@ -3083,6 +3233,7 @@ mod tests {
                 source_composite: None,
                 feasibility: FeasibilityHint::Uncertain,
                 acquisition_quantity: None,
+                artifact_axes: None,
             }],
             Some(GoalKey::from(&goal)),
             Some(SelectedPlanSource::SnapshotContinuation),
@@ -3162,6 +3313,7 @@ mod tests {
                         source_composite: None,
                         feasibility: FeasibilityHint::Uncertain,
                         acquisition_quantity: None,
+                        artifact_axes: None,
                     },
                     RankedGoalSummary {
                         opportunity: market,
@@ -3173,6 +3325,7 @@ mod tests {
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,
+                        artifact_axes: None,
                     },
                 ],
                 top_ranked_comparison: None,
@@ -3393,6 +3546,7 @@ mod tests {
             knowledge_path: KnowledgePath::default(),
             legality: None,
             pursuit: None,
+            artifact_axes: None,
         };
         let candidates = CandidateTrace {
             generated: vec![opportunity],
@@ -3466,6 +3620,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3684,6 +3839,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Likely,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3757,6 +3913,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3829,6 +3986,7 @@ mod tests {
                     source_composite: Some(composite),
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -3921,6 +4079,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -4136,6 +4295,7 @@ mod tests {
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,
+                        artifact_axes: None,
                     },
                     RankedGoalSummary {
                         opportunity: default_opportunity(loser),
@@ -4147,6 +4307,7 @@ mod tests {
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,
+                        artifact_axes: None,
                     },
                 ],
                 top_ranked_comparison: Some(RankedGoalComparison {
@@ -4229,6 +4390,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -4325,6 +4487,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -4402,6 +4565,7 @@ mod tests {
                     source_composite: None,
                     feasibility: FeasibilityHint::Uncertain,
                     acquisition_quantity: None,
+                    artifact_axes: None,
                 }],
                 top_ranked_comparison: None,
                 suppressed: vec![],
@@ -5000,6 +5164,7 @@ mod tests {
             },
             legality: None,
             pursuit: None,
+            artifact_axes: None,
         };
 
         let trace = AgentDecisionTrace {
@@ -5025,6 +5190,7 @@ mod tests {
                         source_composite: None,
                         feasibility: FeasibilityHint::Likely,
                         acquisition_quantity: None,
+                        artifact_axes: None,
                     }],
                     top_ranked_comparison: None,
                     suppressed: vec![],
@@ -5158,6 +5324,7 @@ mod tests {
             knowledge_path: crate::knowledge_path::KnowledgePath::default(),
             legality: None,
             pursuit: Some(pd),
+            artifact_axes: None,
         };
         assert!(evidence.pursuit.is_some());
         assert!(evidence.pursuit.as_ref().unwrap().omission.is_none());

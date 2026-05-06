@@ -182,6 +182,9 @@ pub enum BlockerReason {
     LegalEffectRevoked,
     JurisdictionConflict,
     AwaitingAdjudication,
+    BountyFulfilled,
+    Adjudicated,
+    Refuted,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]

@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 72;
+pub const SAVE_FORMAT_VERSION: u32 = 73;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -201,16 +201,17 @@ mod tests {
         BeliefSnapshot, BeliefStatusTag, BelievedActivity, BelievedEntityState, BlockerKey,
         BlockerRecordedPayload, BlockingFact, BodyCostPerTick, CauseRef, ClaimId, ClaimValue,
         CloseCause, CommodityKind, CommodityPurpose, ControlSource, DecisionEventPayload,
-        Discrepancy, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog,
-        EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
-        ExpectationId, ExpectationMismatchPayload, ExpectationRecord, ExpectationState,
-        ExpectationStore, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey,
-        GoalKind, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
-        GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag, HomeostaticNeedId,
-        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, MaterializationTag,
-        MetabolismProfile, ObservationOmission, ObservationRef, OmissionReason, PendingEvent,
-        PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
-        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
+        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EmitterTag,
+        EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload, EventTag,
+        EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
+        ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
+        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
+        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
+        GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
+        LastSeenRecord, LatrineFullness, MaterializationTag, MetabolismProfile,
+        ObservationOmission, ObservationRef, OmissionReason, PendingEvent, PerceptionSource,
+        PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
+        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
         RewardEncumbrance, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
@@ -488,6 +489,27 @@ mod tests {
         );
         belief_txn
             .set_component_expectation_store(actor, expectation_store)
+            .unwrap();
+        let mut discrepancy_memory = DiscrepancyMemory::default();
+        let artifact = worldwake_core::test_utils::entity_id(100, 0);
+        let artifact_goal = GoalKey::from(GoalKind::FulfillBounty { bounty: artifact });
+        discrepancy_memory.record(DiscrepancyEntry {
+            blocker_key: BlockerKey {
+                goal_key: artifact_goal,
+                place: None,
+                target: Some(artifact),
+                action_def: None,
+            },
+            discrepancy: Discrepancy::ArtifactNotActionable {
+                artifact,
+                reason: worldwake_core::BlockerReason::LegalEffectExpired,
+            },
+            observed_tick: Tick(5),
+            expires_tick: Tick(25),
+            clearing_condition: DiscrepancyClearing::ReobservationOf { target: artifact },
+        });
+        belief_txn
+            .set_component_discrepancy_memory(actor, discrepancy_memory)
             .unwrap();
         belief_txn
             .set_component_last_seen_memory(
@@ -1111,7 +1133,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 72);
+        assert_eq!(SAVE_FORMAT_VERSION, 73);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1122,6 +1144,15 @@ mod tests {
         );
         assert_eq!(runtime, None);
         assert_eq!(restored, state);
+        assert!(
+            restored
+                .world()
+                .get_component_discrepancy_memory(actor)
+                .is_some_and(|memory| memory.entries.values().any(|entry| matches!(
+                    entry.discrepancy,
+                    Discrepancy::ArtifactNotActionable { .. }
+                )))
+        );
         assert_eq!(restored.scheduler().active_actions().len(), 1);
         assert_eq!(restored.scheduler().input_queue().len(), 2);
         assert_eq!(restored.recipe_registry().len(), 1);

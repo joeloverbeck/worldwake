@@ -323,6 +323,7 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
         source_composite: ranked.source_composite,
         feasibility: ranked.feasibility,
         acquisition_quantity: ranked.offer.acquisition_quantity,
+        artifact_axes: None,
     }
 }
 

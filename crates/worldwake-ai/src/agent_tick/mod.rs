@@ -34,10 +34,10 @@ use planning::{
 
 use crate::decision_trace::{
     ActionStartFailureSummary, AffordanceSummary, AffordanceTrace, AgentDecisionTrace,
-    CandidateTrace, DecisionOutcome, DecisionTraceSink, DiscrepancyTrace, ExecutionFailureReason,
-    ExecutionTrace, ExhaustionTraceEntry, FrameTransitionKind, FrameTransitionTrace,
-    InterruptTrace, PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace,
-    SelectionTrace,
+    ArtifactAxisSnapshot, CandidateTrace, DecisionOutcome, DecisionTraceSink, DiscrepancyTrace,
+    ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry, FrameTransitionKind,
+    FrameTransitionTrace, InterruptTrace, PatrolRouteSnapshotTrace, PlanSearchTrace,
+    PlanningPipelineTrace, SelectionTrace,
 };
 use crate::{
     AcceptedRepairProvenance, AgendaPhase, AgendaTickPolicy, AgentDecisionRuntime,
@@ -282,6 +282,9 @@ pub(super) fn decisive_evidence_from_discrepancy_entry(
             if let Some(target) = entry.blocker_key.target {
                 refs.push_observation(target, EntityBeliefAspect::Location, entry.observed_tick);
             }
+        }
+        Discrepancy::ArtifactNotActionable { artifact, .. } => {
+            refs.push_observation(artifact, EntityBeliefAspect::Artifact, entry.observed_tick);
         }
         Discrepancy::SourceInvalidated
         | Discrepancy::ImproperPlanningState
@@ -1914,6 +1917,19 @@ fn process_agent(
         }
 
         tracing.then(|| {
+            let artifact_axes_by_opportunity: BTreeMap<
+                worldwake_core::OpportunityKey,
+                ArtifactAxisSnapshot,
+            > = read_result
+                .candidate_evidence
+                .iter()
+                .filter_map(|trace| {
+                    trace
+                        .artifact_axes
+                        .clone()
+                        .map(|snapshot| (trace.opportunity, snapshot))
+                })
+                .collect();
             let (patrol_route, affordance_trace) = {
                 let view = runtime_belief_view(
                     agent,
@@ -1947,7 +1963,16 @@ fn process_agent(
                 fully_blocked_desires: read_result.fully_blocked_desires,
                 places_reachable: read_result.places_reachable,
                 places_after_belief_filter: read_result.places_after_belief_filter,
-                ranked: ordered.iter().map(summarize_ranked_goal).collect(),
+                ranked: ordered
+                    .iter()
+                    .map(|ranked| {
+                        let mut summary = summarize_ranked_goal(ranked);
+                        summary.artifact_axes = artifact_axes_by_opportunity
+                            .get(&summary.opportunity)
+                            .cloned();
+                        summary
+                    })
+                    .collect(),
                 top_ranked_comparison: ordered.first().zip(ordered.as_slice().get(1)).and_then(
                     |(winner, runner_up)| {
                         crate::ranking::explain_ranked_goal_order(winner, runner_up)

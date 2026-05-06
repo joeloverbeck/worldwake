@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: No new engine code. Adds `crates/worldwake-ai/tests/golden_artifact_lifecycle.rs` (5 scenarios), supporting `.ron` scenario files, and `scripts/check_no_artifact_state.sh` regression grep guard wired into `scripts/verify.sh`.
-**Deps**: archive/tickets/S140ARTLIFAXE-001.md, archive/tickets/S140ARTLIFAXE-002.md, S140ARTLIFAXE-003, S140ARTLIFAXE-004, S140ARTLIFAXE-005
+**Deps**: archive/tickets/S140ARTLIFAXE-001.md, archive/tickets/S140ARTLIFAXE-002.md, archive/tickets/S140ARTLIFAXE-003.md, S140ARTLIFAXE-004, S140ARTLIFAXE-005
 
 ## Problem
 

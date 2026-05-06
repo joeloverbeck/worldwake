@@ -298,6 +298,11 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
             violation_memory.record(pending.kind.clone(), pending.observed_tick, pending.ttl);
         debug_assert_eq!(recorded_id, pending.id);
     }
+    apply_pending_discrepancies(
+        discrepancy_memory,
+        &candidates.pending_discrepancies,
+        phase.structural_block_ticks,
+    );
 
     let generated_keys = candidates
         .candidates
@@ -357,6 +362,27 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         pursuit_invalidation,
         pending_source_reliability_failures: candidates.pending_source_reliability_failures,
         pending_acquisition_exhaustion_resets: candidates.pending_acquisition_exhaustion_resets,
+    }
+}
+
+fn apply_pending_discrepancies(
+    discrepancy_memory: &mut DiscrepancyMemory,
+    pending_discrepancies: &[crate::candidate_generation::PendingDiscrepancyRecord],
+    structural_block_ticks: u32,
+) {
+    for pending in pending_discrepancies {
+        discrepancy_memory.record(worldwake_core::DiscrepancyEntry {
+            blocker_key: pending.blocker_key,
+            discrepancy: pending.discrepancy,
+            observed_tick: pending.observed_tick,
+            expires_tick: Tick(
+                pending
+                    .observed_tick
+                    .0
+                    .saturating_add(u64::from(structural_block_ticks)),
+            ),
+            clearing_condition: pending.clearing_condition,
+        });
     }
 }
 
@@ -479,6 +505,7 @@ fn reinstate_current_plan_candidate(
             knowledge_path: KnowledgePath::default(),
             legality: None,
             pursuit: None,
+            artifact_axes: None,
         });
 }
 
@@ -1000,7 +1027,7 @@ pub(super) fn unique_item_signature(
 mod tests {
     use super::super::AssumptionRefContext;
     use super::{
-        ExpectationMismatchContext, emit_expectation_mismatch,
+        ExpectationMismatchContext, apply_pending_discrepancies, emit_expectation_mismatch,
         pending_local_source_reliability_failures, reinstate_current_plan_candidate,
     };
     use crate::{
@@ -1008,14 +1035,17 @@ mod tests {
         ExpectedMaterialization, GoalOffer, HypotheticalEntityId,
         OpportunityExpectationFailureIncident, OpportunityExpectationKind, PlanTerminalKind,
         PlannedPlan, PlannedStep, PlannerOpKind, PlanningEntityRef,
-        candidate_generation::{CandidateGenerationDiagnostics, CandidateGenerationResult},
+        candidate_generation::{
+            CandidateGenerationDiagnostics, CandidateGenerationResult, PendingDiscrepancyRecord,
+        },
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, CauseRef, CommodityKind, ControlSource,
-        DecisionEventPayload, EntityId, EventLog, EventTag, EventView, FrameAssumption, GoalKey,
-        GoalKind, HomeostaticNeedId, MaterializationTag, OpportunityAnchor, Quantity,
-        ResourceSource, Tick, VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
+        AcquisitionQuantity, ActionDefId, BlockerKey, BlockerReason, CauseRef, CommodityKind,
+        ControlSource, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyMemory,
+        EntityId, EventLog, EventTag, EventView, FrameAssumption, GoalKey, GoalKind,
+        HomeostaticNeedId, MaterializationTag, OpportunityAnchor, Quantity, ResourceSource, Tick,
+        VisibilitySpec, WitnessData, World, WorldTxn, build_prototype_world,
     };
     use worldwake_sim::PerAgentBeliefView;
 
@@ -1041,6 +1071,42 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut event_log = EventLog::new();
         let _ = txn.commit(&mut event_log);
+    }
+
+    #[test]
+    fn apply_pending_discrepancies_records_artifact_actionability_discrepancy() {
+        let artifact = entity(20);
+        let goal_key = GoalKey::from(GoalKind::FulfillBounty { bounty: artifact });
+        let blocker_key = BlockerKey {
+            goal_key,
+            place: None,
+            target: Some(artifact),
+            action_def: None,
+        };
+        let pending = PendingDiscrepancyRecord {
+            blocker_key,
+            discrepancy: Discrepancy::ArtifactNotActionable {
+                artifact,
+                reason: BlockerReason::LegalEffectExpired,
+            },
+            observed_tick: Tick(7),
+            clearing_condition: DiscrepancyClearing::ReobservationOf { target: artifact },
+        };
+        let mut memory = DiscrepancyMemory::default();
+
+        apply_pending_discrepancies(&mut memory, &[pending], 12);
+
+        let entry = memory
+            .entries
+            .get(&blocker_key)
+            .expect("pending discrepancy should be recorded");
+        assert_eq!(entry.discrepancy, pending.discrepancy);
+        assert_eq!(entry.observed_tick, Tick(7));
+        assert_eq!(entry.expires_tick, Tick(19));
+        assert_eq!(
+            entry.clearing_condition,
+            DiscrepancyClearing::ReobservationOf { target: artifact }
+        );
     }
 
     #[test]
@@ -1092,6 +1158,7 @@ mod tests {
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_discrepancies: Vec::new(),
             pending_source_reliability_failures: Vec::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
@@ -1138,6 +1205,7 @@ mod tests {
             candidates: Vec::new(),
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_discrepancies: Vec::new(),
             pending_source_reliability_failures: Vec::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };
@@ -1184,6 +1252,7 @@ mod tests {
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
             pending_violations: Vec::new(),
+            pending_discrepancies: Vec::new(),
             pending_source_reliability_failures: Vec::new(),
             pending_acquisition_exhaustion_resets: BTreeSet::new(),
         };

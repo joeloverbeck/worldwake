@@ -1,6 +1,6 @@
 use crate::{
-    BeliefClaimKey, BlockerKey, CommodityKind, Component, EntityId, HomeostaticNeedId,
-    OmissionReason, Tick,
+    BeliefClaimKey, BlockerKey, BlockerReason, CommodityKind, Component, EntityId,
+    HomeostaticNeedId, OmissionReason, Tick,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -37,6 +37,11 @@ pub enum Discrepancy {
     /// The agent could not revalidate against an entity that perception had
     /// dropped from the belief store under the given salience-budget reason.
     Omission(OmissionReason),
+    /// A social artifact known to the planner cannot currently be acted on.
+    ArtifactNotActionable {
+        artifact: EntityId,
+        reason: BlockerReason,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -101,8 +106,8 @@ impl Component for DiscrepancyMemory {}
 mod tests {
     use super::{Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory};
     use crate::{
-        ActionDefId, BeliefClaimKey, BlockerKey, CommodityKind, EntityBeliefAspect, EntityId,
-        GoalKind, OmissionReason, SaliencePolicy, Tick,
+        ActionDefId, BeliefClaimKey, BlockerKey, BlockerReason, CommodityKind, EntityBeliefAspect,
+        EntityId, GoalKind, OmissionReason, SaliencePolicy, Tick,
         test_utils::{entity_id, sample_goal_key},
         traits::Component,
     };
@@ -177,6 +182,19 @@ mod tests {
             budget: 5,
             candidates_seen: 10,
         });
+
+        let bytes = bincode::serialize(&discrepancy).unwrap();
+        let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, discrepancy);
+    }
+
+    #[test]
+    fn discrepancy_artifact_not_actionable_roundtrips_through_bincode() {
+        let discrepancy = Discrepancy::ArtifactNotActionable {
+            artifact: entity_id(42, 0),
+            reason: BlockerReason::LegalEffectExpired,
+        };
 
         let bytes = bincode::serialize(&discrepancy).unwrap();
         let roundtrip: Discrepancy = bincode::deserialize(&bytes).unwrap();
