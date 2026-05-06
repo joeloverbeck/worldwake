@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `Discrepancy` enum, hypothetical effect-sink revalidation
-**Deps**: `archive/tickets/S135PLAPERBUD-001.md`, S135PLAPERBUD-002, S135PLAPERBUD-003
+**Deps**: `archive/tickets/S135PLAPERBUD-001.md`, `archive/tickets/S135PLAPERBUD-002.md`, S135PLAPERBUD-003
 
 ## Problem
 

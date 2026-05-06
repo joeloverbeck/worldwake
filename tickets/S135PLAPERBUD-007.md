@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: No — test-only
-**Deps**: `archive/tickets/S135PLAPERBUD-001.md`, S135PLAPERBUD-002, S135PLAPERBUD-003, S135PLAPERBUD-004, S135PLAPERBUD-005
+**Deps**: `archive/tickets/S135PLAPERBUD-001.md`, `archive/tickets/S135PLAPERBUD-002.md`, S135PLAPERBUD-003, S135PLAPERBUD-004, S135PLAPERBUD-005
 
 ## Problem
 

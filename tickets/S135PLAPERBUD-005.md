@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — decision-trace surface, planner candidate-discard wiring
-**Deps**: `archive/tickets/S135PLAPERBUD-001.md`, S135PLAPERBUD-002
+**Deps**: `archive/tickets/S135PLAPERBUD-001.md`, `archive/tickets/S135PLAPERBUD-002.md`
 
 ## Problem
 
