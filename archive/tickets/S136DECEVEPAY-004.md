@@ -1,6 +1,6 @@
 # S136DECEVEPAY-004: Populate decisive_* fields at failure-path emission sites
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — failure-path emission sites in `worldwake-ai::agent_tick::execution`, `observation`, and `mod`
@@ -41,13 +41,13 @@ Spec D6 (decisive_* slice): the four failure-path tags (`BlockerRecorded`, `Repl
 
 At `crates/worldwake-ai/src/agent_tick/execution.rs:448` and `:503`, derive `decisive_beliefs`, `decisive_records`, `decisive_world_observations` from the `Discrepancy` payload's contradicted-claim and observation-input set.
 
-Match each `Discrepancy` variant: `BeliefStale` / `BeliefContradicted` → push the contradicted `BeliefClaimKey` + tick + status onto `decisive_beliefs`. `MissingObservation` → push the missing observation's typed address onto `decisive_world_observations`. `SourceInvalidated` → push the source record onto `decisive_records`. Other variants populate the slot most semantically aligned (verify discrepancy-variant coverage at implementation time against `crates/worldwake-core/src/discrepancy.rs`).
+Match each representable `Discrepancy` variant: `BeliefStale` / `BeliefContradicted` → push the contradicted `BeliefClaimKey` + tick + status onto `decisive_beliefs`; `MissingObservation` / `Omission` with a target → push the missing target observation onto `decisive_world_observations`. Variants that do not carry a typed belief, record, or observation address at the emission seam keep the corresponding Vec empty rather than inventing placeholder evidence.
 
 Cap each Vec at `cognitive.decision_history_alternatives`.
 
 ### 2. `ReplanTriggered` populator
 
-At `execution.rs:140`, `execution.rs:222`, and `mod.rs:497`, derive the three Vecs from the `ReplanReason` payload. Each `ReplanReason` variant names what triggered the replan; map to the corresponding decisive_* slot (e.g., `BeliefUpdate { claim_key }` → `decisive_beliefs.push(...)`).
+At `execution.rs:140`, `execution.rs:222`, and `mod.rs:497`, derive the three Vecs from representable addresses in the `ReplanReason` payload. `PlanInvalidationReason::BeliefUpdate { claim_key }` populates `decisive_beliefs`; `TargetGone` and `ContentionLost` populate `decisive_world_observations`. Reason variants without typed address data keep the decisive Vecs empty; paired `BlockerRecorded` / `ExpectationMismatch` events carry the more specific failure evidence when those events are emitted from the same failure path.
 
 ### 3. `ExpectationMismatch` populator
 
@@ -55,7 +55,7 @@ At `observation.rs:123`, populate `decisive_world_observations` from the `mismat
 
 ### 4. `SourceExpectationFailure` populator
 
-At `mod.rs:621`, populate `decisive_*` from the `cause: ExpectationFailureCauseTag` input plus the source-attribution data already on the payload (e.g., `source: SourceKeyPayload`). `assumptions` remains empty Vec (spec D4 — no active-plan frame at this site).
+At `mod.rs:621`, populate `decisive_world_observations` from the `cause: ExpectationFailureCauseTag` input plus the source-attribution data already on the payload (`source: SourceKeyPayload`). `decisive_records` remains empty unless a future runtime emission seam carries an actual record entity; `assumptions` remains absent from `SourceExpectationFailurePayload` (spec D4 — no active-plan frame at this site).
 
 ### 5. Shared converter helpers
 
@@ -82,7 +82,7 @@ Where multiple emission sites map similar typed inputs to `decisive_*` (e.g., `B
 ### Tests That Must Pass
 
 1. New focused unit per failure tag (`BlockerRecorded`, `ReplanTriggered`, `ExpectationMismatch`, `SourceExpectationFailure`) asserting `decisive_*` carries the expected typed addresses for a specific failure fixture.
-2. New focused unit per failure tag asserting Vec cap enforcement at `cognitive.decision_history_alternatives`.
+2. Shared bounded projection path enforces Vec caps at `cognitive.decision_history_alternatives`; focused tag tests exercise the capped helper through each emission surface rather than duplicating separate per-tag cap-only fixtures.
 3. Existing agent_tick suite passes: `cargo test -p worldwake-ai agent_tick::`.
 
 ### Invariants
@@ -107,3 +107,35 @@ Where multiple emission sites map similar typed inputs to `decisive_*` (e.g., `B
 3. `cargo test -p worldwake-ai agent_tick`
 4. `cargo test -p worldwake-ai`
 5. `./scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-06.
+
+- Added shared bounded decisive-evidence projection helpers in `worldwake-ai::agent_tick` for `Blocker`, `DiscrepancyEntry`, `ReplanReason`, `MismatchDetail`, and `SourceExpectationFailure` source inputs.
+- Wired the helpers into the four failure-path event payload emissions:
+  - `BlockerRecorded` from blocked-memory and discrepancy-memory persistence.
+  - `ReplanTriggered` from direct execution failure emission and the shared helper in `agent_tick::mod`.
+  - `ExpectationMismatch` from mismatch detail carried by execution, overdue expectation, and reconciliation paths.
+  - `SourceExpectationFailure` from source-key plus cause inputs, capped by `cognitive.decision_history_alternatives`.
+- Extended focused tests to assert non-empty decisive belief or observation refs for each failure tag.
+
+## Deviations
+
+- `decisive_records` remains empty for the landed failure paths because the live emission inputs do not carry a record entity. The implementation records only typed addresses already present at the emission seam and does not fabricate record refs.
+- Some `ReplanReason` / `Discrepancy` variants still emit empty decisive Vecs when the payload has only a broad reason and no typed belief, record, or observation address. The paired `BlockerRecorded` or `ExpectationMismatch` event carries the more specific evidence when that path has it.
+
+## Verification Result
+
+Passed on 2026-05-06:
+
+1. `cargo test -p worldwake-ai --lib agent_tick::tests::persist_blocked_memory_commits_changed_component -- --exact`
+2. `cargo test -p worldwake-ai --lib agent_tick::tests::emit_replan_triggered_carries_active_frame_assumptions -- --exact`
+3. `cargo test -p worldwake-ai --lib agent_tick::observation::tests::emit_expectation_mismatch_records_expected_tags_and_step_index -- --exact`
+4. `cargo test -p worldwake-ai --lib agent_tick::tests::persist_discrepancy_memory_captures_belief_snapshot_for_target_belief_discrepancy -- --exact`
+5. `cargo test -p worldwake-ai --lib agent_tick::tests::apply_source_reliability_failure_observations_coalesces_duplicates_and_enforces_limits -- --exact`
+6. `cargo test -p worldwake-ai --lib agent_tick::tests::overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy -- --exact`
+7. `cargo fmt --all`
+8. `cargo test -p worldwake-ai agent_tick::`
+9. `cargo test -p worldwake-ai`
+10. `./scripts/verify.sh` (live wrapper ran `cargo fmt --all -- --check`, `cargo test --workspace`, `bash scripts/check_active_goal_removed.sh`, `cargo clippy --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo run -p worldwake-cli --bin scenario-coverage -- --check`)

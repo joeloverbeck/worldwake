@@ -27,7 +27,8 @@ use worldwake_core::{ContentionIntents, QueuedContentionIntent};
 use super::{
     AgentTickContext, AssumptionRefContext, advance_completed_step,
     apply_step_materialization_bindings, committed_action_for_step, current_step,
-    emit_decision_event, handle_current_step_failure, plan_finished, runtime_belief_view,
+    decisive_evidence_from_mismatch_detail, emit_decision_event, handle_current_step_failure,
+    plan_finished, runtime_belief_view,
 };
 
 #[derive(Clone, Copy)]
@@ -106,6 +107,7 @@ pub(super) struct ExpectationMismatchContext<'a> {
     pub(super) expectation_kind: Option<ExpectationKindTag>,
     pub(super) mismatch_detail: Option<MismatchDetail>,
     pub(super) assumption_refs: AssumptionRefContext<'a>,
+    pub(super) max_decisive_evidence: u8,
 }
 
 impl Default for ExpectationMismatchContext<'_> {
@@ -114,6 +116,7 @@ impl Default for ExpectationMismatchContext<'_> {
             expectation_kind: None,
             mismatch_detail: None,
             assumption_refs: AssumptionRefContext::new(&[], 0),
+            max_decisive_evidence: 0,
         }
     }
 }
@@ -127,6 +130,12 @@ pub(super) fn emit_expectation_mismatch(
     step: &PlannedStep,
     context: ExpectationMismatchContext<'_>,
 ) {
+    let decisive = decisive_evidence_from_mismatch_detail(
+        agent,
+        context.mismatch_detail,
+        tick,
+        context.max_decisive_evidence,
+    );
     emit_decision_event(
         event_log,
         tick,
@@ -143,9 +152,9 @@ pub(super) fn emit_expectation_mismatch(
                 .collect(),
             expectation_kind: context.expectation_kind,
             mismatch_detail: context.mismatch_detail,
-            decisive_beliefs: Vec::new(),
-            decisive_records: Vec::new(),
-            decisive_world_observations: Vec::new(),
+            decisive_beliefs: decisive.beliefs,
+            decisive_records: decisive.records,
+            decisive_world_observations: decisive.world_observations,
             assumptions: context.assumption_refs.to_refs(),
         }),
     );
@@ -696,6 +705,7 @@ pub(super) fn reconcile_in_flight_state(
                     ctx.cognitive.decision_history_alternatives,
                     runtime.current_plan.as_ref(),
                 ),
+                max_decisive_evidence: ctx.cognitive.decision_history_alternatives,
                 ..ExpectationMismatchContext::default()
             },
         );
@@ -1214,6 +1224,14 @@ mod tests {
             5,
             &step,
             ExpectationMismatchContext {
+                mismatch_detail: Some(worldwake_core::MismatchDetail::StateUnmet {
+                    predicate: worldwake_core::StatePredicate::ClaimEstablished {
+                        claim: worldwake_core::BeliefClaimKey {
+                            subject: agent,
+                            aspect: worldwake_core::EntityBeliefAspect::Location,
+                        },
+                    },
+                }),
                 assumption_refs: AssumptionRefContext::new(
                     &[FrameAssumption::NeedSafeUntilTick {
                         need: HomeostaticNeedId::Fatigue,
@@ -1221,6 +1239,7 @@ mod tests {
                     }],
                     5,
                 ),
+                max_decisive_evidence: 5,
                 ..ExpectationMismatchContext::default()
             },
         );
@@ -1240,8 +1259,22 @@ mod tests {
                     step_index: 5,
                     expected_materializations: vec![MaterializationTag::SplitOffLot],
                     expectation_kind: None,
-                    mismatch_detail: None,
-                    decisive_beliefs: Vec::new(),
+                    mismatch_detail: Some(worldwake_core::MismatchDetail::StateUnmet {
+                        predicate: worldwake_core::StatePredicate::ClaimEstablished {
+                            claim: worldwake_core::BeliefClaimKey {
+                                subject: agent,
+                                aspect: worldwake_core::EntityBeliefAspect::Location,
+                            },
+                        },
+                    }),
+                    decisive_beliefs: vec![worldwake_core::BeliefRef {
+                        claim_key: worldwake_core::BeliefClaimKey {
+                            subject: agent,
+                            aspect: worldwake_core::EntityBeliefAspect::Location,
+                        },
+                        claim_held_at_tick: Tick(12),
+                        status: worldwake_core::BeliefStatusTag::Contradicted,
+                    }],
                     decisive_records: Vec::new(),
                     decisive_world_observations: Vec::new(),
                     assumptions: vec![worldwake_core::PlanAssumptionRef {

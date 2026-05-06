@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None (test-only; soak harness extension)
-**Deps**: archive/tickets/S136DECEVEPAY-002.md, archive/tickets/S136DECEVEPAY-003.md, tickets/S136DECEVEPAY-004.md, archive/tickets/S136DECEVEPAY-007.md
+**Deps**: archive/tickets/S136DECEVEPAY-002.md, archive/tickets/S136DECEVEPAY-003.md, archive/tickets/S136DECEVEPAY-004.md, archive/tickets/S136DECEVEPAY-007.md
 
 ## Problem
 
@@ -12,7 +12,7 @@ Spec validation requires golden coverage for the new payload fields across four 
 1. **Eat-vs-Drink contested commit** → `GoalCommittedPayload.rejected_alternatives` contains Drink with the correct `score_gap` AND `rejection_dimension == Some(MotiveScore)`. After ticket 002's reorder, `assumptions` is also non-empty.
 2. **Stale-belief replan** → `ReplanTriggeredPayload.decisive_beliefs` names the contradicted claim with `BeliefStatusTag::Stale`, and `assumptions` names the active frame's assumption set.
 3. **Assumption breach** → `ExpectationMismatchPayload.assumptions` names the breached `FrameAssumption::CommodityAvailableAt` from S122, and `decisive_world_observations` names the post-arrival observation that contradicted it.
-4. **Source-expectation failure** → `SourceExpectationFailurePayload.decisive_*` names the source-attribution input (no `assumptions` field — by spec D4).
+4. **Source-expectation failure** → `SourceExpectationFailurePayload.decisive_world_observations` names the source-attribution input; `decisive_beliefs` and `decisive_records` remain empty unless the live emission seam carries lawful typed addresses for those ref families (no `assumptions` field — by spec D4).
 
 Plus a deterministic fixed-seed payload-size sweep through the existing `soak_seed_perf` harness, asserting per-event payload byte size never exceeds a per-tag byte ceiling under the canonical scenarios.
 
@@ -54,7 +54,7 @@ Add `crates/worldwake-ai/tests/golden_decision_payload.rs` (or extend existing s
   - **Scenario 1** (Eat-vs-Drink): assert `rejected_alternatives` contains a Drink entry with the expected `score_gap` and `rejection_dimension == Some(RankedGoalComparisonDimensionTag::MotiveScore)`. Assert `assumptions.len() >= 1` (post-reorder from ticket 002).
   - **Scenario 2** (stale-belief replan): assert `decisive_beliefs` contains a `BeliefRef` with `status == BeliefStatusTag::Stale` and the contradicted claim key. Assert `assumptions` names the active frame's set.
   - **Scenario 3** (assumption breach): assert `assumptions` contains `PlanAssumptionRef { assumption: FrameAssumption::CommodityAvailableAt { ... }, introduced_at_step: <real provenance> }` using the archived S136DECEVEPAY-007 provenance contract. Assert `decisive_world_observations` contains the post-arrival observation that contradicted the assumption.
-  - **Scenario 4** (source-expectation failure): assert `decisive_*` carries the source-attribution input. Assert `assumptions` is NOT present in the payload (compile-time enforced by ticket 001's struct shape).
+  - **Scenario 4** (source-expectation failure): assert `decisive_world_observations` carries the source-attribution input. Assert `decisive_beliefs` and `decisive_records` stay empty for the current seam unless implementation-time reassessment finds a lawful typed carrier. Assert `assumptions` is NOT present in the payload (compile-time enforced by ticket 001's struct shape).
 - Documents the lawful competing affordances excluded from setup per `docs/precision-rules.md` Rule 8.
 
 ### 2. Per-tag payload-size soak sweep

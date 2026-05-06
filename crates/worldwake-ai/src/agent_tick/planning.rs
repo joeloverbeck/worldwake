@@ -1732,6 +1732,7 @@ pub(super) fn plan_and_validate_next_step(
                             } else {
                                 None
                             },
+                            cognitive.decision_history_alternatives,
                         );
                     }
                     let refreshed_view =
@@ -2124,6 +2125,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                         } else {
                             None
                         },
+                        cognitive.decision_history_alternatives,
                     );
                 }
                 let refreshed_view =

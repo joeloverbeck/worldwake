@@ -55,16 +55,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::FrameClearReason;
 use worldwake_core::{
-    ActionDefId, CauseRef, CognitiveProfile, ContentionIntents, ControlSource,
-    DecisionEventPayload, EntityId, EventPayload, EventTag, ExecutionBudget,
-    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, FrameAssumption, GoalAbandonReason,
-    GoalAbandonedPayload, GoalOfferedPayload, GoalSuppressedPayload, GoalSuspendedPayload,
-    GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick, LearnedOpportunityMemory,
+    ActionDefId, BeliefClaimKey, BeliefRef, BeliefStatusTag, Blocker, BlockingFact, CauseRef,
+    CognitiveProfile, ContentionIntents, ControlSource, DecisionEventPayload, Discrepancy,
+    DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect, EntityId, EventPayload, EventTag,
+    ExecutionBudget, ExpectationFailureCauseTag, ExpectationFailurePhaseTag, FrameAssumption,
+    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalSuppressedPayload,
+    GoalSuspendedPayload, GoalSwitchReason, IntentionFrame, LastProactiveExplorationTick,
+    LearnedOpportunityMemory, MismatchDetail, ObservationPredicate, ObservationRef,
     OpportunityAnchor, OpportunityEntry, OpportunityExpectationKindTag, PendingEvent,
     PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
-    PursuitInvalidationReasonTag, RepairAppliedPayload, RepairEntry, RepairKey, RepairKind,
-    RepairMemory, ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
-    SourceExpectationFailurePayload, SourceKeyPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    PursuitInvalidationReasonTag, RecordRef, RepairAppliedPayload, RepairEntry, RepairKey,
+    RepairKind, RepairMemory, ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
+    SourceExpectationFailurePayload, SourceKeyPayload, StatePredicate, Tick, VisibilitySpec,
+    WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     ActionHandlerRegistry, AutonomousController, AutonomousControllerContext, CommittedAction,
@@ -172,6 +175,264 @@ fn step_introduces_assumption(step: &crate::PlannedStep, assumption: FrameAssump
             .any(|candidate| candidate == target),
         FrameAssumption::NoCriticalThreat | FrameAssumption::NeedSafeUntilTick { .. } => false,
     }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct DecisiveEvidenceRefs {
+    pub(super) beliefs: Vec<BeliefRef>,
+    pub(super) records: Vec<RecordRef>,
+    pub(super) world_observations: Vec<ObservationRef>,
+}
+
+impl DecisiveEvidenceRefs {
+    fn push_belief(&mut self, claim_key: BeliefClaimKey, tick: Tick, status: BeliefStatusTag) {
+        self.beliefs.push(BeliefRef {
+            claim_key,
+            claim_held_at_tick: tick,
+            status,
+        });
+    }
+
+    fn push_observation(
+        &mut self,
+        observed_entity: EntityId,
+        aspect: EntityBeliefAspect,
+        tick: Tick,
+    ) {
+        self.world_observations.push(ObservationRef {
+            observed_entity,
+            aspect,
+            observed_tick: tick,
+        });
+    }
+
+    fn capped(mut self, cap: u8) -> Self {
+        let cap = usize::from(cap);
+        self.beliefs.truncate(cap);
+        self.records.truncate(cap);
+        self.world_observations.truncate(cap);
+        self
+    }
+}
+
+pub(super) fn decisive_evidence_from_blocker(blocker: &Blocker, cap: u8) -> DecisiveEvidenceRefs {
+    let mut refs = DecisiveEvidenceRefs::default();
+    let tick = blocker.observed_tick;
+    match blocker.blocking_fact {
+        BlockingFact::TargetGone => {
+            if let Some(target) = blocker.blocker_key.target {
+                refs.push_observation(target, EntityBeliefAspect::Alive, tick);
+            }
+        }
+        BlockingFact::MissingInput(_) => {
+            if let Some(place) = blocker.blocker_key.place
+                && let Some(aspect) = blocking_fact_commodity_aspect(blocker.blocking_fact)
+            {
+                refs.push_observation(place, aspect, tick);
+            }
+        }
+        BlockingFact::WorkstationBusy
+        | BlockingFact::ReservationConflict
+        | BlockingFact::ExclusiveFacilityUnavailable => {
+            if let Some(place) = blocker.blocker_key.place {
+                refs.push_observation(place, EntityBeliefAspect::ContentionState, tick);
+            }
+        }
+        BlockingFact::NoKnownPath => {
+            if let Some(target) = blocker.blocker_key.target {
+                refs.push_observation(target, EntityBeliefAspect::Location, tick);
+            }
+        }
+        BlockingFact::NoKnownSeller
+        | BlockingFact::SellerOutOfStock
+        | BlockingFact::SourceDepleted
+        | BlockingFact::TooExpensive
+        | BlockingFact::MissingTool(_)
+        | BlockingFact::DangerTooHigh
+        | BlockingFact::CombatTooRisky
+        | BlockingFact::PatienceExhausted
+        | BlockingFact::NoBuyer => {}
+    }
+    refs.capped(cap)
+}
+
+fn blocking_fact_commodity_aspect(fact: BlockingFact) -> Option<EntityBeliefAspect> {
+    match fact {
+        BlockingFact::MissingInput(commodity) => Some(EntityBeliefAspect::Inventory(commodity)),
+        _ => None,
+    }
+}
+
+pub(super) fn decisive_evidence_from_discrepancy_entry(
+    entry: &DiscrepancyEntry,
+    cap: u8,
+) -> DecisiveEvidenceRefs {
+    let mut refs = DecisiveEvidenceRefs::default();
+    match entry.discrepancy {
+        Discrepancy::BeliefStale | Discrepancy::BeliefContradicted => {
+            if let Some(claim_key) = discrepancy_claim_key(entry) {
+                refs.push_belief(
+                    claim_key,
+                    entry.observed_tick,
+                    discrepancy_belief_status(entry.discrepancy),
+                );
+            }
+        }
+        Discrepancy::MissingObservation | Discrepancy::Omission(_) => {
+            if let Some(target) = entry.blocker_key.target {
+                refs.push_observation(target, EntityBeliefAspect::Location, entry.observed_tick);
+            }
+        }
+        Discrepancy::SourceInvalidated
+        | Discrepancy::ImproperPlanningState
+        | Discrepancy::NoLegalBinding
+        | Discrepancy::NoWillingCounterparty
+        | Discrepancy::RouteUnknown
+        | Discrepancy::SearchBudgetExhausted
+        | Discrepancy::PartialExecutionDrift
+        | Discrepancy::NeedHorizonExceeded { .. } => {}
+    }
+    refs.capped(cap)
+}
+
+fn discrepancy_claim_key(entry: &DiscrepancyEntry) -> Option<BeliefClaimKey> {
+    match entry.clearing_condition {
+        DiscrepancyClearing::BeliefUpdate { claim_key } => Some(claim_key),
+        _ => entry.blocker_key.target.map(|target| BeliefClaimKey {
+            subject: target,
+            aspect: EntityBeliefAspect::Location,
+        }),
+    }
+}
+
+fn discrepancy_belief_status(discrepancy: Discrepancy) -> BeliefStatusTag {
+    match discrepancy {
+        Discrepancy::BeliefStale => BeliefStatusTag::Stale,
+        Discrepancy::BeliefContradicted => BeliefStatusTag::Contradicted,
+        _ => BeliefStatusTag::Disputed,
+    }
+}
+
+pub(super) fn decisive_evidence_from_replan_reason(
+    reason: &ReplanReason,
+    tick: Tick,
+    cap: u8,
+) -> DecisiveEvidenceRefs {
+    let mut refs = DecisiveEvidenceRefs::default();
+    match reason {
+        ReplanReason::PlanInvalidated { reason } => {
+            append_plan_invalidation_evidence(&mut refs, reason, tick);
+        }
+        ReplanReason::BlockingFactRecorded { .. }
+        | ReplanReason::DiscrepancyRecorded { .. }
+        | ReplanReason::ActionInterrupted { .. }
+        | ReplanReason::ActionStartFailed
+        | ReplanReason::LocalRepairExhausted
+        | ReplanReason::SearchBudgetExhausted
+        | ReplanReason::GoalSwitched { .. } => {}
+    }
+    refs.capped(cap)
+}
+
+fn append_plan_invalidation_evidence(
+    refs: &mut DecisiveEvidenceRefs,
+    reason: &PlanInvalidationReason,
+    tick: Tick,
+) {
+    match reason {
+        PlanInvalidationReason::BeliefUpdate { claim_key } => {
+            refs.push_belief(*claim_key, tick, BeliefStatusTag::Probable);
+        }
+        PlanInvalidationReason::TargetGone { target } => {
+            refs.push_observation(*target, EntityBeliefAspect::Alive, tick);
+        }
+        PlanInvalidationReason::ContentionLost { place, .. } => {
+            refs.push_observation(*place, EntityBeliefAspect::ContentionState, tick);
+        }
+        PlanInvalidationReason::DiscrepancyRecorded { .. }
+        | PlanInvalidationReason::ExpectationMismatch { .. }
+        | PlanInvalidationReason::PreemptedByHigherGoal { .. }
+        | PlanInvalidationReason::PursuitInvalidated { .. }
+        | PlanInvalidationReason::AssumptionFailed { .. }
+        | PlanInvalidationReason::AgentIncapacitated => {}
+    }
+}
+
+pub(super) fn decisive_evidence_from_mismatch_detail(
+    agent: EntityId,
+    detail: Option<MismatchDetail>,
+    tick: Tick,
+    cap: u8,
+) -> DecisiveEvidenceRefs {
+    let mut refs = DecisiveEvidenceRefs::default();
+    match detail {
+        Some(MismatchDetail::StateUnmet { predicate }) => {
+            append_state_predicate_evidence(&mut refs, agent, predicate, tick);
+        }
+        Some(MismatchDetail::ObservationMissing { predicate }) => {
+            append_observation_predicate_evidence(&mut refs, predicate, tick);
+        }
+        Some(MismatchDetail::GuardInvalidator(_)) | None => {}
+    }
+    refs.capped(cap)
+}
+
+fn append_state_predicate_evidence(
+    refs: &mut DecisiveEvidenceRefs,
+    agent: EntityId,
+    predicate: StatePredicate,
+    tick: Tick,
+) {
+    match predicate {
+        StatePredicate::CommodityAtPlaceAtLeast { place, kind, .. } => {
+            refs.push_observation(place, EntityBeliefAspect::Inventory(kind), tick);
+        }
+        StatePredicate::EntityAtPlace { entity, .. } => {
+            refs.push_observation(entity, EntityBeliefAspect::Location, tick);
+        }
+        StatePredicate::ActorHoldsCommodity { kind, .. } => {
+            refs.push_observation(agent, EntityBeliefAspect::Inventory(kind), tick);
+        }
+        StatePredicate::ClaimEstablished { claim } => {
+            refs.push_belief(claim, tick, BeliefStatusTag::Contradicted);
+        }
+    }
+}
+
+fn append_observation_predicate_evidence(
+    refs: &mut DecisiveEvidenceRefs,
+    predicate: ObservationPredicate,
+    tick: Tick,
+) {
+    match predicate {
+        ObservationPredicate::EntityPerceivedAtPlace { entity, .. } => {
+            refs.push_observation(entity, EntityBeliefAspect::Location, tick);
+        }
+        ObservationPredicate::EvidencePerceived { place, .. } => {
+            refs.push_observation(place, EntityBeliefAspect::Evidence, tick);
+        }
+    }
+}
+
+fn decisive_evidence_from_source_expectation_failure(
+    source: SourceKeyPayload,
+    cause: ExpectationFailureCauseTag,
+    detected_at_tick: Tick,
+    cap: u8,
+) -> DecisiveEvidenceRefs {
+    let mut refs = DecisiveEvidenceRefs::default();
+    match cause {
+        ExpectationFailureCauseTag::SourceAbsentLocally
+        | ExpectationFailureCauseTag::SourceDepletedLocally
+        | ExpectationFailureCauseTag::SameGoalSearchInfeasibleWhileSiblingSucceeded => {
+            refs.push_observation(
+                source.entity,
+                EntityBeliefAspect::ResourceAvailable(source.commodity),
+                detected_at_tick,
+            );
+        }
+    }
+    refs.capped(cap)
 }
 
 impl AgentTickDriver {
@@ -491,6 +752,7 @@ pub(super) fn process_overdue_plan_step_expectations(
                     ctx.cognitive.decision_history_alternatives,
                     Some(plan),
                 ),
+                max_decisive_evidence: ctx.cognitive.decision_history_alternatives,
             },
         );
 
@@ -590,6 +852,7 @@ fn emit_replan_triggered(
     max_assumptions: u8,
     plan: Option<&crate::PlannedPlan>,
 ) {
+    let decisive = decisive_evidence_from_replan_reason(&reason, tick, max_assumptions);
     emit_decision_event(
         event_log,
         tick,
@@ -599,9 +862,9 @@ fn emit_replan_triggered(
             agent,
             goal_key,
             reason,
-            decisive_beliefs: Vec::new(),
-            decisive_records: Vec::new(),
-            decisive_world_observations: Vec::new(),
+            decisive_beliefs: decisive.beliefs,
+            decisive_records: decisive.records,
+            decisive_world_observations: decisive.world_observations,
             assumptions: assumptions_to_refs(assumptions, max_assumptions, plan),
         }),
     );
@@ -663,22 +926,30 @@ fn source_expectation_failure_payload(
     agent: EntityId,
     incident: &OpportunityExpectationFailureIncident,
     attribution_outcome: SourceAttributionOutcomeTag,
+    max_decisive_evidence: u8,
 ) -> SourceExpectationFailurePayload {
+    let source = SourceKeyPayload {
+        entity: incident.source.entity,
+        commodity: incident.source.commodity,
+    };
+    let decisive = decisive_evidence_from_source_expectation_failure(
+        source,
+        map_expectation_failure_cause_tag(incident.cause),
+        incident.detected_at_tick,
+        max_decisive_evidence,
+    );
     SourceExpectationFailurePayload {
         agent,
         opportunity: incident.opportunity,
-        source: SourceKeyPayload {
-            entity: incident.source.entity,
-            commodity: incident.source.commodity,
-        },
+        source,
         expectation_kind: map_opportunity_expectation_kind_tag(incident.expectation_kind),
         phase: map_expectation_failure_phase_tag(incident.phase),
         cause: map_expectation_failure_cause_tag(incident.cause),
         detected_at_tick: incident.detected_at_tick,
         attribution_outcome,
-        decisive_beliefs: Vec::new(),
-        decisive_records: Vec::new(),
-        decisive_world_observations: Vec::new(),
+        decisive_beliefs: decisive.beliefs,
+        decisive_records: decisive.records,
+        decisive_world_observations: decisive.world_observations,
     }
 }
 
@@ -688,6 +959,7 @@ fn emit_source_expectation_failure_events(
     incidents: &[OpportunityExpectationFailureIncident],
     applied_failures: &BTreeMap<worldwake_core::SourceKey, BTreeSet<ExpectationFailureCause>>,
     invalidated_committed_source: Option<worldwake_core::SourceKey>,
+    max_decisive_evidence: u8,
 ) {
     let mut seen = BTreeSet::new();
     for incident in incidents {
@@ -730,6 +1002,7 @@ fn emit_source_expectation_failure_events(
                 agent,
                 incident,
                 attribution_outcome,
+                max_decisive_evidence,
             )),
         );
     }
@@ -1317,6 +1590,7 @@ fn process_agent(
             } else {
                 None
             },
+            cognitive.decision_history_alternatives,
         );
     }
     if !read_result.pending_acquisition_exhaustion_resets.is_empty() {

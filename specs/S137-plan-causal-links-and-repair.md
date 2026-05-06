@@ -28,7 +28,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - S110 (Decision History Events) — completed. `EventTag::RepairApplied` already exists; S137 populates its payload with the chosen `RepairKind`.
 - S134 (Canonical Effect Schema) — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. `RepairKind::ReplaceProvider` benefits from the queryable effect-schema surface when picking a replacement step.
 - S138 (Affordance-to-Opportunity Compiler) — Phase 11 sibling. Soft dependency: with S138, `RepairKind::RebindTarget` can pick a sibling target the opportunity compiler surfaced; absent S138, rebind walks the agent's existing belief observations.
-- S136 (Decision Event Payload Extension) — Phase 11 sibling. Soft dependency: `RepairAppliedPayload` benefits from `decisive_beliefs`/`decisive_records` populated by S136; if S136 lands first, the repair-attempt trace inherits the same fields.
+- S136 (Decision Event Payload Extension) — Phase 11 sibling. Soft dependency: `RepairAppliedPayload` benefits from S136's representable `decisive_*` ref families; record refs should be populated only when the repair emission seam carries a lawful record entity.
 
 ## Design Goals
 

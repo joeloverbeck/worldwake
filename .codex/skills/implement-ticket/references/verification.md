@@ -142,6 +142,8 @@ When an event-log or decision-history ticket owns one specific emitted payload r
 
 When a migrated output surface is fed by multiple lawful producers, such as observation, candidate generation, and planning paths writing into one combined vector, confirm which producers the existing focused regression actually exercises before broadening assertions to the whole combined output. If the harness only seeds one producer, keep the proof scoped to that exercised producer or extend the harness explicitly before claiming the combined contract.
 
+When several event tags, trace variants, or payload producers share one bounded projection helper, prove the helper's cap/dedup/order contract directly and then add focused per-emission tests for the actual populated payload contents. If the ticket drafts duplicate cap-only fixtures for every tag but the live implementation centralizes the cap in one shared helper, rewrite acceptance and verification text to that shared-helper proof seam instead of manufacturing redundant per-tag fixtures.
+
 When a broadened golden starts looking truthful only over a longer window than the draft implied, explicitly classify the contract before closeout: immediate post-return behavior, action-lifecycle ordering, or eventual completion over a cooldown/retention horizon. Rewrite the ticket and golden assertions to that exact temporal boundary instead of leaving "completes" ambiguous.
 
 ## Repo-wide live-contract fallout
