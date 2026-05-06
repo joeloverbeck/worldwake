@@ -1215,7 +1215,7 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
         agents: _,
         bandit_camps,
         offices,
-        notices,
+        artifacts,
         items: _,
         facilities: _,
         resource_sources: _,
@@ -1234,8 +1234,8 @@ fn authored_scenario_feature_fields(def: &ScenarioDef) -> BTreeSet<&'static str>
     if !offices.is_empty() {
         fields.insert("offices");
     }
-    if !notices.is_empty() {
-        fields.insert("notices");
+    if !artifacts.is_empty() {
+        fields.insert("artifacts");
     }
     if !bandit_camps.is_empty() {
         fields.insert("bandit_camps");

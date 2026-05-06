@@ -8,18 +8,20 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 use worldwake_core::{
-    AgendaProfile, ArtifactPostingProfile, CarryCapacity, CognitiveProfile, CombatProfile,
-    CommodityDecayMap, CommodityValuationProfile, CommunicationProfile, Container,
-    ContentionDispositionProfile, ContentionPolicy, ControlSource, DisposalProfile,
-    DiversificationProfile, DriveEscalationProfile, DriveThresholds, EpistemicDispositionProfile,
-    ExecutionBudget, ExplorationProfile, GroundComfortTag, HomeostaticNeeds,
-    IntentionDispositionProfile, JusticeDispositionProfile, LatrineFullness, LoadUnits,
-    MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
+    AgendaProfile, ArtifactCredibility, ArtifactExistence, ArtifactLegalEffect,
+    ArtifactPostingProfile, BlockerReason, CarryCapacity, CloseCause, CognitiveProfile,
+    CombatProfile, CommodityDecayMap, CommodityValuationProfile, CommunicationProfile, Container,
+    ContentionDispositionProfile, ContentionPolicy, ControlSource, DestructionCause,
+    DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
+    EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, GroundComfortTag,
+    HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LatrineFullness,
+    LoadUnits, MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
     PerceptionSource, Permille, PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile,
-    PursuitProfile, Quantity, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
-    SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
-    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WashBasinState,
-    WorkstationTag, items::CommodityKind, topology::PlaceTag,
+    ProofKind, ProofRequirement, PursuitProfile, Quantity, RevocationReason, ShelterTag,
+    SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
+    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
+    WashBasinState, WorkstationTag, items::CommodityKind,
+    social_artifact::SuspensionReason as ArtifactSuspensionReason, topology::PlaceTag,
 };
 
 /// Top-level scenario definition. Describes an entire world to initialize.
@@ -36,7 +38,7 @@ pub struct ScenarioDef {
     #[serde(default)]
     pub offices: Vec<OfficeDef>,
     #[serde(default)]
-    pub notices: Vec<NoticeDef>,
+    pub artifacts: Vec<ArtifactDef>,
     #[serde(default)]
     pub items: Vec<ItemDef>,
     #[serde(default)]
@@ -138,10 +140,11 @@ pub enum EligibilityRuleDef {
     FactionMember(String),
 }
 
-/// An authored notice artifact using string references instead of `EntityId`.
+/// An authored social artifact using string references instead of `EntityId`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct NoticeDef {
+pub struct ArtifactDef {
+    pub kind: ArtifactKindDef,
     pub issuer: String,
     pub location: String,
     #[serde(default)]
@@ -150,10 +153,34 @@ pub struct NoticeDef {
     pub expires_at: Option<u64>,
     #[serde(default)]
     pub jurisdiction: Option<String>,
-    pub topic: NoticeTopicDef,
+    pub payload: ArtifactPayloadDef,
+    #[serde(default)]
+    pub existence: Option<ArtifactExistenceDef>,
+    #[serde(default)]
+    pub visibility: Option<ArtifactVisibilityDef>,
+    #[serde(default)]
+    pub legal_effect: Option<ArtifactLegalEffectDef>,
+    #[serde(default)]
+    pub credibility: Option<ArtifactCredibilityDef>,
+    #[serde(default)]
+    pub actionability: Option<ArtifactActionabilityDef>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ArtifactKindDef {
+    Notice,
+    Bounty,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ArtifactPayloadDef {
+    Notice(NoticeTopicDef),
+    Bounty(BountyTermsDef),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub enum NoticeTopicDef {
     ThreatWarning {
@@ -166,6 +193,120 @@ pub enum NoticeTopicDef {
         commodity: CommodityKind,
         place: String,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BountyTermsDef {
+    pub target: BountyTargetDef,
+    pub proof_requirement: ProofRequirement,
+    pub reward_commodity: CommodityKind,
+    pub reward_quantity: Quantity,
+    pub reward_source: RewardSourceDef,
+    pub claim_place: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum BountyTargetDef {
+    EliminateEntity {
+        target: String,
+    },
+    DeliverCommodity {
+        commodity: CommodityKind,
+        quantity: Quantity,
+        destination: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum RewardSourceDef {
+    InstitutionalTreasury { treasury_entity: String },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ArtifactExistenceDef {
+    Exists,
+    Destroyed {
+        destroyed_at: u64,
+        cause: DestructionCause,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ArtifactVisibilityDef {
+    Hidden,
+    Private { audience: Vec<String> },
+    Posted { place: String },
+    WidelyKnown,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ArtifactLegalEffectDef {
+    None,
+    Active {
+        #[serde(default)]
+        expires_at: Option<u64>,
+    },
+    Suspended {
+        reason: ArtifactSuspensionReason,
+        suspended_at: u64,
+    },
+    Expired {
+        expired_at: u64,
+    },
+    Revoked {
+        revoked_at: u64,
+        by: String,
+        reason: RevocationReason,
+    },
+    Fulfilled {
+        fulfilled_at: u64,
+        by: String,
+        evidence: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ArtifactCredibilityDef {
+    Credible,
+    Disputed {
+        disputed_at: u64,
+        contradicting: Vec<String>,
+    },
+    Refuted {
+        refuted_at: u64,
+        evidence: String,
+    },
+    Unknown,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub enum ArtifactActionabilityDef {
+    Actionable,
+    AwaitingProof { required_proof: ProofKind },
+    Blocked { reason: BlockerReason, since: u64 },
+    Closed { closed_at: u64, cause: CloseCause },
+}
+
+pub fn default_artifact_existence() -> ArtifactExistence {
+    ArtifactExistence::Exists
+}
+
+pub fn default_artifact_legal_effect(expires_at: Option<u64>) -> ArtifactLegalEffect {
+    ArtifactLegalEffect::Active {
+        expires_at: expires_at.map(worldwake_core::Tick),
+    }
+}
+
+pub fn default_artifact_credibility() -> ArtifactCredibility {
+    ArtifactCredibility::Credible
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -715,7 +856,7 @@ mod tests {
         assert_eq!(def.agents[0].agenda_profile, None);
         assert!(def.items.is_empty());
         assert!(def.facilities.is_empty());
-        assert!(def.notices.is_empty());
+        assert!(def.artifacts.is_empty());
         assert!(def.resource_sources.is_empty());
         assert_eq!(def.commodity_decay, None);
     }
@@ -766,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scenario_def_deserializes_notice_authors() {
+    fn test_scenario_def_deserializes_artifact_authors() {
         let ron_str = r#"(
             seed: 42,
             places: [
@@ -775,27 +916,97 @@ mod tests {
             agents: [
                 (name: "Alice", location: "Village", control: Human),
             ],
-            notices: [
+            artifacts: [
                 (
+                    kind: Notice,
                     issuer: "Alice",
                     location: "Village",
                     expires_at: 18,
-                    topic: ThreatWarning(place: "Village"),
+                    payload: Notice(ThreatWarning(place: "Village")),
                 ),
             ],
         )"#;
 
         let def: ScenarioDef = from_ron_str(ron_str);
-        assert_eq!(def.notices.len(), 1);
-        let notice = &def.notices[0];
-        assert_eq!(notice.issuer, "Alice");
-        assert_eq!(notice.location, "Village");
-        assert_eq!(notice.expires_at, Some(18));
-        assert_eq!(notice.issuing_authority, None);
-        assert_eq!(notice.jurisdiction, None);
-        match &notice.topic {
-            NoticeTopicDef::ThreatWarning { place } => assert_eq!(place, "Village"),
-            other => panic!("expected threat-warning notice, got {other:?}"),
+        assert_eq!(def.artifacts.len(), 1);
+        let artifact = &def.artifacts[0];
+        assert_eq!(artifact.kind, ArtifactKindDef::Notice);
+        assert_eq!(artifact.issuer, "Alice");
+        assert_eq!(artifact.location, "Village");
+        assert_eq!(artifact.expires_at, Some(18));
+        assert_eq!(artifact.issuing_authority, None);
+        assert_eq!(artifact.jurisdiction, None);
+        match &artifact.payload {
+            ArtifactPayloadDef::Notice(NoticeTopicDef::ThreatWarning { place }) => {
+                assert_eq!(place, "Village");
+            }
+            ArtifactPayloadDef::Notice(other) => {
+                panic!("expected threat-warning notice, got {other:?}")
+            }
+            ArtifactPayloadDef::Bounty(other) => {
+                panic!("expected threat-warning notice, got {other:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn test_scenario_def_deserializes_bounty_artifact_payload_and_axes() {
+        let ron_str = r#"(
+            seed: 42,
+            places: [
+                (name: "Village", tags: [Village]),
+            ],
+            agents: [
+                (name: "Alice", location: "Village", control: Human),
+                (name: "Bandit", location: "Village", control: Ai),
+            ],
+            artifacts: [
+                (
+                    kind: Bounty,
+                    issuer: "Alice",
+                    location: "Village",
+                    payload: Bounty((
+                        target: EliminateEntity(target: "Bandit"),
+                        proof_requirement: PhysicalEvidence,
+                        reward_commodity: Coin,
+                        reward_quantity: 7,
+                        reward_source: InstitutionalTreasury(treasury_entity: "Alice"),
+                        claim_place: "Village",
+                    )),
+                    legal_effect: Active(expires_at: Some(99)),
+                    actionability: AwaitingProof(required_proof: PhysicalEvidence),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let artifact = &def.artifacts[0];
+        assert_eq!(artifact.kind, ArtifactKindDef::Bounty);
+        assert_eq!(
+            artifact.legal_effect,
+            Some(ArtifactLegalEffectDef::Active {
+                expires_at: Some(99)
+            })
+        );
+        assert_eq!(
+            artifact.actionability,
+            Some(ArtifactActionabilityDef::AwaitingProof {
+                required_proof: ProofKind::PhysicalEvidence
+            })
+        );
+        match &artifact.payload {
+            ArtifactPayloadDef::Bounty(terms) => {
+                assert_eq!(
+                    terms.target,
+                    BountyTargetDef::EliminateEntity {
+                        target: "Bandit".into()
+                    }
+                );
+                assert_eq!(terms.reward_quantity, Quantity(7));
+            }
+            other @ ArtifactPayloadDef::Notice(_) => {
+                panic!("expected bounty payload, got {other:?}")
+            }
         }
     }
 

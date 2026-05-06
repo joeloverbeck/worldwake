@@ -311,7 +311,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             items: vec![],
             facilities: vec![],
             resource_sources: vec![],

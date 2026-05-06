@@ -66,7 +66,7 @@ For reassessment-only rejection:
 - Do this active spec/ticket stale-snippet scan before writing the final `Verification Result`. If the scan causes spec or ticket truth-sync, update `Files to Touch`, `Deviations`, and the landed-surface summary before final hygiene checks.
 - After appending `Outcome`, `Verification Result`, or `Deviations`, reread from the insertion point through EOF and remove orphaned draft command lists, duplicated sections, stale status fragments, or old acceptance text left below the closeout.
 - When appending a newer `Assumption Reassessment`, reread older reassessment entries as live ticket claims. Update them, mark them superseded, or remove the now-false phrasing instead of relying on the newest section to silently override stale earlier prose.
-- Re-check `Status`, `## Outcome`, and verification/command notes -- they should reflect commands that actually passed, not the pre-reassessment plan.
+- Re-check `Status`, `## Outcome`, and verification/command notes -- they should reflect commands that actually passed, not the pre-reassessment plan. In `## Verification Result`, label each command `Passed`, `Waived`, or `Blocked`; do not leave bare command bullets whose status has to be inferred from the heading alone.
 - If a broad verification command passed before the final edit, make the proof freshness explicit. First classify the final edit type: code, generated artifact, scenario, executable proof surface, non-generated ticket/spec Markdown, or other docs. Record the broad command as pre-final-edit and list the scoped post-final-edit checks that prove the final diff. Do not imply a broad gate covered code or docs changed after it ran. If the final edits are only non-generated ticket/spec Markdown, `git diff --check` plus targeted stale-claim scans are the normal cheap post-edit proof; rerun broad or targeted executable verification when source, generated artifacts, scenarios, test fixtures, or executable behavior changed after the broad gate.
 - After the final green verification run, re-open the active ticket and compare its `Problem`, `What to Change`, `Acceptance Criteria`, `Invariants`, and `Test Plan` against the landed diff. If late implementation fallout changed the truthful seam, compatibility shape, downstream consumer, or proof boundary, correct the ticket before reporting completion rather than leaving the earlier rewritten wording to overclaim the result.
 - If prose-only ticket/spec/archive corrections happen after the broad gate is green, run at least diff hygiene and targeted stale-claim scans over the touched Markdown before final reporting. Rerun full code verification only when code, generated docs, scenarios, test fixtures, or executable proof surfaces changed after the broad gate.
@@ -116,5 +116,6 @@ Completed on YYYY-MM-DD.
 ## Verification Result
 
 - Passed `<command 1>`
-- Passed `<command 2>`
+- Waived `<command 2>` because <reason>
+- Blocked `<command 3>` because <reason>
 ```

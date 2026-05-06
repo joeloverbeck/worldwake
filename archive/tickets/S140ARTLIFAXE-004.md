@@ -1,6 +1,6 @@
 # S140ARTLIFAXE-004: Unified ArtifactDef scenario authoring (NoticeDef rename + payload sum type)
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No engine changes; CLI scenario-author surface only. `NoticeDef` renamed to `ArtifactDef`; new `ArtifactPayloadDef` sum type; `spawn_notice` renamed to `spawn_artifact` and dispatches by kind.
@@ -112,8 +112,8 @@ Add `test_spawn_bounty_artifact_from_scenario` exercising `ArtifactDef { kind: B
 
 ### Tests That Must Pass
 
-1. `cargo test -p worldwake-cli --lib scenario test_spawn_notice_artifact_from_scenario` — passes with `ArtifactDef::Notice` shape.
-2. `cargo test -p worldwake-cli --lib scenario test_spawn_bounty_artifact_from_scenario` — new test passes.
+1. `cargo test -p worldwake-cli --lib scenario::tests::test_spawn_notice_artifact_from_scenario -- --exact` — passes with `ArtifactDef::Notice` shape.
+2. `cargo test -p worldwake-cli --lib scenario::tests::test_spawn_bounty_artifact_from_scenario -- --exact` — new test passes.
 3. `cargo run -p worldwake-cli --bin scenario-coverage -- --check` — coverage check passes.
 4. Existing suite: `cargo test --workspace`.
 
@@ -131,10 +131,30 @@ Add `test_spawn_bounty_artifact_from_scenario` exercising `ArtifactDef { kind: B
 1. `crates/worldwake-cli/src/scenario/mod.rs` (modify) — rename + adapt `test_spawn_notice_artifact_from_scenario`.
 2. `crates/worldwake-cli/src/scenario/mod.rs` (modify) — add `test_spawn_bounty_artifact_from_scenario`.
 3. `crates/worldwake-cli/src/scenario/mod.rs` (modify) — add `test_spawn_artifact_axis_defaults_match_migration_map` asserting default-axis mapping.
+4. `crates/worldwake-cli/src/scenario/types.rs` (modify) — add RON deserialization tests for artifact authors, bounty payloads, and axis wrappers.
 
 ### Commands
 
 1. `cargo test -p worldwake-cli --lib scenario`
 2. `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
-3. `cargo test --workspace`
-4. `scripts/verify.sh`
+3. `scripts/verify.sh`
+
+## Outcome
+
+Completed on 2026-05-06.
+
+1. Replaced the CLI scenario authoring field with `ScenarioDef.artifacts: Vec<ArtifactDef>` and removed the old `ScenarioDef.notices` / `NoticeDef` authoring surface.
+2. Added `ArtifactKindDef`, `ArtifactPayloadDef`, `BountyTermsDef`, bounty target/reward wrappers, and per-axis `Artifact*Def` wrappers that author the lifecycle axes with string references at the scenario boundary.
+3. Renamed the spawn path to `spawn_artifact` and dispatched shared artifact authoring into `NoticeContent` or `BountyTerms` while preserving the default lifecycle mapping: `Exists | Posted | Active | Credible | Actionable`.
+4. Updated scenario coverage, lint/display/handler constructor fallout, and the affected AI golden fixture constructor to the `artifacts` field.
+
+## Verification Result
+
+1. Passed `cargo test -p worldwake-cli --lib scenario::tests::test_spawn_notice_artifact_from_scenario -- --exact`
+2. Passed `cargo test -p worldwake-cli --lib scenario::tests::test_spawn_bounty_artifact_from_scenario -- --exact`
+3. Passed `cargo test -p worldwake-cli --lib scenario::tests::test_spawn_artifact_axis_defaults_match_migration_map -- --exact`
+4. Passed `cargo test -p worldwake-cli --lib scenario::types::tests::test_scenario_def_deserializes_artifact_authors -- --exact`
+5. Passed `cargo test -p worldwake-cli --lib scenario::types::tests::test_scenario_def_deserializes_bounty_artifact_payload_and_axes -- --exact`
+6. Passed `cargo test -p worldwake-cli --lib scenario`
+7. Passed `cargo run -p worldwake-cli --bin scenario-coverage -- --check`
+8. Passed `scripts/verify.sh`, covering formatting, workspace tests, active-goal guard, both clippy gates, and scenario coverage.

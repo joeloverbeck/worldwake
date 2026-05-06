@@ -672,7 +672,7 @@ mod tests {
             }],
             bandit_camps: Vec::new(),
             offices: vec![],
-            notices: vec![],
+            artifacts: vec![],
             agents: vec![
                 AgentDef {
                     name: "Aster".into(),
