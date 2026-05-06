@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — core types, PerceptionProfile schema, AgentBeliefStore diff/save shape, save-format version, scenario CLI deserialization
-**Deps**: spec `specs/S135-planner-perception-budget.md`
+**Deps**: spec `archive/specs/S135-planner-perception-budget.md`
 
 ## Problem
 

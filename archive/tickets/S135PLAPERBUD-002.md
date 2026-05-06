@@ -62,7 +62,7 @@ The live branch has no `impl_goal_belief_view!` macro. The existing blanket impl
 ## Files to Touch
 
 - `crates/worldwake-sim/src/belief_view.rs` (modify)
-- `specs/S135-planner-perception-budget.md` (truth-sync live blanket implementation wording)
+- `archive/specs/S135-planner-perception-budget.md` (truth-sync live blanket implementation wording)
 
 ## Out of Scope
 
@@ -103,7 +103,7 @@ Completed on 2026-05-05.
 - Added `GoalBeliefView::observation_omission_log(agent) -> Option<&ObservationOmissionLog>` in `crates/worldwake-sim/src/belief_view.rs`.
 - The accessor reads through the existing `GoalBeliefView::agent_belief_store` surface and returns the nested `AgentBeliefStore.observation_omission_log`, preserving the single canonical belief-store path added by ticket 001.
 - Added focused coverage proving a world-created agent's `PerAgentBeliefView` exposes `Some(&ObservationOmissionLog::default())` through the `GoalBeliefView` accessor.
-- Truth-synced this ticket and `specs/S135-planner-perception-budget.md` from the drafted macro wording to the live blanket implementation boundary.
+- Truth-synced this ticket and `archive/specs/S135-planner-perception-budget.md` from the drafted macro wording to the live blanket implementation boundary.
 
 ## Deviations
 

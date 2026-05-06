@@ -106,7 +106,7 @@ Completed on 2026-05-06.
 - Added `RootCandidateTrace.omitted_anchor: Option<OmissionReason>` to the in-memory root decision-trace carrier.
 - Wired root candidate trace construction in `search/candidates.rs` to read the actor's `ObservationOmissionLog` through `GoalBeliefView` and annotate a candidate when its anchor is absent from the planning snapshot but present in the omission log.
 - Extended the `worldwake-ai` search test harness with an agent belief-store fixture and a focused `ShareBelief` synthesized-root test proving `RootCandidateTrace.omitted_anchor == Some(reason)` at the root expansion summary.
-- Truth-synced `specs/S135-planner-perception-budget.md` D4 to the live in-memory trace boundary.
+- Truth-synced `archive/specs/S135-planner-perception-budget.md` D4 to the live in-memory trace boundary.
 
 ## Deviations
 

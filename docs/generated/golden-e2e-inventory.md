@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 36
-- Files contributing `golden_*` tests: 36
-- Total `golden_*` tests: 175
+- Golden test files: 37
+- Files contributing `golden_*` tests: 37
+- Total `golden_*` tests: 178
 
 ## Per-File Inventory
 
@@ -24,6 +24,7 @@ Do not hand-edit it.
 | `golden_need_projection.rs` | 1 |
 | `golden_offices.rs` | 12 |
 | `golden_perception_exposure.rs` | 7 |
+| `golden_perception_omission.rs` | 3 |
 | `golden_place_dirtiness.rs` | 9 |
 | `golden_planner_pathology.rs` | 3 |
 | `golden_portfolio_planning.rs` | 1 |
@@ -159,6 +160,12 @@ Do not hand-edit it.
 - `golden_perception_forms_resource_source_beliefs`
 - `golden_perception_forms_resource_source_beliefs_replays_deterministically`
 - `golden_observation_budget_prioritizes_agents_and_facilities_over_waste`
+
+### `golden_perception_omission.rs`
+
+- `golden_perception_omission_overbudget_writes`
+- `golden_perception_omission_need_weighted_priority`
+- `golden_perception_omission_revalidation_typed_reason`
 
 ### `golden_place_dirtiness.rs`
 

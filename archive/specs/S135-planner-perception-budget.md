@@ -1,6 +1,6 @@
 # S135: Planner Snapshot Perception Budget and Observation Omission
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -8,11 +8,11 @@
 
 S105 (Observation Salience Filtering) addressed the *perception* layer with `PerceptionProfile.observation_budget` (`crates/worldwake-core/src/belief.rs:2573`, default 24) and deterministic-priority truncation in `collect_direct_local_observation_batch` (`crates/worldwake-systems/src/perception.rs:639`). The planner snapshot is a *separate* truncation pass over the agent's already-accumulated belief observations, capped per-place at 50 inside `build_planning_snapshot_with_blocked_facility_uses`. The two caps operate on different windows — perception bounds *per-tick incoming* observations, the planner bounds *accumulated* belief entities at a place — but stacking them silently is exactly the FND-12 violation the assessor flagged: performance compressing causality.
 
-S135 collapses the planner-snapshot truncation by removing the per-place cap entirely; the planner consumes the full set of accumulated belief observations at a place. Every entity the perception system dropped becomes an inspectable `ObservationOmission` record naming the entity, the in-world reason it was dropped, and the tick — so observer reports and goldens can verify "the agent could not act on X because their attention budget was full," not "the planner cap was 50."
+S135 collapses the planner-snapshot truncation by removing the per-place cap entirely. Under the live planner contract, the actor's current place remains an authoritative same-tick local surface, while remote/non-local entities enter through accumulated beliefs or explicit evidence. Every entity the perception system dropped becomes an inspectable `ObservationOmission` record naming the entity, the in-world reason it was dropped, and the tick — so observer reports and goldens can verify "the agent could not act on X because their attention budget was full," not "the planner cap was 50."
 
 ## Phase and Status
 
-Phase 11: Belief-First Continual Planning Architectural — Draft
+Phase 11: Belief-First Continual Planning Architectural — Completed 2026-05-06
 
 ## Crates
 
@@ -31,14 +31,14 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 
 ## Design Goals
 
-1. **Single perception cap, not two.** The planner snapshot consumes the agent's accumulated belief observations directly. No second truncation layer.
+1. **Single perception cap, not two.** The planner snapshot has no second per-place truncation layer. Same-place entities remain planner-visible through the live authoritative local surface; remote/non-local entities enter through accumulated beliefs or explicit evidence.
 2. **Every omission has an in-world reason.** Dropped entities produce an `ObservationOmission { reason }` where `reason` names the in-world cause (`OverBudget`, `SalienceBelowFloor`). Never "planner cap was 50."
 3. **Ring-buffered, agent-local.** Omission records are per-agent belief-store state, ring-buffered to `omission_log_capacity` (default 16). Per FND-22A (concrete learned state) and FND-27 (caches, not truth) — they are recent perceptual residue, decayed by activation, not authoritative event-log history.
 4. **Salience policy is per-agent.** S105 already implements priority-based deterministic truncation with need-pressure boosting. S135 names that policy explicitly via `SaliencePolicy::PriorityWithNeedBoost` and reserves the enum for future genuinely-different policies (e.g., `OcclusionAware` when the lighting/cover substrate exists). Per-agent variation is possible (FND-22) by extending the enum later.
 5. **Determinism preserved.** Omission entries emit in `BTreeMap`-stable order (agent-id keyed) with ring-buffer eviction FIFO over entry insertion order.
 6. **No new event tag.** Omissions are derived per-tick state and ring-buffered cache, not authoritative history. Observer reports read `AgentBeliefStore.observation_omission_log`; tests assert on that nested store field.
 7. **No silent fall-through.** If an action handler revalidates against an entity the agent's belief store does not hold, and that entity has a recent `ObservationOmission` record, the resulting `Discrepancy::Omission(reason)` carries the typed in-world cause so failure is attributable.
-8. **Co-located perception remains belief-equivalent under FND-14A** for entities the agent's perception did observe. S135 does not change FND-14A's same-tick read path; it only ensures the planner snapshot and the perception output agree on which entities are visible.
+8. **Co-located perception remains belief-equivalent under FND-14A.** S135 does not change FND-14A's same-tick read path; it removes the extra planner cap and records perception-budget omissions so local and non-local snapshot behavior remain attributable.
 
 ## Non-Goals
 
@@ -168,7 +168,7 @@ pub enum Discrepancy {
    - the agent's own decision-trace annotation (via the new `GoalBeliefView::observation_omission_log` accessor),
    - the agent's own hypothetical-effect-sink revalidation path (constructing `Discrepancy::Omission(reason)` when belief revalidation would otherwise fail),
    - the observer's read-only diagnostic surface (replayed from the event-log delta path).
-   No new cross-agent path. The planner snapshot itself no longer reads the omission log; it reads accumulated beliefs directly.
+   No new cross-agent path. The planner snapshot itself does not use the omission log for admission; same-place entities come from the authoritative local surface, while remote/non-local entities come from accumulated beliefs or explicit evidence.
 2. **Positive-feedback analysis.** No amplifying loop. An agent who omits an entity does not become *more* likely to omit it next tick — perception runs independently each tick under the same budget.
 3. **Concrete dampeners.** Not applicable.
 4. **Stored state vs derived read-model list.**
@@ -201,10 +201,10 @@ No direct cross-system calls (FND-26).
 ## Validation and Falsification
 
 - **Golden coverage**: new `golden_perception_omission.rs` with three scenarios:
-  1. Crowded place with 60 entities, budget 24 → expect 36 `OmissionReason::OverBudget` records, no planner-side discard pass.
-  2. Need-weighted policy under hunger pressure → expect food-items above non-food-items in the observed set, omitted entries logged for the rest.
-  3. Action revalidation against an omitted entity → expect `Discrepancy::Omission(reason)` returned, with `RootCandidateTrace.omitted_anchor` populated on the next planner pass.
-- **Determinism regression**: existing 1440-tick survival goldens produce identical canonical state hashes when neither the perception per-tick budget nor (formerly) the planner-snapshot cap was the binding constraint. Per measurement (ticket-001 below), `survival-baseline.ron`, `survival-scattered.ron`, `survival-contested.ron` (3-4 agents each, modest entity density) sit comfortably under both caps, so identical state hashes pre/post S135 are expected.
+  1. Crowded same-place setup with 60 equal-priority entities, budget 24 → expect 36 `OmissionReason::OverBudget` records, deterministic omission ordering, disjoint retained/omitted belief-store sets, and no second same-place planner cap.
+  2. Need-weighted policy under hunger pressure → expect food-items retained above waste and omitted entries logged for the lower-priority waste.
+  3. Revalidation against an omitted non-snapshot entity → expect `Discrepancy::Omission(reason)` returned from the hypothetical revalidation surface, with `RootCandidateTrace.omitted_anchor` populated for the matching root candidate.
+- **Generated inventory/docs**: `python3 scripts/golden_inventory.py --write --check-docs` records the new scenarios in `docs/generated/golden-e2e-inventory.md`, `docs/generated/golden-scenario-index.md`, `docs/generated/golden-coverage-matrix.md`, and `docs/generated/golden-scenario-details/perception-omission.md`.
 - **Negative test**: an agent's `ObservationOmissionLog` never contains an entity that is also in their `BeliefStore` for the same tick.
 
 ## Risks
@@ -213,3 +213,26 @@ No direct cross-system calls (FND-26).
 - **Snapshot-size growth at long-lived crowded places.** Removing the per-place planner cap means accumulated beliefs (which can grow beyond perception's per-tick budget over time) are no longer bounded at snapshot construction. For long-running scenarios with high-density places, the snapshot's per-place entity list will be larger. ticket-001's measurement (b) above is the canary; if a real-world scenario exceeds 50 accumulated entities per place, the FND-12 fix is to tighten activation-based decay (S101) rather than re-introduce a snapshot cap.
 - **`ObservationOmissionLog` save-format growth.** Ring buffer of 16 entries × N agents could grow event-log delta size. Mitigation: leverage S71 (Event Log Delta Compaction) — omission-log diffs piggyback on the existing `BeliefStoreDiff` compact path through D1's paired `omission_log_added` / `omission_log_removed` fields.
 - **Discrepancy variant blast radius.** Adding `Discrepancy::Omission(OmissionReason)` requires updating every exhaustive match on `Discrepancy` in the workspace. Most use sites construct `Err(Discrepancy::X)` and don't pattern-match exhaustively, but the audit must cover the full ~145 use sites to find the genuinely-exhaustive matches. This is a single-commit migration cost, not a runtime risk.
+
+## Outcome
+
+Completed on 2026-05-06.
+
+- Landed the S135 perception-omission substrate across the ticket chain: `PerceptionProfile` omission settings, `ObservationOmissionLog`, omission diffs, the `GoalBeliefView` accessor, `Discrepancy::Omission`, `RootCandidateTrace.omitted_anchor`, observer omission rendering, and removal of `CognitiveProfile.max_snapshot_entities_per_place`.
+- Added `crates/worldwake-ai/tests/golden_perception_omission.rs` with scenarios 381-383 proving over-budget omission writes, need-weighted priority retention, and typed omission attribution through decision traces plus hypothetical revalidation.
+- Regenerated generated golden inventory/docs, including `docs/generated/golden-scenario-details/perception-omission.md`.
+- Truth-synced the spec to the live current-place planner contract: co-located entities remain planner-visible through the authoritative same-tick local surface, while S135 owns explicit omission attribution for perception-budget drops and non-local/absent snapshot anchors.
+
+Deviations from original plan:
+
+- The final no-second-cap proof asserts all 60 co-located local lots remain planner-visible under `docs/planner-contracts.md`, rather than treating the perception budget as a same-place planner admission cap.
+- The older-baseline state-hash regression was removed because the repo does not carry a separate older S135 baseline hash. Existing survival goldens continue to own long-run survival behavior.
+- Revalidation attribution is proved through `search_plan` root-candidate traces and direct `HypotheticalEffectSink` revalidation, not a fully autonomous action lifecycle.
+
+Verification results:
+
+- `cargo test -p worldwake-ai --test golden_perception_omission -- --list`
+- `cargo test -p worldwake-ai --test golden_perception_omission`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test -p worldwake-ai`
+- `./scripts/verify.sh`

@@ -17,7 +17,7 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Before presenting any 1-3-1, load `references/mismatch-handling.md`. If the choice involves duplicate lawful state paths, duplicate transport paths, cache-vs-truth ambiguity, or another `FOUNDATIONS`-level boundary, evaluate the options against `docs/FOUNDATIONS.md` before naming the recommendation.
 - When the user approves a reassessment option or `FOUNDATIONS`-driven boundary reset, record the selected implementation boundary in the active ticket/spec before coding unless the user explicitly asked for analysis only.
 - If a narrow production fix lands but the drafted broader golden/E2E story is still false, follow `Mixed outcome: narrow fix landed, broader golden still false` below.
-- Prefer the strongest existing honest proof seam. Extend an existing focused unit/runtime/golden test instead of creating the drafted new file mechanically.
+- Prefer the strongest existing honest proof seam. Extend an existing focused unit/runtime/golden test instead of creating the drafted new file mechanically. If the ticket explicitly owns a new golden scenario/documented coverage surface and no existing suite owns that scenario page, a new `golden_*.rs` file is acceptable; record why the adjacent suite was not the owner.
 - Keep Cargo sequential, confirm ambiguous or pre-existing exact selectors with `-- --list`, and record only truthful verification boundaries.
 - Before the first Cargo command you will count as proof, load `references/verification.md` unless the ticket is already classified as a small/local fast path whose focused selector and proof boundary are unambiguous.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
@@ -25,7 +25,7 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Leave active ticket status non-completed until the last executable gate required for the final source diff has passed. Make `Status: COMPLETED` one of the final ticket edits, except when a provisional verification note explicitly names the remaining gates.
 - Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.
 
-Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail. When adding new guidance after a session, prefer placing specialized case law in the relevant `references/*.md` file and adding only a compact routing note here unless the rule is a global hard stop.
+Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail. When new guidance is not a global hard stop, put the detailed rule in the relevant `references/*.md` file and keep any top-level change to a one-sentence routing note.
 
 ## Mandatory Closeout Checklist
 
