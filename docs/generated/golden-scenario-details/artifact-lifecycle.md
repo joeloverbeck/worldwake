@@ -7,7 +7,7 @@ Scenarios: 5
 
 ### Scenario 388: S140 Bounty Fulfillment Closes Actionability
 
-- Source: `golden_artifact_lifecycle.rs:273`
+- Source: `golden_artifact_lifecycle.rs:361`
 - Systems: ArtifactActions, ArtifactLifecycle, EventLog
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -25,7 +25,7 @@ Scenarios: 5
 
 ### Scenario 389: S140 Revoked Bounty Blocks Planner Emission
 
-- Source: `golden_artifact_lifecycle.rs:372`
+- Source: `golden_artifact_lifecycle.rs:460`
 - Systems: ArtifactActions, ArtifactLifecycle, AI
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -43,7 +43,7 @@ Scenarios: 5
 
 ### Scenario 390: S140 Expired Bounty Remains Posted But Closed
 
-- Source: `golden_artifact_lifecycle.rs:490`
+- Source: `golden_artifact_lifecycle.rs:578`
 - Systems: ArtifactLifecycle, EventLog
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -61,7 +61,7 @@ Scenarios: 5
 
 ### Scenario 391: S140 Suspended Legal Effect Restores Without Closing
 
-- Source: `golden_artifact_lifecycle.rs:535`
+- Source: `golden_artifact_lifecycle.rs:623`
 - Systems: ArtifactLifecycle, EventLog
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact
@@ -71,15 +71,15 @@ Scenarios: 5
 - Replay tests: None
 - All tests: `suspended_legal_effect_restores_on_resolution_event`
 
-**Setup**: the fixture injects the legal-effect transition events that represent a jurisdiction review suspending and then resolving a bounty. No closure cause is emitted.
+**Setup**: an office force-control record first becomes contested, then resolves. The bounty is issued by that office so the record events are lawful source carriers for jurisdiction suspension/restoration. No closure cause is emitted.
 
-**Proves**: Suspended and restored Active legal-effect transitions remain append-only and do not create a spurious actionability closure.
+**Proves**: source-backed Suspended and restored Active legal-effect transitions remain append-only and do not create a spurious actionability closure.
 
-**Cross-system chain**: ArtifactTransition(LegalEffect::Suspended) -> lifecycle no-op for actionability -> ArtifactTransition(LegalEffect::Active) -> actionability remains Actionable.
+**Cross-system chain**: ForceControl(contested) record event -> artifact_lifecycle_system -> ArtifactTransition(LegalEffect::Suspended) -> ForceControl(resolved) record event -> ArtifactTransition(LegalEffect::Active).
 
 ### Scenario 392: S140 Refuted False Rumor Closes Actionability
 
-- Source: `golden_artifact_lifecycle.rs:602`
+- Source: `golden_artifact_lifecycle.rs:691`
 - Systems: ArtifactLifecycle, EventLog
 - GoalKinds: FulfillBounty
 - ActionDomains: Artifact

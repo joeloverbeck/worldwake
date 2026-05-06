@@ -69,7 +69,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
 9. After moving the ticket, inspect `git status` for both the archived path and the original active path. Record which post-archive state occurred, and mention it explicitly in the report:
    - tracked rename / move into the archive path
    - tracked deletion at the active path plus untracked archive file
-10. Re-read the archived ticket after the move and fix any purely mechanical path fallout caused by relocation (for example relative markdown links in `Deps`, archive-ticket references, or other moved-path links inside the archived file). Also sweep archived sibling tickets for unambiguous links that still point at the just-moved active path and rewrite those as archival mechanics when no ownership judgment is required. Treat these edits as archival mechanics, not scope changes.
+10. Re-read the archived ticket after the move and fix any purely mechanical path fallout caused by relocation (for example relative markdown links in `Deps`, archive-ticket references, or other moved-path links inside the archived file). Also sweep archived sibling tickets for unambiguous links that still point at the just-moved active path and rewrite those as archival mechanics when no ownership judgment is required. Preserve historical meaning in archived sibling prose; if a past-tense note says review created an active ticket, rewrite it as "the now-archived `archive/tickets/<id>.md`" rather than implying the original creation happened at the archive path. Treat these edits as archival mechanics, not scope changes.
 11. If rereading the archived ticket exposes stale verification or handoff wording, factual corrections to archived `Outcome`, `Verification Result`, `Verification Layers`, or similar proof-surface sections are allowed when they only make the archived proof truthful. Do not use this allowance to rewrite the ticket's problem statement, original scope, or acceptance criteria after archival.
 
 ### 3. Establish the review surface
@@ -252,6 +252,7 @@ For archived, already-archived, or follow-up-producing reviews, use the full rep
 ## Ticket Actions
 
 - **Created**: <ticket ids with one-line rationale and deps>
+- **Pre-existing same-session follow-ups**: <tickets created before this review pass, then cited or updated here>
 - **Updated**: <ticket ids with one-line rationale>
 - **Covered by existing tickets**: <ticket ids and why no new ticket was created>
 - **Adjacent roadmap still valid**: <nearby active tickets that remain relevant context but were not updated>

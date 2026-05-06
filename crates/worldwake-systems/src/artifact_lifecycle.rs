@@ -1,8 +1,10 @@
 use crate::reward_encumbrance_support::release_bounty_reward;
+use worldwake_core::social_artifact::SuspensionReason;
 use worldwake_core::{
     ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactKind,
-    ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, CauseRef, CloseCause, EntityKind,
-    EventId, EventLog, EventTag, EventView, RewardSource, Tick, VisibilitySpec, WitnessData, World,
+    ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, CauseRef, CloseCause, ComponentDelta,
+    ComponentValue, EntityId, EntityKind, EventId, EventLog, EventTag, EventView,
+    InstitutionalClaim, RewardSource, StateDelta, Tick, VisibilitySpec, WitnessData, World,
     WorldTxn,
 };
 use worldwake_sim::{SystemError, SystemExecutionContext};
@@ -40,6 +42,11 @@ fn legal_effect_stage(
     event_log: &mut EventLog,
     tick: Tick,
 ) -> Result<(), SystemError> {
+    let source_events = force_control_source_events_at_tick(event_log, tick);
+    for source in source_events {
+        apply_force_control_source_event(world, event_log, tick, source)?;
+    }
+
     let expiring = world
         .query_artifact_header()
         .filter_map(|(artifact, header)| {
@@ -163,6 +170,140 @@ fn set_transition_payload(txn: &mut WorldTxn<'_>, payload: ArtifactTransitionPay
     txn.set_artifact_transition_payload(payload);
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+struct ForceControlSourceEvent {
+    event_id: EventId,
+    office: EntityId,
+    contested: bool,
+}
+
+fn force_control_source_events_at_tick(
+    event_log: &EventLog,
+    tick: Tick,
+) -> Vec<ForceControlSourceEvent> {
+    event_log
+        .events_at_tick(tick)
+        .iter()
+        .filter_map(|event_id| event_log.get(*event_id).map(|record| (*event_id, record)))
+        .flat_map(|(event_id, record)| {
+            record
+                .state_deltas()
+                .iter()
+                .flat_map(move |delta| new_force_control_claims(event_id, delta))
+        })
+        .collect()
+}
+
+fn new_force_control_claims(event_id: EventId, delta: &StateDelta) -> Vec<ForceControlSourceEvent> {
+    let StateDelta::Component(ComponentDelta::Set {
+        before,
+        after: ComponentValue::RecordData(after),
+        ..
+    }) = delta
+    else {
+        return Vec::new();
+    };
+    let before_len = before
+        .as_ref()
+        .and_then(|value| match value {
+            ComponentValue::RecordData(before) => Some(before.entries.len()),
+            _ => None,
+        })
+        .unwrap_or(0);
+
+    after
+        .entries
+        .iter()
+        .skip(before_len)
+        .filter_map(|entry| match entry.claim {
+            InstitutionalClaim::ForceControl {
+                office, contested, ..
+            } => Some(ForceControlSourceEvent {
+                event_id,
+                office,
+                contested,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn apply_force_control_source_event(
+    world: &mut World,
+    event_log: &mut EventLog,
+    tick: Tick,
+    source: ForceControlSourceEvent,
+) -> Result<(), SystemError> {
+    let affected = world
+        .query_artifact_header()
+        .filter_map(|(artifact, header)| {
+            artifact_authority_matches(header, source.office).then_some((artifact, header.clone()))
+        })
+        .collect::<Vec<_>>();
+
+    for (artifact, mut header) in affected {
+        let new = if source.contested {
+            if !matches!(header.legal_effect, ArtifactLegalEffect::Active { .. }) {
+                continue;
+            }
+            ArtifactLegalEffect::Suspended {
+                reason: SuspensionReason::JurisdictionDispute,
+                suspended_at: tick,
+            }
+        } else if matches!(
+            header.legal_effect,
+            ArtifactLegalEffect::Suspended {
+                reason: SuspensionReason::JurisdictionDispute,
+                ..
+            }
+        ) {
+            ArtifactLegalEffect::Active {
+                expires_at: header.expires_at,
+            }
+        } else {
+            continue;
+        };
+
+        let prior = header.legal_effect;
+        header.legal_effect = new;
+        let place = world.effective_place(artifact);
+        let mut txn = WorldTxn::new(
+            world,
+            tick,
+            CauseRef::Event(source.event_id),
+            None,
+            place,
+            VisibilitySpec::SamePlace,
+            WitnessData::default(),
+        );
+        set_transition_payload(
+            &mut txn,
+            ArtifactTransitionPayload {
+                artifact,
+                axis: AxisName::LegalEffect,
+                prior: ArtifactAxisValue::LegalEffect(prior),
+                new: ArtifactAxisValue::LegalEffect(new),
+                cause_event: Some(source.event_id),
+                at: tick,
+            },
+        );
+        txn.add_tag(EventTag::System)
+            .add_tag(EventTag::Social)
+            .add_tag(EventTag::WorldMutation)
+            .add_target(artifact)
+            .add_target(source.office);
+        txn.set_component_artifact_header(artifact, header)
+            .map_err(|error| SystemError::new(error.to_string()))?;
+        let _ = txn.commit(event_log);
+    }
+
+    Ok(())
+}
+
+fn artifact_authority_matches(header: &worldwake_core::ArtifactHeader, office: EntityId) -> bool {
+    header.issuing_authority == Some(office) || header.jurisdiction == Some(office)
+}
+
 fn legal_or_credibility_transitions_at_tick(
     event_log: &EventLog,
     tick: Tick,
@@ -204,9 +345,10 @@ mod tests {
         ArtifactActionability, ArtifactAxisValue, ArtifactHeader, ArtifactKind,
         ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, BountyTarget, BountyTerms,
         CauseRef, CloseCause, CommodityKind, ControlSource, EntityKind, EventLog, EventTag,
-        EventView, NoticeContent, NoticeTopic, ProofRequirement, PrototypePlace, Quantity,
-        RewardEncumbrance, RewardReservation, RewardSource, Seed, Tick, VisibilitySpec,
-        WitnessData, World, WorldTxn, build_prototype_world, prototype_place_entity,
+        EventView, InstitutionalClaim, NoticeContent, NoticeTopic, ProofRequirement,
+        PrototypePlace, Quantity, RecordData, RecordKind, RewardEncumbrance, RewardReservation,
+        RewardSource, Seed, Tick, VisibilitySpec, WitnessData, World, WorldTxn,
+        build_prototype_world, prototype_place_entity, social_artifact::SuspensionReason,
     };
     use worldwake_sim::{ActionDefRegistry, DeterministicRng, SystemExecutionContext, SystemId};
 
@@ -339,6 +481,52 @@ mod tests {
         artifact
     }
 
+    fn create_record(
+        world: &mut World,
+        tick: u64,
+        place: worldwake_core::EntityId,
+        issuer: worldwake_core::EntityId,
+        kind: RecordKind,
+    ) -> worldwake_core::EntityId {
+        let mut txn = new_txn(world, tick);
+        let record = txn
+            .create_record(RecordData {
+                record_kind: kind,
+                home_place: place,
+                issuer,
+                consultation_ticks: 1,
+                max_entries_per_consult: 8,
+                entries: Vec::new(),
+                next_entry_id: 0,
+            })
+            .unwrap();
+        commit_txn(txn);
+        record
+    }
+
+    fn append_force_control_claim(
+        world: &mut World,
+        log: &mut EventLog,
+        tick: u64,
+        record: worldwake_core::EntityId,
+        office: worldwake_core::EntityId,
+        contested: bool,
+    ) -> worldwake_core::EventId {
+        let mut txn = new_txn(world, tick);
+        txn.append_record_entry(
+            record,
+            InstitutionalClaim::ForceControl {
+                office,
+                controller: None,
+                contested,
+                effective_tick: Tick(tick),
+            },
+        )
+        .unwrap();
+        txn.add_tag(EventTag::Social).add_tag(EventTag::Control);
+        txn.commit(log)
+    }
+
     #[test]
     fn artifact_lifecycle_system_expires_active_artifact_at_expiration_tick() {
         let mut world = World::new(build_prototype_world()).unwrap();
@@ -461,6 +649,139 @@ mod tests {
             ArtifactActionability::Actionable
         );
         assert!(log.is_empty());
+    }
+
+    #[test]
+    fn force_control_contest_source_event_suspends_office_artifacts() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let issuer = spawn_agent_at(&mut world, 50, square);
+        let office = {
+            let mut txn = new_txn(&mut world, 1);
+            let office = txn.create_office("Market Warden").unwrap();
+            commit_txn(txn);
+            office
+        };
+        let record = create_record(&mut world, 2, square, issuer, RecordKind::OfficeRegister);
+        let artifact = post_institutional_bounty(&mut world, 3, square, office, None);
+        let mut log = EventLog::new();
+        let source_event =
+            append_force_control_claim(&mut world, &mut log, 5, record, office, true);
+        let mut rng = DeterministicRng::new(Seed([11; 32]));
+
+        artifact_lifecycle_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &std::collections::BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(5),
+            system_id: SystemId::ArtifactLifecycle,
+        })
+        .unwrap();
+
+        assert_eq!(
+            world
+                .get_component_artifact_header(artifact)
+                .unwrap()
+                .legal_effect,
+            ArtifactLegalEffect::Suspended {
+                reason: SuspensionReason::JurisdictionDispute,
+                suspended_at: Tick(5),
+            }
+        );
+        assert_eq!(
+            world
+                .get_component_artifact_header(artifact)
+                .unwrap()
+                .actionability,
+            ArtifactActionability::Actionable
+        );
+        let transition_ids = log.events_by_tag(EventTag::ArtifactTransition);
+        assert_eq!(transition_ids.len(), 1);
+        let transitions = transition_payloads(&log);
+        assert_eq!(transitions[0].axis, AxisName::LegalEffect);
+        assert_eq!(transitions[0].cause_event, Some(source_event));
+        assert_eq!(
+            transitions[0].new,
+            ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Suspended {
+                reason: SuspensionReason::JurisdictionDispute,
+                suspended_at: Tick(5),
+            })
+        );
+    }
+
+    #[test]
+    fn force_control_resolution_source_event_restores_suspended_office_artifacts() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let square = prototype_place_entity(PrototypePlace::VillageSquare);
+        let issuer = spawn_agent_at(&mut world, 51, square);
+        let office = {
+            let mut txn = new_txn(&mut world, 1);
+            let office = txn.create_office("Market Warden").unwrap();
+            commit_txn(txn);
+            office
+        };
+        let record = create_record(&mut world, 2, square, issuer, RecordKind::OfficeRegister);
+        let artifact = post_institutional_bounty(&mut world, 3, square, office, Some(Tick(20)));
+        let mut log = EventLog::new();
+        append_force_control_claim(&mut world, &mut log, 5, record, office, true);
+        let mut rng = DeterministicRng::new(Seed([12; 32]));
+
+        artifact_lifecycle_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &std::collections::BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(5),
+            system_id: SystemId::ArtifactLifecycle,
+        })
+        .unwrap();
+        let source_event =
+            append_force_control_claim(&mut world, &mut log, 6, record, office, false);
+        artifact_lifecycle_system(SystemExecutionContext {
+            world: &mut world,
+            event_log: &mut log,
+            rng: &mut rng,
+            active_actions: &std::collections::BTreeMap::new(),
+            action_defs: &ActionDefRegistry::new(),
+            politics_trace: None,
+            perception_trace: None,
+            tick: Tick(6),
+            system_id: SystemId::ArtifactLifecycle,
+        })
+        .unwrap();
+
+        assert_eq!(
+            world
+                .get_component_artifact_header(artifact)
+                .unwrap()
+                .legal_effect,
+            ArtifactLegalEffect::Active {
+                expires_at: Some(Tick(20)),
+            }
+        );
+        assert_eq!(
+            world
+                .get_component_artifact_header(artifact)
+                .unwrap()
+                .actionability,
+            ArtifactActionability::Actionable
+        );
+        let transitions = transition_payloads(&log);
+        assert_eq!(transitions.len(), 2);
+        assert_eq!(transitions[1].cause_event, Some(source_event));
+        assert_eq!(
+            transitions[1].new,
+            ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Active {
+                expires_at: Some(Tick(20)),
+            })
+        );
     }
 
     #[test]

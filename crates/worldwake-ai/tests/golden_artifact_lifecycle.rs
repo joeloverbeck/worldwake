@@ -6,13 +6,15 @@ use std::collections::BTreeMap;
 
 use golden_harness::{commit_txn, new_txn, seed_belief_from_world};
 use worldwake_ai::generate_candidates;
+use worldwake_core::social_artifact::SuspensionReason;
 use worldwake_core::{
     ArtifactActionability, ArtifactAxisValue, ArtifactCredibility, ArtifactHeader, ArtifactKind,
     ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, BlockerMemory, BountyTarget,
     BountyTerms, CauseRef, CloseCause, CommodityKind, ComponentKind, ComponentValue,
     ContentionStatus, ControlSource, DeadAt, EntityId, EntityKind, EventLog, EventTag, EventView,
-    GoalKind, PerceptionSource, ProofRequirement, PrototypePlace, Quantity, RewardSource, Seed,
-    Tick, World, build_prototype_world, prototype_place_entity,
+    GoalKind, InstitutionalClaim, PerceptionSource, ProofRequirement, PrototypePlace, Quantity,
+    RecordData, RecordKind, RewardSource, Seed, Tick, World, build_prototype_world,
+    prototype_place_entity,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionError, ActionExecutionAuthority, ActionExecutionContext,
@@ -95,6 +97,92 @@ fn bounty(
     txn.set_ground_location(artifact, SQUARE).unwrap();
     commit_txn(txn, &mut EventLog::new());
     artifact
+}
+
+fn office(world: &mut World, name: &str) -> EntityId {
+    let mut txn = new_txn(world, 1);
+    let office = txn.create_office(name).unwrap();
+    commit_txn(txn, &mut EventLog::new());
+    office
+}
+
+fn record(world: &mut World, issuer: EntityId, place: EntityId, kind: RecordKind) -> EntityId {
+    let mut txn = new_txn(world, 2);
+    let record = txn
+        .create_record(RecordData {
+            record_kind: kind,
+            home_place: place,
+            issuer,
+            consultation_ticks: 1,
+            max_entries_per_consult: 8,
+            entries: Vec::new(),
+            next_entry_id: 0,
+        })
+        .unwrap();
+    commit_txn(txn, &mut EventLog::new());
+    record
+}
+
+fn office_bounty(
+    world: &mut World,
+    issuer: EntityId,
+    office: EntityId,
+    target: EntityId,
+    expires_at: Option<Tick>,
+) -> EntityId {
+    let mut txn = new_txn(world, 3);
+    let artifact = txn.create_entity(EntityKind::SocialArtifact);
+    txn.set_component_artifact_header(
+        artifact,
+        ArtifactHeader::posted_active(
+            ArtifactKind::Bounty,
+            issuer,
+            Some(office),
+            Tick(3),
+            expires_at,
+            Some(office),
+            SQUARE,
+        ),
+    )
+    .unwrap();
+    txn.set_component_bounty_terms(
+        artifact,
+        BountyTerms {
+            target: BountyTarget::EliminateEntity { target },
+            proof_requirement: ProofRequirement::PhysicalEvidence,
+            reward_commodity: CommodityKind::Coin,
+            reward_quantity: Quantity(4),
+            reward_source: RewardSource::PersonalFunds { issuer },
+            claim_place: SQUARE,
+        },
+    )
+    .unwrap();
+    txn.set_ground_location(artifact, SQUARE).unwrap();
+    commit_txn(txn, &mut EventLog::new());
+    artifact
+}
+
+fn force_control_source_event(
+    world: &mut World,
+    log: &mut EventLog,
+    record: EntityId,
+    office: EntityId,
+    contested: bool,
+    tick: Tick,
+) -> worldwake_core::EventId {
+    let mut txn = new_txn(world, tick.0);
+    txn.append_record_entry(
+        record,
+        InstitutionalClaim::ForceControl {
+            office,
+            controller: None,
+            contested,
+            effective_tick: tick,
+        },
+    )
+    .unwrap();
+    txn.add_tag(EventTag::Social).add_tag(EventTag::Control);
+    txn.commit(log)
 }
 
 fn action_id(defs: &ActionDefRegistry, name: &str) -> worldwake_core::ActionDefId {
@@ -538,33 +626,27 @@ fn expired_bounty_retains_posted_visibility_with_closed_actionability() {
 // ActionDomains: Artifact
 // Places: VillageSquare
 // Principles: 18, 21, 26
-// Setup: the fixture injects the legal-effect transition events that represent
-//   a jurisdiction review suspending and then resolving a bounty. No closure
-//   cause is emitted.
-// Proves: Suspended and restored Active legal-effect transitions remain
-//   append-only and do not create a spurious actionability closure.
-// Chain: ArtifactTransition(LegalEffect::Suspended) -> lifecycle no-op for
-//   actionability -> ArtifactTransition(LegalEffect::Active) -> actionability
-//   remains Actionable.
+// Setup: an office force-control record first becomes contested, then resolves.
+//   The bounty is issued by that office so the record events are lawful source
+//   carriers for jurisdiction suspension/restoration. No closure cause is
+//   emitted.
+// Proves: source-backed Suspended and restored Active legal-effect transitions
+//   remain append-only and do not create a spurious actionability closure.
+// Chain: ForceControl(contested) record event ->
+//   artifact_lifecycle_system -> ArtifactTransition(LegalEffect::Suspended) ->
+//   ForceControl(resolved) record event -> ArtifactTransition(LegalEffect::Active).
 #[test]
 fn suspended_legal_effect_restores_on_resolution_event() {
     let mut world = World::new(build_prototype_world()).unwrap();
     let issuer = actor(&mut world, "issuer", SQUARE);
+    let office = office(&mut world, "Market Warden");
+    let record = record(&mut world, issuer, SQUARE, RecordKind::OfficeRegister);
     let target = actor(&mut world, "target", SQUARE);
-    let bounty = bounty(&mut world, issuer, target, None);
+    let bounty = office_bounty(&mut world, issuer, office, target, None);
     let mut log = EventLog::new();
 
-    transition(
-        &mut world,
-        &mut log,
-        bounty,
-        AxisName::LegalEffect,
-        ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Suspended {
-            reason: worldwake_core::social_artifact::SuspensionReason::ProcessReview,
-            suspended_at: Tick(9),
-        }),
-        Tick(9),
-    );
+    let suspend_source =
+        force_control_source_event(&mut world, &mut log, record, office, true, Tick(9));
     run_lifecycle(&mut world, &mut log, Tick(9));
     assert_eq!(
         world
@@ -574,14 +656,8 @@ fn suspended_legal_effect_restores_on_resolution_event() {
         ArtifactActionability::Actionable
     );
 
-    transition(
-        &mut world,
-        &mut log,
-        bounty,
-        AxisName::LegalEffect,
-        ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Active { expires_at: None }),
-        Tick(10),
-    );
+    let restore_source =
+        force_control_source_event(&mut world, &mut log, record, office, false, Tick(10));
     run_lifecycle(&mut world, &mut log, Tick(10));
 
     let header = world.get_component_artifact_header(bounty).unwrap();
@@ -597,6 +673,19 @@ fn suspended_legal_effect_restores_on_resolution_event() {
             .count(),
         2
     );
+    let legal_transitions = transition_payloads(&log)
+        .into_iter()
+        .filter(|(_, payload)| payload.axis == AxisName::LegalEffect)
+        .collect::<Vec<_>>();
+    assert_eq!(legal_transitions[0].1.cause_event, Some(suspend_source));
+    assert_eq!(
+        legal_transitions[0].1.new,
+        ArtifactAxisValue::LegalEffect(ArtifactLegalEffect::Suspended {
+            reason: SuspensionReason::JurisdictionDispute,
+            suspended_at: Tick(9),
+        })
+    );
+    assert_eq!(legal_transitions[1].1.cause_event, Some(restore_source));
 }
 
 // Scenario 392: S140 Refuted False Rumor Closes Actionability

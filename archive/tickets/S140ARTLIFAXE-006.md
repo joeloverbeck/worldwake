@@ -132,7 +132,7 @@ Outcome amended: 2026-05-06.
 - No authored `.ron` scenarios were added. The current live proof surface is better served by programmatic/hybrid golden fixtures, so no `scenarios/*` file or `docs/scenario-roadmap.md` registration changed.
 - The suspended legal-effect and refuted-rumor cases use explicit lifecycle transition events inside the golden fixture because the live scenario authoring substrate does not yet expose dedicated domain source events for those two branches.
 - This supersedes the drafted "resolution event" / "evidence-against event" wording for those two cases: the archived proof is lifecycle-handler behavior after explicit transition payloads, not domain-source event authoring.
-- Post-ticket review created `tickets/S140ARTLIFAXE-007.md` to own source-event-backed suspension/refutation lifecycle transitions and the remaining S140 spec truth-sync for those branches.
+- Post-ticket review created the now-archived `archive/tickets/S140ARTLIFAXE-007.md` to own source-event-backed suspension/refutation lifecycle transitions and the remaining S140 spec truth-sync for those branches.
 
 ## Verification Result
 
