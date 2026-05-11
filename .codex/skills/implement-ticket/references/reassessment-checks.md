@@ -177,6 +177,8 @@ When a ticket adds a field to an internal diagnostic, trace, or metadata struct,
 
 ## Event, trace, and payload carrier tickets
 
+When a ticket requires an `EventTag` "with payload" or an event-log transition event whose payload must be inspectable later, verify the full live event carrier chain before coding: `EventPayload`, `PendingEvent`, `EventRecord`, `EventView`, `WorldTxn`, save/load, and observer/report consumers. A tag plus payload type is not enough if no persisted event field carries that payload.
+
 When a system ticket claims a new event-log, trace, or transition carrier, verify first whether the live canonical carrier is already ordinary `WorldTxn` event payload fields (`action_name`, tags, targets, visibility, witness data) before planning a new structured event path.
 
 When a spec or ticket says a maintenance mutation, recovery step, or passive reconciliation is silent, distinguish "no domain-specific event tag" from "no causal record at all." Do not add domain-specific or generic event tags unless the live system contract already requires them; prefer ordinary hidden `WorldTxn` component deltas when that is the strongest honest append-only record.

@@ -74,18 +74,21 @@ When the ticket primarily adds a new variant to an existing shared enum or paylo
 For this shape:
 
 1. Reassess the owner enum/payload, any paired event-tag/manifest surface, crate-root re-exports, exhaustive `match` consumers, render/report observers, and focused serialization or round-trip proof before coding.
-2. Expect downstream CLI/report/observer fallout even when the drafted file list only names the defining crate.
-3. Perform one explicit early consumer sweep before implementation scope is final: search the workspace for `Type::Variant`, owner-type names in exhaustive `match` blocks, and known observer/report formatter entrypoints.
-4. Classify each hit as owner, compile-only fallout, semantic renderer/observer fallout, or no-change cited file.
-5. Use that sweep to seed the real `Files to Touch` / closeout boundary before the first broadened verification run.
-6. If the changed type is embedded inside persisted runtime state or another enclosing saveable carrier, treat the ticket as a save-shape change and verify the enclosing persisted seam and version policy up front.
-7. Inspect semantic consumers, not only exhaustive matches. Sorting, filtering, goal emission, report routing, discrepancy classification, and similar consumers may need explicit exclusion or routing updates.
-8. If the staged runtime path depends on place, entity, claim, or other bound semantics carried through an existing runtime step/report record, inspect whether the current carrier stores that fact explicitly or only infers it from another field.
-9. If the inferred path would make the live binding dishonest, treat the carrier-field fix and constructor fallout as current-ticket scope before closeout.
-10. If the ticket lands a new read-only wrapper or view type, check trait/lint expectations for the full surface early, including iterator companion impls.
-11. If the ticket broadly flips consumer signatures from a raw collection to a wrapper/view type, sweep nearby and same-crate `#[cfg(test)]` modules for raw fixtures such as `vec![...]`, arrays, `&[]`, and `std::slice::from_ref`.
-12. If the ticket introduces a mirrored enum or record in one crate to represent a type owned by another crate, identify the nearest lawful proof seam that can see both sides and prove parity there.
-13. During closeout, rewrite any stale drafted `Files to Touch`, `Out of Scope`, or "no consumer/rendering change" prose when the consumer sweep or broadened verification proves a downstream observer, report, fixture, save/load, or renderer update was required.
+2. For shared payload widening, use a compact first pass before coding: identify the owner type, persisted save/load carrier and required `SAVE_FORMAT_VERSION` decision, render/report/CLI consumers, Debug-derived snapshot fixtures, inventory arrays/count assertions, crate-root re-export namespace collisions, every existing derive or size-sensitive lint bound on the widened enum or carrier plus nested payload types needed to satisfy those bounds, and any active sibling ticket or spec handoff text whose baseline becomes false after the new payload shape lands.
+3. When a semantic type name already exists through multiple module paths or crate-root re-exports, verify the real owner module and prefer that owner-module import in implementation and tests instead of trusting the shortest re-export path.
+4. When a shared payload or tag conversion crosses crate-owned types, verify the dependency direction before accepting the drafted conversion site. Put the conversion in the crate that can lawfully name both types, and truth-sync active tickets/specs when the draft names a dependency-inverting crate.
+5. Expect downstream CLI/report/observer fallout even when the drafted file list only names the defining crate.
+6. Perform one explicit early consumer sweep before implementation scope is final: search the workspace for `Type::Variant`, owner-type names in exhaustive `match` blocks, and known observer/report formatter entrypoints.
+7. Classify each hit as owner, compile-only fallout, semantic renderer/observer fallout, or no-change cited file.
+8. Use that sweep to seed the real `Files to Touch` / closeout boundary before the first broadened verification run.
+9. If the changed type is embedded inside persisted runtime state or another enclosing saveable carrier, treat the ticket as a save-shape change and verify the enclosing persisted seam and version policy up front.
+10. Inspect semantic consumers, not only exhaustive matches. Sorting, filtering, goal emission, report routing, discrepancy classification, and similar consumers may need explicit exclusion or routing updates.
+11. If the staged runtime path depends on place, entity, claim, or other bound semantics carried through an existing runtime step/report record, inspect whether the current carrier stores that fact explicitly or only infers it from another field.
+12. If the inferred path would make the live binding dishonest, treat the carrier-field fix and constructor fallout as current-ticket scope before closeout.
+13. If the ticket lands a new read-only wrapper or view type, check trait/lint expectations for the full surface early, including iterator companion impls.
+14. If the ticket broadly flips consumer signatures from a raw collection to a wrapper/view type, sweep nearby and same-crate `#[cfg(test)]` modules for raw fixtures such as `vec![...]`, arrays, `&[]`, and `std::slice::from_ref`.
+15. If the ticket introduces a mirrored enum or record in one crate to represent a type owned by another crate, identify the nearest lawful proof seam that can see both sides and prove parity there.
+16. During closeout, rewrite any stale drafted `Files to Touch`, `Out of Scope`, or "no consumer/rendering change" prose when the consumer sweep or broadened verification proves a downstream observer, report, fixture, save/load, or renderer update was required.
 
 ## Shared field/type migration quick path
 

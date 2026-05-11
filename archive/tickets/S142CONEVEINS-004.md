@@ -1,6 +1,6 @@
 # S142CONEVEINS-004: Emit `ContentionResolved` from `grant_or_signal_full` slot grants
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-systems` resource-extraction grant emission added
@@ -8,7 +8,7 @@
 
 ## Problem
 
-The resource-extraction grant flow at `crates/worldwake-systems/src/production_actions.rs::grant_or_signal_full` (`:484`) is the second contention-resolution substrate in the codebase after the facility-queue grant flow. Today this path issues a slot grant by setting `queue.granted = Some(ContentionGrant { ... })` at `:528` but emits no event recording the contention. Per the spec's S142 multi-substrate hook coverage requirement, the headline scenario "three agents converge on a single-slot orchard" runs through this path, not the facility-queue path. Without emission here, the spec's "every grant emits" contract is incomplete and the orchard scenario produces no `ContentionResolved` event. This ticket adds emission to the slot-grant decision point, sharing the helper from ticket 001.
+The resource-extraction grant flow at `crates/worldwake-systems/src/production_actions.rs::grant_or_signal_full` (`:484`) is the second contention-resolution substrate in the codebase after the facility-queue grant flow. Before this ticket, this path issued a slot grant by setting `queue.granted = Some(ContentionGrant { ... })` at `:528` but emitted no event recording the contention. Per the spec's S142 multi-substrate hook coverage requirement, the headline scenario "three agents converge on a single-slot orchard" runs through this path, not the facility-queue path. Without emission here, the spec's "every grant emits" contract was incomplete and the orchard scenario produced no `ContentionResolved` event. This ticket adds emission to the slot-grant decision point, sharing the helper from ticket 001.
 
 ## Assumption Reassessment (2026-05-10)
 
@@ -108,3 +108,22 @@ Add a focused test exercising a contended extraction slot (2+ waiters on the sam
 1. `cargo test -p worldwake-systems production_actions`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-11.
+
+- `grant_or_signal_full` now snapshots the chosen extraction slot before mutating `queue.granted`, builds a `ContentionEventPayload` with `ContentionResolutionRule::ArrivalTime`, and stages it through `WorldTxn::set_contention_event_payload` on successful new slot grants.
+- The actor-already-granted and slot-full failure paths remain non-emitting.
+- The three existing harvest-slot tests now assert resource-extraction `ContentionResolved` emission/count behavior, and `every_extraction_grant_emits_contention_event` proves the contended-waiter payload shape.
+
+## Deviations
+
+- The existing free-slot start tests assert an event with an empty claimant snapshot because no actor was waiting before the free grab. The new contended-waiter test covers the claimant ordering and `Granted`/`QueuedBehind` payload contract.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-systems --lib production_actions::tests::every_extraction_grant_emits_contention_event -- --exact`
+- Passed `cargo test -p worldwake-systems production_actions`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
