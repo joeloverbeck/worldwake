@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 74;
+pub const SAVE_FORMAT_VERSION: u32 = 75;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -196,22 +196,23 @@ mod tests {
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, ActionDomain, AgentBeliefStore, ArtifactActionability,
-        ArtifactAxisValue, ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef,
-        BeliefSnapshot, BeliefStatusTag, BelievedActivity, BelievedEntityState, BlockerKey,
-        BlockerRecordedPayload, BlockingFact, BodyCostPerTick, CauseRef, ClaimId, ClaimValue,
-        CloseCause, CommodityKind, CommodityPurpose, ControlSource, DecisionEventPayload,
-        Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EmitterTag,
-        EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog, EventPayload, EventTag,
-        EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationId,
-        ExpectationMismatchPayload, ExpectationRecord, ExpectationState, ExpectationStore,
-        GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind,
-        GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload,
-        GoalSwitchReason, GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, LatrineFullness, MaterializationTag, MetabolismProfile,
-        ObservationOmission, ObservationRef, OmissionReason, PendingEvent, PerceptionSource,
-        PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
-        PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
+        AcquisitionQuantity, ActionDefId, ActionDomain, AffordanceKey, AgentBeliefStore,
+        ArtifactActionability, ArtifactAxisValue, ArtifactTransitionPayload, AxisName,
+        BeliefClaimKey, BeliefRef, BeliefSnapshot, BeliefStatusTag, BelievedActivity,
+        BelievedEntityState, BlockerKey, BlockerRecordedPayload, BlockingFact, BodyCostPerTick,
+        CauseRef, ClaimId, ClaimValue, ClaimantOutcome, CloseCause, CommodityKind,
+        CommodityPurpose, ContentionClaimant, ContentionEventPayload, ContentionResolutionRule,
+        ControlSource, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
+        DiscrepancyMemory, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog,
+        EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
+        ExpectationId, ExpectationMismatchPayload, ExpectationRecord, ExpectationState,
+        ExpectationStore, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey,
+        GoalKind, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
+        GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag, HomeostaticNeedId,
+        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, MaterializationTag,
+        MetabolismProfile, ObservationOmission, ObservationRef, OmissionReason, PendingEvent,
+        PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
+        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
         RewardEncumbrance, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
@@ -543,6 +544,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: std::collections::BTreeSet::from([worldwake_core::EventTag::System]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -807,6 +809,7 @@ mod tests {
                 visibility: VisibilitySpec::Hidden,
                 witness_data: WitnessData::default(),
                 tags: std::collections::BTreeSet::from([tag]),
+                contention_event_payload: None,
                 decision_payload: Some(payload),
                 artifact_transition_payload: None,
             }));
@@ -833,6 +836,7 @@ mod tests {
                 visibility: VisibilitySpec::Hidden,
                 witness_data: WitnessData::default(),
                 tags: std::collections::BTreeSet::from([EventTag::ArtifactTransition]),
+                contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: Some(ArtifactTransitionPayload {
                     artifact,
@@ -845,6 +849,58 @@ mod tests {
                     cause_event,
                     at: tick,
                 }),
+            }));
+    }
+
+    fn append_contention_event(
+        state: &mut SimulationState,
+        tick: Tick,
+        facility: EntityId,
+        place: EntityId,
+        winner: EntityId,
+    ) {
+        let _ = state
+            .event_log_mut()
+            .emit(PendingEvent::from_payload(EventPayload {
+                tick,
+                cause: CauseRef::SystemTick(tick),
+                actor_id: Some(winner),
+                action_name: None,
+                target_ids: vec![facility, winner],
+                evidence: Vec::new(),
+                place_id: Some(place),
+                state_deltas: Vec::new(),
+                observed_entities: std::collections::BTreeMap::new(),
+                visibility: VisibilitySpec::Hidden,
+                witness_data: WitnessData::default(),
+                tags: std::collections::BTreeSet::from([EventTag::ContentionResolved]),
+                contention_event_payload: Some(ContentionEventPayload {
+                    contested_affordance: AffordanceKey {
+                        facility,
+                        action: ActionDefId(77),
+                    },
+                    place,
+                    resolution_rule: ContentionResolutionRule::ArrivalTime,
+                    claimants: vec![
+                        ContentionClaimant {
+                            agent: winner,
+                            arrived_tick: Tick(18),
+                            queue_position: 1,
+                            outcome: ClaimantOutcome::Granted,
+                        },
+                        ContentionClaimant {
+                            agent: decision_test_entity(302),
+                            arrived_tick: Tick(19),
+                            queue_position: 2,
+                            outcome: ClaimantOutcome::QueuedBehind,
+                        },
+                    ],
+                    total_claimants: 2,
+                    winner: Some(winner),
+                    at_tick: tick,
+                }),
+                decision_payload: None,
+                artifact_transition_payload: None,
             }));
     }
 
@@ -1133,7 +1189,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 74);
+        assert_eq!(SAVE_FORMAT_VERSION, 75);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1509,6 +1565,40 @@ mod tests {
         assert_eq!(payload.artifact, target);
         assert_eq!(payload.axis, AxisName::Actionability);
         assert_eq!(payload.cause_event, Some(worldwake_core::EventId(3)));
+    }
+
+    #[test]
+    fn save_to_bytes_roundtrip_preserves_contention_event_payloads() {
+        let (mut state, actor, _target, _) = populated_state();
+        let facility = decision_test_entity(901);
+        let place = decision_test_entity(902);
+        append_contention_event(&mut state, Tick(20), facility, place, actor);
+
+        let bytes = save_to_bytes(&state, None).unwrap();
+        let (restored, runtime) = load_from_bytes(&bytes).unwrap();
+
+        assert_eq!(runtime, None);
+        assert_eq!(restored, state);
+
+        let event_id = restored
+            .event_log()
+            .events_by_tag(EventTag::ContentionResolved)[0];
+        let payload = restored
+            .event_log()
+            .get(event_id)
+            .and_then(EventView::contention_event_payload)
+            .expect("contention event payload survives save/load");
+        assert_eq!(payload.contested_affordance.facility, facility);
+        assert_eq!(payload.contested_affordance.action, ActionDefId(77));
+        assert_eq!(payload.place, place);
+        assert_eq!(
+            payload.resolution_rule,
+            ContentionResolutionRule::ArrivalTime
+        );
+        assert_eq!(payload.total_claimants, 2);
+        assert_eq!(payload.winner, Some(actor));
+        assert_eq!(payload.claimants[0].outcome, ClaimantOutcome::Granted);
+        assert_eq!(payload.claimants[1].outcome, ClaimantOutcome::QueuedBehind);
     }
 
     #[test]

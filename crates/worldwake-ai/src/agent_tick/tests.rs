@@ -1202,6 +1202,7 @@ fn run_same_place_observation(
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));

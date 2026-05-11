@@ -626,6 +626,7 @@ pub(super) fn emit_decision_event(
         visibility: VisibilitySpec::Hidden,
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([tag]),
+        contention_event_payload: None,
         decision_payload: Some(decision_payload),
         artifact_transition_payload: None,
     }));

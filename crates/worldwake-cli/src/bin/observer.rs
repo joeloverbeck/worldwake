@@ -4763,6 +4763,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([tag]),
+            contention_event_payload: None,
             decision_payload: Some(payload),
             artifact_transition_payload: None,
         }));
@@ -4789,6 +4790,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::ArtifactTransition]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: Some(ArtifactTransitionPayload {
                 artifact,

@@ -25,6 +25,7 @@ pub enum EventTag {
     QueueGrantExpired,
     QueueHeadFailed,
     QueueGrantPromoted,
+    ContentionResolved,
     Political,
     Control,
     System,
@@ -62,7 +63,7 @@ mod tests {
     >() {
     }
 
-    const ALL_EVENT_TAGS: [EventTag; 45] = [
+    const ALL_EVENT_TAGS: [EventTag; 46] = [
         EventTag::WorldMutation,
         EventTag::Inventory,
         EventTag::Transfer,
@@ -83,6 +84,7 @@ mod tests {
         EventTag::QueueGrantExpired,
         EventTag::QueueHeadFailed,
         EventTag::QueueGrantPromoted,
+        EventTag::ContentionResolved,
         EventTag::Political,
         EventTag::Control,
         EventTag::System,
@@ -117,7 +119,8 @@ mod tests {
 
     #[test]
     fn event_tag_includes_all_required_variants() {
-        assert_eq!(ALL_EVENT_TAGS.len(), 45);
+        assert_eq!(ALL_EVENT_TAGS.len(), 46);
+        assert!(ALL_EVENT_TAGS.contains(&EventTag::ContentionResolved));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::WasteCreated));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::WashFacilityUsed));
         assert!(ALL_EVENT_TAGS.contains(&EventTag::SurveyRecorded));

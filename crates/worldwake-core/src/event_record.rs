@@ -1,8 +1,8 @@
 //! Immutable append-only event payloads.
 
 use crate::{
-    ArtifactTransitionPayload, CauseRef, DecisionEventPayload, EventTag, MismatchKind,
-    ObservedEntitySnapshot, StateDelta, VisibilitySpec, WitnessData, WoundId,
+    ArtifactTransitionPayload, CauseRef, ContentionEventPayload, DecisionEventPayload, EventTag,
+    MismatchKind, ObservedEntitySnapshot, StateDelta, VisibilitySpec, WitnessData, WoundId,
 };
 use crate::{EntityId, EventId, Tick};
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,7 @@ pub trait EventView {
     fn visibility(&self) -> VisibilitySpec;
     fn witness_data(&self) -> &WitnessData;
     fn tags(&self) -> &BTreeSet<EventTag>;
+    fn contention_event_payload(&self) -> Option<&ContentionEventPayload>;
     fn decision_payload(&self) -> Option<&DecisionEventPayload>;
     fn artifact_transition_payload(&self) -> Option<&ArtifactTransitionPayload>;
 }
@@ -57,6 +58,7 @@ pub struct EventPayload {
     pub visibility: VisibilitySpec,
     pub witness_data: WitnessData,
     pub tags: BTreeSet<EventTag>,
+    pub contention_event_payload: Option<ContentionEventPayload>,
     pub decision_payload: Option<DecisionEventPayload>,
     pub artifact_transition_payload: Option<ArtifactTransitionPayload>,
 }
@@ -116,6 +118,10 @@ impl EventView for PendingEvent {
         &self.payload.tags
     }
 
+    fn contention_event_payload(&self) -> Option<&ContentionEventPayload> {
+        self.payload.contention_event_payload.as_ref()
+    }
+
     fn decision_payload(&self) -> Option<&DecisionEventPayload> {
         self.payload.decision_payload.as_ref()
     }
@@ -172,6 +178,10 @@ impl EventView for EventRecord {
 
     fn tags(&self) -> &BTreeSet<EventTag> {
         &self.payload.tags
+    }
+
+    fn contention_event_payload(&self) -> Option<&ContentionEventPayload> {
+        self.payload.contention_event_payload.as_ref()
     }
 
     fn decision_payload(&self) -> Option<&DecisionEventPayload> {
@@ -298,6 +308,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([entity(2), entity(10)]),
             },
             tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         });
@@ -350,6 +361,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([entity(2), entity(10)]),
             },
             tags: BTreeSet::from([EventTag::WorldMutation, EventTag::System]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         })
@@ -390,6 +402,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         })
@@ -450,6 +463,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
             },
             tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         });
@@ -533,6 +547,7 @@ mod tests {
             visibility: VisibilitySpec::ParticipantsOnly,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Discovery]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         });
@@ -605,6 +620,7 @@ mod tests {
             visibility: VisibilitySpec::ParticipantsOnly,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Discovery]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         });
@@ -674,6 +690,7 @@ mod tests {
                 visibility: VisibilitySpec::ParticipantsOnly,
                 witness_data: WitnessData::default(),
                 tags: BTreeSet::from([EventTag::Discovery]),
+                contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: None,
             },
@@ -734,6 +751,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::WorldMutation]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         });
@@ -793,6 +811,7 @@ mod tests {
                     potential_witnesses: BTreeSet::from([entity(1), entity(2), entity(3)]),
                 },
                 tags: BTreeSet::from([EventTag::ActionCommitted, EventTag::Travel]),
+                contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: None,
             },
@@ -849,6 +868,7 @@ mod tests {
                     potential_witnesses: BTreeSet::from([entity(3)]),
                 },
                 tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+                contention_event_payload: None,
                 decision_payload: None,
                 artifact_transition_payload: None,
             },
@@ -886,6 +906,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::GoalOffered]),
+            contention_event_payload: None,
             decision_payload: Some(DecisionEventPayload::GoalOffered(GoalOfferedPayload {
                 agent: entity(1),
                 goal_key: crate::test_utils::sample_goal_key(),
@@ -921,6 +942,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::ArtifactTransition]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: Some(crate::ArtifactTransitionPayload {
                 artifact: entity(2),
@@ -943,5 +965,48 @@ mod tests {
         let roundtrip: EventPayload = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, payload);
+    }
+
+    #[test]
+    fn event_payload_roundtrips_with_contention_event_payload() {
+        let payload = EventPayload {
+            tick: Tick(30),
+            cause: CauseRef::SystemTick(Tick(30)),
+            actor_id: Some(entity(1)),
+            action_name: Some("grant".to_string()),
+            target_ids: vec![entity(2)],
+            evidence: Vec::new(),
+            place_id: Some(entity(3)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::ContentionResolved]),
+            contention_event_payload: Some(crate::ContentionEventPayload {
+                contested_affordance: crate::AffordanceKey {
+                    facility: entity(2),
+                    action: crate::ActionDefId(77),
+                },
+                place: entity(3),
+                resolution_rule: crate::ContentionResolutionRule::ArrivalTime,
+                claimants: vec![crate::ContentionClaimant {
+                    agent: entity(1),
+                    arrived_tick: Tick(29),
+                    queue_position: 1,
+                    outcome: crate::ClaimantOutcome::Granted,
+                }],
+                total_claimants: 1,
+                winner: Some(entity(1)),
+                at_tick: Tick(30),
+            }),
+            decision_payload: None,
+            artifact_transition_payload: None,
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: EventPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+        assert!(roundtrip.contention_event_payload.is_some());
     }
 }

@@ -41,6 +41,7 @@ pub mod component_tables;
 pub mod components;
 pub mod conservation;
 pub mod contention;
+pub mod contention_event;
 pub mod control;
 pub mod crime;
 pub mod decision_event_payload;
@@ -148,6 +149,10 @@ pub use contention::{
     ContentionDispositionProfile, ContentionError, ContentionGrant, ContentionIntents,
     ContentionPolicy, ContentionQueue, ContentionStatus, ContentionWaiter, QueuedContentionIntent,
     ResourceExtractionQueues,
+};
+pub use contention_event::{
+    AffordanceKey, ClaimantOutcome, ContentionClaimant, ContentionEventPayload,
+    ContentionResolutionRule, DenialReason, build_contention_event_payload,
 };
 pub use control::ControlSource;
 pub use crime::{
