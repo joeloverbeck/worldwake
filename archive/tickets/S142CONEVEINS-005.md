@@ -1,6 +1,6 @@
 # S142CONEVEINS-005: Populate `BlockingFact::ReservationConflict.contention_event` from event-log lookup
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small-Medium
 **Engine Changes**: Yes — `worldwake-ai` agent_tick execution path looks up contention events
@@ -30,7 +30,7 @@ After ticket 002 lands, `BlockingFact::ReservationConflict` carries `contention_
 ## Verification Layers
 
 1. Lookup behavior — focused unit/runtime test in `agent_tick/execution.rs` test module: a `BlockingFact::ReservationConflict` with a contention event present in the log gets `contention_event: Some(_)` populated; with no event present, `contention_event` stays `None`.
-2. Decision trace surfaces the populated field — verify via decision-trace assertion in the test (or a focused trace-sink inspection)
+2. Decision trace surfaces the populated field because `BlockingFact` is carried as-is in the existing `BlockerRecorded` payload; direct trace-sink/end-to-end assertion remains ticket 007's golden 4.
 3. End-to-end attribution chain (failure → look up event → populate field → trace exposes it) is covered by ticket 007's golden 4 (`BlockingFact::ReservationConflict` with non-`None` `contention_event`)
 4. Per Rule 5 (verification surface mapping): this ticket's contract is the population behavior. Lower-layer (event-log writes) is verified by tickets 003/004; upper-layer (end-to-end) is verified by ticket 007. This ticket's proof is the focused unit/runtime test on the lookup function itself.
 
@@ -38,7 +38,7 @@ After ticket 002 lands, `BlockingFact::ReservationConflict` carries `contention_
 
 ### 1. Add a lookup-and-populate helper in `agent_tick/execution.rs`
 
-Add a function (e.g., `populate_contention_event_ref`) that takes a mutable `BlockingFact`, the agent's tick, and the event log; if the variant is `BlockingFact::ReservationConflict { affordance, contention_event: ref mut ce }` and `ce` is `None`, walk `event_log.events_by_tag(EventTag::ContentionResolved)`, resolve each event's payload, and set `*ce = Some(event_id)` when the payload's `contested_affordance == affordance` and `at_tick == tick`. If multiple matches exist (bug condition), prefer the first match and surface a debug assertion for non-debug tests.
+Add `populate_contention_event_refs`, which takes a `BlockerMemory`, the agent's tick, and the event log; for each `BlockingFact::ReservationConflict { affordance, contention_event: None }`, walk `event_log.events_by_tag(EventTag::ContentionResolved)`, resolve each event's payload, and populate the copied blocker memory with `contention_event = Some(event_id)` when the payload's `contested_affordance == affordance` and `at_tick == tick`. If multiple matches exist (bug condition), prefer the first match and surface a debug assertion.
 
 ### 2. Call the helper at the `BlockingFact` finalization point in `agent_tick/execution.rs`
 
@@ -92,10 +92,30 @@ Plus a tick-mismatch test:
 
 ### New/Modified Tests
 
-1. `crates/worldwake-ai/src/agent_tick/execution.rs` (new or extended `#[cfg(test)]` block) — 3 focused tests covering positive lookup, affordance mismatch, tick mismatch.
+1. `crates/worldwake-ai/src/agent_tick/execution.rs` (extended `#[cfg(test)]` block) — 3 focused tests covering positive lookup, affordance mismatch, tick mismatch.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai execution`
+1. `cargo test -p worldwake-ai --lib populate_contention_event_ref`
 2. `cargo test --workspace`
 3. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-11.
+
+- Added `populate_contention_event_refs` in `crates/worldwake-ai/src/agent_tick/execution.rs`, called from `finalize_agent_tick` before `persist_blocked_memory`, so newly recorded `BlockingFact::ReservationConflict` entries are lazily enriched from `events_by_tag(EventTag::ContentionResolved)` before the blocker memory component and `BlockerRecorded` decision payload are written.
+- Added focused unit coverage for matching `(affordance, at_tick)` population, affordance mismatch, and tick mismatch. The lookup remains read-only and leaves `contention_event` as `None` when no matching event exists.
+
+## Deviations
+
+- The landed helper operates over `BlockerMemory` lazily rather than mutating a standalone `BlockingFact`; this keeps the finalization boundary centralized and ensures the persisted component and decision trace payload use the same populated blocker value.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib populate_contention_event_ref -- --list` (selector resolved to the 3 focused `agent_tick::execution::tests::*` tests).
+- Passed `cargo test -p worldwake-ai --lib populate_contention_event_ref`.
+- Passed `cargo fmt --all`.
+- Passed `cargo test -p worldwake-ai agent_tick`.
+- Passed `cargo test --workspace`.
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`.
