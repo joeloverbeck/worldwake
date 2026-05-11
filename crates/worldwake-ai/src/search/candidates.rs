@@ -155,6 +155,7 @@ pub(super) fn root_candidate_trace_from_candidate(
         payload_status: root_candidate_payload_status(candidate.payload_override.as_ref(), None),
         outcome: crate::decision_trace::RootCandidateOutcome::Expanded,
         omitted_anchor,
+        source: crate::decision_trace::CandidateSource::Emitter,
     }
 }
 
@@ -1282,5 +1283,36 @@ pub(super) fn candidate_action_place(
             .effective_place_ref(PlanningEntityRef::Authoritative(
                 node.state.snapshot().actor(),
             )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_candidate_trace_from_candidate_defaults_to_emitter_source() {
+        let candidate = SearchCandidate {
+            def_id: ActionDefId(0),
+            authoritative_targets: vec![EntityId {
+                slot: 7,
+                generation: 0,
+            }],
+            planning_targets: Vec::new(),
+            payload_override: None,
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        };
+        let registry = ActionDefRegistry::new();
+        let semantics_table = BTreeMap::new();
+
+        let trace =
+            root_candidate_trace_from_candidate(&candidate, &registry, &semantics_table, None);
+
+        assert_eq!(
+            trace.source,
+            crate::decision_trace::CandidateSource::Emitter
+        );
     }
 }

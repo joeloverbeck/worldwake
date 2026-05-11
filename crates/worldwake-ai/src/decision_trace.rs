@@ -816,6 +816,12 @@ pub enum RootCandidateOutcome {
 }
 
 /// Structured root candidate provenance for one goal attempt.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum CandidateSource {
+    Emitter,
+    OpportunityCompiler,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RootCandidateTrace {
     pub def_id: ActionDefId,
@@ -826,6 +832,17 @@ pub struct RootCandidateTrace {
     pub payload_status: RootCandidatePayloadStatus,
     pub outcome: RootCandidateOutcome,
     pub omitted_anchor: Option<OmissionReason>,
+    pub source: CandidateSource,
+}
+
+#[derive(
+    Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize,
+)]
+pub struct OpportunityCompilerLoad {
+    pub compiled_count: u32,
+    pub salience_floored: u32,
+    pub learned_memory_damped: u32,
+    pub cap_truncated: u32,
 }
 
 /// Final per-expansion status for one candidate after all pre-successor filters.
@@ -4630,6 +4647,7 @@ mod tests {
                                 },
                             ),
                             omitted_anchor: None,
+                            source: CandidateSource::Emitter,
                         }],
                         root_omissions: vec![RootOperatorOmissionTrace {
                             op_kind: PlannerOpKind::PressForceClaim,

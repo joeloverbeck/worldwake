@@ -234,13 +234,7 @@ Load `references/verification.md` unless Step 0 classified the ticket as a clear
 
 #### Cargo execution discipline
 
-Resolve focused Cargo test selectors before using `--exact`, normally with `cargo test -p <crate> --lib -- --list` for crate unit tests. If the list output prints `module::path::test_name`, copy that full listed ID into the exact selector; the pre-`--` filter may be a substring, but `--exact` matches the complete Rust test ID. If a module or prefix matches multiple tests, either run it without `--exact` and confirm the intended nonzero test count, or run each concrete listed test separately with `--exact`. See `references/verification.md` for detailed selector patterns and examples.
-
-When adding several new tests whose names do not share a prefix, do not use one filtered `-- --list` query as proof that the whole set exists. Use an unfiltered list plus a focused text search, or run separate list queries for every intended exact selector before relying on exact test runs or writing closeout verification. If a list query used for discovery includes unrelated tests, record it as selector discovery only; use the exact test run or a cleaner list query as verification evidence.
-
-If a passing focused selector matches only the wrong test set, discard it as non-proof. Do not record it as ticket verification except, when useful, as a corrected false start that led to the final truthful selector.
-
-If a drafted Cargo command names multiple positional test filters before `--` (for example `cargo test -p crate foo:: bar::`), treat the command as invalid draft syntax. Rebind it to valid focused proof by splitting it into separate Cargo invocations or replacing it with one exact/module-qualified selector, then update the ticket's command list and closeout instead of preserving the impossible command.
+Use `references/verification.md` for focused selector rules, exact-test pitfalls, multi-test proof shapes, and invalid drafted Cargo syntax. Keep only the hard stop here: a selector that runs zero intended tests, or only the wrong test set, is non-proof and must not be recorded as verification.
 
 If repo guidance or the active verification contract requires `cargo fmt --all`, run it, then immediately inspect `git status --short` and classify any formatter spillover in already-dirty files as unrelated or adjacent fallout unless the current ticket truly owns those paths. Record that spillover explicitly in closeout rather than silently attributing the formatted files to the ticket.
 
