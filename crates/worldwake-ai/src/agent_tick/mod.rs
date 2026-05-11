@@ -232,7 +232,7 @@ pub(super) fn decisive_evidence_from_blocker(blocker: &Blocker, cap: u8) -> Deci
             }
         }
         BlockingFact::WorkstationBusy
-        | BlockingFact::ReservationConflict
+        | BlockingFact::ReservationConflict { .. }
         | BlockingFact::ExclusiveFacilityUnavailable => {
             if let Some(place) = blocker.blocker_key.place {
                 refs.push_observation(place, EntityBeliefAspect::ContentionState, tick);

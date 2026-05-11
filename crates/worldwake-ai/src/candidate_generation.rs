@@ -510,7 +510,7 @@ fn filter_suppressed_candidates(
                 opportunity,
                 match suppression {
                     SuppressionMatch::Discrepancy => None,
-                    SuppressionMatch::Blocker(detail) => Some(detail),
+                    SuppressionMatch::Blocker(detail) => Some(*detail),
                 },
             ));
             continue;
@@ -541,7 +541,7 @@ fn filter_suppressed_candidates(
 
 enum SuppressionMatch {
     Discrepancy,
-    Blocker(crate::decision_trace::BlockerMatchDetail),
+    Blocker(Box<crate::decision_trace::BlockerMatchDetail>),
 }
 
 fn find_matching_suppression(
@@ -563,13 +563,13 @@ fn find_matching_suppression(
             && intent.expires_tick > current_tick
             && intent.blocks_goal_generation()
             && candidate_matches_blocker(candidate, &intent.blocker_key);
-        matches.then_some(SuppressionMatch::Blocker(
+        matches.then_some(SuppressionMatch::Blocker(Box::new(
             crate::decision_trace::BlockerMatchDetail {
                 blocker_key: intent.blocker_key,
                 blocking_fact: intent.blocking_fact,
                 expires_tick: intent.expires_tick,
             },
-        ))
+        )))
     })
 }
 

@@ -1148,7 +1148,13 @@ mod tests {
                     agent: actor,
                     blocker_key,
                     discrepancy: Some(Discrepancy::RouteUnknown),
-                    blocking_fact: Some(BlockingFact::NoKnownPath),
+                    blocking_fact: Some(BlockingFact::ReservationConflict {
+                        affordance: AffordanceKey {
+                            facility: target,
+                            action: ActionDefId(8),
+                        },
+                        contention_event: Some(worldwake_core::EventId(3)),
+                    }),
                     expires_tick: Tick(99),
                     belief_snapshot: Some(BeliefSnapshot {
                         confidence: worldwake_core::Permille::new(650).unwrap(),
@@ -1529,6 +1535,21 @@ mod tests {
 
         assert_eq!(restored_payloads, original_payloads);
         assert_eq!(restored_payloads.len(), decision_events.len());
+        assert!(restored_payloads.iter().any(|payload| {
+            matches!(
+                payload,
+                DecisionEventPayload::BlockerRecorded(BlockerRecordedPayload {
+                    blocking_fact: Some(BlockingFact::ReservationConflict {
+                        affordance: AffordanceKey {
+                            facility,
+                            action: ActionDefId(8),
+                        },
+                        contention_event: Some(worldwake_core::EventId(3)),
+                    }),
+                    ..
+                }) if *facility == target
+            )
+        }));
 
         for (original, roundtrip) in original_payloads.iter().zip(&restored_payloads) {
             assert_eq!(

@@ -129,7 +129,7 @@ Add `ContentionResolved` emission to `crates/worldwake-systems/src/production_ac
 
 ### D4. `BlockingFact::ReservationConflict` payload widening
 
-Today's variant at `crates/worldwake-core/src/blocker_memory.rs:197` is a unit variant (`ReservationConflict,`). Widen to a struct variant:
+Ticket S142CONEVEINS-002 widens the pre-S142 unit variant at `crates/worldwake-core/src/blocker_memory.rs:197` (`ReservationConflict,`) to a struct variant:
 
 ```rust
 pub enum BlockingFact {
@@ -141,7 +141,7 @@ pub enum BlockingFact {
 }
 ```
 
-`Option<EventId>` is `Copy`, preserving any `Copy`-deriving requirement on `BlockingFact`. Mandatory blast-radius work:
+`Option<EventId>` is `Copy`, preserving the live `Copy` derive on `BlockingFact`. Mandatory blast-radius work:
 
 - Audit all 17 `BlockingFact::ReservationConflict` use sites workspace-wide (`grep -rn "BlockingFact::ReservationConflict" crates/ --include="*.rs"`); update each construction site to the new struct form and each destructuring/match site to bind the new fields. Tests asserting the bare unit variant need updating.
 - Verify the `BlockingFact` enum's derives still hold. If `BlockingFact` derives `Copy`, `AffordanceKey` is `Copy` and `Option<EventId>` is `Copy`, so the derive is preserved.
@@ -210,6 +210,6 @@ Not applicable — contention resolution is per-affordance, not per-agent. The `
 ## Risks
 
 - **Event-log volume.** Contested scenarios may emit many contention events. Mitigation: existing S71/S72 delta compaction handles them; bounded `Vec<ContentionClaimant>` truncated to 8 at emit time caps payload size; soak measures aggregate event-log delta footprint.
-- **`BlockingFact::ReservationConflict` payload-widening blast radius.** 17 cross-crate use sites (mix of construction and destructuring). Mitigation: a single ticket performs the workspace-wide migration in one pass with grep enumeration; tests covering the bare unit form are updated alongside production code in the same change.
+- **`BlockingFact::ReservationConflict` payload-widening blast radius.** The pre-ticket unit form had 17 `worldwake-ai` use sites (mix of construction and destructuring). Mitigation: ticket S142CONEVEINS-002 performs the workspace-wide migration in one pass with grep enumeration; tests covering the bare unit form are updated alongside production code in the same change.
 - **Snapshot-before-mutate ordering in emission code.** Both D3a and D3b read `ContentionQueue.waiting` ordinals BEFORE the grant mutation removes the head. Mitigation: emission helper accepts the pre-mutation queue snapshot as a parameter; the unit test for the helper exercises the case where the head is mutated between snapshot and emission to confirm the snapshot is the authoritative source for `queue_position`.
 - **Discrepancy backreference latency.** The AI populates `contention_event` by looking up an event emitted earlier in the same tick; if the lookup index is per-tick rebuilt, cost grows. Mitigation: a follow-up ticket measures lookup cost on `survival-contested.ron`; if it exceeds 1% of agent_tick, an O(1) index is added (per-affordance most-recent-resolution pointer).

@@ -1,8 +1,8 @@
 //! Authoritative blocker memory stored on agents.
 
 use crate::{
-    ActionDefId, CommodityKind, Component, EntityId, GoalKey, Permille, Quantity, Tick,
-    UniqueItemKind,
+    ActionDefId, AffordanceKey, CommodityKind, Component, EntityId, EventId, GoalKey, Permille,
+    Quantity, Tick, UniqueItemKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -194,7 +194,10 @@ pub enum BlockingFact {
     TooExpensive,
     SourceDepleted,
     WorkstationBusy,
-    ReservationConflict,
+    ReservationConflict {
+        affordance: AffordanceKey,
+        contention_event: Option<EventId>,
+    },
     ExclusiveFacilityUnavailable,
     MissingTool(UniqueItemKind),
     MissingInput(CommodityKind),
@@ -214,7 +217,8 @@ mod tests {
         BlockingFact, ClearingBaseline,
     };
     use crate::{
-        AcquisitionQuantity, ActionDefId, CommodityKind, GoalKind, Quantity, Tick, UniqueItemKind,
+        AcquisitionQuantity, ActionDefId, AffordanceKey, CommodityKind, EventId, GoalKind,
+        Quantity, Tick, UniqueItemKind,
         test_utils::{entity_id, sample_blocker, sample_blocker_key, sample_goal_key},
         traits::Component,
     };
@@ -246,7 +250,7 @@ mod tests {
         assert_copy_value_bounds::<Blocker>();
         assert_copy_value_bounds::<BlockerClearingCondition>();
         assert_copy_value_bounds::<ClearingBaseline>();
-        assert_value_bounds::<BlockingFact>();
+        assert_copy_value_bounds::<BlockingFact>();
         assert_value_bounds::<BlockerKey>();
         assert_value_bounds::<BlockerDiagnostic>();
     }
@@ -493,6 +497,22 @@ mod tests {
         let roundtrip: BlockerMemory = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, memory);
+    }
+
+    #[test]
+    fn reservation_conflict_blocking_fact_roundtrips_with_affordance_and_event() {
+        let fact = BlockingFact::ReservationConflict {
+            affordance: AffordanceKey {
+                facility: entity_id(44, 0),
+                action: ActionDefId(7),
+            },
+            contention_event: Some(EventId(99)),
+        };
+
+        let bytes = bincode::serialize(&fact).unwrap();
+        let roundtrip: BlockingFact = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, fact);
     }
 
     #[test]
