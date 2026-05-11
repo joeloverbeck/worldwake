@@ -16,14 +16,15 @@ use worldwake_core::{
     ExpectationStore, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, InstitutionalBeliefKey,
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
     LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance,
-    LatrineFullness, LoadUnits, MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker,
-    ObligationSatiationProfile, OfficeData, PerceptionSource, Permille, PlaceDirtiness, PlaceTag,
-    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordedViolation,
-    ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RouteExperience,
-    SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
-    SubstitutePreferences, SurveyMemory, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
-    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, WashBasinState,
-    WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated, load_of_entity,
+    LatrineFullness, LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionSource, Permille,
+    PlaceDirtiness, PlaceTag, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
+    RecordedViolation, ResourceExtractionQueues, ResourceSource, RewardEncumbrance,
+    RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
+    StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellMemoryKey, TellProfile, TellTopic,
+    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+    WashBasinState, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
+    load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -700,6 +701,18 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_cognitive_profile(agent).copied())
+            .flatten()
+    }
+
+    fn risk_weight_profile(&self, agent: EntityId) -> Option<RiskWeightProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_risk_weight_profile(agent).copied())
+            .flatten()
+    }
+
+    fn law_abiding_profile(&self, agent: EntityId) -> Option<LawAbidingProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_law_abiding_profile(agent).copied())
             .flatten()
     }
 
@@ -2022,13 +2035,14 @@ mod tests {
         ExpectationStore, ExplorationProfile, FactionData, FactionPurpose, HarvestTraceEntry,
         HomeostaticNeedId, InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
         InstitutionalKnowledgeSource, LastHarvestTrace, LastSeenMemory, LastSeenProvenance,
-        LastSeenRecord, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
-        PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, PreferenceProfile,
-        Quantity, RecipientKnowledgeStatus, RecordData, RecordKind, ResourceExtractionQueues,
-        ResourceSource, RightKind, RouteExperience, SuccessionLaw, TellMemoryKey, TellTopic, Tick,
-        ToldBeliefMemory, Topology, TravelEdge, TravelEdgeId, UtilityProfile, VisibilitySpec,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause,
-        WoundId, build_believed_entity_state, build_prototype_world,
+        LastSeenRecord, LawAbidingProfile, ObligationExecutionTracker, ObligationSatiationProfile,
+        OfficeData, PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag,
+        PreferenceProfile, Quantity, RecipientKnowledgeStatus, RecordData, RecordKind,
+        ResourceExtractionQueues, ResourceSource, RightKind, RiskWeightProfile, RouteExperience,
+        SuccessionLaw, TellMemoryKey, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
+        TravelEdgeId, UtilityProfile, VisibilitySpec, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
+        build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_commodity_valuation_profile, sample_discrepancy_memory,
             sample_learned_opportunity_memory, sample_preference_profile, sample_repair_memory,
@@ -3446,6 +3460,52 @@ mod tests {
 
         assert_eq!(ProfileBeliefView::cognitive_profile(&view, other), None);
         assert_eq!(GoalBeliefView::cognitive_profile(&view, other), None);
+    }
+
+    #[test]
+    fn opportunity_profiles_return_actor_profiles_when_present() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let risk_weight = RiskWeightProfile {
+            theft_aversion: Permille::new_unchecked(300),
+            exposure_aversion: Permille::new_unchecked(450),
+            threat_aversion: Permille::new_unchecked(700),
+        };
+        let law_abiding = LawAbidingProfile {
+            criminal_threshold: Permille::new_unchecked(650),
+            social_norm_weight: Permille::new_unchecked(250),
+        };
+        let agent = {
+            let mut txn = new_txn(&mut world, 1);
+            let agent = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            txn.set_ground_location(agent, place).unwrap();
+            txn.set_component_risk_weight_profile(agent, risk_weight)
+                .unwrap();
+            txn.set_component_law_abiding_profile(agent, law_abiding)
+                .unwrap();
+            commit_txn(txn);
+            agent
+        };
+
+        let beliefs = AgentBeliefStore::new();
+        let view = PerAgentBeliefView::new(agent, &world, &beliefs);
+
+        assert_eq!(
+            ProfileBeliefView::risk_weight_profile(&view, agent),
+            Some(risk_weight)
+        );
+        assert_eq!(
+            GoalBeliefView::risk_weight_profile(&view, agent),
+            Some(risk_weight)
+        );
+        assert_eq!(
+            ProfileBeliefView::law_abiding_profile(&view, agent),
+            Some(law_abiding)
+        );
+        assert_eq!(
+            GoalBeliefView::law_abiding_profile(&view, agent),
+            Some(law_abiding)
+        );
     }
 
     #[test]

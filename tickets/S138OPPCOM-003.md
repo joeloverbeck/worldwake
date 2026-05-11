@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends two universal profile structs; bumps `SAVE_FORMAT_VERSION` 76 → 77
-**Deps**: 002 (sequential SAVE_FORMAT bump)
+**Deps**: archive/tickets/S138OPPCOM-002.md (sequential SAVE_FORMAT bump)
 
 ## Problem
 
@@ -23,7 +23,7 @@ Each field carries a `#[serde(default)]` annotation so existing scenario RON fil
 3. Shared abstraction boundary: per-agent profile cluster — `CognitiveProfile` and `PerceptionProfile` already host serde-default fields (`observation_budget`, `omission_log_capacity`, `slot_weights`, etc.), so the addition pattern is established.
 4. Struct-literal construction sites for `CognitiveProfile`: 16+ enumerate-style literals confirmed across `crates/worldwake-core/src/{cognitive_profile.rs, delta.rs, survey_memory.rs}`, `crates/worldwake-ai/src/{decision_runtime.rs, plan_revalidation.rs, agent_tick/planning.rs, agent_tick/tests.rs, search/tests.rs, goal_model.rs, failure_handling.rs}`, `crates/worldwake-ai/tests/{conformance_execution_budget.rs, golden_ai_decisions.rs, golden_exploration.rs, golden_quantity_aware_acquisition.rs}`, `crates/worldwake-systems/src/{evidence_decay.rs, perception.rs}`. None use spread syntax — every site enumerates all fields. Effort tracks this site count (Medium).
 5. `PerceptionProfile` struct-literal construction sites: mostly use `PerceptionProfile::default()` (per `world.rs:184`, scenario layer). A handful of test sites in `crates/worldwake-core/src/belief.rs` may enumerate fields — confirm during implementation. The new field has `#[serde(default)]` so RON authors are unaffected.
-6. Save-format bump: ticket 002 bumps 75→76; this ticket bumps 76→77 (cascade).
+6. Save-format bump: archived ticket `archive/tickets/S138OPPCOM-002.md` bumps 75→76; this ticket bumps 76→77 (cascade).
 
 ## Architecture Check
 
@@ -109,7 +109,7 @@ Run `python3 scripts/profile_docs.py` and commit the regenerated `docs/profiles/
 ## Out of Scope
 
 - Reading the new fields anywhere (consumers land in tickets 006 and 007)
-- New universal-on-Agent components — lands in ticket 002
+- New universal-on-Agent components — landed in `archive/tickets/S138OPPCOM-002.md`
 - `SaliencePolicy` enum modification — the spec explicitly hosts the floor on `PerceptionProfile`, not `SaliencePolicy`
 
 ## Acceptance Criteria
@@ -127,7 +127,7 @@ Run `python3 scripts/profile_docs.py` and commit the regenerated `docs/profiles/
 
 1. Adding `#[serde(default)]` fields does not break authored RON scenarios — `scenarios/survival-baseline.ron` continues to load
 2. All `CognitiveProfile` struct-literal construction sites compile after the addition (workspace-builds-after-each-ticket invariant)
-3. Older save files (SAVE_FORMAT_VERSION 76 from ticket 002) fail to load — no silent backward-compat
+3. Older save files (SAVE_FORMAT_VERSION 76 from `archive/tickets/S138OPPCOM-002.md`) fail to load — no silent backward-compat
 
 ## Test Plan
 
@@ -146,4 +146,4 @@ Run `python3 scripts/profile_docs.py` and commit the regenerated `docs/profiles/
 5. `cargo clippy --workspace --all-targets -- -D warnings`
 6. `python3 scripts/profile_docs.py` then `git diff docs/profiles/all-profiles.md`
 
-Merge note: Bumps `SAVE_FORMAT_VERSION` 76→77 — must land after ticket 002 (75→76). See Step 6 Merge-Order Constraints.
+Merge note: Bumps `SAVE_FORMAT_VERSION` 76→77 — must land after `archive/tickets/S138OPPCOM-002.md` (75→76). See Step 6 Merge-Order Constraints.

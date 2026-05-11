@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — adds per-tick compile_opportunities pass before candidate generation; populates `RootCandidateTrace.source` and records `OpportunityCompilerLoad` per-agent per-tick
-**Deps**: archive/tickets/S138OPPCOM-001.md, 002, 003, 005
+**Deps**: archive/tickets/S138OPPCOM-001.md, archive/tickets/S138OPPCOM-002.md, 003, 005
 
 ## Problem
 
@@ -20,7 +20,7 @@ The cornerstone deliverable: implement `compile_opportunities(agent, belief_view
 2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "`worldwake-ai::opportunity_compiler` (new module)"; the spec's `compile_opportunities` signature was updated to drop `PerceptionState` (does not exist in the codebase) and use `&impl RuntimeBeliefView`.
 3. Shared abstraction boundary: `compile_opportunities` reads only via the agent's `RuntimeBeliefView` (FND-7 locality preserved) plus the registry-time `EffectSchemaIndex`. No cross-system imperative.
 4. Mixed-layer ticket: candidate generation (ai), decision-trace surface (ai), authoritative read of registry (sim) — bounded inside the ai crate at the consumption surface.
-5. Authoritative-to-AI Impact Rule (CLAUDE.md): this ticket modifies candidate emission. 7-point check applies:
+5. Authoritative-to-AI Impact Rule (AGENTS.md): this ticket modifies candidate emission. 7-point check applies:
    1. `get_affordances` — unaffected (compile_opportunities reads beliefs, not affordances)
    2. `generate_candidates` — extended to consume opportunities; new goal kinds are NOT emitted (FND-3, S138 Non-Goals); existing kinds gain opportunity-derived bindings
    3. `search_plan` — unaffected (planner consumes ranked candidates as before)
@@ -28,7 +28,7 @@ The cornerstone deliverable: implement `compile_opportunities(agent, belief_view
    5. `handle_plan_failure` — unaffected
    6. Payload revalidation — N/A (no new action introduced)
    7. Golden tests — exercised by ticket 010
-6. Per-agent profile reads: the compiler consults `RiskWeightProfile` and `LawAbidingProfile` via the `GoalBeliefView::risk_weight_profile` and `law_abiding_profile` accessors added in ticket 002.
+6. Per-agent profile reads: the compiler consults `RiskWeightProfile` and `LawAbidingProfile` via the `GoalBeliefView::risk_weight_profile` and `law_abiding_profile` accessors added in `archive/tickets/S138OPPCOM-002.md`.
 7. Per-tick budget: result length bounded by `CognitiveProfile.compile_opportunity_cap` (ticket 003); salience floor enforced via `PerceptionProfile.opportunity_floor_permille` (ticket 003).
 
 ## Architecture Check
@@ -71,7 +71,7 @@ pub fn compile_opportunities(
 ```
 
 Implementation details:
-- Read `belief_view.risk_weight_profile(agent)` and `belief_view.law_abiding_profile(agent)` (accessors from ticket 002)
+- Read `belief_view.risk_weight_profile(agent)` and `belief_view.law_abiding_profile(agent)` (accessors from `archive/tickets/S138OPPCOM-002.md`)
 - Read `belief_view.learned_opportunity_memory(agent)` to dampen repeated emissions
 - Read `belief_view.survey_memory(agent)` to skip opportunities anchored on confirmed-empty places (spec line 28)
 - Honor `PerceptionProfile.opportunity_floor_permille` as the salience-emission gate

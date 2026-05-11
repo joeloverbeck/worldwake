@@ -70,6 +70,7 @@ pub mod institutional;
 pub mod intention_disposition;
 pub mod intention_frame;
 pub mod items;
+pub mod law_abiding_profile;
 pub mod learned_opportunity_memory;
 pub mod load;
 pub mod materialization_tag;
@@ -88,6 +89,7 @@ pub mod relations;
 pub mod repair_memory;
 pub mod reward_encumbrance;
 pub mod rights;
+pub mod risk_weight_profile;
 pub mod sleep_episode;
 pub mod social_artifact;
 pub mod survey_memory;
@@ -224,6 +226,7 @@ pub use items::{
     ItemLot, LotOperation, ProvenanceEntry, TradeCategory, UniqueItem, UniqueItemKind,
     UniqueItemKindSpec, UniqueItemPhysicalProfile, default_commodity_decay_map,
 };
+pub use law_abiding_profile::LawAbidingProfile;
 pub use learned_opportunity_memory::{LearnedOpportunityMemory, OpportunityEntry};
 pub use load::{
     current_container_load, load_of_entity, load_of_lot, load_of_unique_item,
@@ -255,6 +258,7 @@ pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, Re
 pub use repair_memory::{RepairEntry, RepairKey, RepairMemory};
 pub use reward_encumbrance::{RewardEncumbrance, RewardReservation};
 pub use rights::{EffectiveRight, RightKind};
+pub use risk_weight_profile::RiskWeightProfile;
 pub use sleep_episode::{
     GroundComfortTag, ShelterTag, SleepEpisode, SleepQualityProfile, SleepRecoveryModifier,
     WakeCondition,

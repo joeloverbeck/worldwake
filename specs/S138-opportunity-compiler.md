@@ -224,7 +224,7 @@ All derives match existing analog patterns: `Copy, Clone, Debug, Eq, PartialEq, 
 
 ```rust
 // crates/worldwake-core/src/risk_weight_profile.rs (new)
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct RiskWeightProfile {
     pub theft_aversion: Permille,
     pub exposure_aversion: Permille,
@@ -232,7 +232,7 @@ pub struct RiskWeightProfile {
 }
 
 // crates/worldwake-core/src/law_abiding_profile.rs (new)
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct LawAbidingProfile {
     pub criminal_threshold: Permille,
     pub social_norm_weight: Permille,
@@ -256,11 +256,11 @@ Required wiring (per Section 5 + the "New Component on EntityKind::Agent" and "N
    let law_abiding = agent_def.law_abiding_profile.unwrap_or_default();
    txn.set_component_law_abiding_profile(agent_id, law_abiding)?;
    ```
-4. **`Default` impls** are required on both (universal classification) and are provided by `#[derive(Default)]` on the structs above (all fields are `Permille` which has `Default == ZERO`).
+4. **`Default` impls** are required on both (universal classification) and are explicit manual impls returning `Permille::ZERO` for every field. `Permille` itself does not implement `Default`.
 5. **`GoalBeliefView` accessors** in `crates/worldwake-sim/src/belief_view.rs` (trait at line 269, blanket impl at line 1416) — add accessors on the `ProfileBeliefView` sub-trait alongside the existing per-agent profile accessors:
    ```rust
-   fn risk_weight_profile(&self, agent: EntityId) -> &RiskWeightProfile;
-   fn law_abiding_profile(&self, agent: EntityId) -> &LawAbidingProfile;
+   fn risk_weight_profile(&self, agent: EntityId) -> Option<RiskWeightProfile>;
+   fn law_abiding_profile(&self, agent: EntityId) -> Option<LawAbidingProfile>;
    ```
    With matching backing impls on `PerAgentBeliefView` (`crates/worldwake-sim/src/per_agent_belief_view.rs:1493`) and the existing sub-trait forwarders.
 

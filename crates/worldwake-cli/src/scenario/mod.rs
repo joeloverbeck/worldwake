@@ -639,9 +639,13 @@ fn spawn_agent(
     let tell = agent_def.tell_profile.unwrap_or_default();
     txn.set_component_tell_profile(agent_id, tell)?;
     let cognitive = agent_def.cognitive_profile.unwrap_or_default();
+    let risk_weight = agent_def.risk_weight_profile.unwrap_or_default();
+    let law_abiding = agent_def.law_abiding_profile.unwrap_or_default();
     let agenda_profile = agent_def.agenda_profile.unwrap_or_default();
     let execution_budget = agent_def.execution_budget.unwrap_or_default();
     txn.set_component_cognitive_profile(agent_id, cognitive)?;
+    txn.set_component_risk_weight_profile(agent_id, risk_weight)?;
+    txn.set_component_law_abiding_profile(agent_id, law_abiding)?;
     txn.set_component_agenda_profile(agent_id, agenda_profile)?;
     txn.set_component_execution_budget(agent_id, execution_budget)?;
     let epistemic = agent_def.epistemic_disposition.clone().unwrap_or_default();
@@ -1485,11 +1489,12 @@ mod tests {
         DriveThresholds, EpistemicDispositionProfile, ExecutionBudget, ExpectationStore,
         GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, IntentionDispositionProfile,
         JusticeDispositionProfile, LastProactiveExplorationTick, LastSeenMemory, LatrineFullness,
-        LoadUnits, MultiplierPermille, ObligationSatiationProfile, PatrolProfile, PatrolRoute,
-        PerceptionProfile, Permille, PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile,
-        PursuitProfile, Quantity, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
-        SubstitutePreferences, TellProfile, TheftDispositionProfile, ThresholdBand, TradeCategory,
-        ViolationDispositionProfile, WashBasinState, WorkstationTag, default_commodity_decay_map,
+        LawAbidingProfile, LoadUnits, MultiplierPermille, ObligationSatiationProfile,
+        PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceDirtiness,
+        PlaceVisibilityProfile, PreferenceProfile, PursuitProfile, Quantity, RiskWeightProfile,
+        ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, TellProfile,
+        TheftDispositionProfile, ThresholdBand, TradeCategory, ViolationDispositionProfile,
+        WashBasinState, WorkstationTag, default_commodity_decay_map,
     };
 
     fn minimal_agent(name: &str, location: &str, control: ControlSource) -> AgentDef {
@@ -1506,6 +1511,8 @@ mod tests {
             perception_profile: None,
             tell_profile: None,
             cognitive_profile: None,
+            risk_weight_profile: None,
+            law_abiding_profile: None,
             agenda_profile: None,
             execution_budget: None,
             epistemic_disposition: None,
@@ -3492,6 +3499,14 @@ mod tests {
             Some(&CognitiveProfile::default())
         );
         assert_eq!(
+            world.get_component_risk_weight_profile(agent),
+            Some(&RiskWeightProfile::default())
+        );
+        assert_eq!(
+            world.get_component_law_abiding_profile(agent),
+            Some(&LawAbidingProfile::default())
+        );
+        assert_eq!(
             world.get_component_execution_budget(agent),
             Some(&ExecutionBudget::default())
         );
@@ -3539,6 +3554,38 @@ mod tests {
         assert_eq!(
             world.get_component_last_proactive_exploration_tick(agent),
             None
+        );
+    }
+
+    #[test]
+    fn test_spawn_agent_applies_authored_opportunity_profiles() {
+        let mut def = minimal_def();
+        let risk_weight = RiskWeightProfile {
+            theft_aversion: Permille::new_unchecked(250),
+            exposure_aversion: Permille::new_unchecked(500),
+            threat_aversion: Permille::new_unchecked(750),
+        };
+        let law_abiding = LawAbidingProfile {
+            criminal_threshold: Permille::new_unchecked(600),
+            social_norm_weight: Permille::new_unchecked(350),
+        };
+        def.agents[0].risk_weight_profile = Some(risk_weight);
+        def.agents[0].law_abiding_profile = Some(law_abiding);
+
+        let spawned = spawn_scenario(&def).unwrap();
+        let world = spawned.state.world();
+        let agent = world
+            .entities_with_name_and_agent_data()
+            .next()
+            .expect("spawned scenario should contain one agent");
+
+        assert_eq!(
+            world.get_component_risk_weight_profile(agent),
+            Some(&risk_weight)
+        );
+        assert_eq!(
+            world.get_component_law_abiding_profile(agent),
+            Some(&law_abiding)
         );
     }
 

@@ -1,6 +1,6 @@
 # S138OPPCOM-002: Universal-on-Agent components — RiskWeightProfile and LawAbidingProfile
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — adds two universal components on `EntityKind::Agent`; bumps `SAVE_FORMAT_VERSION` 75 → 76
@@ -21,16 +21,16 @@ S138's compile-time ranking of opportunities (buy / steal / beg / wait) requires
 ## Architecture Check
 
 1. Two sibling component files (`risk_weight_profile.rs`, `law_abiding_profile.rs`) follow the established profile-per-file precedent (`cognitive_profile.rs`, `metabolism_profile.rs`, `preference_profile.rs`). Keeps the per-component surface inspectable.
-2. Universal classification matches `Default`-with-zero semantics — `Permille::default() == ZERO`, so a default-seeded agent's risk-aversion and law-abiding weights are zero, which is the "neutral" baseline scenario authors can override via RON.
-3. No backward-compatibility shims: the SAVE_FORMAT bump is mandatory; older save files cannot deserialize against the new schema, matching the project's no-back-compat invariant (CLAUDE.md "Critical Invariants").
-4. `GoalBeliefView` accessor placement: add to the existing `ProfileBeliefView` sub-trait (`crates/worldwake-sim/src/belief_view.rs`, accessor cluster around the existing per-agent profile accessors), so `RuntimeBeliefView`'s blanket impl at `belief_view.rs:1416` continues to forward via the sub-trait.
+2. Universal classification matches manual zero-default semantics — `Permille` does not implement `Default`, so both profile structs provide explicit `Default` impls that seed all fields to `Permille::ZERO`. A default-seeded agent's risk-aversion and law-abiding weights are therefore zero, which is the "neutral" baseline scenario authors can override via RON.
+3. No backward-compatibility shims: the SAVE_FORMAT bump is mandatory; older save files cannot deserialize against the new schema, matching the project's no-back-compat invariant (AGENTS.md "Critical Invariants").
+4. `GoalBeliefView` accessor placement: add to the existing `ProfileBeliefView` sub-trait (`crates/worldwake-sim/src/belief_view.rs`, accessor cluster around the existing per-agent profile accessors), using the live profile-view convention of `Option<Profile>` by value. `RuntimeBeliefView`'s blanket impl continues to forward via the sub-trait.
 
 ## Verification Layers
 
 1. Component definition + Default impl — focused unit test (per-file inline `#[cfg(test)]`)
-2. Component registration generates accessors — focused unit test calling `txn.insert_component_risk_weight_profile(...)` and `txn.get_component_risk_weight_profile(...)`
+2. Component registration generates accessors — compile/no-run workspace proof plus focused `ComponentKind`/transaction-delta tests exercise the macro expansion sites and generated component values.
 3. `create_agent` seeds both components — extension of existing `create_agent_components_queryable` test in `world.rs:1292`
-4. `GoalBeliefView::risk_weight_profile(agent)` returns the seeded default for a freshly-created agent — focused unit test in `belief_view.rs`
+4. `GoalBeliefView::risk_weight_profile(agent)` returns `Some(default)` for a freshly-created actor when viewed through that actor's belief view — focused unit test in `per_agent_belief_view.rs`
 5. Scenario authoring through `AgentDef` — focused test in `scenario/types.rs` deserializing a RON scenario that overrides one field
 6. Save-format roundtrip survives the bump — `cargo test -p worldwake-sim save_load`
 
@@ -44,7 +44,7 @@ Create `crates/worldwake-core/src/risk_weight_profile.rs`:
 use crate::{Component, Permille};
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RiskWeightProfile {
     pub theft_aversion: Permille,
@@ -55,7 +55,7 @@ pub struct RiskWeightProfile {
 impl Component for RiskWeightProfile {}
 ```
 
-Create `crates/worldwake-core/src/law_abiding_profile.rs` with the parallel structure (fields: `criminal_threshold`, `social_norm_weight`).
+Create `crates/worldwake-core/src/law_abiding_profile.rs` with the parallel structure (fields: `criminal_threshold`, `social_norm_weight`). Both files include manual `Default` impls that return zero-valued `Permille` fields.
 
 Expose both in `crates/worldwake-core/src/lib.rs` next to existing profile re-exports.
 
@@ -107,8 +107,8 @@ txn.set_component_law_abiding_profile(agent_id, law_abiding)?;
 Modify `crates/worldwake-sim/src/belief_view.rs` (`ProfileBeliefView` sub-trait, near existing per-agent profile accessors):
 
 ```rust
-fn risk_weight_profile(&self, agent: EntityId) -> &RiskWeightProfile;
-fn law_abiding_profile(&self, agent: EntityId) -> &LawAbidingProfile;
+fn risk_weight_profile(&self, agent: EntityId) -> Option<RiskWeightProfile>;
+fn law_abiding_profile(&self, agent: EntityId) -> Option<LawAbidingProfile>;
 ```
 
 Modify `crates/worldwake-sim/src/per_agent_belief_view.rs:1493` and the sibling impls — add the two accessors. The blanket impl at `belief_view.rs:1416` should continue to forward via the sub-trait without modification.
@@ -119,7 +119,7 @@ Modify `crates/worldwake-sim/src/save_load.rs:6`: `SAVE_FORMAT_VERSION = 76`. Up
 
 ### 9. Profile-docs regeneration
 
-Run `python3 scripts/profile_docs.py` and commit the regenerated `docs/profiles/all-profiles.md`.
+Run `python3 scripts/profile_docs.py --write` and commit the regenerated `docs/profiles/all-profiles.md`.
 
 ## Files to Touch
 
@@ -133,6 +133,9 @@ Run `python3 scripts/profile_docs.py` and commit the regenerated `docs/profiles/
 - `crates/worldwake-core/src/component_tables.rs` (likely modify — macro expansion site; confirm during implementation)
 - `crates/worldwake-cli/src/scenario/types.rs` (modify — AgentDef fields)
 - `crates/worldwake-cli/src/scenario/mod.rs` (modify — spawn_agent set-calls)
+- `crates/worldwake-cli/src/display.rs` and `crates/worldwake-cli/src/handlers/*.rs` (modify — explicit `AgentDef` literal fallout)
+- `crates/worldwake-cli/src/scenario/lints.rs` (modify — explicit `AgentDef` literal fallout)
+- `crates/worldwake-cli/src/bin/scenario_coverage.rs` (modify — authored-field accounting)
 - `crates/worldwake-sim/src/belief_view.rs` (modify — two accessor methods on ProfileBeliefView)
 - `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify — backing impls)
 - `crates/worldwake-sim/src/save_load.rs` (modify — SAVE_FORMAT_VERSION 75→76 and tests)
@@ -151,7 +154,7 @@ Run `python3 scripts/profile_docs.py` and commit the regenerated `docs/profiles/
 1. New test in `risk_weight_profile.rs`: `RiskWeightProfile::default()` produces zero-valued `Permille` fields; bincode roundtrip preserves identity
 2. New test in `law_abiding_profile.rs`: parallel coverage for `LawAbidingProfile`
 3. Extended `create_agent_components_queryable` test (`world.rs:1292`): asserts both new components are present on a freshly-created agent
-4. New test in `belief_view.rs`: `GoalBeliefView::risk_weight_profile(agent)` returns the seeded default
+4. New test in `per_agent_belief_view.rs`: `GoalBeliefView::risk_weight_profile(agent)` and `GoalBeliefView::law_abiding_profile(agent)` return the actor's seeded values
 5. New test in `scenario/types.rs`: scenario RON authoring overrides one field of `RiskWeightProfile` and round-trips
 6. Save-format roundtrip test in `save_load.rs:1198` passes with new version 76
 7. Existing suite: `cargo test --workspace`
@@ -169,17 +172,42 @@ Run `python3 scripts/profile_docs.py` and commit the regenerated `docs/profiles/
 1. `crates/worldwake-core/src/risk_weight_profile.rs` (inline `#[cfg(test)]`) — default + roundtrip
 2. `crates/worldwake-core/src/law_abiding_profile.rs` (inline `#[cfg(test)]`) — default + roundtrip
 3. `crates/worldwake-core/src/world.rs` (extend existing tests at 1292) — both new components present after `create_agent`
-4. `crates/worldwake-sim/src/belief_view.rs` (inline `#[cfg(test)]`) — accessor returns default for new agent
+4. `crates/worldwake-sim/src/per_agent_belief_view.rs` (inline `#[cfg(test)]`) — accessors return the actor's authored opportunity profiles through both `ProfileBeliefView` and `GoalBeliefView`
 5. `crates/worldwake-cli/src/scenario/types.rs` (inline `#[cfg(test)]`) — RON deserialization round-trips a scenario with overridden values
 6. `crates/worldwake-sim/src/save_load.rs` (extend existing test at 1198) — version 76 round-trip
 
 ### Commands
 
-1. `cargo test -p worldwake-core risk_weight_profile law_abiding_profile create_agent`
-2. `cargo test -p worldwake-sim save_load belief_view`
-3. `cargo test -p worldwake-cli scenario`
-4. `cargo test --workspace`
-5. `cargo clippy --workspace --all-targets -- -D warnings`
-6. `python3 scripts/profile_docs.py` then `git diff docs/profiles/all-profiles.md` (verify regen captures the new components)
+1. `cargo test -p worldwake-core risk_weight_profile`
+2. `cargo test -p worldwake-core law_abiding_profile`
+3. `cargo test -p worldwake-core create_agent_components_queryable`
+4. `cargo test -p worldwake-core component_kind_variants_match_authoritative_components`
+5. `cargo test -p worldwake-core create_agent_records_entity_component_and_in_transit_deltas_and_supports_read_through`
+6. `cargo test -p worldwake-sim opportunity_profiles_return_actor_profiles_when_present`
+7. `cargo test -p worldwake-sim save_to_bytes_roundtrip_preserves_full_nondefault_state`
+8. `cargo test -p worldwake-cli test_scenario_def_opportunity_profiles_deserialize`
+9. `cargo test -p worldwake-cli test_spawn_agent_applies_authored_opportunity_profiles`
+10. `cargo test --workspace`
+11. `cargo clippy --workspace --all-targets -- -D warnings`
+12. `python3 scripts/profile_docs.py --write` then `git diff docs/profiles/all-profiles.md` (verify regen captures the new components)
 
 Merge note: This ticket bumps `SAVE_FORMAT_VERSION` 75→76; ticket 003 bumps 76→77 — see Step 6 Merge-Order Constraints in the spec-to-tickets summary.
+
+## Outcome
+
+Completion date: 2026-05-11.
+
+Implemented the two universal-on-Agent opportunity profile components, registered them in the core component schema, seeded them from `World::create_agent`, exposed them through `AgentDef`/`spawn_agent`, surfaced them through the profile/goal belief views, bumped `SAVE_FORMAT_VERSION` to 76, and regenerated profile docs.
+
+## Deviations
+
+- The original ticket/spec sketch used `#[derive(Default)]` and assumed `Permille::default() == ZERO`; the live type does not implement `Default`, so both profiles now use explicit zero-valued `Default` impls.
+- The original accessor sketch returned references. The live `ProfileBeliefView`/`GoalBeliefView` profile convention returns `Option<Profile>` by value, so these accessors follow that convention.
+
+## Verification Result
+
+- Passed: `cargo test --workspace --no-run`
+- Passed: `python3 scripts/profile_docs.py --write` (regenerated docs; only existing unrelated profile-doc warnings remain)
+- Passed: focused tests listed in the updated Test Plan above
+- Passed: `cargo test --workspace`
+- Passed: `cargo clippy --workspace --all-targets -- -D warnings`

@@ -17,10 +17,12 @@ Always applied to every agent with defaults. Scenario definitions may override i
 - [EpistemicDispositionProfile](#epistemicdispositionprofile) — Per-agent parameters governing deliberate epistemic behavior.
 - [ExplorationProfile](#explorationprofile) — Stable per-agent parameters governing need-driven exploration pressure.
 - [IntentionDispositionProfile](#intentiondispositionprofile) — Per-agent disposition profile governing intention frame patience and commitment switch behavior across all domains.
+- [LawAbidingProfile](#lawabidingprofile) — Per-agent legal and social-norm weights used when ranking opportunities.
 - [MetabolismProfile](#metabolismprofile) — Per-agent physiology parameters that drive metabolism and recovery.
 - [ObligationSatiationProfile](#obligationsatiationprofile) — Per-agent parameters controlling how obligation-class goals decay after repeated execution within a recent window.
 - [PerceptionProfile](#perceptionprofile) — Per-agent parameters controlling belief retention and observation quality.
 - [PreferenceProfile](#preferenceprofile) — Per-agent experience-based route and source preference parameters.
+- [RiskWeightProfile](#riskweightprofile) — Per-agent risk-aversion weights used when ranking opportunities.
 - [TellProfile](#tellprofile) — Per-agent parameters controlling what information an agent relays and accepts.
 
 ### Optional Profiles
@@ -72,7 +74,7 @@ Stable per-agent agenda memory and retry parameters used by the AI layer.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/social_artifact.rs:19`
+**Source**: `crates/worldwake-core/src/social_artifact.rs:50`
 
 Per-agent defaults for artifact TTL when posting notices and bounties.
 
@@ -214,6 +216,21 @@ Per-agent disposition profile governing intention frame patience and commitment 
 
 ---
 
+## LawAbidingProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/law_abiding_profile.rs:7`
+
+Per-agent legal and social-norm weights used when ranking opportunities.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `criminal_threshold` | `Permille` | Minimum legal-risk salience before an opportunity is treated as criminally unacceptable. (default: `Permille::ZERO`) |
+| `social_norm_weight` | `Permille` | Weight assigned to non-criminal social norms and shame costs. (default: `Permille::ZERO`) |
+
+---
+
 ## MetabolismProfile
 
 **Category**: Universal (always applied with defaults)
@@ -265,7 +282,7 @@ Per-agent parameters controlling how obligation-class goals decay after repeated
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2613`
+**Source**: `crates/worldwake-core/src/belief.rs:2644`
 
 Per-agent parameters controlling belief retention and observation quality.
 
@@ -307,11 +324,27 @@ Per-agent experience-based route and source preference parameters.
 
 ---
 
+## RiskWeightProfile
+
+**Category**: Universal (always applied with defaults)
+
+**Source**: `crates/worldwake-core/src/risk_weight_profile.rs:7`
+
+Per-agent risk-aversion weights used when ranking opportunities.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `theft_aversion` | `Permille` | Penalty weight for opportunities whose lawful path involves theft. (default: `Permille::ZERO`) |
+| `exposure_aversion` | `Permille` | Penalty weight for opportunities with public or socially exposed execution. (default: `Permille::ZERO`) |
+| `threat_aversion` | `Permille` | Penalty weight for opportunities with nearby physical danger. (default: `Permille::ZERO`) |
+
+---
+
 ## TellProfile
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2677`
+**Source**: `crates/worldwake-core/src/belief.rs:2708`
 
 Per-agent parameters controlling what information an agent relays and accepts.
 

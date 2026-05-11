@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 75;
+pub const SAVE_FORMAT_VERSION: u32 = 76;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -209,17 +209,18 @@ mod tests {
         ExpectationStore, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey,
         GoalKind, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
         GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag, HomeostaticNeedId,
-        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, MaterializationTag,
-        MetabolismProfile, ObservationOmission, ObservationRef, OmissionReason, PendingEvent,
-        PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
+        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, LawAbidingProfile,
+        MaterializationTag, MetabolismProfile, ObservationOmission, ObservationRef, OmissionReason,
+        PendingEvent, PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
         PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
         RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
         RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        RewardEncumbrance, Seed, ShelterTag, SleepEpisode, SleepEpisodeEndedPayload,
-        SleepEpisodeStartedPayload, SleepQualityProfile, SleepRecoveryModifier, StateHash,
-        SuspensionReason, Tick, TickRange, UniqueItemKind, VisibilitySpec, WakeCondition,
-        WakeReason, WashBasinState, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource,
-        WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        RewardEncumbrance, RiskWeightProfile, Seed, ShelterTag, SleepEpisode,
+        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
+        SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
+        VisibilitySpec, WakeCondition, WakeReason, WashBasinState, WashFacilityUsedPayload,
+        WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World,
+        WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -333,6 +334,25 @@ mod tests {
                 MetabolismProfile {
                     min_sleep_ticks: NonZeroU32::new(11).unwrap(),
                     ..MetabolismProfile::default()
+                },
+            )
+            .unwrap();
+        profile_txn
+            .set_component_risk_weight_profile(
+                actor,
+                RiskWeightProfile {
+                    theft_aversion: worldwake_core::Permille::new_unchecked(250),
+                    exposure_aversion: worldwake_core::Permille::new_unchecked(400),
+                    threat_aversion: worldwake_core::Permille::new_unchecked(900),
+                },
+            )
+            .unwrap();
+        profile_txn
+            .set_component_law_abiding_profile(
+                actor,
+                LawAbidingProfile {
+                    criminal_threshold: worldwake_core::Permille::new_unchecked(650),
+                    social_norm_weight: worldwake_core::Permille::new_unchecked(275),
                 },
             )
             .unwrap();
@@ -1195,7 +1215,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 75);
+        assert_eq!(SAVE_FORMAT_VERSION, 76);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1248,6 +1268,21 @@ mod tests {
                 .unwrap()
                 .capacity_observation_weight,
             worldwake_core::Permille::new_unchecked(20)
+        );
+        assert_eq!(
+            restored.world().get_component_risk_weight_profile(actor),
+            Some(&RiskWeightProfile {
+                theft_aversion: worldwake_core::Permille::new_unchecked(250),
+                exposure_aversion: worldwake_core::Permille::new_unchecked(400),
+                threat_aversion: worldwake_core::Permille::new_unchecked(900),
+            })
+        );
+        assert_eq!(
+            restored.world().get_component_law_abiding_profile(actor),
+            Some(&LawAbidingProfile {
+                criminal_threshold: worldwake_core::Permille::new_unchecked(650),
+                social_norm_weight: worldwake_core::Permille::new_unchecked(275),
+            })
         );
         assert_eq!(
             restored.world().commodity_decay(),

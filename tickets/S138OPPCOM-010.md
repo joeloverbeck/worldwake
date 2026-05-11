@@ -76,7 +76,7 @@ The exact metric expression depends on the timing infrastructure — confirm dur
 ## Out of Scope
 
 - Engine modifications — this is tests-only
-- Tuning default profile values — defaults remain as landed in tickets 002 and 003
+- Tuning default profile values — defaults remain as landed in `archive/tickets/S138OPPCOM-002.md` and ticket 003
 - New action types — none introduced
 - HTN methods over opportunities — spec Non-Goal
 

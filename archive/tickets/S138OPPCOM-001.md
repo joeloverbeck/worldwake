@@ -79,7 +79,7 @@ Modify `crates/worldwake-ai/src/decision_trace.rs`:
 - `EffectSchemaIndex` module — lands in ticket 005
 - Per-tick recording of `OpportunityCompilerLoad` on the decision-trace sink — the struct is defined here; the recording behavior is in 006
 - `Authority` enum + `relevant_ops_authority()` — lands in ticket 004
-- New universal-on-Agent components (`RiskWeightProfile`, `LawAbidingProfile`) — lands in ticket 002
+- New universal-on-Agent components (`RiskWeightProfile`, `LawAbidingProfile`) — landed in `archive/tickets/S138OPPCOM-002.md`
 - Profile field additions on `CognitiveProfile`/`PerceptionProfile` — lands in ticket 003
 - Observer rendering of opportunities — lands in ticket 009
 

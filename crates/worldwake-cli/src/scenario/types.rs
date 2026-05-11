@@ -15,12 +15,13 @@ use worldwake_core::{
     DisposalProfile, DiversificationProfile, DriveEscalationProfile, DriveThresholds,
     EpistemicDispositionProfile, ExecutionBudget, ExplorationProfile, GroundComfortTag,
     HomeostaticNeeds, IntentionDispositionProfile, JusticeDispositionProfile, LatrineFullness,
-    LoadUnits, MetabolismProfile, ObligationSatiationProfile, PatrolProfile, PerceptionProfile,
-    PerceptionSource, Permille, PlaceDirtiness, PlaceVisibilityProfile, PreferenceProfile,
-    ProofKind, ProofRequirement, PursuitProfile, Quantity, RevocationReason, ShelterTag,
-    SleepQualityProfile, SleepRecoveryModifier, SubstitutePreferences, SuccessionLaw, TellProfile,
-    TheftDispositionProfile, TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile,
-    WashBasinState, WorkstationTag, items::CommodityKind,
+    LawAbidingProfile, LoadUnits, MetabolismProfile, ObligationSatiationProfile, PatrolProfile,
+    PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness, PlaceVisibilityProfile,
+    PreferenceProfile, ProofKind, ProofRequirement, PursuitProfile, Quantity, RevocationReason,
+    RiskWeightProfile, ShelterTag, SleepQualityProfile, SleepRecoveryModifier,
+    SubstitutePreferences, SuccessionLaw, TellProfile, TheftDispositionProfile,
+    TradeDispositionProfile, UtilityProfile, ViolationDispositionProfile, WashBasinState,
+    WorkstationTag, items::CommodityKind,
     social_artifact::SuspensionReason as ArtifactSuspensionReason, topology::PlaceTag,
 };
 
@@ -590,6 +591,10 @@ pub struct AgentDef {
     pub tell_profile: Option<TellProfile>,
     #[serde(default)]
     pub cognitive_profile: Option<CognitiveProfile>,
+    #[serde(default)]
+    pub risk_weight_profile: Option<RiskWeightProfile>,
+    #[serde(default)]
+    pub law_abiding_profile: Option<LawAbidingProfile>,
     #[serde(default)]
     pub agenda_profile: Option<AgendaProfile>,
     #[serde(default)]
@@ -1700,6 +1705,8 @@ mod tests {
         assert!(agent.perception_profile.is_none());
         assert!(agent.tell_profile.is_none());
         assert!(agent.cognitive_profile.is_none());
+        assert!(agent.risk_weight_profile.is_none());
+        assert!(agent.law_abiding_profile.is_none());
         assert!(agent.agenda_profile.is_none());
         assert!(agent.execution_budget.is_none());
         assert!(agent.epistemic_disposition.is_none());
@@ -1777,6 +1784,49 @@ mod tests {
                 pending_capacity: 20,
                 suspended_capacity: 4,
                 revive_cooldown_ticks: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn test_scenario_def_opportunity_profiles_deserialize() {
+        let ron_str = r#"(
+            seed: 1,
+            places: [(name: "Nowhere", tags: [])],
+            agents: [
+                (
+                    name: "Planner",
+                    location: "Nowhere",
+                    control: Ai,
+                    risk_weight_profile: (
+                        theft_aversion: 250,
+                        exposure_aversion: 500,
+                        threat_aversion: 750,
+                    ),
+                    law_abiding_profile: (
+                        criminal_threshold: 600,
+                        social_norm_weight: 350,
+                    ),
+                ),
+            ],
+        )"#;
+
+        let def: ScenarioDef = from_ron_str(ron_str);
+        let agent = &def.agents[0];
+
+        assert_eq!(
+            agent.risk_weight_profile,
+            Some(RiskWeightProfile {
+                theft_aversion: Permille::new_unchecked(250),
+                exposure_aversion: Permille::new_unchecked(500),
+                threat_aversion: Permille::new_unchecked(750),
+            })
+        );
+        assert_eq!(
+            agent.law_abiding_profile,
+            Some(LawAbidingProfile {
+                criminal_threshold: Permille::new_unchecked(600),
+                social_norm_weight: Permille::new_unchecked(350),
             })
         );
     }
