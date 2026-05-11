@@ -1,3 +1,4 @@
+use crate::opportunity_compiler::Opportunity;
 use crate::{
     ExpectationFailureCause, ExpectationFailurePhase, GoalOffer,
     OpportunityExpectationFailureIncident, PlannedPlan,
@@ -5,7 +6,7 @@ use crate::{
         ArtifactAxisSnapshot, BanditCandidateOmission, BanditCandidateOmissionReason,
         BanditGoalFamily, CandidateEvidenceContributor, CandidateEvidenceExclusion,
         CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
-        CandidateLegalityTrace, DesireFullyBlocked, PoliticalCandidateOmission,
+        CandidateLegalityTrace, CandidateSource, DesireFullyBlocked, PoliticalCandidateOmission,
         PoliticalCandidateOmissionReason, PoliticalGoalFamily, PursuitDiagnostic,
         PursuitOmissionReason, SocialCandidateOmission, ViolationDetectionOmission,
         ViolationDetectionOmissionReason,
@@ -163,6 +164,7 @@ struct GenerationContext<'a> {
     current_tick: Tick,
     tracing_enabled: bool,
     current_plan: Option<&'a PlannedPlan>,
+    opportunities: &'a [Opportunity],
 }
 
 #[derive(Default)]
@@ -174,6 +176,7 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_social: Vec<SocialCandidateOmission>,
     pub omitted_violation_detection: Vec<ViolationDetectionOmission>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
+    pub sources: BTreeMap<OpportunityKey, CandidateSource>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
     pub places_reachable: u32,
     pub places_after_belief_filter: u32,
@@ -294,6 +297,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_horizon(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -306,6 +310,35 @@ pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_ho
     tracing_enabled: bool,
     current_plan: Option<&PlannedPlan>,
 ) -> CandidateGenerationResult {
+    generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities(
+        view,
+        agent,
+        blocked,
+        discrepancies,
+        violation_memory,
+        recipes,
+        current_tick,
+        travel_horizon,
+        tracing_enabled,
+        current_plan,
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    blocked: &BlockerMemory,
+    discrepancies: &DiscrepancyMemory,
+    violation_memory: &ViolationMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+    travel_horizon: u8,
+    tracing_enabled: bool,
+    current_plan: Option<&PlannedPlan>,
+    opportunities: &[Opportunity],
+) -> CandidateGenerationResult {
     generate_candidates_with_memories_with_travel_horizon_impl(
         view,
         agent,
@@ -317,6 +350,7 @@ pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_ho
         travel_horizon,
         tracing_enabled,
         current_plan,
+        opportunities,
     )
 }
 
@@ -343,6 +377,7 @@ pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
         travel_horizon,
         tracing_enabled,
         None,
+        &[],
     )
 }
 
@@ -358,6 +393,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     travel_horizon: u8,
     tracing_enabled: bool,
     current_plan: Option<&PlannedPlan>,
+    opportunities: &[Opportunity],
 ) -> CandidateGenerationResult {
     if view.is_dead(agent) || !view.is_alive(agent) {
         return CandidateGenerationResult {
@@ -390,6 +426,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         current_tick,
         tracing_enabled,
         current_plan,
+        opportunities,
     };
 
     emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
@@ -422,6 +459,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     emit_proactive_exploration_candidates(&mut candidates, &mut diagnostics, &ctx, needs);
     let (pending_violations, pending_source_reliability_failures) =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_opportunity_compiler_candidates(&mut candidates, &mut diagnostics, &ctx);
 
     let mut candidates = filter_suppressed_candidates(
         candidates,
@@ -450,6 +488,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     diagnostics
         .suppressed
         .extend(fallback_diagnostics.suppressed);
+    diagnostics.sources.extend(fallback_diagnostics.sources);
 
     CandidateGenerationResult {
         candidates,
@@ -458,6 +497,68 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         pending_discrepancies,
         pending_source_reliability_failures,
         pending_acquisition_exhaustion_resets,
+    }
+}
+
+fn emit_opportunity_compiler_candidates(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    for opportunity in ctx.opportunities {
+        let goal_kind = opportunity.key.goal_key.kind;
+        if !matches!(goal_kind, GoalKind::AcquireCommodity { .. }) {
+            continue;
+        }
+        let mut evidence = Evidence::default();
+        match opportunity.key.anchor {
+            OpportunityAnchor::Entity(entity) => {
+                evidence.entities.insert(entity);
+                if let Some(place) = ctx.view.effective_place(entity) {
+                    evidence.places.insert(place);
+                }
+            }
+            OpportunityAnchor::Place(place) => {
+                evidence.places.insert(place);
+            }
+            OpportunityAnchor::None => {}
+        }
+        if evidence.is_empty() {
+            continue;
+        }
+        if candidates.iter().any(|candidate| {
+            candidate.key == opportunity.key.goal_key && candidate.anchor == opportunity.key.anchor
+        }) {
+            diagnostics
+                .sources
+                .entry(opportunity.key)
+                .or_insert(CandidateSource::OpportunityCompiler);
+            continue;
+        }
+        let acquisition_quantity = goal_kind_acquisition_quantity(&goal_kind);
+        diagnostics.offers.push(CandidateOfferDiagnostic {
+            opportunity: opportunity.key,
+            emitter: EmitterTag::HomeostaticNeeds,
+            source_evidence: combined_evidence(
+                EvidenceKindTag::HomeostaticPressure,
+                EvidenceKindTag::PerceptionObservation,
+            ),
+        });
+        diagnostics
+            .sources
+            .insert(opportunity.key, CandidateSource::OpportunityCompiler);
+        candidates.push(GoalOffer {
+            key: opportunity.key.goal_key,
+            anchor: opportunity.key.anchor,
+            evidence_entities: evidence.entities,
+            evidence_places: evidence.places,
+            obligation_source: None,
+            commitment_impact_if_ignored: opportunity.salience,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity,
+        });
     }
 }
 
@@ -4632,6 +4733,13 @@ fn emit_candidate(
         emitter,
         source_evidence,
     });
+    diagnostics.sources.insert(
+        OpportunityKey {
+            goal_key: key,
+            anchor,
+        },
+        CandidateSource::Emitter,
+    );
     candidates.push(GoalOffer {
         key,
         anchor,
@@ -5241,6 +5349,9 @@ fn emit_candidate_with_trace(
         emitter,
         source_evidence,
     });
+    diagnostics
+        .sources
+        .insert(opportunity, CandidateSource::Emitter);
     candidates.push(GoalOffer {
         key,
         anchor,
@@ -7646,6 +7757,7 @@ mod tests {
             current_tick: view.current_tick,
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         }
     }
 
@@ -10395,6 +10507,7 @@ mod tests {
             current_tick: Tick(0),
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         };
 
         assert!(!super::relief_path_actionable(
@@ -11949,6 +12062,7 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         };
         let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -12434,6 +12548,7 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         };
         let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -18135,6 +18250,7 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
             current_plan: Some(&current_plan),
+            opportunities: &[],
         };
 
         let (_pending, incidents) = emit_expectation_violation_candidates(
@@ -18224,6 +18340,7 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
             current_plan: Some(&current_plan),
+            opportunities: &[],
         };
 
         let (_pending, incidents) = emit_expectation_violation_candidates(
@@ -19865,6 +19982,7 @@ mod tests {
             current_tick: Tick(500),
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         };
 
         assert_eq!(

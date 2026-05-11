@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — `evaluate_interrupt` ranks opportunity-derived candidates against the active commitment's expected-motive-satisfaction; behavior activates only when the opportunity index is non-empty
-**Deps**: 006 (Opportunity / PerceivedOpportunityIndex populated per-tick)
+**Deps**: archive/tickets/S138OPPCOM-006.md (Opportunity / PerceivedOpportunityIndex populated per-tick)
 
 ## Problem
 
@@ -39,7 +39,7 @@ S138 enriches the existing interrupt layer (`crates/worldwake-ai/src/interrupts.
 
 Modify `crates/worldwake-ai/src/interrupts.rs:31`:
 
-Either (a) accept an additional `opportunity_candidates: &[GoalOffer]` parameter, OR (b) ensure `ranked_candidates: &OrderedRanked<'_>` already includes opportunity-derived candidates as part of the unified ranking. The latter is preferred — it keeps the gate signature stable. If ticket 006 routes opportunity-derived candidates through the same `OrderedRanked` produced by ranking, no signature change is needed here. Confirm during implementation.
+Either (a) accept an additional `opportunity_candidates: &[GoalOffer]` parameter, OR (b) ensure `ranked_candidates: &OrderedRanked<'_>` already includes opportunity-derived candidates as part of the unified ranking. The latter is preferred — it keeps the gate signature stable. If archive/tickets/S138OPPCOM-006.md routes opportunity-derived candidates through the same `OrderedRanked` produced by ranking, no signature change is needed here. Confirm during implementation.
 
 ### 2. Surface opportunity-vs-commitment comparison
 
@@ -52,7 +52,7 @@ When the interrupt fires with an opportunity-derived best-challenger, the `Inter
 ## Files to Touch
 
 - `crates/worldwake-ai/src/interrupts.rs` (modify — best-challenger comparison reads opportunity-derived candidates; trigger source attribution)
-- Likely: `crates/worldwake-ai/src/ranking.rs` — confirm whether opportunity-derived candidates are already merged into `OrderedRanked` by ticket 006 or need explicit handling here
+- Likely: `crates/worldwake-ai/src/ranking.rs` — confirm whether opportunity-derived candidates are already merged into `OrderedRanked` by archive/tickets/S138OPPCOM-006.md or need explicit handling here
 
 ## Out of Scope
 

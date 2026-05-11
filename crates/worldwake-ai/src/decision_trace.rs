@@ -93,6 +93,7 @@ pub struct AgentDecisionTrace {
     pub agent: EntityId,
     pub tick: Tick,
     pub outcome: DecisionOutcome,
+    pub opportunity_compiler_load: Option<OpportunityCompilerLoad>,
 }
 
 /// What the decision pipeline produced for this agent this tick.
@@ -1326,15 +1327,40 @@ impl PlanningPipelineTrace {
 #[derive(Clone, Debug)]
 pub struct DecisionTraceSink {
     traces: Vec<AgentDecisionTrace>,
+    opportunity_compiler_loads: BTreeMap<(EntityId, Tick), OpportunityCompilerLoad>,
 }
 
 impl DecisionTraceSink {
     pub fn new() -> Self {
-        Self { traces: Vec::new() }
+        Self {
+            traces: Vec::new(),
+            opportunity_compiler_loads: BTreeMap::new(),
+        }
     }
 
     pub fn record(&mut self, trace: AgentDecisionTrace) {
+        if let Some(load) = trace.opportunity_compiler_load {
+            self.opportunity_compiler_loads
+                .insert((trace.agent, trace.tick), load);
+        }
         self.traces.push(trace);
+    }
+
+    pub fn record_opportunity_compiler_load(
+        &mut self,
+        agent: EntityId,
+        tick: Tick,
+        load: OpportunityCompilerLoad,
+    ) {
+        self.opportunity_compiler_loads.insert((agent, tick), load);
+    }
+
+    pub fn opportunity_compiler_load(
+        &self,
+        agent: EntityId,
+        tick: Tick,
+    ) -> Option<&OpportunityCompilerLoad> {
+        self.opportunity_compiler_loads.get(&(agent, tick))
     }
 
     pub fn traces(&self) -> &[AgentDecisionTrace] {
@@ -1376,6 +1402,7 @@ impl DecisionTraceSink {
 
     pub fn clear(&mut self) {
         self.traces.clear();
+        self.opportunity_compiler_loads.clear();
     }
 
     /// Print a human-readable summary for one agent across all recorded ticks.
@@ -2538,6 +2565,7 @@ mod tests {
         let trace = AgentDecisionTrace {
             agent: entity(1),
             tick: Tick(8),
+            opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: crate::DirtySet::default(),
@@ -2623,6 +2651,7 @@ mod tests {
         AgentDecisionTrace {
             agent,
             tick,
+            opportunity_compiler_load: None,
             outcome: DecisionOutcome::Dead,
         }
     }
@@ -2682,6 +2711,7 @@ mod tests {
         AgentDecisionTrace {
             agent: entity(1),
             tick,
+            opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: crate::DirtySet::default(),
@@ -2738,6 +2768,7 @@ mod tests {
         let trace = AgentDecisionTrace {
             agent: entity(1),
             tick: Tick(5),
+            opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: crate::DirtySet::default(),
@@ -2821,6 +2852,25 @@ mod tests {
         assert_eq!(t.agent, agent_a);
         assert_eq!(t.tick, tick_1);
         assert!(matches!(t.outcome, DecisionOutcome::Dead));
+    }
+
+    #[test]
+    fn sink_records_opportunity_compiler_load_by_agent_tick() {
+        let mut sink = DecisionTraceSink::new();
+        let agent = entity(0);
+        let tick = Tick(4);
+        let load = OpportunityCompilerLoad {
+            compiled_count: 3,
+            salience_floored: 1,
+            learned_memory_damped: 2,
+            cap_truncated: 1,
+        };
+        let mut trace = dead_trace(agent, tick);
+        trace.opportunity_compiler_load = Some(load);
+
+        sink.record(trace);
+
+        assert_eq!(sink.opportunity_compiler_load(agent, tick), Some(&load));
     }
 
     #[test]
@@ -5196,6 +5246,7 @@ mod tests {
         let trace = AgentDecisionTrace {
             agent,
             tick: Tick(5),
+            opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: crate::DirtySet::default(),

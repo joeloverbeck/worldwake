@@ -3,8 +3,8 @@ use crate::agenda_manager::{RejectionLifecycle, classify_rejection};
 use crate::agent_tick::portfolio::{FeasibilityVerdict, Portfolio, SlotKind, assemble_portfolio};
 use crate::candidate_generation::relieved_needs_for_commodity;
 use crate::decision_trace::{
-    BindingRejection, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
-    PlannedStepSummary, PortfolioSlotTrace, PortfolioTrace, RankedGoalSummary,
+    BindingRejection, CandidateSource, GoalSwitchSummary, PlanAttemptTrace, PlanSearchOutcome,
+    PlanSearchTrace, PlannedStepSummary, PortfolioSlotTrace, PortfolioTrace, RankedGoalSummary,
     SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
     SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
     SelectedPlanTrace, SelectionTrace, SideBenefitTrace, SnapshotContinuationOutcome,
@@ -19,7 +19,9 @@ use crate::plan_selection::SelectionCandidatePlan;
 use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update, write_plan_step_expectations,
 };
-use crate::search::{PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata};
+use crate::search::{
+    PlanSearchResult, SearchTraceMetadata, search_plan_with_trace_metadata_and_source,
+};
 use crate::{
     AcceptedRepairProvenance, AgendaEntry, AgendaPhase, AgendaState, AgentDecisionRuntime,
     DirtySet, ExhaustionEntry, ExhaustionRetryState, ExpectationFailureCause,
@@ -415,6 +417,49 @@ pub(super) fn build_candidate_plans(
     collect_expansion_summaries: bool,
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
 ) -> CandidatePlanningPass {
+    build_candidate_plans_with_sources(
+        world,
+        scheduler,
+        agent,
+        ranked_candidates,
+        committed_opportunity,
+        discrepancy_memory,
+        blocked_memory,
+        current_tick,
+        cognitive,
+        execution_budget,
+        semantics_table,
+        action_defs,
+        action_handlers,
+        recipe_registry,
+        collect_rejections,
+        collect_expansion_summaries,
+        exhaustion_cache,
+        &BTreeMap::new(),
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
+pub(super) fn build_candidate_plans_with_sources(
+    world: &worldwake_core::World,
+    scheduler: &Scheduler,
+    agent: worldwake_core::EntityId,
+    ranked_candidates: &OrderedRanked<'_>,
+    committed_opportunity: Option<OpportunityKey>,
+    discrepancy_memory: &DiscrepancyMemory,
+    blocked_memory: &BlockerMemory,
+    current_tick: Tick,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+    recipe_registry: &RecipeRegistry,
+    collect_rejections: bool,
+    collect_expansion_summaries: bool,
+    exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
+    candidate_sources: &BTreeMap<OpportunityKey, CandidateSource>,
+) -> CandidatePlanningPass {
     let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
     let mut admitted_candidates: Vec<_> = ranked_candidates
         .iter()
@@ -549,6 +594,10 @@ pub(super) fn build_candidate_plans(
             goal_key: ranked.offer.key,
             anchor: ranked.offer.anchor,
         };
+        let candidate_source = candidate_sources
+            .get(&opportunity)
+            .copied()
+            .unwrap_or(CandidateSource::Emitter);
         // Apply search budget backoff for goals with 3+ consecutive exhaustion
         // failures. Each failure beyond the 2nd halves the budget (floor 16).
         // The first two retries use full budget to give goals a fair chance
@@ -564,7 +613,7 @@ pub(super) fn build_candidate_plans(
             }
             _ => *cognitive,
         };
-        let result = search_plan_with_trace_metadata(
+        let result = search_plan_with_trace_metadata_and_source(
             &snapshot,
             &ranked.offer,
             semantics_table,
@@ -586,6 +635,7 @@ pub(super) fn build_candidate_plans(
                 None
             },
             Some(&mut trace_metadata),
+            candidate_source,
         );
         let result = match result {
             PlanSearchResult::Found(plan)
@@ -1855,6 +1905,7 @@ pub(super) fn plan_and_validate_next_step_traced(
     tracing: bool,
     previous_goal: Option<worldwake_core::GoalKey>,
     recipe_registry: &RecipeRegistry,
+    candidate_sources: &BTreeMap<OpportunityKey, CandidateSource>,
 ) -> PlanningStepTraceResult {
     if !tracing {
         let (step, valid) = plan_and_validate_next_step(
@@ -1981,7 +2032,7 @@ pub(super) fn plan_and_validate_next_step_traced(
                         .map(|active_goal| active_goal.key.goal_key)
             });
 
-        let plans = build_candidate_plans(
+        let plans = build_candidate_plans_with_sources(
             world,
             scheduler,
             agent,
@@ -1999,6 +2050,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             true,
             true,
             &runtime.exhaustion_cache,
+            candidate_sources,
         );
         portfolio_trace = Some(plans.portfolio_trace());
 
@@ -5300,6 +5352,7 @@ mod tests {
             true,
             None,
             &recipes,
+            &BTreeMap::new(),
         );
 
         let plan_search_trace =

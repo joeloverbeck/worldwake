@@ -13,6 +13,10 @@ use worldwake_sim::{
 use crate::decision_trace::CandidateDampingEntry;
 use crate::failure_handling::ExecutionFailure;
 use crate::knowledge_path::KnowledgePath;
+use crate::opportunity_compiler::{
+    Opportunity, PerceivedOpportunityIndex, build_perceived_opportunity_index,
+    compile_opportunities,
+};
 use crate::plan_step_expectations::{
     fulfill_plan_step_expectations, persist_expectation_store_update,
 };
@@ -70,6 +74,18 @@ pub(crate) struct ReadPhaseResult {
     pub(super) generated_keys: Vec<worldwake_core::OpportunityKey>,
     /// Typed candidate-evidence provenance keyed by generated goal.
     pub(super) candidate_evidence: Vec<crate::CandidateEvidenceTrace>,
+    /// Candidate source attribution keyed by generated goal.
+    pub(super) candidate_sources:
+        BTreeMap<worldwake_core::OpportunityKey, crate::decision_trace::CandidateSource>,
+    /// Compiled per-tick opportunities available to downstream S138 consumers.
+    #[allow(dead_code)]
+    pub(super) opportunities: Vec<Opportunity>,
+    /// Dense index over the compiled opportunities for same-tick consumers.
+    #[allow(dead_code)]
+    pub(super) opportunity_index: PerceivedOpportunityIndex,
+    /// Per-agent load counters for the compiler pass.
+    #[allow(dead_code)]
+    pub(super) opportunity_compiler_load: crate::decision_trace::OpportunityCompilerLoad,
     /// Desire-level diagnostics for goals whose emitted sibling opportunities
     /// were all filtered out as blocked before ranking.
     pub(super) fully_blocked_desires: Vec<crate::DesireFullyBlocked>,
@@ -189,6 +205,7 @@ pub(super) fn refresh_runtime_for_read_phase(
         violation_memory,
         &RepairMemory::default(),
         &LearnedOpportunityMemory::default(),
+        &crate::EffectSchemaIndex::default(),
         agent,
         replan_signals,
         phase,
@@ -209,6 +226,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     violation_memory: &mut worldwake_core::ViolationMemory,
     repair_memory: &RepairMemory,
     learned_opportunity_memory: &LearnedOpportunityMemory,
+    effect_schema_index: &crate::EffectSchemaIndex,
     agent: EntityId,
     replan_signals: &[&ReplanNeeded],
     phase: ReadPhaseContext<'_>,
@@ -216,6 +234,9 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
 ) -> ReadPhaseResult {
     // One authoritative read view covers blocker cleanup, snapshot dirtiness, and ranking.
     let view = runtime_belief_view(agent, world, scheduler, action_defs, phase.recipe_registry);
+    let (opportunities, opportunity_compiler_load) =
+        compile_opportunities(agent, &view, effect_schema_index);
+    let opportunity_index = build_perceived_opportunity_index(opportunities.clone());
     let before = blocked_memory.clone();
     let queue_transition_changed = handle_facility_queue_transitions(
         &view,
@@ -270,7 +291,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     }
 
     let mut candidates =
-        crate::candidate_generation::generate_candidates_with_current_plan_with_memories_with_travel_horizon(
+        crate::candidate_generation::generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities(
             &view,
             agent,
             blocked_memory,
@@ -281,6 +302,7 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
             phase.travel_horizon,
             tracing,
             runtime.current_plan.as_ref(),
+            &opportunities,
         );
     reinstate_current_plan_candidate(&mut candidates, runtime, active_goal);
     candidates.pending_source_reliability_failures.extend(
@@ -344,6 +366,10 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         ranked,
         generated_keys,
         candidate_evidence,
+        candidate_sources: candidates.diagnostics.sources,
+        opportunities,
+        opportunity_index,
+        opportunity_compiler_load,
         fully_blocked_desires: candidates.diagnostics.fully_blocked_desires,
         places_reachable: candidates.diagnostics.places_reachable,
         places_after_belief_filter: candidates.diagnostics.places_after_belief_filter,

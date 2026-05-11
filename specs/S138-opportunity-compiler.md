@@ -88,10 +88,11 @@ pub fn compile_opportunities(
     agent: EntityId,
     belief_view: &impl RuntimeBeliefView,
     action_index: &EffectSchemaIndex,
-) -> Vec<Opportunity> { /* … */ }
+) -> (Vec<Opportunity>, OpportunityCompilerLoad) { /* … */ }
 ```
 
 `compile_opportunities` reads perceived entities, observed records, observed routes, and recalled habits through `belief_view`'s existing accessors (`agent_belief_store`, `entities_at`, `effective_place`, `learned_opportunity_memory`, `survey_memory`, plus the new `risk_weight_profile` and `law_abiding_profile` accessors added in this spec). No separate `PerceptionState` parameter is needed — the agent's perception output is already in the belief store by the time the compiler runs. The result length is bounded by the per-agent `compile_opportunity_cap` field on `CognitiveProfile` (see Profile-Driven Parameters); truncation prefers higher-salience entries.
+The implementation returns `OpportunityCompilerLoad` alongside the opportunity vector so the same read-phase pass can record compiled, floored, damped, and cap-truncated counts without recomputing or inspecting global state.
 
 ### `worldwake-ai::effect_schema_index` (new module)
 

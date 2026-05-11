@@ -4,7 +4,7 @@
 **Priority**: LOW
 **Effort**: Small
 **Engine Changes**: None (tooling-only; observer binary in `worldwake-cli`)
-**Deps**: archive/tickets/S138OPPCOM-001.md (CandidateSource, OpportunityCompilerLoad types), 006 (Opportunity records emitted on the decision-trace sink)
+**Deps**: archive/tickets/S138OPPCOM-001.md (CandidateSource, OpportunityCompilerLoad types), archive/tickets/S138OPPCOM-006.md (Opportunity records emitted on the decision-trace sink)
 
 ## Problem
 
@@ -14,7 +14,7 @@ S138's debuggability surface (FND-29) requires that compiled opportunities be in
 
 1. Existing focused/unit coverage: `crates/worldwake-cli/src/bin/observer.rs:684` contains the Section 3 (Decision History) rendering using a markdown table `| Tick | Agent | Event | Payload Summary |`. Sections in the binary are tagged textually (e.g., "## Section 3 — Decision History"); confirm the literal heading style during implementation.
 2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "Observer Section 3" — the spec example shows a non-tabular format for opportunities.
-3. Shared abstraction boundary: the observer reads from `DecisionTraceSink` (defined in `worldwake-ai`); ticket 006 records per-tick opportunity data on the sink. This ticket only consumes the sink — no engine state mutation.
+3. Shared abstraction boundary: the observer reads from `DecisionTraceSink` (defined in `worldwake-ai`); archive/tickets/S138OPPCOM-006.md records per-tick opportunity data on the sink. This ticket only consumes the sink — no engine state mutation.
 4. Tooling-only classification: per `references/worldwake-validation-patterns.md` "Read-Only Tooling Consumer", the observer is a binary that consumes public APIs from `worldwake-ai` (decision trace) without writing to any system.
 5. Coordination with S137: S137 also lands rendering for `EventTag::RepairApplied` in this section. Both specs extend Section 3; this ticket creates the sub-section split (3a / 3b) and S137's tickets land their rendering inside 3b (or a sibling 3c). The split is non-blocking for S137.
 

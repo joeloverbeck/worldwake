@@ -1,6 +1,6 @@
 # S138OPPCOM-006: Opportunity compiler core and agent_tick integration
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — adds per-tick compile_opportunities pass before candidate generation; populates `RootCandidateTrace.source` and records `OpportunityCompilerLoad` per-agent per-tick
@@ -8,7 +8,26 @@
 
 ## Problem
 
-The cornerstone deliverable: implement `compile_opportunities(agent, belief_view, action_index) -> Vec<Opportunity>`, build the per-tick `PerceivedOpportunityIndex`, insert the call into `agent_tick/observation.rs` immediately before `generate_candidates_with_*` at line 273, and route opportunities into `candidate_generation.rs` as a parallel input alongside the existing emitters. When candidate generation emits a goal whose binding originated from an opportunity (e.g., the agent perceives unguarded bread and a `Steal`-routed `AcquireCommodity` candidate is produced), the `RootCandidateTrace.source` field is set to `CandidateSource::OpportunityCompiler`; otherwise it remains `CandidateSource::Emitter`. Per-agent per-tick `OpportunityCompilerLoad` is recorded on the decision-trace sink.
+The cornerstone deliverable: implement `compile_opportunities(agent, belief_view, action_index) -> (Vec<Opportunity>, OpportunityCompilerLoad)`, build the per-tick `PerceivedOpportunityIndex`, insert the call into `agent_tick/observation.rs` immediately before `generate_candidates_with_*` at line 273, and route opportunities into `candidate_generation.rs` as a parallel input alongside the existing emitters. When candidate generation emits a goal whose binding originated from an opportunity (e.g., the agent perceives unguarded bread and a `Steal`-routed `AcquireCommodity` candidate is produced), the `RootCandidateTrace.source` field is set to `CandidateSource::OpportunityCompiler`; otherwise it remains `CandidateSource::Emitter`. Per-agent per-tick `OpportunityCompilerLoad` is recorded on the decision-trace sink.
+
+## Completion Notes (2026-05-11)
+
+Implemented the S138 core compiler slice:
+
+- Added `opportunity_compiler::compile` with `compile_opportunities` and `build_perceived_opportunity_index`.
+- Extended belief views with a belief-local `perception_profile` accessor so the compiler can honor `PerceptionProfile.opportunity_floor_permille` without authoritative world reads.
+- Integrated the compile pass into `agent_tick` read phase before candidate generation, using the driver's `EffectSchemaIndex`.
+- Threaded compiled opportunities into candidate generation and preserved `CandidateSource::OpportunityCompiler` through planning search/root candidate traces.
+- Added `DecisionTraceSink` storage/query support for per-agent per-tick `OpportunityCompilerLoad`.
+
+Truthful proof surface:
+
+- `compile_opportunities` now has focused coverage for inventory-backed opportunities, salience floor, cap truncation, confirmed-empty survey suppression, and learned-memory damping.
+- `RootCandidateTrace` has focused source-attribution coverage for `CandidateSource::OpportunityCompiler`.
+- `DecisionTraceSink` has focused `OpportunityCompilerLoad` recording coverage.
+- Full workspace tests and CI-shape workspace clippy passed.
+
+Deferred by sibling tickets as drafted: travel-pruning consumption of `PerceivedOpportunityIndex` (007), interrupt-layer consumption (008), observer rendering (009), and scenario/golden proof of the full S138 row (010).
 
 ## Assumption Reassessment (2026-05-11)
 
@@ -150,7 +169,7 @@ Modify `crates/worldwake-ai/src/decision_trace.rs` (`DecisionTraceSink` at line 
 4. New test: `LearnedOpportunityMemory` damping reduces salience for opportunities the agent has previously seen and not pursued
 5. New test: `RootCandidateTrace.source = CandidateSource::OpportunityCompiler` for opportunity-derived candidates emitted in `candidate_generation.rs`
 6. New integration test in `agent_tick/tests.rs`: a perceived bread + starving agent scenario produces opportunity-derived `AcquireCommodity` candidate
-7. Existing 1440-tick goldens (`survival-baseline.ron`, `survival-scattered.ron`, `survival-contested.ron`) continue to pass — opportunities are additive at default profiles (ticket 010 enforces the strict regression)
+7. Existing 1440-tick golden/regression proof is explicitly deferred to `tickets/S138OPPCOM-010.md`; this ticket proves the focused compiler and `agent_tick` substrate needed by that golden pass.
 8. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -173,7 +192,29 @@ Modify `crates/worldwake-ai/src/decision_trace.rs` (`DecisionTraceSink` at line 
 
 ### Commands
 
-1. `cargo test -p worldwake-ai opportunity_compiler candidate_generation agent_tick`
-2. `cargo test -p worldwake-ai`
-3. `cargo test --workspace`
-4. `cargo clippy --workspace --all-targets -- -D warnings`
+1. Focused compiler/read-phase proof: `cargo test -p worldwake-ai read_phase_runs_opportunity_compiler_before_candidate_generation`
+2. Full AI suite: `cargo test -p worldwake-ai`
+3. Full workspace suite: `cargo test --workspace`
+4. CI-shaped lint gate: `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-11.
+
+- Added `opportunity_compiler::compile` with `compile_opportunities` and `build_perceived_opportunity_index`.
+- Extended `RuntimeBeliefView` / `PerAgentBeliefView` with belief-local `perception_profile` reads so the compiler can honor `PerceptionProfile.opportunity_floor_permille` without authoritative world reads.
+- Integrated the compiler into the `agent_tick` read phase before opportunity-aware candidate generation and threaded the resulting opportunities into candidate generation/search provenance.
+- Preserved opportunity-derived candidate source attribution as `CandidateSource::OpportunityCompiler` through the read/search trace surfaces.
+- Added `DecisionTraceSink` storage/query support for per-agent per-tick `OpportunityCompilerLoad`.
+- Updated downstream trace constructors and read models that share `AgentDecisionTrace`.
+
+## Deviations
+
+- The full S138 golden/regression surface remains owned by `tickets/S138OPPCOM-010.md`; this ticket lands and proves the focused compiler, read-phase integration, source attribution, and trace-load substrate.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai read_phase_runs_opportunity_compiler_before_candidate_generation`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `cargo test --workspace`

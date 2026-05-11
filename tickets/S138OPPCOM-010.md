@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None (tests only; uses existing harness)
-**Deps**: 006 (compile_opportunities + agent_tick integration), 007 (travel-pruning detour), 008 (interrupt enrichment)
+**Deps**: archive/tickets/S138OPPCOM-006.md (compile_opportunities + agent_tick integration), 007 (travel-pruning detour), 008 (interrupt enrichment)
 
 ## Problem
 

@@ -18,13 +18,14 @@ use worldwake_core::{
     JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LatrineFullness,
     LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
     ObligationExecutionTracker, ObligationSatiationProfile, ObservationOmissionLog, OfficeData,
-    PatrolProfile, PatrolRoute, Permille, PlaceDirtiness, PlaceTag, PlaceTagSet, PreferenceProfile,
-    Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind, RecordedViolation,
-    ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource, RightKind,
-    RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
-    StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick,
-    TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-    ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
+    PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceDirtiness, PlaceTag, PlaceTagSet,
+    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
+    RecordedViolation, ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource,
+    RightKind, RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation,
+    SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound,
+    effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -515,6 +516,10 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn perception_profile(&self, agent: EntityId) -> Option<PerceptionProfile> {
+        let _ = agent;
+        None
+    }
     fn risk_weight_profile(&self, agent: EntityId) -> Option<RiskWeightProfile> {
         let _ = agent;
         None
@@ -853,6 +858,10 @@ pub trait ProfileBeliefView {
         ObligationExecutionTracker::default()
     }
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
+        let _ = agent;
+        None
+    }
+    fn perception_profile(&self, agent: EntityId) -> Option<PerceptionProfile> {
         let _ = agent;
         None
     }
@@ -1956,6 +1965,13 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::CognitiveProfile> {
         ProfileBeliefView::cognitive_profile(self, agent)
+    }
+
+    fn perception_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::PerceptionProfile> {
+        ProfileBeliefView::perception_profile(self, agent)
     }
 
     fn risk_weight_profile(

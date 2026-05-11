@@ -487,9 +487,48 @@ pub(crate) fn search_plan_with_trace_metadata(
     recipes: &RecipeRegistry,
     blocked: &BlockerMemory,
     current_tick: Tick,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+    trace_metadata: Option<&mut SearchTraceMetadata>,
+) -> PlanSearchResult {
+    search_plan_with_trace_metadata_and_source(
+        snapshot,
+        goal,
+        semantics_table,
+        registry,
+        handlers,
+        cognitive,
+        execution_budget,
+        recipes,
+        blocked,
+        current_tick,
+        binding_rejections,
+        expansion_summaries,
+        trace_metadata,
+        crate::decision_trace::CandidateSource::Emitter,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref
+)]
+pub(crate) fn search_plan_with_trace_metadata_and_source(
+    snapshot: &PlanningSnapshot,
+    goal: &GoalOffer,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    recipes: &RecipeRegistry,
+    blocked: &BlockerMemory,
+    current_tick: Tick,
     mut binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
     mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
     mut trace_metadata: Option<&mut SearchTraceMetadata>,
+    candidate_source: crate::decision_trace::CandidateSource,
 ) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
@@ -579,6 +618,7 @@ pub(crate) fn search_plan_with_trace_metadata(
                 blocked,
                 current_tick,
                 relevant_defs: &relevant_defs,
+                candidate_source,
             },
             CandidateTraceSinks {
                 binding_rejections: binding_rejections.as_deref_mut(),

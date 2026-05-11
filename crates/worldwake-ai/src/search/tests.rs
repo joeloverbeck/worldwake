@@ -115,6 +115,7 @@ fn candidate_search_context<'a>(
         blocked,
         current_tick,
         relevant_defs,
+        candidate_source: crate::decision_trace::CandidateSource::Emitter,
     }
 }
 
@@ -11668,7 +11669,13 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
     let mut root_candidates = candidates
         .iter()
         .map(|candidate| {
-            root_candidate_trace_from_candidate(candidate, &registry, &semantics_table, None)
+            root_candidate_trace_from_candidate(
+                candidate,
+                &registry,
+                &semantics_table,
+                None,
+                crate::decision_trace::CandidateSource::Emitter,
+            )
         })
         .collect::<Vec<_>>();
 

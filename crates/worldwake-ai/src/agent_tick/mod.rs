@@ -630,6 +630,7 @@ pub(super) struct AgentTickContext<'a> {
     pub(super) action_handlers: &'a ActionHandlerRegistry,
     pub(super) recipe_registry: &'a RecipeRegistry,
     pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
+    pub(super) effect_schema_index: &'a EffectSchemaIndex,
     pub(super) cognitive: &'a CognitiveProfile,
     pub(super) execution_budget: &'a ExecutionBudget,
     pub(super) tick: Tick,
@@ -1174,6 +1175,7 @@ impl AutonomousController for AgentTickDriver {
                 action_handlers: ctx.action_handlers,
                 recipe_registry: ctx.recipe_registry,
                 semantics_table,
+                effect_schema_index: &self.effect_schema_index,
                 cognitive: &cognitive,
                 execution_budget: &execution_budget,
                 tick: ctx.tick,
@@ -1204,6 +1206,7 @@ fn process_agent(
     let action_handlers = ctx.action_handlers;
     let recipe_registry = ctx.recipe_registry;
     let semantics_table = ctx.semantics_table;
+    let effect_schema_index = ctx.effect_schema_index;
     let cognitive = ctx.cognitive;
     let execution_budget = ctx.execution_budget;
     let tick = ctx.tick;
@@ -1352,6 +1355,7 @@ fn process_agent(
                 agent,
                 tick,
                 outcome: DecisionOutcome::Dead,
+                opportunity_compiler_load: None,
             }));
         }
     }
@@ -1534,6 +1538,7 @@ fn process_agent(
         &mut violation_memory,
         &repair_memory,
         &learned_opportunity_memory,
+        effect_schema_index,
         agent,
         replan_signals,
         ReadPhaseContext {
@@ -1883,6 +1888,7 @@ fn process_agent(
             tracing,
             previous_goal,
             ctx.recipe_registry,
+            &read_result.candidate_sources,
         );
         current_active_goal = current_agenda_state.committed.clone();
         if !pending_tracker_increments.is_empty() {
@@ -2338,6 +2344,7 @@ fn process_agent(
         agent,
         tick,
         outcome,
+        opportunity_compiler_load: Some(read_result.opportunity_compiler_load),
     }))
 }
 

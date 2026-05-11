@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — extends `prune_travel_away_from_goal_with_expansion_trace` with two new params; changes detour-allow semantics under non-empty opportunity sets
-**Deps**: archive/tickets/S138OPPCOM-003.md (CognitiveProfile.detour_budget_permille), 006 (PerceivedOpportunityIndex populated per-tick)
+**Deps**: archive/tickets/S138OPPCOM-003.md (CognitiveProfile.detour_budget_permille), archive/tickets/S138OPPCOM-006.md (PerceivedOpportunityIndex populated per-tick)
 
 ## Problem
 
@@ -15,7 +15,7 @@ S138 makes travel pruning opportunity-aware: a detour that would normally be pru
 1. Existing focused/unit coverage: `crates/worldwake-ai/src/search/heuristic.rs` has inline tests adjacent to the function at line 248; the sibling `prune_travel_away_from_goal` at line 231 is the parameter-free variant retained for callers that don't need expansion traces.
 2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "Travel-pruning extension (in `search/heuristic.rs`)".
 3. Caller surface: `prune_travel_away_from_goal_with_expansion_trace` has a single caller in `crates/worldwake-ai/src/search/candidates.rs` (per agent finding). The single-caller surface means parameter threading is mechanical.
-4. `PerceivedOpportunityIndex` becomes available per-tick after ticket 006 lands; before 006, the index is `Default::default()` (empty), and the new branch never fires — workspace builds fine even in intermediate state. This ticket's effective behavior activates only when 006 is also landed.
+4. `PerceivedOpportunityIndex` becomes available per-tick after archive/tickets/S138OPPCOM-006.md lands; before that archived prerequisite, the index is `Default::default()` (empty), and the new branch never fires — workspace builds fine even in intermediate state. This ticket's effective behavior activates only when the archived prerequisite is also landed.
 5. Heuristic-removal discipline (precision-rules.md §12): this ticket does NOT remove or weaken the existing prune heuristic. It adds an opportunity-derived bypass under explicit per-agent budget control. The existing prune behavior is preserved when the opportunity index is empty or salience contributions are zero.
 
 ## Architecture Check
@@ -72,7 +72,7 @@ The exact salience-summation function (`sum_salience_along_detour`) iterates the
 
 ### 3. Update the single caller
 
-Modify `crates/worldwake-ai/src/search/candidates.rs`: pass `cognitive_profile.detour_budget_permille` and the per-tick `PerceivedOpportunityIndex` (threaded from observation phase per ticket 006) into the call.
+Modify `crates/worldwake-ai/src/search/candidates.rs`: pass `cognitive_profile.detour_budget_permille` and the per-tick `PerceivedOpportunityIndex` (threaded from observation phase per archive/tickets/S138OPPCOM-006.md) into the call.
 
 ## Files to Touch
 

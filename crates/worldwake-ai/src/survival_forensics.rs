@@ -736,6 +736,7 @@ mod tests {
         AgentDecisionTrace {
             agent,
             tick,
+            opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
                 dirty: DirtySet::default(),

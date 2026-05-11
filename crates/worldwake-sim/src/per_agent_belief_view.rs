@@ -17,14 +17,14 @@ use worldwake_core::{
     InstitutionalBeliefRead, IntentionDispositionProfile, JusticeDispositionProfile,
     LastHarvestTrace, LastProactiveExplorationTick, LastSeenMemory, LastSeenProvenance,
     LatrineFullness, LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
-    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionSource, Permille,
-    PlaceDirtiness, PlaceTag, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
-    RecordedViolation, ResourceExtractionQueues, ResourceSource, RewardEncumbrance,
-    RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation, SourceReliability,
-    StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellMemoryKey, TellProfile, TellTopic,
-    Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
-    WashBasinState, WorkstationTag, World, Wound, danger_ratio_permille, is_incapacitated,
-    load_of_entity,
+    ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, PerceptionProfile,
+    PerceptionSource, Permille, PlaceDirtiness, PlaceTag, PreferenceProfile, Quantity, RecipeId,
+    RecipientKnowledgeStatus, RecordedViolation, ResourceExtractionQueues, ResourceSource,
+    RewardEncumbrance, RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation,
+    SourceReliability, StockStoragePolicy, SubstitutePreferences, SurveyMemory, TellMemoryKey,
+    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
+    UniqueItemKind, UtilityProfile, WashBasinState, WorkstationTag, World, Wound,
+    danger_ratio_permille, is_incapacitated, load_of_entity,
 };
 
 #[derive(Clone, Copy)]
@@ -701,6 +701,12 @@ impl ProfileBeliefView for PerAgentBeliefView<'_> {
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
         (agent == self.agent)
             .then(|| self.world.get_component_cognitive_profile(agent).copied())
+            .flatten()
+    }
+
+    fn perception_profile(&self, agent: EntityId) -> Option<PerceptionProfile> {
+        (agent == self.agent)
+            .then(|| self.world.get_component_perception_profile(agent).copied())
             .flatten()
     }
 
