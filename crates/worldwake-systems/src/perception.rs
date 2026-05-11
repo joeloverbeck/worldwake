@@ -1031,6 +1031,7 @@ fn emit_discovery_event(
             potential_witnesses: BTreeSet::from([context.observer]),
         },
         tags: BTreeSet::from([EventTag::Discovery, EventTag::WorldMutation]),
+        contention_event_payload: None,
         decision_payload: None,
         artifact_transition_payload: None,
     }));
@@ -1573,6 +1574,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Political, EventTag::WorldMutation]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -2827,6 +2829,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -3540,6 +3543,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Trade]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -3613,6 +3617,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -3683,6 +3688,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social, EventTag::Transfer]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -3759,6 +3765,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Crime, EventTag::Transfer]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -3838,6 +3845,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Political]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -3921,6 +3929,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Social, EventTag::Coercion]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -4000,6 +4009,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([bystander, direct_witness]),
             },
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -4070,6 +4080,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([direct_witness, bystander]),
             },
             tags: BTreeSet::from([EventTag::Social]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         });
@@ -4100,6 +4111,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([direct_witness, bystander]),
             },
             tags: BTreeSet::from([EventTag::Social, EventTag::Transfer]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         });
@@ -4124,6 +4136,7 @@ mod tests {
                 potential_witnesses: BTreeSet::from([direct_witness, bystander]),
             },
             tags: BTreeSet::from([EventTag::Social, EventTag::Coercion]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         });
@@ -4182,6 +4195,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -4291,6 +4305,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -5757,6 +5772,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -5853,6 +5869,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -5951,6 +5968,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -6051,6 +6069,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -6067,6 +6086,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
@@ -6195,6 +6215,7 @@ mod tests {
             visibility: VisibilitySpec::AdjacentPlaces { max_hops: 1 },
             witness_data: WitnessData::default(),
             tags: BTreeSet::new(),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));

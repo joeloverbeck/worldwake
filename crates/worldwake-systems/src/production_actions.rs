@@ -3,9 +3,10 @@ use crate::experience_recording::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use worldwake_core::{
-    ActionDefId, CommodityKind, Container, ContentionGrant, Discrepancy, EntityId, EntityKind,
-    EventTag, HarvestTraceEntry, LoadUnits, ProductionOutputOwner, Quantity, ReliabilityRecord,
-    SourceKey, Tick, VisibilitySpec, WorkstationMarker, World, WorldTxn, load_per_unit,
+    ActionDefId, CommodityKind, Container, ContentionGrant, ContentionResolutionRule, Discrepancy,
+    EntityId, EntityKind, EventTag, HarvestTraceEntry, LoadUnits, ProductionOutputOwner, Quantity,
+    ReliabilityRecord, SourceKey, Tick, VisibilitySpec, WorkstationMarker, World, WorldTxn,
+    build_contention_event_payload, load_per_unit,
 };
 use worldwake_sim::{
     AbortReason, ActionDef, ActionDefRegistry, ActionError, ActionHandler, ActionHandlerId,
@@ -518,6 +519,21 @@ fn grant_or_signal_full(
             .filter(|waiter| waiter.actor == actor)
             .map(|waiter| waiter.queued_at);
         if queue.granted.is_none() {
+            let queue_snapshot = queue.clone();
+            let place = txn.effective_place(workstation).ok_or_else(|| {
+                ActionError::InternalError(format!(
+                    "workstation {workstation} has no effective place for contention event"
+                ))
+            })?;
+            let payload = build_contention_event_payload(
+                &queue_snapshot,
+                workstation,
+                place,
+                action_def,
+                ContentionResolutionRule::ArrivalTime,
+                Some(actor),
+                txn.tick(),
+            );
             // Promote the head waiter (or grab a free slot). Removing from
             // waiting before granting keeps the queue invariant that an
             // actor never appears in both `granted` and `waiting`.
@@ -531,6 +547,7 @@ fn grant_or_signal_full(
                 granted_at: txn.tick(),
                 expires_at: txn.tick(),
             });
+            txn.set_contention_event_payload(payload);
             txn.set_component_resource_extraction_queues(workstation, queues)
                 .map_err(|err| ActionError::InternalError(err.to_string()))?;
             if let Some(queued_at) = head_queued_at {
@@ -1247,14 +1264,15 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AgentBeliefStore, BodyCostPerTick, CauseRef, CommodityKind, Container, ContentionGrant,
-        ContentionPolicy, ContentionQueue, ControlSource, DeprivationExposure, DriveThresholds,
-        EntityId, EventId, EventLog, EventView, HomeostaticNeeds, LoadUnits, MetabolismProfile,
-        PerceptionSource, Permille, PreferenceProfile, ProductionOutputOwner,
-        ProductionOutputOwnershipPolicy, Quantity, RelationDelta, RelationKind, RelationValue,
-        ReliabilityRecord, ResourceSource, Seed, SourceKey, SourceReliability, StateDelta, Tick,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn,
-        build_believed_entity_state, build_prototype_world,
+        AgentBeliefStore, BodyCostPerTick, CauseRef, ClaimantOutcome, CommodityKind, Container,
+        ContentionGrant, ContentionPolicy, ContentionQueue, ContentionResolutionRule,
+        ControlSource, DeprivationExposure, DriveThresholds, EntityId, EventId, EventLog,
+        EventView, HomeostaticNeeds, LoadUnits, MetabolismProfile, PerceptionSource, Permille,
+        PreferenceProfile, ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity,
+        RelationDelta, RelationKind, RelationValue, ReliabilityRecord, ResourceSource, Seed,
+        SourceKey, SourceReliability, StateDelta, Tick, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_believed_entity_state,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionExecutionAuthority, ActionHandlerRegistry, ActionInstance,
@@ -1288,6 +1306,44 @@ mod tests {
     fn commit_txn(txn: WorldTxn<'_>) {
         let mut log = EventLog::new();
         let _ = txn.commit(&mut log);
+    }
+
+    fn assert_extraction_contention_events(
+        log: &EventLog,
+        facility: EntityId,
+        place: EntityId,
+        action: ActionDefId,
+        tick: Tick,
+        expected_claimants: &[(EntityId, Tick, ClaimantOutcome)],
+        winner: EntityId,
+    ) {
+        assert_eq!(log.events_by_tag(EventTag::ContentionResolved).len(), 1);
+        let contention_event_id = *log
+            .events_by_tag(EventTag::ContentionResolved)
+            .last()
+            .expect("expected at least one contention event");
+        let record = log.get(contention_event_id).unwrap();
+        let payload = record
+            .contention_event_payload()
+            .expect("contention event carries typed payload");
+        assert_eq!(payload.contested_affordance.facility, facility);
+        assert_eq!(payload.contested_affordance.action, action);
+        assert_eq!(payload.place, place);
+        assert_eq!(
+            payload.resolution_rule,
+            ContentionResolutionRule::ArrivalTime
+        );
+        assert_eq!(payload.winner, Some(winner));
+        assert_eq!(payload.at_tick, tick);
+        assert_eq!(payload.total_claimants, expected_claimants.len() as u16);
+        assert_eq!(payload.claimants.len(), expected_claimants.len());
+        for (index, (claimant, arrived_tick, outcome)) in expected_claimants.iter().enumerate() {
+            let emitted = &payload.claimants[index];
+            assert_eq!(emitted.agent, *claimant);
+            assert_eq!(emitted.arrived_tick, *arrived_tick);
+            assert_eq!(emitted.queue_position, (index + 1) as u16);
+            assert_eq!(emitted.outcome, *outcome);
+        }
     }
 
     fn test_rng(byte: u8) -> DeterministicRng {
@@ -2112,7 +2168,7 @@ mod tests {
         // identity for the duration of the action and is cleared at commit.
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
         let (defs, handlers, ids) = setup_registries(&recipes);
-        let (mut world, actor, workstation, _place) =
+        let (mut world, actor, workstation, place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor, recipe_id);
         let affordance = single_harvest_affordance(&world, actor, &defs, &handlers);
@@ -2147,6 +2203,15 @@ mod tests {
                 .map(|g| (g.actor, g.intended_action)),
             Some((actor, ids[0])),
         );
+        assert_extraction_contention_events(
+            &event_log,
+            workstation,
+            place,
+            ids[0],
+            Tick(10),
+            &[],
+            actor,
+        );
 
         run_to_completion(
             &mut world,
@@ -2179,8 +2244,8 @@ mod tests {
         // slot 0 (the only slot), and aborting the first actor's harvest
         // releases the slot without consuming source stock.
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
-        let (defs, handlers, _ids) = setup_registries(&recipes);
-        let (mut world, actor_a, workstation, _place) =
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let (mut world, actor_a, workstation, place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor_a, recipe_id);
         let actor_b = {
@@ -2214,6 +2279,15 @@ mod tests {
             worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
         .unwrap();
+        assert_extraction_contention_events(
+            &event_log,
+            workstation,
+            place,
+            ids[0],
+            Tick(10),
+            &[],
+            actor_a,
+        );
 
         let second_start = start_action(
             &affordance_b,
@@ -2232,6 +2306,11 @@ mod tests {
         assert_eq!(
             second_start,
             ActionError::PreconditionFailed("extraction_slots_full".to_string()),
+        );
+        assert_eq!(
+            event_log.events_by_tag(EventTag::ContentionResolved).len(),
+            1,
+            "blocked start should not emit an additional contention event"
         );
         // Failure handler should have enqueued actor_b on the only slot.
         let queues_after_b = world
@@ -2281,7 +2360,7 @@ mod tests {
         // The losing start (slots full → enqueue) must not consume source
         // stock; only the granted actor's commit drains the source.
         let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
-        let (mut world, actor_a, workstation, _place) =
+        let (mut world, actor_a, workstation, place) =
             setup_world(false, WorkstationTag::OrchardRow, 5);
         grant_recipe(&mut world, actor_a, recipe_id);
         let actor_b = {
@@ -2294,7 +2373,8 @@ mod tests {
             let _ = txn.commit(&mut EventLog::new());
             actor
         };
-        let (defs, handlers, _ids) = setup_registries(&recipes);
+        let (defs, handlers, ids) = setup_registries(&recipes);
+        let action_id = ids[0];
 
         let affordance_a = single_harvest_affordance(&world, actor_a, &defs, &handlers);
         let affordance_b = single_harvest_affordance(&world, actor_b, &defs, &handlers);
@@ -2317,6 +2397,15 @@ mod tests {
             worldwake_sim::ActionExecutionContext::without_recipes(CauseRef::Bootstrap, Tick(10)),
         )
         .unwrap();
+        assert_extraction_contention_events(
+            &event_log,
+            workstation,
+            place,
+            action_id,
+            Tick(10),
+            &[],
+            actor_a,
+        );
 
         let second_start = start_action(
             &affordance_b,
@@ -2335,6 +2424,11 @@ mod tests {
         assert_eq!(
             second_start,
             ActionError::PreconditionFailed("extraction_slots_full".to_string())
+        );
+        assert_eq!(
+            event_log.events_by_tag(EventTag::ContentionResolved).len(),
+            1,
+            "failed start should not emit an additional contention event"
         );
         assert_eq!(
             world
@@ -2364,6 +2458,66 @@ mod tests {
             Quantity(3),
             "orchard stock should drop only when the winning harvest commits"
         );
+    }
+
+    #[test]
+    fn every_extraction_grant_emits_contention_event() {
+        let (recipes, recipe_id) = harvest_recipe_registry(BodyCostPerTick::zero());
+        let (_defs, _handlers, ids) = setup_registries(&recipes);
+        let action_id = ids[0];
+        let (mut world, actor_a, workstation, place) =
+            setup_world(false, WorkstationTag::OrchardRow, 5);
+        grant_recipe(&mut world, actor_a, recipe_id);
+        let actor_b = {
+            let mut txn = new_txn(&mut world, 3);
+            let actor = txn.create_agent("Bram", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_component_known_recipes(actor, worldwake_core::KnownRecipes::with([recipe_id]))
+                .unwrap();
+            commit_txn(txn);
+            actor
+        };
+        {
+            let mut queue = ContentionQueue::default();
+            queue.enqueue(actor_a, action_id, Tick(7), None).unwrap();
+            queue.enqueue(actor_b, action_id, Tick(8), None).unwrap();
+            let mut txn = new_txn(&mut world, 4);
+            txn.set_component_resource_extraction_queues(
+                workstation,
+                worldwake_core::ResourceExtractionQueues {
+                    queues: vec![queue],
+                },
+            )
+            .unwrap();
+            commit_txn(txn);
+        }
+
+        let mut txn = new_txn(&mut world, 10);
+        grant_or_signal_full(&mut txn, actor_a, workstation, action_id).unwrap();
+        let mut event_log = EventLog::new();
+        let _ = txn.commit(&mut event_log);
+
+        assert_extraction_contention_events(
+            &event_log,
+            workstation,
+            place,
+            action_id,
+            Tick(10),
+            &[
+                (actor_a, Tick(7), ClaimantOutcome::Granted),
+                (actor_b, Tick(8), ClaimantOutcome::QueuedBehind),
+            ],
+            actor_a,
+        );
+        let queues = world
+            .get_component_resource_extraction_queues(workstation)
+            .unwrap();
+        assert_eq!(
+            queues.queues[0].granted.as_ref().map(|g| g.actor),
+            Some(actor_a)
+        );
+        assert_eq!(queues.queues[0].position_of(actor_a), None);
+        assert_eq!(queues.queues[0].position_of(actor_b), Some(0));
     }
 
     #[test]

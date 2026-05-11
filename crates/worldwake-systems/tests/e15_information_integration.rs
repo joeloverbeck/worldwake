@@ -726,6 +726,7 @@ fn hidden_event_at_empty_location_remains_isolated_from_remote_agents() {
         visibility: VisibilitySpec::SamePlace,
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([EventTag::WorldMutation]),
+        contention_event_payload: None,
         decision_payload: None,
         artifact_transition_payload: None,
     }));

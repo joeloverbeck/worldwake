@@ -1,4 +1,3 @@
-use crate::ArtifactTransitionPayload;
 use crate::{
     ArchiveMutationSnapshot, BelievedInstitutionalClaim, CommodityKind, Container, ControlSource,
     EntityId, EntityKind, EventId, InstitutionalBeliefKey, InstitutionalClaim, LoadUnits,
@@ -6,6 +5,7 @@ use crate::{
     StockStoragePolicy, Tick, TickRange, UniqueItemKind, World, WorldError,
     build_observed_entity_snapshot, component_schema::with_component_schema_entries,
 };
+use crate::{ArtifactTransitionPayload, ContentionEventPayload};
 use crate::{
     BeliefStoreDiff, CauseRef, ComponentDelta, ComponentDiff, ComponentKind, ComponentValue,
     DecisionEventPayload, EntityDelta, EventLog, EventPayload, EventTag, EvidenceRef, PendingEvent,
@@ -27,6 +27,7 @@ pub struct WorldTxn<'w> {
     target_ids: Vec<EntityId>,
     visibility: VisibilitySpec,
     witness_data: WitnessData,
+    contention_event_payload: Option<ContentionEventPayload>,
     decision_payload: Option<DecisionEventPayload>,
     artifact_transition_payload: Option<ArtifactTransitionPayload>,
     deltas: Vec<StateDelta>,
@@ -103,6 +104,7 @@ impl<'w> WorldTxn<'w> {
             target_ids: Vec::new(),
             visibility,
             witness_data,
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
             deltas: Vec::new(),
@@ -182,6 +184,7 @@ impl<'w> WorldTxn<'w> {
             visibility: self.visibility,
             witness_data: self.witness_data,
             tags: self.tags,
+            contention_event_payload: self.contention_event_payload,
             decision_payload: self.decision_payload,
             artifact_transition_payload: self.artifact_transition_payload,
         })
@@ -204,6 +207,12 @@ impl<'w> WorldTxn<'w> {
 
     pub fn add_tag(&mut self, tag: EventTag) -> &mut Self {
         self.tags.insert(tag);
+        self
+    }
+
+    pub fn set_contention_event_payload(&mut self, payload: ContentionEventPayload) -> &mut Self {
+        self.tags.insert(EventTag::ContentionResolved);
+        self.contention_event_payload = Some(payload);
         self
     }
 

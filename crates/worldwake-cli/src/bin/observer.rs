@@ -29,9 +29,10 @@ use worldwake_core::{
     PlaceTag, PlanInvalidationReason, Quantity, RecipeId, ReplanReason, Tick, WorkstationTag,
 };
 use worldwake_sim::{
-    ActionTraceEvent, ActionTraceKind, ActionTraceSink, AutonomousControllerRuntime,
-    InstitutionalKnowledgeTraceSink, PerceptionTraceSink, PoliticalTraceSink, RecipeDefinition,
-    RecipeRegistry, RequestResolutionTraceSink, TickStepServices, step_tick,
+    ActionDefRegistry, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
+    AutonomousControllerRuntime, InstitutionalKnowledgeTraceSink, PerceptionTraceSink,
+    PoliticalTraceSink, RecipeDefinition, RecipeRegistry, RequestResolutionTraceSink,
+    TickStepServices, step_tick,
 };
 
 #[derive(Parser)]
@@ -54,6 +55,9 @@ struct ObserverCli {
     /// Number of recent observation omissions to render per agent in Section 5
     #[arg(long, default_value_t = 5)]
     top_omissions: usize,
+    /// Number of highest-claimant contention events to render in Section 12
+    #[arg(long)]
+    contention_top_n: Option<usize>,
     /// Bypass scenario lint failures for ad-hoc debugging.
     #[arg(long)]
     ignore_lints: bool,
@@ -3160,6 +3164,92 @@ fn render_observation_omissions(
     writeln!(out).unwrap();
 }
 
+fn action_def_label(
+    action_defs: &ActionDefRegistry,
+    action: worldwake_core::ActionDefId,
+) -> String {
+    action_defs
+        .get(action)
+        .map_or_else(|| format!("{action:?}"), |def| def.name.clone())
+}
+
+fn claimant_outcome_label(outcome: worldwake_core::ClaimantOutcome) -> String {
+    match outcome {
+        worldwake_core::ClaimantOutcome::Granted => "Granted".to_string(),
+        worldwake_core::ClaimantOutcome::QueuedAhead => "QueuedAhead".to_string(),
+        worldwake_core::ClaimantOutcome::QueuedBehind => "QueuedBehind".to_string(),
+        worldwake_core::ClaimantOutcome::Denied { reason } => format!("Denied {reason:?}"),
+    }
+}
+
+fn render_contention_section(
+    out: &mut String,
+    world: &worldwake_core::World,
+    event_log: &worldwake_core::EventLog,
+    action_defs: &ActionDefRegistry,
+    contention_top_n: Option<usize>,
+) {
+    writeln!(out, "## Section 12 — Contention\n").unwrap();
+
+    let mut events = event_log
+        .events_by_tag(EventTag::ContentionResolved)
+        .iter()
+        .filter_map(|event_id| {
+            let record = event_log.get(*event_id)?;
+            let payload = record.contention_event_payload()?;
+            Some((*event_id, payload))
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(limit) = contention_top_n {
+        events.sort_by(|(left_id, left), (right_id, right)| {
+            right
+                .total_claimants
+                .cmp(&left.total_claimants)
+                .then_with(|| left.at_tick.cmp(&right.at_tick))
+                .then_with(|| left_id.cmp(right_id))
+        });
+        events.truncate(limit);
+    } else {
+        events.sort_by(|(left_id, left), (right_id, right)| {
+            left.at_tick
+                .cmp(&right.at_tick)
+                .then_with(|| left_id.cmp(right_id))
+        });
+    }
+
+    if events.is_empty() {
+        writeln!(out, "No contention events.\n").unwrap();
+        return;
+    }
+
+    for (_event_id, payload) in events {
+        let facility = entity_display_name(world, payload.contested_affordance.facility);
+        let place = entity_display_name(world, payload.place);
+        let action = action_def_label(action_defs, payload.contested_affordance.action);
+        writeln!(
+            out,
+            "Tick {} \u{2014} Contention: {facility}@{place} ({action})",
+            payload.at_tick.0
+        )
+        .unwrap();
+        writeln!(out, "  rule: {:?}", payload.resolution_rule).unwrap();
+        writeln!(out, "  claimants ({}):", payload.total_claimants).unwrap();
+        for claimant in &payload.claimants {
+            writeln!(
+                out,
+                "    {} \u{2014} arrived t={}, position {}, {}",
+                entity_display_name(world, claimant.agent),
+                claimant.arrived_tick.0,
+                claimant.queue_position,
+                claimant_outcome_label(claimant.outcome)
+            )
+            .unwrap();
+        }
+        writeln!(out).unwrap();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn format_report(
     scenario_path: &str,
@@ -3172,6 +3262,7 @@ fn format_report(
     event_log: &worldwake_core::EventLog,
     action_trace: &ActionTraceSink,
     perception_trace: &PerceptionTraceSink,
+    action_defs: &ActionDefRegistry,
     recipe_registry: &RecipeRegistry,
     world: &worldwake_core::World,
     driver: &AgentTickDriver,
@@ -3180,6 +3271,7 @@ fn format_report(
     critical_window_reports: &[CriticalWindowReport],
     total_critical_window_count: usize,
     top_omissions: usize,
+    contention_top_n: Option<usize>,
 ) -> String {
     let mut out = String::new();
 
@@ -4044,6 +4136,7 @@ fn format_report(
     }
 
     render_artifact_lifecycle_section(&mut out, world, event_log);
+    render_contention_section(&mut out, world, event_log, action_defs, contention_top_n);
 
     out
 }
@@ -4484,6 +4577,7 @@ fn main() {
         sim.event_log(),
         &action_trace,
         &perception_trace,
+        &spawned.action_registries.defs,
         sim.recipe_registry(),
         sim.world(),
         &driver,
@@ -4492,6 +4586,7 @@ fn main() {
         &critical_window_reports,
         all_critical_window_reports.len(),
         cli.top_omissions,
+        cli.contention_top_n,
     );
 
     // Ensure parent directory exists
@@ -4527,8 +4622,8 @@ mod tests {
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
         format_death_cause, format_report, need_high_threshold, post_travel_affordance_snapshots,
         primary_satisfied_need, recipe_usage_rows, render_artifact_lifecycle_section,
-        render_decision_history_section, render_maintenance_rates_table, render_recipe_usage_table,
-        unknown_location_entity_groups,
+        render_contention_section, render_decision_history_section, render_maintenance_rates_table,
+        render_recipe_usage_table, unknown_location_entity_groups,
     };
     use crate::ObserverCli;
     use clap::Parser;
@@ -4548,28 +4643,31 @@ mod tests {
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, AgentBeliefStore, ArtifactActionability,
-        ArtifactAxisValue, ArtifactHeader, ArtifactKind, ArtifactLegalEffect,
-        ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef, BeliefStatusTag,
-        BelievedEntityState, BlockerKey, BlockerRecordedPayload, BodyCostPerTick, CauseRef,
-        CloseCause, CommodityKind, CommodityPurpose, ControlSource, DeadAt, DeathCause,
+        AcquisitionQuantity, ActionDefId, ActionDomain, AffordanceKey, AgentBeliefStore,
+        ArtifactActionability, ArtifactAxisValue, ArtifactHeader, ArtifactKind,
+        ArtifactLegalEffect, ArtifactTransitionPayload, AxisName, BeliefClaimKey, BeliefRef,
+        BeliefStatusTag, BelievedEntityState, BlockerKey, BlockerRecordedPayload, BodyCostPerTick,
+        CauseRef, ClaimantOutcome, CloseCause, CommodityKind, CommodityPurpose, ContentionClaimant,
+        ContentionEventPayload, ContentionResolutionRule, ControlSource, DeadAt, DeathCause,
         DecisionEventPayload, DriveThresholds, EmitterTag, EntityBeliefAspect, EntityId,
         EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, GoalAbandonReason,
         GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
         GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
-        HomeostaticNeedId, KnownRecipes, MetabolismProfile, ObservationOmission, ObservationRef,
-        OmissionReason, OpportunityAnchor, PendingEvent, Permille, PlanAdoptedPayload,
-        PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason, PrototypePlace,
-        Quantity, RankedGoalComparisonDimensionTag, RecipeId, RecordRef, ResourceSource,
-        SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+        HomeostaticNeedId, KnownRecipes, MetabolismProfile, Name, ObservationOmission,
+        ObservationRef, OmissionReason, OpportunityAnchor, PendingEvent, Permille,
+        PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+        PrototypePlace, Quantity, RankedGoalComparisonDimensionTag, RecipeId, RecordRef,
+        ResourceSource, SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
         SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
         WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
     };
     use worldwake_sim::{
-        ActionInstanceId, ActionTraceEvent, ActionTraceKind, ActionTraceSink, CommitOutcome,
-        PerceptionTraceSink, RecipeDefinition, RecipeRegistry, RequestAttemptTrace,
-        RequestBindingKind, RequestProvenance, ResolvedRequestTrace,
+        ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstanceId, ActionPayload,
+        ActionTraceEvent, ActionTraceKind, ActionTraceSink, BindingStrictness, CommitOutcome,
+        DurationExpr, EffectSchema, Interruptibility, PerceptionTraceSink, RecipeDefinition,
+        RecipeRegistry, RequestAttemptTrace, RequestBindingKind, RequestProvenance, ReservationReq,
+        ResolvedRequestTrace,
     };
 
     fn sample_summary(depth: u8, candidates_generated: u16) -> SearchExpansionSummary {
@@ -4763,6 +4861,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([tag]),
+            contention_event_payload: None,
             decision_payload: Some(payload),
             artifact_transition_payload: None,
         }));
@@ -4789,6 +4888,7 @@ mod tests {
             visibility: VisibilitySpec::Hidden,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::ArtifactTransition]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: Some(ArtifactTransitionPayload {
                 artifact,
@@ -4798,6 +4898,94 @@ mod tests {
                 cause_event: None,
                 at: Tick(tick),
             }),
+        }));
+    }
+
+    fn sample_action_registry() -> ActionDefRegistry {
+        let mut registry = ActionDefRegistry::new();
+        registry.register(ActionDef {
+            id: ActionDefId(0),
+            name: "Harvest Apples".to_string(),
+            domain: ActionDomain::Generic,
+            actor_constraints: Vec::new(),
+            targets: Vec::new(),
+            preconditions: Vec::new(),
+            reservation_requirements: Vec::<ReservationReq>::new(),
+            duration: DurationExpr::Fixed(NonZeroU32::new(1).unwrap()),
+            body_cost_per_tick: BodyCostPerTick::zero(),
+            attention_cost: Permille::ZERO,
+            interruptibility: Interruptibility::FreelyInterruptible,
+            commit_conditions: Vec::new(),
+            visibility: VisibilitySpec::Hidden,
+            causal_event_tags: BTreeSet::new(),
+            payload: ActionPayload::None,
+            handler: ActionHandlerId(0),
+            binding_strictness: BindingStrictness::ExactIdentity,
+            guard_template: None,
+            expectation_template: Vec::new(),
+            effect_schema: EffectSchema::empty(),
+        });
+        registry
+    }
+
+    fn world_with_contention_entities() -> (World, EntityId, EntityId, EntityId, EntityId, EntityId)
+    {
+        let mut world = World::new(build_prototype_world()).expect("world");
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let (facility, agent_a, agent_b, agent_c) = {
+            let mut txn = new_txn(&mut world, 1);
+            let facility = txn.create_entity(EntityKind::Facility);
+            txn.set_component_name(facility, Name("orchard".to_string()))
+                .unwrap();
+            txn.set_ground_location(facility, place).unwrap();
+            let agent_a = txn.create_agent("Agent A", ControlSource::Ai).unwrap();
+            let agent_b = txn.create_agent("Agent B", ControlSource::Ai).unwrap();
+            let agent_c = txn.create_agent("Agent C", ControlSource::Ai).unwrap();
+            commit_txn(txn);
+            (facility, agent_a, agent_b, agent_c)
+        };
+        (world, place, facility, agent_a, agent_b, agent_c)
+    }
+
+    fn emit_contention_event(
+        log: &mut EventLog,
+        tick: u64,
+        place: EntityId,
+        facility: EntityId,
+        claimants: Vec<ContentionClaimant>,
+    ) {
+        let total_claimants = claimants.len() as u16;
+        let winner = claimants
+            .iter()
+            .find(|claimant| claimant.outcome == ClaimantOutcome::Granted)
+            .map(|claimant| claimant.agent);
+        let _ = log.emit(PendingEvent::from_payload(EventPayload {
+            tick: Tick(tick),
+            cause: CauseRef::SystemTick(Tick(tick)),
+            actor_id: winner,
+            action_name: Some("Harvest Apples".to_string()),
+            target_ids: vec![facility],
+            evidence: Vec::new(),
+            place_id: Some(place),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::ContentionResolved]),
+            contention_event_payload: Some(ContentionEventPayload {
+                contested_affordance: AffordanceKey {
+                    facility,
+                    action: ActionDefId(0),
+                },
+                place,
+                resolution_rule: ContentionResolutionRule::ArrivalTime,
+                claimants,
+                total_claimants,
+                winner,
+                at_tick: Tick(tick),
+            }),
+            decision_payload: None,
+            artifact_transition_payload: None,
         }));
     }
 
@@ -5921,6 +6109,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &driver,
@@ -5929,6 +6118,7 @@ mod tests {
             &[],
             0,
             5,
+            None,
         );
 
         assert!(
@@ -5999,6 +6189,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &driver,
@@ -6007,6 +6198,7 @@ mod tests {
             &[],
             0,
             5,
+            None,
         );
 
         assert!(report.contains("**Agenda state**: committed=Sleep, pending=1, suspended=1"));
@@ -6023,10 +6215,19 @@ mod tests {
     fn observer_cli_parses_top_omissions_default_and_override() {
         let default_cli = ObserverCli::parse_from(["worldwake-observer", "scenario.ron"]);
         assert_eq!(default_cli.top_omissions, 5);
+        assert_eq!(default_cli.contention_top_n, None);
 
         let override_cli =
             ObserverCli::parse_from(["worldwake-observer", "scenario.ron", "--top-omissions", "3"]);
         assert_eq!(override_cli.top_omissions, 3);
+
+        let contention_cli = ObserverCli::parse_from([
+            "worldwake-observer",
+            "scenario.ron",
+            "--contention-top-n",
+            "2",
+        ]);
+        assert_eq!(contention_cli.contention_top_n, Some(2));
     }
 
     #[test]
@@ -6047,6 +6248,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6055,6 +6257,7 @@ mod tests {
             &[],
             0,
             5,
+            None,
         );
 
         assert!(report.contains("#### Top observation omissions"));
@@ -6081,6 +6284,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6089,6 +6293,7 @@ mod tests {
             &[],
             0,
             5,
+            None,
         );
 
         assert!(report.contains("\u{2014} (no omissions recorded)"));
@@ -6112,6 +6317,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6120,6 +6326,7 @@ mod tests {
             &[],
             0,
             3,
+            None,
         );
 
         assert_eq!(report.matches("/ OverBudget / tick").count(), 3);
@@ -6151,6 +6358,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6159,6 +6367,7 @@ mod tests {
             &[],
             0,
             5,
+            None,
         );
 
         let first = report
@@ -6523,6 +6732,7 @@ mod tests {
             &log,
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6531,6 +6741,7 @@ mod tests {
             &[sample_critical_window_report(agent)],
             1,
             5,
+            None,
         );
 
         assert!(report.contains("## Section 10 — Critical Window Forensics"));
@@ -6562,6 +6773,7 @@ mod tests {
             &log,
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6570,6 +6782,7 @@ mod tests {
             &[],
             0,
             5,
+            None,
         );
 
         assert!(report.contains("## Section 10 — Critical Window Forensics"));
@@ -6592,6 +6805,7 @@ mod tests {
             &EventLog::new(),
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6600,6 +6814,7 @@ mod tests {
             &[],
             0,
             5,
+            None,
         );
 
         assert!(!report.contains("## Section 10 — Critical Window Forensics"));
@@ -6622,6 +6837,7 @@ mod tests {
             &log,
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6630,6 +6846,7 @@ mod tests {
             &[sample_critical_window_report(agent)],
             1,
             5,
+            None,
         );
 
         let section_8 = report
@@ -6657,6 +6874,7 @@ mod tests {
             &log,
             &ActionTraceSink::new(),
             &PerceptionTraceSink::new(),
+            &ActionDefRegistry::new(),
             &registry,
             &world,
             &AgentTickDriver::new(),
@@ -6665,6 +6883,7 @@ mod tests {
             &[sample_critical_window_report(agent)],
             1,
             5,
+            None,
         );
 
         let section_10 = report
@@ -6695,6 +6914,169 @@ mod tests {
         assert!(out.contains("actionability: Actionable -> Closed"));
         assert!(out.contains("event 0 t=20: legal_effect"));
         assert!(out.contains("Bounty "));
+    }
+
+    #[test]
+    fn section_12_contention_renders_event_with_claimants() {
+        let (world, place, facility, agent_a, agent_b, agent_c) = world_with_contention_entities();
+        let mut log = EventLog::new();
+        emit_contention_event(
+            &mut log,
+            412,
+            place,
+            facility,
+            vec![
+                ContentionClaimant {
+                    agent: agent_a,
+                    arrived_tick: Tick(410),
+                    queue_position: 1,
+                    outcome: ClaimantOutcome::Granted,
+                },
+                ContentionClaimant {
+                    agent: agent_b,
+                    arrived_tick: Tick(411),
+                    queue_position: 2,
+                    outcome: ClaimantOutcome::QueuedAhead,
+                },
+                ContentionClaimant {
+                    agent: agent_c,
+                    arrived_tick: Tick(412),
+                    queue_position: 3,
+                    outcome: ClaimantOutcome::QueuedBehind,
+                },
+            ],
+        );
+        let mut out = String::new();
+
+        render_contention_section(&mut out, &world, &log, &sample_action_registry(), None);
+
+        assert!(out.contains("## Section 12 \u{2014} Contention"));
+        assert!(
+            out.contains("Tick 412 \u{2014} Contention: orchard@Village Square (Harvest Apples)")
+        );
+        assert!(out.contains("  rule: ArrivalTime"));
+        assert!(out.contains("  claimants (3):"));
+        assert!(out.contains("Agent A \u{2014} arrived t=410, position 1, Granted"));
+        assert!(out.contains("Agent B \u{2014} arrived t=411, position 2, QueuedAhead"));
+        assert!(out.contains("Agent C \u{2014} arrived t=412, position 3, QueuedBehind"));
+    }
+
+    #[test]
+    fn section_12_contention_empty_log_renders_empty() {
+        let (world, _place, _facility, _agent_a, _agent_b, _agent_c) =
+            world_with_contention_entities();
+        let mut out = String::new();
+
+        render_contention_section(
+            &mut out,
+            &world,
+            &EventLog::new(),
+            &sample_action_registry(),
+            None,
+        );
+
+        assert!(out.contains("## Section 12 \u{2014} Contention"));
+        assert!(out.contains("No contention events."));
+    }
+
+    #[test]
+    fn section_12_contention_top_n_filters_by_claimant_count() {
+        let (world, place, facility, agent_a, agent_b, agent_c) = world_with_contention_entities();
+        let mut log = EventLog::new();
+        emit_contention_event(
+            &mut log,
+            10,
+            place,
+            facility,
+            vec![
+                ContentionClaimant {
+                    agent: agent_a,
+                    arrived_tick: Tick(8),
+                    queue_position: 1,
+                    outcome: ClaimantOutcome::Granted,
+                },
+                ContentionClaimant {
+                    agent: agent_b,
+                    arrived_tick: Tick(9),
+                    queue_position: 2,
+                    outcome: ClaimantOutcome::QueuedBehind,
+                },
+                ContentionClaimant {
+                    agent: agent_c,
+                    arrived_tick: Tick(10),
+                    queue_position: 3,
+                    outcome: ClaimantOutcome::QueuedBehind,
+                },
+            ],
+        );
+        emit_contention_event(
+            &mut log,
+            20,
+            place,
+            facility,
+            vec![
+                ContentionClaimant {
+                    agent: agent_a,
+                    arrived_tick: Tick(17),
+                    queue_position: 1,
+                    outcome: ClaimantOutcome::Granted,
+                },
+                ContentionClaimant {
+                    agent: agent_b,
+                    arrived_tick: Tick(18),
+                    queue_position: 2,
+                    outcome: ClaimantOutcome::QueuedBehind,
+                },
+                ContentionClaimant {
+                    agent: agent_c,
+                    arrived_tick: Tick(19),
+                    queue_position: 3,
+                    outcome: ClaimantOutcome::QueuedBehind,
+                },
+                ContentionClaimant {
+                    agent: entity(100),
+                    arrived_tick: Tick(20),
+                    queue_position: 4,
+                    outcome: ClaimantOutcome::QueuedBehind,
+                },
+                ContentionClaimant {
+                    agent: entity(101),
+                    arrived_tick: Tick(21),
+                    queue_position: 5,
+                    outcome: ClaimantOutcome::QueuedBehind,
+                },
+            ],
+        );
+        emit_contention_event(
+            &mut log,
+            30,
+            place,
+            facility,
+            vec![
+                ContentionClaimant {
+                    agent: agent_a,
+                    arrived_tick: Tick(30),
+                    queue_position: 1,
+                    outcome: ClaimantOutcome::Granted,
+                },
+                ContentionClaimant {
+                    agent: agent_b,
+                    arrived_tick: Tick(31),
+                    queue_position: 2,
+                    outcome: ClaimantOutcome::QueuedBehind,
+                },
+            ],
+        );
+        let mut out = String::new();
+
+        render_contention_section(&mut out, &world, &log, &sample_action_registry(), Some(2));
+
+        assert!(out.contains("Tick 20 \u{2014} Contention"));
+        assert!(out.contains("claimants (5):"));
+        assert!(out.contains("Tick 10 \u{2014} Contention"));
+        assert!(out.contains("claimants (3):"));
+        assert!(!out.contains("Tick 30 \u{2014} Contention"));
+        assert!(!out.contains("claimants (2):"));
     }
 
     #[test]

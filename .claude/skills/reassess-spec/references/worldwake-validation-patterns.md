@@ -226,17 +226,19 @@ If the spec proposes utility gates (emit only if utility > 0), that belongs in t
 
 **Trigger**: Spec proposes a new failure mode that an action handler, revalidation path, or planner step can encounter and attribute (typed cause for "this didn't work because…").
 
-**Three options for surfacing the failure**:
+**Four options for surfacing the failure**:
 
 1. **As a `Discrepancy` enum variant** (`crates/worldwake-core/src/discrepancy.rs:8`) — first-class typed surface. Constraints: (a) `Discrepancy` derives `Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize`, so any payload type the new variant carries must derive `Copy` and the rest of the bounds; (b) workspace-wide exhaustive-match audit (~145 `Discrepancy` use sites at the time of writing — most are construction `Err(Discrepancy::X)` sites in `effect_sink_hypothetical.rs`, `needs_actions.rs`, `search_actions.rs`; the genuinely-exhaustive `match d { ... }` sites are the subset requiring new arms); (c) `Ord` ordering decision for the new variant.
 2. **As a trace-only annotation** on `RootCandidateTrace` (`crates/worldwake-ai/src/decision_trace.rs`), `ActionTraceSink`, `DecisionTraceSink`, or another decision sink — surfaces the cause for debug/observer inspection without extending the typed failure taxonomy. No exhaustive-match cost. Use when the failure does not need to alter handler control flow or replan logic.
 3. **Reuse an existing `Discrepancy` variant** — if `MissingObservation`, `BeliefStale`, `BeliefContradicted`, `SourceInvalidated`, etc. already cover the semantic case, the spec should not introduce a new variant. The new failure mode can still surface specifics through trace annotation alongside the reused variant.
+4. **Widen a variant on a sibling typed enum (`BlockingFact`, `BlockerMemory`, etc.)** — applicable when the variant the spec actually means lives on a different enum than `Discrepancy`. Common confusion source: post-S109 the live blocker surface (`BlockingFact`, `crates/worldwake-core/src/blocker_memory.rs`) and the typed-discrepancy surface (`Discrepancy`) are separate enums; spec authors frequently propose `Discrepancy::<Variant>` when the variant they mean lives on `BlockingFact` (or vice versa). When this option is chosen, apply the same payload-widening blast-radius checks as for option (1): grep cross-crate use sites for the existing variant, verify derive compatibility for the new payload type (e.g., the sibling enum's `Copy` requirement), and enumerate the audit scope as a deliverable per the "Existing Variant Payload Widening" pattern.
 
 **Verify the spec addresses**:
 
-1. Which of (1)/(2)/(3) the spec is choosing — explicitly. A spec that mentions `Discrepancy` in prose without naming the choice has a missing design decision.
+1. Which of (1)/(2)/(3)/(4) the spec is choosing — explicitly. A spec that mentions `Discrepancy` in prose without naming the choice has a missing design decision.
 2. For option (1): a deliverable section enumerates the variant addition, payload type and its `Copy` derive, and the exhaustive-match audit scope.
 3. For option (2): a deliverable section names the trace surface and the field/variant added there.
 4. For option (3): the spec acknowledges the reuse and (where applicable) names the existing variant.
+5. For option (4): the spec names the sibling enum and the variant being widened, and acknowledges why this enum (not `Discrepancy`) is the correct surface. **Audit pass**: when a spec proposes extending `Discrepancy::<Name>` and the variant doesn't exist on `Discrepancy`, grep `BlockingFact::<Name>` and `BlockerMemory::<Name>` before flagging the variant as missing — the variant frequently lives on a sibling enum, in which case the recommendation is to reroute to option (4) rather than to add a new `Discrepancy` variant.
 
-**Flag as Issue**: Spec writes failure attribution into prose without committing to one of (1)/(2)/(3), or proposes a new `Discrepancy` variant without enumerating the deliverable per "Pattern Triggers Map to Deliverables, Not Prose Only" (top of file).
+**Flag as Issue**: Spec writes failure attribution into prose without committing to one of (1)/(2)/(3)/(4), or proposes a new `Discrepancy` variant without enumerating the deliverable per "Pattern Triggers Map to Deliverables, Not Prose Only" (top of file), or proposes extending `Discrepancy::<Variant>` when the variant actually lives on a sibling enum (reroute to option (4)).

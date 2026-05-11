@@ -574,7 +574,7 @@ Phase 11 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S134 (completed, archived)    S135 (completed, archived)    S140 (completed, archived)    S142 (independent)
+S134 (completed, archived)    S135 (completed, archived)    S140 (completed, archived)    S142 (completed, archived)
    │                                                                                            
    └── S138 (hard dep on S134)
          │
@@ -597,8 +597,8 @@ S136 (completed, archived)
 - **S136**: Always-On Decision Event Payload Extension — completed and archived at `archive/specs/S136-decision-event-payload-extension.md`. Implemented across the archived `S136DECEVEPAY-001` through `S136DECEVEPAY-007` ticket chain: always-on decision payloads now carry rejected-goal comparison dimensions, failure-path decisive refs, frame assumptions with step provenance, observer single-line summaries, replay/save-load coverage, and generated golden payload-shape coverage plus deterministic payload-size soak enforcement.
 - **S140**: Multi-Axis Artifact Lifecycle — completed and archived at `archive/specs/S140-artifact-lifecycle-axes.md`. Replaced flat `ArtifactState` with five typed lifecycle axes, added append-only `ArtifactTransition` provenance, migrated planner actionability gating, scenario authoring, observer output, save/load shape through version 74, and landed artifact-lifecycle goldens 388-392 including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation.
 
-**Remaining Wave 1** (parallel, no hard deps):
-- **S142**: Contention Event Inspectability — `EventTag::ContentionResolved` with typed `ContentionResolutionRule` and per-claimant outcome.
+**Completed Wave 1 final slice**:
+- **S142**: Contention Event Inspectability — completed and archived at `archive/specs/S142-contention-event-inspectability.md` through the `S142CONEVEINS-001` through `S142CONEVEINS-007` ticket chain. Landed `EventTag::ContentionResolved`, typed contention payloads, facility-queue and resource-extraction emission, `BlockingFact::ReservationConflict.contention_event` attribution, observer Section 12 rendering, generated golden inventory updates, and `golden_contention_inspectability.rs` scenarios 393-397. The two ignored contention-inspectability goldens are manual-only proof witnesses.
 
 **Wave 2** (after Wave 1):
 - **S138**: Affordance-to-Opportunity Compiler with Effect-Schema Indexing — bottom-up opportunity compiler driven by `EffectSchemaIndex`; `relevant_ops` becomes hint, effect-schema becomes authority. Folds in PR-7, PR-13, PR-20.
@@ -615,7 +615,7 @@ S136 (completed, archived)
 ### Phase 11 Gate
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
-- [ ] Wave 1 specs implemented and passing golden E2E tests
+- [x] Wave 1 specs implemented and passing golden E2E tests
 - [ ] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
@@ -625,7 +625,7 @@ S136 (completed, archived)
 - [ ] Opportunity compiler golden proves desperate-agent steal opportunity emission and salience-weighted ranking
 - [x] S140 multi-axis artifact lifecycle core goldens prove the five axis paths, including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation; full Scenario G justice/witness/case-chain coverage remains owned outside S140.
 - [ ] Motive-source parity regression: every existing 1440-tick survival golden produces identical `motive_score` values pre/post-S141
-- [ ] Contention-resolution events emit at every grant-issuance site under `survival-contested.ron`
+- [x] Contention-resolution events emit at every grant-issuance site under `survival-contested.ron`
 - [ ] FOUNDATIONS Scenario C (stored gold robbery): owner-believes-gold-present → `InspectContainer` → mismatch → robbery report producible end-to-end
 - [ ] FOUNDATIONS Scenario G (false rumor → wrongful accusation → correction): `AskWitness` chain across two contradicting witnesses producible end-to-end
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean

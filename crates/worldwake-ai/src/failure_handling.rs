@@ -1,9 +1,9 @@
 use crate::{AgentDecisionRuntime, DirtySet, PlannedStep, PlannerOpKind, authoritative_target};
 use worldwake_core::{
-    Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact, ClearingBaseline,
-    CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy, DiscrepancyClearing,
-    DiscrepancyEntry, DiscrepancyMemory, EntityBeliefAspect, EntityId, GoalKey, GoalKind,
-    IntentionFrame, Quantity, Tick,
+    AffordanceKey, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory, BlockingFact,
+    ClearingBaseline, CognitiveProfile, CommodityKind, ContentionIntents, Discrepancy,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EntityBeliefAspect, EntityId,
+    GoalKey, GoalKind, IntentionFrame, Quantity, Tick,
 };
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionPayload, ActionStartFailure,
@@ -166,7 +166,9 @@ pub(crate) fn classify_discrepancy(
         return FailureClassification::Discrepancy(Discrepancy::BeliefContradicted);
     }
 
-    if let Some(classification) = execution_failure.and_then(map_execution_failure) {
+    if let Some(classification) =
+        execution_failure.and_then(|failure| map_execution_failure(failure, step))
+    {
         return classification;
     }
 
@@ -417,11 +419,29 @@ fn is_contention_blocker(classification: &FailureClassification) -> bool {
     matches!(
         classification,
         FailureClassification::Blocker(
-            BlockingFact::ReservationConflict
+            BlockingFact::ReservationConflict { .. }
                 | BlockingFact::ExclusiveFacilityUnavailable
                 | BlockingFact::WorkstationBusy,
         )
     )
+}
+
+fn reservation_conflict_for(affordance: AffordanceKey) -> BlockingFact {
+    BlockingFact::ReservationConflict {
+        affordance,
+        contention_event: None,
+    }
+}
+
+fn step_affordance(step: &PlannedStep) -> Option<AffordanceKey> {
+    step.targets
+        .first()
+        .copied()
+        .and_then(authoritative_target)
+        .map(|facility| AffordanceKey {
+            facility,
+            action: step.def_id,
+        })
 }
 
 fn should_scope_local_commodity_unavailability_to_place(
@@ -522,7 +542,10 @@ fn classify_production_failure(
         return Some(BlockingFact::WorkstationBusy);
     }
     if !view.reservation_ranges(workstation).is_empty() {
-        return Some(BlockingFact::ReservationConflict);
+        return Some(reservation_conflict_for(AffordanceKey {
+            facility: workstation,
+            action: step.def_id,
+        }));
     }
     // Multi-slot harvest start: every slot has a foreign grant. The agent
     // is enqueued by `record_harvest_start_failure` and replans; classify
@@ -538,7 +561,10 @@ fn classify_production_failure(
                     .all(|queue| queue.granted.as_ref().is_some_and(|g| g.actor != agent))
         })
     {
-        return Some(BlockingFact::ReservationConflict);
+        return Some(reservation_conflict_for(AffordanceKey {
+            facility: workstation,
+            action: step.def_id,
+        }));
     }
     if view
         .resource_source(workstation)
@@ -689,14 +715,20 @@ fn combat_too_risky(view: &dyn RuntimeBeliefView, agent: EntityId) -> bool {
         || (!view.visible_hostiles_for(agent).is_empty() && view.has_wounds(agent))
 }
 
-fn map_execution_failure(failure: ExecutionFailure<'_>) -> Option<FailureClassification> {
+fn map_execution_failure(
+    failure: ExecutionFailure<'_>,
+    step: &PlannedStep,
+) -> Option<FailureClassification> {
     match failure {
-        ExecutionFailure::Replan(signal) => map_replan_abort_reason(signal),
-        ExecutionFailure::Start(failure) => map_start_failure_reason(&failure.reason),
+        ExecutionFailure::Replan(signal) => map_replan_abort_reason(signal, step),
+        ExecutionFailure::Start(failure) => map_start_failure_reason(failure, step),
     }
 }
 
-fn map_replan_abort_reason(signal: &ReplanNeeded) -> Option<FailureClassification> {
+fn map_replan_abort_reason(
+    signal: &ReplanNeeded,
+    step: &PlannedStep,
+) -> Option<FailureClassification> {
     match &signal.reason {
         AbortReason::CommitConditionFailed { condition } => match condition {
             worldwake_sim::Precondition::TargetAdjacentToActor(_) => {
@@ -715,7 +747,9 @@ fn map_replan_abort_reason(signal: &ReplanNeeded) -> Option<FailureClassificatio
                 Some(FailureClassification::Blocker(BlockingFact::DangerTooHigh))
             }
             InterruptReason::Reprioritized => None,
-            InterruptReason::Other => detail.as_deref().and_then(parse_abort_detail),
+            InterruptReason::Other => detail
+                .as_deref()
+                .and_then(|detail| parse_abort_detail(detail, step)),
         },
         AbortReason::ExternalAbort { kind, detail } => match kind {
             ExternalAbortReason::TargetDestroyed => {
@@ -725,18 +759,27 @@ fn map_replan_abort_reason(signal: &ReplanNeeded) -> Option<FailureClassificatio
                 None
             }
             ExternalAbortReason::HandlerRequested { reason } => map_handler_abort_reason(reason),
-            ExternalAbortReason::Other => detail.as_deref().and_then(parse_abort_detail),
+            ExternalAbortReason::Other => detail
+                .as_deref()
+                .and_then(|detail| parse_abort_detail(detail, step)),
         },
     }
 }
 
-fn map_start_failure_reason(reason: &ActionStartFailureReason) -> Option<FailureClassification> {
-    match reason {
-        ActionStartFailureReason::ReservationUnavailable(_) => Some(
-            FailureClassification::Blocker(BlockingFact::ReservationConflict),
+fn map_start_failure_reason(
+    failure: &ActionStartFailure,
+    step: &PlannedStep,
+) -> Option<FailureClassification> {
+    match &failure.reason {
+        ActionStartFailureReason::ReservationUnavailable(facility) => Some(
+            FailureClassification::Blocker(reservation_conflict_for(AffordanceKey {
+                facility: *facility,
+                action: failure.def_id,
+            })),
         ),
         ActionStartFailureReason::PreconditionFailed(detail) => {
-            classify_precondition_failure_detail(detail).or_else(|| parse_abort_detail(detail))
+            classify_precondition_failure_detail(detail, step)
+                .or_else(|| parse_abort_detail(detail, step))
         }
         ActionStartFailureReason::InvalidTarget(_) => {
             Some(FailureClassification::Blocker(BlockingFact::TargetGone))
@@ -745,7 +788,10 @@ fn map_start_failure_reason(reason: &ActionStartFailureReason) -> Option<Failure
     }
 }
 
-fn classify_precondition_failure_detail(detail: &str) -> Option<FailureClassification> {
+fn classify_precondition_failure_detail(
+    detail: &str,
+    step: &PlannedStep,
+) -> Option<FailureClassification> {
     let detail = detail.to_ascii_lowercase();
     if detail.contains("exactidentityrequired") {
         return Some(FailureClassification::Discrepancy(
@@ -767,9 +813,9 @@ fn classify_precondition_failure_detail(detail: &str) -> Option<FailureClassific
     // `ReservationConflict` so the blocker memory matches the prior
     // contention-conflict expiry/clearing semantics.
     if detail.contains("extraction_slots_full") {
-        return Some(FailureClassification::Blocker(
-            BlockingFact::ReservationConflict,
-        ));
+        return step_affordance(step)
+            .map(reservation_conflict_for)
+            .map(FailureClassification::Blocker);
     }
     None
 }
@@ -827,16 +873,16 @@ fn map_handler_abort_reason(reason: &ActionAbortRequestReason) -> Option<Failure
     }
 }
 
-fn parse_abort_detail(detail: &str) -> Option<FailureClassification> {
+fn parse_abort_detail(detail: &str, step: &PlannedStep) -> Option<FailureClassification> {
     let detail = detail.to_ascii_lowercase();
     if detail.contains("danger") {
         Some(FailureClassification::Blocker(BlockingFact::DangerTooHigh))
     } else if detail.contains("risk") || detail.contains("combat") {
         Some(FailureClassification::Blocker(BlockingFact::CombatTooRisky))
     } else if detail.contains("reservation") {
-        Some(FailureClassification::Blocker(
-            BlockingFact::ReservationConflict,
-        ))
+        step_affordance(step)
+            .map(reservation_conflict_for)
+            .map(FailureClassification::Blocker)
     } else if detail.contains("seller") || detail.contains("stock") {
         Some(FailureClassification::Discrepancy(
             Discrepancy::NoWillingCounterparty,
@@ -956,7 +1002,7 @@ fn derive_clearing_condition(
         }
         BlockingFact::WorkstationBusy
         | BlockingFact::ExclusiveFacilityUnavailable
-        | BlockingFact::ReservationConflict => {
+        | BlockingFact::ReservationConflict { .. } => {
             let Some(facility) = blocker_key.target else {
                 return (BlockerClearingCondition::TtlOnly, None);
             };
@@ -1231,7 +1277,7 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
             Some(ClearingBaseline::ContentionPosition(baseline)),
         ) => match blocker.blocking_fact {
             BlockingFact::WorkstationBusy => !view.has_production_job(*facility),
-            BlockingFact::ReservationConflict => {
+            BlockingFact::ReservationConflict { .. } => {
                 reservation_conflict_cleared(view, *facility, agent, *baseline)
             }
             BlockingFact::ExclusiveFacilityUnavailable => {
@@ -1247,7 +1293,7 @@ fn is_blocker_cleared(view: &dyn RuntimeBeliefView, agent: EntityId, blocker: &B
         (BlockerClearingCondition::ContentionChanged { facility }, None) => {
             match blocker.blocking_fact {
                 BlockingFact::WorkstationBusy => !view.has_production_job(*facility),
-                BlockingFact::ReservationConflict => {
+                BlockingFact::ReservationConflict { .. } => {
                     reservation_conflict_cleared(view, *facility, agent, None)
                 }
                 BlockingFact::ExclusiveFacilityUnavailable => view
@@ -1447,7 +1493,7 @@ fn blocking_fact_ttl(fact: BlockingFact, cognitive: &CognitiveProfile) -> u32 {
     match fact {
         BlockingFact::SellerOutOfStock
         | BlockingFact::WorkstationBusy
-        | BlockingFact::ReservationConflict
+        | BlockingFact::ReservationConflict { .. }
         | BlockingFact::ExclusiveFacilityUnavailable
         | BlockingFact::TargetGone => cognitive.transient_block_ticks,
         BlockingFact::NoKnownPath
@@ -1490,7 +1536,7 @@ mod tests {
     use super::{
         ExecutionFailure, FailureClassification, PlanFailureContext, blocking_fact_ttl,
         classify_discrepancy, clear_resolved_failures, derive_clearing_condition, discrepancy_ttl,
-        handle_plan_failure, is_blocker_cleared,
+        handle_plan_failure, is_blocker_cleared, reservation_conflict_for,
     };
     use crate::{
         AgentDecisionRuntime, HypotheticalEntityId, PlanTerminalKind, PlannedPlan, PlannedStep,
@@ -1499,8 +1545,8 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::num::NonZeroU32;
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, Blocker, BlockerClearingCondition, BlockerKey,
-        BlockerMemory, BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
+        AcquisitionQuantity, ActionDefId, AffordanceKey, Blocker, BlockerClearingCondition,
+        BlockerKey, BlockerMemory, BlockingFact, ClearingBaseline, CognitiveProfile, CombatProfile,
         CommodityConsumableProfile, CommodityKind, CommodityPurpose, ContentionGrant,
         ContentionIntents, DemandObservation, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
         DiscrepancyMemory, DriveThresholds, EntityId, EntityKind, FrameState, GoalKey, GoalKind,
@@ -2701,7 +2747,7 @@ mod tests {
         let (condition, baseline) = derive_clearing_condition(
             &view,
             agent,
-            BlockingFact::ReservationConflict,
+            reservation_conflict(facility, ActionDefId(3)),
             &blocker_key,
         );
 
@@ -2909,7 +2955,7 @@ mod tests {
                 target: Some(facility),
                 action_def: Some(ActionDefId(3)),
             },
-            blocking_fact: BlockingFact::ReservationConflict,
+            blocking_fact: reservation_conflict(facility, ActionDefId(3)),
             diagnostic_context: None,
             observed_tick: Tick(1),
             expires_tick: Tick(20),
@@ -2941,7 +2987,7 @@ mod tests {
         let (condition, baseline) = derive_clearing_condition(
             &view,
             agent,
-            BlockingFact::ReservationConflict,
+            reservation_conflict(source, ActionDefId(11)),
             &blocker_key,
         );
 
@@ -3143,6 +3189,10 @@ mod tests {
         }
     }
 
+    fn reservation_conflict(facility: EntityId, action: ActionDefId) -> BlockingFact {
+        reservation_conflict_for(AffordanceKey { facility, action })
+    }
+
     #[test]
     fn derive_blocking_fact_detects_seller_out_of_stock() {
         let agent = entity(1);
@@ -3274,7 +3324,7 @@ mod tests {
             &craft_step(workstation),
             None,
         );
-        assert_eq!(fact, BlockingFact::ReservationConflict);
+        assert_eq!(fact, reservation_conflict(workstation, ActionDefId(3)));
     }
 
     #[test]
@@ -3308,7 +3358,7 @@ mod tests {
             Some(ExecutionFailure::Start(&start_failure)),
         );
 
-        assert_eq!(fact, BlockingFact::ReservationConflict);
+        assert_eq!(fact, reservation_conflict(workstation, ActionDefId(3)));
     }
 
     #[test]
@@ -3590,7 +3640,7 @@ mod tests {
         let transient_facts = [
             BlockingFact::SellerOutOfStock,
             BlockingFact::WorkstationBusy,
-            BlockingFact::ReservationConflict,
+            reservation_conflict(entity(3), ActionDefId(3)),
             BlockingFact::ExclusiveFacilityUnavailable,
             BlockingFact::TargetGone,
         ];

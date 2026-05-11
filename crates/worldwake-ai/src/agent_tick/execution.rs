@@ -13,10 +13,10 @@ use crate::plan_step_expectations::{
 };
 use crate::{AgentDecisionRuntime, PlannedStep, RevalidationOutcome, classify_revalidation};
 use worldwake_core::{
-    BeliefSnapshot, BeliefStatusTag, BlockerMemory, BlockerRecordedPayload, CauseRef,
-    ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyEntry, DiscrepancyMemory,
-    EntityId, EventTag, LearnedOpportunityMemory, RepairMemory, ReplanTriggeredPayload, Tick,
-    VisibilitySpec, WitnessData, WorldTxn,
+    AffordanceKey, BeliefSnapshot, BeliefStatusTag, BlockerMemory, BlockerRecordedPayload,
+    BlockingFact, CauseRef, ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyEntry,
+    DiscrepancyMemory, EntityId, EventId, EventLog, EventTag, EventView, LearnedOpportunityMemory,
+    RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     CommitOutcome, CommittedAction, EntityBeliefView, InputKind, PerAgentBeliefView, Scheduler,
@@ -318,6 +318,9 @@ pub(super) fn finalize_agent_tick(
     runtime: &mut AgentDecisionRuntime,
     assumption_refs: AssumptionRefContext<'_>,
 ) -> Result<(), TickInputError> {
+    let populated_blocked_memory = populate_contention_event_refs(blocked_memory, event_log, tick);
+    let blocked_memory = populated_blocked_memory.as_ref().unwrap_or(blocked_memory);
+
     persist_blocked_memory(
         world,
         event_log,
@@ -366,6 +369,65 @@ pub(super) fn finalize_agent_tick(
         update_runtime_observation_snapshot(&view, agent, runtime);
     }
     Ok(())
+}
+
+fn populate_contention_event_refs(
+    blocked_memory: &BlockerMemory,
+    event_log: &EventLog,
+    tick: Tick,
+) -> Option<BlockerMemory> {
+    let mut updated = None;
+    for (key, blocker) in &blocked_memory.intents {
+        let BlockingFact::ReservationConflict {
+            affordance,
+            contention_event: None,
+        } = blocker.blocking_fact
+        else {
+            continue;
+        };
+        let Some(event_id) = contention_event_for_affordance_at_tick(event_log, affordance, tick)
+        else {
+            continue;
+        };
+
+        let memory = updated.get_or_insert_with(|| blocked_memory.clone());
+        let Some(updated_blocker) = memory.intents.get_mut(key) else {
+            continue;
+        };
+        if let BlockingFact::ReservationConflict {
+            contention_event, ..
+        } = &mut updated_blocker.blocking_fact
+        {
+            *contention_event = Some(event_id);
+        }
+    }
+    updated
+}
+
+fn contention_event_for_affordance_at_tick(
+    event_log: &EventLog,
+    affordance: AffordanceKey,
+    tick: Tick,
+) -> Option<EventId> {
+    let mut matched = None;
+    for event_id in event_log.events_by_tag(EventTag::ContentionResolved) {
+        let Some(payload) = event_log
+            .get(*event_id)
+            .and_then(EventView::contention_event_payload)
+        else {
+            continue;
+        };
+        if payload.contested_affordance != affordance || payload.at_tick != tick {
+            continue;
+        }
+
+        debug_assert!(
+            matched.is_none(),
+            "multiple ContentionResolved events for affordance {affordance:?} at tick {tick:?}"
+        );
+        matched.get_or_insert(*event_id);
+    }
+    matched
 }
 
 pub(super) fn resolve_step_targets(
@@ -777,4 +839,141 @@ pub(super) fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
     runtime.current_plan.as_ref().is_some_and(|plan| {
         runtime.current_step_index >= plan.steps.len() && !runtime.step_in_flight
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::populate_contention_event_refs;
+    use std::collections::{BTreeMap, BTreeSet};
+    use worldwake_core::{
+        ActionDefId, AffordanceKey, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory,
+        BlockingFact, CauseRef, ClaimantOutcome, ContentionClaimant, ContentionEventPayload,
+        ContentionResolutionRule, EntityId, EventLog, EventPayload, EventTag, GoalKey, GoalKind,
+        PendingEvent, Tick, VisibilitySpec, WitnessData,
+    };
+
+    fn entity(slot: u32) -> EntityId {
+        EntityId {
+            slot,
+            generation: 0,
+        }
+    }
+
+    fn affordance(facility_slot: u32, action: u32) -> AffordanceKey {
+        AffordanceKey {
+            facility: entity(facility_slot),
+            action: ActionDefId(action),
+        }
+    }
+
+    fn blocker_memory_for(affordance: AffordanceKey) -> BlockerMemory {
+        let blocker_key = BlockerKey {
+            goal_key: GoalKey {
+                kind: GoalKind::Sleep,
+                commodity: None,
+                entity: Some(affordance.facility),
+                place: Some(entity(99)),
+            },
+            place: Some(entity(99)),
+            target: Some(affordance.facility),
+            action_def: Some(affordance.action),
+        };
+        let mut memory = BlockerMemory::default();
+        memory.record(Blocker {
+            blocker_key,
+            blocking_fact: BlockingFact::ReservationConflict {
+                affordance,
+                contention_event: None,
+            },
+            diagnostic_context: None,
+            observed_tick: Tick(40),
+            expires_tick: Tick(50),
+            clearing_condition: BlockerClearingCondition::ContentionChanged {
+                facility: affordance.facility,
+            },
+            baseline_snapshot: None,
+        });
+        memory
+    }
+
+    fn emit_contention_event(
+        event_log: &mut EventLog,
+        affordance: AffordanceKey,
+        tick: Tick,
+    ) -> worldwake_core::EventId {
+        event_log.emit(PendingEvent::from_payload(EventPayload {
+            tick,
+            cause: CauseRef::SystemTick(tick),
+            actor_id: None,
+            action_name: None,
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: Some(entity(99)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::Hidden,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::ContentionResolved]),
+            contention_event_payload: Some(ContentionEventPayload {
+                contested_affordance: affordance,
+                place: entity(99),
+                resolution_rule: ContentionResolutionRule::ArrivalTime,
+                claimants: vec![ContentionClaimant {
+                    agent: entity(7),
+                    arrived_tick: Tick(39),
+                    queue_position: 1,
+                    outcome: ClaimantOutcome::Granted,
+                }],
+                total_claimants: 1,
+                winner: Some(entity(7)),
+                at_tick: tick,
+            }),
+            decision_payload: None,
+            artifact_transition_payload: None,
+        }))
+    }
+
+    fn recorded_contention_event(memory: &BlockerMemory) -> Option<worldwake_core::EventId> {
+        let blocker = memory.intents.values().next().expect("missing blocker");
+        let BlockingFact::ReservationConflict {
+            contention_event, ..
+        } = blocker.blocking_fact
+        else {
+            panic!("expected reservation conflict blocker");
+        };
+        contention_event
+    }
+
+    #[test]
+    fn populate_contention_event_ref_sets_matching_resolution_event() {
+        let affordance = affordance(10, 3);
+        let mut event_log = EventLog::new();
+        let event_id = emit_contention_event(&mut event_log, affordance, Tick(40));
+        let memory = blocker_memory_for(affordance);
+
+        let populated = populate_contention_event_refs(&memory, &event_log, Tick(40))
+            .expect("expected contention event population");
+
+        assert_eq!(recorded_contention_event(&populated), Some(event_id));
+    }
+
+    #[test]
+    fn populate_contention_event_ref_ignores_affordance_mismatch() {
+        let blocker_affordance = affordance(10, 3);
+        let mut event_log = EventLog::new();
+        emit_contention_event(&mut event_log, affordance(11, 3), Tick(40));
+        let memory = blocker_memory_for(blocker_affordance);
+
+        assert!(populate_contention_event_refs(&memory, &event_log, Tick(40)).is_none());
+    }
+
+    #[test]
+    fn populate_contention_event_ref_ignores_tick_mismatch() {
+        let affordance = affordance(10, 3);
+        let mut event_log = EventLog::new();
+        emit_contention_event(&mut event_log, affordance, Tick(39));
+        let memory = blocker_memory_for(affordance);
+
+        assert!(populate_contention_event_refs(&memory, &event_log, Tick(40)).is_none());
+    }
 }

@@ -232,7 +232,7 @@ pub(super) fn decisive_evidence_from_blocker(blocker: &Blocker, cap: u8) -> Deci
             }
         }
         BlockingFact::WorkstationBusy
-        | BlockingFact::ReservationConflict
+        | BlockingFact::ReservationConflict { .. }
         | BlockingFact::ExclusiveFacilityUnavailable => {
             if let Some(place) = blocker.blocker_key.place {
                 refs.push_observation(place, EntityBeliefAspect::ContentionState, tick);
@@ -626,6 +626,7 @@ pub(super) fn emit_decision_event(
         visibility: VisibilitySpec::Hidden,
         witness_data: WitnessData::default(),
         tags: BTreeSet::from([tag]),
+        contention_event_payload: None,
         decision_payload: Some(decision_payload),
         artifact_transition_payload: None,
     }));

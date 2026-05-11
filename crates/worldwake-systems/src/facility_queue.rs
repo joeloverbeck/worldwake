@@ -2,19 +2,19 @@ use crate::facility_queue_actions::exclusive_facility_workstation_tag;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use worldwake_core::{
-    ActionDomain, CauseRef, ContentionPolicy, ContentionQueue, EntityId, EntityKind, EventLog,
-    EventTag, ReliabilityRecord, SourceKey, Tick, VisibilitySpec, WitnessData, WorkstationTag,
-    World, WorldTxn,
+    ActionDomain, CauseRef, ContentionEventPayload, ContentionPolicy, ContentionQueue, EntityId,
+    EntityKind, EventLog, EventTag, ReliabilityRecord, SourceKey, Tick, VisibilitySpec,
+    WitnessData, WorkstationTag, World, WorldTxn, build_contention_event_payload,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionInstance, ActionStatus, SystemError, SystemExecutionContext,
     validate_action_def_authoritatively,
 };
 
-#[derive(Clone, Copy)]
 struct QueueUpdateEffects<'a> {
     extra_tag: Option<EventTag>,
     extra_target: Option<EntityId>,
+    extra_contention_event: Option<ContentionEventPayload>,
     cleared_waiters: &'a [worldwake_core::ContentionWaiter],
     wait_observation: Option<WaitObservation>,
 }
@@ -196,6 +196,7 @@ fn prune_invalid_waiters(
             QueueUpdateEffects {
                 extra_tag: None,
                 extra_target: None,
+                extra_contention_event: None,
                 cleared_waiters: &removed_waiters,
                 wait_observation: None,
             },
@@ -243,6 +244,7 @@ fn prune_patience_exceeded(
             QueueUpdateEffects {
                 extra_tag: None,
                 extra_target: None,
+                extra_contention_event: None,
                 cleared_waiters: &removed_waiters,
                 wait_observation: None,
             },
@@ -278,6 +280,7 @@ fn expire_stale_grant(
         QueueUpdateEffects {
             extra_tag: Some(EventTag::QueueGrantExpired),
             extra_target: Some(granted.actor),
+            extra_contention_event: None,
             cleared_waiters: &[],
             wait_observation: None,
         },
@@ -317,6 +320,7 @@ fn prune_structurally_invalid_heads(
             QueueUpdateEffects {
                 extra_tag: Some(EventTag::QueueHeadFailed),
                 extra_target: Some(queued_actor),
+                extra_contention_event: None,
                 cleared_waiters: std::slice::from_ref(&queued),
                 wait_observation: None,
             },
@@ -366,11 +370,24 @@ fn promote_ready_head(
         .saturating_sub(queued_at.0)
         .try_into()
         .unwrap_or(u32::MAX);
+    let queue_snapshot = queue.clone();
+    let facility_place = world
+        .effective_place(facility)
+        .ok_or_else(|| SystemError::new("contention facility has no effective place"))?;
 
     let granted = queue
         .promote_head(tick, policy.grant_hold_ticks)
         .cloned()
         .expect("queue head exists when promotion is attempted");
+    let contention_event = build_contention_event_payload(
+        &queue_snapshot,
+        facility,
+        facility_place,
+        granted.intended_action,
+        worldwake_core::ContentionResolutionRule::ArrivalTime,
+        Some(granted.actor),
+        tick,
+    );
     commit_queue_update(
         world,
         event_log,
@@ -380,6 +397,7 @@ fn promote_ready_head(
         QueueUpdateEffects {
             extra_tag: Some(EventTag::QueueGrantPromoted),
             extra_target: Some(granted.actor),
+            extra_contention_event: Some(contention_event),
             cleared_waiters: &[],
             wait_observation: Some(WaitObservation {
                 actor: queued_actor,
@@ -506,6 +524,9 @@ fn commit_queue_update(
     if let Some(tag) = effects.extra_tag {
         txn.add_tag(tag);
     }
+    if let Some(payload) = effects.extra_contention_event {
+        txn.set_contention_event_payload(payload);
+    }
     if let Some(target) = effects.extra_target {
         txn.add_target(target);
     }
@@ -581,13 +602,14 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU32;
     use worldwake_core::{
-        ActionDefId, BodyPart, CauseRef, CommodityKind, ContentionDispositionProfile,
-        ContentionIntents, ContentionPolicy, ContentionQueue, ControlSource, DeadAt,
-        DeprivationKind, EntityId, EntityKind, EventLog, EventTag, EventView, GoalKey, GoalKind,
-        KnownRecipes, ProductionJob, ProductionOutputOwner, ProductionOutputOwnershipPolicy,
-        Quantity, QueuedContentionIntent, ResourceSource, Seed, SourceKey, Tick, UniqueItemKind,
-        VisibilitySpec, WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound,
-        WoundCause, WoundId, WoundList, build_prototype_world,
+        ActionDefId, BodyPart, CauseRef, ClaimantOutcome, CommodityKind,
+        ContentionDispositionProfile, ContentionIntents, ContentionPolicy, ContentionQueue,
+        ContentionResolutionRule, ControlSource, DeadAt, DeprivationKind, EntityId, EntityKind,
+        EventLog, EventTag, EventView, GoalKey, GoalKind, KnownRecipes, ProductionJob,
+        ProductionOutputOwner, ProductionOutputOwnershipPolicy, Quantity, QueuedContentionIntent,
+        ResourceSource, Seed, SourceKey, Tick, UniqueItemKind, VisibilitySpec, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, WoundList,
+        build_prototype_world,
     };
     use worldwake_sim::{
         ActionDefRegistry, ActionDuration, ActionHandlerRegistry, ActionInstance, ActionInstanceId,
@@ -851,6 +873,46 @@ mod tests {
         }
     }
 
+    fn assert_single_contention_grant_event(
+        log: &EventLog,
+        facility: EntityId,
+        place: EntityId,
+        action: ActionDefId,
+        tick: Tick,
+        expected_claimants: &[(EntityId, Tick, ClaimantOutcome)],
+        winner: EntityId,
+    ) {
+        assert_eq!(log.events_by_tag(EventTag::ContentionResolved).len(), 1);
+        let contention_event_id = log.events_by_tag(EventTag::ContentionResolved)[0];
+        assert!(
+            log.events_by_tag(EventTag::QueueGrantPromoted)
+                .contains(&contention_event_id),
+            "contention payload should be attached to the promoted-grant event"
+        );
+        let record = log.get(contention_event_id).unwrap();
+        let payload = record
+            .contention_event_payload()
+            .expect("contention event carries typed payload");
+        assert_eq!(payload.contested_affordance.facility, facility);
+        assert_eq!(payload.contested_affordance.action, action);
+        assert_eq!(payload.place, place);
+        assert_eq!(
+            payload.resolution_rule,
+            ContentionResolutionRule::ArrivalTime
+        );
+        assert_eq!(payload.winner, Some(winner));
+        assert_eq!(payload.at_tick, tick);
+        assert_eq!(payload.total_claimants, expected_claimants.len() as u16);
+        assert_eq!(payload.claimants.len(), expected_claimants.len());
+        for (index, (claimant, arrived_tick, outcome)) in expected_claimants.iter().enumerate() {
+            let emitted = &payload.claimants[index];
+            assert_eq!(emitted.agent, *claimant);
+            assert_eq!(emitted.arrived_tick, *arrived_tick);
+            assert_eq!(emitted.queue_position, (index + 1) as u16);
+            assert_eq!(emitted.outcome, *outcome);
+        }
+    }
+
     #[test]
     fn dead_actor_is_pruned_from_queue() {
         let recipes = build_recipe_registry();
@@ -962,6 +1024,7 @@ mod tests {
             .get(log.events_by_tag(EventTag::QueueGrantExpired)[0])
             .unwrap();
         assert_eq!(record.visibility(), VisibilitySpec::SamePlace);
+        assert!(log.events_by_tag(EventTag::ContentionResolved).is_empty());
     }
 
     #[test]
@@ -994,6 +1057,15 @@ mod tests {
         );
         assert_eq!(log.events_by_tag(EventTag::QueueGrantExpired).len(), 1);
         assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
+        assert_single_contention_grant_event(
+            &log,
+            facility,
+            place,
+            harvest_id,
+            Tick(5),
+            &[(second, Tick(2), ClaimantOutcome::Granted)],
+            second,
+        );
     }
 
     #[test]
@@ -1020,6 +1092,7 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(log.events_by_tag(EventTag::QueueHeadFailed).len(), 1);
+        assert!(log.events_by_tag(EventTag::ContentionResolved).is_empty());
     }
 
     #[test]
@@ -1041,6 +1114,7 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(log.events_by_tag(EventTag::QueueHeadFailed).len(), 1);
+        assert!(log.events_by_tag(EventTag::ContentionResolved).is_empty());
     }
 
     #[test]
@@ -1154,6 +1228,15 @@ mod tests {
         assert_eq!(granted.actor, actor);
         assert_eq!(granted.expires_at, Tick(6));
         assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
+        assert_single_contention_grant_event(
+            &log,
+            facility,
+            place,
+            harvest_id,
+            Tick(3),
+            &[(actor, Tick(2), ClaimantOutcome::Granted)],
+            actor,
+        );
     }
 
     #[test]
@@ -1163,14 +1246,9 @@ mod tests {
         let (mut world, place, facility) = setup_world(WorkstationTag::OrchardRow, 4);
         let actor = add_actor(&mut world, place, worldwake_core::RecipeId(0));
         enqueue_at(&mut world, facility, actor, harvest_id, 10);
+        let mut log = EventLog::new();
 
-        run_system(
-            &mut world,
-            &mut EventLog::new(),
-            &defs,
-            &BTreeMap::new(),
-            15,
-        );
+        run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 15);
 
         let reliability = world
             .get_component_source_reliability(actor)
@@ -1184,6 +1262,15 @@ mod tests {
             .expect("wait observation should be recorded for resource source");
         assert_eq!(record.average_wait_ticks, 5);
         assert_eq!(record.wait_observation_count, 1);
+        assert_single_contention_grant_event(
+            &log,
+            facility,
+            place,
+            harvest_id,
+            Tick(15),
+            &[(actor, Tick(10), ClaimantOutcome::Granted)],
+            actor,
+        );
     }
 
     #[test]
@@ -1256,6 +1343,15 @@ mod tests {
         assert_eq!(granted.actor, actor);
         assert_eq!(granted.intended_action, loot_id);
         assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
+        assert_single_contention_grant_event(
+            &log,
+            corpse,
+            place,
+            loot_id,
+            Tick(3),
+            &[(actor, Tick(2), ClaimantOutcome::Granted)],
+            actor,
+        );
     }
 
     #[test]
@@ -1311,6 +1407,15 @@ mod tests {
         assert_eq!(granted.actor, actor);
         assert_eq!(granted.intended_action, heal_id);
         assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
+        assert_single_contention_grant_event(
+            &log,
+            patient,
+            place,
+            heal_id,
+            Tick(3),
+            &[(actor, Tick(2), ClaimantOutcome::Granted)],
+            actor,
+        );
     }
 
     #[test]
@@ -1329,6 +1434,7 @@ mod tests {
         assert_eq!(queue.position_of(actor), Some(0));
         assert!(queue.granted.is_none());
         assert!(log.events_by_tag(EventTag::QueueGrantPromoted).is_empty());
+        assert!(log.events_by_tag(EventTag::ContentionResolved).is_empty());
     }
 
     #[test]
@@ -1344,7 +1450,9 @@ mod tests {
             active_action(harvest_id, harvest_payload, actor, facility),
         )]);
 
-        run_system(&mut world, &mut EventLog::new(), &defs, &active, 3);
+        let mut log = EventLog::new();
+
+        run_system(&mut world, &mut log, &defs, &active, 3);
 
         assert!(
             world
@@ -1352,6 +1460,47 @@ mod tests {
                 .unwrap()
                 .granted
                 .is_none()
+        );
+        assert!(log.events_by_tag(EventTag::ContentionResolved).is_empty());
+    }
+
+    #[test]
+    fn every_facility_grant_emits_contention_event() {
+        let recipes = build_recipe_registry();
+        let (defs, _handlers, harvest_id, _craft_id) = setup_registries(&recipes);
+        let (mut world, place, facility) = setup_world(WorkstationTag::OrchardRow, 4);
+        let first = add_actor(&mut world, place, worldwake_core::RecipeId(0));
+        let second = add_actor(&mut world, place, worldwake_core::RecipeId(0));
+        let third = add_actor(&mut world, place, worldwake_core::RecipeId(0));
+        enqueue_at(&mut world, facility, first, harvest_id, 6);
+        enqueue_at(&mut world, facility, second, harvest_id, 7);
+        enqueue_at(&mut world, facility, third, harvest_id, 8);
+        let mut log = EventLog::new();
+
+        run_system(&mut world, &mut log, &defs, &BTreeMap::new(), 9);
+
+        assert_eq!(
+            world
+                .get_component_contention_queue(facility)
+                .unwrap()
+                .granted
+                .as_ref()
+                .map(|grant| grant.actor),
+            Some(first)
+        );
+        assert_eq!(log.events_by_tag(EventTag::QueueGrantPromoted).len(), 1);
+        assert_single_contention_grant_event(
+            &log,
+            facility,
+            place,
+            harvest_id,
+            Tick(9),
+            &[
+                (first, Tick(6), ClaimantOutcome::Granted),
+                (second, Tick(7), ClaimantOutcome::QueuedBehind),
+                (third, Tick(8), ClaimantOutcome::QueuedBehind),
+            ],
+            first,
         );
     }
 

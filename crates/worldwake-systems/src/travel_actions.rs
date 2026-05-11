@@ -808,6 +808,7 @@ mod tests {
             visibility: VisibilitySpec::SamePlace,
             witness_data: WitnessData::default(),
             tags: BTreeSet::from([EventTag::Combat]),
+            contention_event_payload: None,
             decision_payload: None,
             artifact_transition_payload: None,
         }));
