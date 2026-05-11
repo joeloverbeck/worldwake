@@ -139,7 +139,7 @@ For tickets that clearly fit the small/local fast path, the fast-path instructio
 ### 1. Load the ticket context
 
 1. Read the target ticket file.
-2. Read every directly relevant reference (specs, docs, code symbols, test files), including any specs/docs explicitly named by the user even when the ticket does not link them.
+2. Read every directly relevant reference (specs, docs, code symbols, test files), including any specs/docs explicitly named by the user even when the ticket does not link them. Treat Markdown links, raw repo paths, and path mentions inside ticket comments as cited references when they point to specs, docs, or process rules that affect reassessment or verification.
 3. When the user supplies a glob, shorthand, or obvious near-match typo, confirm the exact live file path before reading or relying on it.
    If the invocation includes extra positional tokens or path-like hints after the ticket path, resolve the first live ticket path first, then treat the remaining tokens as optional reference hints unless they clearly resolve to another ticket or a worktree root.
    If the only live match changes the numbered ticket/spec family, announce the resolved path before coding; if more than one plausible numbered-family match exists, use 1-3-1 before proceeding.
@@ -164,7 +164,7 @@ When a ticket adds a new crate, binary, GUI shell, or other dependency-bearing t
 When a ticket/spec touches `Permille` or another bounded numeric wrapper, validate cited examples, profile values, and sibling-ticket snippets against the live type bounds during reassessment. If active spec-family examples are out of range, correct the active spec/ticket family before coding instead of letting focused tests discover the invalid values later.
 When a shared value-type ticket makes trait, identity, or keying claims, verify those claims against the live derives and key carrier before coding or closeout. Check both the new type and the containing/future consumer type for `Copy`, `Hash`, `Eq`, `Ord`, serialization, and save-shape wording, then truth-sync active sibling tickets/specs whose handoff text still describes a stale identity mechanism.
 
-Load `references/reassessment-checks.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md` and `references/reassessment-golden-observer-report.md`.
+Load `references/reassessment-checks.md` unless Step 0 classified the ticket as a clear small/local fast path whose cited docs/specs, owned symbols, and live proof boundary are already covered by `references/ticket-classification.md`. For planner-root, snapshot-completeness, planner-traceability, or AI pipeline work, also load `references/reassessment-planner-ai.md`. For golden E2E or observer-motivated tickets, also load `references/reassessment-golden.md` and `references/reassessment-golden-observer-report.md` unless the same small/local fast-path exception applies.
 
 Detailed domain-specific reassessment case law lives in `references/reassessment-checks.md` and the other references named by the ticket shape. Keep this Step 2 section to universal reassessment obligations; load the relevant reference instead of expanding the top-level workflow.
 
@@ -213,6 +213,7 @@ For small CLI/tooling tickets that touch a single binary or local helper surface
 If the live emitter, runtime mutation seam, and focused verification harness already live together in one existing file or module, prefer landing the change there over creating a new sibling file from the drafted sketch. Record that live seam explicitly in the ticket closeout whenever it wins over the drafted file layout.
 When the live proof seam or owned implementation boundary differs from the ticket's drafted sketch, record the exact landed seam in the ticket closeout instead of preserving the drafted shape in prose. Small/local tickets often land through a private extracted helper or a narrower same-file formatter/test seam even when the draft described a more direct in-place edit.
 Before implementation scope is final, compare `Verification Layers`, `Acceptance Criteria`, and drafted `New/Modified Tests` for one-to-one proof coverage. If the ticket names an invariant that requires its own focused proof but the drafted tests do not include it, correct the ticket/test plan up front instead of discovering the missing proof only during closeout.
+When the ticket names exact fixture cardinalities, row counts, scenario counts, or similar numeric acceptance examples, mirror those values in the focused proof unless live reassessment shows they are impossible or misleading. If the proof intentionally uses different numbers, record that deviation in the ticket before closeout.
 When a small/local ticket creates a user-facing UI or visualizer shell, keep the staged shell operational and avoid visible in-app text that explains implementation staging, future tickets, or debugging internals. Put staging boundaries and deferred controls in ticket/spec closeout instead; the app surface should show only user-meaningful state and controls for the slice that actually landed.
 When a small/local UI, visualizer, or tooling ticket makes a previously staged surface live, sweep the crate-local `README.md`, manual QA checklist, and nearby user-facing docs before closeout. Remove stale “empty shell”, “placeholder”, or future-tense wording that now conflicts with the implemented tool, and record any README/manual-QA refresh in the active ticket's landed file surface.
 
@@ -228,7 +229,7 @@ Use `references/implementation-discipline.md` for detailed editing patterns: exa
 
 Run the narrowest correct verification first, then broaden.
 
-Load `references/verification.md`.
+Load `references/verification.md` unless Step 0 classified the ticket as a clear small/local fast path whose focused selector, generated artifact check, wrapper gate, and proof boundary are unambiguous and already covered by `references/ticket-classification.md`.
 
 #### Cargo execution discipline
 
@@ -283,7 +284,7 @@ When a shared serialized-surface ticket widens a schema, payload, enum, or savea
 
 ### 7. Close out the ticket honestly
 
-Load `references/closeout.md`.
+Load `references/closeout.md` unless Step 0 classified the ticket as a clear small/local fast path and `references/ticket-classification.md` already covers the final ticket truthing, stale-scan, hygiene, and status requirements for the landed diff.
 
 If final edits happen after broad verification, classify the freshness boundary before reporting completion: code, generated artifact, scenario, or executable-proof edits require rerunning the relevant broad or targeted executable checks; non-generated ticket/spec Markdown edits normally require `git diff --check` plus any targeted stale-claim scans. Record which broad gates were pre-final-edit and which post-edit checks prove the final diff.
 After final ticket/spec Markdown edits made after executable verification, run `git diff --check` or explicitly record why it was not run before reporting completion.

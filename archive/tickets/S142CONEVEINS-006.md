@@ -1,6 +1,6 @@
 # S142CONEVEINS-006: Add observer Section 12 (Contention) and `--contention-top-n` CLI flag
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small-Medium
 **Engine Changes**: None — observer-only diagnostic surface; no simulation runtime change
@@ -16,7 +16,7 @@ The observer binary at `crates/worldwake-cli/src/bin/observer.rs` renders the po
 
 1. The existing observer sections in `crates/worldwake-cli/src/bin/observer.rs` are at lines 680 (Section 3 — Decision History), 719 (Section 9 — Budget Exhaustion Snapshots), 858 (Section 10 — Critical Window Forensics), 1111 (Section 11 — Artifact Lifecycle), 3188 (Section 1 — Run Metadata), 3212 (Section 2 — Per-Agent Summary), 3373 (Section 4 — Anomaly Flags), 3388 (Section 5 — Raw Event Sample), 3557 (Section 6 — Per-Agent Belief Summary), 3661 (Section 7 — End-State Inventory & Resources), 3734 (Section 8 — Per-Agent Decision Summary). Sections are non-sequential in the file's source order (Section 11 appears at line 1111, Sections 1–8 at lines 3188+); the canonical numbering is the section header text itself, NOT source order. Section 12 is the next unused number.
 2. The shared abstraction boundary under audit is the observer's read-only event-log consumption pattern. Per FND-14A footnote and FND-29 (debuggability), observer output is a derived view over authoritative event-log state and does not affect simulation semantics. Per the worldwake-validation-patterns.md "Read-Only Tooling Consumer" pattern, the observer reads via canonical accessors (`events_by_tag(EventTag::ContentionResolved)`), no shortcut accessors.
-3. The observer's existing CLI flag conventions (e.g., `--critical-window-top-n` mentioned in the spec but not yet present in the binary per spot-check) follow the `--<section>-top-n` pattern. The new `--contention-top-n` flag follows this convention.
+3. The observer's existing CLI flag conventions include `--critical-window-top-n` and `--top-omissions`; the new `--contention-top-n` flag follows the same optional diagnostic flag pattern.
 4. Section 12's per-tick rendering format matches the spec's example output: header line `Tick T — Contention: <facility-name>@<place-name> (<action-name>)`, indented `rule:`, indented `claimants (N):`, one line per claimant with `Agent X — arrived t=Y, position Z, <outcome>`. This matches existing sibling section formatting (Section 11 uses parallel indented body lines per item).
 5. Per `docs/precision-rules.md` Rule 5 (verification surface mapping): observer output is a derived view; the verification surface for observer correctness is the headless render test that constructs a fixture event log and asserts the rendered text contains the expected section header and per-claimant rendering. The single-layer ticket maps the rendering invariant to focused observer-bin coverage.
 
@@ -106,6 +106,31 @@ Add focused tests in the observer's `#[cfg(test)]` block (boundary at `:4517`):
 
 ### Commands
 
-1. `cargo test -p worldwake-cli observer`
-2. `cargo test --workspace`
-3. `cargo clippy --workspace --all-targets -- -D warnings`
+1. `cargo test -p worldwake-cli --bin observer section_12_contention`
+2. `cargo test -p worldwake-cli --bin observer observer_cli_parses_top_omissions_default_and_override`
+3. `cargo test -p worldwake-cli`
+4. `cargo test --workspace`
+5. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-11.
+
+- Added observer Section 12 (`## Section 12 — Contention`) as a read-only derived view over `events_by_tag(EventTag::ContentionResolved)` and `EventView::contention_event_payload`.
+- Rendered each contention event with tick, facility/place/action label, resolution rule, total claimant count, and per-claimant arrival tick, queue position, and outcome.
+- Added optional `--contention-top-n N`, threaded it through report generation, and sorted filtered output by `total_claimants` descending with deterministic tick/event-id tie-breakers.
+- Added focused observer-bin coverage for populated rendering, empty-log rendering, top-N filtering with 5/3/2 claimant fixtures, and CLI parsing.
+
+## Deviations
+
+- The empty-log convention renders Section 12 with `No contention events.` rather than omitting the header. This matches the observer's numbered-section style and is covered by `section_12_contention_empty_log_renders_empty`.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-cli --bin observer section_12_contention -- --list`
+- Passed `cargo fmt --all`
+- Passed `cargo test -p worldwake-cli --bin observer section_12_contention`
+- Passed `cargo test -p worldwake-cli --bin observer observer_cli_parses_top_omissions_default_and_override`
+- Passed `cargo test -p worldwake-cli`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
