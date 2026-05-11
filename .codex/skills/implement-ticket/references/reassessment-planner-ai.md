@@ -47,6 +47,8 @@ If the falsified hypothesis was the ticket's core implementability claim rather 
 
 When a planner/search change introduces a new pre-successor candidate filter, pruning mode, or other search-loop omission path, explicitly sweep the planner-owned traceability surfaces for that new boundary: candidate/root outcome enums, filter reasons, expansion summaries, and any existing omission/provenance structures that should explain the filtered branch. Do not leave the new planner filter behavior invisible in decision-trace inventories when the trace surface already claims to explain candidate loss.
 
+When a planner/search filter consumes a per-tick derived read-model or index, trace the whole handoff before patching: the read-phase constructor, the production planning call, any test-only or public wrappers that need neutral defaults, the search/heuristic consumer, and the trace surface that should explain retained or pruned candidates. Treat wrappers that default to empty/neutral data as acceptable only when they delegate to the canonical implementation and do not create a second lawful behavior path.
+
 ## Profile/component absent negative cases
 
 When a ticket's proof or negative case depends on a profile, component, or carrier being absent, verify whether that data is actually optional on the live runtime subject under test. If the runtime bootstrap or factory path seeds it universally by default, correct the ticket and proof surface to the lawful distinction that still exists (for example self vs. non-self access, empty contents vs. missing carrier, or pre-perception vs. post-perception state) instead of writing tests around an impossible "component missing" state.

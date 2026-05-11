@@ -14,6 +14,7 @@ use crate::exhaustion::{derive_invalidation_conditions, invalidate_exhausted_goa
 use crate::feasibility_probe;
 use crate::goal_dispatch_decl::FrontierExhaustionStrategy;
 use crate::goal_dispatch_key::GoalDispatchKey;
+use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::perf_telemetry::record_planning_phase_duration;
 use crate::plan_selection::SelectionCandidatePlan;
 use crate::plan_step_expectations::{
@@ -417,6 +418,50 @@ pub(super) fn build_candidate_plans(
     collect_expansion_summaries: bool,
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
 ) -> CandidatePlanningPass {
+    let opportunity_index = PerceivedOpportunityIndex::default();
+    build_candidate_plans_with_opportunity_index(
+        world,
+        scheduler,
+        agent,
+        ranked_candidates,
+        committed_opportunity,
+        discrepancy_memory,
+        blocked_memory,
+        current_tick,
+        cognitive,
+        execution_budget,
+        semantics_table,
+        action_defs,
+        action_handlers,
+        recipe_registry,
+        collect_rejections,
+        collect_expansion_summaries,
+        exhaustion_cache,
+        &opportunity_index,
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
+fn build_candidate_plans_with_opportunity_index(
+    world: &worldwake_core::World,
+    scheduler: &Scheduler,
+    agent: worldwake_core::EntityId,
+    ranked_candidates: &OrderedRanked<'_>,
+    committed_opportunity: Option<OpportunityKey>,
+    discrepancy_memory: &DiscrepancyMemory,
+    blocked_memory: &BlockerMemory,
+    current_tick: Tick,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+    recipe_registry: &RecipeRegistry,
+    collect_rejections: bool,
+    collect_expansion_summaries: bool,
+    exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
+    opportunity_index: &PerceivedOpportunityIndex,
+) -> CandidatePlanningPass {
     build_candidate_plans_with_sources(
         world,
         scheduler,
@@ -436,6 +481,7 @@ pub(super) fn build_candidate_plans(
         collect_expansion_summaries,
         exhaustion_cache,
         &BTreeMap::new(),
+        opportunity_index,
     )
 }
 
@@ -459,6 +505,7 @@ pub(super) fn build_candidate_plans_with_sources(
     collect_expansion_summaries: bool,
     exhaustion_cache: &std::collections::BTreeMap<OpportunityKey, ExhaustionEntry>,
     candidate_sources: &BTreeMap<OpportunityKey, CandidateSource>,
+    opportunity_index: &PerceivedOpportunityIndex,
 ) -> CandidatePlanningPass {
     let view = runtime_belief_view(agent, world, scheduler, action_defs, recipe_registry);
     let mut admitted_candidates: Vec<_> = ranked_candidates
@@ -636,6 +683,7 @@ pub(super) fn build_candidate_plans_with_sources(
             },
             Some(&mut trace_metadata),
             candidate_source,
+            opportunity_index,
         );
         let result = match result {
             PlanSearchResult::Found(plan)
@@ -1607,6 +1655,7 @@ fn clear_current_plan(
         .map(|candidate| candidate.priority_class);
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
 pub(super) fn plan_and_validate_next_step(
     world: &mut worldwake_core::World,
@@ -1630,6 +1679,58 @@ pub(super) fn plan_and_validate_next_step(
     action_defs: &worldwake_sim::ActionDefRegistry,
     action_handlers: &ActionHandlerRegistry,
     recipe_registry: &RecipeRegistry,
+) -> (Option<PlannedStep>, Option<bool>) {
+    let opportunity_index = PerceivedOpportunityIndex::default();
+    plan_and_validate_next_step_with_opportunity_index(
+        world,
+        event_log,
+        scheduler,
+        runtime,
+        agenda_state,
+        jc,
+        facility_intents,
+        agent,
+        ranked_candidates,
+        discrepancy_memory,
+        blocked_memory,
+        default_switch_margin,
+        frame_switch_margin,
+        side_benefit_weight,
+        tick,
+        cognitive,
+        execution_budget,
+        semantics_table,
+        action_defs,
+        action_handlers,
+        recipe_registry,
+        &opportunity_index,
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::trivially_copy_pass_by_ref)]
+fn plan_and_validate_next_step_with_opportunity_index(
+    world: &mut worldwake_core::World,
+    event_log: &mut EventLog,
+    scheduler: &Scheduler,
+    runtime: &mut AgentDecisionRuntime,
+    agenda_state: &mut AgendaState,
+    jc: &mut Option<IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
+    agent: worldwake_core::EntityId,
+    ranked_candidates: &OrderedRanked<'_>,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    blocked_memory: &BlockerMemory,
+    default_switch_margin: Permille,
+    frame_switch_margin: Permille,
+    side_benefit_weight: Permille,
+    tick: Tick,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+    recipe_registry: &RecipeRegistry,
+    opportunity_index: &PerceivedOpportunityIndex,
 ) -> (Option<PlannedStep>, Option<bool>) {
     let planning_start = Instant::now();
     let result = (|| {
@@ -1665,7 +1766,7 @@ pub(super) fn plan_and_validate_next_step(
                 runtime.dirty.contains(DirtySet::BLOCKER_CLEANUP),
             );
 
-            let plans = build_candidate_plans(
+            let plans = build_candidate_plans_with_opportunity_index(
                 world,
                 scheduler,
                 agent,
@@ -1683,6 +1784,7 @@ pub(super) fn plan_and_validate_next_step(
                 false,
                 false,
                 &runtime.exhaustion_cache,
+                opportunity_index,
             );
 
             // Record newly exhausted goals for next tick.
@@ -1876,6 +1978,7 @@ pub(super) fn plan_and_validate_next_step(
 /// Wrapper around `plan_and_validate_next_step` that also captures trace data.
 ///
 /// Returns `(next_step, valid, plan_continued, plan_search_trace, selection_trace, pending_tracker_increments)`.
+#[cfg(test)]
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
@@ -1907,8 +2010,70 @@ pub(super) fn plan_and_validate_next_step_traced(
     recipe_registry: &RecipeRegistry,
     candidate_sources: &BTreeMap<OpportunityKey, CandidateSource>,
 ) -> PlanningStepTraceResult {
+    let opportunity_index = PerceivedOpportunityIndex::default();
+    plan_and_validate_next_step_traced_with_opportunity_index(
+        world,
+        event_log,
+        scheduler,
+        runtime,
+        agenda_state,
+        jc,
+        facility_intents,
+        agent,
+        ranked_candidates,
+        discrepancy_memory,
+        blocked_memory,
+        default_switch_margin,
+        frame_switch_margin,
+        side_benefit_weight,
+        tick,
+        cognitive,
+        execution_budget,
+        semantics_table,
+        action_defs,
+        action_handlers,
+        tracing,
+        previous_goal,
+        recipe_registry,
+        candidate_sources,
+        &opportunity_index,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref
+)]
+pub(super) fn plan_and_validate_next_step_traced_with_opportunity_index(
+    world: &mut worldwake_core::World,
+    event_log: &mut EventLog,
+    scheduler: &Scheduler,
+    runtime: &mut AgentDecisionRuntime,
+    agenda_state: &mut AgendaState,
+    jc: &mut Option<IntentionFrame>,
+    facility_intents: &mut worldwake_core::ContentionIntents,
+    agent: worldwake_core::EntityId,
+    ranked_candidates: &OrderedRanked<'_>,
+    discrepancy_memory: &mut DiscrepancyMemory,
+    blocked_memory: &BlockerMemory,
+    default_switch_margin: Permille,
+    frame_switch_margin: Permille,
+    side_benefit_weight: Permille,
+    tick: Tick,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    action_defs: &worldwake_sim::ActionDefRegistry,
+    action_handlers: &ActionHandlerRegistry,
+    tracing: bool,
+    previous_goal: Option<worldwake_core::GoalKey>,
+    recipe_registry: &RecipeRegistry,
+    candidate_sources: &BTreeMap<OpportunityKey, CandidateSource>,
+    opportunity_index: &PerceivedOpportunityIndex,
+) -> PlanningStepTraceResult {
     if !tracing {
-        let (step, valid) = plan_and_validate_next_step(
+        let (step, valid) = plan_and_validate_next_step_with_opportunity_index(
             world,
             event_log,
             scheduler,
@@ -1930,6 +2095,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             action_defs,
             action_handlers,
             recipe_registry,
+            opportunity_index,
         );
         return (step, valid, false, None, None, None, BTreeSet::new());
     }
@@ -2051,6 +2217,7 @@ pub(super) fn plan_and_validate_next_step_traced(
             true,
             &runtime.exhaustion_cache,
             candidate_sources,
+            opportunity_index,
         );
         portfolio_trace = Some(plans.portfolio_trace());
 

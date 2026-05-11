@@ -5,6 +5,7 @@ pub(crate) mod landmarks;
 pub(crate) mod strategic;
 mod transition;
 
+use crate::opportunity_compiler::PerceivedOpportunityIndex;
 use crate::{
     GoalKindPlannerExt, GoalOffer, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpSemantics,
     PlanningEntityRef, PlanningSnapshot, PlanningState, shared_collections::SharedVec,
@@ -491,6 +492,46 @@ pub(crate) fn search_plan_with_trace_metadata(
     expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
     trace_metadata: Option<&mut SearchTraceMetadata>,
 ) -> PlanSearchResult {
+    let opportunity_index = PerceivedOpportunityIndex::default();
+    search_plan_with_trace_metadata_and_opportunities(
+        snapshot,
+        goal,
+        semantics_table,
+        registry,
+        handlers,
+        cognitive,
+        execution_budget,
+        recipes,
+        blocked,
+        current_tick,
+        binding_rejections,
+        expansion_summaries,
+        trace_metadata,
+        &opportunity_index,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::trivially_copy_pass_by_ref
+)]
+pub(crate) fn search_plan_with_trace_metadata_and_opportunities(
+    snapshot: &PlanningSnapshot,
+    goal: &GoalOffer,
+    semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
+    registry: &ActionDefRegistry,
+    handlers: &ActionHandlerRegistry,
+    cognitive: &CognitiveProfile,
+    execution_budget: &ExecutionBudget,
+    recipes: &RecipeRegistry,
+    blocked: &BlockerMemory,
+    current_tick: Tick,
+    binding_rejections: Option<&mut Vec<crate::decision_trace::BindingRejection>>,
+    expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
+    trace_metadata: Option<&mut SearchTraceMetadata>,
+    opportunity_index: &PerceivedOpportunityIndex,
+) -> PlanSearchResult {
     search_plan_with_trace_metadata_and_source(
         snapshot,
         goal,
@@ -506,6 +547,7 @@ pub(crate) fn search_plan_with_trace_metadata(
         expansion_summaries,
         trace_metadata,
         crate::decision_trace::CandidateSource::Emitter,
+        opportunity_index,
     )
 }
 
@@ -529,6 +571,7 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
     mut expansion_summaries: Option<&mut Vec<crate::decision_trace::SearchExpansionSummary>>,
     mut trace_metadata: Option<&mut SearchTraceMetadata>,
     candidate_source: crate::decision_trace::CandidateSource,
+    opportunity_index: &PerceivedOpportunityIndex,
 ) -> PlanSearchResult {
     if unsupported_goal(&goal.key.kind) {
         return PlanSearchResult::Unsupported;
@@ -711,6 +754,8 @@ pub(crate) fn search_plan_with_trace_metadata_and_source(
                 &combined_places.places,
                 snapshot,
                 semantics_table,
+                cognitive.detour_budget_permille,
+                opportunity_index,
             );
         }
         let mut expansion_trace_sink = Some(&mut expansion_candidates);

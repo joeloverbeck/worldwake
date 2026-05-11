@@ -27,9 +27,11 @@ use observation::{
     emit_expectation_mismatch, reconcile_in_flight_state,
     refresh_runtime_for_read_phase_with_memories, update_runtime_observation_snapshot,
 };
+#[cfg(test)]
+use planning::plan_and_validate_next_step_traced;
 use planning::{
-    build_candidate_plans, plan_and_validate_next_step_traced, summarize_ranked_goal,
-    summarize_step,
+    build_candidate_plans, plan_and_validate_next_step_traced_with_opportunity_index,
+    summarize_ranked_goal, summarize_step,
 };
 
 use crate::decision_trace::{
@@ -1864,7 +1866,7 @@ fn process_agent(
             selection_trace,
             portfolio_trace,
             pending_tracker_increments,
-        ) = plan_and_validate_next_step_traced(
+        ) = plan_and_validate_next_step_traced_with_opportunity_index(
             ctx.world,
             ctx.event_log,
             ctx.scheduler,
@@ -1889,6 +1891,7 @@ fn process_agent(
             previous_goal,
             ctx.recipe_registry,
             &read_result.candidate_sources,
+            &read_result.opportunity_index,
         );
         current_active_goal = current_agenda_state.committed.clone();
         if !pending_tracker_increments.is_empty() {

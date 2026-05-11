@@ -30,14 +30,14 @@ use worldwake_core::{
     DriveThresholds, EntityId, EntityKind, EpistemicDispositionProfile, EventLog, ExecutionBudget,
     HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge, KnownRecipes, LoadUnits,
     MerchandiseProfile, MetabolismProfile, NoticeTopic, ObservationOmission,
-    ObservationOmissionLog, OmissionReason, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
-    Place, PlaceTag, PortfolioSlotWeights, ProofRequirement, PrototypePlace, Quantity, RecipeId,
-    RecordedViolation, ResourceSource, RewardSource, TellTopic, TheftDispositionProfile, Tick,
-    TickRange, Topology, TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind,
-    ViolationDispositionProfile, ViolationId, ViolationKind, VisibilitySpec, WashBasinState,
-    WitnessData, WorkstationMarker, WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId,
-    build_believed_entity_state, build_prototype_world, prototype_place_entity,
-    test_utils::sample_trade_disposition_profile,
+    ObservationOmissionLog, OmissionReason, OpportunityAnchor, OpportunityKey, PatrolProfile,
+    PatrolRoute, PerceptionSource, Permille, Place, PlaceTag, PortfolioSlotWeights,
+    ProofRequirement, PrototypePlace, Quantity, RecipeId, RecordedViolation, ResourceSource,
+    RewardSource, TellTopic, TheftDispositionProfile, Tick, TickRange, Topology,
+    TradeDispositionProfile, TravelEdge, TravelEdgeId, UniqueItemKind, ViolationDispositionProfile,
+    ViolationId, ViolationKind, VisibilitySpec, WashBasinState, WitnessData, WorkstationMarker,
+    WorkstationTag, World, WorldTxn, Wound, WoundCause, WoundId, build_believed_entity_state,
+    build_prototype_world, prototype_place_entity, test_utils::sample_trade_disposition_profile,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionPayload, Affordance, CombatBeliefView, ControlBeliefView,
@@ -7212,6 +7212,62 @@ fn make_non_travel_candidate(def_id: ActionDefId, target: EntityId) -> SearchCan
     }
 }
 
+fn opportunity_index_for_place(
+    place: EntityId,
+    saliences: impl IntoIterator<Item = u16>,
+) -> crate::opportunity_compiler::PerceivedOpportunityIndex {
+    let all = saliences
+        .into_iter()
+        .enumerate()
+        .map(
+            |(index, salience)| crate::opportunity_compiler::Opportunity {
+                key: OpportunityKey {
+                    goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                        commodity: CommodityKind::Bread,
+                        purpose: CommodityPurpose::SelfConsume,
+                        quantity: AcquisitionQuantity::single(),
+                    }),
+                    anchor: OpportunityAnchor::Place(place),
+                },
+                perceived_at: Tick(u64::try_from(index).unwrap_or(u64::MAX)),
+                source_belief: worldwake_core::BeliefRef {
+                    claim_key: worldwake_core::BeliefClaimKey {
+                        subject: place,
+                        aspect: worldwake_core::EntityBeliefAspect::Location,
+                    },
+                    claim_held_at_tick: Tick(0),
+                    status: worldwake_core::BeliefStatusTag::Probable,
+                },
+                possible_effects: vec![
+                    crate::opportunity_compiler::EffectFactKey::CommodityTransfer,
+                ],
+                possible_information: Vec::new(),
+                required_actions: vec![PlannerOpKind::Trade],
+                legal_status: crate::opportunity_compiler::BelievedLegalStatus::BelievedUnclaimed,
+                social_exposure: crate::opportunity_compiler::SocialExposureBand::Private,
+                risks: Vec::new(),
+                salience: Permille::new(salience).unwrap(),
+            },
+        )
+        .collect::<Vec<_>>();
+    let mut by_place = BTreeMap::new();
+    by_place.insert(
+        place,
+        (0..all.len())
+            .map(|index| {
+                crate::opportunity_compiler::OpportunityHandle(
+                    u32::try_from(index).unwrap_or(u32::MAX),
+                )
+            })
+            .collect(),
+    );
+    crate::opportunity_compiler::PerceivedOpportunityIndex {
+        by_place,
+        by_anchor: BTreeMap::new(),
+        all,
+    }
+}
+
 fn travel_semantics() -> PlannerOpSemantics {
     PlannerOpSemantics {
         op_kind: PlannerOpKind::Travel,
@@ -7312,6 +7368,267 @@ fn prune_travel_keeps_only_toward_goal() {
             },
         ]
     );
+}
+
+#[test]
+fn prune_travel_with_empty_opportunity_index_matches_default_pruning() {
+    let (view, actor, hub, east, south, north, goal_store) = build_hub_pruning_view();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([hub, east, south, north, goal_store]),
+        5,
+    );
+
+    let travel_east_id = ActionDefId(100);
+    let travel_south_id = ActionDefId(101);
+    let travel_north_id = ActionDefId(102);
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(travel_east_id, travel_semantics());
+    semantics_table.insert(travel_south_id, travel_semantics());
+    semantics_table.insert(travel_north_id, travel_semantics());
+
+    let original_candidates = vec![
+        make_travel_candidate(travel_east_id, east),
+        make_travel_candidate(travel_south_id, south),
+        make_travel_candidate(travel_north_id, north),
+    ];
+    let mut default_candidates = original_candidates.clone();
+    let mut opportunity_candidates = original_candidates;
+
+    let default_pruning = prune_travel_away_from_goal(
+        &mut default_candidates,
+        hub,
+        &[goal_store],
+        &snapshot,
+        &semantics_table,
+    );
+    let empty_index = crate::opportunity_compiler::PerceivedOpportunityIndex::default();
+    let opportunity_pruning = super::prune_travel_away_from_goal_with_expansion_trace(
+        &mut opportunity_candidates,
+        None,
+        hub,
+        &[goal_store],
+        &snapshot,
+        &semantics_table,
+        Permille::new(150).unwrap(),
+        &empty_index,
+    );
+
+    assert_eq!(
+        default_candidates
+            .iter()
+            .map(|candidate| candidate.def_id)
+            .collect::<Vec<_>>(),
+        opportunity_candidates
+            .iter()
+            .map(|candidate| candidate.def_id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(default_pruning, opportunity_pruning);
+}
+
+#[test]
+fn prune_travel_allows_high_salience_opportunity_detour() {
+    let (view, actor, hub, east, south, north, goal_store) = build_hub_pruning_view();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([hub, east, south, north, goal_store]),
+        5,
+    );
+    let travel_east_id = ActionDefId(100);
+    let travel_south_id = ActionDefId(101);
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(travel_east_id, travel_semantics());
+    semantics_table.insert(travel_south_id, travel_semantics());
+    let mut candidates = vec![
+        make_travel_candidate(travel_east_id, east),
+        make_travel_candidate(travel_south_id, south),
+    ];
+
+    let opportunity_index = opportunity_index_for_place(south, [540]);
+    let pruning = super::prune_travel_away_from_goal_with_expansion_trace(
+        &mut candidates,
+        None,
+        hub,
+        &[goal_store],
+        &snapshot,
+        &semantics_table,
+        Permille::new(150).unwrap(),
+        &opportunity_index,
+    )
+    .expect("travel pruning trace should be emitted");
+
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.def_id)
+            .collect::<Vec<_>>(),
+        vec![travel_east_id, travel_south_id],
+        "south detour cost increase is 4, and 540 * 150 >= 4 * 1000"
+    );
+    assert_eq!(pruning.retained.len(), 2);
+    assert!(pruning.pruned.is_empty());
+    assert!(
+        pruning
+            .retained
+            .iter()
+            .any(|entry| entry.destination == south)
+    );
+}
+
+#[test]
+fn prune_travel_prunes_low_salience_opportunity_detour() {
+    let (view, actor, hub, east, south, _north, goal_store) = build_hub_pruning_view();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([hub, east, south, goal_store]),
+        5,
+    );
+    let travel_east_id = ActionDefId(100);
+    let travel_south_id = ActionDefId(101);
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(travel_east_id, travel_semantics());
+    semantics_table.insert(travel_south_id, travel_semantics());
+    let mut candidates = vec![
+        make_travel_candidate(travel_east_id, east),
+        make_travel_candidate(travel_south_id, south),
+    ];
+
+    let opportunity_index = opportunity_index_for_place(south, [20]);
+    let pruning = super::prune_travel_away_from_goal_with_expansion_trace(
+        &mut candidates,
+        None,
+        hub,
+        &[goal_store],
+        &snapshot,
+        &semantics_table,
+        Permille::new(150).unwrap(),
+        &opportunity_index,
+    )
+    .expect("travel pruning trace should be emitted");
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].def_id, travel_east_id);
+    assert_eq!(pruning.pruned.len(), 1);
+    assert_eq!(pruning.pruned[0].destination, south);
+}
+
+#[test]
+fn prune_travel_uses_per_agent_detour_budget() {
+    let (view, actor, hub, east, south, _north, goal_store) = build_hub_pruning_view();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([hub, east, south, goal_store]),
+        5,
+    );
+    let travel_east_id = ActionDefId(100);
+    let travel_south_id = ActionDefId(101);
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(travel_east_id, travel_semantics());
+    semantics_table.insert(travel_south_id, travel_semantics());
+    let opportunity_index = opportunity_index_for_place(south, [20]);
+
+    let mut conservative_candidates = vec![
+        make_travel_candidate(travel_east_id, east),
+        make_travel_candidate(travel_south_id, south),
+    ];
+    super::prune_travel_away_from_goal_with_expansion_trace(
+        &mut conservative_candidates,
+        None,
+        hub,
+        &[goal_store],
+        &snapshot,
+        &semantics_table,
+        Permille::new(150).unwrap(),
+        &opportunity_index,
+    );
+
+    let mut permissive_candidates = vec![
+        make_travel_candidate(travel_east_id, east),
+        make_travel_candidate(travel_south_id, south),
+    ];
+    super::prune_travel_away_from_goal_with_expansion_trace(
+        &mut permissive_candidates,
+        None,
+        hub,
+        &[goal_store],
+        &snapshot,
+        &semantics_table,
+        Permille::new(300).unwrap(),
+        &opportunity_index,
+    );
+
+    assert_eq!(conservative_candidates.len(), 1);
+    assert_eq!(permissive_candidates.len(), 2);
+}
+
+#[test]
+fn prune_travel_opportunity_salience_sum_is_deterministic() {
+    let (view, actor, hub, east, south, _north, goal_store) = build_hub_pruning_view();
+    let snapshot = build_planning_snapshot(
+        &view,
+        actor,
+        &BTreeSet::new(),
+        &BTreeSet::from([hub, east, south, goal_store]),
+        5,
+    );
+    let travel_east_id = ActionDefId(100);
+    let travel_south_id = ActionDefId(101);
+    let mut semantics_table = BTreeMap::new();
+    semantics_table.insert(travel_east_id, travel_semantics());
+    semantics_table.insert(travel_south_id, travel_semantics());
+
+    let mut forward_candidates = vec![
+        make_travel_candidate(travel_east_id, east),
+        make_travel_candidate(travel_south_id, south),
+    ];
+    let forward_index = opportunity_index_for_place(south, [10, 11]);
+    let forward_pruning = super::prune_travel_away_from_goal_with_expansion_trace(
+        &mut forward_candidates,
+        None,
+        hub,
+        &[goal_store],
+        &snapshot,
+        &semantics_table,
+        Permille::new(200).unwrap(),
+        &forward_index,
+    );
+
+    let mut reverse_candidates = vec![
+        make_travel_candidate(travel_east_id, east),
+        make_travel_candidate(travel_south_id, south),
+    ];
+    let reverse_index = opportunity_index_for_place(south, [11, 10]);
+    let reverse_pruning = super::prune_travel_away_from_goal_with_expansion_trace(
+        &mut reverse_candidates,
+        None,
+        hub,
+        &[goal_store],
+        &snapshot,
+        &semantics_table,
+        Permille::new(200).unwrap(),
+        &reverse_index,
+    );
+
+    assert_eq!(
+        forward_candidates
+            .iter()
+            .map(|candidate| candidate.def_id)
+            .collect::<Vec<_>>(),
+        reverse_candidates
+            .iter()
+            .map(|candidate| candidate.def_id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(forward_pruning, reverse_pruning);
 }
 
 #[test]
