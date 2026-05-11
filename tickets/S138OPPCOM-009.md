@@ -48,9 +48,9 @@ Insert immediately before Section 3b a new sub-section "Section 3a — Opportuni
 Section 3a — Opportunities
 
 Tick 412 — Agent A:
-  bread@bakery: salience 720 — effects: OwnsCommodity(Bread); legal: BelievedOwned(baker); exposure: Public
-  bread@bakery: salience 540 — effects: OwnsCommodity(Bread); legal: BelievedOwned(baker); exposure: PublicWithCriminalRisk
-  altar@hut: salience 380 — effects: OwnsCommodity(Bread); legal: SociallyOpenToRequest; exposure: PublicWithShameRisk
+  bread@bakery: salience 720 — effects: CommodityTransfer; commodity: Bread; legal: BelievedOwned(baker); exposure: Public
+  bread@bakery: salience 540 — effects: CommodityTransfer; commodity: Bread; legal: BelievedOwned(baker); exposure: PublicWithCriminalRisk
+  altar@hut: salience 380 — effects: CommodityTransfer; commodity: Bread; legal: SociallyOpenToRequest; exposure: PublicWithShameRisk
 ```
 
 Render up to K=8 opportunities per agent per tick (top by `Opportunity.salience`). Skip ticks with no opportunities recorded.

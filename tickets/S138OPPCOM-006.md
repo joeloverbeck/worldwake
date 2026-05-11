@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — adds per-tick compile_opportunities pass before candidate generation; populates `RootCandidateTrace.source` and records `OpportunityCompilerLoad` per-agent per-tick
-**Deps**: archive/tickets/S138OPPCOM-001.md, archive/tickets/S138OPPCOM-002.md, archive/tickets/S138OPPCOM-003.md, archive/tickets/S138OPPCOM-004.md, tickets/S138OPPCOM-005.md
+**Deps**: archive/tickets/S138OPPCOM-001.md, archive/tickets/S138OPPCOM-002.md, archive/tickets/S138OPPCOM-003.md, archive/tickets/S138OPPCOM-004.md, archive/tickets/S138OPPCOM-005.md
 
 ## Problem
 
@@ -30,6 +30,7 @@ The cornerstone deliverable: implement `compile_opportunities(agent, belief_view
    7. Golden tests — exercised by ticket 010
 6. Per-agent profile reads: the compiler consults `RiskWeightProfile` and `LawAbidingProfile` via the `GoalBeliefView::risk_weight_profile` and `law_abiding_profile` accessors added in `archive/tickets/S138OPPCOM-002.md`.
 7. Per-tick budget: result length bounded by `CognitiveProfile.compile_opportunity_cap` (archive/tickets/S138OPPCOM-003.md); salience floor enforced via `PerceptionProfile.opportunity_floor_permille` (archive/tickets/S138OPPCOM-003.md).
+8. Effect-schema index handoff: `archive/tickets/S138OPPCOM-005.md` lands a payload-free `EffectFactKey` category index over `EffectStep` declarations. This ticket owns the next binding layer: combine category lookups such as `EffectFactKey::CommodityTransfer` with the agent's perceived/believed commodity, target, legal-status, and required-action evidence before emitting concrete opportunities.
 
 ## Architecture Check
 
@@ -99,7 +100,7 @@ Immediately before the existing `generate_candidates_with_*` call:
 let (opportunities, load) = compile_opportunities(
     agent,
     &belief_view,
-    &driver.effect_schema_index,
+    driver.effect_schema_index(),
 );
 let opportunity_index = build_perceived_opportunity_index(opportunities.clone());
 decision_trace_sink.record_opportunity_compiler_load(agent, current_tick, load);
@@ -114,7 +115,7 @@ Modify `crates/worldwake-ai/src/candidate_generation.rs`:
 
 Update `generate_candidates` (line 250) to accept `&[Opportunity]` as an additional input. Iterate the opportunities, emit `GoalOffer`s for each opportunity whose `required_actions` and `legal_status` resolve to viable bindings, and tag the resulting `RootCandidateTrace.source` with `CandidateSource::OpportunityCompiler`. Emitter-sourced candidates continue to tag `CandidateSource::Emitter`.
 
-When a goal's existing `relevant_ops` hint set is exhausted AND `urgency_class >= GoalPriorityClass::HighPriority` AND `relevant_ops_authority()` returns `HintOnly` (ticket 004), query `action_index.actions_producing(...)` for additional bindings.
+When a goal's existing `relevant_ops` hint set is exhausted AND `urgency_class >= GoalPriorityClass::HighPriority` AND `relevant_ops_authority()` returns `HintOnly` (ticket 004), query `action_index.actions_producing(...)` for additional category-matched action defs. The category lookup is not payload-specific; filter and bind commodity/entity/legal relevance from the agent's accessible belief view before emitting a candidate.
 
 ### 5. Record `OpportunityCompilerLoad` on decision-trace sink
 
@@ -127,7 +128,7 @@ Modify `crates/worldwake-ai/src/decision_trace.rs` (`DecisionTraceSink` at line 
 - `crates/worldwake-ai/src/agent_tick/observation.rs` (modify — insert compile pass at line 273 + thread results into generate_candidates_with_*)
 - `crates/worldwake-ai/src/candidate_generation.rs` (modify — accept `&[Opportunity]`; tag `source` field; consult `EffectSchemaIndex` when hint exhausted)
 - `crates/worldwake-ai/src/decision_trace.rs` (modify — add `record_opportunity_compiler_load` method)
-- `crates/worldwake-ai/src/agent_tick/mod.rs` (likely modify — ensure driver passes `effect_schema_index` and trace sink to observation phase)
+- `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — pass `driver.effect_schema_index()` and trace sink to observation phase)
 - `crates/worldwake-ai/src/agent_tick/tests.rs` (modify — add integration coverage)
 
 ## Out of Scope
@@ -155,10 +156,11 @@ Modify `crates/worldwake-ai/src/decision_trace.rs` (`DecisionTraceSink` at line 
 ### Invariants
 
 1. `compile_opportunities` reads only the agent's belief view + the registry-time `EffectSchemaIndex` (FND-7 locality preserved)
-2. No new `GoalKind` variant is introduced (spec Non-Goal)
-3. `RootCandidateTrace.source` is `OpportunityCompiler` only for candidates whose binding originated from a compiled opportunity; `Emitter` for everything else
-4. The compile pass runs synchronously within `agent_tick`, exactly once per agent per tick, immediately before `generate_candidates` (FND-29A determinism preserved)
-5. Per-agent `compile_opportunity_cap` and `opportunity_floor_permille` govern truncation and filtering — no hard-coded constants
+2. `EffectSchemaIndex` supplies payload-free effect categories only; `compile_opportunities` supplies commodity/entity/legal binding from belief-local evidence
+3. No new `GoalKind` variant is introduced (spec Non-Goal)
+4. `RootCandidateTrace.source` is `OpportunityCompiler` only for candidates whose binding originated from a compiled opportunity; `Emitter` for everything else
+5. The compile pass runs synchronously within `agent_tick`, exactly once per agent per tick, immediately before `generate_candidates` (FND-29A determinism preserved)
+6. Per-agent `compile_opportunity_cap` and `opportunity_floor_permille` govern truncation and filtering — no hard-coded constants
 
 ## Test Plan
 

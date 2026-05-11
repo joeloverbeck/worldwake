@@ -45,6 +45,7 @@ use crate::{
     OpportunityExpectationFailureIncident, PlannerOpSemantics,
     agenda_manager::goal_post_conditions_already_satisfied,
     authoritative_target, build_semantics_table,
+    effect_schema_index::EffectSchemaIndex,
     failure_handling::{classify_discrepancy, record_failure_classification},
     frame_runtime_snapshot,
     plan_step_expectations::{expire_plan_step_expectations, persist_expectation_store_update},
@@ -78,6 +79,8 @@ use worldwake_sim::{
 pub struct AgentTickDriver {
     runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
     semantics_cache: Option<(usize, BTreeMap<ActionDefId, PlannerOpSemantics>)>,
+    effect_schema_index: EffectSchemaIndex,
+    effect_schema_index_action_count: Option<usize>,
     /// Optional trace collector. When `Some`, decision traces are recorded.
     trace_sink: Option<DecisionTraceSink>,
 }
@@ -444,8 +447,17 @@ impl AgentTickDriver {
         Self {
             runtime_by_agent: BTreeMap::new(),
             semantics_cache: None,
+            effect_schema_index: EffectSchemaIndex::empty(),
+            effect_schema_index_action_count: None,
             trace_sink: None,
         }
+    }
+
+    #[must_use]
+    pub fn new_with_action_defs(action_defs: &worldwake_sim::ActionDefRegistry) -> Self {
+        let mut driver = Self::new();
+        driver.initialize_effect_schema_index(action_defs);
+        driver
     }
 
     pub fn from_saved_runtime(
@@ -467,6 +479,11 @@ impl AgentTickDriver {
     #[must_use]
     pub fn trace_sink(&self) -> Option<&DecisionTraceSink> {
         self.trace_sink.as_ref()
+    }
+
+    #[must_use]
+    pub fn effect_schema_index(&self) -> &EffectSchemaIndex {
+        &self.effect_schema_index
     }
 
     /// Read-only access to persisted per-agent runtime state for diagnostic
@@ -507,6 +524,14 @@ impl AgentTickDriver {
             .1
     }
 
+    fn initialize_effect_schema_index(&mut self, action_defs: &worldwake_sim::ActionDefRegistry) {
+        if self.effect_schema_index_action_count.is_some() {
+            return;
+        }
+        self.effect_schema_index = EffectSchemaIndex::build(action_defs);
+        self.effect_schema_index_action_count = Some(action_defs.len());
+    }
+
     #[must_use]
     pub fn frame_snapshot(
         &self,
@@ -535,6 +560,8 @@ impl AgentTickDriver {
         // No post-load fixups needed — the deserialized state is identical
         // to the pre-save state, preserving replay determinism.
         self.semantics_cache = None;
+        self.effect_schema_index = EffectSchemaIndex::empty();
+        self.effect_schema_index_action_count = None;
     }
 
     fn restore_runtime_state(&mut self, bytes: &[u8]) -> Result<(), SaveError> {
@@ -542,6 +569,8 @@ impl AgentTickDriver {
             .map_err(|error| SaveError::RuntimeDeserialization(error.to_string()))?;
         self.runtime_by_agent = state.runtime_by_agent;
         self.semantics_cache = None;
+        self.effect_schema_index = EffectSchemaIndex::empty();
+        self.effect_schema_index_action_count = None;
         self.trace_sink = None;
         Ok(())
     }
@@ -1122,6 +1151,7 @@ impl AutonomousController for AgentTickDriver {
         // Ensure semantics cache is populated, then split-borrow fields to
         // avoid cloning the entire BTreeMap on every agent tick.
         let _ = self.semantics_table(ctx.action_defs);
+        self.initialize_effect_schema_index(ctx.action_defs);
         let semantics_table = &self.semantics_cache.as_ref().unwrap().1;
         let tracing = self.trace_sink.is_some();
         let cognitive = ctx

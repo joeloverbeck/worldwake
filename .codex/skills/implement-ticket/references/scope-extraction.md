@@ -39,6 +39,15 @@ Use this compact checklist before editing:
 - when canonical names, classifications, or display rows depend on an existing registry/catalog, verify whether the live render/helper signature must accept that input explicitly instead of assuming the change is purely local `writeln!` fallout
 - for UI/visualizer snapshot fields derived through AI or belief helpers, list the runtime context the helper actually reads (belief store, current tick, scheduler active actions, action definitions, recipe registry if relevant) and make that context part of the owned scope when the final rendered value would otherwise be misleading
 
+For registry-derived indexes or caches stored on runtime drivers:
+
+- identify whether the normal constructor actually has the registry/catalog input, or whether a separate explicit constructor is needed
+- decide whether restored/default driver paths rebuild the derived read-model at load time, first controller/use time, or another named lifecycle point
+- keep persisted runtime state separate from the derived read-model unless the ticket explicitly changes save shape; record any intentional no-bump decision in closeout
+- expose a narrow read accessor when sibling tickets will consume the derived model, instead of relying on direct field access
+- prove there is no per-tick rebuild, or record the precise invalidation/rebuild trigger if the registry can change during the driver lifetime
+- truth-sync active sibling tickets/spec snippets when the live accessor, constructor, or lifecycle differs from the draft sketch
+
 ## Doc-only or compile-time regression tickets
 
 Use this compact checklist before editing:

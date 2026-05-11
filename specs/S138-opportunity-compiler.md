@@ -6,7 +6,7 @@
 
 Candidate generation in `crates/worldwake-ai/src/candidate_generation.rs` is purely top-down emitter-driven: ~15 `emit_*` functions read agent need/obligation/threat state and emit goal candidates. `relevant_ops` (`crates/worldwake-ai/src/goal_dispatch_decl.rs:57`) declares per-goal-kind which `PlannerOpKind`s are "relevant" — and a conformance test enforces that the declaration matches the live goal-model dispatch. As an architectural pattern, this works for ~40 goal kinds and hand-curated scenarios. It begins to fail when scenarios offer many emergent paths to the same end: `AcquireCommodity(Food)` only considers Trade/Harvest/Craft/Queue/Travel/MoveCargo because those are the declared `relevant_ops`. A starving agent next to an unguarded basket of bread cannot discover *steal*; a thirsty agent in a deserted hut cannot discover *beg from the household altar*; a hunter past their last reliable source cannot discover *raid an abandoned camp*.
 
-The architectural shift the assessor proposes is bottom-up: for every perceived entity, record, place, route, social fact, and affordance, derive what effects it could enable, what motives those effects would satisfy, what risks or legal consequences they create, and what information they could reveal. The bottom-up pass produces `Opportunity` records that the existing emitters consume alongside the top-down pass. `relevant_ops` becomes a hint that biases search, not the authoritative gate of possibility. Authority moves to a queryable index over `ActionDef.effect_schema` (S134): "give me every action whose effect schema produces `EffectFact::OwnsCommodity(Food)` against an agent-accessible target."
+The architectural shift the assessor proposes is bottom-up: for every perceived entity, record, place, route, social fact, and affordance, derive what effects it could enable, what motives those effects would satisfy, what risks or legal consequences they create, and what information they could reveal. The bottom-up pass produces `Opportunity` records that the existing emitters consume alongside the top-down pass. `relevant_ops` becomes a hint that biases search, not the authoritative gate of possibility. Authority moves to a queryable index over `ActionDef.effect_schema` (S134): "give me every action whose effect schema can produce `EffectFactKey::CommodityTransfer`; then let the compiler bind commodity- and target-specific relevance from the agent's accessible belief/view state."
 
 S138 also folds in the assessor's PR-13 (richer travel pruning — detours that satisfy causal landmarks, reduce risk, gain information) and PR-20 (richer interrupt-layer opportunism). The opportunity compiler is the unifying surface: travel pruning becomes opportunity-aware, and the existing interrupt layer (`crates/worldwake-ai/src/interrupts.rs`) enriches its fired set from the same opportunity index. A panicked agent who sees a corpse, an unattended valuable, or a wounded ally generates opportunities through the same pass that emits "I see bread" and "I hear a cart on the road."
 
@@ -35,7 +35,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 ## Design Goals
 
 1. **Bottom-up parity with top-down.** Every perceived entity, record, route, social fact, and place produces zero or more `Opportunity` records per tick. Opportunities feed candidate generation alongside existing emitters; they do not replace them.
-2. **Effect-schema is the authority.** The `EffectSchemaIndex` answers "which actions produce this effect?" Goals query the index when their `relevant_ops` hints are exhausted or when motive urgency exceeds a per-agent threshold.
+2. **Effect-schema is the authority.** The `EffectSchemaIndex` answers "which actions can emit this effect category?" Goals query the index when their `relevant_ops` hints are exhausted or when motive urgency exceeds a per-agent threshold; commodity-, entity-, and legality-specific binding remains the compiler's belief-local work.
 3. **`relevant_ops` becomes a hint.** The existing declaration stays for fast-path ranking. When the agent's urgency or learned-opportunity memory indicates the hint is insufficient, the compiler queries the effect-schema index and emits additional candidates. The conformance test (`test_declaration_relevant_ops_match_live_goal_model` at `crates/worldwake-ai/src/goal_dispatch_decl.rs:971`) continues to assert that `relevant_ops` matches the live goal model's `relevant_op_kinds()` exactly — the test's *assertion* is unchanged; only the *runtime authority* of the slice changes (from gate to hint). The static slice remains the curated fast-path; the effect-schema index becomes the broader authority when the hint is exhausted.
 4. **Per-perception cost bound.** Compilation runs in O(|perceived entities| × |relevant action effects|), with `relevant action effects` bounded by `EffectSchemaIndex` lookup. Deterministic, bounded, no global scan.
 5. **Risk and legality declared, not imposed.** Each opportunity declares believed legality (`BelievedLegalStatus`) and social exposure (`SocialExposureBand`) so ranking can weigh them per-agent. The compiler does not filter out illegal opportunities — that is the agent's per-profile decision.
@@ -106,7 +106,7 @@ impl EffectSchemaIndex {
 }
 ```
 
-`ActionDefRegistry` lives in `crates/worldwake-sim/src/action_def_registry.rs:6`. The index is built once at simulation startup (registry construction) and shared across the run, never per-tick.
+`ActionDefRegistry` lives in `crates/worldwake-sim/src/action_def_registry.rs:6`. The index is built once per `AgentTickDriver` lifetime from the registry and shared across the run, never per-tick; normal startup can use `AgentTickDriver::new_with_action_defs`, while restored/default driver paths initialize once from the first controller context.
 
 ### `relevant_ops` reclassification (in `goal_dispatch_decl.rs`)
 
@@ -152,9 +152,9 @@ The existing Section 3 (Decision History) at `crates/worldwake-cli/src/bin/obser
 Section 3a — Opportunities
 
 Tick 412 — Agent A:
-  bread@bakery: salience 720 — effects: OwnsCommodity(Bread); legal: BelievedOwned(baker); exposure: Public
-  bread@bakery: salience 540 — effects: OwnsCommodity(Bread); legal: BelievedOwned(baker)→Steal; exposure: Public+CriminalRisk
-  altar@hut: salience 380 — effects: OwnsCommodity(Bread); legal: SociallyOpenToRequest; exposure: Public+ShameRisk
+  bread@bakery: salience 720 — effects: CommodityTransfer; commodity: Bread; legal: BelievedOwned(baker); exposure: Public
+  bread@bakery: salience 540 — effects: CommodityTransfer; commodity: Bread; legal: BelievedOwned(baker)→Steal; exposure: Public+CriminalRisk
+  altar@hut: salience 380 — effects: CommodityTransfer; commodity: Bread; legal: SociallyOpenToRequest; exposure: Public+ShameRisk
 ```
 
 K is governed by `observer.section_3a_top_k` (existing observer-args precedent) or a fixed default if no flag exists at landing.
@@ -309,11 +309,11 @@ Two additions:
    - `PerceptionProfile.opportunity_floor_permille` floor below which opportunities are not emitted.
 4. **Stored state vs derived read-model list.**
    - **Stored authoritative state**: `LearnedOpportunityMemory` (already in `worldwake-core/src/learned_opportunity_memory.rs`, S109); two new universal-on-Agent components `RiskWeightProfile` and `LawAbidingProfile` (sibling components, not extensions of `PreferenceProfile`); new field on `PerceptionProfile.opportunity_floor_permille`; new fields on `CognitiveProfile` (`detour_budget_permille`, `compile_opportunity_cap`).
-   - **Derived read-model**: `Opportunity` records (per-tick, ai-side), `EffectSchemaIndex` (registry-time, rebuilt only on `ActionDefRegistry` change — i.e., simulation startup; no per-tick rebuild), `PerceivedOpportunityIndex` (per-tick view), `OpportunityCompilerLoad` (per-tick trace counter).
+   - **Derived read-model**: `Opportunity` records (per-tick, ai-side), `EffectSchemaIndex` (registry-time; explicit startup construction when the `ActionDefRegistry` is available, with one-time first-controller-use initialization for restored/default driver paths; no per-tick rebuild), `PerceivedOpportunityIndex` (per-tick view), `OpportunityCompilerLoad` (per-tick trace counter).
 
 ## SystemFn Integration
 
-No new `SystemFn` in the simulation tick. `compile_opportunities` runs synchronously within `agent_tick` — specifically inside `crates/worldwake-ai/src/agent_tick/observation.rs` immediately before the existing `generate_candidates_with_*` invocation at line 273. The `AgentTickDriver` (`crates/worldwake-ai/src/agent_tick/mod.rs`) orchestrates `agent_tick`; this spec inserts the compiler call into the observation phase, not into a new top-level SystemFn. The `EffectSchemaIndex` is built once at simulation startup (registry construction in `ActionDefRegistry`) and shared across the run; the `PerceivedOpportunityIndex` is built per-tick from the compiler's output and consumed by travel pruning and interrupts within the same tick.
+No new `SystemFn` in the simulation tick. `compile_opportunities` runs synchronously within `agent_tick` — specifically inside `crates/worldwake-ai/src/agent_tick/observation.rs` immediately before the existing `generate_candidates_with_*` invocation at line 273. The `AgentTickDriver` (`crates/worldwake-ai/src/agent_tick/mod.rs`) orchestrates `agent_tick`; this spec inserts the compiler call into the observation phase, not into a new top-level SystemFn. The `EffectSchemaIndex` is built from the registry once per driver lifetime, either through explicit startup construction (`AgentTickDriver::new_with_action_defs`) or the first controller context for restored/default driver paths, and shared across the run; the `PerceivedOpportunityIndex` is built per-tick from the compiler's output and consumed by travel pruning and interrupts within the same tick.
 
 ## Component Registration
 
