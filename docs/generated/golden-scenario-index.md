@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 150
-- Contributing golden test files: 36
-- Associated tests: 182
+- Scenario blocks: 155
+- Contributing golden test files: 37
+- Associated tests: 187
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -217,9 +217,59 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: ArtifactCredibilityRefutation record event -> ArtifactTransition(Credibility::Refuted) -> ArtifactTransition(Actionability::Closed).
 
+### Scenario 393: Single-Slot Orchard Emits Arrival-Time Contention Payload
+
+- Source: `golden_contention_inspectability.rs:333`
+
+**Setup**: Three human-controlled agents are co-located at a single-slot orchard with a pre-seeded waiting queue before the head actor makes a real harvest request.
+
+**Proves**: Resource-extraction grant emits ContentionResolved with all queued claimants in ordinal order, first Granted, later QueuedBehind, and ArrivalTime rule.
+
+**Cross-system chain**: ResourceExtractionQueues.waiting -> harvest start -> grant_or_signal_full -> set_contention_event_payload -> EventLog::events_by_tag(ContentionResolved).
+
+### Scenario 394: Survival Contested Emits Resource And Facility Contention
+
+- Source: `golden_contention_inspectability.rs:398`
+
+**Setup**: Run authored survival-contested.ron long enough for resource-extraction and facility-queue contention substrates to emit.
+
+**Proves**: Scenario-backed path emits ContentionResolved from both substrate families with concrete (facility, action) keys and deterministic claimant ordering when claimants are present.
+
+**Cross-system chain**: authored scenario -> AI self-care/acquisition -> queue/grant substrates -> typed contention events.
+
+### Scenario 395: Well Facility Queue Admission Emits Contention Payload
+
+- Source: `golden_contention_inspectability.rs:448`
+
+**Setup**: Two thirsty human-controlled agents queue for one auto-promoting contention-managed well with a pre-seeded facility queue.
+
+**Proves**: Facility-queue path emits ContentionResolved on the QueueGrantPromoted event with the head Granted and the following claimant behind.
+
+**Cross-system chain**: ContentionQueue.waiting -> contention_system::promote_ready_head -> commit_queue_update -> typed contention event plus QueueGrantPromoted tag.
+
+### Scenario 396: Reservation Conflict Backreference Resolves To Event Payload
+
+- Source: `golden_contention_inspectability.rs:515`
+
+**Setup**: A real harvest grant emits ContentionResolved, then BlockerMemory stores that event id in ReservationConflict.contention_event.
+
+**Proves**: Stored blocker backreference resolves to the corresponding ContentionResolved event payload; private AI lookup helper remains unit-covered.
+
+**Cross-system chain**: harvest grant -> typed contention event -> BlockerMemory ReservationConflict.contention_event -> EventLog payload lookup.
+
+### Scenario 397: Survival Contested Contention Events Replay Deterministically
+
+- Source: `golden_contention_inspectability.rs:562`
+
+**Setup**: Run survival-contested.ron twice from its authored seed for the full 1440-tick window and capture ContentionResolved payloads.
+
+**Proves**: S142 event emission is deterministic at event-log payload surface across same-seed independent runs.
+
+**Cross-system chain**: scenario spawn -> 1440 ticks -> EventLog::events_by_tag slice -> payload equality across independent runs.
+
 ### Scenario 384: S136 Decision Payload Eat Commitment Records Drink Rejection
 
-- Source: `golden_decision_payload.rs:75`
+- Source: `golden_decision_payload.rs:76`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -231,7 +281,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim
 
-- Source: `golden_decision_payload.rs:124`
+- Source: `golden_decision_payload.rs:125`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -243,7 +293,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 386: S136 Decision Payload Commodity Assumption Breach Records Observation
 
-- Source: `golden_decision_payload.rs:175`
+- Source: `golden_decision_payload.rs:176`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -255,7 +305,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 387: S136 Decision Payload Source Failure Records Source Observation
 
-- Source: `golden_decision_payload.rs:234`
+- Source: `golden_decision_payload.rs:235`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -267,7 +317,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 
-- Source: `golden_experience_preferences.rs:546`
+- Source: `golden_experience_preferences.rs:547`
 - Systems: Travel, learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -279,7 +329,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 92: Combat-Aborted Travel Still Creates Hostile Route Memory
 
-- Source: `golden_experience_preferences.rs:570`
+- Source: `golden_experience_preferences.rs:571`
 - Systems: Travel, interrupt/abort, learned route experience, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production
@@ -291,7 +341,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 93: Preference Profiles Create Route Diversity From the Same Memory
 
-- Source: `golden_experience_preferences.rs:591`
+- Source: `golden_experience_preferences.rs:592`
 - Systems: learned route experience, belief view, AI planning
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Travel, Production

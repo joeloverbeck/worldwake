@@ -1,6 +1,6 @@
 # S142: Contention Event Inspectability
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -12,7 +12,7 @@ S142 adds `ContentionEvent` as a first-class append-only event payload emitted w
 
 ## Phase and Status
 
-Phase 11: Belief-First Continual Planning Architectural — Draft
+Phase 11: Belief-First Continual Planning Architectural — COMPLETED
 
 ## Crates
 
@@ -199,12 +199,13 @@ Not applicable — contention resolution is per-affordance, not per-agent. The `
 
 ## Validation and Falsification
 
-- **Golden coverage**: new `golden_contention_inspectability.rs` with four scenarios:
-  1. Three agents converge on a single-slot orchard via the resource-extraction path → expects one `ContentionResolved` event per slot grant with all three claimants in arrival order, winner = first arrival, `resolution_rule = ArrivalTime`.
-  2. Resource-extraction slot grant in `survival-contested.ron` style → expects per-slot grant events with correct `(facility, action)` keys.
-  3. Facility queue admission on a wash basin → expects queued-ahead/queued-behind classification per claimant via the `promote_ready_head` path.
-  4. `BlockingFact::ReservationConflict` with non-`None` `contention_event` → end-to-end attribution from AI failure path to the resolution record.
-- **Replay parity**: 1440-tick `survival-contested.ron` replay produces identical `ContentionResolved` event sequence pre/post-replay (deterministic emission).
+- **Golden coverage**: new `golden_contention_inspectability.rs` with five scenarios:
+  1. Single-slot orchard resource-extraction grant with a pre-seeded waiting queue → expects one `ContentionResolved` event carrying all three claimants in arrival order, winner = first claimant, `resolution_rule = ArrivalTime`.
+  2. `survival-contested.ron` multi-substrate emission → expects `ContentionResolved` events from both the resource-extraction and facility-queue substrates with concrete `(facility, action)` keys and deterministic claimant ordering when queued claimants are present.
+  3. Facility queue admission on a contention-managed well harvest affordance → expects queued-ahead/queued-behind classification per claimant via the `promote_ready_head` path. The live `queue_for_facility_use` substrate admits exclusive harvest/craft workstation actions; wash is not a queued facility-use action on this branch.
+  4. `BlockingFact::ReservationConflict` with non-`None` `contention_event` → verifies the stored blocker backreference resolves to the corresponding `ContentionResolved` payload. The private AI lookup helper is covered by the lower-layer `agent_tick::execution` unit tests; the golden owns the persisted cross-carrier contract.
+  5. `survival-contested.ron` replay parity → two same-seed 1440-tick runs produce identical `ContentionResolved` event/payload sequences.
+- **Replay parity**: 1440-tick `survival-contested.ron` replay produces identical `ContentionResolved` event sequences across independent same-seed runs (deterministic emission).
 - **Coverage**: `every_grant_emits_contention_event()` conformance test asserts both the facility-queue grant path (`promote_ready_head`) and the resource-extraction grant path (`grant_or_signal_full`) emit the event. Any future grant-issuance code path added to either substrate must be instrumented; the test enforces no third path bypasses emission.
 
 ## Risks
@@ -213,3 +214,9 @@ Not applicable — contention resolution is per-affordance, not per-agent. The `
 - **`BlockingFact::ReservationConflict` payload-widening blast radius.** The pre-ticket unit form had 17 `worldwake-ai` use sites (mix of construction and destructuring). Mitigation: ticket S142CONEVEINS-002 performs the workspace-wide migration in one pass with grep enumeration; tests covering the bare unit form are updated alongside production code in the same change.
 - **Snapshot-before-mutate ordering in emission code.** Both D3a and D3b read `ContentionQueue.waiting` ordinals BEFORE the grant mutation removes the head. Mitigation: emission helper accepts the pre-mutation queue snapshot as a parameter; the unit test for the helper exercises the case where the head is mutated between snapshot and emission to confirm the snapshot is the authoritative source for `queue_position`.
 - **Discrepancy backreference latency.** The AI populates `contention_event` by looking up an event emitted earlier in the same tick; if the lookup index is per-tick rebuilt, cost grows. Mitigation: a follow-up ticket measures lookup cost on `survival-contested.ron`; if it exceeds 1% of agent_tick, an O(1) index is added (per-affordance most-recent-resolution pointer).
+
+## Outcome
+
+Completed on 2026-05-11 through the archived `S142CONEVEINS-001` through `S142CONEVEINS-007` ticket chain. The landed contract adds append-only `ContentionResolved` event payloads, facility-queue and resource-extraction emission, `BlockingFact::ReservationConflict.contention_event` attribution, observer rendering, and five-scenario golden coverage in `golden_contention_inspectability.rs`.
+
+The final validation seam differs from the original draft in two places: facility-queue golden proof uses the live contention-managed well harvest affordance rather than wash, and the blocker-memory golden proves persisted event-id-to-payload resolution while the private AI lookup helper remains covered by lower-layer `agent_tick::execution` unit tests. The two ignored contention-inspectability goldens are explicit manual-only proof witnesses; no dedicated GitHub Actions workflow was added for S142.
