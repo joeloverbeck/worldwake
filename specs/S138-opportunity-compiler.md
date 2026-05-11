@@ -143,7 +143,7 @@ A detour is allowed if the summed opportunity-salience along the detour path × 
 
 ### Interrupt-layer enrichment (in `interrupts.rs`)
 
-The `evaluate_interrupt` function at `crates/worldwake-ai/src/interrupts.rs:31` already gates on `ranked_candidates`. Extend the candidate set seen by the interrupt layer with opportunity-derived candidates (salience × effect-to-motive-satisfaction). The interrupt fires when the opportunity's expected-motive-satisfaction exceeds the active commitment's expected-motive-satisfaction by at least the existing `frame_switch_margin`. No new interrupt channel is added; opportunities populate the existing `ranked_candidates` input set.
+The `evaluate_interrupt` function at `crates/worldwake-ai/src/interrupts.rs:31` already gates on `ranked_candidates`. Extend the candidate set seen by the interrupt layer with opportunity-derived candidates (salience × effect-to-motive-satisfaction). The interrupt fires when the opportunity's expected-motive-satisfaction clears the active commitment's expected-motive-satisfaction by the existing relative `Permille` `frame_switch_margin` / switch-margin rule. No new interrupt channel is added; opportunities populate the existing `ranked_candidates` input set.
 
 ### Observer Section 3
 

@@ -23,6 +23,7 @@ If the falsified hypothesis was the ticket's core implementability claim rather 
 **Goal and candidate pipeline:**
 - When the ticket claims a goal family should become behaviorally selectable, check the full AI admission path: candidate generation, goal-policy suppression, ranking, selection.
 - When a ticket audits threshold alignment between candidate emission and goal satisfaction, also inspect the matching hypothetical planner transition. Record whether one step or repeated steps clear the relevant band.
+- When a planner, ranking, interrupt, or goal-switch ticket names `switch_margin`, `frame_switch_margin`, motive-score deltas, or `Permille` examples, inspect the live comparison helper before writing tests or closeout prose. Do not infer absolute score deltas from `Permille(100)`-style prose; bind examples to the helper's actual relative/absolute arithmetic.
 - When an existing operator becomes newly goal-satisfying for an additional goal family, compare operator legality across every live goal family that consumes that operator.
 - When making a payload-override action live through the AI pipeline, compare planner-step revalidation against runtime request resolution.
 
