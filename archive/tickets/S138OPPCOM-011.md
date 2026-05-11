@@ -1,6 +1,6 @@
 # S138OPPCOM-011: Attribute opportunity-retained travel pruning decisions
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — enriches travel-pruning trace records and selected-plan provenance formatting
@@ -14,9 +14,9 @@ That leaves the spec's debugging promise incomplete: `specs/S138-opportunity-com
 
 ## Assumption Reassessment (2026-05-11)
 
-1. `TravelSuccessorTrace` in `crates/worldwake-ai/src/decision_trace.rs` currently records destination, perceived travel cost pieces, remaining travel ticks, and projected total cost, but no retention/pruning reason.
+1. Before this ticket, `TravelSuccessorTrace` in `crates/worldwake-ai/src/decision_trace.rs` recorded destination, perceived travel cost pieces, remaining travel ticks, and projected total cost, but no retention/pruning reason.
 2. `TravelPruningTrace` already travels through `SearchExpansionSummary.travel_pruning` and `SelectedPlanSearchProvenance.root_travel_pruning`; this ticket should enrich that existing trace path rather than adding a parallel debug subsystem.
-3. `format_selected_plan_search_provenance` renders retained and pruned travel successors without any opportunity salience, budget, threshold, or reason information.
+3. Before this ticket, `format_selected_plan_search_provenance` rendered retained and pruned travel successors without any opportunity salience, budget, threshold, or reason information.
 4. S138OPPCOM-007's focused pruning tests prove behavior, but they do not prove trace attribution for opportunity-retained detours.
 5. The exact shared abstraction boundary is the planner search trace/provenance surface for spatial pruning, not authoritative action execution or observer opportunity rendering.
 
@@ -42,8 +42,8 @@ Modify `crates/worldwake-ai/src/decision_trace.rs` to add a typed reason/attribu
 pub enum TravelPruningAttribution {
     WithinBestCost,
     OpportunityDetour {
-        salience_permille: u16,
-        detour_budget_permille: u16,
+        salience_permille: u32,
+        detour_budget_permille: Permille,
         cost_increase: u32,
         cost_threshold: u32,
     },
@@ -99,6 +99,29 @@ Update `format_selected_plan_search_provenance` and nearby decision-trace tests 
 ### Commands
 
 1. `cargo test -p worldwake-ai --lib prune_travel`
-2. `cargo test -p worldwake-ai decision_trace`
+2. `cargo test -p worldwake-ai --lib decision_trace::tests::summary_planning_includes_attempt_anchor -- --exact`
 3. `cargo test -p worldwake-ai`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-11.
+
+- Added typed `TravelPruningAttribution` data to `TravelSuccessorTrace` on the existing `TravelPruningTrace` / selected-plan provenance path.
+- Populated attribution at the pruning decision point from the same arithmetic used to retain opportunity detours: summed opportunity salience, per-agent detour budget, cost increase, and threshold.
+- Rendered the attribution in selected-plan search provenance as `within_best_cost`, `opportunity_detour(...)`, or `pruned_as_away_from_goal`.
+- Tightened focused pruning and decision-trace tests so ordinary retained, opportunity-retained, and pruned travel successors are distinguishable.
+
+## Deviations
+
+- The decision-trace proof used the exact live unit test `decision_trace::tests::summary_planning_includes_attempt_anchor`; `cargo test -p worldwake-ai --lib decision_trace -- --list` was used as selector discovery, then narrowed to the proof that renders selected-plan search provenance.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib prune_travel -- --list`
+- Passed `cargo test -p worldwake-ai --lib prune_travel`
+- Passed `cargo test -p worldwake-ai --lib decision_trace -- --list`
+- Passed `cargo test -p worldwake-ai --lib decision_trace::tests::summary_planning_includes_attempt_anchor -- --exact`
+- Passed `cargo fmt --all`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

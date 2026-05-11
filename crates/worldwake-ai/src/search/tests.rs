@@ -6882,6 +6882,7 @@ fn prune_travel_trace_records_perceived_cost_components_for_retained_rivals() {
                 direct_perceived_cost: 2,
                 remaining_travel_ticks: 2,
                 projected_total_cost: 4,
+                attribution: crate::decision_trace::TravelPruningAttribution::WithinBestCost,
             },
             crate::decision_trace::TravelSuccessorTrace {
                 destination: safe_waypoint,
@@ -6891,6 +6892,7 @@ fn prune_travel_trace_records_perceived_cost_components_for_retained_rivals() {
                 direct_perceived_cost: 1,
                 remaining_travel_ticks: 2,
                 projected_total_cost: 3,
+                attribution: crate::decision_trace::TravelPruningAttribution::WithinBestCost,
             },
         ],
     );
@@ -7343,6 +7345,7 @@ fn prune_travel_keeps_only_toward_goal() {
             direct_perceived_cost: 5,
             remaining_travel_ticks: 2,
             projected_total_cost: 7,
+            attribution: crate::decision_trace::TravelPruningAttribution::WithinBestCost,
         }]
     );
     assert_eq!(
@@ -7356,6 +7359,7 @@ fn prune_travel_keeps_only_toward_goal() {
                 direct_perceived_cost: 4,
                 remaining_travel_ticks: 11,
                 projected_total_cost: 15,
+                attribution: crate::decision_trace::TravelPruningAttribution::PrunedAsAwayFromGoal,
             },
             crate::decision_trace::TravelSuccessorTrace {
                 destination: north,
@@ -7365,6 +7369,7 @@ fn prune_travel_keeps_only_toward_goal() {
                 direct_perceived_cost: 3,
                 remaining_travel_ticks: 10,
                 projected_total_cost: 13,
+                attribution: crate::decision_trace::TravelPruningAttribution::PrunedAsAwayFromGoal,
             },
         ]
     );
@@ -7472,6 +7477,20 @@ fn prune_travel_allows_high_salience_opportunity_detour() {
     );
     assert_eq!(pruning.retained.len(), 2);
     assert!(pruning.pruned.is_empty());
+    let south_successor = pruning
+        .retained
+        .iter()
+        .find(|entry| entry.destination == south)
+        .expect("south detour should be retained");
+    assert_eq!(
+        south_successor.attribution,
+        crate::decision_trace::TravelPruningAttribution::OpportunityDetour {
+            salience_permille: 540,
+            detour_budget_permille: Permille::new(150).unwrap(),
+            cost_increase: 4,
+            cost_threshold: 4000,
+        }
+    );
     assert!(
         pruning
             .retained
@@ -7517,6 +7536,10 @@ fn prune_travel_prunes_low_salience_opportunity_detour() {
     assert_eq!(candidates[0].def_id, travel_east_id);
     assert_eq!(pruning.pruned.len(), 1);
     assert_eq!(pruning.pruned[0].destination, south);
+    assert_eq!(
+        pruning.pruned[0].attribution,
+        crate::decision_trace::TravelPruningAttribution::PrunedAsAwayFromGoal
+    );
 }
 
 #[test]

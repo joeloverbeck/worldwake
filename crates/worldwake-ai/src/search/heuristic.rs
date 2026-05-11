@@ -314,6 +314,20 @@ pub(super) fn prune_travel_away_from_goal_with_expansion_trace(
                     perceived_cost: 0,
                 },
             );
+        let cost_increase = remaining_travel_ticks.saturating_sub(current_min);
+        let opportunity_attribution = opportunity_detour_budget_attribution(
+            opportunity_index,
+            destination,
+            cost_increase,
+            detour_budget_permille,
+        );
+        let retained_attribution = if remaining_travel_ticks <= current_min {
+            crate::decision_trace::TravelPruningAttribution::WithinBestCost
+        } else if let Some(attribution) = opportunity_attribution {
+            attribution
+        } else {
+            crate::decision_trace::TravelPruningAttribution::PrunedAsAwayFromGoal
+        };
         let successor = crate::decision_trace::TravelSuccessorTrace {
             destination,
             base_ticks: direct_cost.base_ticks,
@@ -324,15 +338,13 @@ pub(super) fn prune_travel_away_from_goal_with_expansion_trace(
             projected_total_cost: direct_cost
                 .perceived_cost
                 .saturating_add(remaining_travel_ticks),
+            attribution: retained_attribution,
         };
-        if remaining_travel_ticks <= current_min
-            || opportunity_detour_budget_allows(
-                opportunity_index,
-                destination,
-                remaining_travel_ticks.saturating_sub(current_min),
-                detour_budget_permille,
-            )
-        {
+        if matches!(
+            successor.attribution,
+            crate::decision_trace::TravelPruningAttribution::WithinBestCost
+                | crate::decision_trace::TravelPruningAttribution::OpportunityDetour { .. }
+        ) {
             retained.push(successor);
             kept_candidates.push(candidate);
         } else {
@@ -361,23 +373,30 @@ pub(super) fn prune_travel_away_from_goal_with_expansion_trace(
     })
 }
 
-fn opportunity_detour_budget_allows(
+fn opportunity_detour_budget_attribution(
     opportunity_index: &crate::opportunity_compiler::PerceivedOpportunityIndex,
     destination: EntityId,
     cost_increase: u32,
     detour_budget_permille: Permille,
-) -> bool {
+) -> Option<crate::decision_trace::TravelPruningAttribution> {
     if cost_increase == 0 || detour_budget_permille == Permille::ZERO {
-        return false;
+        return None;
     }
     let detour_salience = opportunity_salience_at_place(opportunity_index, destination);
     if detour_salience == 0 {
-        return false;
+        return None;
     }
     let weighted_salience =
         detour_salience.saturating_mul(u32::from(detour_budget_permille.value()));
     let cost_threshold = cost_increase.saturating_mul(1000);
-    weighted_salience >= cost_threshold
+    (weighted_salience >= cost_threshold).then_some(
+        crate::decision_trace::TravelPruningAttribution::OpportunityDetour {
+            salience_permille: detour_salience,
+            detour_budget_permille,
+            cost_increase,
+            cost_threshold,
+        },
+    )
 }
 
 fn opportunity_salience_at_place(

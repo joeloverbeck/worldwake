@@ -1009,6 +1009,20 @@ pub struct TravelSuccessorTrace {
     pub direct_perceived_cost: u32,
     pub remaining_travel_ticks: u32,
     pub projected_total_cost: u32,
+    pub attribution: TravelPruningAttribution,
+}
+
+/// Why a travel successor was retained or pruned by spatial pruning.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TravelPruningAttribution {
+    WithinBestCost,
+    OpportunityDetour {
+        salience_permille: u32,
+        detour_budget_permille: Permille,
+        cost_increase: u32,
+        cost_threshold: u32,
+    },
+    PrunedAsAwayFromGoal,
 }
 
 /// Structured summary of spatial pruning at one expansion boundary.
@@ -2116,35 +2130,13 @@ fn format_selected_plan_search_provenance(provenance: &SelectedPlanSearchProvena
             let retained = trace
                 .retained
                 .iter()
-                .map(|successor| {
-                    format!(
-                        "{:?}[base={}, threat={}, penalty={}, direct={}, remain={}, total={}]",
-                        successor.destination,
-                        successor.base_ticks,
-                        successor.threat_permille.value(),
-                        successor.penalty_ticks,
-                        successor.direct_perceived_cost,
-                        successor.remaining_travel_ticks,
-                        successor.projected_total_cost
-                    )
-                })
+                .map(format_travel_successor_trace)
                 .collect::<Vec<_>>()
                 .join(",");
             let pruned = trace
                 .pruned
                 .iter()
-                .map(|successor| {
-                    format!(
-                        "{:?}[base={}, threat={}, penalty={}, direct={}, remain={}, total={}]",
-                        successor.destination,
-                        successor.base_ticks,
-                        successor.threat_permille.value(),
-                        successor.penalty_ticks,
-                        successor.direct_perceived_cost,
-                        successor.remaining_travel_ticks,
-                        successor.projected_total_cost
-                    )
-                })
+                .map(format_travel_successor_trace)
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
@@ -2161,6 +2153,36 @@ fn format_selected_plan_search_provenance(provenance: &SelectedPlanSearchProvena
         "expansions={}, root_remaining={}, selected_root_travel={}, pruning={pruning}",
         provenance.expansions_used, provenance.root_remaining_travel_ticks, selected
     )
+}
+
+fn format_travel_successor_trace(successor: &TravelSuccessorTrace) -> String {
+    format!(
+        "{:?}[base={}, threat={}, penalty={}, direct={}, remain={}, total={}, reason={}]",
+        successor.destination,
+        successor.base_ticks,
+        successor.threat_permille.value(),
+        successor.penalty_ticks,
+        successor.direct_perceived_cost,
+        successor.remaining_travel_ticks,
+        successor.projected_total_cost,
+        format_travel_pruning_attribution(&successor.attribution),
+    )
+}
+
+fn format_travel_pruning_attribution(attribution: &TravelPruningAttribution) -> String {
+    match attribution {
+        TravelPruningAttribution::WithinBestCost => "within_best_cost".to_string(),
+        TravelPruningAttribution::OpportunityDetour {
+            salience_permille,
+            detour_budget_permille,
+            cost_increase,
+            cost_threshold,
+        } => format!(
+            "opportunity_detour(salience={salience_permille},budget={},increase={cost_increase},threshold={cost_threshold})",
+            detour_budget_permille.value()
+        ),
+        TravelPruningAttribution::PrunedAsAwayFromGoal => "pruned_as_away_from_goal".to_string(),
+    }
 }
 
 fn format_same_goal_planning_trace_summary(trace: &SameGoalPlanningTrace) -> String {
@@ -3746,6 +3768,12 @@ mod tests {
                                 direct_perceived_cost: 2,
                                 remaining_travel_ticks: 5,
                                 projected_total_cost: 7,
+                                attribution: TravelPruningAttribution::OpportunityDetour {
+                                    salience_permille: 540,
+                                    detour_budget_permille: Permille::new(150).unwrap(),
+                                    cost_increase: 4,
+                                    cost_threshold: 4000,
+                                },
                             }],
                             pruned: vec![TravelSuccessorTrace {
                                 destination: entity(13),
@@ -3755,6 +3783,7 @@ mod tests {
                                 direct_perceived_cost: 4,
                                 remaining_travel_ticks: 9,
                                 projected_total_cost: 13,
+                                attribution: TravelPruningAttribution::PrunedAsAwayFromGoal,
                             }],
                         }),
                     }),
@@ -3802,6 +3831,9 @@ mod tests {
         assert!(summary.contains("expansions=3"));
         assert!(summary.contains("root_remaining=7"));
         assert!(summary.contains("selected_root_travel=EntityId"));
+        assert!(summary.contains(
+            "reason=opportunity_detour(salience=540,budget=150,increase=4,threshold=4000)"
+        ));
         assert!(summary.contains("pruned=["));
     }
 
@@ -4886,6 +4918,7 @@ mod tests {
                     direct_perceived_cost: 2,
                     remaining_travel_ticks: 2,
                     projected_total_cost: 4,
+                    attribution: TravelPruningAttribution::WithinBestCost,
                 }],
                 pruned: vec![TravelSuccessorTrace {
                     destination: entity(3),
@@ -4895,6 +4928,7 @@ mod tests {
                     direct_perceived_cost: 3,
                     remaining_travel_ticks: 6,
                     projected_total_cost: 9,
+                    attribution: TravelPruningAttribution::PrunedAsAwayFromGoal,
                 }],
             }),
             prerequisite_guidance: None,

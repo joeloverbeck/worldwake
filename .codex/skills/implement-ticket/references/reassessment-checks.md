@@ -174,8 +174,13 @@ When a later sibling ticket has already landed additional fields on the same sha
 
 When a ticket adds internal diagnostic, trace, or metadata carriage, preserve existing public/external call signatures unless the ticket explicitly owns that API change; prefer an internal helper, wrapper, or traced variant for the new carrier rather than widening public fallout by default.
 When a ticket adds a field to an internal diagnostic, trace, or metadata struct, sweep the full carriage chain before accepting a single-file scope: producer, internal conversion/wrapper layers, renderers or report surfaces, manual struct literals, and all-target test/CLI consumers. Treat those as part of the owned reassessment boundary even when the original ticket only names the producer file.
+Run a workspace-wide constructor sweep for new or changed trace structs before coding, including production trace builders, CLI/observer/report helpers, visualizer/read-model helpers, golden harnesses, and all-target test helpers. Treat constructor fallout from CI-shaped all-target verification as current-ticket scope.
+If agenda metadata, ranking provenance, planning trace metadata, or another derived AI carrier is nested under runtime save state, treat the enclosing persisted runtime wrapper as the save/load boundary and decide `SAVE_FORMAT_VERSION` before the first proof pass.
+For planner-boundary tickets that add or remove trace/provenance carrier fields, apply both the planner-boundary checks in `reassessment-planner-ai.md` and this constructor/consumer sweep. Do not let the eventual edit surface looking narrow collapse the shared-carrier proof obligation.
 
 ## Event, trace, and payload carrier tickets
+
+For event, trace, or payload carrier tickets that add typed reference families, classify each destination ref family as representable from the live emission inputs before coding.
 
 When a ticket requires an `EventTag` "with payload" or an event-log transition event whose payload must be inspectable later, verify the full live event carrier chain before coding: `EventPayload`, `PendingEvent`, `EventRecord`, `EventView`, `WorldTxn`, save/load, and observer/report consumers. A tag plus payload type is not enough if no persisted event field carries that payload.
 
