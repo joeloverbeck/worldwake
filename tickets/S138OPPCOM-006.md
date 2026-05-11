@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — adds per-tick compile_opportunities pass before candidate generation; populates `RootCandidateTrace.source` and records `OpportunityCompilerLoad` per-agent per-tick
-**Deps**: archive/tickets/S138OPPCOM-001.md, archive/tickets/S138OPPCOM-002.md, archive/tickets/S138OPPCOM-003.md, 005
+**Deps**: archive/tickets/S138OPPCOM-001.md, archive/tickets/S138OPPCOM-002.md, archive/tickets/S138OPPCOM-003.md, archive/tickets/S138OPPCOM-004.md, tickets/S138OPPCOM-005.md
 
 ## Problem
 

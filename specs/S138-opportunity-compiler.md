@@ -119,7 +119,7 @@ pub enum Authority {
 }
 ```
 
-The static `GoalDispatchDeclaration.relevant_ops` slice remains exactly as today. Add `relevant_ops_authority(goal: &GoalKind) -> Authority` returning `Authority::HintOnly` for all goal kinds at landing. Candidate generation queries the `EffectSchemaIndex` whenever `urgency_class >= GoalPriorityClass::HighPriority` AND the hint set is exhausted (`relevant_ops` did not bind a candidate). The conformance test `test_declaration_relevant_ops_match_live_goal_model` (`goal_dispatch_decl.rs:971`) continues to assert `relevant_ops` equals `relevant_op_kinds()` — the assertion is unchanged.
+The static `GoalDispatchDeclaration.relevant_ops` slice remains exactly as today. Add `GoalDispatchDeclaration::relevant_ops_authority() -> Authority` returning `Authority::HintOnly` for all goal dispatch declarations at landing. Candidate generation queries the `EffectSchemaIndex` whenever `urgency_class >= GoalPriorityClass::HighPriority` AND the hint set is exhausted (`relevant_ops` did not bind a candidate). The conformance test `test_declaration_relevant_ops_match_live_goal_model` continues to assert `relevant_ops` equals `relevant_op_kinds()` — the assertion is unchanged.
 
 ### Travel-pruning extension (in `search/heuristic.rs`)
 

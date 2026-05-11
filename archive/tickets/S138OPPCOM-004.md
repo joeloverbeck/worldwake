@@ -1,6 +1,6 @@
 # S138OPPCOM-004: Authority enum and relevant_ops_authority method on goal dispatch
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None at landing — the new method returns `HintOnly` for all goal kinds but no consumer reads it yet. Authority semantics activate when ticket 006 lands.
@@ -12,9 +12,9 @@ S138's architectural shift makes `GoalDispatchDeclaration.relevant_ops` a rankin
 
 ## Assumption Reassessment (2026-05-11)
 
-1. Existing focused/unit coverage: `crates/worldwake-ai/src/goal_dispatch_decl.rs` has 5 tests at lines 948, 958, 970, 982, 1001. The conformance test at line 970 is `test_declaration_relevant_ops_match_live_goal_model`, which asserts `relevant_ops` equals `relevant_op_kinds()` per goal kind. This ticket preserves the test verbatim.
+1. Existing focused/unit coverage: `crates/worldwake-ai/src/goal_dispatch_decl.rs` has focused declaration tests, including `test_declaration_relevant_ops_match_live_goal_model`, which asserts `relevant_ops` equals `relevant_op_kinds()` per goal kind. This ticket preserves the conformance assertion verbatim.
 2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "`relevant_ops` reclassification (in `goal_dispatch_decl.rs`)".
-3. Shared abstraction boundary: `GoalDispatchDeclaration` struct at `goal_dispatch_decl.rs:54` — the new method is a property of the declaration, sibling to existing per-declaration metadata (`invalidation_strategy`, `feasibility_strategy`, etc.).
+3. Shared abstraction boundary: `GoalDispatchDeclaration` in `goal_dispatch_decl.rs` — the new method is a property of the declaration, sibling to existing per-declaration metadata (`invalidation_strategy`, `feasibility_strategy`, etc.).
 4. Planner-modifying ticket: technically yes (the method's return value will be consumed by ticket 006 to decide when to query the effect-schema index), but at this ticket's landing the method has no consumer, so the Authoritative-to-AI Impact Rule 7-point checklist is satisfied trivially — the existing planner behavior is unchanged.
 
 ## Architecture Check
@@ -33,7 +33,7 @@ S138's architectural shift makes `GoalDispatchDeclaration.relevant_ops` a rankin
 
 ### 1. Define `Authority` enum
 
-In `crates/worldwake-ai/src/goal_dispatch_decl.rs`, add adjacent to `GoalDispatchDeclaration` (line 54):
+In `crates/worldwake-ai/src/goal_dispatch_decl.rs`, add adjacent to `GoalDispatchDeclaration`:
 
 ```rust
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -59,11 +59,23 @@ The uniform `HintOnly` return is intentional — ticket 006 will consume this va
 
 ### 3. Preserve existing conformance test
 
-`test_declaration_relevant_ops_match_live_goal_model` at line 970 stays unchanged. No prose around the test is altered; it continues to assert the hint accuracy.
+`test_declaration_relevant_ops_match_live_goal_model` stays unchanged. No prose around the test is altered; it continues to assert the hint accuracy.
 
 ## Files to Touch
 
 - `crates/worldwake-ai/src/goal_dispatch_decl.rs` (modify — add Authority enum + method)
+- `crates/worldwake-ai/src/lib.rs` (modify — re-export `Authority` for downstream S138 consumers)
+
+## Outcome
+
+Completion date: 2026-05-11.
+
+Implemented the staged authority surface in `goal_dispatch_decl.rs`: `Authority { Gate, HintOnly }` now derives value-type and serde traits, and `GoalDispatchDeclaration::relevant_ops_authority()` returns `Authority::HintOnly` for every declaration. The existing `relevant_ops` slices and conformance assertion were not changed. `worldwake-ai::Authority` is re-exported from `lib.rs` for ticket 006 consumption.
+
+## Deviations
+
+- Added the `Authority` re-export in `crates/worldwake-ai/src/lib.rs`; the draft file list omitted it, but later S138 consumers need the public value type.
+- Updated `specs/S138-opportunity-compiler.md` to describe the landed method form on `GoalDispatchDeclaration` instead of a free function.
 
 ## Out of Scope
 
@@ -76,8 +88,8 @@ The uniform `HintOnly` return is intentional — ticket 006 will consume this va
 ### Tests That Must Pass
 
 1. New test in `goal_dispatch_decl.rs`: `relevant_ops_authority()` returns `Authority::HintOnly` for every goal kind in `GoalDispatchKey::ALL`
-2. Existing test at line 970 (`test_declaration_relevant_ops_match_live_goal_model`) continues to pass unchanged
-3. Existing 4 other tests at lines 948, 958, 982, 1001 continue to pass
+2. Existing test `test_declaration_relevant_ops_match_live_goal_model` continues to pass unchanged
+3. Existing neighboring declaration tests continue to pass
 4. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -98,3 +110,10 @@ The uniform `HintOnly` return is intentional — ticket 006 will consume this va
 2. `cargo test -p worldwake-ai test_declaration_relevant_ops_match_live_goal_model`
 3. `cargo test -p worldwake-ai`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Verification Result
+
+- Passed: `cargo test -p worldwake-ai goal_dispatch_decl`
+- Passed: `cargo test -p worldwake-ai test_declaration_relevant_ops_match_live_goal_model`
+- Passed: `cargo test -p worldwake-ai`
+- Passed: `cargo clippy --workspace --all-targets -- -D warnings`
