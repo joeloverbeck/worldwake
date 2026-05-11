@@ -18,7 +18,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 
 - `worldwake-core` — extends `EventTag` (`crates/worldwake-core/src/event_tag.rs:7`) with `ContentionResolved`. Adds `ContentionEventPayload` carrying the resolution record, an `EventPayload.contention_event_payload` carrier, and a `WorldTxn::set_contention_event_payload` writer. Adds `ContentionResolutionRule` enum with the single live variant `ArrivalTime`. Adds `AffordanceKey { facility: EntityId, action: ActionDefId }` struct identifying a contested affordance. Extends `BlockingFact::ReservationConflict` (`crates/worldwake-core/src/blocker_memory.rs:197`) from a unit variant to a struct variant carrying the contention-event reference.
 - `worldwake-sim` — bumps `SAVE_FORMAT_VERSION` and extends save/load round-trip coverage for `ContentionResolved` events carrying `ContentionEventPayload`.
-- `worldwake-systems` — `facility_queue.rs::promote_ready_head` extends its existing `commit_queue_update` `extra_tag` emission to also emit `ContentionResolved` alongside `QueueGrantPromoted`. `production_actions.rs::grant_or_signal_full` adds a new `ContentionResolved` emission at the slot-grant point (currently no event is written there).
+- `worldwake-systems` — `facility_queue.rs::promote_ready_head` extends its existing `commit_queue_update` emission so the successful grant event is tagged with both `QueueGrantPromoted` and `ContentionResolved` and carries the typed contention payload. `production_actions.rs::grant_or_signal_full` adds a new `ContentionResolved` emission at the slot-grant point (currently no event is written there).
 - `worldwake-ai` — `agent_tick/execution.rs` populates the new `BlockingFact::ReservationConflict.contention_event` field when the conflict path observes a `ContentionResolved` event for the same affordance at the conflict tick. Existing call sites that construct or destructure `BlockingFact::ReservationConflict` are migrated for the new payload shape (17 sites workspace-wide).
 - `worldwake-cli` — observer adds **Section 12 (Contention)** rendering per-tick contention events. Optional `--contention-top-n` flag surfaces top-N contentions per run by claimant count.
 
@@ -111,7 +111,7 @@ All four types live in `worldwake-core`. `AffordanceKey` derives `Copy, Clone, D
 
 ### D3a. Facility-queue emission
 
-Extend `crates/worldwake-systems/src/facility_queue.rs::promote_ready_head` (line 327) so its existing `commit_queue_update(world, event_log, facility, queue, tick, QueueUpdateEffects { extra_tag: Some(EventTag::QueueGrantPromoted), ... })` call (line 381) also writes a `ContentionResolved` event. Implementation note: capture the queue's `BTreeMap<u32, ContentionWaiter>` snapshot BEFORE `promote_head` mutates it, so the emission code has the full claimant set with arrival order and ordinals. The `ContentionEventPayload` fields are derived as follows for this path:
+Extend `crates/worldwake-systems/src/facility_queue.rs::promote_ready_head` so its existing `commit_queue_update(world, event_log, facility, queue, tick, QueueUpdateEffects { extra_tag: Some(EventTag::QueueGrantPromoted), ... })` call also writes a `ContentionEventPayload` through `WorldTxn::set_contention_event_payload`. The resulting committed event is indexed by both `QueueGrantPromoted` and `ContentionResolved`. Implementation note: capture the queue's `BTreeMap<u32, ContentionWaiter>` snapshot BEFORE `promote_head` mutates it, so the emission code has the full claimant set with arrival order and ordinals. The `ContentionEventPayload` fields are derived as follows for this path:
 
 - `contested_affordance.facility` = the facility entity holding the queue
 - `contested_affordance.action` = the granted waiter's `intended_action`
@@ -121,7 +121,7 @@ Extend `crates/worldwake-systems/src/facility_queue.rs::promote_ready_head` (lin
 - `total_claimants` = full waiting count (including head)
 - `winner` = `Some(granted.actor)`
 
-Emit alongside `QueueGrantPromoted`, not in place of it; both events are part of the canonical record.
+Emit alongside `QueueGrantPromoted`, not in place of it; both tags and the typed payload are part of the canonical event record.
 
 ### D3b. Resource-extraction emission
 

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: None — golden test infrastructure only; no production code change
-**Deps**: archive/tickets/S142CONEVEINS-001.md, archive/tickets/S142CONEVEINS-002.md, S142CONEVEINS-003, S142CONEVEINS-004, S142CONEVEINS-005, S142CONEVEINS-006
+**Deps**: archive/tickets/S142CONEVEINS-001.md, archive/tickets/S142CONEVEINS-002.md, archive/tickets/S142CONEVEINS-003.md, S142CONEVEINS-004, S142CONEVEINS-005, S142CONEVEINS-006
 
 ## Problem
 

@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small-Medium
 **Engine Changes**: Yes — `worldwake-ai` agent_tick execution path looks up contention events
-**Deps**: archive/tickets/S142CONEVEINS-001.md (provides `EventTag::ContentionResolved`), archive/tickets/S142CONEVEINS-002.md (provides `BlockingFact::ReservationConflict.contention_event` field), S142CONEVEINS-003 (facility-queue emission), S142CONEVEINS-004 (resource-extraction emission)
+**Deps**: archive/tickets/S142CONEVEINS-001.md (provides `EventTag::ContentionResolved`), archive/tickets/S142CONEVEINS-002.md (provides `BlockingFact::ReservationConflict.contention_event` field), archive/tickets/S142CONEVEINS-003.md (facility-queue emission), S142CONEVEINS-004 (resource-extraction emission)
 
 ## Problem
 
