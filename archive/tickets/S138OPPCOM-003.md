@@ -1,6 +1,6 @@
 # S138OPPCOM-003: Profile field additions — CognitiveProfile (×2) and PerceptionProfile (×1)
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — extends two universal profile structs; bumps `SAVE_FORMAT_VERSION` 76 → 77
@@ -22,7 +22,7 @@ Each field carries a `#[serde(default)]` annotation so existing scenario RON fil
 2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "`PerceptionProfile` opportunity-floor field" + "Profile-Driven Parameters" section.
 3. Shared abstraction boundary: per-agent profile cluster — `CognitiveProfile` and `PerceptionProfile` already host serde-default fields (`observation_budget`, `omission_log_capacity`, `slot_weights`, etc.), so the addition pattern is established.
 4. Struct-literal construction sites for `CognitiveProfile`: 16+ enumerate-style literals confirmed across `crates/worldwake-core/src/{cognitive_profile.rs, delta.rs, survey_memory.rs}`, `crates/worldwake-ai/src/{decision_runtime.rs, plan_revalidation.rs, agent_tick/planning.rs, agent_tick/tests.rs, search/tests.rs, goal_model.rs, failure_handling.rs}`, `crates/worldwake-ai/tests/{conformance_execution_budget.rs, golden_ai_decisions.rs, golden_exploration.rs, golden_quantity_aware_acquisition.rs}`, `crates/worldwake-systems/src/{evidence_decay.rs, perception.rs}`. None use spread syntax — every site enumerates all fields. Effort tracks this site count (Medium).
-5. `PerceptionProfile` struct-literal construction sites: mostly use `PerceptionProfile::default()` (per `world.rs:184`, scenario layer). A handful of test sites in `crates/worldwake-core/src/belief.rs` may enumerate fields — confirm during implementation. The new field has `#[serde(default)]` so RON authors are unaffected.
+5. `PerceptionProfile` struct-literal construction sites: mostly use `PerceptionProfile::default()` (per `world.rs:184`, scenario layer), but compile fallout confirmed additional exhaustive literals across core, systems, AI golden harnesses, and CLI scenario tests. The new field has `#[serde(default)]` so RON authors are unaffected.
 6. Save-format bump: archived ticket `archive/tickets/S138OPPCOM-002.md` bumps 75→76; this ticket bumps 76→77 (cascade).
 
 ## Architecture Check
@@ -80,7 +80,7 @@ Add default function near `default_observation_budget`:
 fn default_opportunity_floor_permille() -> Permille { Permille::new_unchecked(100) }
 ```
 
-`PerceptionProfile` has no manual `Default` impl (it derives via field defaults plus serde annotations); the new field's `Permille::default() == ZERO` is incorrect for the intended floor — verify whether the struct needs a `Default` impl now, or whether the new field's default value is provided exclusively through serde. If the latter, update any `PerceptionProfile { … }` struct literal that previously omitted serde-default fields.
+`PerceptionProfile` has a manual `Default` impl on the live branch. Add the new field there with `default_opportunity_floor_permille()` and update any `PerceptionProfile { … }` struct literal that previously enumerated all fields.
 
 ### 3. Update all `CognitiveProfile` struct-literal sites
 
@@ -147,3 +147,30 @@ Run `python3 scripts/profile_docs.py` and commit the regenerated `docs/profiles/
 6. `python3 scripts/profile_docs.py` then `git diff docs/profiles/all-profiles.md`
 
 Merge note: Bumps `SAVE_FORMAT_VERSION` 76→77 — must land after `archive/tickets/S138OPPCOM-002.md` (75→76). See Step 6 Merge-Order Constraints.
+
+## Outcome
+
+Completed on 2026-05-11.
+
+- Added `CognitiveProfile.detour_budget_permille` and `CognitiveProfile.compile_opportunity_cap` with serde defaults, `Default` values, bincode round-trip coverage, omitted-field serde coverage, and explicit constructor fallout updates across core, AI, systems, CLI scenario tests, and golden harness fixtures.
+- Added `PerceptionProfile.opportunity_floor_permille` with serde/default support, explicit authored-input coverage, and constructor fallout updates across full `PerceptionProfile` literals.
+- Bumped `SAVE_FORMAT_VERSION` from 76 to 77 and updated the save/load version assertion.
+- Regenerated `docs/profiles/all-profiles.md` with the new profile fields.
+
+## Deviations
+
+- Live reassessment corrected the draft note that `PerceptionProfile` lacked a manual `Default` impl; the implementation updated the existing manual impl instead.
+- `default_opportunity_floor_permille` is public and re-exported beside `default_omission_log_capacity` so downstream exhaustive literals can use the same canonical default helper.
+- `python3 scripts/profile_docs.py --write` passed and regenerated the profile docs while reporting 15 pre-existing documentation-gap warnings for unrelated profile fields.
+
+## Verification Result
+
+- Passed `cargo test --workspace --no-run`
+- Passed `python3 scripts/profile_docs.py --write`
+- Passed `cargo fmt --all`
+- Passed `cargo test -p worldwake-core cognitive_profile`
+- Passed `cargo test -p worldwake-core perception_profile`
+- Passed `cargo test -p worldwake-sim save_load`
+- Passed `cargo build --workspace`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

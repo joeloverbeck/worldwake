@@ -21,6 +21,7 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Keep Cargo sequential, confirm ambiguous or pre-existing exact selectors with `-- --list`, and record only truthful verification boundaries.
 - Before the first Cargo command you will count as proof, load `references/verification.md` unless the ticket is already classified as a small/local fast path whose focused selector and proof boundary are unambiguous.
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
+- For shared Rust struct-literal fallout, do not use broad regex/perl insertion across files. Use compiler-guided precise patches or syntax-aware tooling, and inspect each changed hunk immediately when any mechanical rewrite was used.
 - During ticket/spec stale-claim scans, quote Markdown/code-span search patterns safely. Use single-quoted `rg` patterns for backticked symbols so the shell does not treat them as command substitution.
 - Leave active ticket status non-completed until the last executable gate required for the final source diff has passed. Make `Status: COMPLETED` one of the final ticket edits, except when a provisional verification note explicitly names the remaining gates.
 - Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.

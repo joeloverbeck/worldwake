@@ -86,6 +86,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         decision_history_alternatives: CognitiveProfile::default().decision_history_alternatives,
+        detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
+        compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
         slot_weights: PortfolioSlotWeights::default(),
     }
 }

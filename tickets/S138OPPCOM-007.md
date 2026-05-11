@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: Yes — extends `prune_travel_away_from_goal_with_expansion_trace` with two new params; changes detour-allow semantics under non-empty opportunity sets
-**Deps**: 003 (CognitiveProfile.detour_budget_permille), 006 (PerceivedOpportunityIndex populated per-tick)
+**Deps**: archive/tickets/S138OPPCOM-003.md (CognitiveProfile.detour_budget_permille), 006 (PerceivedOpportunityIndex populated per-tick)
 
 ## Problem
 

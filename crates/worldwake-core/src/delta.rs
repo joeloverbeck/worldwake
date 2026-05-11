@@ -583,6 +583,7 @@ mod tests {
                 observation_budget: 24,
                 salience_policy: crate::SaliencePolicy::default(),
                 omission_log_capacity: crate::default_omission_log_capacity(),
+                opportunity_floor_permille: Permille::new(100).unwrap(),
                 need_salience_boost: Permille::new(500).unwrap(),
                 need_salience_urgency_threshold: Permille::new(500).unwrap(),
             }),
@@ -628,6 +629,8 @@ mod tests {
                 landmark_extraction_depth: 3,
                 use_ff_heuristic: true,
                 decision_history_alternatives: 5,
+                detour_budget_permille: Permille::new(150).unwrap(),
+                compile_opportunity_cap: 16,
                 slot_weights: PortfolioSlotWeights::default(),
             }),
             ComponentValue::AgendaProfile(AgendaProfile {

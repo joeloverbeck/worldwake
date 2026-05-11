@@ -2667,6 +2667,9 @@ pub struct PerceptionProfile {
     /// Maximum number of recent omitted observations retained in the agent's belief store.
     #[serde(default = "default_omission_log_capacity")]
     pub omission_log_capacity: u8,
+    /// Opportunity salience floor below which compiled opportunities are not emitted.
+    #[serde(default = "default_opportunity_floor_permille")]
+    pub opportunity_floor_permille: Permille,
     /// Observation priority boost for entities relevant to the agent's current needs.
     pub need_salience_boost: Permille,
     /// Need pressure level above which the salience boost activates.
@@ -2683,6 +2686,10 @@ pub fn default_omission_log_capacity() -> u8 {
     16
 }
 
+pub fn default_opportunity_floor_permille() -> Permille {
+    Permille::new_unchecked(100)
+}
+
 impl Default for PerceptionProfile {
     fn default() -> Self {
         Self {
@@ -2697,6 +2704,7 @@ impl Default for PerceptionProfile {
             observation_budget: default_observation_budget(),
             salience_policy: SaliencePolicy::default(),
             omission_log_capacity: default_omission_log_capacity(),
+            opportunity_floor_permille: default_opportunity_floor_permille(),
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -2870,8 +2878,8 @@ mod tests {
         SocialObservationDetail, SocialObservationKind, TellMemoryKey, TellProfile, TellTopic,
         ToldBeliefMemory, belief_confidence, build_believed_entity_state,
         build_observed_entity_snapshot, compute_activation, default_omission_log_capacity,
-        derive_entity_summary, recipient_knowledge_status, salience_boost, share_equivalent,
-        state_salience_boost, to_shared_belief_snapshot,
+        default_opportunity_floor_permille, derive_entity_summary, recipient_knowledge_status,
+        salience_boost, share_equivalent, state_salience_boost, to_shared_belief_snapshot,
     };
     use crate::{
         ActionDefId, ActionDomain, BelievedArtifactState, BelievedBountyTerms,
@@ -2911,6 +2919,7 @@ mod tests {
             observation_budget: 24,
             salience_policy: SaliencePolicy::default(),
             omission_log_capacity: default_omission_log_capacity(),
+            opportunity_floor_permille: default_opportunity_floor_permille(),
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -6940,6 +6949,10 @@ mod tests {
             SaliencePolicy::PriorityWithNeedBoost
         );
         assert_eq!(profile.omission_log_capacity, 16);
+        assert_eq!(
+            profile.opportunity_floor_permille,
+            Permille::new(100).unwrap()
+        );
         assert_eq!(profile.need_salience_boost, Permille::new(500).unwrap());
         assert_eq!(
             profile.need_salience_urgency_threshold,
@@ -6955,14 +6968,21 @@ mod tests {
 
     #[test]
     fn perception_profile_serde_defaults_observation_budget_when_omitted() {
-        let serialized = ron::to_string(&PerceptionProfile::default()).expect("serialize");
+        let serialized = ron::ser::to_string_pretty(
+            &PerceptionProfile::default(),
+            ron::ser::PrettyConfig::default(),
+        )
+        .expect("serialize");
         let omitted = serialized
-            .replace("observation_budget:24,", "")
-            .replace("observation_budget: 24,", "")
-            .replace("salience_policy:PriorityWithNeedBoost,", "")
-            .replace("salience_policy: PriorityWithNeedBoost,", "")
-            .replace("omission_log_capacity:16,", "")
-            .replace("omission_log_capacity: 16,", "");
+            .lines()
+            .filter(|line| {
+                !line.contains("observation_budget")
+                    && !line.contains("salience_policy")
+                    && !line.contains("omission_log_capacity")
+                    && !line.contains("opportunity_floor_permille")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         let profile: PerceptionProfile = ron::from_str(&omitted)
             .expect("deserialize perception profile without defaulted fields");
 
@@ -6972,6 +6992,26 @@ mod tests {
             SaliencePolicy::PriorityWithNeedBoost
         );
         assert_eq!(profile.omission_log_capacity, 16);
+        assert_eq!(
+            profile.opportunity_floor_permille,
+            Permille::new(100).unwrap()
+        );
+    }
+
+    #[test]
+    fn perception_profile_serde_accepts_explicit_opportunity_floor() {
+        let explicit = ron::to_string(&PerceptionProfile {
+            opportunity_floor_permille: Permille::new(225).unwrap(),
+            ..PerceptionProfile::default()
+        })
+        .expect("serialize");
+        let profile: PerceptionProfile = ron::from_str(&explicit)
+            .expect("deserialize perception profile with explicit opportunity floor");
+
+        assert_eq!(
+            profile.opportunity_floor_permille,
+            Permille::new(225).unwrap()
+        );
     }
 
     #[test]

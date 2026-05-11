@@ -126,6 +126,8 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `landmark_extraction_depth` | `u8` | Maximum depth of landmark chain extraction during tactical planning. Higher values produce more landmarks for better search guidance at increased extraction cost. 0 disables landmarks. (default: `4`) |
 | `use_ff_heuristic` | `bool` | Whether this agent uses the FF-style relaxed-plan heuristic for tactical search guidance. (default: `default_use_ff_heuristic()`) |
 | `decision_history_alternatives` | `u8` | Maximum number of rejected alternatives recorded in decision history events. (default: `default_decision_history_alternatives()`) |
+| `detour_budget_permille` | `Permille` | Salience budget that allows opportunity-aware travel detours. (default: `default_detour_budget_permille()`) |
+| `compile_opportunity_cap` | `u16` | Soft cap on compiled opportunities retained per decision cycle. (default: `default_compile_opportunity_cap()`) |
 | `slot_weights` | `PortfolioSlotWeights` | Relative slot weights for portfolio candidate ordering. (default: `PortfolioSlotWeights::default()`) |
 
 ---
@@ -299,6 +301,7 @@ Per-agent parameters controlling belief retention and observation quality.
 | `observation_budget` | `u8` | Maximum number of co-located entities observed per tick before salience filtering truncates. (default: `default_observation_budget()`) |
 | `salience_policy` | `SaliencePolicy` | Policy used to rank observation salience before budget truncation. (default: `SaliencePolicy::default()`) |
 | `omission_log_capacity` | `u8` | Maximum number of recent omitted observations retained in the agent's belief store. (default: `default_omission_log_capacity()`) |
+| `opportunity_floor_permille` | `Permille` | Opportunity salience floor below which compiled opportunities are not emitted. (default: `default_opportunity_floor_permille()`) |
 | `need_salience_boost` | `Permille` | Observation priority boost for entities relevant to the agent's current needs. (default: `Permille::new(500).unwrap()`) |
 | `need_salience_urgency_threshold` | `Permille` | Need pressure level above which the salience boost activates. (default: `Permille::new(500).unwrap()`) |
 
@@ -344,7 +347,7 @@ Per-agent risk-aversion weights used when ranking opportunities.
 
 **Category**: Universal (always applied with defaults)
 
-**Source**: `crates/worldwake-core/src/belief.rs:2708`
+**Source**: `crates/worldwake-core/src/belief.rs:2716`
 
 Per-agent parameters controlling what information an agent relays and accepts.
 

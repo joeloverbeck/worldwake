@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — adds per-tick compile_opportunities pass before candidate generation; populates `RootCandidateTrace.source` and records `OpportunityCompilerLoad` per-agent per-tick
-**Deps**: archive/tickets/S138OPPCOM-001.md, archive/tickets/S138OPPCOM-002.md, 003, 005
+**Deps**: archive/tickets/S138OPPCOM-001.md, archive/tickets/S138OPPCOM-002.md, archive/tickets/S138OPPCOM-003.md, 005
 
 ## Problem
 
@@ -29,7 +29,7 @@ The cornerstone deliverable: implement `compile_opportunities(agent, belief_view
    6. Payload revalidation — N/A (no new action introduced)
    7. Golden tests — exercised by ticket 010
 6. Per-agent profile reads: the compiler consults `RiskWeightProfile` and `LawAbidingProfile` via the `GoalBeliefView::risk_weight_profile` and `law_abiding_profile` accessors added in `archive/tickets/S138OPPCOM-002.md`.
-7. Per-tick budget: result length bounded by `CognitiveProfile.compile_opportunity_cap` (ticket 003); salience floor enforced via `PerceptionProfile.opportunity_floor_permille` (ticket 003).
+7. Per-tick budget: result length bounded by `CognitiveProfile.compile_opportunity_cap` (archive/tickets/S138OPPCOM-003.md); salience floor enforced via `PerceptionProfile.opportunity_floor_permille` (archive/tickets/S138OPPCOM-003.md).
 
 ## Architecture Check
 

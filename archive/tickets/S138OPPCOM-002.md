@@ -16,7 +16,7 @@ S138's compile-time ranking of opportunities (buy / steal / beg / wait) requires
 2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "New universal-on-Agent components and their scenario contract"; `docs/spec-drafting-rules.md` Section 5 for the profile contract checklist.
 3. Shared abstraction boundary under audit: the cross-crate accessor surface — core defines the component, sim exposes it via `GoalBeliefView` / `RuntimeBeliefView`, cli scenarios author it through `AgentDef`. No direct cross-system call.
 4. `World::create_agent` at `crates/worldwake-core/src/world.rs:183` currently seeds 18 universal profiles via `XProfile::default()`; the two new components join that list (precedent: `CognitiveProfile::default()` at line 203, `PreferenceProfile::default()` at line 227). The `with_component_schema_entries!` macro at `crates/worldwake-core/src/component_schema.rs` generates accessors that must compile at `delta.rs`, `world.rs`, `component_tables.rs`, `world_txn.rs` (per `tickets/README.md` check #13).
-5. Save-format bump: `SAVE_FORMAT_VERSION = 75` at `crates/worldwake-sim/src/save_load.rs:6`. Adding components to authoritative state requires bump to 76 (cascade with ticket 003 which bumps 76→77).
+5. Save-format bump: `SAVE_FORMAT_VERSION = 75` at `crates/worldwake-sim/src/save_load.rs:6`. Adding components to authoritative state requires bump to 76 (cascade with `archive/tickets/S138OPPCOM-003.md` which bumps 76→77).
 
 ## Architecture Check
 
@@ -144,7 +144,7 @@ Run `python3 scripts/profile_docs.py --write` and commit the regenerated `docs/p
 ## Out of Scope
 
 - Reading `RiskWeightProfile` / `LawAbidingProfile` in candidate ranking — lands in ticket 006 (the compiler) and downstream ranking consumers
-- Adding fields to `PerceptionProfile` / `CognitiveProfile` — lands in ticket 003 (carries its own SAVE_FORMAT bump 76→77)
+- Adding fields to `PerceptionProfile` / `CognitiveProfile` — lands in the now-archived `archive/tickets/S138OPPCOM-003.md` (carries its own SAVE_FORMAT bump 76→77)
 - Defining `Opportunity` and the typed enums that the new profiles will be consulted against — lands in ticket 001
 
 ## Acceptance Criteria
@@ -191,7 +191,7 @@ Run `python3 scripts/profile_docs.py --write` and commit the regenerated `docs/p
 11. `cargo clippy --workspace --all-targets -- -D warnings`
 12. `python3 scripts/profile_docs.py --write` then `git diff docs/profiles/all-profiles.md` (verify regen captures the new components)
 
-Merge note: This ticket bumps `SAVE_FORMAT_VERSION` 75→76; ticket 003 bumps 76→77 — see Step 6 Merge-Order Constraints in the spec-to-tickets summary.
+Merge note: This ticket bumps `SAVE_FORMAT_VERSION` 75→76; `archive/tickets/S138OPPCOM-003.md` bumps 76→77 — see Step 6 Merge-Order Constraints in the spec-to-tickets summary.
 
 ## Outcome
 
