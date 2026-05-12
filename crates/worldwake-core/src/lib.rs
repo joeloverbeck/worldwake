@@ -75,6 +75,7 @@ pub mod learned_opportunity_memory;
 pub mod load;
 pub mod materialization_tag;
 pub mod memory_capacity_profile;
+pub mod motive_source;
 pub mod needs;
 pub mod numerics;
 pub mod obligation;
@@ -234,6 +235,7 @@ pub use load::{
 };
 pub use materialization_tag::MaterializationTag;
 pub use memory_capacity_profile::MemoryCapacityProfile;
+pub use motive_source::{MotiveSource, MotiveSourceRef};
 pub use needs::{
     BodyCostPerTick, DeprivationExposure, HomeostaticNeedId, HomeostaticNeeds, MetabolismProfile,
 };
