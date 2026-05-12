@@ -17,9 +17,9 @@ This ticket extends the existing Section 3b `GoalCommitted` rendering with the m
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. Section 3b — Decision History exists at `crates/worldwake-cli/src/bin/observer.rs:833` and already renders `GoalCommitted` events with the aggregate `motive_score`. The Section 3a (Opportunities) format at line 706 establishes the existing `→` and `(label=value, …)` formatting conventions this ticket extends. Existing focused/unit tests in `observer.rs#[cfg(test)]` at lines 6582, 6683–6686 already assert the presence of "## Section 3b — Decision History" in the output — those assertions are unchanged by this ticket.
-2. Both source surfaces are wired by sibling tickets: `GoalCommittedPayload.decisive_motive_sources` (event payload, written at commit time by 005) and `RankedGoalSummary.motive_source_contributions` (decision trace, populated by 004 via 003's field declaration). Observer reads decision events from `EventLog` and per-candidate decision-trace state from the installed `DecisionTraceSink` per the existing observer wiring; both are already plumbed.
+2. Both source surfaces are wired by sibling tickets: `GoalCommittedPayload.decisive_motive_sources` (event payload, written at commit time by 005) and `RankedGoalSummary.motive_source_contributions` (decision trace, populated by `archive/tickets/S141MOTSOULED-004.md` via 003's field declaration). Observer reads decision events from `EventLog` and per-candidate decision-trace state from the installed `DecisionTraceSink` per the existing observer wiring; both are already plumbed.
 3. Shared abstraction boundary: observer is a read-only tooling consumer per the worldwake-validation-patterns "Read-Only Tooling Consumer" pattern. It calls existing public APIs to read decision events and decision-trace state. No new accessor methods on world/sim are introduced.
-4. Per `docs/precision-rules.md` Rule 5 (verification surface mapping): observer rendering is the downstream-most surface; the ticket's proof is the rendered text contents. The upstream contracts (payload contents per 005, trace contents per 004) are verified at their owning ticket boundaries.
+4. Per `docs/precision-rules.md` Rule 5 (verification surface mapping): observer rendering is the downstream-most surface; the ticket's proof is the rendered text contents. The upstream contracts (payload contents per 005, trace contents per `archive/tickets/S141MOTSOULED-004.md`) are verified at their owning ticket boundaries.
 5. Format-fidelity check (per `references/codebase-validation.md` 3.3A): the spec's example format uses `→` for contribution arrows and `(weight=NNN, pressure=MMM)` for metadata — these match Section 3a's existing convention. The spec's `(motive NNNNN)` aggregate-score parenthetical is already what the existing line renders.
 
 ## Architecture Check
@@ -69,7 +69,7 @@ In `observer.rs#[cfg(test)]`, add a test (e.g., `section_3b_renders_motive_sourc
 ## Out of Scope
 
 - `RankedGoalSummary.motive_source_contributions` field declaration — owned by `archive/tickets/S141MOTSOULED-003.md`.
-- Population of `motive_source_contributions` by `score_motive_source` — owned by 004.
+- Population of `motive_source_contributions` — owned by `archive/tickets/S141MOTSOULED-004.md`.
 - `GoalCommittedPayload.decisive_motive_sources` field and commit-time emission — owned by 005.
 - Any new observer section, header, or section numbering change — Section 3b is the existing home for `GoalCommitted` rendering per the S141 reassessment's I6 finding. Sections 4 (Anomaly Flags), 5+ remain unchanged.
 - Golden scenarios that exercise the rendering end-to-end — owned by 007's `golden_motive_sources.rs` suite, which also includes "observer renders both" assertions per spec D8 scenario 2.

@@ -332,13 +332,14 @@ fn golden_perception_omission_revalidation_typed_reason() {
         "listener must be absent from the snapshot for omission attribution to be meaningful"
     );
 
+    let goal_kind = GoalKind::ShareBelief {
+        listener,
+        topic: TellTopic::EntityBelief { subject },
+        communication_class: CommunicationClass::Gossip,
+    };
     let goal = GoalOffer {
         anchor: OpportunityAnchor::Entity(listener),
-        key: GoalKey::from(GoalKind::ShareBelief {
-            listener,
-            topic: TellTopic::EntityBelief { subject },
-            communication_class: CommunicationClass::Gossip,
-        }),
+        key: GoalKey::from(goal_kind),
         evidence_entities: BTreeSet::new(),
         evidence_places: BTreeSet::from([TEST_PLACE]),
         obligation_source: None,
@@ -346,6 +347,11 @@ fn golden_perception_omission_revalidation_typed_reason() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: worldwake_ai::motive_source_mapping::derive_default_motive_sources(
+            &goal_kind,
+            &OpportunityAnchor::Entity(listener),
+            Tick(7),
+        ),
         acquisition_quantity: None,
     };
     let mut expansions = Vec::new();

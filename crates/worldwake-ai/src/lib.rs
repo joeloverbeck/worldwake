@@ -27,6 +27,7 @@ mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
 pub mod knowledge_path;
+pub mod motive_source_mapping;
 pub mod opportunity_compiler;
 pub mod opportunity_expectation_failure;
 pub mod perf_telemetry;

@@ -5673,6 +5673,9 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: worldwake_ai::motive_source_mapping::derive_default_motive_sources(
+                    &goal.kind, &anchor, tick,
+                ),
                 acquisition_quantity: None,
             },
             phase,

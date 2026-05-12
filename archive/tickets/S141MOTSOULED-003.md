@@ -10,7 +10,7 @@
 
 S141's decision-trace deliverable (D5) requires per-motive-source contribution scoring to be inspectable in the decision trace so observer Section 3b (owned by 006) can render the breakdown per `GoalCommitted`. The existing `RankedGoalSummary` at `crates/worldwake-ai/src/decision_trace.rs:529` carries `motive_score: u32` but no per-source decomposition.
 
-This ticket added the field with empty default. Population by `score_motive_source` remains owned by 004 (the motive_score body refactor). The transient state (field exists but is empty until 004 lands) is acceptable because the trace surface is not authoritative — it's a derived read model per FND-27.
+This ticket added the field with empty default. Population by `score_motive_source` remains owned by `archive/tickets/S141MOTSOULED-004.md` (the motive_score body refactor). The transient state (field exists but is empty until `archive/tickets/S141MOTSOULED-004.md` lands) is acceptable because the trace surface is not authoritative — it's a derived read model per FND-27.
 
 ## Assumption Reassessment (2026-05-12)
 
@@ -19,7 +19,7 @@ This ticket added the field with empty default. Population by `score_motive_sour
 1. `RankedGoalSummary` at `crates/worldwake-ai/src/decision_trace.rs:529` carried `motive_score: u32`, `provenance`, discounts, `acquisition_quantity`, and `artifact_axes` before this ticket. The live constructor sweep found 21 explicit construction/helper sites once test-only forensic helpers and the production `summarize_ranked_goal` path were included. No existing focused/unit, runtime, or golden test asserted `motive_source_contributions` before this ticket — it was a net-new trace field.
 2. `MotiveSourceRef` lives in `worldwake-core::motive_source` after `archive/tickets/S141MOTSOULED-001.md` landed. `worldwake-ai/Cargo.toml` already depends on `worldwake-core`, so importing the new type is a one-line `use` change.
 3. Shared abstraction boundary: `RankedGoalSummary` is the per-candidate trace shape consumed by `DecisionTraceSink` and ultimately by observer Section 3b. Its field set is the data contract under audit. Adding `motive_source_contributions: Vec<(MotiveSourceRef, u32)>` is purely additive; existing decision-trace consumers ignore the new field until 006 wires the rendering.
-4. The field is populated by 004's `score_motive_source` returning `(MotiveSourceRef, u32)` tuples; this ticket only adds the field with empty default. The empty-vec transient state is FND-28-compliant because the field is a derived view (FND-27 cache), not authoritative state.
+4. The field is populated by `archive/tickets/S141MOTSOULED-004.md`'s scoring path; this ticket only adds the field with empty default. The empty-vec transient state is FND-28-compliant because the field is a derived view (FND-27 cache), not authoritative state.
 
 ## Architecture Check
 
@@ -30,7 +30,7 @@ This ticket added the field with empty default. Population by `score_motive_sour
 
 1. RankedGoalSummary shape → focused unit test in `crates/worldwake-ai/src/decision_trace.rs#[cfg(test)]` asserts `RankedGoalSummary::default().motive_source_contributions.is_empty()`.
 2. Trace consumer compatibility → existing decision-trace tests passed without consumer changes; consumers that do not read the field are unaffected.
-3. Single-layer ticket — population by `score_motive_source` remains owned by 004; rendering by observer remains owned by 006. Cross-layer verification belongs in those tickets.
+3. Single-layer ticket — population by `score_motive_source` remains owned by `archive/tickets/S141MOTSOULED-004.md`; rendering by observer remains owned by 006. Cross-layer verification belongs in those tickets.
 
 ## What Changed
 
@@ -63,7 +63,7 @@ Explicit `RankedGoalSummary` test literals now carry the new field with an empty
 
 ## Out of Scope
 
-- Population of `motive_source_contributions` by `score_motive_source` — owned by 004.
+- Population of `motive_source_contributions` by `score_motive_source` — owned by `archive/tickets/S141MOTSOULED-004.md`.
 - Observer rendering of the field — owned by 006.
 - `SAVE_FORMAT_VERSION` bump — owned by `archive/tickets/S141MOTSOULED-002.md` (this field is in-memory trace state, not serialized; if later serialized, it rides under version 78 via `Vec::new()` default).
 
@@ -97,7 +97,7 @@ Completed on 2026-05-12.
 
 - Added `RankedGoalSummary.motive_source_contributions: Vec<(MotiveSourceRef, u32)>` and a `Default` impl whose staged contribution vector is empty.
 - Updated the production `summarize_ranked_goal` trace construction and all explicit test/synthetic `RankedGoalSummary` literals to seed the field with `Vec::new()`.
-- Added focused unit coverage for the empty-default behavior. Population by motive-source scoring remains owned by `tickets/S141MOTSOULED-004.md`.
+- Added focused unit coverage for the empty-default behavior. Population by motive-source scoring remains owned by `archive/tickets/S141MOTSOULED-004.md`.
 
 ## Deviations
 

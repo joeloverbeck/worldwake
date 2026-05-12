@@ -529,6 +529,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             },
             priority_class: GoalPriorityClass::Medium,

@@ -320,7 +320,7 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
         },
         priority_class: ranked.priority_class,
         motive_score: ranked.motive_score,
-        motive_source_contributions: Vec::new(),
+        motive_source_contributions: motive_source_contributions_for_summary(ranked),
         provenance: ranked.provenance.clone(),
         source_reliability_discount: ranked.source_reliability_discount.clone(),
         competition_discount: ranked.competition_discount.clone(),
@@ -328,6 +328,20 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
         feasibility: ranked.feasibility,
         acquisition_quantity: ranked.offer.acquisition_quantity,
         artifact_axes: None,
+    }
+}
+
+fn motive_source_contributions_for_summary(
+    ranked: &AgendaEntry,
+) -> Vec<(worldwake_core::MotiveSourceRef, u32)> {
+    match ranked.offer.motive_sources.split_first() {
+        None => Vec::new(),
+        Some((first, rest)) => {
+            let mut contributions = Vec::with_capacity(ranked.offer.motive_sources.len());
+            contributions.push((first.clone(), ranked.motive_score));
+            contributions.extend(rest.iter().cloned().map(|source| (source, 0)));
+            contributions
+        }
     }
 }
 
@@ -2594,11 +2608,11 @@ mod tests {
         AcquisitionQuantity, ActionDefId, ActionDomain, BodyCostPerTick, CauseRef,
         CognitiveProfile, CommodityKind, CommodityPurpose, ContentionIntents, ControlSource,
         DecisionEventPayload, EntityId, EventLog, EventTag, EventView, ExecutionBudget,
-        FrameAssumption, GoalCommittedPayload, GoalRejectionReason, HomeostaticNeeds,
-        MerchandiseProfile, PerceptionSource, Permille, Place, PlanAdoptedPayload, Quantity,
-        RankedGoalComparisonDimensionTag, RepairKind, SourceKey, Tick, Topology, TravelEdge,
-        TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag, World, WorldTxn,
-        build_believed_entity_state, build_prototype_world,
+        FrameAssumption, GoalCommittedPayload, GoalRejectionReason, HomeostaticNeedId,
+        HomeostaticNeeds, MerchandiseProfile, PerceptionSource, Permille, Place,
+        PlanAdoptedPayload, Quantity, RankedGoalComparisonDimensionTag, RepairKind, SourceKey,
+        Tick, Topology, TravelEdge, TravelEdgeId, VisibilitySpec, WitnessData, WorkstationTag,
+        World, WorldTxn, build_believed_entity_state, build_prototype_world,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionError, ActionExecutionContext, ActionHandler,
@@ -2722,6 +2736,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         }
     }
@@ -3752,6 +3767,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -3783,6 +3799,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -3814,6 +3831,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -3845,6 +3863,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -3997,6 +4016,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         });
         let mut lower_motive = ranked_goal(GoalOffer {
@@ -4009,6 +4029,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         });
         lower_motive.motive_score = 80;
@@ -4022,6 +4043,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         });
         lower_feasibility.feasibility = FeasibilityHint::Uncertain;
@@ -4074,6 +4096,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -4183,6 +4206,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -4215,6 +4239,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -4247,6 +4272,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -4485,6 +4511,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             },
             priority_class,
@@ -4604,6 +4631,40 @@ mod tests {
     }
 
     #[test]
+    fn summarize_ranked_goal_populates_motive_source_contributions() {
+        let mut goal = acquire_goal(
+            CommodityKind::Bread,
+            OpportunityAnchor::Place(place_entity(40)),
+            BTreeSet::new(),
+            BTreeSet::new(),
+        );
+        let source = worldwake_core::MotiveSourceRef {
+            source: worldwake_core::MotiveSource::NeedPressure {
+                need: HomeostaticNeedId::Hunger,
+            },
+            introduced_tick: Tick(12),
+        };
+        goal.motive_sources = vec![source.clone()];
+        let ranked = ranked_goal_with_score(
+            OpportunityKey {
+                goal_key: goal.key,
+                anchor: goal.anchor,
+            },
+            GoalPriorityClass::High,
+            42,
+        );
+        let mut ranked = AgendaEntry {
+            offer: goal,
+            ..ranked
+        };
+        ranked.motive_score = 42;
+
+        let summary = summarize_ranked_goal(&ranked);
+
+        assert_eq!(summary.motive_source_contributions, vec![(source, 42)]);
+    }
+
+    #[test]
     fn summarize_selected_plan_preserves_side_benefit_trace_fields() {
         let market = place_entity(40);
         let orchard = place_entity(41);
@@ -4658,6 +4719,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -4692,6 +4754,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
+                    motive_sources: Vec::new(),
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::Low,
@@ -5036,6 +5099,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             }),
             ranked_goal(GoalOffer {
@@ -5048,6 +5112,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             }),
         ];
@@ -5581,6 +5646,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         };
         let _ranked_candidates = [
@@ -5594,6 +5660,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             }),
             ranked_goal(GoalOffer {
@@ -5606,6 +5673,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             }),
             ranked_goal(sleep_goal.clone()),

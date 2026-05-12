@@ -1108,6 +1108,7 @@ fn consume_goal(commodity: CommodityKind) -> GoalOffer {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     }
 }
@@ -1127,6 +1128,7 @@ fn acquire_goal_with_purpose(commodity: CommodityKind, purpose: CommodityPurpose
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     }
 }
@@ -1520,6 +1522,7 @@ fn search_returns_travel_then_trade_barrier_for_reachable_seller() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -1646,6 +1649,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_listed_sale_lot_without_c
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let (registry, handlers) = build_registry();
@@ -1775,6 +1779,7 @@ fn search_returns_travel_then_trade_barrier_for_remote_displayed_sale_lot_with_c
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let (registry, handlers) = build_registry();
@@ -1884,6 +1889,7 @@ fn search_prefers_local_trade_barrier_over_cheaper_nonterminal_travel_options() 
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -1980,6 +1986,7 @@ fn search_returns_trade_barrier_for_recipe_input_acquire_goal() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -2510,6 +2517,7 @@ fn search_rejects_branch_when_duration_estimation_fails() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -2578,6 +2586,7 @@ fn search_returns_pick_up_goal_satisfaction_for_local_unpossessed_food_lot() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -2657,6 +2666,7 @@ fn search_blocks_remote_stale_move_cargo_by_target_place() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -2779,6 +2789,7 @@ fn place_anchored_acquire_search_does_not_retarget_sibling_place_lot() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -2883,6 +2894,7 @@ fn place_anchored_acquire_search_does_not_escape_blocked_local_lot_to_sibling_pl
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -2959,6 +2971,7 @@ fn search_returns_pick_up_goal_satisfaction_for_local_commodity_lot() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3029,6 +3042,7 @@ fn search_returns_partial_pick_up_goal_satisfaction_for_local_food_lot() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3132,6 +3146,7 @@ fn cargo_search_finds_pickup_then_travel_plan() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3237,6 +3252,7 @@ fn cargo_search_handles_partial_pickup_split_before_travel() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3362,6 +3378,7 @@ fn cargo_search_for_facility_destination_requires_store_stock_after_travel() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3470,6 +3487,7 @@ fn sell_search_for_stored_home_stock_requires_stage_before_goal_satisfaction() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3610,6 +3628,7 @@ fn authoritative_partial_cargo_pickup_can_reach_goal_satisfaction() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let (registry, handlers) = build_registry();
@@ -3747,6 +3766,7 @@ fn search_uses_hypothetical_movement_to_reduce_local_danger() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3808,6 +3828,7 @@ fn search_marks_leaf_combat_as_combat_commitment() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3870,6 +3891,7 @@ fn build_successor_estimates_defend_ticks_from_combat_profile() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -3942,6 +3964,7 @@ fn build_successor_preserves_parent_steps_when_appending_child_step() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -4039,6 +4062,7 @@ fn build_successor_estimates_steal_ticks_from_theft_profile() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -4246,6 +4270,7 @@ fn search_finds_restock_progress_barrier_from_branchy_market_hub() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
@@ -4341,6 +4366,7 @@ fn search_wash_finds_direct_plan_at_current_clean_basin() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
@@ -4460,6 +4486,7 @@ fn search_local_wash_candidates_require_clean_basin() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
@@ -4789,6 +4816,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let short_route_view =
@@ -4838,6 +4866,7 @@ fn search_restock_route_preference_follows_believed_combat_threat() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let safe_route_view =
@@ -5194,6 +5223,7 @@ fn search_queues_before_harvest_at_exclusive_facility_without_grant() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -5256,6 +5286,7 @@ fn search_acquire_self_consume_queues_before_harvest_at_exclusive_facility_witho
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -5316,6 +5347,7 @@ fn search_skips_queue_when_matching_grant_is_already_active() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -5380,6 +5412,7 @@ fn search_acquire_self_consume_skips_queue_when_matching_grant_is_already_active
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -5442,6 +5475,7 @@ fn search_does_not_offer_duplicate_queue_candidate_when_actor_is_already_queued(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -5502,6 +5536,7 @@ fn search_filters_blocked_facility_use_from_queue_candidates() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let mut blocked = BlockerMemory::default();
@@ -5580,6 +5615,7 @@ fn search_trace_records_blocked_facility_use_root_filter() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let mut blocked = BlockerMemory::default();
@@ -5715,6 +5751,7 @@ fn search_keeps_other_facility_paths_when_one_exclusive_pair_is_blocked() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let mut blocked = BlockerMemory::default();
@@ -5787,6 +5824,7 @@ fn corpse_queue_affordance_expands_to_loot_and_filters_direct_loot_without_grant
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -5870,6 +5908,7 @@ fn corpse_loot_goal_searches_queue_step_before_loot_when_corpse_is_contention_ma
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -5917,6 +5956,7 @@ fn corpse_queue_affordance_expands_to_bury_and_filters_direct_bury_without_grant
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -6001,6 +6041,7 @@ fn corpse_bury_goal_searches_queue_step_before_bury_when_corpse_is_contention_ma
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -6047,6 +6088,7 @@ fn care_queue_affordance_expands_to_heal_and_filters_direct_heal_without_grant()
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -6154,6 +6196,7 @@ fn care_queue_affordance_does_not_expand_when_actor_cannot_currently_heal() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -6272,6 +6315,7 @@ fn queue_affordance_expands_to_one_candidate_per_matching_intended_action() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     {
@@ -6429,6 +6473,7 @@ fn search_candidates_from_affordance_rejects_trade_for_wrong_seller_opportunity(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -6752,6 +6797,7 @@ fn search_prefers_longer_low_threat_route_over_shorter_dangerous_route() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -6979,6 +7025,7 @@ fn search_uses_shorter_route_when_no_danger_beliefs_exist() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -7943,6 +7990,7 @@ fn combined_places_include_remote_medicine_lot_for_treat_wounds() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -7982,6 +8030,7 @@ fn combined_places_drop_medicine_place_after_hypothetical_pick_up() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let node = SearchNode {
@@ -8068,6 +8117,7 @@ fn combined_places_include_grounded_evidence_place_when_goal_has_no_intrinsic_pl
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -8112,6 +8162,7 @@ fn prune_travel_retains_remote_medicine_branch_for_treat_wounds() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let goal_places = combined_relevant_places(
@@ -8177,6 +8228,7 @@ fn treat_wounds_search_candidates_include_pick_up_at_medicine_location() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let node = root_node(
@@ -8270,6 +8322,7 @@ fn steal_goal_surfaces_search_candidates_after_action_lands() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let node = root_node(&snapshot, &goal, &recipes, &budget);
@@ -8389,6 +8442,7 @@ fn steal_goal_plans_for_contained_displayed_sale_lot_without_owner_belief() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -8501,6 +8555,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let punish_goal = GoalOffer {
@@ -8520,6 +8575,7 @@ fn accuse_goal_exposes_accuse_action_while_punish_remains_deferred() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -8654,6 +8710,7 @@ fn build_successor_keeps_accuse_step_target_bound_to_accused() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let node = root_node(&snapshot, &goal, &recipes, &reasoning);
@@ -8752,6 +8809,7 @@ fn fulfill_bounty_goal_surfaces_exact_bound_claim_candidate() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -8915,6 +8973,7 @@ fn fulfill_bounty_delivery_search_finds_delivery_then_claim_plan() {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         },
         &build_semantics_table(&registry),
@@ -9039,6 +9098,7 @@ fn fulfill_bounty_elimination_does_not_surface_claim_candidate_before_target_dea
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -9178,6 +9238,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_delivery_gap_
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -9318,6 +9379,7 @@ fn fulfill_bounty_delivery_does_not_surface_claim_candidate_before_reaching_clai
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -9388,6 +9450,7 @@ fn test_binding_two_corpses_same_place() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -9478,6 +9541,7 @@ fn test_binding_two_hostiles_same_place() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -9560,6 +9624,7 @@ fn test_binding_flexible_goal_unaffected() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -9630,6 +9695,7 @@ fn test_binding_rejection_trace_populated() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -9763,6 +9829,7 @@ fn search_local_acquire_goal_remains_direct_without_prerequisite_stage() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -9864,6 +9931,7 @@ fn search_returns_deferred_barrier_as_fallback_after_frontier_exhaustion() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -9967,6 +10035,7 @@ fn search_returns_deferred_barrier_on_budget_exhaustion() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -10136,6 +10205,7 @@ fn search_expansion_summary_counts_prerequisite_places_for_remote_treat_wounds()
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -10202,6 +10272,7 @@ fn search_trace_metadata_records_two_phase_strategic_and_landmark_details() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -10294,6 +10365,7 @@ fn search_trace_metadata_zero_landmarks_reports_zero_counts() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -10366,6 +10438,7 @@ fn ff_successor_rewrite_uses_relaxed_plan_when_it_exceeds_spatial_heuristic() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -10502,6 +10575,7 @@ fn ff_successor_rewrite_preserves_spatial_heuristic_when_it_exceeds_relaxed_plan
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -10635,6 +10709,7 @@ fn search_trace_metadata_records_ff_heuristic_and_helpful_actions_when_enabled()
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -10699,6 +10774,7 @@ fn search_trace_metadata_disables_ff_fields_when_profile_toggle_is_off() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -10766,6 +10842,7 @@ fn ff_dead_end_falls_back_to_landmark_guidance_at_root() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -10909,6 +10986,7 @@ fn search_trace_metadata_records_acquire_prerequisite_for_known_remote_acquire_s
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(actor, &world);
@@ -10988,6 +11066,7 @@ fn search_trace_metadata_records_no_tactical_goal_for_local_sleep() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11050,6 +11129,7 @@ fn local_critical_sleep_returns_progress_barrier_after_one_step() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11124,6 +11204,7 @@ fn search_generic_explore_without_tactical_goal_still_finds_plan() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11189,6 +11270,7 @@ fn search_explore_tactical_goal_produced_despite_nonempty_evidence() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11257,6 +11339,7 @@ fn search_evidence_directed_exploration_prefers_evidence_place() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11300,6 +11383,7 @@ fn search_accuse_satisfy_goal_does_not_install_travel_barrier() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11366,6 +11450,7 @@ fn search_accuse_search_without_tactical_barrier_still_finds_plan() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11454,6 +11539,7 @@ fn search_acquire_commodity_uses_travel_to_goal() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11521,6 +11607,7 @@ fn search_patrol_uses_travel_to_goal_for_remote_place() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11603,6 +11690,7 @@ fn search_investigate_uses_travel_to_goal() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11710,6 +11798,7 @@ fn search_investigate_allows_local_scene_investigation_despite_stale_remote_evid
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11757,6 +11846,7 @@ fn search_travel_to_goal_barrier_satisfied_at_destination() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -11802,6 +11892,7 @@ fn search_travel_to_goal_candidate_filter() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let travel_id = ActionDefId(100);
@@ -11895,6 +11986,7 @@ fn commodity_relevance_filter_prunes_mismatched_trade_movecargo_and_craft_candid
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let mut recipes = RecipeRegistry::new();
@@ -12105,6 +12197,7 @@ fn commodity_relevance_filter_keeps_travel_unknown_and_queue_for_matching_craft(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -12217,6 +12310,7 @@ fn commodity_relevance_filter_bypasses_non_commodity_goals() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -12305,6 +12399,7 @@ fn commodity_relevance_filter_uses_active_prerequisite_commodity_for_produce_goa
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -12429,6 +12524,7 @@ fn search_pipeline_records_commodity_irrelevant_root_candidate_filtering() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -12491,6 +12587,7 @@ fn search_treat_wounds_uses_two_phase_pick_up_before_heal() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -12549,6 +12646,7 @@ fn search_treat_wounds_with_zero_landmarks_preserves_two_phase_plan_shape() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -12612,6 +12710,7 @@ fn search_produce_commodity_uses_two_phase_pick_up_before_craft() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -12705,6 +12804,7 @@ fn search_produce_commodity_with_zero_landmarks_preserves_two_phase_plan_shape()
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let view = PerAgentBeliefView::from_world(fixture.actor, &fixture.world);
@@ -12970,6 +13070,7 @@ fn search_political_goal_uses_consult_record_as_mid_plan_prerequisite_when_belie
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -13068,6 +13169,7 @@ fn search_political_goal_skips_consult_record_when_vacancy_belief_is_already_cer
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -13152,6 +13254,7 @@ fn planned_plan_carries_searched_opportunity_key() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
 
@@ -13229,6 +13332,7 @@ fn search_trace_records_force_claim_root_candidate_outcomes() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let mut expansions = Vec::new();
@@ -13308,6 +13412,7 @@ fn search_trace_records_omitted_relevant_operator_when_no_matching_action_def_ex
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -13398,6 +13503,7 @@ fn search_trace_annotates_root_candidate_with_omitted_anchor_reason() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot =
@@ -13471,6 +13577,7 @@ fn fulfill_post_notice_search_finds_travel_then_post_notice_progress_barrier() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -13555,6 +13662,7 @@ fn fulfill_post_notice_search_finds_same_place_post_notice_progress_barrier() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -13653,6 +13761,7 @@ fn fulfill_post_bounty_search_finds_travel_then_post_bounty_progress_barrier() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -13743,6 +13852,7 @@ fn search_trace_records_trade_omission_when_goal_side_target_derivation_fails() 
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -13835,6 +13945,7 @@ fn search_trace_records_ask_witness_omission_when_no_stale_epistemic_subjects_ex
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -13926,6 +14037,7 @@ fn search_trace_records_ask_witness_omission_when_no_witness_affordance_exists()
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -14475,6 +14587,7 @@ fn remote_pursuit_travel_then_attack_for_raid_target() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -14585,6 +14698,7 @@ fn remote_pursuit_travel_then_attack_for_engage_hostile() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -14674,6 +14788,7 @@ fn explore_location_search_finds_travel_plan_to_target_place() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(
@@ -14761,6 +14876,7 @@ fn search_empty_beliefs_exploration_fallback_returns_nearest_travel_barrier() {
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: Vec::new(),
         acquisition_quantity: None,
     };
     let snapshot = build_planning_snapshot(

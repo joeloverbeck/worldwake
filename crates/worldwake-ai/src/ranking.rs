@@ -49,12 +49,12 @@ use worldwake_core::{
     DriveThresholds, EntityId, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
     ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
     GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefRead,
-    InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MultiplierPermille,
-    NoticeTopic, ObligationExecutionTracker, ObligationSatiationProfile, OpportunityAnchor,
-    OpportunityKey, PerceptionSource, Permille, PreferenceProfile, Quantity, ReliabilityRecord,
-    RepairKey, RepairMemory, RightKind, SourceKey, SubstitutePreferences, SurveyRecord, TellTopic,
-    ThresholdBand, Tick, UtilityProfile, ViolationKind, belief_confidence, escalation_multiplier,
-    failure_ratio_permille,
+    InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MotiveSource,
+    MotiveSourceRef, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
+    ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
+    PreferenceProfile, Quantity, ReliabilityRecord, RepairKey, RepairMemory, RightKind, SourceKey,
+    SubstitutePreferences, SurveyRecord, TellTopic, ThresholdBand, Tick, UtilityProfile,
+    ViolationKind, belief_confidence, escalation_multiplier, failure_ratio_permille,
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
@@ -1005,6 +1005,49 @@ fn acquire_commodity_quantity_bonus(quantity: worldwake_core::AcquisitionQuantit
 }
 
 fn motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
+    #[cfg(test)]
+    let derived_sources;
+    let sources = if candidate.motive_sources.is_empty() {
+        #[cfg(test)]
+        {
+            derived_sources = crate::motive_source_mapping::derive_default_motive_sources(
+                &candidate.key.kind,
+                &candidate.anchor,
+                Tick(0),
+            );
+            derived_sources.as_slice()
+        }
+        #[cfg(not(test))]
+        {
+            candidate.assert_motive_sources_present();
+            &candidate.motive_sources
+        }
+    } else {
+        candidate.motive_sources.as_slice()
+    };
+    sources
+        .iter()
+        .map(|source| score_motive_source(source, candidate, context))
+        .sum()
+}
+
+fn score_motive_source(
+    source: &MotiveSourceRef,
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+) -> u32 {
+    match &source.source {
+        MotiveSource::NeedPressure { .. }
+        | MotiveSource::Pain { .. }
+        | MotiveSource::OfficeDuty { .. }
+        | MotiveSource::Loyalty { .. }
+        | MotiveSource::Greed { .. }
+        | MotiveSource::Shame { .. }
+        | MotiveSource::Revenge { .. } => score_goal_kind_motive(candidate, context),
+    }
+}
+
+fn score_goal_kind_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
     match candidate.key.kind {
         GoalKind::ConsumeOwnedCommodity { commodity } => {
             relevant_self_consume_factors(commodity, context)
@@ -3413,6 +3456,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         }
     }
@@ -3428,6 +3472,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         }
     }
@@ -3443,6 +3488,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         }
     }
@@ -3462,6 +3508,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         }
     }
@@ -8727,6 +8774,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             },
             priority_class,

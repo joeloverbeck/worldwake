@@ -24,10 +24,19 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Close out the ticket/spec with the real landed seam and deviations. Do not leave the correction only in conversation.
 - For shared Rust struct-literal fallout, do not use broad regex/perl insertion across files. Use compiler-guided precise patches or syntax-aware tooling, and inspect each changed hunk immediately when any mechanical rewrite was used.
 - During ticket/spec stale-claim scans, quote Markdown/code-span search patterns safely. Use single-quoted `rg` patterns for backticked symbols so the shell does not treat them as command substitution.
-- Leave active ticket status non-completed until the last executable gate required for the final source diff has passed. Make `Status: COMPLETED` one of the final ticket edits, except when a provisional verification note explicitly names the remaining gates.
+- Leave active ticket status non-completed until the last executable gate required for the final source diff has passed. Provisional verification notes may name remaining gates, but `Status: COMPLETED` must remain unset until those gates are observed complete.
 - Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.
 
 Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail. When new guidance is not a global hard stop, put the detailed rule in the relevant `references/*.md` file and keep any top-level change to a one-sentence routing note.
+
+## Execution Hard Stops
+
+- Never include a Cargo command in `multi_tool_use.parallel`. Run Cargo alone and wait for any in-flight Cargo command before starting another.
+- If a resumed or compacted session has an unpollable proof-counted command, treat that prior run as untrusted and rerun it before recording verification.
+- Do not use broad regex/perl insertion for shared Rust struct-literal fallout; use compiler-guided precise patches or syntax-aware tooling and inspect the changed hunks.
+- Quote stale-scan `rg` patterns containing Markdown code spans with single quotes so backticked symbols are not treated as shell command substitution.
+- Do not set `Status: COMPLETED` while any required proof gate is still running, blocked, unpollable, or unrun. Keep provisional closeout notes under `Verification Result` with `Blocked` rows until proof is observed complete.
+- After any source, generated, scenario, test, or executable-behavior edit that follows a broad gate, rerun the narrowest affected proof and the required broad gate before completing the ticket. For final ticket/spec Markdown-only edits, run `git diff --check` plus targeted stale-claim scans.
 
 ## Mandatory Closeout Checklist
 
@@ -272,7 +281,7 @@ Load `references/closeout.md` unless Step 0 classified the ticket as a clear sma
 If final edits happen after broad verification, classify the freshness boundary before reporting completion: code, generated artifact, scenario, or executable-proof edits require rerunning the relevant broad or targeted executable checks; non-generated ticket/spec Markdown edits normally require `git diff --check` plus any targeted stale-claim scans. Record which broad gates were pre-final-edit and which post-edit checks prove the final diff.
 After final ticket/spec Markdown edits made after executable verification, run `git diff --check` or explicitly record why it was not run before reporting completion.
 
-Do not set an active ticket's `Status` to `COMPLETED` until the required executable verification gates for that ticket have passed. If a proof-counted command is still running, blocked on a process handle, or unpollable after resume, leave the status non-completed until the command is observed complete or rerun. If a status field must be touched earlier during a closeout rewrite, pair it immediately with a provisional verification note that names the remaining gates, and do not report completion until the final ticket text reflects the observed completed verification.
+Do not set an active ticket's `Status` to `COMPLETED` until the required executable verification gates for that ticket have passed. If a proof-counted command is still running, blocked on a process handle, or unpollable after resume, leave the status non-completed until the command is observed complete or rerun. If closeout text must be drafted before the final gate, keep `Status` non-completed and pair the draft with provisional `Blocked` verification rows naming the remaining gates; do not report completion until the final ticket text reflects the observed completed verification.
 
 For documentation-only roadmap/report tickets, use this compact closeout checklist before marking completion:
 - restate the authoritative-source order that won during reassessment (for example generated companion, live code/generator rule, authored scenario/test, then draft design doc)

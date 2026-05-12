@@ -8,7 +8,7 @@
 
 ## Problem
 
-S141's `motive_score` body refactor (owned by 004) reads per-motive-class weights from `UtilityProfile`. The 7 kept `MotiveSource` variants need 5 additional `Permille` fields on `UtilityProfile` — the existing per-need weights cover `NeedPressure`, the existing `pain_weight` covers `Pain`, and the new fields cover `OfficeDuty`, `Loyalty`, `Greed`, `Shame`, `Revenge`. Without these fields, 004's per-variant scoring helpers cannot read agent-specific weights, and FND-22 (agent diversity through concrete variation) is unsatisfied for the new motive classes.
+S141's `motive_score` body refactor (owned by `archive/tickets/S141MOTSOULED-004.md`) reads per-motive-class weights from `UtilityProfile`. The 7 kept `MotiveSource` variants need 5 additional `Permille` fields on `UtilityProfile` — the existing per-need weights cover `NeedPressure`, the existing `pain_weight` covers `Pain`, and the new fields cover `OfficeDuty`, `Loyalty`, `Greed`, `Shame`, `Revenge`. Without these fields, `archive/tickets/S141MOTSOULED-004.md`'s per-source scoring path cannot read agent-specific weights, and FND-22 (agent diversity through concrete variation) is unsatisfied for the new motive classes.
 
 This ticket is independent of 001 because the 5 new fields are forward references for 004 — they exist as unread defaults until 004 lands. The transient state is not dead code in a live authority path (motive_score still reads via the existing `match goal_kind` body until 004 flips it).
 
@@ -109,7 +109,7 @@ Generated:
 
 ## Out of Scope
 
-- Reading the 5 new fields from `motive_score` — owned by 004 (the field values exist as defaults but no scoring helper reads them yet).
+- Reading the 5 new fields from `motive_score` — owned by `archive/tickets/S141MOTSOULED-004.md` (the field values exist as defaults but no scoring helper reads them yet).
 - `ProfileHomogeneity` lint extension to detect cloned values across the new fields — owned by 007 (validation deliverable).
 - Any scenario `.ron` file edits to author non-default values for the new weights — optional and scenario-author-driven; not load-bearing for compilation because `#[serde(default)]` covers absence.
 - The `MotiveSource` enum and `MotiveSourceRef` carrier — owned by `archive/tickets/S141MOTSOULED-001.md`.
@@ -152,7 +152,7 @@ Completed on 2026-05-12.
 - Added `office_duty_weight`, `loyalty_weight`, `greed_weight`, `shame_weight`, and `revenge_weight` to `UtilityProfile` with per-field serde defaults and matching `Default` values.
 - Bumped `SAVE_FORMAT_VERSION` from 77 to 78 and extended the save-load round-trip fixture to persist non-default motive-class weights.
 - Updated exhaustive `UtilityProfile` literals surfaced by all-target compile fallout and regenerated `docs/profiles/all-profiles.md`.
-- Left `motive_score` and runtime use of the new fields to S141MOTSOULED-004, as planned.
+- Left `motive_score` and runtime use of the new fields to `archive/tickets/S141MOTSOULED-004.md`, as planned.
 
 ## Deviations
 

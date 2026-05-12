@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No new engine state — adds test coverage and extends an existing lint
-**Deps**: `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` fields), 004 (exercises `motive_score` refactor end-to-end), 005 (exercises `decisive_motive_sources` payload end-to-end)
+**Deps**: `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` fields), `archive/tickets/S141MOTSOULED-004.md` (exercises `motive_score` refactor end-to-end), 005 (exercises `decisive_motive_sources` payload end-to-end)
 
 ## Problem
 
@@ -13,7 +13,7 @@ S141's validation deliverable (D8) closes the contract:
 2. Behavioral goldens: five scenarios that exercise per-class scoring, profile-driven variation, observer rendering, and the empty-vec debug assertion.
 3. Per-agent diversity: `ProfileHomogeneity` lint (per S111) extends to detect cloned values across the 5 new `UtilityProfile` weight fields.
 
-Without these, the spec's "no silent privilege" + "FND-22 diversity" + FND-28 "no fallback path" promises are unenforced and would erode the next time someone adds an emitter without populating motive sources.
+Without these, the spec's "no silent privilege" + "FND-22 diversity" + FND-28 "no fallback path" promises are unenforced and would erode the next time someone adds an emitter without populating motive sources. S141MOTSOULED-004 landed a parity-preserving first switchover: production candidate helpers populate motive sources, but synthetic fixture helpers may still use explicit empty vectors behind test-only ranking fallback. This ticket owns turning that into a whole-planner conformance guarantee.
 
 ## Assumption Reassessment (2026-05-12)
 
@@ -21,7 +21,7 @@ Without these, the spec's "no silent privilege" + "FND-22 diversity" + FND-28 "n
 
 1. Existing conformance test precedents: `crates/worldwake-ai/tests/planner_conformance.rs` (workspace-wide planner conformance) and `crates/worldwake-ai/tests/conformance_execution_budget.rs` (planner budget conformance). This ticket adds a sibling file `crates/worldwake-ai/tests/conformance_motive_sources.rs` following the same pattern: spawn a representative scenario, run the planner, assert the invariant across all `GoalOffer`s constructed during the run.
 2. `ProfileHomogeneity` lint lives at `crates/worldwake-cli/src/scenario/lints.rs:62-93` and reads 8 agent profile fields via the `option_field_varies()` helper (lines 95–109). The lint currently does NOT inspect `UtilityProfile` subfields — extension scope is field-by-field within the existing `UtilityProfile` comparison.
-3. Existing 1440-tick survival goldens at `crates/worldwake-ai/tests/golden_survival_*.rs` already enforce the score-parity gate from 004 — this ticket does NOT duplicate that coverage. New goldens in `golden_motive_sources.rs` exercise behavior that the parity goldens don't cover (Hunger + Greed sum, Pain dominance under wound profile, per-agent profile divergence, empty-vec debug panic).
+3. Existing 1440-tick survival goldens at `crates/worldwake-ai/tests/golden_survival_*.rs` already enforce the score-parity gate from `archive/tickets/S141MOTSOULED-004.md` — this ticket does NOT duplicate that coverage. New goldens in `golden_motive_sources.rs` exercise behavior that the parity goldens don't cover (Hunger + Greed sum, Pain dominance under wound profile, per-agent profile divergence, empty-vec debug panic) and should remove or isolate any remaining test-only empty-source fallback where it would mask a production omission.
 4. Shared abstraction boundary: this is a (b)+(d) hybrid — production deliverables (lint extension, conformance assertions) plus new test coverage. Per spec D8 the lint inhabits the same "validation surface" as the goldens, so co-locating them in one ticket preserves the spec's organization. Per the precision-rules Coverage Gap Classification rule, the gaps closed here are:
    - **Missing focused/unit coverage**: per-class scoring weights uniformly default-able (`utility_profile_default_for_motive_class`).
    - **Missing runtime trace/integration coverage**: `every_goal_offer_has_motive_sources` (full action registries needed because the planner runs over real emitter coverage, not a needs-only harness).
@@ -29,7 +29,7 @@ Without these, the spec's "no silent privilege" + "FND-22 diversity" + FND-28 "n
 
 ## Architecture Check
 
-1. The conformance test enforces FND-28 (no fallback path post-S141) by failing CI if a future emitter forgets to populate `motive_sources` — the `debug_assert!` in test builds (from 004) catches per-construction-site mistakes; the conformance test catches the "test build forgot to enable debug assertions" loophole.
+1. The conformance test enforces FND-28 (no fallback path post-S141) by failing CI if a future emitter forgets to populate `motive_sources`. Because 004 left synthetic empty vectors as explicit fixture scaffolding, this ticket must distinguish production agenda offers from unit-test fixture offers and make production omissions fail directly.
 2. The lint extension enforces FND-22 (agent diversity) by flagging scenario authors whose agent population clones the same motive-class weights across all agents — preserves the spec's "two agents with identical state but different `greed_weight` rank the same opportunity differently" promise.
 3. The 5 new goldens validate semantic claims of the spec (per-class summation, dominance under wound profile, profile-driven divergence, debug assertion firing, observer rendering). Each golden corresponds to a spec D8 scenario item.
 
@@ -38,7 +38,7 @@ Without these, the spec's "no silent privilege" + "FND-22 diversity" + FND-28 "n
 1. Conformance: `every_goal_offer_has_motive_sources` → runtime trace coverage. Boundary: full action registries (not needs-only harness) because the planner must exercise every emitter family.
 2. Conformance: `utility_profile_default_for_motive_class` → focused unit coverage in the conformance file (no scenario needed).
 3. Behavioral correctness: 5 `golden_motive_sources.rs` scenarios → golden E2E coverage. Each scenario maps one spec D8 bullet:
-   - Scenario 1 (Hunger-only commit, score parity) → existing-1440-tick-goldens-as-strict-parity (verified by 004) reused here as a single-tick assertion that the motive_source vec carries exactly one `NeedPressure(Hunger)` and the contribution score matches `motive_score`.
+   - Scenario 1 (Hunger-only commit, score parity) → existing-1440-tick-goldens-as-strict-parity (verified by `archive/tickets/S141MOTSOULED-004.md`) reused here as a single-tick assertion that the motive_source vec carries exactly one `NeedPressure(Hunger)` and the contribution score matches `motive_score`.
    - Scenario 2 (Hunger + Greed sum) → asserts two motive sources, sum equals score, observer rendering contains both.
    - Scenario 3 (Pain dominates Hunger under wound profile) → asserts `Pain(...)` contribution > `NeedPressure(Hunger)` contribution at scoring time.
    - Scenario 4 (Per-agent `greed_weight` variation) → two agents with identical state but different `greed_weight` produce different commit choices for the same opportunity.
@@ -77,11 +77,11 @@ Add focused unit tests in the same file (`scenario/lints.rs#[cfg(test)]`):
 
 ## Out of Scope
 
-- `GoalOffer.motive_sources` field, `motive_score` body refactor, mapping helper — owned by 004 (must land first).
+- `GoalOffer.motive_sources` field, `motive_score` body refactor, mapping helper — owned by `archive/tickets/S141MOTSOULED-004.md` (must land first).
 - `UtilityProfile` 5 new fields, `Default` impl, `#[serde(default)]` helpers — owned by `archive/tickets/S141MOTSOULED-002.md`.
 - `GoalCommittedPayload.decisive_motive_sources` and commit-time emission — owned by 005 (must land first).
 - Observer Section 3b rendering — owned by 006 (must land first for Scenario 2's observer assertion to work).
-- Score parity across existing 1440-tick survival goldens — owned by 004 (validated by `cargo test --workspace`; this ticket does not duplicate that coverage).
+- Score parity across existing 1440-tick survival goldens — owned by `archive/tickets/S141MOTSOULED-004.md` (validated by `cargo test --workspace`; this ticket does not duplicate that coverage).
 - Goldens for the 5 deferred `MotiveSource` variants (`Fear`, `Obligation`, `Debt`, `Habit`, `Curiosity`) — Phase 12 follow-ups; can't be authored until the substrates exist.
 
 ## Acceptance Criteria

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core::GoalCommittedPayload` field extension; commit-time emission seam in `worldwake-ai`
-**Deps**: `archive/tickets/S141MOTSOULED-001.md` (uses `MotiveSourceRef`), 004 (reads `offer.motive_sources` at commit time)
+**Deps**: `archive/tickets/S141MOTSOULED-001.md` (uses `MotiveSourceRef`), `archive/tickets/S141MOTSOULED-004.md` (reads `offer.motive_sources` at commit time)
 
 ## Problem
 
@@ -59,7 +59,7 @@ Insert `use crate::motive_source::MotiveSourceRef;` near the top of the file (or
 
 ### 2. Populate at the commit-time emission seam
 
-In `crates/worldwake-ai/src/agent_tick/planning.rs` (production path at line 1163), where `GoalCommittedPayload { ... }` is constructed from the committing `AgendaEntry`, attach `decisive_motive_sources: entry.offer.motive_sources.clone()`. Lifecycle: the agenda entry's offer carries the motive sources populated by 004's `derive_default_motive_sources`; this ticket only copies them into the event payload at the commit boundary.
+In `crates/worldwake-ai/src/agent_tick/planning.rs` (production path at line 1163), where `GoalCommittedPayload { ... }` is constructed from the committing `AgendaEntry`, attach `decisive_motive_sources: entry.offer.motive_sources.clone()`. Lifecycle: the agenda entry's offer carries the motive sources populated by `archive/tickets/S141MOTSOULED-004.md`'s `derive_default_motive_sources`; this ticket only copies them into the event payload at the commit boundary.
 
 ### 3. Update the 5 remaining `GoalCommittedPayload { ... }` construction sites
 
@@ -86,7 +86,7 @@ Update the existing golden's assertion to verify that `GoalCommitted` events car
 - `SAVE_FORMAT_VERSION` bump — owned by `archive/tickets/S141MOTSOULED-002.md` (single-shot bump 77→78 covering all S141 serialized-state changes via `#[serde(default)]`).
 - Observer rendering of `decisive_motive_sources` — owned by 006.
 - `MotiveSourceRef` type definition — owned by `archive/tickets/S141MOTSOULED-001.md`.
-- `GoalOffer.motive_sources` field and population — owned by 004 (must land first; this ticket only consumes `offer.motive_sources` at commit time).
+- `GoalOffer.motive_sources` field and production population — owned by `archive/tickets/S141MOTSOULED-004.md` (must land first; this ticket only consumes `offer.motive_sources` at commit time).
 - Conformance test that every emitted `GoalCommitted` event carries non-empty `decisive_motive_sources` — partially overlaps with 007's conformance suite; this ticket's golden assertion is per-scenario, while 007's is workspace-wide.
 
 ## Acceptance Criteria

@@ -534,6 +534,11 @@ fn reinstate_current_plan_candidate(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: crate::motive_source_mapping::derive_default_motive_sources(
+            &opportunity.goal_key.kind,
+            &opportunity.anchor,
+            worldwake_core::Tick(0),
+        ),
         acquisition_quantity: None,
     });
     candidates
@@ -1196,6 +1201,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),
@@ -1290,6 +1296,7 @@ mod tests {
                 required_information_gaps: Vec::new(),
                 invalidators: Vec::new(),
                 learned_expectation_refs: Vec::new(),
+                motive_sources: Vec::new(),
                 acquisition_quantity: None,
             }],
             diagnostics: CandidateGenerationDiagnostics::default(),

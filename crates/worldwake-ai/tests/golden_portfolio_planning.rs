@@ -72,6 +72,11 @@ fn committed_goal_entry(goal_key: GoalKey, opportunity: OpportunityKey, tick: Ti
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: worldwake_ai::motive_source_mapping::derive_default_motive_sources(
+                &goal_key.kind,
+                &opportunity.anchor,
+                tick,
+            ),
             acquisition_quantity: None,
         },
         phase: AgendaPhase::Committed,
