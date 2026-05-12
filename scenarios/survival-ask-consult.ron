@@ -70,6 +70,7 @@
                 notice_posting_weight: 0,
                 courage: 0,
                 care_weight: 0,
+                office_duty_weight: 0,
             ),
             drive_thresholds: (
                 hunger: (low: 1000, medium: 1000, high: 1000, critical: 1000),
@@ -136,6 +137,7 @@
                 notice_posting_weight: 0,
                 courage: 500,
                 care_weight: 0,
+                office_duty_weight: 0,
             ),
             communication_profile: (
                 alarm_acceptance: 950,
@@ -240,6 +242,7 @@
                 notice_posting_weight: 0,
                 courage: 500,
                 care_weight: 900,
+                office_duty_weight: 0,
             ),
             epistemic_disposition: (
                 stale_evidence_barrier_threshold: 400,
@@ -381,6 +384,7 @@
                 notice_posting_weight: 0,
                 courage: 500,
                 care_weight: 0,
+                office_duty_weight: 950,
             ),
             communication_profile: (
                 alarm_acceptance: 950,
