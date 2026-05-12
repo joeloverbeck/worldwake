@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: No — observer-only (CLI binary)
-**Deps**: 003 (reads `RankedGoalSummary.motive_source_contributions`), 005 (reads `GoalCommittedPayload.decisive_motive_sources`)
+**Deps**: `archive/tickets/S141MOTSOULED-003.md` (reads `RankedGoalSummary.motive_source_contributions`), 005 (reads `GoalCommittedPayload.decisive_motive_sources`)
 
 ## Problem
 
@@ -68,7 +68,7 @@ In `observer.rs#[cfg(test)]`, add a test (e.g., `section_3b_renders_motive_sourc
 
 ## Out of Scope
 
-- `RankedGoalSummary.motive_source_contributions` field declaration — owned by 003.
+- `RankedGoalSummary.motive_source_contributions` field declaration — owned by `archive/tickets/S141MOTSOULED-003.md`.
 - Population of `motive_source_contributions` by `score_motive_source` — owned by 004.
 - `GoalCommittedPayload.decisive_motive_sources` field and commit-time emission — owned by 005.
 - Any new observer section, header, or section numbering change — Section 3b is the existing home for `GoalCommitted` rendering per the S141 reassessment's I6 finding. Sections 4 (Anomaly Flags), 5+ remain unchanged.

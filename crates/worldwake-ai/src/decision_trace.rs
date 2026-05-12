@@ -10,8 +10,8 @@ use worldwake_core::{
     ActionDefId, ActionDomain, ArtifactActionability, ArtifactCredibility, ArtifactExistence,
     ArtifactLegalEffect, ArtifactVisibility, BelievedArtifactState, BlockerKey, BlockingFact,
     CommodityKind, EntityId, FrameAssumption, FrameClearReason, GoalKey, HypothesisKind,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, OmissionReason,
-    OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
+    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDomainTag, MotiveSourceRef,
+    OmissionReason, OpportunityAnchor, OpportunityKey, PatrolRoute, PerceptionSource, Permille,
     PunishmentFineSelectionTrace, SuspensionReason, TellTopic, Tick,
 };
 use worldwake_sim::{
@@ -530,6 +530,9 @@ pub struct RankedGoalSummary {
     pub opportunity: OpportunityKey,
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
+    /// Per-source contribution scores for this ranked goal. S141-003 stages
+    /// the carrier as empty until S141-004 wires motive-source scoring.
+    pub motive_source_contributions: Vec<(MotiveSourceRef, u32)>,
     pub provenance: Option<RankedGoalProvenance>,
     pub source_reliability_discount: Option<SourceReliabilityDiscount>,
     pub competition_discount: Option<CompetitionDiscount>,
@@ -545,6 +548,27 @@ pub struct RankedGoalSummary {
     /// Snapshot of the five social-artifact axes for an artifact referenced by
     /// this ranked candidate, when the candidate is grounded on one.
     pub artifact_axes: Option<ArtifactAxisSnapshot>,
+}
+
+impl Default for RankedGoalSummary {
+    fn default() -> Self {
+        Self {
+            opportunity: OpportunityKey {
+                goal_key: GoalKey::new(worldwake_core::GoalKind::Sleep),
+                anchor: OpportunityAnchor::None,
+            },
+            priority_class: GoalPriorityClass::Background,
+            motive_score: 0,
+            motive_source_contributions: Vec::new(),
+            provenance: None,
+            source_reliability_discount: None,
+            competition_discount: None,
+            source_composite: None,
+            feasibility: FeasibilityHint::Uncertain,
+            acquisition_quantity: None,
+            artifact_axes: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2537,6 +2561,13 @@ mod tests {
     }
 
     #[test]
+    fn ranked_goal_summary_default_has_empty_motive_source_contributions() {
+        let summary = RankedGoalSummary::default();
+
+        assert!(summary.motive_source_contributions.is_empty());
+    }
+
+    #[test]
     fn candidate_trace_default_has_empty_damped_vec() {
         let trace = CandidateTrace::default();
 
@@ -2605,6 +2636,7 @@ mod tests {
                         opportunity,
                         priority_class: crate::GoalPriorityClass::Medium,
                         motive_score: 500,
+                        motive_source_contributions: Vec::new(),
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
@@ -2968,6 +3000,7 @@ mod tests {
                     opportunity: default_opportunity(GoalKey::from(&selected_goal)),
                     priority_class: GoalPriorityClass::High,
                     motive_score: 900,
+                    motive_source_contributions: Vec::new(),
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
@@ -2980,6 +3013,7 @@ mod tests {
                     opportunity: default_opportunity(GoalKey::from(&outranked_goal)),
                     priority_class: GoalPriorityClass::Medium,
                     motive_score: 600,
+                    motive_source_contributions: Vec::new(),
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
@@ -3306,6 +3340,7 @@ mod tests {
                 opportunity: default_opportunity(GoalKey::from(&goal)),
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -3330,6 +3365,7 @@ mod tests {
                 opportunity: default_opportunity(GoalKey::from(&goal)),
                 priority_class: GoalPriorityClass::Medium,
                 motive_score: 700,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -3410,6 +3446,7 @@ mod tests {
                         opportunity: orchard,
                         priority_class: GoalPriorityClass::High,
                         motive_score: 800,
+                        motive_source_contributions: Vec::new(),
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
@@ -3422,6 +3459,7 @@ mod tests {
                         opportunity: market,
                         priority_class: GoalPriorityClass::High,
                         motive_score: 790,
+                        motive_source_contributions: Vec::new(),
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
@@ -3717,6 +3755,7 @@ mod tests {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
+                    motive_source_contributions: Vec::new(),
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
@@ -3946,6 +3985,7 @@ mod tests {
                     },
                     priority_class: GoalPriorityClass::High,
                     motive_score: 700,
+                    motive_source_contributions: Vec::new(),
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
@@ -4020,6 +4060,7 @@ mod tests {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: discount.post_discount_motive,
+                    motive_source_contributions: Vec::new(),
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: Some(discount),
@@ -4093,6 +4134,7 @@ mod tests {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: discount.post_discount_motive,
+                    motive_source_contributions: Vec::new(),
                     provenance: None,
                     source_reliability_discount: Some(discount),
                     competition_discount: None,
@@ -4186,6 +4228,7 @@ mod tests {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::Sleep)),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 800,
+                    motive_source_contributions: Vec::new(),
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
@@ -4402,6 +4445,7 @@ mod tests {
                         opportunity: default_opportunity(winner),
                         priority_class: GoalPriorityClass::Critical,
                         motive_score: 800,
+                        motive_source_contributions: Vec::new(),
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
@@ -4414,6 +4458,7 @@ mod tests {
                         opportunity: default_opportunity(loser),
                         priority_class: GoalPriorityClass::Critical,
                         motive_score: 600,
+                        motive_source_contributions: Vec::new(),
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,
@@ -4489,6 +4534,7 @@ mod tests {
                     opportunity: default_opportunity(GoalKey::new(GoalKind::ReduceDanger)),
                     priority_class: GoalPriorityClass::High,
                     motive_score: 700,
+                    motive_source_contributions: Vec::new(),
                     provenance: Some(RankedGoalProvenance::Danger(crate::DangerAssessment {
                         pressure: worldwake_core::Permille::new(600).unwrap(),
                         thresholds_present: true,
@@ -4576,6 +4622,7 @@ mod tests {
                     )),
                     priority_class: GoalPriorityClass::Critical,
                     motive_score: 380_000,
+                    motive_source_contributions: Vec::new(),
                     provenance: Some(RankedGoalProvenance::Drive(
                         crate::RankedDriveGoalProvenance {
                             base_priority_class: GoalPriorityClass::High,
@@ -4672,6 +4719,7 @@ mod tests {
                     })),
                     priority_class: GoalPriorityClass::High,
                     motive_score: 400,
+                    motive_source_contributions: Vec::new(),
                     provenance: None,
                     source_reliability_discount: None,
                     competition_discount: None,
@@ -5302,6 +5350,7 @@ mod tests {
                         opportunity: default_opportunity(goal_key),
                         priority_class: GoalPriorityClass::Medium,
                         motive_score: 100,
+                        motive_source_contributions: Vec::new(),
                         provenance: None,
                         source_reliability_discount: None,
                         competition_discount: None,

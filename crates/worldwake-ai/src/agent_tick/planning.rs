@@ -320,6 +320,7 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
         },
         priority_class: ranked.priority_class,
         motive_score: ranked.motive_score,
+        motive_source_contributions: Vec::new(),
         provenance: ranked.provenance.clone(),
         source_reliability_discount: ranked.source_reliability_discount.clone(),
         competition_discount: ranked.competition_discount.clone(),

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `GoalOffer` extension, `motive_score` body refactor, new mapping helper module, populates `RankedGoalSummary.motive_source_contributions`
-**Deps**: `archive/tickets/S141MOTSOULED-001.md` (uses `MotiveSource`, `MotiveSourceRef`), `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` weights), 003 (populates `motive_source_contributions`)
+**Deps**: `archive/tickets/S141MOTSOULED-001.md` (uses `MotiveSource`, `MotiveSourceRef`), `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` weights), `archive/tickets/S141MOTSOULED-003.md` (declares `motive_source_contributions`)
 
 ## Problem
 
@@ -159,7 +159,7 @@ Per FND-28, the old `match candidate.key.goal_kind { ... }` body is removed enti
 
 - The 5 new `UtilityProfile` weight fields — owned by `archive/tickets/S141MOTSOULED-002.md`.
 - `MotiveSource` / `MotiveSourceRef` type definitions — owned by `archive/tickets/S141MOTSOULED-001.md`.
-- `RankedGoalSummary.motive_source_contributions` field declaration — owned by 003 (this ticket only populates it).
+- `RankedGoalSummary.motive_source_contributions` field declaration — owned by `archive/tickets/S141MOTSOULED-003.md` (this ticket only populates it).
 - `GoalCommittedPayload.decisive_motive_sources` — owned by 005.
 - Observer rendering of motive sources — owned by 006.
 - New goldens for motive-source behavior — owned by 007.
