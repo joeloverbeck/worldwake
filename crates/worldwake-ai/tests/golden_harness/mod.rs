@@ -1312,6 +1312,7 @@ pub fn set_courage(world: &mut World, event_log: &mut EventLog, agent: EntityId,
 pub fn enterprise_weighted_utility(enterprise: Permille) -> worldwake_core::UtilityProfile {
     worldwake_core::UtilityProfile {
         enterprise_weight: enterprise,
+        office_duty_weight: enterprise,
         ..worldwake_core::UtilityProfile::default()
     }
 }

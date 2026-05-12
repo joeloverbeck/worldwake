@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 41
-- Files contributing `golden_*` tests: 41
-- Total `golden_*` tests: 197
+- Golden test files: 42
+- Files contributing `golden_*` tests: 42
+- Total `golden_*` tests: 202
 
 ## Per-File Inventory
 
@@ -24,6 +24,7 @@ Do not hand-edit it.
 | `golden_final_integration.rs` | 2 |
 | `golden_item_decay.rs` | 1 |
 | `golden_merchant_selling.rs` | 13 |
+| `golden_motive_sources.rs` | 5 |
 | `golden_need_projection.rs` | 1 |
 | `golden_offices.rs` | 12 |
 | `golden_opportunity_compiler.rs` | 5 |
@@ -158,6 +159,14 @@ Do not hand-edit it.
 - `dead_seller_invalidates_listing`
 - `demand_memory_raises_sell_ranking`
 - `hungry_merchant_eats_listed_stock`
+
+### `golden_motive_sources.rs`
+
+- `golden_motive_sources_hunger_and_greed_offer_sums_source_contributions`
+- `golden_motive_sources_commit_payload_preserves_hunger_and_greed_sources`
+- `golden_motive_sources_pain_contribution_can_dominate_hunger`
+- `golden_motive_sources_greed_weight_variation_is_profile_state`
+- `golden_motive_sources_empty_offer_assertion_panics_in_test_build`
 
 ### `golden_need_projection.rs`
 

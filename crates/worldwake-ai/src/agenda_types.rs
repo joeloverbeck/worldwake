@@ -5,7 +5,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use worldwake_core::{CommodityKind, EntityId, ExpectationId, OpportunityKey, Quantity, Tick};
+use worldwake_core::{
+    CommodityKind, EntityId, ExpectationId, MotiveSourceRef, OpportunityKey, Quantity, Tick,
+};
 
 pub type AgendaEntryKey = OpportunityKey;
 
@@ -28,6 +30,8 @@ pub struct AgendaEntry {
     pub kill_condition: KillCondition,
     pub priority_class: GoalPriorityClass,
     pub motive_score: u32,
+    #[serde(default)]
+    pub motive_source_contributions: Vec<(MotiveSourceRef, u32)>,
     pub provenance: Option<RankedGoalProvenance>,
     pub source_reliability_discount: Option<SourceReliabilityDiscount>,
     pub competition_discount: Option<CompetitionDiscount>,
@@ -43,6 +47,7 @@ impl AgendaEntry {
         tick: Tick,
         priority_class: GoalPriorityClass,
         motive_score: u32,
+        motive_source_contributions: Vec<(MotiveSourceRef, u32)>,
         provenance: Option<RankedGoalProvenance>,
         source_reliability_discount: Option<SourceReliabilityDiscount>,
         competition_discount: Option<CompetitionDiscount>,
@@ -63,6 +68,7 @@ impl AgendaEntry {
             kill_condition: KillCondition::External,
             priority_class,
             motive_score,
+            motive_source_contributions,
             provenance,
             source_reliability_discount,
             competition_discount,
@@ -166,6 +172,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         };
         let entry = AgendaEntry::pending(
@@ -173,6 +180,7 @@ mod tests {
             Tick(7),
             GoalPriorityClass::Background,
             42,
+            Vec::new(),
             None,
             None,
             None,

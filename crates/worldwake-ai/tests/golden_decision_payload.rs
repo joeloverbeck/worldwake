@@ -5,10 +5,10 @@ use worldwake_core::{
     CommodityPurpose, DecisionEventPayload, EntityBeliefAspect, EntityId, EventLog, EventPayload,
     EventTag, EventView, ExpectationFailureCauseTag, ExpectationFailurePhaseTag,
     ExpectationKindTag, ExpectationMismatchPayload, FrameAssumption, GoalCommittedPayload, GoalKey,
-    GoalKind, GoalRejectionReason, HomeostaticNeedId, MismatchDetail, ObservationRef,
-    OpportunityAnchor, OpportunityExpectationKindTag, OpportunityKey, PendingEvent,
-    PlanAssumptionRef, Quantity, RankedGoalComparisonDimensionTag, RejectedAlternativeSummary,
-    ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
+    GoalKind, GoalRejectionReason, HomeostaticNeedId, MismatchDetail, MotiveSource,
+    MotiveSourceRef, ObservationRef, OpportunityAnchor, OpportunityExpectationKindTag,
+    OpportunityKey, PendingEvent, PlanAssumptionRef, Quantity, RankedGoalComparisonDimensionTag,
+    RejectedAlternativeSummary, ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
     SourceExpectationFailurePayload, SourceKeyPayload, StatePredicate, Tick, VisibilitySpec,
     WitnessData,
 };
@@ -89,12 +89,19 @@ fn need_assumption() -> PlanAssumptionRef {
 fn golden_decision_payload_goal_committed_records_rejected_drink_and_assumptions() {
     let eat = consume_goal(CommodityKind::Bread);
     let drink = consume_goal(CommodityKind::Water);
+    let motive_source = MotiveSourceRef {
+        source: MotiveSource::NeedPressure {
+            need: HomeostaticNeedId::Hunger,
+        },
+        introduced_tick: Tick(412),
+    };
     let payload = emit_decision_payload(
         EventTag::GoalCommitted,
         DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
             agent: entity(1),
             goal_key: eat,
             motive_score: 18420,
+            decisive_motive_sources: vec![motive_source.clone()],
             rejected_alternatives: vec![RejectedAlternativeSummary {
                 goal_key: drink,
                 rejection_reason: GoalRejectionReason::LowerMotive,
@@ -120,6 +127,7 @@ fn golden_decision_payload_goal_committed_records_rejected_drink_and_assumptions
         Some(RankedGoalComparisonDimensionTag::MotiveScore)
     );
     assert!(!payload.assumptions.is_empty());
+    assert_eq!(payload.decisive_motive_sources, vec![motive_source]);
 }
 
 // Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim

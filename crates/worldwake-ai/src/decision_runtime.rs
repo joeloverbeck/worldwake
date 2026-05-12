@@ -367,6 +367,7 @@ mod tests {
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
             acquisition_quantity: None,
         }
     }
@@ -391,6 +392,7 @@ mod tests {
             kill_condition: KillCondition::External,
             priority_class: GoalPriorityClass::Background,
             motive_score: 42,
+            motive_source_contributions: Vec::new(),
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,

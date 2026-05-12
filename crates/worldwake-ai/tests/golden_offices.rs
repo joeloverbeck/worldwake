@@ -172,6 +172,7 @@ fn golden_simple_office_claim_via_declare_support() {
 fn social_supporter_utility(social: Permille) -> UtilityProfile {
     UtilityProfile {
         enterprise_weight: Permille::new_unchecked(0),
+        office_duty_weight: Permille::new_unchecked(0),
         social_weight: social,
         ..UtilityProfile::default()
     }
@@ -1899,6 +1900,7 @@ fn build_force_control_locality_and_tell_scenario(
         UtilityProfile {
             social_weight: pm(900),
             enterprise_weight: pm(0),
+            office_duty_weight: pm(0),
             ..UtilityProfile::default()
         },
     );

@@ -22,6 +22,7 @@ use crate::{
         BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
         SelfKnowledgeProvenance,
     },
+    motive_source_mapping::derive_default_motive_sources,
     pressure::is_bandit_raid_deterred_by_wounds,
     route_threat::strongest_threat_warning_place,
     theft::assess_theft_deterrence,
@@ -561,6 +562,11 @@ fn emit_opportunity_compiler_candidates(
             required_information_gaps: Vec::new(),
             invalidators: Vec::new(),
             learned_expectation_refs: Vec::new(),
+            motive_sources: derive_default_motive_sources(
+                &opportunity.key.goal_key.kind,
+                &opportunity.key.anchor,
+                ctx.current_tick,
+            ),
             acquisition_quantity,
         });
     }
@@ -4782,7 +4788,7 @@ fn emit_candidate(
     anchor: OpportunityAnchor,
     evidence: Evidence,
     _blocked: &BlockerMemory,
-    _current_tick: Tick,
+    current_tick: Tick,
 ) {
     if evidence.is_empty() {
         return;
@@ -4815,6 +4821,7 @@ fn emit_candidate(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: derive_default_motive_sources(&key.kind, &anchor, current_tick),
         acquisition_quantity,
     });
 }
@@ -5427,6 +5434,7 @@ fn emit_candidate_with_trace(
         required_information_gaps: Vec::new(),
         invalidators: Vec::new(),
         learned_expectation_refs: Vec::new(),
+        motive_sources: derive_default_motive_sources(&key.kind, &anchor, Tick(0)),
         acquisition_quantity,
     });
 

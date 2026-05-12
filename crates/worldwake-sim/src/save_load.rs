@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 77;
+pub const SAVE_FORMAT_VERSION: u32 = 79;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -210,17 +210,17 @@ mod tests {
         GoalKind, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
         GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag, HomeostaticNeedId,
         LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, LawAbidingProfile,
-        MaterializationTag, MetabolismProfile, ObservationOmission, ObservationRef, OmissionReason,
-        PendingEvent, PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
-        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
-        RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
-        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
-        RewardEncumbrance, RiskWeightProfile, Seed, ShelterTag, SleepEpisode,
-        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
-        SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
-        VisibilitySpec, WakeCondition, WakeReason, WashBasinState, WashFacilityUsedPayload,
-        WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker, WorkstationTag, World,
-        WorldTxn, build_prototype_world,
+        MaterializationTag, MetabolismProfile, MotiveSource, MotiveSourceRef, ObservationOmission,
+        ObservationRef, OmissionReason, PendingEvent, PerceptionSource, PlaceDirtiness,
+        PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
+        PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
+        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
+        ReplanTriggeredPayload, ReservationId, RewardEncumbrance, RiskWeightProfile, Seed,
+        ShelterTag, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
+        SleepQualityProfile, SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange,
+        UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
+        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
+        WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
             sample_preference_profile, sample_route_experience, sample_source_reliability,
         },
@@ -353,6 +353,19 @@ mod tests {
                 LawAbidingProfile {
                     criminal_threshold: worldwake_core::Permille::new_unchecked(650),
                     social_norm_weight: worldwake_core::Permille::new_unchecked(275),
+                },
+            )
+            .unwrap();
+        profile_txn
+            .set_component_utility_profile(
+                actor,
+                UtilityProfile {
+                    office_duty_weight: worldwake_core::Permille::new_unchecked(625),
+                    loyalty_weight: worldwake_core::Permille::new_unchecked(675),
+                    greed_weight: worldwake_core::Permille::new_unchecked(725),
+                    shame_weight: worldwake_core::Permille::new_unchecked(275),
+                    revenge_weight: worldwake_core::Permille::new_unchecked(325),
+                    ..UtilityProfile::default()
                 },
             )
             .unwrap();
@@ -991,6 +1004,12 @@ mod tests {
                     agent: actor,
                     goal_key: produce_goal,
                     motive_score: 420,
+                    decisive_motive_sources: vec![MotiveSourceRef {
+                        source: MotiveSource::NeedPressure {
+                            need: HomeostaticNeedId::Hunger,
+                        },
+                        introduced_tick: Tick(12),
+                    }],
                     rejected_alternatives: vec![RejectedAlternativeSummary {
                         goal_key: trade_goal,
                         rejection_reason: GoalRejectionReason::LowerMotive,
@@ -1215,7 +1234,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 77);
+        assert_eq!(SAVE_FORMAT_VERSION, 79);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1282,6 +1301,17 @@ mod tests {
             Some(&LawAbidingProfile {
                 criminal_threshold: worldwake_core::Permille::new_unchecked(650),
                 social_norm_weight: worldwake_core::Permille::new_unchecked(275),
+            })
+        );
+        assert_eq!(
+            restored.world().get_component_utility_profile(actor),
+            Some(&UtilityProfile {
+                office_duty_weight: worldwake_core::Permille::new_unchecked(625),
+                loyalty_weight: worldwake_core::Permille::new_unchecked(675),
+                greed_weight: worldwake_core::Permille::new_unchecked(725),
+                shame_weight: worldwake_core::Permille::new_unchecked(275),
+                revenge_weight: worldwake_core::Permille::new_unchecked(325),
+                ..UtilityProfile::default()
             })
         );
         assert_eq!(

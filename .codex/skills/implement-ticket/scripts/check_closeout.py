@@ -9,9 +9,39 @@ from pathlib import Path
 
 
 SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
-STATUS_RE = re.compile(r"^Status:\s*(.+?)\s*$", re.MULTILINE)
+STATUS_RE = re.compile(r"^\s*\**Status\**:\s*(.+?)\s*$", re.MULTILINE)
 VERIFICATION_ITEM_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)")
 VERIFICATION_LABEL_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)(Passed|Waived|Blocked)\b")
+VERIFICATION_LABELED_ITEM_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)(Passed|Waived|Blocked)\b(.*)$")
+BACKTICK_RE = re.compile(r"`([^`\n]+)`")
+COMMAND_START_RE = re.compile(
+    r"^(?:"
+    r"cargo|"
+    r"\./scripts/verify\.sh|"
+    r"scripts/verify\.sh|"
+    r"python3|"
+    r"node|"
+    r"bash|"
+    r"pnpm|"
+    r"npm"
+    r")\b"
+)
+PROOF_SECTIONS = (
+    "Acceptance Criteria",
+    "Test Plan",
+    "New/Modified Tests",
+    "Verification Layers",
+)
+NARRATIVE_SECTIONS = (
+    "Problem",
+    "Assumption Reassessment",
+    "What to Change",
+)
+PROOF_DRAFT_RE = re.compile(r"\b(new|will|should|planned|TODO|TBD)\b", re.IGNORECASE)
+NARRATIVE_STALE_RE = re.compile(
+    r"\b(today|current|leaves|will|should|planned|TODO|TBD)\b",
+    re.IGNORECASE,
+)
 
 
 def section_body(text: str, name: str) -> str | None:
@@ -23,6 +53,37 @@ def section_body(text: str, name: str) -> str | None:
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         return text[start:end]
     return None
+
+
+def command_refs(body: str | None) -> set[str]:
+    if body is None:
+        return set()
+
+    refs: set[str] = set()
+    for match in BACKTICK_RE.finditer(body):
+        command = match.group(1).strip()
+        if COMMAND_START_RE.match(command):
+            refs.add(command)
+    return refs
+
+
+def labeled_verification_commands(body: str | None) -> dict[str, set[str]]:
+    commands_by_label: dict[str, set[str]] = {
+        "Passed": set(),
+        "Waived": set(),
+        "Blocked": set(),
+    }
+    if body is None:
+        return commands_by_label
+
+    for line in body.splitlines():
+        label_match = VERIFICATION_LABELED_ITEM_RE.match(line)
+        if label_match is None:
+            continue
+        label = label_match.group(1)
+        item_text = label_match.group(2)
+        commands_by_label[label].update(command_refs(item_text))
+    return commands_by_label
 
 
 def main() -> int:
@@ -44,6 +105,8 @@ def main() -> int:
                 warnings.append(f"completed ticket is missing ## {section}")
 
         verification = section_body(text, "Verification Result")
+        verification_commands = command_refs(verification)
+        verification_commands_by_label = labeled_verification_commands(verification)
         if verification is not None:
             items = [
                 line
@@ -56,17 +119,38 @@ def main() -> int:
                     "Verification Result has list items that do not start with Passed, Waived, or Blocked"
                 )
 
-        for section in ("Acceptance Criteria", "Test Plan", "New/Modified Tests", "Verification Layers"):
+        required_commands: set[str] = set()
+        for section in PROOF_SECTIONS:
+            required_commands.update(command_refs(section_body(text, section)))
+
+        missing_commands = sorted(required_commands - verification_commands)
+        if missing_commands:
+            warnings.append(
+                "command-like proof references are not mirrored in Verification Result: "
+                + ", ".join(f"`{command}`" for command in missing_commands)
+            )
+
+        waived_required_commands = sorted(
+            required_commands & verification_commands_by_label["Waived"]
+        )
+        if waived_required_commands:
+            warnings.append(
+                "waived commands are still listed as required proof: "
+                + ", ".join(f"`{command}`" for command in waived_required_commands)
+            )
+
+        for section in PROOF_SECTIONS:
             body = section_body(text, section)
-            if body and re.search(r"\b(new|will|should|planned|TODO|TBD)\b", body, re.IGNORECASE):
+            if body and PROOF_DRAFT_RE.search(body):
                 warnings.append(f"completed ticket has future/draft wording in ## {section}")
 
-        if re.search(
-            r"^\s*(?:-\s*|\d+\.\s+)`?(cargo|./scripts/verify\.sh|scripts/verify\.sh)\b",
-            text,
-            re.MULTILINE,
-        ):
-            warnings.append("ticket still contains command-looking list items; confirm they are observed proof")
+        for section in NARRATIVE_SECTIONS:
+            body = section_body(text, section)
+            if body and NARRATIVE_STALE_RE.search(body):
+                warnings.append(
+                    f"completed ticket may have stale present/future wording in ## {section}; "
+                    "use result tense or explicit before-this-ticket framing"
+                )
 
     if warnings:
         for warning in warnings:

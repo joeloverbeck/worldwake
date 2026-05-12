@@ -109,6 +109,11 @@ pub fn sample_utility_profile() -> UtilityProfile {
         notice_posting_weight: Permille::new(0).unwrap(),
         courage: Permille::new(350).unwrap(),
         care_weight: Permille::new(250).unwrap(),
+        office_duty_weight: Permille::new(575).unwrap(),
+        loyalty_weight: Permille::new(525).unwrap(),
+        greed_weight: Permille::new(475).unwrap(),
+        shame_weight: Permille::new(350).unwrap(),
+        revenge_weight: Permille::new(300).unwrap(),
     }
 }
 

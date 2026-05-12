@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 160
-- Contributing golden test files: 38
-- Associated tests: 192
+- Scenario blocks: 165
+- Contributing golden test files: 39
+- Associated tests: 197
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -281,7 +281,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim
 
-- Source: `golden_decision_payload.rs:125`
+- Source: `golden_decision_payload.rs:133`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -293,7 +293,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 386: S136 Decision Payload Commodity Assumption Breach Records Observation
 
-- Source: `golden_decision_payload.rs:176`
+- Source: `golden_decision_payload.rs:184`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -305,7 +305,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 387: S136 Decision Payload Source Failure Records Source Observation
 
-- Source: `golden_decision_payload.rs:235`
+- Source: `golden_decision_payload.rs:243`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -738,6 +738,66 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: critical hunger → ConsumeOwnedCommodity(Critical) beats SellCommodity(Medium) → eat action → consume_one_unit archives Quantity(1) lot → SaleListing gone
 
+### Scenario 403: S141 Motive Sources Hunger And Greed Sum For Market Offer
+
+- Source: `golden_motive_sources.rs:101`
+- Systems: AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: Needs, Trade
+- Principles: P3, P20, P29
+
+**Setup**: programmatic market-offer fixture isolates the default source mapping and trace contribution ledger without observer-side derivation.
+
+**Proves**: a self-consume acquisition offer maps to NeedPressure(Hunger) plus Greed, and their contributions sum to the aggregate motive_score.
+
+### Scenario 404: S141 Motive Sources Commit Payload Preserves Hunger And Greed
+
+- Source: `golden_motive_sources.rs:143`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: DecisionHistory
+- Principles: P3, P20, P29
+
+**Setup**: event-log fixture carries two decisive sources directly. Rival planner branches are excluded because this scenario proves persisted payload shape, not autonomous candidate choice.
+
+**Proves**: GoalCommitted payloads preserve multiple decisive motive sources in insertion order through the append-only event log.
+
+### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
+
+- Source: `golden_motive_sources.rs:188`
+- Systems: AI
+- GoalKinds: TreatWounds, ConsumeOwnedCommodity
+- ActionDomains: Medical, Needs
+- Principles: P3, P20
+
+**Setup**: trace-summary fixture excludes hunger-relief execution and medical action execution; it isolates the contribution ordering the live trace carrier can express.
+
+**Proves**: a Pain source contribution can be represented as the dominant motive over a competing Hunger source without collapsing either source into the aggregate score.
+
+### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
+
+- Source: `golden_motive_sources.rs:234`
+- Systems: AI
+- GoalKinds: PostNotice
+- ActionDomains: DecisionHistory
+- Principles: P3, P22
+
+**Setup**: two otherwise identical UtilityProfiles vary only greed_weight.
+
+**Proves**: Greed-backed motive sources and per-agent greed_weight variation are both concrete state without adding a global tuning path.
+
+### Scenario 407: S141 Motive Sources Empty Offer Assertion
+
+- Source: `golden_motive_sources.rs:266`
+- Systems: AI
+- GoalKinds: Sleep
+- ActionDomains: DecisionHistory
+- Principles: P28
+
+**Setup**: synthetic fixture constructs an explicitly empty GoalOffer. This is the remaining test-only path called out by S141; production emitters are covered by conformance_motive_sources.
+
+**Proves**: the debug assertion rejects empty motive_sources at explicit validation points in test builds.
+
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
 - Source: `golden_offices.rs:20`
@@ -770,7 +830,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `golden_offices.rs:383`
+- Source: `golden_offices.rs:384`
 - Systems: Bribe, Succession, AI, Conservation
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -785,7 +845,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:630`
+- Source: `golden_offices.rs:631`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -800,7 +860,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:931`
+- Source: `golden_offices.rs:932`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -815,7 +875,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1044`
+- Source: `golden_offices.rs:1045`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -830,7 +890,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1248`
+- Source: `golden_offices.rs:1249`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -845,7 +905,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:1438`
+- Source: `golden_offices.rs:1439`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -860,7 +920,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:1599`
+- Source: `golden_offices.rs:1600`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -875,7 +935,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:1851`
+- Source: `golden_offices.rs:1852`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -890,7 +950,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 109: Vacancy notice unlocks political action without record consult
 
-- Source: `golden_offices.rs:2138`
+- Source: `golden_offices.rs:2140`
 - Systems: Social artifact actions, Perception, Institutional beliefs, AI, Political actions, Succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Social, Generic
@@ -1191,7 +1251,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:681`
+- Source: `golden_planner_pathology.rs:696`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Production, Needs
@@ -1206,7 +1266,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
 
-- Source: `golden_planner_pathology.rs:806`
+- Source: `golden_planner_pathology.rs:821`
 - Systems: Needs, AI, Production
 - GoalKinds: FreeCarryCapacity
 - ActionDomains: Needs, Production
@@ -1221,7 +1281,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 144: Obligation satiation allows survival needs to override posting
 
-- Source: `golden_planner_pathology.rs:938`
+- Source: `golden_planner_pathology.rs:953`
 - Systems: Social artifact actions, Needs, AI, Perception
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs
@@ -1236,7 +1296,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `golden_portfolio_planning.rs:213`
+- Source: `golden_portfolio_planning.rs:219`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production
@@ -1971,7 +2031,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 176: Survival Theft Lands the Concealed Staged-Lot Branch
 
-- Source: `golden_survival_theft.rs:398`
+- Source: `golden_survival_theft.rs:405`
 - Systems: AI, Needs, Trade, Perception, Transport
 - GoalKinds: StealItem, ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Needs, Transport

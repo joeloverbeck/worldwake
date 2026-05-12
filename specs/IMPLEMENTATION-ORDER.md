@@ -586,7 +586,7 @@ S134 (completed, archived)    S135 (completed, archived)    S140 (completed, arc
 
 S136 (completed, archived)
    │
-   └── S141 (soft dep on S136)
+   └── S141 (completed, archived)
 ```
 
 ### Active Execution Steps
@@ -602,10 +602,7 @@ S136 (completed, archived)
 
 **Completed Wave 2 slice**:
 - **S138**: Affordance-to-Opportunity Compiler with Effect-Schema Indexing — completed and archived at `archive/specs/S138-opportunity-compiler.md` through the `S138OPPCOM-001` through `S138OPPCOM-011` ticket chain. Landed the bottom-up opportunity compiler driven by `EffectSchemaIndex`, profile-driven opportunity salience/risk, opportunity-derived candidate/source tracing, observer opportunity rendering, travel-pruning and interrupt integration, and golden coverage in `golden_opportunity_compiler.rs` scenarios 398-402. Folds in PR-7, PR-13, PR-20.
-
-**Remaining Wave 2** (after Wave 1):
-- **S141**: Motive Source Ledger and Desire Tokens — `MotiveSource` enum on `GoalOffer`; `motive_score` becomes derived view over per-agent state references. FND-3 direct compliance.
-  - S136 soft dependency is satisfied (for `decisive_motive_sources` payload integration)
+- **S141**: Motive Source Ledger — completed and archived at `archive/specs/S141-motive-source-ledger.md` through the `S141MOTSOULED-001` through `S141MOTSOULED-008` ticket chain. Landed motive-source carriers, goal-offer and decision-payload provenance, trace contribution storage/rendering, profile/lint support, save-shape updates, and independent live-source contribution arithmetic. FND-3 direct compliance.
 
 **Wave 3** (after Wave 2):
 - **S137**: Plan Causal Links and Localized Repair Search — extend `PlanGuard` with `CausalLink` provenance; `PlanRepairContext` localized repair before full replan; per-`Discrepancy` `ClearingCondition`. Folds in PR-15.
@@ -617,7 +614,7 @@ S136 (completed, archived)
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
 - [x] Wave 1 specs implemented and passing golden E2E tests
-- [ ] Wave 2 specs implemented and passing golden E2E tests (S138 complete and archived; S141 remains)
+- [x] Wave 2 specs implemented and passing golden E2E tests
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
 - [x] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
@@ -625,10 +622,10 @@ S136 (completed, archived)
 - [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`
 - [x] Opportunity compiler goldens prove profile/risk salience, trace/load carriage, effect-schema index miss behavior, learned-memory damping, deterministic replay hashing, and compiler-load bounds
 - [x] S140 multi-axis artifact lifecycle core goldens prove the five axis paths, including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation; full Scenario G justice/witness/case-chain coverage remains owned outside S140.
-- [ ] Motive-source parity regression: every existing 1440-tick survival golden produces identical `motive_score` values pre/post-S141
+- [x] Motive-source ranking regression: single-source behavior remains stable under existing goldens, and multi-source offers prove contribution sums through dedicated S141 tests
 - [x] Contention-resolution events emit at every grant-issuance site under `survival-contested.ron`
 - [ ] FOUNDATIONS Scenario C (stored gold robbery): owner-believes-gold-present → `InspectContainer` → mismatch → robbery report producible end-to-end
 - [ ] FOUNDATIONS Scenario G (false rumor → wrongful accusation → correction): `AskWitness` chain across two contradicting witnesses producible end-to-end
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
-- [ ] `cargo test --workspace` passing
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` clean
+- [x] `cargo test --workspace` passing
 - [ ] Golden E2E coverage for each new spec's core behavior

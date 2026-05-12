@@ -38,10 +38,11 @@
 | 4 | Agent B | GoalSuppressed | goal=AcquireCommodity { commodity: Apple, purpose: SelfConsume, quantity: AcquisitionQuantity { desired_min: 1, desired_target: 1, horizon_ticks: 200 } } reason=SuppressedByBlocker |
 | 4 | Agent B | GoalSuppressed | goal=AcquireCommodity { commodity: Apple, purpose: SelfConsume, quantity: AcquisitionQuantity { desired_min: 1, desired_target: 1, horizon_ticks: 200 } } reason=SuppressedByBlocker |
 | 4 | Agent B | GoalCommitted | goal=ExploreLocation { target_place: EntityId { slot: 2, generation: 0 }, motivating_need: NeedDriven(Hunger), hypothesis: MayContainCommodity { commodity: Apple } } motive=271125 alts=0 assume=1 |
+|  |  |  | motive sources: |
+|  |  |  | &nbsp;&nbsp;Greed(OpportunityKey { goal_key: GoalKey { kind: ExploreLocation { target_place: EntityId { slot: 2, generation: 0 }, motivating_need: NeedDriven(Hunger), hypothesis: MayContainCommodity { commodity: Apple } }, commodity: None, entity: None, place: Some(EntityId { slot: 2, generation: 0 }) }, anchor: Place(EntityId { slot: 2, generation: 0 }) }) → 271125 |
 | 4 | Agent B | PlanAdopted | goal=ExploreLocation { target_place: EntityId { slot: 2, generation: 0 }, motivating_need: NeedDriven(Hunger), hypothesis: MayContainCommodity { commodity: Apple } } steps=1 assume=1 |
 | 4 | Agent B | GoalAbandoned | goal=AcquireCommodity { commodity: Apple, purpose: SelfConsume, quantity: AcquisitionQuantity { desired_min: 1, desired_target: 1, horizon_ticks: 200 } } reason=GoalSwitched(SameClassMargin->ExploreLocation { target_place: EntityId { slot: 2, generation: 0 }, motivating_need: NeedDriven(Hunger), hypothesis: MayContainCommodity { commodity: Apple } }) |
 | 4 | Agent C | GoalOffered | goal=ConsumeOwnedCommodity { commodity: Water } emitter=HomeostaticNeeds evidence=HomeostaticPressurex1,PerceptionObservationx1 |
 | 4 | Agent C | GoalOffered | goal=ExploreLocation { target_place: EntityId { slot: 1, generation: 0 }, motivating_need: NeedDriven(Hunger), hypothesis: MayContainCommodity { commodity: Apple } } emitter=Exploration evidence=ExplorationPressurex1 |
 | 4 | Agent C | PlanAdopted | goal=ConsumeOwnedCommodity { commodity: Water } steps=1 |
 | 4 | Agent C | GoalAbandoned | goal=AcquireCommodity { commodity: Water, purpose: SelfConsume, quantity: AcquisitionQuantity { desired_min: 1, desired_target: 1, horizon_ticks: 200 } } reason=GoalSwitched(SameClassMargin->ConsumeOwnedCommodity { commodity: Water }) |
-

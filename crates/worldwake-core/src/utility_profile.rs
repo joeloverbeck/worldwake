@@ -36,6 +36,41 @@ pub struct UtilityProfile {
     pub courage: Permille,
     /// Weight applied to caregiving and obligation-fulfillment goals.
     pub care_weight: Permille,
+    /// Weight applied to office-duty motive sources.
+    #[serde(default = "default_office_duty_weight")]
+    pub office_duty_weight: Permille,
+    /// Weight applied to loyalty motive sources.
+    #[serde(default = "default_loyalty_weight")]
+    pub loyalty_weight: Permille,
+    /// Weight applied to greed/opportunity motive sources.
+    #[serde(default = "default_greed_weight")]
+    pub greed_weight: Permille,
+    /// Weight applied to shame motive sources.
+    #[serde(default = "default_shame_weight")]
+    pub shame_weight: Permille,
+    /// Weight applied to revenge motive sources.
+    #[serde(default = "default_revenge_weight")]
+    pub revenge_weight: Permille,
+}
+
+fn default_office_duty_weight() -> Permille {
+    Permille::new_unchecked(500)
+}
+
+fn default_loyalty_weight() -> Permille {
+    Permille::new_unchecked(500)
+}
+
+fn default_greed_weight() -> Permille {
+    Permille::new_unchecked(500)
+}
+
+fn default_shame_weight() -> Permille {
+    Permille::new_unchecked(400)
+}
+
+fn default_revenge_weight() -> Permille {
+    Permille::new_unchecked(400)
 }
 
 impl Default for UtilityProfile {
@@ -60,6 +95,11 @@ impl Default for UtilityProfile {
             notice_posting_weight: disabled,
             courage: balanced,
             care_weight: social,
+            office_duty_weight: default_office_duty_weight(),
+            loyalty_weight: default_loyalty_weight(),
+            greed_weight: default_greed_weight(),
+            shame_weight: default_shame_weight(),
+            revenge_weight: default_revenge_weight(),
         }
     }
 }
@@ -102,6 +142,11 @@ mod tests {
         assert_eq!(profile.notice_posting_weight.value(), 0);
         assert_eq!(profile.courage.value(), 500);
         assert_eq!(profile.care_weight.value(), 200);
+        assert_eq!(profile.office_duty_weight.value(), 500);
+        assert_eq!(profile.loyalty_weight.value(), 500);
+        assert_eq!(profile.greed_weight.value(), 500);
+        assert_eq!(profile.shame_weight.value(), 400);
+        assert_eq!(profile.revenge_weight.value(), 400);
         assert!(profile.social_weight < profile.enterprise_weight);
     }
 
@@ -115,6 +160,11 @@ mod tests {
             notice_posting_weight: crate::Permille::new(325).unwrap(),
             courage: crate::Permille::new(125).unwrap(),
             care_weight: crate::Permille::new(750).unwrap(),
+            office_duty_weight: crate::Permille::new(625).unwrap(),
+            loyalty_weight: crate::Permille::new(675).unwrap(),
+            greed_weight: crate::Permille::new(725).unwrap(),
+            shame_weight: crate::Permille::new(275).unwrap(),
+            revenge_weight: crate::Permille::new(325).unwrap(),
             ..UtilityProfile::default()
         };
 
@@ -122,5 +172,37 @@ mod tests {
         let roundtrip: UtilityProfile = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, profile);
+    }
+
+    #[test]
+    fn utility_profile_serde_defaults_motive_class_weights_when_omitted() {
+        let profile: UtilityProfile = ron::from_str(
+            r"(
+                hunger_weight: (501),
+                thirst_weight: (502),
+                fatigue_weight: (503),
+                bladder_weight: (504),
+                dirtiness_weight: (505),
+                pain_weight: (506),
+                danger_weight: (507),
+                enterprise_weight: (508),
+                social_weight: (509),
+                activity_awareness_weight: (510),
+                side_benefit_weight: (511),
+                bounty_posting_weight: (512),
+                notice_posting_weight: (513),
+                courage: (514),
+                care_weight: (515),
+            )",
+        )
+        .unwrap();
+
+        assert_eq!(profile.hunger_weight.value(), 501);
+        assert_eq!(profile.care_weight.value(), 515);
+        assert_eq!(profile.office_duty_weight.value(), 500);
+        assert_eq!(profile.loyalty_weight.value(), 500);
+        assert_eq!(profile.greed_weight.value(), 500);
+        assert_eq!(profile.shame_weight.value(), 400);
+        assert_eq!(profile.revenge_weight.value(), 400);
     }
 }
