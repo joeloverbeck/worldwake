@@ -57,6 +57,9 @@ pub fn compile_opportunities(
             if quantity <= Quantity(0) {
                 continue;
             }
+            if belief_view.direct_possessor(entity) == Some(agent) {
+                continue;
+            }
             let Some(goal) = acquisition_goal_for_commodity(commodity) else {
                 continue;
             };
@@ -69,7 +72,7 @@ pub fn compile_opportunities(
             let mut risks = Vec::new();
             let legal_status = if let Some(owner) = owned {
                 if owner == agent {
-                    BelievedLegalStatus::BelievedUnclaimed
+                    BelievedLegalStatus::BelievedOwned { owner }
                 } else {
                     risks.push(RiskFact::CriminalLiability {
                         violation_kind: worldwake_core::ViolationKind::SuspectedTheft {

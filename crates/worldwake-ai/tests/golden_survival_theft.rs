@@ -216,6 +216,12 @@ fn run_survival_theft() -> SurvivalTheftObservation {
                 && matches!(event.kind, ActionTraceKind::Committed { .. })
                 && social_transfer_tick.is_none()
             {
+                let Some(investigated_at) = investigate_tick else {
+                    continue;
+                };
+                if tick < investigated_at {
+                    continue;
+                }
                 let Some(ActionTraceDetail::Tell { listener, topic }) = &event.detail else {
                     continue;
                 };
@@ -301,6 +307,7 @@ fn run_survival_theft() -> SurvivalTheftObservation {
         }
 
         if clerk_suspicion_tick.is_none()
+            && social_transfer_tick.is_some_and(|transferred_at| tick >= transferred_at)
             && h.world
                 .get_component_agent_belief_store(clerk)
                 .is_some_and(|store| {

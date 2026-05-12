@@ -6779,7 +6779,17 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
 
 #[test]
 fn read_phase_runs_opportunity_compiler_before_candidate_generation() {
-    let harness = Harness::new(ControlSource::Ai);
+    let mut harness = Harness::new(ControlSource::Ai);
+    let place = harness.world.effective_place(harness.actor).unwrap();
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        let bread = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(1))
+            .unwrap();
+        txn.set_ground_location(bread, place).unwrap();
+        commit_txn(txn);
+    }
+    sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
     let bread = harness
         .world
         .get_component_agent_belief_store(harness.actor)
@@ -6787,10 +6797,11 @@ fn read_phase_runs_opportunity_compiler_before_candidate_generation() {
         .known_entities
         .iter()
         .find_map(|(entity, state)| {
-            state
+            (state
                 .last_known_inventory
                 .contains_key(&CommodityKind::Bread)
-                .then_some(*entity)
+                && harness.world.possessor_of(*entity).is_none())
+            .then_some(*entity)
         })
         .expect("harness should seed a believed bread lot");
     let goal = GoalKey::from(GoalKind::AcquireCommodity {

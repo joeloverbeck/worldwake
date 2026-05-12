@@ -746,11 +746,23 @@ fn candidate_matches_blocker(candidate: &GoalOffer, blocker: &worldwake_core::Bl
         return true;
     }
 
+    if blocker.action_def.is_some()
+        && blocker.target.is_none()
+        && matches!(candidate.key.kind, GoalKind::AcquireCommodity { .. })
+    {
+        return false;
+    }
+
     if let Some(place) = blocker.place {
         let anchor_matches =
             matches!(candidate.anchor, OpportunityAnchor::Place(anchor) if anchor == place);
         if !anchor_matches && !candidate.evidence_places.contains(&place) {
             return false;
+        }
+        if blocker.action_def.is_some()
+            && !matches!(candidate.key.kind, GoalKind::AcquireCommodity { .. })
+        {
+            return true;
         }
     }
 
@@ -3010,12 +3022,6 @@ fn emit_exploration_candidates(
     needs: Option<HomeostaticNeeds>,
     pending_acquisition_exhaustion_resets: &mut BTreeSet<HomeostaticNeedId>,
 ) {
-    if candidates
-        .iter()
-        .any(|candidate| !goal_is_self_care_fallback(candidate.key.kind))
-    {
-        return;
-    }
     let Some(needs) = needs else {
         return;
     };
@@ -6486,10 +6492,7 @@ fn local_owned_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
             continue;
         }
-        let directly_possessed = view.direct_possessor(entity) == Some(agent);
-        let loose_local_owned = view.direct_container(entity).is_none()
-            && view.believed_owner_of(entity) == Some(agent);
-        if !directly_possessed && !loose_local_owned {
+        if view.direct_possessor(entity) != Some(agent) {
             continue;
         }
         evidence.entities.insert(entity);
@@ -9232,6 +9235,7 @@ mod tests {
         );
         view.controllable.insert((agent, water_lot));
         view.believed_owners.insert(water_lot, agent);
+        view.direct_possessors.insert(water_lot, agent);
 
         let candidates = generate_candidates(
             &view,
@@ -9763,6 +9767,115 @@ mod tests {
         assert_eq!(
             acquire_goals[0].anchor,
             worldwake_core::OpportunityAnchor::Place(market)
+        );
+    }
+
+    #[test]
+    fn action_specific_place_blocker_without_target_does_not_suppress_whole_acquisition_place() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let seller = entity(2);
+        let key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, orchard);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(orchard),
+                target: None,
+                action_def: Some(worldwake_core::ActionDefId(9)),
+            },
+            blocking_fact: BlockingFact::TargetGone,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+
+        let acquire_goals = goals_for(
+            &candidates,
+            &GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            },
+        );
+        assert_eq!(acquire_goals.len(), 1);
+        assert_eq!(
+            acquire_goals[0].anchor,
+            worldwake_core::OpportunityAnchor::Place(orchard)
+        );
+    }
+
+    #[test]
+    fn action_specific_place_blocker_with_support_target_suppresses_matching_sleep_candidate() {
+        let agent = entity(1);
+        let camp = entity(10);
+        let witness = entity(2);
+        let key = GoalKey::from(GoalKind::Sleep);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, witness]);
+        view.effective_places.insert(agent, camp);
+        view.effective_places.insert(witness, camp);
+        view.homeostatic_needs.insert(agent, fatigue(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+
+        let unblocked = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+        assert!(
+            unblocked
+                .iter()
+                .any(|candidate| candidate.key.kind == GoalKind::Sleep)
+        );
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(camp),
+                target: Some(witness),
+                action_def: Some(worldwake_core::ActionDefId(9)),
+            },
+            blocking_fact: BlockingFact::TargetGone,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| candidate.key.kind != GoalKind::Sleep)
         );
     }
 
