@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No new engine state — adds test coverage and extends an existing lint
-**Deps**: `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` fields), `archive/tickets/S141MOTSOULED-004.md` (exercises `motive_score` refactor end-to-end), `archive/tickets/S141MOTSOULED-005.md` (exercises `decisive_motive_sources` payload end-to-end)
+**Deps**: `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` fields), `archive/tickets/S141MOTSOULED-004.md` (exercises `motive_score` refactor end-to-end), `archive/tickets/S141MOTSOULED-005.md` (exercises `decisive_motive_sources` payload end-to-end), `archive/tickets/S141MOTSOULED-006.md` (observer Section 3b rendering for Scenario 2)
 
 ## Problem
 
@@ -80,7 +80,7 @@ Add focused unit tests in the same file (`scenario/lints.rs#[cfg(test)]`):
 - `GoalOffer.motive_sources` field, `motive_score` body refactor, mapping helper — owned by `archive/tickets/S141MOTSOULED-004.md` (must land first).
 - `UtilityProfile` 5 new fields, `Default` impl, `#[serde(default)]` helpers — owned by `archive/tickets/S141MOTSOULED-002.md`.
 - `GoalCommittedPayload.decisive_motive_sources` and commit-time emission — owned by 005 (must land first).
-- Observer Section 3b rendering — owned by 006 (must land first for Scenario 2's observer assertion to work).
+- Observer Section 3b rendering — owned by `archive/tickets/S141MOTSOULED-006.md` (must land first for Scenario 2's observer assertion to work).
 - Score parity across existing 1440-tick survival goldens — owned by `archive/tickets/S141MOTSOULED-004.md` (validated by `cargo test --workspace`; this ticket does not duplicate that coverage).
 - Goldens for the 5 deferred `MotiveSource` variants (`Fear`, `Obligation`, `Debt`, `Habit`, `Curiosity`) — Phase 12 follow-ups; can't be authored until the substrates exist.
 

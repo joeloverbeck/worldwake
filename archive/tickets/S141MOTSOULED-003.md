@@ -8,7 +8,7 @@
 
 ## Problem
 
-S141's decision-trace deliverable (D5) requires per-motive-source contribution scoring to be inspectable in the decision trace so observer Section 3b (owned by 006) can render the breakdown per `GoalCommitted`. The existing `RankedGoalSummary` at `crates/worldwake-ai/src/decision_trace.rs:529` carries `motive_score: u32` but no per-source decomposition.
+S141's decision-trace deliverable (D5) requires per-motive-source contribution scoring to be inspectable in the decision trace so observer Section 3b (owned by `archive/tickets/S141MOTSOULED-006.md`) can render the breakdown per `GoalCommitted`. The existing `RankedGoalSummary` at `crates/worldwake-ai/src/decision_trace.rs:529` carries `motive_score: u32` but no per-source decomposition.
 
 This ticket added the field with empty default. Population by `score_motive_source` remains owned by `archive/tickets/S141MOTSOULED-004.md` (the motive_score body refactor). The transient state (field exists but is empty until `archive/tickets/S141MOTSOULED-004.md` lands) is acceptable because the trace surface is not authoritative — it's a derived read model per FND-27.
 
@@ -30,7 +30,7 @@ This ticket added the field with empty default. Population by `score_motive_sour
 
 1. RankedGoalSummary shape → focused unit test in `crates/worldwake-ai/src/decision_trace.rs#[cfg(test)]` asserts `RankedGoalSummary::default().motive_source_contributions.is_empty()`.
 2. Trace consumer compatibility → existing decision-trace tests passed without consumer changes; consumers that do not read the field are unaffected.
-3. Single-layer ticket — population by `score_motive_source` remains owned by `archive/tickets/S141MOTSOULED-004.md`; rendering by observer remains owned by 006. Cross-layer verification belongs in those tickets.
+3. Single-layer ticket — population by `score_motive_source` remains owned by `archive/tickets/S141MOTSOULED-004.md`; rendering by observer remains owned by `archive/tickets/S141MOTSOULED-006.md`. Cross-layer verification belongs in those tickets.
 
 ## What Changed
 
@@ -64,7 +64,7 @@ Explicit `RankedGoalSummary` test literals now carry the new field with an empty
 ## Out of Scope
 
 - Population of `motive_source_contributions` by `score_motive_source` — owned by `archive/tickets/S141MOTSOULED-004.md`.
-- Observer rendering of the field — owned by 006.
+- Observer rendering of the field — owned by `archive/tickets/S141MOTSOULED-006.md`.
 - `SAVE_FORMAT_VERSION` bump — owned by `archive/tickets/S141MOTSOULED-002.md` (this field is in-memory trace state, not serialized; if later serialized, it rides under version 78 via `Vec::new()` default).
 
 ## Acceptance Result

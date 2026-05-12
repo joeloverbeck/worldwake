@@ -222,11 +222,11 @@ This is the soft-dep deliverable that the spec's Dependencies section promised. 
 ```
 Tick 412 — Agent A — GoalCommitted: Eat (motive 18420)
   motive sources:
-    NeedPressure(Hunger) → 14200 (need_weight=750, pressure=950)
-    Greed(market_opportunity#42) → 4220 (greed_weight=500, opportunity_score=420)
+    NeedPressure(Hunger) → 14200
+    Greed(market_opportunity#42) → 4220
 ```
 
-The `→` and `(weight=…, …)` formatting mirrors existing Section 3a (Opportunities) rendering conventions in observer.rs. No new Section 4 is introduced; Section 4 (Anomaly Flags) and Section 5+ remain unchanged.
+The `→` formatting mirrors existing Section 3a (Opportunities) rendering conventions in observer.rs. The live D5 trace carrier is `Vec<(MotiveSourceRef, u32)>`, so Section 3b renders source identity plus contribution value without deriving per-source weight/pressure metadata in the observer. No new Section 4 is introduced; Section 4 (Anomaly Flags) and Section 5+ remain unchanged.
 
 ### D8: Conformance and golden coverage
 

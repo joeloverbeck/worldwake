@@ -25,7 +25,7 @@ This ticket adds `decisive_motive_sources: Vec<MotiveSourceRef>` to the payload 
 2. The commit-time emission seam is `crates/worldwake-ai/src/agent_tick/planning.rs:1163` (the production path that emits `EventTag::GoalCommitted`). This site reads from the committing `AgendaEntry` (which carries `offer: GoalOffer` per `crates/worldwake-ai/src/agenda_types.rs:22`); after 004 lands, `entry.offer.motive_sources` is non-empty and can be cloned into `decisive_motive_sources`.
 3. Shared abstraction boundary: `GoalCommittedPayload` is the always-on decision-event payload (per S136). Adding `decisive_motive_sources: Vec<MotiveSourceRef>` is purely additive; the existing payload fields remain unchanged. Per S141 spec FND-01 Section H, `MotiveSourceRef` becomes authoritative state only when embedded in this payload at commit time — the carrying `GoalOffer` (per-tick agenda entry) is not authoritative on its own.
 4. Save-format: this ticket does NOT bump `SAVE_FORMAT_VERSION` further. It rides under the 77→78 bump from `archive/tickets/S141MOTSOULED-002.md` via `#[serde(default)]` on the new field (defaulting to `Vec::new()`) for omitted-field payload/current-format deserialization. Full pre-bump save files with header version 77 remain rejected by the loader after `archive/tickets/S141MOTSOULED-002.md`. The bump is single-shot per the S141 reassessment's merge note in `archive/tickets/S141MOTSOULED-002.md`.
-5. Per `docs/precision-rules.md` Rule 16 (information-path refactors): post-commit motive-source provenance currently has no transport — the event payload carries `motive_score` but not the per-source decomposition. After this ticket, the event payload is the canonical transport; observer Section 3b (owned by 006) reads from it. There is no duplicate path to retire.
+5. Per `docs/precision-rules.md` Rule 16 (information-path refactors): post-commit motive-source provenance currently has no transport — the event payload carries `motive_score` but not the per-source decomposition. After this ticket, the event payload is the canonical transport; observer Section 3b (owned by `archive/tickets/S141MOTSOULED-006.md`) reads from it. There is no duplicate path to retire.
 
 ## Architecture Check
 
@@ -84,7 +84,7 @@ Update the existing golden's assertion to verify that `GoalCommitted` event payl
 ## Out of Scope
 
 - `SAVE_FORMAT_VERSION` bump — owned by `archive/tickets/S141MOTSOULED-002.md` (single-shot bump 77→78 covering all S141 serialized-state changes via `#[serde(default)]`).
-- Observer rendering of `decisive_motive_sources` — owned by 006.
+- Observer rendering of `decisive_motive_sources` — owned by `archive/tickets/S141MOTSOULED-006.md`.
 - `MotiveSourceRef` type definition — owned by `archive/tickets/S141MOTSOULED-001.md`.
 - `GoalOffer.motive_sources` field and production population — owned by `archive/tickets/S141MOTSOULED-004.md` (must land first; this ticket only consumes `offer.motive_sources` at commit time).
 - Conformance test that every emitted `GoalCommitted` event carries non-empty `decisive_motive_sources` — partially overlaps with 007's conformance suite; this ticket's golden assertion is per-scenario, while 007's is workspace-wide.

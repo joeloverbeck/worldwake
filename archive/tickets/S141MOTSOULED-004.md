@@ -159,7 +159,7 @@ There is no persisted compatibility path and no alternate production ranking mod
 - `MotiveSource` / `MotiveSourceRef` type definitions — owned by `archive/tickets/S141MOTSOULED-001.md`.
 - `RankedGoalSummary.motive_source_contributions` field declaration — owned by `archive/tickets/S141MOTSOULED-003.md` (this ticket only populates it).
 - `GoalCommittedPayload.decisive_motive_sources` — owned by 005.
-- Observer rendering of motive sources — owned by 006.
+- Observer rendering of motive sources — owned by `archive/tickets/S141MOTSOULED-006.md`.
 - New goldens for motive-source behavior — owned by 007.
 - The 5 deferred `MotiveSource` variants (`Fear`, `Obligation`, `Debt`, `Habit`, `Curiosity`) — Phase 12 follow-ups per spec's Deferred Variants table; never reach `score_motive_source` because they don't exist in the live enum.
 

@@ -28,9 +28,9 @@ use worldwake_cli::scenario::{load_scenario_file, spawn_scenario, spawn_scenario
 use worldwake_core::{
     ActionInterruptReasonTag, AgentBeliefStore, ArtifactAxisValue, ArtifactHeader, AxisName,
     CommodityKind, DeadAt, DeathCause, DecisionEventPayload, EntityId, EntityKind, EventId,
-    EventTag, EventView, GoalAbandonReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile,
-    OpportunityAnchor, PlaceTag, PlanInvalidationReason, Quantity, RecipeId, ReplanReason, Tick,
-    WorkstationTag,
+    EventTag, EventView, GoalAbandonReason, GoalCommittedPayload, GoalKey, HomeostaticNeedId,
+    KnownRecipes, MetabolismProfile, MotiveSource, MotiveSourceRef, OpportunityAnchor, PlaceTag,
+    PlanInvalidationReason, Quantity, RecipeId, ReplanReason, Tick, WorkstationTag,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
@@ -829,6 +829,7 @@ fn render_decision_history_section(
     out: &mut String,
     event_log: &worldwake_core::EventLog,
     agents: &[(EntityId, String)],
+    traces: Option<&DecisionTraceSink>,
 ) {
     writeln!(out, "## Section 3b — Decision History\n").unwrap();
     let agent_names = agents
@@ -860,12 +861,88 @@ fn render_decision_history_section(
             decision_payload_summary(payload)
         )
         .unwrap();
+        if let DecisionEventPayload::GoalCommitted(inner) = payload {
+            for line in goal_committed_motive_source_lines(inner, traces, record.tick()) {
+                writeln!(out, "|  |  |  | {line} |").unwrap();
+            }
+        }
         rendered_any = true;
     }
     if !rendered_any {
         writeln!(out, "| - | - | - | No decision events recorded. |").unwrap();
     }
     writeln!(out).unwrap();
+}
+
+fn goal_committed_motive_source_lines(
+    payload: &GoalCommittedPayload,
+    traces: Option<&DecisionTraceSink>,
+    tick: Tick,
+) -> Vec<String> {
+    if payload.decisive_motive_sources.is_empty() {
+        return Vec::new();
+    }
+    let Some(summary) =
+        ranked_goal_summary_for_commit(traces, payload.agent, tick, payload.goal_key)
+    else {
+        return Vec::new();
+    };
+
+    let mut lines = Vec::new();
+    for source in &payload.decisive_motive_sources {
+        let Some((_, contribution)) = summary
+            .motive_source_contributions
+            .iter()
+            .find(|(candidate_source, _)| candidate_source == source)
+        else {
+            continue;
+        };
+        if lines.is_empty() {
+            lines.push("motive sources:".to_string());
+        }
+        lines.push(format!(
+            "&nbsp;&nbsp;{} → {}",
+            format_motive_source_ref(source),
+            contribution
+        ));
+    }
+    lines
+}
+
+fn ranked_goal_summary_for_commit(
+    traces: Option<&DecisionTraceSink>,
+    agent: EntityId,
+    tick: Tick,
+    goal_key: GoalKey,
+) -> Option<&worldwake_ai::RankedGoalSummary> {
+    let trace = traces?.trace_at(agent, tick)?;
+    let DecisionOutcome::Planning(planning) = &trace.outcome else {
+        return None;
+    };
+    planning
+        .selected_ranked_summary()
+        .filter(|summary| summary.opportunity.goal_key == goal_key)
+        .or_else(|| {
+            planning
+                .candidates
+                .ranked
+                .iter()
+                .find(|summary| summary.opportunity.goal_key == goal_key)
+        })
+}
+
+fn format_motive_source_ref(source_ref: &MotiveSourceRef) -> String {
+    match &source_ref.source {
+        MotiveSource::NeedPressure { need } => format!("NeedPressure({need:?})"),
+        MotiveSource::Pain { wound } => format!("Pain({wound:?})"),
+        MotiveSource::OfficeDuty { office } => format!("OfficeDuty({office})"),
+        MotiveSource::Loyalty { other } => format!("Loyalty({other})"),
+        MotiveSource::Greed { opportunity } => format!("Greed({opportunity:?})"),
+        MotiveSource::Shame { reputation_record } => {
+            format!("Shame({reputation_record})")
+        }
+        MotiveSource::Revenge { violation } => format!("Revenge({violation:?})"),
+    }
 }
 
 fn format_budget_exhaustion_snapshots(out: &mut String, snapshots: &[BudgetExhaustionSnapshot]) {
@@ -3616,7 +3693,7 @@ fn format_report(
         )
         .unwrap();
     }
-    render_decision_history_section(&mut out, event_log, agents);
+    render_decision_history_section(&mut out, event_log, agents, driver.trace_sink());
 
     // Section 4: Anomaly Flags
     writeln!(out, "## Section 4 — Anomaly Flags\n").unwrap();
@@ -6581,7 +6658,12 @@ mod tests {
         let log = sample_decision_event_log(agent, target);
         let mut out = String::new();
 
-        render_decision_history_section(&mut out, &log, &[(agent, "Guard Theron".to_string())]);
+        render_decision_history_section(
+            &mut out,
+            &log,
+            &[(agent, "Guard Theron".to_string())],
+            None,
+        );
 
         assert!(out.contains("## Section 3b — Decision History"));
         assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
@@ -6619,6 +6701,72 @@ mod tests {
         assert!(
             out.contains("water=1 agent_dirtiness_delta=500 basin_dirtiness_delta=25 partial=true")
         );
+    }
+
+    #[test]
+    fn section_3b_renders_motive_source_contributions() {
+        let agent = entity(1);
+        let source = worldwake_core::MotiveSourceRef {
+            source: worldwake_core::MotiveSource::NeedPressure {
+                need: HomeostaticNeedId::Hunger,
+            },
+            introduced_tick: Tick(412),
+        };
+        let goal_key = GoalKey::from(GoalKind::Sleep);
+        let opportunity = worldwake_core::OpportunityKey {
+            goal_key,
+            anchor: OpportunityAnchor::None,
+        };
+        let mut trace = planning_affordance_trace(
+            agent,
+            412,
+            AffordanceTrace {
+                available: Vec::new(),
+                place: None,
+            },
+        );
+        let DecisionOutcome::Planning(planning) = &mut trace.outcome else {
+            panic!("expected planning trace");
+        };
+        planning.selection.selected_opportunity = Some(opportunity);
+        planning
+            .candidates
+            .ranked
+            .push(worldwake_ai::RankedGoalSummary {
+                opportunity,
+                priority_class: GoalPriorityClass::High,
+                motive_score: 14200,
+                motive_source_contributions: vec![(source.clone(), 14200)],
+                ..Default::default()
+            });
+        let mut sink = DecisionTraceSink::new();
+        sink.record(trace);
+        let mut log = EventLog::new();
+        emit_decision_event(
+            &mut log,
+            412,
+            agent,
+            EventTag::GoalCommitted,
+            DecisionEventPayload::GoalCommitted(GoalCommittedPayload {
+                agent,
+                goal_key,
+                motive_score: 14200,
+                decisive_motive_sources: vec![source],
+                rejected_alternatives: Vec::new(),
+                assumptions: Vec::new(),
+            }),
+        );
+
+        let mut out = String::new();
+        render_decision_history_section(
+            &mut out,
+            &log,
+            &[(agent, "Agent A".to_string())],
+            Some(&sink),
+        );
+
+        assert!(out.contains("motive sources:"));
+        assert!(out.contains("NeedPressure(Hunger) → 14200"));
     }
 
     #[test]
@@ -6680,6 +6828,7 @@ mod tests {
             &mut decision,
             &EventLog::new(),
             &[(agent, "Agent A".to_string())],
+            Some(&sink),
         );
         let report = format!("{opportunities}{decision}");
 
