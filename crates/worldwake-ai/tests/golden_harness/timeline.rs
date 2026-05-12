@@ -321,6 +321,7 @@ mod tests {
         decision_sink.record(AgentDecisionTrace {
             agent,
             tick: Tick(2),
+            compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             outcome: DecisionOutcome::Dead,
         });

@@ -29,6 +29,7 @@ use crate::knowledge_path::{
     BeliefAspect, BeliefProvenance, InstitutionalBeliefProvenance, KnowledgePath,
     SelfKnowledgeProvenance,
 };
+use crate::opportunity_compiler::Opportunity;
 use crate::planner_duration_contract::PlannerDurationDependency;
 use crate::planner_ops::{PlanTerminalKind, PlannerOpKind};
 use crate::ranking::RankedGoalComparison;
@@ -93,6 +94,7 @@ pub struct AgentDecisionTrace {
     pub agent: EntityId,
     pub tick: Tick,
     pub outcome: DecisionOutcome,
+    pub compiled_opportunities: Vec<Opportunity>,
     pub opportunity_compiler_load: Option<OpportunityCompilerLoad>,
 }
 
@@ -2587,6 +2589,7 @@ mod tests {
         let trace = AgentDecisionTrace {
             agent: entity(1),
             tick: Tick(8),
+            compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
@@ -2673,6 +2676,7 @@ mod tests {
         AgentDecisionTrace {
             agent,
             tick,
+            compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             outcome: DecisionOutcome::Dead,
         }
@@ -2733,6 +2737,7 @@ mod tests {
         AgentDecisionTrace {
             agent: entity(1),
             tick,
+            compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
@@ -2790,6 +2795,7 @@ mod tests {
         let trace = AgentDecisionTrace {
             agent: entity(1),
             tick: Tick(5),
+            compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,
@@ -5280,6 +5286,7 @@ mod tests {
         let trace = AgentDecisionTrace {
             agent,
             tick: Tick(5),
+            compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,

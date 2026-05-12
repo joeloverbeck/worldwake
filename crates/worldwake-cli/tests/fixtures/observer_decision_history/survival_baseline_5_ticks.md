@@ -1,4 +1,4 @@
-## Section 3 — Decision History
+## Section 3b — Decision History
 
 | Tick | Agent | Event | Payload Summary |
 |------|-------|-------|-----------------|

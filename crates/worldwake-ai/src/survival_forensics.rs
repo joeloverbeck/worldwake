@@ -736,6 +736,7 @@ mod tests {
         AgentDecisionTrace {
             agent,
             tick,
+            compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: None,

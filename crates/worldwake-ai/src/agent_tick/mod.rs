@@ -1357,6 +1357,7 @@ fn process_agent(
                 agent,
                 tick,
                 outcome: DecisionOutcome::Dead,
+                compiled_opportunities: Vec::new(),
                 opportunity_compiler_load: None,
             }));
         }
@@ -2347,6 +2348,7 @@ fn process_agent(
         agent,
         tick,
         outcome,
+        compiled_opportunities: read_result.opportunities,
         opportunity_compiler_load: Some(read_result.opportunity_compiler_load),
     }))
 }
