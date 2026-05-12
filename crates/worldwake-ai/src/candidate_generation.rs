@@ -701,7 +701,7 @@ fn find_matching_suppression(
     if discrepancies.entries.values().any(|entry| {
         entry.expires_tick > current_tick
             && entry.blocker_key.goal_key == candidate.key
-            && candidate_matches_blocker(candidate, &entry.blocker_key)
+            && candidate_matches_blocker(candidate, &entry.blocker_key, None)
     }) {
         return Some(SuppressionMatch::Discrepancy);
     }
@@ -710,7 +710,11 @@ fn find_matching_suppression(
         let matches = intent.blocker_key.goal_key == candidate.key
             && intent.expires_tick > current_tick
             && intent.blocks_goal_generation()
-            && candidate_matches_blocker(candidate, &intent.blocker_key);
+            && candidate_matches_blocker(
+                candidate,
+                &intent.blocker_key,
+                Some(intent.blocking_fact),
+            );
         matches.then_some(SuppressionMatch::Blocker(Box::new(
             crate::decision_trace::BlockerMatchDetail {
                 blocker_key: intent.blocker_key,
@@ -741,7 +745,11 @@ fn goal_is_suppressed(
         )
 }
 
-fn candidate_matches_blocker(candidate: &GoalOffer, blocker: &worldwake_core::BlockerKey) -> bool {
+fn candidate_matches_blocker(
+    candidate: &GoalOffer,
+    blocker: &worldwake_core::BlockerKey,
+    blocking_fact: Option<worldwake_core::BlockingFact>,
+) -> bool {
     if blocker.place.is_none() && blocker.target.is_none() && blocker.action_def.is_none() {
         return true;
     }
@@ -749,6 +757,10 @@ fn candidate_matches_blocker(candidate: &GoalOffer, blocker: &worldwake_core::Bl
     if blocker.action_def.is_some()
         && blocker.target.is_none()
         && matches!(candidate.key.kind, GoalKind::AcquireCommodity { .. })
+        && matches!(
+            blocking_fact,
+            Some(worldwake_core::BlockingFact::TargetGone)
+        )
     {
         return false;
     }
@@ -9823,6 +9835,66 @@ mod tests {
         assert_eq!(
             acquire_goals[0].anchor,
             worldwake_core::OpportunityAnchor::Place(orchard)
+        );
+    }
+
+    #[test]
+    fn reservation_conflict_place_blocker_suppresses_matching_acquisition_place() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let seller = entity(2);
+        let key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, orchard);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(orchard),
+                target: None,
+                action_def: Some(worldwake_core::ActionDefId(9)),
+            },
+            blocking_fact: BlockingFact::ReservationConflict {
+                affordance: worldwake_core::AffordanceKey {
+                    facility: orchard,
+                    action: worldwake_core::ActionDefId(9),
+                },
+                contention_event: None,
+            },
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+
+        assert!(
+            goals_for(
+                &candidates,
+                &GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                },
+            )
+            .is_empty()
         );
     }
 

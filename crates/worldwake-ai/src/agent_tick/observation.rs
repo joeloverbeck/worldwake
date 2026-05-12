@@ -14,7 +14,7 @@ use crate::decision_trace::CandidateDampingEntry;
 use crate::failure_handling::ExecutionFailure;
 use crate::knowledge_path::KnowledgePath;
 use crate::opportunity_compiler::{
-    BelievedLegalStatus, Opportunity, PerceivedOpportunityIndex, build_perceived_opportunity_index,
+    Opportunity, PerceivedOpportunityIndex, build_perceived_opportunity_index,
     compile_opportunities,
 };
 use crate::plan_step_expectations::{
@@ -239,7 +239,6 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     let candidate_opportunities: Vec<Opportunity> = opportunities
         .iter()
         .filter(|opportunity| Some(opportunity.key.goal_key) != active_goal)
-        .filter(|opportunity| !is_self_owned_acquisition_opportunity(opportunity, agent))
         .cloned()
         .collect();
     let before = blocked_memory.clone();
@@ -406,16 +405,6 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
         pending_source_reliability_failures: candidates.pending_source_reliability_failures,
         pending_acquisition_exhaustion_resets: candidates.pending_acquisition_exhaustion_resets,
     }
-}
-
-fn is_self_owned_acquisition_opportunity(opportunity: &Opportunity, agent: EntityId) -> bool {
-    matches!(
-        opportunity.legal_status,
-        BelievedLegalStatus::BelievedOwned { owner } if owner == agent
-    ) && matches!(
-        opportunity.key.goal_key.kind,
-        worldwake_core::GoalKind::AcquireCommodity { .. }
-    )
 }
 
 fn apply_pending_discrepancies(
