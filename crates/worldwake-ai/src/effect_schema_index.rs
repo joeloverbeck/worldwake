@@ -57,7 +57,19 @@ fn effect_keys_for_steps(steps: &[EffectStep]) -> Vec<EffectFactKey> {
 
 fn collect_effect_keys(step: &EffectStep, keys: &mut Vec<EffectFactKey>) {
     match step {
-        EffectStep::Transfer { .. } => keys.push(EffectFactKey::CommodityTransfer),
+        EffectStep::Transfer { .. }
+        | EffectStep::LootPossessionsWithinCapacity { .. }
+        | EffectStep::FinishCraft { .. }
+        | EffectStep::CollectDisplayStock { .. }
+        | EffectStep::PickUp { .. }
+        | EffectStep::PutDown { .. }
+        | EffectStep::DropItem { .. }
+        | EffectStep::Steal { .. }
+        | EffectStep::CompleteTrade => keys.push(EffectFactKey::CommodityTransfer),
+        EffectStep::HarvestResource { .. } => {
+            keys.push(EffectFactKey::CommodityTransfer);
+            keys.push(EffectFactKey::PartialQuantity);
+        }
         EffectStep::ApplyWound { .. } => keys.push(EffectFactKey::WoundApplied),
         EffectStep::EmitEvent { .. } => keys.push(EffectFactKey::EventEmitted),
         EffectStep::AssertExpectationFulfilled { .. } => {
@@ -66,7 +78,6 @@ fn collect_effect_keys(step: &EffectStep, keys: &mut Vec<EffectFactKey>) {
         EffectStep::ConsumeContentionGrant { .. } => {
             keys.push(EffectFactKey::ContentionGrantConsumed);
         }
-        EffectStep::HarvestResource { .. } => keys.push(EffectFactKey::PartialQuantity),
         EffectStep::PartialOnFailure { primary, fallback } => {
             for nested in primary.iter().chain(fallback) {
                 collect_effect_keys(nested, keys);
@@ -78,7 +89,6 @@ fn collect_effect_keys(step: &EffectStep, keys: &mut Vec<EffectFactKey>) {
         | EffectStep::ClearCombatStance { .. }
         | EffectStep::EnqueueContention { .. }
         | EffectStep::ClearContentionMembership { .. }
-        | EffectStep::LootPossessionsWithinCapacity { .. }
         | EffectStep::BuryCorpse { .. }
         | EffectStep::ResolveCombatAttack { .. }
         | EffectStep::ClearEntityContentionIfNoWounds { .. }
@@ -87,16 +97,9 @@ fn collect_effect_keys(step: &EffectStep, keys: &mut Vec<EffectFactKey>) {
         | EffectStep::UseToilet
         | EffectStep::RelieveWilderness
         | EffectStep::UseWashBasin { .. }
-        | EffectStep::FinishCraft { .. }
         | EffectStep::StoreStock { .. }
-        | EffectStep::CollectDisplayStock { .. }
         | EffectStep::StageStockForSale { .. }
         | EffectStep::UnstageStock { .. }
-        | EffectStep::PickUp { .. }
-        | EffectStep::PutDown { .. }
-        | EffectStep::DropItem { .. }
-        | EffectStep::Steal { .. }
-        | EffectStep::CompleteTrade
         | EffectStep::RecordStaffMarketDemand
         | EffectStep::CompleteEscortToSafety
         | EffectStep::CompleteTravel

@@ -10,7 +10,7 @@
 
 S138OPPCOM-007 made `prune_travel_away_from_goal_with_expansion_trace` retain travel candidates that would otherwise be pruned when a destination's opportunity salience multiplied by `CognitiveProfile.detour_budget_permille` meets the detour cost threshold. The existing trace surface records retained and pruned destinations, but it does not say whether a retained farther destination survived because it was already within the best travel cost or because the opportunity budget allowed the detour.
 
-That leaves the spec's debugging promise incomplete: `specs/S138-opportunity-compiler.md` says travel-detour budget mis-tuning should be inspectable because observer/provenance surfaces expose detour decisions with attribution.
+That leaves the spec's debugging promise incomplete: `archive/specs/S138-opportunity-compiler.md` says travel-detour budget mis-tuning should be inspectable because observer/provenance surfaces expose detour decisions with attribution.
 
 ## Assumption Reassessment (2026-05-11)
 
@@ -71,7 +71,7 @@ Update `format_selected_plan_search_provenance` and nearby decision-trace tests 
 
 - Changing travel-pruning behavior — S138OPPCOM-007 already landed the decision rule
 - Observer Section 3a opportunity list rendering — owned by S138OPPCOM-009
-- Golden/E2E scenario coverage — owned by S138OPPCOM-010
+- Golden/E2E scenario coverage — owned by `archive/tickets/S138OPPCOM-010.md`
 
 ## Acceptance Criteria
 

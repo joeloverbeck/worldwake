@@ -13,7 +13,7 @@ S138 enriches the existing interrupt layer (`crates/worldwake-ai/src/interrupts.
 ## Assumption Reassessment (2026-05-11)
 
 1. Existing focused/unit coverage: `crates/worldwake-ai/src/interrupts.rs` has 10+ inline tests starting at line 405 (lines 405, 431, 462, 488, 518, 539, 571, 603, 642, 744). The tests exercise the existing `ranked_candidates`-based fire/no-fire decision. Adding opportunity-derived candidates to the input set must not regress these tests at default (empty) opportunity index.
-2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "Interrupt-layer enrichment (in `interrupts.rs`)".
+2. Spec/doc reference: `archive/specs/S138-opportunity-compiler.md` deliverable section "Interrupt-layer enrichment (in `interrupts.rs`)".
 3. Shared abstraction boundary: `evaluate_interrupt` already consumes `ranked_candidates: &OrderedRanked<'_>` and per-agent budget margins. Opportunity-derived candidates flow through the same `OrderedRanked` surface — no new fire pathway, no new commitment-loss semantics.
 4. AI-regression layer: this is a runtime `agent_tick` change (interrupt evaluation). Existing harness is sufficient — `agent_tick/tests.rs` has integration coverage for the surrounding flow.
 5. Heuristic-removal discipline (precision-rules.md §12): this ticket does NOT remove or weaken the existing fire-or-not gate. It extends the gate's input set. The existing tests at empty-opportunity-set default should pass unchanged.

@@ -576,7 +576,7 @@ Phase 11 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ```text
 S134 (completed, archived)    S135 (completed, archived)    S140 (completed, archived)    S142 (completed, archived)
    │                                                                                            
-   └── S138 (hard dep on S134)
+   └── S138 (completed, archived)
          │
          ├── S137 (soft deps on S134, S136, S138)
          │     │
@@ -600,9 +600,10 @@ S136 (completed, archived)
 **Completed Wave 1 final slice**:
 - **S142**: Contention Event Inspectability — completed and archived at `archive/specs/S142-contention-event-inspectability.md` through the `S142CONEVEINS-001` through `S142CONEVEINS-007` ticket chain. Landed `EventTag::ContentionResolved`, typed contention payloads, facility-queue and resource-extraction emission, `BlockingFact::ReservationConflict.contention_event` attribution, observer Section 12 rendering, generated golden inventory updates, and `golden_contention_inspectability.rs` scenarios 393-397. The two ignored contention-inspectability goldens are manual-only proof witnesses.
 
-**Wave 2** (after Wave 1):
-- **S138**: Affordance-to-Opportunity Compiler with Effect-Schema Indexing — bottom-up opportunity compiler driven by `EffectSchemaIndex`; `relevant_ops` becomes hint, effect-schema becomes authority. Folds in PR-7, PR-13, PR-20.
-  - hard dependency S134 is satisfied (for `EffectSchemaIndex`)
+**Completed Wave 2 slice**:
+- **S138**: Affordance-to-Opportunity Compiler with Effect-Schema Indexing — completed and archived at `archive/specs/S138-opportunity-compiler.md` through the `S138OPPCOM-001` through `S138OPPCOM-011` ticket chain. Landed the bottom-up opportunity compiler driven by `EffectSchemaIndex`, profile-driven opportunity salience/risk, opportunity-derived candidate/source tracing, observer opportunity rendering, travel-pruning and interrupt integration, and golden coverage in `golden_opportunity_compiler.rs` scenarios 398-402. Folds in PR-7, PR-13, PR-20.
+
+**Remaining Wave 2** (after Wave 1):
 - **S141**: Motive Source Ledger and Desire Tokens — `MotiveSource` enum on `GoalOffer`; `motive_score` becomes derived view over per-agent state references. FND-3 direct compliance.
   - S136 soft dependency is satisfied (for `decisive_motive_sources` payload integration)
 
@@ -616,13 +617,13 @@ S136 (completed, archived)
 
 - [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
 - [x] Wave 1 specs implemented and passing golden E2E tests
-- [ ] Wave 2 specs implemented and passing golden E2E tests
+- [ ] Wave 2 specs implemented and passing golden E2E tests (S138 complete and archived; S141 remains)
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
 - [x] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
 - [x] S136 always-on decision payload extension landed: rejected-goal dimensions, failure-path `decisive_*` refs, frame assumptions with step provenance, observer summaries, replay/save-load coverage, golden payload-shape coverage, and payload-size soak enforcement
 - [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron`
-- [ ] Opportunity compiler golden proves desperate-agent steal opportunity emission and salience-weighted ranking
+- [x] Opportunity compiler goldens prove profile/risk salience, trace/load carriage, effect-schema index miss behavior, learned-memory damping, deterministic replay hashing, and compiler-load bounds
 - [x] S140 multi-axis artifact lifecycle core goldens prove the five axis paths, including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation; full Scenario G justice/witness/case-chain coverage remains owned outside S140.
 - [ ] Motive-source parity regression: every existing 1440-tick survival golden produces identical `motive_score` values pre/post-S141
 - [x] Contention-resolution events emit at every grant-issuance site under `survival-contested.ron`

@@ -13,7 +13,7 @@ S138's debuggability surface (FND-29) requires that compiled opportunities be in
 ## Assumption Reassessment (2026-05-11)
 
 1. Existing focused/unit coverage: `crates/worldwake-cli/src/bin/observer.rs` contained the old Section 3 (Decision History) rendering using a markdown table `| Tick | Agent | Event | Payload Summary |`; the implemented heading is now `## Section 3b — Decision History`.
-2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "Observer Section 3" — the spec example shows a non-tabular format for opportunities.
+2. Spec/doc reference: `archive/specs/S138-opportunity-compiler.md` deliverable section "Observer Section 3" — the spec example shows a non-tabular format for opportunities.
 3. Shared abstraction boundary: the observer reads from `DecisionTraceSink` (defined in `worldwake-ai`). Live reassessment showed `archive/tickets/S138OPPCOM-006.md` recorded `OpportunityCompilerLoad` but did not retain the actual `Opportunity` records for report consumers, so this ticket owns the narrow derived trace-carrier addition: `AgentDecisionTrace.compiled_opportunities: Vec<Opportunity>`.
 4. Tooling/trace classification: the observer is a binary that consumes public APIs from `worldwake-ai` (decision trace) without writing to any system. The new trace field carries derived per-tick read-model data only; it is not authoritative state and does not affect save/load format.
 5. Coordination with S137: S137 also lands rendering for `EventTag::RepairApplied` in this section. Both specs extend Section 3; this ticket creates the sub-section split (3a / 3b) and S137's tickets land their rendering inside 3b (or a sibling 3c). The split is non-blocking for S137.
@@ -120,7 +120,7 @@ Completed on 2026-05-11.
 - Added observer Section 3a rendering from the decision trace sink, grouped by `(tick, agent)`, sorted by descending salience, capped at top 8 opportunities per agent-tick, and omitted entirely when no opportunities exist.
 - Renamed existing decision-history output to Section 3b without changing the table rows, and updated the observer decision-history fixture to the new heading.
 - Updated all-target trace constructor fallout in AI golden harness helpers and the visualizer trace-buffer tests.
-- Truth-synced `specs/S138-opportunity-compiler.md` so the active spec records `AgentDecisionTrace.compiled_opportunities` as derived diagnostic trace data.
+- Truth-synced `archive/specs/S138-opportunity-compiler.md` so the spec records `AgentDecisionTrace.compiled_opportunities` as derived diagnostic trace data.
 
 ## Deviations
 

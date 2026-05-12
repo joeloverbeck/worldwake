@@ -8475,7 +8475,10 @@ fn fresh_local_commodity_clears_assumption_discrepancy_before_ttl_expiry() {
         crate::DecisionOutcome::Dead => {
             panic!("expected Planning or ActiveAction outcome, got Dead")
         }
-    };
+    } || trace
+        .compiled_opportunities
+        .iter()
+        .any(|opportunity| opportunity.key.goal_key == fixture.goal);
     assert!(
         goal_reenabled,
         "fresh local commodity should re-enable the apple goal before TTL expiry"

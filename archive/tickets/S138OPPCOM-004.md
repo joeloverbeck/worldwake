@@ -13,7 +13,7 @@ S138's architectural shift makes `GoalDispatchDeclaration.relevant_ops` a rankin
 ## Assumption Reassessment (2026-05-11)
 
 1. Existing focused/unit coverage: `crates/worldwake-ai/src/goal_dispatch_decl.rs` has focused declaration tests, including `test_declaration_relevant_ops_match_live_goal_model`, which asserts `relevant_ops` equals `relevant_op_kinds()` per goal kind. This ticket preserves the conformance assertion verbatim.
-2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "`relevant_ops` reclassification (in `goal_dispatch_decl.rs`)".
+2. Spec/doc reference: `archive/specs/S138-opportunity-compiler.md` deliverable section "`relevant_ops` reclassification (in `goal_dispatch_decl.rs`)".
 3. Shared abstraction boundary: `GoalDispatchDeclaration` in `goal_dispatch_decl.rs` — the new method is a property of the declaration, sibling to existing per-declaration metadata (`invalidation_strategy`, `feasibility_strategy`, etc.).
 4. Planner-modifying ticket: technically yes (the method's return value will be consumed by ticket 006 to decide when to query the effect-schema index), but at this ticket's landing the method has no consumer, so the Authoritative-to-AI Impact Rule 7-point checklist is satisfied trivially — the existing planner behavior is unchanged.
 
@@ -75,7 +75,7 @@ Implemented the staged authority surface in `goal_dispatch_decl.rs`: `Authority 
 ## Deviations
 
 - Added the `Authority` re-export in `crates/worldwake-ai/src/lib.rs`; the draft file list omitted it, but later S138 consumers need the public value type.
-- Updated `specs/S138-opportunity-compiler.md` to describe the landed method form on `GoalDispatchDeclaration` instead of a free function.
+- Updated `archive/specs/S138-opportunity-compiler.md` to describe the landed method form on `GoalDispatchDeclaration` instead of a free function.
 
 ## Out of Scope
 

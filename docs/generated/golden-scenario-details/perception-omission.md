@@ -41,7 +41,7 @@ Scenarios: 3
 
 ### Scenario 383: Omitted Anchor Reason Surfaces In Planning And Revalidation
 
-- Source: `golden_perception_omission.rs:272`
+- Source: `golden_perception_omission.rs:273`
 - Systems: AI, PlanningSnapshot
 - ActionDomains: Social, Inventory
 - Places: OrchardFarm, ForestPath

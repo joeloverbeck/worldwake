@@ -236,7 +236,11 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
     let view = runtime_belief_view(agent, world, scheduler, action_defs, phase.recipe_registry);
     let (opportunities, opportunity_compiler_load) =
         compile_opportunities(agent, &view, effect_schema_index);
-    let opportunity_index = build_perceived_opportunity_index(opportunities.clone());
+    let candidate_opportunities: Vec<Opportunity> = opportunities
+        .iter()
+        .filter(|opportunity| Some(opportunity.key.goal_key) != active_goal)
+        .cloned()
+        .collect();
     let before = blocked_memory.clone();
     let queue_transition_changed = handle_facility_queue_transitions(
         &view,
@@ -302,8 +306,20 @@ pub(super) fn refresh_runtime_for_read_phase_with_memories(
             phase.travel_horizon,
             tracing,
             runtime.current_plan.as_ref(),
-            &opportunities,
+            &candidate_opportunities,
         );
+    let opportunity_index = build_perceived_opportunity_index(
+        opportunities
+            .iter()
+            .filter(|opportunity| {
+                matches!(
+                    candidates.diagnostics.sources.get(&opportunity.key),
+                    Some(crate::decision_trace::CandidateSource::OpportunityCompiler)
+                )
+            })
+            .cloned()
+            .collect(),
+    );
     reinstate_current_plan_candidate(&mut candidates, runtime, active_goal);
     candidates.pending_source_reliability_failures.extend(
         pending_local_source_reliability_failures(

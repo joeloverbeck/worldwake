@@ -36,7 +36,7 @@ Deferred by sibling tickets as drafted: travel-pruning consumption of `Perceived
    - `agent_tick/observation.rs:273` — currently invokes `generate_candidates_with_current_plan_with_memories_with_travel_horizon(...)`; the compile pass inserts immediately before this call
    - `decision_trace.rs:1310` — `DecisionTraceSink` accepts new `OpportunityCompilerLoad` entries via the existing per-agent per-tick recording surface
    - `ranking.rs:59` — ranking consumes `GoalOffer` from candidate generation; opportunity-derived candidates flow through the same pipeline
-2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "`worldwake-ai::opportunity_compiler` (new module)"; the spec's `compile_opportunities` signature was updated to drop `PerceptionState` (does not exist in the codebase) and use `&impl RuntimeBeliefView`.
+2. Spec/doc reference: `archive/specs/S138-opportunity-compiler.md` deliverable section "`worldwake-ai::opportunity_compiler` (new module)"; the spec's `compile_opportunities` signature was updated to drop `PerceptionState` (does not exist in the codebase) and use `&impl RuntimeBeliefView`.
 3. Shared abstraction boundary: `compile_opportunities` reads only via the agent's `RuntimeBeliefView` (FND-7 locality preserved) plus the registry-time `EffectSchemaIndex`. No cross-system imperative.
 4. Mixed-layer ticket: candidate generation (ai), decision-trace surface (ai), authoritative read of registry (sim) — bounded inside the ai crate at the consumption surface.
 5. Authoritative-to-AI Impact Rule (AGENTS.md): this ticket modifies candidate emission. 7-point check applies:
@@ -169,7 +169,7 @@ Modify `crates/worldwake-ai/src/decision_trace.rs` (`DecisionTraceSink` at line 
 4. New test: `LearnedOpportunityMemory` damping reduces salience for opportunities the agent has previously seen and not pursued
 5. New test: `RootCandidateTrace.source = CandidateSource::OpportunityCompiler` for opportunity-derived candidates emitted in `candidate_generation.rs`
 6. New integration test in `agent_tick/tests.rs`: a perceived bread + starving agent scenario produces opportunity-derived `AcquireCommodity` candidate
-7. Existing 1440-tick golden/regression proof is explicitly deferred to `tickets/S138OPPCOM-010.md`; this ticket proves the focused compiler and `agent_tick` substrate needed by that golden pass.
+7. Existing 1440-tick golden/regression proof is explicitly deferred to `archive/tickets/S138OPPCOM-010.md`; this ticket proves the focused compiler and `agent_tick` substrate needed by that golden pass.
 8. Existing suite: `cargo test -p worldwake-ai`
 
 ### Invariants
@@ -210,7 +210,7 @@ Completed on 2026-05-11.
 
 ## Deviations
 
-- The full S138 golden/regression surface remains owned by `tickets/S138OPPCOM-010.md`; this ticket lands and proves the focused compiler, read-phase integration, source attribution, and trace-load substrate.
+- The full S138 golden/regression surface remains owned by `archive/tickets/S138OPPCOM-010.md`; this ticket lands and proves the focused compiler, read-phase integration, source attribution, and trace-load substrate.
 
 ## Verification Result
 

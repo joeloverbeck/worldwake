@@ -97,6 +97,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - When planner-boundary fixes remove unlawful omniscient carriers, dependent tests may need explicit belief/evidence seeding. Treat that as expected fallout to audit, not automatic proof that the production fix is wrong.
 - When a planner-visible fact exists on both runtime belief views and planner snapshots, prove `PerAgentBeliefView`/`RuntimeBeliefView` separately from `PlanningSnapshot`/`PlanningState` and name the split if they differ.
 - When planner/ranking work changes agenda metadata, ranking provenance, or other AI state that may persist through saves, verify the persisted carrier and current `SAVE_FORMAT_VERSION` policy before closeout.
+- When a previously inert compiler, index, derived read-model, or planner feed starts affecting candidate/search/agenda behavior, identify the closest existing integration or golden suite for the same goal/action family and run it before or alongside the broad crate gate. Use that adjacent golden to catch behavior-expansion fallout that the new ticket's focused proof may not exercise directly.
 
 ## Migration verification checklist
 

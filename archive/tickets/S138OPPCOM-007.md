@@ -13,7 +13,7 @@ S138 makes travel pruning opportunity-aware: a detour that would normally be pru
 ## Assumption Reassessment (2026-05-11)
 
 1. Existing focused/unit coverage: `crates/worldwake-ai/src/search/heuristic.rs` has inline tests adjacent to the function at line 248; the sibling `prune_travel_away_from_goal` at line 231 is the parameter-free variant retained for callers that don't need expansion traces.
-2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable section "Travel-pruning extension (in `search/heuristic.rs`)".
+2. Spec/doc reference: `archive/specs/S138-opportunity-compiler.md` deliverable section "Travel-pruning extension (in `search/heuristic.rs`)".
 3. Caller surface: `prune_travel_away_from_goal_with_expansion_trace` has a single production caller in `crates/worldwake-ai/src/search/mod.rs`, inside the search expansion loop. Parameter threading is mechanical but crosses the planning/read-phase boundary rather than `search/candidates.rs`.
 4. `PerceivedOpportunityIndex` is already available per-tick after archive/tickets/S138OPPCOM-006.md lands via `ReadPhaseResult.opportunity_index`; this ticket threads that read-phase index through `agent_tick/mod.rs`, `agent_tick/planning.rs`, and `search/mod.rs`. Existing test-only/public search helper wrappers keep an empty default index for non-opportunity callers, so behavior remains unchanged unless the live per-tick index is explicitly supplied.
 5. Heuristic-removal discipline (precision-rules.md §12): this ticket does NOT remove or weaken the existing prune heuristic. It adds an opportunity-derived bypass under explicit per-agent budget control. The existing prune behavior is preserved when the opportunity index is empty or salience contributions are zero.

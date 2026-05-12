@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 40
-- Files contributing `golden_*` tests: 40
-- Total `golden_*` tests: 192
+- Golden test files: 41
+- Files contributing `golden_*` tests: 41
+- Total `golden_*` tests: 197
 
 ## Per-File Inventory
 
@@ -26,6 +26,7 @@ Do not hand-edit it.
 | `golden_merchant_selling.rs` | 13 |
 | `golden_need_projection.rs` | 1 |
 | `golden_offices.rs` | 12 |
+| `golden_opportunity_compiler.rs` | 5 |
 | `golden_perception_exposure.rs` | 7 |
 | `golden_perception_omission.rs` | 3 |
 | `golden_place_dirtiness.rs` | 9 |
@@ -176,6 +177,14 @@ Do not hand-edit it.
 - `golden_contested_force_claim_resolves_after_yield`
 - `golden_force_control_locality_requires_tell`
 - `golden_vacancy_notice_unlocks_political_action_without_record_consult`
+
+### `golden_opportunity_compiler.rs`
+
+- `profile_weighting_preserves_owned_bread_opportunity_with_lower_salience`
+- `agent_tick_trace_carries_compiled_opportunities_and_load`
+- `effect_schema_index_miss_emits_no_opportunity`
+- `learned_opportunity_memory_damps_repeated_bread_opportunity`
+- `survival_baseline_replay_is_deterministic_and_compiler_load_is_bounded`
 
 ### `golden_perception_exposure.rs`
 

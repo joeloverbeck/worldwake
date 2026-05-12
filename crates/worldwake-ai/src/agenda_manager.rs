@@ -260,6 +260,11 @@ fn promote_revived(
             .expect("pending key disappeared during revival pass");
         revived_entry.last_reconsidered_tick = tick;
         revived_entry.phase = AgendaPhase::Pending;
+        let revived_goal = revived_entry.key.goal_key;
+        let revived_trigger = revived_entry.revival_trigger.clone();
+        state.pending.retain(|_, pending| {
+            pending.key.goal_key != revived_goal || pending.revival_trigger != revived_trigger
+        });
         revived.push(revived_entry);
     }
 
@@ -283,6 +288,13 @@ fn merge_candidates(
         {
             refresh_entry(committed, &candidate, tick);
             committed.phase = AgendaPhase::Committed;
+            continue;
+        }
+        if state
+            .committed
+            .as_ref()
+            .is_some_and(|committed| committed.key.goal_key == key.goal_key)
+        {
             continue;
         }
 
@@ -400,12 +412,16 @@ fn demote_to_pending_or_suspended(
     tick: Tick,
 ) -> (Vec<AgendaEntryKey>, Vec<AgendaEntryKey>) {
     let committed_key = state.committed.as_ref().map(|entry| entry.key);
+    let committed_goal = state.committed.as_ref().map(|entry| entry.key.goal_key);
     let mut demoted_to_pending = Vec::new();
     let demoted_to_suspended = Vec::new();
     let mut seen = BTreeSet::new();
 
     for mut entry in ranked {
-        if Some(entry.key) == committed_key || !seen.insert(entry.key) {
+        if Some(entry.key) == committed_key
+            || Some(entry.key.goal_key) == committed_goal
+            || !seen.insert(entry.key)
+        {
             continue;
         }
         if entry.revival_trigger.is_none() && entry.introduced_tick == tick {
@@ -944,6 +960,45 @@ mod tests {
         assert_eq!(refreshed.last_reconsidered_tick, Tick(10));
         assert_eq!(refreshed.motive_score, 40);
         assert_eq!(transitions.demoted_to_pending, vec![pending.key]);
+    }
+
+    #[test]
+    fn committed_goal_suppresses_parallel_same_goal_pending_anchor() {
+        let mut state = AgendaState::default();
+        let mut committed = agenda_entry(
+            GoalKind::Sleep,
+            OpportunityAnchor::Place(PLACE),
+            100,
+            Tick(1),
+        );
+        committed.phase = AgendaPhase::Committed;
+        state.committed = Some(committed);
+
+        let fresh = agenda_entry(
+            GoalKind::Sleep,
+            OpportunityAnchor::Entity(TARGET),
+            40,
+            Tick(9),
+        );
+        let transitions = tick_agenda(
+            AGENT,
+            &mut state,
+            vec![fresh],
+            &MockGoalBeliefView::default(),
+            &worldwake_core::DiscrepancyMemory::default(),
+            AgendaTickPolicy {
+                profile: &default_profile(),
+                switch_margin: default_switch_margin(),
+            },
+            Tick(10),
+        );
+
+        assert!(state.pending.is_empty());
+        assert!(transitions.demoted_to_pending.is_empty());
+        assert_eq!(
+            state.committed.as_ref().map(|entry| entry.key.anchor),
+            Some(OpportunityAnchor::Place(PLACE))
+        );
     }
 
     #[test]

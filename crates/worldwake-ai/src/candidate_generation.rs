@@ -489,6 +489,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         .suppressed
         .extend(fallback_diagnostics.suppressed);
     diagnostics.sources.extend(fallback_diagnostics.sources);
+    remove_redundant_opportunity_compiler_candidates(&mut candidates, &mut diagnostics);
 
     CandidateGenerationResult {
         candidates,
@@ -526,13 +527,16 @@ fn emit_opportunity_compiler_candidates(
         if evidence.is_empty() {
             continue;
         }
-        if candidates.iter().any(|candidate| {
-            candidate.key == opportunity.key.goal_key && candidate.anchor == opportunity.key.anchor
-        }) {
-            diagnostics
-                .sources
-                .entry(opportunity.key)
-                .or_insert(CandidateSource::OpportunityCompiler);
+        if ctx
+            .current_plan
+            .is_some_and(|plan| plan.goal == opportunity.key.goal_key)
+        {
+            continue;
+        }
+        if candidates
+            .iter()
+            .any(|candidate| candidate.key == opportunity.key.goal_key)
+        {
             continue;
         }
         let acquisition_quantity = goal_kind_acquisition_quantity(&goal_kind);
@@ -560,6 +564,49 @@ fn emit_opportunity_compiler_candidates(
             acquisition_quantity,
         });
     }
+}
+
+fn remove_redundant_opportunity_compiler_candidates(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+) {
+    let emitter_goals: BTreeSet<GoalKey> = candidates
+        .iter()
+        .filter_map(|candidate| {
+            let opportunity = OpportunityKey {
+                goal_key: candidate.key,
+                anchor: candidate.anchor,
+            };
+            (!matches!(
+                diagnostics.sources.get(&opportunity),
+                Some(CandidateSource::OpportunityCompiler)
+            ))
+            .then_some(candidate.key)
+        })
+        .collect();
+    let removed_opportunities: BTreeSet<OpportunityKey> = diagnostics
+        .sources
+        .iter()
+        .filter_map(|(opportunity, source)| {
+            (emitter_goals.contains(&opportunity.goal_key)
+                && matches!(source, CandidateSource::OpportunityCompiler))
+            .then_some(*opportunity)
+        })
+        .collect();
+
+    candidates.retain(|candidate| {
+        let opportunity = OpportunityKey {
+            goal_key: candidate.key,
+            anchor: candidate.anchor,
+        };
+        !removed_opportunities.contains(&opportunity)
+    });
+    diagnostics
+        .sources
+        .retain(|opportunity, _source| !removed_opportunities.contains(opportunity));
+    diagnostics
+        .offers
+        .retain(|offer| !removed_opportunities.contains(&offer.opportunity));
 }
 
 fn utility_profile_for_goal_generation(ctx: &GenerationContext<'_>) -> UtilityProfile {

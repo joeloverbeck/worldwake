@@ -13,7 +13,7 @@ S138 introduces a bottom-up opportunity compiler with several typed enums, an ai
 ## Assumption Reassessment (2026-05-11)
 
 1. Existing focused/unit coverage: `crates/worldwake-ai/src/decision_trace.rs` has inline `#[cfg(test)]` adjacent to `RootCandidateTrace` (defined at line 820), plus construction sites at `decision_trace.rs:4620` (vec!-style `root_candidates`) and `crates/worldwake-ai/src/search/candidates.rs:144-145` (direct struct literal). No existing test asserts the absence of a `source` field, so the addition is non-regressing.
-2. Spec/doc reference: `specs/S138-opportunity-compiler.md` deliverable sections "New typed enums and read-models" and "Decision-trace surface".
+2. Spec/doc reference: `archive/specs/S138-opportunity-compiler.md` deliverable sections "New typed enums and read-models" and "Decision-trace surface".
 3. Shared abstraction boundary under audit: the `Opportunity` rich record + `PerceivedOpportunityIndex` per-tick view + `RootCandidateTrace.source` attribution — all live in `worldwake-ai`, no cross-crate type leakage.
 4. `EffectFact` lives at `crates/worldwake-sim/src/effect_schema.rs:209` with 6 variants (`CommodityTransfer`, `PartialQuantity`, `WoundApplied`, `ExpectationFulfilled`, `ContentionGrantConsumed`, `EventEmitted`); `EffectFactKey` must 1:1 mirror these names as payload-free variants. `ViolationKind` (referenced by `RiskFact::CriminalLiability`) exists at `crates/worldwake-core/src/violation.rs:24`.
 
