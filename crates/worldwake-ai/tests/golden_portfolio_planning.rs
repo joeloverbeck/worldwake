@@ -87,6 +87,7 @@ fn committed_goal_entry(goal_key: GoalKey, opportunity: OpportunityKey, tick: Ti
         kill_condition: KillCondition::External,
         priority_class: worldwake_ai::GoalPriorityClass::Background,
         motive_score: 0,
+        motive_source_contributions: Vec::new(),
         provenance: None,
         source_reliability_discount: None,
         competition_discount: None,

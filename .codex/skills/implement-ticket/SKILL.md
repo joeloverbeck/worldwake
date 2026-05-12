@@ -43,7 +43,7 @@ Keep this top-level skill as routing plus hard stops. Load the referenced files 
 - Do not use broad regex/perl insertion for shared Rust struct-literal fallout; use compiler-guided precise patches or syntax-aware tooling and inspect the changed hunks.
 - Quote stale-scan `rg` patterns containing Markdown code spans with single quotes so backticked symbols are not treated as shell command substitution.
 - Do not set `Status: COMPLETED` while any required proof gate is still running, blocked, unpollable, or unrun. Keep provisional closeout notes under `Verification Result` with `Blocked` rows until proof is observed complete.
-- After any source, generated, scenario, test, or executable-behavior edit that follows a broad gate, rerun the narrowest affected proof and the required broad gate before completing the ticket. For final ticket/spec Markdown-only edits, run `git diff --check` plus targeted stale-claim scans.
+- After any source, generated, scenario, test, or executable-behavior edit that follows a broad gate, rerun the narrowest affected proof and the required broad gate before completing the ticket. Exception: if the only post-gate non-Markdown changes are comment-only golden metadata/prose edits in `golden_*.rs` plus regenerated `docs/generated/*`, and no assertions, fixtures, scenarios, or executable behavior changed, rerun the golden inventory generator and stale/diff hygiene instead of Cargo. For final ticket/spec Markdown-only edits, run `git diff --check` plus targeted stale-claim scans.
 
 ## Mandatory Closeout Checklist
 
@@ -51,7 +51,7 @@ Before marking an active ticket `COMPLETED` or sending the final response, load 
 
 Top-level closeout hard stops:
 - Do not edit `Status: COMPLETED` or final verification claims while any proof-counted command is still running, blocked on an unavailable process handle, or not observed complete.
-- Confirm the final source/test/generated diff is covered by completed executable verification; if source, generated, scenario, test, or executable behavior changes after a broad gate, rerun the narrowest affected proof and the required broad gate before changing `Status` to `COMPLETED`. Clippy-only or lint-only source cleanup still makes the earlier broad gate stale.
+- Confirm the final source/test/generated diff is covered by completed executable verification; if source, generated, scenario, test, or executable behavior changes after a broad gate, rerun the narrowest affected proof and the required broad gate before changing `Status` to `COMPLETED`. Comment-only golden metadata/prose edits plus regenerated `docs/generated/*` are documentation freshness work when no assertions, fixtures, scenarios, or executable behavior changed; cover those with the golden inventory generator, generated-prose inspection, stale scans, and diff hygiene. Clippy-only or lint-only source cleanup still makes the earlier broad gate stale.
 - Rewrite stale drafted acceptance/proof/spec wording before final status: remove unrun command lists, unproved `Verification Layers`, false implementation sketches, and disproved phrases from the active ticket and directly cited active specs.
 - Add or update `## Verification Result`; every recorded command/proof item must start with `Passed`, `Waived`, or `Blocked`, and wrapper-equivalent proof may be claimed only when the live wrapper gates were run or individually covered.
 - Run Markdown/diff hygiene after final ticket/spec edits, normally `git diff --check`, and use explicit untracked-file whitespace checks for owned untracked files.

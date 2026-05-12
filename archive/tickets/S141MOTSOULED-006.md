@@ -65,7 +65,7 @@ In `observer.rs#[cfg(test)]`, add a test (e.g., `section_3b_renders_motive_sourc
 
 - `crates/worldwake-cli/src/bin/observer.rs` (modify — Section 3b rendering + focused unit test)
 - `crates/worldwake-cli/tests/fixtures/observer_decision_history/survival_baseline_5_ticks.md` (modify — existing Section 3b fixture updated for the new rows)
-- `specs/S141-motive-source-ledger.md` (truth-sync — D7 no longer claims unavailable per-source weight/pressure metadata)
+- `archive/specs/S141-motive-source-ledger.md` (truth-sync — D7 no longer claims unavailable per-source weight/pressure metadata)
 
 ## Out of Scope
 

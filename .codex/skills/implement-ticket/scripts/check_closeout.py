@@ -26,6 +26,22 @@ COMMAND_START_RE = re.compile(
     r"npm"
     r")\b"
 )
+PROOF_SECTIONS = (
+    "Acceptance Criteria",
+    "Test Plan",
+    "New/Modified Tests",
+    "Verification Layers",
+)
+NARRATIVE_SECTIONS = (
+    "Problem",
+    "Assumption Reassessment",
+    "What to Change",
+)
+PROOF_DRAFT_RE = re.compile(r"\b(new|will|should|planned|TODO|TBD)\b", re.IGNORECASE)
+NARRATIVE_STALE_RE = re.compile(
+    r"\b(today|current|leaves|will|should|planned|TODO|TBD)\b",
+    re.IGNORECASE,
+)
 
 
 def section_body(text: str, name: str) -> str | None:
@@ -104,13 +120,7 @@ def main() -> int:
                 )
 
         required_commands: set[str] = set()
-        proof_sections = (
-            "Acceptance Criteria",
-            "Test Plan",
-            "New/Modified Tests",
-            "Verification Layers",
-        )
-        for section in proof_sections:
+        for section in PROOF_SECTIONS:
             required_commands.update(command_refs(section_body(text, section)))
 
         missing_commands = sorted(required_commands - verification_commands)
@@ -129,10 +139,18 @@ def main() -> int:
                 + ", ".join(f"`{command}`" for command in waived_required_commands)
             )
 
-        for section in proof_sections:
+        for section in PROOF_SECTIONS:
             body = section_body(text, section)
-            if body and re.search(r"\b(new|will|should|planned|TODO|TBD)\b", body, re.IGNORECASE):
+            if body and PROOF_DRAFT_RE.search(body):
                 warnings.append(f"completed ticket has future/draft wording in ## {section}")
+
+        for section in NARRATIVE_SECTIONS:
+            body = section_body(text, section)
+            if body and NARRATIVE_STALE_RE.search(body):
+                warnings.append(
+                    f"completed ticket may have stale present/future wording in ## {section}; "
+                    "use result tense or explicit before-this-ticket framing"
+                )
 
     if warnings:
         for warning in warnings:

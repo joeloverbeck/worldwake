@@ -334,15 +334,7 @@ pub(super) fn summarize_ranked_goal(ranked: &AgendaEntry) -> RankedGoalSummary {
 fn motive_source_contributions_for_summary(
     ranked: &AgendaEntry,
 ) -> Vec<(worldwake_core::MotiveSourceRef, u32)> {
-    match ranked.offer.motive_sources.split_first() {
-        None => Vec::new(),
-        Some((first, rest)) => {
-            let mut contributions = Vec::with_capacity(ranked.offer.motive_sources.len());
-            contributions.push((first.clone(), ranked.motive_score));
-            contributions.extend(rest.iter().cloned().map(|source| (source, 0)));
-            contributions
-        }
-    }
+    ranked.motive_source_contributions.clone()
 }
 
 pub(super) fn determine_selected_plan_source(
@@ -3736,6 +3728,7 @@ mod tests {
             offer: goal,
             priority_class: GoalPriorityClass::High,
             motive_score: 100,
+            motive_source_contributions: Vec::new(),
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
@@ -3779,6 +3772,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 120,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -3811,6 +3805,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 110,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -3843,6 +3838,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 90,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -3875,6 +3871,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 80,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -4109,6 +4106,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -4219,6 +4217,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 900,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -4252,6 +4251,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 800,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -4285,6 +4285,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 600,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -4524,6 +4525,7 @@ mod tests {
             },
             priority_class,
             motive_score,
+            motive_source_contributions: Vec::new(),
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
@@ -4666,6 +4668,7 @@ mod tests {
             ..ranked
         };
         ranked.motive_score = 42;
+        ranked.motive_source_contributions = vec![(source.clone(), 42)];
 
         let summary = summarize_ranked_goal(&ranked);
 
@@ -4732,6 +4735,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::High,
                 motive_score: 800,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,
@@ -4767,6 +4771,7 @@ mod tests {
                 },
                 priority_class: GoalPriorityClass::Low,
                 motive_score: 300,
+                motive_source_contributions: Vec::new(),
                 provenance: None,
                 source_reliability_discount: None,
                 competition_discount: None,

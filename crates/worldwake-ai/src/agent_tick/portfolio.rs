@@ -263,6 +263,7 @@ mod tests {
             },
             priority_class: GoalPriorityClass::High,
             motive_score,
+            motive_source_contributions: Vec::new(),
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,

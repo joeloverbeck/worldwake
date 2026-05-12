@@ -162,7 +162,7 @@ Do not hand-edit it.
 
 ### `golden_motive_sources.rs`
 
-- `golden_motive_sources_hunger_offer_carries_need_pressure_and_score_contribution`
+- `golden_motive_sources_hunger_and_greed_offer_sums_source_contributions`
 - `golden_motive_sources_commit_payload_preserves_hunger_and_greed_sources`
 - `golden_motive_sources_pain_contribution_can_dominate_hunger`
 - `golden_motive_sources_greed_weight_variation_is_profile_state`

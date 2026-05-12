@@ -48,7 +48,7 @@ S141's validation deliverable needs proof that production goal offers carry firs
 ## Deviations
 
 1. The original drafted autonomous "Hunger + Greed sum", "Pain dominates under wound profile", and "per-agent `greed_weight` produces different commits" assertions depend on independent per-source production scoring that is not present in the live S141 004 implementation.
-2. The remaining independent multi-source scoring and autonomous branch-divergence goldens are split to `tickets/S141MOTSOULED-008.md`.
+2. The remaining independent multi-source scoring and autonomous branch-divergence goldens were split to the now-archived `archive/tickets/S141MOTSOULED-008.md`.
 3. `./scripts/verify.sh` was not run because this ticket is not a push preparation pass. Every live gate in the wrapper was run directly and recorded in `Verification Result`.
 
 ## Files Touched

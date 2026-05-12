@@ -239,6 +239,7 @@ pub(crate) fn rank_candidates_with_memories(
         let provenance = goal_ranking_provenance(candidate, &context);
         let priority_class = ranked_priority_class(candidate, &context, provenance.as_ref());
         let motive_score = ranked_motive_score(candidate, &context, provenance.as_ref());
+        let raw_motive_source_contributions = motive_source_contributions(candidate, &context);
         let source_reliability_discount =
             apply_source_reliability_discount(candidate, &context, motive_score);
         let post_source_reliability_motive = source_reliability_discount
@@ -246,16 +247,18 @@ pub(crate) fn rank_candidates_with_memories(
             .map_or(motive_score, |discount| discount.post_discount_motive);
         let competition_discount =
             apply_competition_discount(candidate, &context, post_source_reliability_motive);
+        let final_motive_score = competition_discount
+            .as_ref()
+            .map_or(post_source_reliability_motive, |discount| {
+                discount.post_discount_motive
+            });
         let source_composite = source_composite_rank(candidate, &context);
         let scored = AgendaEntry::pending(
             candidate.clone(),
             current_tick,
             priority_class,
-            competition_discount
-                .as_ref()
-                .map_or(post_source_reliability_motive, |discount| {
-                    discount.post_discount_motive
-                }),
+            final_motive_score,
+            scale_contributions_to_total(raw_motive_source_contributions, final_motive_score),
             provenance,
             source_reliability_discount,
             competition_discount,
@@ -324,6 +327,34 @@ fn ranked_motive_score(
     );
     let base = apply_hygiene_motive_modifiers(candidate, context, base);
     base.saturating_add(memory_motive_bonus(candidate, context, base))
+}
+
+fn scale_contributions_to_total(
+    raw: Vec<(MotiveSourceRef, u32)>,
+    final_total: u32,
+) -> Vec<(MotiveSourceRef, u32)> {
+    if raw.is_empty() || final_total == 0 {
+        return raw.into_iter().map(|(source, _)| (source, 0)).collect();
+    }
+
+    let raw_total: u32 = raw.iter().map(|(_, contribution)| *contribution).sum();
+    if raw_total == 0 || raw_total == final_total {
+        return raw;
+    }
+
+    let len = raw.len();
+    let mut scaled = Vec::with_capacity(len);
+    let mut assigned = 0u32;
+    for (index, (source, contribution)) in raw.into_iter().enumerate() {
+        let scaled_contribution = if index + 1 == len {
+            final_total.saturating_sub(assigned)
+        } else {
+            contribution.saturating_mul(final_total) / raw_total
+        };
+        assigned = assigned.saturating_add(scaled_contribution);
+        scaled.push((source, scaled_contribution));
+    }
+    scaled
 }
 
 fn memory_motive_bonus(
@@ -503,6 +534,10 @@ pub(crate) fn apply_pending_source_reliability_failures(
             .competition_discount
             .as_ref()
             .map_or(post_source_motive, |discount| discount.post_discount_motive);
+        entry.motive_source_contributions = scale_contributions_to_total(
+            motive_source_contributions(&entry.offer, &context),
+            entry.motive_score,
+        );
     }
 
     let _ = sort_in_place(ranked);
@@ -1031,19 +1066,171 @@ fn motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
         .sum()
 }
 
+fn motive_source_contributions(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+) -> Vec<(MotiveSourceRef, u32)> {
+    #[cfg(test)]
+    let derived_sources;
+    let sources = if candidate.motive_sources.is_empty() {
+        #[cfg(test)]
+        {
+            derived_sources = crate::motive_source_mapping::derive_default_motive_sources(
+                &candidate.key.kind,
+                &candidate.anchor,
+                Tick(0),
+            );
+            derived_sources.as_slice()
+        }
+        #[cfg(not(test))]
+        {
+            candidate.assert_motive_sources_present();
+            &candidate.motive_sources
+        }
+    } else {
+        candidate.motive_sources.as_slice()
+    };
+    sources
+        .iter()
+        .map(|source| {
+            (
+                source.clone(),
+                score_motive_source(source, candidate, context),
+            )
+        })
+        .collect()
+}
+
 fn score_motive_source(
     source: &MotiveSourceRef,
     candidate: &GoalOffer,
     context: &RankingContext<'_>,
 ) -> u32 {
     match &source.source {
-        MotiveSource::NeedPressure { .. }
-        | MotiveSource::Pain { .. }
-        | MotiveSource::OfficeDuty { .. }
-        | MotiveSource::Loyalty { .. }
-        | MotiveSource::Greed { .. }
-        | MotiveSource::Shame { .. }
-        | MotiveSource::Revenge { .. } => score_goal_kind_motive(candidate, context),
+        MotiveSource::NeedPressure { need } => {
+            need_pressure_motive_score(*need, candidate, context)
+        }
+        MotiveSource::Pain { .. } => pain_motive_score(candidate, context),
+        MotiveSource::OfficeDuty { .. } => u32::from(context.utility.office_duty_weight.value()),
+        MotiveSource::Loyalty { other } => context
+            .view
+            .loyalty_to(context.agent, *other)
+            .map_or(0, |loyalty| {
+                score_product(context.utility.loyalty_weight, loyalty)
+            }),
+        MotiveSource::Greed { .. } => greed_motive_score(candidate, context),
+        MotiveSource::Shame { .. } => u32::from(context.utility.shame_weight.value()),
+        MotiveSource::Revenge { .. } => u32::from(context.utility.revenge_weight.value()),
+    }
+}
+
+fn need_pressure_motive_score(
+    need: HomeostaticNeedId,
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+) -> u32 {
+    match candidate.key.kind {
+        GoalKind::ConsumeOwnedCommodity { commodity }
+        | GoalKind::AcquireCommodity {
+            commodity,
+            purpose: CommodityPurpose::SelfConsume,
+            ..
+        } => relevant_self_consume_factors(commodity, context)
+            .into_iter()
+            .filter(|factor| homeostatic_need_id_for_drive(factor.drive) == need)
+            .map(effective_drive_factor_score)
+            .max()
+            .unwrap_or(0),
+        GoalKind::Sleep if need == HomeostaticNeedId::Fatigue => drive_score(
+            context,
+            HomeostaticNeedId::Fatigue,
+            |needs| needs.fatigue,
+            |utility| utility.fatigue_weight,
+        ),
+        GoalKind::Relieve if need == HomeostaticNeedId::Bladder => drive_score(
+            context,
+            HomeostaticNeedId::Bladder,
+            |needs| needs.bladder,
+            |utility| utility.bladder_weight,
+        ),
+        GoalKind::Wash if need == HomeostaticNeedId::Dirtiness => drive_score(
+            context,
+            HomeostaticNeedId::Dirtiness,
+            |needs| needs.dirtiness,
+            |utility| utility.dirtiness_weight,
+        ),
+        GoalKind::ExploreLocation {
+            motivating_need: ExplorationMotivation::NeedDriven(motivating_need),
+            ..
+        } if motivating_need == need => {
+            exploration_motive(context, ExplorationMotivation::NeedDriven(need))
+        }
+        _ => 0,
+    }
+}
+
+fn pain_motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
+    match candidate.key.kind {
+        GoalKind::TreatWounds { patient } => {
+            let patient_pain = derive_pain_pressure(context.view, patient);
+            if patient == context.agent {
+                score_product(context.utility.pain_weight, patient_pain)
+            } else {
+                score_product(context.utility.care_weight, patient_pain)
+            }
+        }
+        _ => score_product(
+            context.utility.pain_weight,
+            derive_pain_pressure(context.view, context.agent),
+        ),
+    }
+}
+
+fn greed_motive_score(candidate: &GoalOffer, context: &RankingContext<'_>) -> u32 {
+    match candidate.key.kind {
+        GoalKind::AcquireCommodity {
+            commodity,
+            purpose: CommodityPurpose::SelfConsume,
+            ..
+        }
+        | GoalKind::SellCommodity { commodity }
+        | GoalKind::RestockCommodity { commodity } => {
+            let signal = opportunity_signal(
+                context.view,
+                context.agent,
+                context.view.effective_place(context.agent),
+                commodity,
+            );
+            score_product(context.utility.greed_weight, signal)
+        }
+        GoalKind::AcquireCommodity {
+            purpose: CommodityPurpose::RecipeInput(recipe_id),
+            ..
+        }
+        | GoalKind::ProduceCommodity { recipe_id } => {
+            best_recipe_output_assessment(recipe_id, context).map_or(0, |assessment| {
+                assessment
+                    .motive_score
+                    .saturating_mul(u32::from(context.utility.greed_weight.value()))
+                    / u32::from(context.utility.enterprise_weight.value()).max(1)
+            })
+        }
+        GoalKind::MoveCargo {
+            commodity,
+            destination,
+        } => {
+            let signal =
+                market_signal_for_place(context.view, context.agent, commodity, destination);
+            score_product(context.utility.greed_weight, signal)
+        }
+        GoalKind::LootCorpse { corpse } => corpse_loot_assessment(corpse, context)
+            .map_or(1, |assessment| assessment.motive_score.max(1)),
+        GoalKind::StealItem { target_item } => steal_item_assessment(target_item, context)
+            .map_or_else(
+                || theft_motive(context),
+                |assessment| assessment.motive_score.max(1),
+            ),
+        _ => score_goal_kind_motive(candidate, context),
     }
 }
 
@@ -2801,16 +2988,16 @@ mod tests {
         GroundComfortTag, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind, InTransitOnEdge,
         InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource,
         JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
-        MetabolismProfile, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
-        ObligationSatiationProfile, OfficeData, OpportunityAnchor, OpportunityKey, PatrolProfile,
-        PatrolRoute, PerceptionSource, Permille, PlaceDirtiness, PreferenceProfile,
-        ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation, ReliabilityRecord,
-        ResourceSource, RewardSource, RightKind, RouteExperience, ShelterTag, SleepQualityProfile,
-        SleepRecoveryModifier, SourceKey, SourceReliability, SubstitutePreferences, SurveyMemory,
-        SurveyRecord, TellTopic, TheftDispositionProfile, TheftFacts, Tick, TickRange,
-        TradeCategory, TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId,
-        ViolationKind, WashBasinState, WorkstationTag, Wound, WoundCause, WoundId,
-        belief_confidence,
+        MetabolismProfile, MotiveSource, MotiveSourceRef, MultiplierPermille, NoticeTopic,
+        ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, OpportunityAnchor,
+        OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille, PlaceDirtiness,
+        PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation,
+        ReliabilityRecord, ResourceSource, RewardSource, RightKind, RouteExperience, ShelterTag,
+        SleepQualityProfile, SleepRecoveryModifier, SourceKey, SourceReliability,
+        SubstitutePreferences, SurveyMemory, SurveyRecord, TellTopic, TheftDispositionProfile,
+        TheftFacts, Tick, TickRange, TradeCategory, TradeDispositionProfile, UniqueItemKind,
+        UtilityProfile, ViolationId, ViolationKind, WashBasinState, WorkstationTag, Wound,
+        WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -3412,6 +3599,13 @@ mod tests {
         }
     }
 
+    fn motive_source(source: MotiveSource) -> MotiveSourceRef {
+        MotiveSourceRef {
+            source,
+            introduced_tick: current_tick(),
+        }
+    }
+
     fn believed_state(observed_tick: u64, source: PerceptionSource) -> BelievedEntityState {
         BelievedEntityState {
             believed_kind: None,
@@ -3567,6 +3761,7 @@ mod tests {
             kill_condition: crate::KillCondition::External,
             priority_class: GoalPriorityClass::Medium,
             motive_score,
+            motive_source_contributions: Vec::new(),
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,
@@ -4246,7 +4441,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(accuse.priority_class, GoalPriorityClass::Low);
-        assert_eq!(accuse.motive_score, 640);
+        assert_eq!(accuse.motive_score, 400);
 
         let punish = outcome
             .ranked
@@ -5594,7 +5789,7 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
-        assert_eq!(ranked[0].motive_score, 200 * 1000);
+        assert_eq!(ranked[0].motive_score, 500 * 1000);
     }
 
     #[test]
@@ -5644,15 +5839,15 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked.len(), 1);
-        assert_eq!(ranked[0].motive_score, 120_000);
+        assert_eq!(ranked[0].motive_score, 300_000);
         assert_eq!(
             ranked[0].competition_discount,
             Some(CompetitionDiscount {
                 observed_competitors: vec![competitor_a, competitor_b],
                 domain: ActionDomain::Production,
                 effective_discount: pm(400),
-                pre_discount_motive: 200_000,
-                post_discount_motive: 120_000,
+                pre_discount_motive: 500_000,
+                post_discount_motive: 300_000,
             })
         );
     }
@@ -5768,15 +5963,15 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].motive_score, 200_000);
+        assert_eq!(ranked[0].motive_score, 500_000);
         assert_eq!(
             ranked[0].competition_discount,
             Some(CompetitionDiscount {
                 observed_competitors: vec![competitor],
                 domain: ActionDomain::Production,
                 effective_discount: pm(0),
-                pre_discount_motive: 200_000,
-                post_discount_motive: 200_000,
+                pre_discount_motive: 500_000,
+                post_discount_motive: 500_000,
             })
         );
     }
@@ -6325,15 +6520,15 @@ mod tests {
         )
         .into_ranked();
 
-        assert_eq!(ranked[0].motive_score, 80_000);
+        assert_eq!(ranked[0].motive_score, 200_000);
         assert_eq!(
             ranked[0].source_reliability_discount,
             Some(SourceReliabilityDiscount {
                 source_entity: source,
                 commodity: CommodityKind::Bread,
                 failure_ratio_permille: 500,
-                pre_discount_motive: 200_000,
-                post_discount_motive: 100_000,
+                pre_discount_motive: 500_000,
+                post_discount_motive: 250_000,
             })
         );
         assert_eq!(
@@ -6342,8 +6537,8 @@ mod tests {
                 observed_competitors: vec![competitor],
                 domain: ActionDomain::Production,
                 effective_discount: pm(200),
-                pre_discount_motive: 100_000,
-                post_discount_motive: 80_000,
+                pre_discount_motive: 250_000,
+                post_discount_motive: 200_000,
             })
         );
     }
@@ -6530,7 +6725,7 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
-        assert_eq!(ranked[0].motive_score, 200 * 1000);
+        assert_eq!(ranked[0].motive_score, 500 * 1000);
     }
 
     #[test]
@@ -6634,6 +6829,7 @@ mod tests {
             }),
             priority_class: GoalPriorityClass::Medium,
             motive_score: 250_000,
+            motive_source_contributions: Vec::new(),
             provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
                 base_priority_class: GoalPriorityClass::Medium,
                 final_priority_class: GoalPriorityClass::Medium,
@@ -6668,6 +6864,7 @@ mod tests {
             offer: goal(GoalKind::LootCorpse { corpse }),
             priority_class: GoalPriorityClass::Medium,
             motive_score: 250_000,
+            motive_source_contributions: Vec::new(),
             provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
                 base_priority_class: GoalPriorityClass::Medium,
                 final_priority_class: GoalPriorityClass::Medium,
@@ -6720,6 +6917,7 @@ mod tests {
             }),
             priority_class: GoalPriorityClass::Medium,
             motive_score: 250_000,
+            motive_source_contributions: Vec::new(),
             provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
                 base_priority_class: GoalPriorityClass::Medium,
                 final_priority_class: GoalPriorityClass::Medium,
@@ -6754,6 +6952,7 @@ mod tests {
             offer: goal(GoalKind::LootCorpse { corpse }),
             priority_class: GoalPriorityClass::Medium,
             motive_score: 250_000,
+            motive_source_contributions: Vec::new(),
             provenance: Some(RankedGoalProvenance::Drive(RankedDriveGoalProvenance {
                 base_priority_class: GoalPriorityClass::Medium,
                 final_priority_class: GoalPriorityClass::Medium,
@@ -7448,6 +7647,146 @@ mod tests {
     }
 
     #[test]
+    fn multi_source_acquire_sums_hunger_and_greed_contributions() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        let market = view.effective_places[&agent];
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(600), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+        let goal_kind = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        };
+        let hunger = motive_source(MotiveSource::NeedPressure {
+            need: HomeostaticNeedId::Hunger,
+        });
+        let greed = motive_source(MotiveSource::Greed {
+            opportunity: OpportunityKey {
+                goal_key: GoalKey::from(goal_kind),
+                anchor: OpportunityAnchor::Place(market),
+            },
+        });
+        let mut offer = goal_at_place(goal_kind, market);
+        offer.motive_sources = vec![hunger.clone(), greed.clone()];
+
+        let profile = utility();
+        let context = RankingContext::new(
+            &view,
+            agent,
+            current_tick(),
+            &profile,
+            build_decision_context(&view, agent),
+        );
+        assert_eq!(
+            super::motive_source_contributions(&offer, &context),
+            vec![(hunger.clone(), 540_000), (greed.clone(), 500_000)]
+        );
+        let ranked = rank(&[offer], &view, agent, current_tick(), &profile).into_ranked();
+
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(
+            ranked[0]
+                .motive_source_contributions
+                .iter()
+                .map(|(_, contribution)| *contribution)
+                .sum::<u32>(),
+            ranked[0].motive_score
+        );
+    }
+
+    #[test]
+    fn pain_source_can_dominate_hunger_source_under_wound_profile() {
+        let agent = entity(1);
+        let mut view = base_view(agent);
+        view.needs.insert(
+            agent,
+            HomeostaticNeeds::new(pm(100), pm(0), pm(0), pm(0), pm(0)),
+        );
+        view.wounds.insert(agent, vec![wound(900)]);
+        let mut profile = utility();
+        profile.pain_weight = pm(1000);
+        let pain = motive_source(MotiveSource::Pain {
+            wound: WoundId(900),
+        });
+        let hunger = motive_source(MotiveSource::NeedPressure {
+            need: HomeostaticNeedId::Hunger,
+        });
+        let mut treat = goal_at_entity(GoalKind::TreatWounds { patient: agent }, agent);
+        treat.motive_sources = vec![pain.clone()];
+        let mut eat = goal(GoalKind::ConsumeOwnedCommodity {
+            commodity: CommodityKind::Bread,
+        });
+        eat.motive_sources = vec![hunger.clone()];
+
+        let ranked = rank(&[eat, treat], &view, agent, current_tick(), &profile).into_ranked();
+
+        assert_eq!(
+            ranked[0].offer.key.kind,
+            GoalKind::TreatWounds { patient: agent }
+        );
+        assert_eq!(ranked[0].motive_source_contributions, vec![(pain, 900_000)]);
+        assert_eq!(
+            ranked[1].motive_source_contributions,
+            vec![(hunger, 90_000)]
+        );
+    }
+
+    #[test]
+    fn greed_weight_can_flip_medium_priority_branch_selection() {
+        let agent = entity(1);
+        let office = entity(7);
+        let mut view = base_view(agent);
+        let market = view.effective_places[&agent];
+        view.demand_memory
+            .insert(agent, vec![demand(market, CommodityKind::Bread, 10)]);
+        let sell_kind = GoalKind::SellCommodity {
+            commodity: CommodityKind::Bread,
+        };
+        let greed = motive_source(MotiveSource::Greed {
+            opportunity: OpportunityKey {
+                goal_key: GoalKey::from(sell_kind),
+                anchor: OpportunityAnchor::Place(market),
+            },
+        });
+        let office_duty = motive_source(MotiveSource::OfficeDuty { office });
+        let mut sell = goal_at_place(sell_kind, market);
+        sell.motive_sources = vec![greed.clone()];
+        let mut claim = goal(GoalKind::ClaimOffice { office });
+        claim.motive_sources = vec![office_duty.clone()];
+        let low_greed = UtilityProfile {
+            greed_weight: Permille::ZERO,
+            office_duty_weight: pm(500),
+            ..utility()
+        };
+        let high_greed = UtilityProfile {
+            greed_weight: pm(800),
+            office_duty_weight: pm(500),
+            ..utility()
+        };
+
+        let low = rank(
+            &[sell.clone(), claim.clone()],
+            &view,
+            agent,
+            current_tick(),
+            &low_greed,
+        )
+        .into_ranked();
+        let high = rank(&[sell, claim], &view, agent, current_tick(), &high_greed).into_ranked();
+
+        assert_eq!(low[0].offer.key.kind, GoalKind::ClaimOffice { office });
+        assert_eq!(low.len(), 1);
+        assert_eq!(low[0].motive_source_contributions, vec![(office_duty, 500)]);
+        assert_eq!(high[0].offer.key.kind, sell_kind);
+        assert_eq!(high[0].motive_source_contributions, vec![(greed, 800_000)]);
+    }
+
+    #[test]
     fn self_treat_wounds_uses_pain_weight_for_motive() {
         let agent = entity(1);
         let mut view = base_view(agent);
@@ -7594,7 +7933,7 @@ mod tests {
         .into_ranked();
 
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
-        assert_eq!(ranked[0].motive_score, 200 * 1000);
+        assert_eq!(ranked[0].motive_score, 500 * 1000);
     }
 
     #[test]
@@ -8101,7 +8440,7 @@ mod tests {
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(
             ranked[0].motive_score,
-            u32::from(utility().enterprise_weight.value())
+            u32::from(utility().office_duty_weight.value())
         );
     }
 
@@ -8641,7 +8980,7 @@ mod tests {
         assert_eq!(ranked[0].motive_score, 850);
         assert_eq!(ranked[1].offer.key.kind, GoalKind::ClaimOffice { office });
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
-        assert_eq!(ranked[1].motive_score, 1000);
+        assert_eq!(ranked[1].motive_score, 500);
     }
 
     #[test]
@@ -8676,7 +9015,7 @@ mod tests {
         assert_eq!(ranked[0].motive_score, 1050);
         assert_eq!(ranked[1].offer.key.kind, GoalKind::ClaimOffice { office });
         assert_eq!(ranked[1].priority_class, GoalPriorityClass::Medium);
-        assert_eq!(ranked[1].motive_score, 1000);
+        assert_eq!(ranked[1].motive_score, 500);
     }
 
     #[test]
@@ -8705,7 +9044,7 @@ mod tests {
 
         assert_eq!(ranked[0].offer.key.kind, GoalKind::ClaimOffice { office });
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
-        assert_eq!(ranked[0].motive_score, 1);
+        assert_eq!(ranked[0].motive_score, 500);
         assert_eq!(
             ranked[1].offer.key.kind,
             GoalKind::TreatWounds { patient: agent }
@@ -8737,7 +9076,7 @@ mod tests {
         assert_eq!(ranked[0].priority_class, GoalPriorityClass::Medium);
         assert_eq!(
             ranked[0].motive_score,
-            u32::from(utility().social_weight.value()) * u32::from(pm(600).value())
+            u32::from(utility().loyalty_weight.value()) * u32::from(pm(600).value())
         );
     }
 
@@ -8779,6 +9118,7 @@ mod tests {
             },
             priority_class,
             motive_score: motive,
+            motive_source_contributions: Vec::new(),
             provenance: None,
             source_reliability_discount: None,
             competition_discount: None,

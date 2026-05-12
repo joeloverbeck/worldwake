@@ -5,24 +5,24 @@ Do not hand-edit it.
 
 Scenarios: 5
 
-### Scenario 403: S141 Motive Sources Hunger Offer Carries NeedPressure
+### Scenario 403: S141 Motive Sources Hunger And Greed Sum For Market Offer
 
-- Source: `golden_motive_sources.rs:100`
+- Source: `golden_motive_sources.rs:101`
 - Systems: AI
-- GoalKinds: ConsumeOwnedCommodity
-- ActionDomains: Needs
+- GoalKinds: AcquireCommodity
+- ActionDomains: Needs, Trade
 - Principles: P3, P20, P29
-- Primary tests: `golden_motive_sources_hunger_offer_carries_need_pressure_and_score_contribution`
+- Primary tests: `golden_motive_sources_hunger_and_greed_offer_sums_source_contributions`
 - Replay tests: None
-- All tests: `golden_motive_sources_hunger_offer_carries_need_pressure_and_score_contribution`
+- All tests: `golden_motive_sources_hunger_and_greed_offer_sums_source_contributions`
 
-**Setup**: programmatic offer fixture isolates the default source mapping; no acquisition or travel branches are staged because this scenario proves the ranked source ledger shape for a hunger-only goal.
+**Setup**: programmatic market-offer fixture isolates the default source mapping and trace contribution ledger without observer-side derivation.
 
-**Proves**: a hunger commit maps to NeedPressure(Hunger), and the contribution sum equals the aggregate motive_score carried by the trace summary.
+**Proves**: a self-consume acquisition offer maps to NeedPressure(Hunger) plus Greed, and their contributions sum to the aggregate motive_score.
 
 ### Scenario 404: S141 Motive Sources Commit Payload Preserves Hunger And Greed
 
-- Source: `golden_motive_sources.rs:139`
+- Source: `golden_motive_sources.rs:143`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -37,7 +37,7 @@ Scenarios: 5
 
 ### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
 
-- Source: `golden_motive_sources.rs:184`
+- Source: `golden_motive_sources.rs:188`
 - Systems: AI
 - GoalKinds: TreatWounds, ConsumeOwnedCommodity
 - ActionDomains: Medical, Needs
@@ -52,7 +52,7 @@ Scenarios: 5
 
 ### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
 
-- Source: `golden_motive_sources.rs:230`
+- Source: `golden_motive_sources.rs:234`
 - Systems: AI
 - GoalKinds: PostNotice
 - ActionDomains: DecisionHistory
@@ -61,13 +61,13 @@ Scenarios: 5
 - Replay tests: None
 - All tests: `golden_motive_sources_greed_weight_variation_is_profile_state`
 
-**Setup**: two otherwise identical UtilityProfiles vary only greed_weight. No autonomous branch is staged because current S141 scoring is still parity-preserving; this fixture proves the per-agent state variation that later richer scoring consumes.
+**Setup**: two otherwise identical UtilityProfiles vary only greed_weight.
 
-**Proves**: Greed-backed motive sources and per-agent greed_weight variation are both representable without adding a global tuning path.
+**Proves**: Greed-backed motive sources and per-agent greed_weight variation are both concrete state without adding a global tuning path.
 
 ### Scenario 407: S141 Motive Sources Empty Offer Assertion
 
-- Source: `golden_motive_sources.rs:265`
+- Source: `golden_motive_sources.rs:266`
 - Systems: AI
 - GoalKinds: Sleep
 - ActionDomains: DecisionHistory

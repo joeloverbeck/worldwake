@@ -738,21 +738,21 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 **Cross-system chain**: critical hunger → ConsumeOwnedCommodity(Critical) beats SellCommodity(Medium) → eat action → consume_one_unit archives Quantity(1) lot → SaleListing gone
 
-### Scenario 403: S141 Motive Sources Hunger Offer Carries NeedPressure
+### Scenario 403: S141 Motive Sources Hunger And Greed Sum For Market Offer
 
-- Source: `golden_motive_sources.rs:100`
+- Source: `golden_motive_sources.rs:101`
 - Systems: AI
-- GoalKinds: ConsumeOwnedCommodity
-- ActionDomains: Needs
+- GoalKinds: AcquireCommodity
+- ActionDomains: Needs, Trade
 - Principles: P3, P20, P29
 
-**Setup**: programmatic offer fixture isolates the default source mapping; no acquisition or travel branches are staged because this scenario proves the ranked source ledger shape for a hunger-only goal.
+**Setup**: programmatic market-offer fixture isolates the default source mapping and trace contribution ledger without observer-side derivation.
 
-**Proves**: a hunger commit maps to NeedPressure(Hunger), and the contribution sum equals the aggregate motive_score carried by the trace summary.
+**Proves**: a self-consume acquisition offer maps to NeedPressure(Hunger) plus Greed, and their contributions sum to the aggregate motive_score.
 
 ### Scenario 404: S141 Motive Sources Commit Payload Preserves Hunger And Greed
 
-- Source: `golden_motive_sources.rs:139`
+- Source: `golden_motive_sources.rs:143`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -764,7 +764,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
 
-- Source: `golden_motive_sources.rs:184`
+- Source: `golden_motive_sources.rs:188`
 - Systems: AI
 - GoalKinds: TreatWounds, ConsumeOwnedCommodity
 - ActionDomains: Medical, Needs
@@ -776,19 +776,19 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
 
-- Source: `golden_motive_sources.rs:230`
+- Source: `golden_motive_sources.rs:234`
 - Systems: AI
 - GoalKinds: PostNotice
 - ActionDomains: DecisionHistory
 - Principles: P3, P22
 
-**Setup**: two otherwise identical UtilityProfiles vary only greed_weight. No autonomous branch is staged because current S141 scoring is still parity-preserving; this fixture proves the per-agent state variation that later richer scoring consumes.
+**Setup**: two otherwise identical UtilityProfiles vary only greed_weight.
 
-**Proves**: Greed-backed motive sources and per-agent greed_weight variation are both representable without adding a global tuning path.
+**Proves**: Greed-backed motive sources and per-agent greed_weight variation are both concrete state without adding a global tuning path.
 
 ### Scenario 407: S141 Motive Sources Empty Offer Assertion
 
-- Source: `golden_motive_sources.rs:265`
+- Source: `golden_motive_sources.rs:266`
 - Systems: AI
 - GoalKinds: Sleep
 - ActionDomains: DecisionHistory
@@ -830,7 +830,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 13: Bribe -> Support Coalition (Full-Quantity Transfer)
 
-- Source: `golden_offices.rs:383`
+- Source: `golden_offices.rs:384`
 - Systems: Bribe, Succession, AI, Conservation
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -845,7 +845,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 14: Threaten with Courage Diversity (Principle 20)
 
-- Source: `golden_offices.rs:630`
+- Source: `golden_offices.rs:631`
 - Systems: Threaten, Succession, AI
 - GoalKinds: ClaimOffice, SupportCandidateForOffice
 - ActionDomains: Generic
@@ -860,7 +860,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 15: Travel to Distant Jurisdiction for Office Claim
 
-- Source: `golden_offices.rs:931`
+- Source: `golden_offices.rs:932`
 - Systems: Travel, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -875,7 +875,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 16: Political Office Facts Remain Local Until Belief Update
 
-- Source: `golden_offices.rs:1044`
+- Source: `golden_offices.rs:1045`
 - Systems: AI, Travel, Succession, Political actions, Perception
 - GoalKinds: ClaimOffice
 - ActionDomains: Travel, Generic
@@ -890,7 +890,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 17: Survival Pressure Suppresses Political Goals
 
-- Source: `golden_offices.rs:1248`
+- Source: `golden_offices.rs:1249`
 - Systems: Needs, AI, Succession, Political actions
 - GoalKinds: ClaimOffice, ConsumeOwnedCommodity
 - ActionDomains: Needs, Generic
@@ -905,7 +905,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 18: Faction Eligibility Filters Office Claim
 
-- Source: `golden_offices.rs:1438`
+- Source: `golden_offices.rs:1439`
 - Systems: Factions, Succession, AI, Political actions
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -920,7 +920,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 71: Contested Force Claim Resolves Only After Yield
 
-- Source: `golden_offices.rs:1599`
+- Source: `golden_offices.rs:1600`
 - Systems: Force-claim actions, Force-control succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Generic
@@ -935,7 +935,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 72: Force Control Knowledge Stays Local Until Tell
 
-- Source: `golden_offices.rs:1851`
+- Source: `golden_offices.rs:1852`
 - Systems: Force-control succession, Tell, Perception
 - GoalKinds: ClaimOffice, ShareBelief
 - ActionDomains: Generic, Social
@@ -950,7 +950,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 109: Vacancy notice unlocks political action without record consult
 
-- Source: `golden_offices.rs:2138`
+- Source: `golden_offices.rs:2140`
 - Systems: Social artifact actions, Perception, Institutional beliefs, AI, Political actions, Succession
 - GoalKinds: ClaimOffice
 - ActionDomains: Social, Generic
@@ -1296,7 +1296,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `golden_portfolio_planning.rs:218`
+- Source: `golden_portfolio_planning.rs:219`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production

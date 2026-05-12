@@ -1,8 +1,9 @@
 //! Golden fixtures for S141 motive-source payload and trace shape.
 //!
-//! These cases stay on the current live seam: candidate generation provides
-//! one default source per production offer, and trace summaries carry source
-//! identity plus contribution values without observer-side re-derivation.
+//! These cases cover the S141 motive-source payload and contribution ledger:
+//! production self-consume acquisition now carries independent hunger and
+//! greed sources, and trace summaries carry contribution values without
+//! observer-side re-derivation.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -97,36 +98,39 @@ fn empty_offer() -> GoalOffer {
     }
 }
 
-// Scenario 403: S141 Motive Sources Hunger Offer Carries NeedPressure
+// Scenario 403: S141 Motive Sources Hunger And Greed Sum For Market Offer
 // Systems: AI
-// GoalKinds: ConsumeOwnedCommodity
-// ActionDomains: Needs
+// GoalKinds: AcquireCommodity
+// ActionDomains: Needs, Trade
 // Principles: P3, P20, P29
-// Setup: programmatic offer fixture isolates the default source mapping; no
-//        acquisition or travel branches are staged because this scenario proves
-//        the ranked source ledger shape for a hunger-only goal.
-// Proves: a hunger commit maps to NeedPressure(Hunger), and the contribution
-//         sum equals the aggregate motive_score carried by the trace summary.
+// Setup: programmatic market-offer fixture isolates the default source mapping
+//        and trace contribution ledger without observer-side derivation.
+// Proves: a self-consume acquisition offer maps to NeedPressure(Hunger) plus
+//         Greed, and their contributions sum to the aggregate motive_score.
 // Cross-system chain: GoalKind -> MotiveSourceRef -> RankedGoalSummary.
 #[test]
-fn golden_motive_sources_hunger_offer_carries_need_pressure_and_score_contribution() {
-    let goal = GoalKind::ConsumeOwnedCommodity {
+fn golden_motive_sources_hunger_and_greed_offer_sums_source_contributions() {
+    let goal = GoalKind::AcquireCommodity {
         commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
     };
-    let sources = derive_default_motive_sources(&goal, &OpportunityAnchor::None, Tick(7));
+    let anchor = OpportunityAnchor::Place(entity(20));
+    let sources = derive_default_motive_sources(&goal, &anchor, Tick(7));
 
-    assert_eq!(sources.len(), 1);
+    assert_eq!(sources.len(), 2);
     assert_eq!(
         sources[0].source,
         MotiveSource::NeedPressure {
             need: HomeostaticNeedId::Hunger
         }
     );
+    assert!(matches!(sources[1].source, MotiveSource::Greed { .. }));
 
     let summary = summary_with_contributions(
-        opportunity(goal, OpportunityAnchor::None),
-        18_420,
-        vec![(sources[0].clone(), 18_420)],
+        opportunity(goal, anchor),
+        1_040_000,
+        vec![(sources[0].clone(), 540_000), (sources[1].clone(), 500_000)],
     );
     let contribution_sum: u32 = summary
         .motive_source_contributions
@@ -232,12 +236,9 @@ fn golden_motive_sources_pain_contribution_can_dominate_hunger() {
 // GoalKinds: PostNotice
 // ActionDomains: DecisionHistory
 // Principles: P3, P22
-// Setup: two otherwise identical UtilityProfiles vary only greed_weight. No
-//        autonomous branch is staged because current S141 scoring is still
-//        parity-preserving; this fixture proves the per-agent state variation
-//        that later richer scoring consumes.
+// Setup: two otherwise identical UtilityProfiles vary only greed_weight.
 // Proves: Greed-backed motive sources and per-agent greed_weight variation are
-//         both representable without adding a global tuning path.
+//         both concrete state without adding a global tuning path.
 // Cross-system chain: UtilityProfile -> MotiveSource::Greed.
 #[test]
 fn golden_motive_sources_greed_weight_variation_is_profile_state() {

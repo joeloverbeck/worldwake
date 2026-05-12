@@ -133,7 +133,7 @@ Completed on 2026-05-12.
 - Updated all live `GoalCommittedPayload` struct literals and fixtures surfaced by the shared-field sweep.
 - Extended core payload tests for omitted-field serde defaulting and populated bincode round-trip preservation.
 - Extended the planning emission test and `golden_decision_payload` so committed payloads preserve and assert the decisive motive-source references.
-- Extended the save-load decision-event fixture with a non-empty decisive motive source and truth-synced `specs/S141-motive-source-ledger.md` to show the landed serde default.
+- Extended the save-load decision-event fixture with a non-empty decisive motive source and truth-synced `archive/specs/S141-motive-source-ledger.md` to show the landed serde default.
 
 ## Deviations
 

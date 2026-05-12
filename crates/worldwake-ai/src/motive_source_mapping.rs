@@ -8,13 +8,30 @@ pub fn derive_default_motive_sources(
     anchor: &OpportunityAnchor,
     introduced_tick: Tick,
 ) -> Vec<MotiveSourceRef> {
+    let mut sources = Vec::new();
     let source = match goal_kind {
-        GoalKind::ConsumeOwnedCommodity { commodity }
-        | GoalKind::AcquireCommodity {
+        GoalKind::AcquireCommodity {
             commodity,
             purpose: worldwake_core::CommodityPurpose::SelfConsume,
             ..
-        } => MotiveSource::NeedPressure {
+        } => {
+            let need = need_for_commodity(*commodity).unwrap_or(HomeostaticNeedId::Hunger);
+            sources.push(MotiveSourceRef {
+                source: MotiveSource::NeedPressure { need },
+                introduced_tick,
+            });
+            sources.push(MotiveSourceRef {
+                source: MotiveSource::Greed {
+                    opportunity: OpportunityKey {
+                        goal_key: (*goal_kind).into(),
+                        anchor: *anchor,
+                    },
+                },
+                introduced_tick,
+            });
+            return sources;
+        }
+        GoalKind::ConsumeOwnedCommodity { commodity } => MotiveSource::NeedPressure {
             need: need_for_commodity(*commodity).unwrap_or(HomeostaticNeedId::Hunger),
         },
         GoalKind::Sleep => MotiveSource::NeedPressure {
@@ -41,10 +58,11 @@ pub fn derive_default_motive_sources(
             },
         },
     };
-    vec![MotiveSourceRef {
+    sources.push(MotiveSourceRef {
         source,
         introduced_tick,
-    }]
+    });
+    sources
 }
 
 fn need_for_commodity(commodity: worldwake_core::CommodityKind) -> Option<HomeostaticNeedId> {
@@ -78,27 +96,61 @@ mod tests {
         sources[0].source.clone()
     }
 
+    fn sources(goal_kind: GoalKind) -> Vec<MotiveSource> {
+        derive_default_motive_sources(&goal_kind, &OpportunityAnchor::None, Tick(7))
+            .into_iter()
+            .map(|source| {
+                assert_eq!(source.introduced_tick, Tick(7));
+                source.source
+            })
+            .collect()
+    }
+
     #[test]
     fn maps_core_need_goals_to_need_pressure_sources() {
         assert_eq!(
-            only_source(GoalKind::AcquireCommodity {
+            sources(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Bread,
                 purpose: CommodityPurpose::SelfConsume,
                 quantity: AcquisitionQuantity::single(),
             }),
-            MotiveSource::NeedPressure {
-                need: HomeostaticNeedId::Hunger
-            }
+            vec![
+                MotiveSource::NeedPressure {
+                    need: HomeostaticNeedId::Hunger
+                },
+                MotiveSource::Greed {
+                    opportunity: OpportunityKey {
+                        goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                            commodity: CommodityKind::Bread,
+                            purpose: CommodityPurpose::SelfConsume,
+                            quantity: AcquisitionQuantity::single(),
+                        }),
+                        anchor: OpportunityAnchor::None,
+                    }
+                },
+            ]
         );
         assert_eq!(
-            only_source(GoalKind::AcquireCommodity {
+            sources(GoalKind::AcquireCommodity {
                 commodity: CommodityKind::Water,
                 purpose: CommodityPurpose::SelfConsume,
                 quantity: AcquisitionQuantity::single(),
             }),
-            MotiveSource::NeedPressure {
-                need: HomeostaticNeedId::Thirst
-            }
+            vec![
+                MotiveSource::NeedPressure {
+                    need: HomeostaticNeedId::Thirst
+                },
+                MotiveSource::Greed {
+                    opportunity: OpportunityKey {
+                        goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                            commodity: CommodityKind::Water,
+                            purpose: CommodityPurpose::SelfConsume,
+                            quantity: AcquisitionQuantity::single(),
+                        }),
+                        anchor: OpportunityAnchor::None,
+                    }
+                },
+            ]
         );
         assert_eq!(
             only_source(GoalKind::Sleep),

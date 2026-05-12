@@ -17,7 +17,7 @@ This ticket lands the foundation only: type definitions and module registration.
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. The 7 kept variants' referent types all exist in `worldwake-core` per the S141 reassessment (this session): `HomeostaticNeedId` (`crates/worldwake-core/src/needs.rs:19`), `WoundId` (`crates/worldwake-core/src/wounds.rs:9`), `OpportunityKey` (`crates/worldwake-core/src/goal.rs:201`), `ViolationId` (`crates/worldwake-core/src/violation.rs:20`), `EntityId` (`crates/worldwake-core/src/ids.rs:44`), `Tick` (`crates/worldwake-core/src/ids.rs:57`). No focused/unit, runtime trace, or golden test exercises `MotiveSource` yet — it's a net-new type.
-2. The 5 deferred variants (`Fear`, `Obligation`, `Debt`, `Habit`, `Curiosity`) are documented as Phase 12 follow-ups in `specs/S141-motive-source-ledger.md` Deferred Variants table. This ticket does NOT introduce stubs or placeholders for those variants — adding zero-contribution stubs would violate FND-28 (no dead paths in live authoritative paths).
+2. The 5 deferred variants (`Fear`, `Obligation`, `Debt`, `Habit`, `Curiosity`) are documented as Phase 12 follow-ups in `archive/specs/S141-motive-source-ledger.md` Deferred Variants table. This ticket does NOT introduce stubs or placeholders for those variants — adding zero-contribution stubs would violate FND-28 (no dead paths in live authoritative paths).
 3. Shared abstraction boundary: `MotiveSource` is a new core-resident enum embedded in higher-crate types. Its variant payloads reference only core-resident types so `worldwake-core` retains no upward dependency on `worldwake-sim`, `worldwake-systems`, `worldwake-ai`, or `worldwake-cli`. Derive set (`Clone, Debug, Eq, PartialEq, Serialize, Deserialize`) matches `GoalOffer`'s existing derives at `crates/worldwake-ai/src/goal_model.rs:2037` and the always-on decision-payload convention at `crates/worldwake-core/src/decision_event_payload.rs:11`.
 
 ## Architecture Check
@@ -96,7 +96,7 @@ Add `pub mod motive_source;` in the existing module list (alphabetically near `n
 ### Invariants
 
 1. `worldwake-core` has no new upward dependency. Specifically, the new module's `use` list contains only `crate::*` paths and `serde`.
-2. The 7 kept variants and their payload shapes match `specs/S141-motive-source-ledger.md` Deliverable D1 exactly — variant names, payload field names, and field types are not allowed to drift between spec and code.
+2. The 7 kept variants and their payload shapes match `archive/specs/S141-motive-source-ledger.md` Deliverable D1 exactly — variant names, payload field names, and field types are not allowed to drift between spec and code.
 3. Derive set on both types is exactly `Clone, Debug, Eq, PartialEq, Serialize, Deserialize` (no `Copy`, no `Hash`, no `Ord`) — matches `GoalOffer`'s derive set at `crates/worldwake-ai/src/goal_model.rs:2037`.
 
 ## Test Plan
