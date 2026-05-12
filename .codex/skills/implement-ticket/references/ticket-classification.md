@@ -139,13 +139,13 @@ When the migrated type is formatted for humans outside the primary owner module,
 
 ## Shared additive fast checklist
 
-1. Confirm whether the new field/type is serde-deserialized from scenarios, saves, or other authored input; if so, decide the omitted-field/defaulting proof up front.
+1. Confirm whether the new field/type is serde-deserialized from scenarios, saves, or other authored input; if so, decide the omitted-field/defaulting proof up front. If the draft claims old-save or cross-version loading from `#[serde(default)]`, inspect `SAVE_FORMAT_VERSION` and the live loader first; full old save files remain rejected unless explicit compatibility work is requested.
 2. For authored scenario/schema fields, check generator/report/catalog readers such as `scenario_coverage`, golden inventory, or feature catalogs before coding; decide whether the new field is mapped now, intentionally unmapped, or follow-up owned.
    For universal or optional profile structs, also check whether `docs/profiles/all-profiles.md` is generator-owned and run the repo's profile-doc generator, normally `python3 scripts/profile_docs.py --write` or its check mode if available.
    If `scripts/profile_docs.py --write` exits 0 but reports doc-comment gaps unrelated to the new field, record those warnings as pre-existing generator output in closeout and keep the generated diff only when it matches the landed profile surface.
 3. Sweep manual literals and separate full `Type { ... }` literals from partial `..Default::default()` literals before accepting the drafted file list as real scope.
 4. Edit constructor fallout with precise patches or syntax-aware tooling. Do not use broad regex/perl insertion across Rust struct literals; if any mechanical rewrite is still used, immediately inspect each changed hunk and re-scan touched files for accidental insertions before compiling.
-5. If the additive field lands on a serialized root, persisted carrier, or component payload included in save/load state, decide the save-version policy and the focused non-default roundtrip proof up front rather than leaving it to late broad verification.
+5. If the additive field lands on a serialized root, persisted carrier, or component payload included in save/load state, decide the save-version policy and the focused non-default roundtrip proof up front rather than leaving it to late broad verification. Do not treat `#[serde(default)]` on a bincode-backed persisted payload as old-save compatibility by itself.
 6. Name the honest proof surfaces early: default/serde behavior, authored-input parsing, bootstrap/default seeding, save/load proof when applicable, and the narrowest existing focused tests that already touch the shape.
 7. Land the first shared field/type patch, then run `cargo test --workspace --no-run` early to let all-target compile fallout enumerate the remaining exhaustive constructors and helpers.
 8. Treat compiler fallout as the source of truth for the remaining shared literal patch set; do not patch default-spread call sites unless the live contract actually requires it.

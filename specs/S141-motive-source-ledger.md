@@ -203,7 +203,7 @@ Five new `Permille` fields (one per kept non-need motive class — `NeedPressure
 | `shame_weight` | `pm(400)` | slight downweight — shame typically does not dominate need pressure |
 | `revenge_weight` | `pm(400)` | slight downweight — revenge dampened to prevent runaway feedback loops |
 
-`#[serde(default = "...")]` on each new field preserves save-format compatibility for snapshots created pre-S141 (the snapshot decoder fills missing fields with the per-field default). `SAVE_FORMAT_VERSION` (currently 77 at `crates/worldwake-sim/src/save_load.rs:23`) increments to 78 for the schema bump.
+`#[serde(default = "...")]` on each new field preserves omitted-field deserialization for `UtilityProfile` payloads in current-format inputs (the profile decoder fills missing fields with the per-field default). `SAVE_FORMAT_VERSION` increments from 77 to 78 for the schema bump, and full pre-78 save files remain rejected by the save header version gate.
 
 Per FND-22, two agents differ on these weights through scenario authoring. The conformance test `utility_profile_default_for_motive_class()` (D8) ensures every new motive class has a default function.
 
@@ -311,5 +311,5 @@ When any of those substrates lands, extending `MotiveSource` is additive: a new 
 
 - **Body refactor must produce bitwise-identical motive scores.** The score-parity regression (D8) is the gate. Mitigation: per-variant scoring helpers are direct extractions of the current `motive_score` body's `match` arms; S141MOTSOULED-004 lands the per-`GoalKind`-to-`MotiveSource` mapping that preserves which variant contributes which fragment.
 - **Per-`GoalKind` → `MotiveSource` mapping ambiguity.** Some `GoalKind` variants (e.g., enterprise goals, social goals, combat goals) could plausibly emit multiple motive sources. Mitigation: S141MOTSOULED-004 lands the canonical mapping table and a per-emitter override hook for cases where the emitter has richer context (e.g., a `ReportRecordedViolation` emitter knows the exact `ViolationId`). The mapping is part of D2's deliverable scope.
-- **`UtilityProfile` save-format growth.** 5 new `Permille` fields. Mitigation: per-field `#[serde(default = "...")]` ensures pre-S141 snapshots deserialize cleanly; `SAVE_FORMAT_VERSION` bumps from 77 → 78.
+- **`UtilityProfile` save-format growth.** 5 new `Permille` fields. Mitigation: per-field `#[serde(default = "...")]` handles omitted-field profile payloads in current-format inputs; `SAVE_FORMAT_VERSION` bumps from 77 → 78, and full pre-78 saves stay rejected by the loader.
 - **Deferred-variant pressure.** Designers may want `Fear`/`Obligation`/`Debt`/`Habit`/`Curiosity` motives surfaced in goldens before Phase 12 lands the substrates. Mitigation: the deferred-variants table above is the contract. Scenarios that need to express these motives early should author them as `Greed(opportunity)` or similar existing-state proxies until the substrate lands.

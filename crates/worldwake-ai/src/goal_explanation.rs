@@ -430,6 +430,11 @@ mod tests {
             notice_posting_weight: pm(0),
             courage: pm(500),
             care_weight: pm(200),
+            office_duty_weight: pm(500),
+            loyalty_weight: pm(500),
+            greed_weight: pm(500),
+            shame_weight: pm(400),
+            revenge_weight: pm(400),
         }
     }
 

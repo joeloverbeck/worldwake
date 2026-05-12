@@ -64,7 +64,7 @@ If decision-trace tests construct expected `RankedGoalSummary` values with expli
 
 - Population of `motive_source_contributions` by `score_motive_source` — owned by 004.
 - Observer rendering of the field — owned by 006.
-- `SAVE_FORMAT_VERSION` bump — owned by 002 (this field is in-memory trace state, not serialized; if later serialized, it rides under version 78 via `Vec::new()` default).
+- `SAVE_FORMAT_VERSION` bump — owned by `archive/tickets/S141MOTSOULED-002.md` (this field is in-memory trace state, not serialized; if later serialized, it rides under version 78 via `Vec::new()` default).
 
 ## Acceptance Criteria
 

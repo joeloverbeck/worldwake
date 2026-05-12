@@ -35,7 +35,7 @@ Before marking an active ticket `COMPLETED` or sending the final response, load 
 
 Top-level closeout hard stops:
 - Do not edit `Status: COMPLETED` or final verification claims while any proof-counted command is still running, blocked on an unavailable process handle, or not observed complete.
-- Confirm the final source/test/generated diff is covered by completed executable verification; if source, generated, scenario, test, or executable behavior changes after a broad gate, rerun the narrowest affected proof and the required broad gate.
+- Confirm the final source/test/generated diff is covered by completed executable verification; if source, generated, scenario, test, or executable behavior changes after a broad gate, rerun the narrowest affected proof and the required broad gate before changing `Status` to `COMPLETED`. Clippy-only or lint-only source cleanup still makes the earlier broad gate stale.
 - Rewrite stale drafted acceptance/proof/spec wording before final status: remove unrun command lists, unproved `Verification Layers`, false implementation sketches, and disproved phrases from the active ticket and directly cited active specs.
 - Add or update `## Verification Result`; every recorded command/proof item must start with `Passed`, `Waived`, or `Blocked`, and wrapper-equivalent proof may be claimed only when the live wrapper gates were run or individually covered.
 - Run Markdown/diff hygiene after final ticket/spec edits, normally `git diff --check`, and use explicit untracked-file whitespace checks for owned untracked files.

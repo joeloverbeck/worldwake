@@ -572,6 +572,11 @@ Stable per-agent utility weights used to diversify decision making.
 | `notice_posting_weight` | `Permille` | Weight applied to notice-posting goals. 0 disables notice posting. (default: `disabled`) |
 | `courage` | `Permille` | Willingness to engage in risky actions such as combat or confrontation. (default: `balanced`) |
 | `care_weight` | `Permille` | Weight applied to caregiving and obligation-fulfillment goals. (default: `social`) |
+| `office_duty_weight` | `Permille` | Weight applied to office-duty motive sources. (default: `default_office_duty_weight()`) |
+| `loyalty_weight` | `Permille` | Weight applied to loyalty motive sources. (default: `default_loyalty_weight()`) |
+| `greed_weight` | `Permille` | Weight applied to greed/opportunity motive sources. (default: `default_greed_weight()`) |
+| `shame_weight` | `Permille` | Weight applied to shame motive sources. (default: `default_shame_weight()`) |
+| `revenge_weight` | `Permille` | Weight applied to revenge motive sources. (default: `default_revenge_weight()`) |
 
 ---
 

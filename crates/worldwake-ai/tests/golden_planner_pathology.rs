@@ -214,6 +214,11 @@ fn seed_guard_theron(h: &mut GoldenHarness) -> EntityId {
             notice_posting_weight: pm(900),
             courage: pm(850),
             care_weight: pm(400),
+            office_duty_weight: pm(500),
+            loyalty_weight: pm(500),
+            greed_weight: pm(500),
+            shame_weight: pm(400),
+            revenge_weight: pm(400),
         },
         worldwake_core::KnownRecipes::with([water_recipe]),
     );
@@ -348,6 +353,11 @@ fn seed_forager_lina_cli_evaluation_slice(h: &mut GoldenHarness) -> EntityId {
             notice_posting_weight: pm(0),
             courage: pm(400),
             care_weight: pm(300),
+            office_duty_weight: pm(500),
+            loyalty_weight: pm(500),
+            greed_weight: pm(500),
+            shame_weight: pm(400),
+            revenge_weight: pm(400),
         },
         worldwake_core::KnownRecipes::with([harvest_apples]),
     );
@@ -513,6 +523,11 @@ fn run_obligation_satiation_allows_survival(
             notice_posting_weight: pm(900),
             courage: pm(700),
             care_weight: pm(200),
+            office_duty_weight: pm(500),
+            loyalty_weight: pm(500),
+            greed_weight: pm(500),
+            shame_weight: pm(400),
+            revenge_weight: pm(400),
         },
     );
     set_agent_perception_profile(

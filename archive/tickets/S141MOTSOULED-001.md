@@ -83,7 +83,7 @@ Add `pub mod motive_source;` in the existing module list (alphabetically near `n
 - Any consumer of the new types. `GoalOffer.motive_sources` is owned by 004; `RankedGoalSummary.motive_source_contributions` is owned by 003; `GoalCommittedPayload.decisive_motive_sources` is owned by 005.
 - `derive_default_motive_sources` mapping helper — owned by 004 (lives in `worldwake-ai`, not core).
 - The 5 deferred variants and their referent substrate (Phase 12 follow-ups per spec's Deferred Variants table).
-- `SAVE_FORMAT_VERSION` bump — owned by 002 (single-shot bump shared with 003/005 via `#[serde(default)]` on their respective new fields).
+- `SAVE_FORMAT_VERSION` bump — owned by `archive/tickets/S141MOTSOULED-002.md` (single-shot bump shared with 003/005 via `#[serde(default)]` on their respective new fields).
 
 ## Acceptance Criteria
 

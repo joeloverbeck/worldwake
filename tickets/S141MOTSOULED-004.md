@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — `GoalOffer` extension, `motive_score` body refactor, new mapping helper module, populates `RankedGoalSummary.motive_source_contributions`
-**Deps**: `archive/tickets/S141MOTSOULED-001.md` (uses `MotiveSource`, `MotiveSourceRef`), 002 (reads new `UtilityProfile` weights), 003 (populates `motive_source_contributions`)
+**Deps**: `archive/tickets/S141MOTSOULED-001.md` (uses `MotiveSource`, `MotiveSourceRef`), `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` weights), 003 (populates `motive_source_contributions`)
 
 ## Problem
 
@@ -39,7 +39,7 @@ The acceptance gate is **score parity**: every existing 1440-tick survival golde
 3. Shared abstraction boundary: the `GoalKind → MotiveSource` mapping (in the new `derive_default_motive_sources` helper) and the `MotiveSource → score` mapping (in the new `score_motive_source` dispatch) jointly preserve the existing per-`GoalKind` score arithmetic. Score parity is the contract; any drift between today's match-on-GoalKind and the post-refactor sum-over-motive-sources is a bug to fix, never a test to weaken (FND-3, FND-28). Per `docs/precision-rules.md` Rule 7 (cumulative arithmetic), the per-variant scoring helpers must reproduce today's exact `u32` arithmetic — equal-weight assumptions are not enough; the full active substrate (pressure, weights, hygiene modifiers, memory bonuses) must be partitioned across the new helpers.
 4. The `derive_default_motive_sources` mapping is the load-bearing structural change. For each existing `GoalKind` variant, the helper returns a `Vec<MotiveSourceRef>` whose per-variant contributions, summed by `score_motive_source`, exactly equal today's `motive_score` body arm for that `GoalKind`. Ambiguous mappings (enterprise → `Greed`?, crime → `Revenge` with the right `ViolationId`?) are part of this ticket's scope and must be audited per `GoalKind`.
 5. The 13 GoalOffer construction sites use field-by-field enumeration (no `..Default::default()` spread); each site must explicitly add `motive_sources: derive_default_motive_sources(&goal_kind, &anchor)` (or pass an explicit override where the site has richer context). Test-build `debug_assert!(!offer.motive_sources.is_empty())` will fire if a site forgets to populate.
-6. Ranking-sensitive precision (per `docs/precision-rules.md` Rule 5): the divergence driver for `motive_score` is the per-`MotiveSource` weight × strength product. After refactor, two agents with identical world state but different per-`MotiveSource`-class weights on `UtilityProfile` (per 002) must produce different `motive_score` values — this is FND-22 diversity. Verify against `crime_goals_use_profile_driven_motive_scores` (line 1388), which already asserts this for crime goals; extend coverage to the new motive classes in 007.
+6. Ranking-sensitive precision (per `docs/precision-rules.md` Rule 5): the divergence driver for `motive_score` is the per-`MotiveSource` weight × strength product. After refactor, two agents with identical world state but different per-`MotiveSource`-class weights on `UtilityProfile` (from `archive/tickets/S141MOTSOULED-002.md`) must produce different `motive_score` values — this is FND-22 diversity. Verify against `crime_goals_use_profile_driven_motive_scores` (line 1388), which already asserts this for crime goals; extend coverage to the new motive classes in 007.
 
 ## Architecture Check
 
@@ -157,7 +157,7 @@ Per FND-28, the old `match candidate.key.goal_kind { ... }` body is removed enti
 
 ## Out of Scope
 
-- The 5 new `UtilityProfile` weight fields — owned by 002 (must land first).
+- The 5 new `UtilityProfile` weight fields — owned by `archive/tickets/S141MOTSOULED-002.md`.
 - `MotiveSource` / `MotiveSourceRef` type definitions — owned by `archive/tickets/S141MOTSOULED-001.md`.
 - `RankedGoalSummary.motive_source_contributions` field declaration — owned by 003 (this ticket only populates it).
 - `GoalCommittedPayload.decisive_motive_sources` — owned by 005.

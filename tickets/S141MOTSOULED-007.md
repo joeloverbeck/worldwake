@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No new engine state — adds test coverage and extends an existing lint
-**Deps**: 002 (reads new `UtilityProfile` fields), 004 (exercises `motive_score` refactor end-to-end), 005 (exercises `decisive_motive_sources` payload end-to-end)
+**Deps**: `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` fields), 004 (exercises `motive_score` refactor end-to-end), 005 (exercises `decisive_motive_sources` payload end-to-end)
 
 ## Problem
 
@@ -78,7 +78,7 @@ Add focused unit tests in the same file (`scenario/lints.rs#[cfg(test)]`):
 ## Out of Scope
 
 - `GoalOffer.motive_sources` field, `motive_score` body refactor, mapping helper — owned by 004 (must land first).
-- `UtilityProfile` 5 new fields, `Default` impl, `#[serde(default)]` helpers — owned by 002 (must land first).
+- `UtilityProfile` 5 new fields, `Default` impl, `#[serde(default)]` helpers — owned by `archive/tickets/S141MOTSOULED-002.md`.
 - `GoalCommittedPayload.decisive_motive_sources` and commit-time emission — owned by 005 (must land first).
 - Observer Section 3b rendering — owned by 006 (must land first for Scenario 2's observer assertion to work).
 - Score parity across existing 1440-tick survival goldens — owned by 004 (validated by `cargo test --workspace`; this ticket does not duplicate that coverage).
@@ -97,7 +97,7 @@ Add focused unit tests in the same file (`scenario/lints.rs#[cfg(test)]`):
 ### Invariants
 
 1. The conformance file is the workspace-wide enforcement of S141's "non-empty motive_sources" contract — any future emitter that forgets to populate must fail this test.
-2. The lint covers exactly 5 new UtilityProfile fields — extension scope is fully aligned with 002's field additions; no field added in 002 is missed by the lint.
+2. The lint covers exactly 5 new UtilityProfile fields — extension scope is fully aligned with `archive/tickets/S141MOTSOULED-002.md`; no field added there is missed by the lint.
 3. Per `docs/precision-rules.md` Rule 8: each golden documents its isolation choice. Scenario 3 (Pain dominance) explicitly removes hunger-relief affordances near the wounded agent in the scenario setup, with a comment naming the excluded lawful branch.
 
 ## Test Plan
