@@ -1,6 +1,6 @@
 # S141MOTSOULED-005: `GoalCommittedPayload.decisive_motive_sources` + commit-time population
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core::GoalCommittedPayload` field extension; commit-time emission seam in `worldwake-ai`
@@ -35,10 +35,10 @@ This ticket adds `decisive_motive_sources: Vec<MotiveSourceRef>` to the payload 
 
 ## Verification Layers
 
-1. Payload shape → focused unit test in `crates/worldwake-core/src/decision_event_payload.rs#[cfg(test)]` asserting `GoalCommittedPayload::default().decisive_motive_sources.is_empty()` and that a populated payload round-trips through bincode unchanged.
-2. Commit-time emission → action trace + decision-event-log delta. Verify in `crates/worldwake-ai/tests/golden_decision_payload.rs` that a committed goal emits a `GoalCommitted` event whose `decisive_motive_sources` matches the committing `offer.motive_sources`.
+1. Payload shape → focused unit tests in `crates/worldwake-core/src/decision_event_payload.rs#[cfg(test)]` asserting omitted-field RON deserialization defaults `decisive_motive_sources` to an empty vec and that a populated payload round-trips through bincode unchanged.
+2. Commit-time emission → decision-event-log delta. Verify in `crates/worldwake-ai/src/agent_tick/planning.rs#[cfg(test)]` that the emitted `GoalCommitted` event copies `decisive_motive_sources` from the committing `AgendaEntry.offer.motive_sources`; `golden_decision_payload.rs` verifies the event-log payload preserves the field.
 3. Save-load compatibility → focused integration test in `crates/worldwake-sim/src/save_load.rs#[cfg(test)]` round-tripping an event log containing a `GoalCommitted` event with non-empty `decisive_motive_sources` under version 78.
-4. Omitted-field deserialization -> a pre-S141 `GoalCommittedPayload` payload shape loads in the current save format with `decisive_motive_sources` populated from `#[serde(default)]` (empty `Vec`). Full version-77 save files remain rejected after `archive/tickets/S141MOTSOULED-002.md`.
+4. Omitted-field deserialization -> a pre-S141 `GoalCommittedPayload` payload shape loads at the payload serde boundary with `decisive_motive_sources` populated from `#[serde(default)]` (empty `Vec`). Full version-77 save files remain rejected after `archive/tickets/S141MOTSOULED-002.md`.
 5. Per `docs/precision-rules.md` Rule 5 (verification surface mapping): the immediate proof is at the event-log delta layer (payload contents observable in the event-log diff). Observer rendering (006) is the downstream surface; this ticket's verification stops at the payload layer.
 
 ## What to Change
@@ -61,7 +61,7 @@ Insert `use crate::motive_source::MotiveSourceRef;` near the top of the file (or
 
 In `crates/worldwake-ai/src/agent_tick/planning.rs` (production path at line 1163), where `GoalCommittedPayload { ... }` is constructed from the committing `AgendaEntry`, attach `decisive_motive_sources: entry.offer.motive_sources.clone()`. Lifecycle: the agenda entry's offer carries the motive sources populated by `archive/tickets/S141MOTSOULED-004.md`'s `derive_default_motive_sources`; this ticket only copies them into the event payload at the commit boundary.
 
-### 3. Update the 5 remaining `GoalCommittedPayload { ... }` construction sites
+### 3. Update the live `GoalCommittedPayload { ... }` construction sites
 
 - `crates/worldwake-core/src/decision_event_payload.rs:574` (test fixture) — add `decisive_motive_sources: Vec::new()` or a representative non-empty vec for the round-trip test.
 - `crates/worldwake-sim/src/save_load.rs:990` (round-trip fixture) — same.
@@ -71,7 +71,7 @@ In `crates/worldwake-ai/src/agent_tick/planning.rs` (production path at line 116
 
 ### 4. Extend `golden_decision_payload.rs` assertions
 
-Update the existing golden's assertion to verify that `GoalCommitted` events carry non-empty `decisive_motive_sources` whose entries match the committing offer's `motive_sources`. This is the cross-layer proof that the commit-time emission seam is wired correctly.
+Update the existing golden's assertion to verify that `GoalCommitted` event payloads carry non-empty `decisive_motive_sources`. The commit-time emission seam is verified in the focused `agent_tick::planning` test that compares the emitted payload against the committing offer's `motive_sources`.
 
 ## Files to Touch
 
@@ -91,13 +91,14 @@ Update the existing golden's assertion to verify that `GoalCommitted` events car
 
 ## Acceptance Criteria
 
-### Tests That Must Pass
+### Acceptance Result
 
-1. `GoalCommittedPayload::default().decisive_motive_sources.is_empty()` — focused unit assertion.
+1. Omitted-field deserialization defaults `GoalCommittedPayload.decisive_motive_sources` to an empty vec via `#[serde(default)]` — focused unit assertion.
 2. `GoalCommittedPayload` bincode round-trip preserves a populated `decisive_motive_sources` vec exactly.
-3. Omitted-field deserialization: a pre-S141 `GoalCommittedPayload` payload shape deserializes with `decisive_motive_sources` defaulted to an empty vec via `#[serde(default)]` when embedded in the current save format. Full version-77 save files remain rejected by the save header gate after `archive/tickets/S141MOTSOULED-002.md`.
-4. Golden `golden_decision_payload.rs`: a scenario that commits a goal produces a `GoalCommitted` event whose `decisive_motive_sources` matches the committing offer's `motive_sources` element-for-element (insertion-ordered).
-5. Existing suite: `cargo test --workspace`.
+3. Omitted-field deserialization: a pre-S141 `GoalCommittedPayload` payload shape deserializes with `decisive_motive_sources` defaulted to an empty vec via `#[serde(default)]` at the payload serde boundary. Full version-77 save files remain rejected by the save header gate after `archive/tickets/S141MOTSOULED-002.md`.
+4. `agent_tick::planning` commit emission: a committed goal produces a `GoalCommitted` event whose `decisive_motive_sources` matches the committing offer's `motive_sources` element-for-element (insertion-ordered).
+5. Golden `golden_decision_payload.rs`: the event-log payload preserves non-empty `decisive_motive_sources`.
+6. Existing suite: `cargo test --workspace`.
 
 ### Invariants
 
@@ -105,18 +106,46 @@ Update the existing golden's assertion to verify that `GoalCommitted` events car
 2. The commit-time emission seam at `crates/worldwake-ai/src/agent_tick/planning.rs:1163` populates `decisive_motive_sources` from the committing `AgendaEntry.offer.motive_sources` — no separate motive-source derivation at commit time. FND-3: the payload reflects authoritative state, not a re-derived view.
 3. No `SAVE_FORMAT_VERSION` bump in this ticket — confirms the single-shot bump invariant from `archive/tickets/S141MOTSOULED-002.md`.
 
-## Test Plan
+## Test Plan Result
 
-### New/Modified Tests
+### Added/Modified Tests
 
-1. `crates/worldwake-core/src/decision_event_payload.rs#[cfg(test)]` — extend the existing payload round-trip test to cover the added field; add an omitted-field payload deserialization test under the current save format.
+1. `crates/worldwake-core/src/decision_event_payload.rs#[cfg(test)]` — extend the existing payload round-trip test to cover the added field; add an omitted-field payload deserialization test at the payload serde boundary.
 2. `crates/worldwake-sim/src/save_load.rs#[cfg(test)]` — extend the event-log round-trip test to include `decisive_motive_sources`.
-3. `crates/worldwake-ai/tests/golden_decision_payload.rs` — extend the existing golden assertion to verify `decisive_motive_sources` matches the committing offer's `motive_sources` for at least one committed goal in the scenario.
+3. `crates/worldwake-ai/src/agent_tick/planning.rs#[cfg(test)]` — extend the commit/adopt emission test to verify `decisive_motive_sources` is copied from the committing offer.
+4. `crates/worldwake-ai/tests/golden_decision_payload.rs` — extend the existing golden assertion to verify non-empty `decisive_motive_sources` survives the event-log payload path.
 
-### Commands
+### Commands Run
 
 1. `cargo test -p worldwake-core decision_event_payload`
 2. `cargo test -p worldwake-sim save_load`
-3. `cargo test -p worldwake-ai --test golden_decision_payload`
-4. `cargo test --workspace`
-5. `cargo clippy --workspace --all-targets -- -D warnings`
+3. `cargo test -p worldwake-ai --lib agent_tick::planning::tests::emit_plan_selection_events_records_commit_then_adoption_with_truncation -- --exact`
+4. `cargo test -p worldwake-ai --test golden_decision_payload`
+5. `cargo test --workspace`
+6. `cargo clippy --workspace --all-targets -- -D warnings`
+
+## Outcome
+
+Completed on 2026-05-12.
+
+- Added `#[serde(default)] pub decisive_motive_sources: Vec<MotiveSourceRef>` to `GoalCommittedPayload`.
+- Wired `emit_plan_selection_events` to copy `committed.offer.motive_sources` into the `GoalCommitted` decision payload at commit time.
+- Updated all live `GoalCommittedPayload` struct literals and fixtures surfaced by the shared-field sweep.
+- Extended core payload tests for omitted-field serde defaulting and populated bincode round-trip preservation.
+- Extended the planning emission test and `golden_decision_payload` so committed payloads preserve and assert the decisive motive-source references.
+- Extended the save-load decision-event fixture with a non-empty decisive motive source and truth-synced `specs/S141-motive-source-ledger.md` to show the landed serde default.
+
+## Deviations
+
+- The draft's `GoalCommittedPayload::default()` proof was stale: the live payload type has no `Default` impl and no clear neutral `GoalKey`. The landed proof uses explicit construction plus omitted-field deserialization, which is the actual serde/default boundary.
+- The drafted constructor count was stale. Compile and struct-literal sweeps found the exact live fallout in core, AI, sim, CLI observer fixtures, and `golden_decision_payload`.
+- No `SAVE_FORMAT_VERSION` bump landed in this ticket; the field rides the existing S141 format version 78 as planned.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-core decision_event_payload`
+- Passed `cargo test -p worldwake-sim save_load`
+- Passed `cargo test -p worldwake-ai --lib agent_tick::planning::tests::emit_plan_selection_events_records_commit_then_adoption_with_truncation -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_decision_payload`
+- Passed `cargo test --workspace`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`

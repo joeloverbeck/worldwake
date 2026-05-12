@@ -1,8 +1,8 @@
 use crate::{
     ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy,
     EntityBeliefAspect, EntityId, ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey,
-    HomeostaticNeedId, HypothesisKind, MaterializationTag, MismatchDetail, OpportunityKey,
-    Permille, SleepRecoveryModifier, SuspensionReason, Tick, WakeCondition,
+    HomeostaticNeedId, HypothesisKind, MaterializationTag, MismatchDetail, MotiveSourceRef,
+    OpportunityKey, Permille, SleepRecoveryModifier, SuspensionReason, Tick, WakeCondition,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -157,6 +157,8 @@ pub struct GoalCommittedPayload {
     pub agent: EntityId,
     pub goal_key: GoalKey,
     pub motive_score: u32,
+    #[serde(default)]
+    pub decisive_motive_sources: Vec<MotiveSourceRef>,
     pub rejected_alternatives: Vec<RejectedAlternativeSummary>,
     #[serde(default)]
     pub assumptions: Vec<PlanAssumptionRef>,
@@ -503,7 +505,7 @@ mod tests {
     use crate::{
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
         ExpectationKindTag, FrameAssumption, FrameClearReason, HomeostaticNeedId, HypothesisKind,
-        InvalidatorTag, MaterializationTag, MismatchDetail, ObservationPredicate,
+        InvalidatorTag, MaterializationTag, MismatchDetail, MotiveSourceRef, ObservationPredicate,
         OpportunityAnchor, OpportunityKey, SuspensionReason, Tick, WakeCondition,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
@@ -575,6 +577,7 @@ mod tests {
                 agent: entity_id(3, 0),
                 goal_key: sample_goal_key(),
                 motive_score: 420,
+                decisive_motive_sources: Vec::new(),
                 rejected_alternatives: vec![RejectedAlternativeSummary {
                     goal_key: sample_goal_key(),
                     rejection_reason: GoalRejectionReason::LowerMotive,
@@ -856,6 +859,50 @@ mod tests {
             let roundtrip: DecisionEventPayload = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, payload);
         }
+    }
+
+    #[test]
+    fn goal_committed_payload_defaults_omitted_decisive_motive_sources() {
+        let ron = r"(
+            agent: (slot: 3, generation: 0),
+            goal_key: (
+                kind: Sleep,
+                commodity: None,
+                entity: None,
+                place: None,
+            ),
+            motive_score: 420,
+            rejected_alternatives: [],
+            assumptions: [],
+        )";
+
+        let payload: GoalCommittedPayload = ron::from_str(ron).unwrap();
+
+        assert!(payload.decisive_motive_sources.is_empty());
+    }
+
+    #[test]
+    fn goal_committed_payload_roundtrips_populated_decisive_motive_sources() {
+        let source = MotiveSourceRef {
+            source: crate::MotiveSource::NeedPressure {
+                need: HomeostaticNeedId::Hunger,
+            },
+            introduced_tick: Tick(42),
+        };
+        let payload = GoalCommittedPayload {
+            agent: entity_id(3, 0),
+            goal_key: sample_goal_key(),
+            motive_score: 420,
+            decisive_motive_sources: vec![source.clone()],
+            rejected_alternatives: Vec::new(),
+            assumptions: Vec::new(),
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: GoalCommittedPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip.decisive_motive_sources, vec![source]);
+        assert_eq!(roundtrip, payload);
     }
 
     #[test]

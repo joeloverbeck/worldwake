@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: No — observer-only (CLI binary)
-**Deps**: `archive/tickets/S141MOTSOULED-003.md` (reads `RankedGoalSummary.motive_source_contributions`), 005 (reads `GoalCommittedPayload.decisive_motive_sources`)
+**Deps**: `archive/tickets/S141MOTSOULED-003.md` (reads `RankedGoalSummary.motive_source_contributions`), `archive/tickets/S141MOTSOULED-005.md` (reads `GoalCommittedPayload.decisive_motive_sources`)
 
 ## Problem
 

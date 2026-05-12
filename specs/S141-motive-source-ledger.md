@@ -208,6 +208,7 @@ In `crates/worldwake-core/src/decision_event_payload.rs`, extend `GoalCommittedP
 ```rust
 pub struct GoalCommittedPayload {
     // existing fields preserved
+    #[serde(default)]
     pub decisive_motive_sources: Vec<MotiveSourceRef>,    // NEW
 }
 ```

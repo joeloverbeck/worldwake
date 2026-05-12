@@ -1179,6 +1179,7 @@ fn emit_plan_selection_events(
                 agent,
                 goal_key: selected_plan.goal,
                 motive_score: committed.motive_score,
+                decisive_motive_sources: committed.offer.motive_sources.clone(),
                 rejected_alternatives: build_rejected_alternatives(
                     ranked_candidates,
                     portfolio,
@@ -3755,6 +3756,12 @@ mod tests {
         let runner_up = GoalKey::from(GoalKind::Wash);
         let third = GoalKey::from(GoalKind::Relieve);
         let fourth = GoalKey::from(GoalKind::ReduceDanger);
+        let decisive_source = worldwake_core::MotiveSourceRef {
+            source: worldwake_core::MotiveSource::NeedPressure {
+                need: HomeostaticNeedId::Fatigue,
+            },
+            introduced_tick: Tick(7),
+        };
         let ranked_candidates = vec![
             AgendaEntry {
                 offer: GoalOffer {
@@ -3767,7 +3774,7 @@ mod tests {
                     required_information_gaps: Vec::new(),
                     invalidators: Vec::new(),
                     learned_expectation_refs: Vec::new(),
-                    motive_sources: Vec::new(),
+                    motive_sources: vec![decisive_source.clone()],
                     acquisition_quantity: None,
                 },
                 priority_class: GoalPriorityClass::High,
@@ -3961,6 +3968,7 @@ mod tests {
                 agent,
                 goal_key: selected_goal,
                 motive_score: 120,
+                decisive_motive_sources: vec![decisive_source],
                 rejected_alternatives: vec![
                     worldwake_core::RejectedAlternativeSummary {
                         goal_key: runner_up,

@@ -56,6 +56,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ## Golden test verification
 
+- Golden-proof closeout checklist: before adding or renumbering `// Scenario N:` metadata blocks, pre-scan existing golden scenario IDs and choose an unused range; update scenario metadata comments; keep `Setup:`, `Proves:`, and `Chain:` metadata self-contained on their first comment line because generated detail docs ignore continuation prose; regenerate golden inventory; inspect new or changed `docs/generated/golden-scenario-details/*.md` `Setup` and `Proves` blocks for stale terms from reassessment; classify every new or renamed `#[ignore]` golden as existing-workflow-owned, new/updated-workflow-owned, or explicitly manual-only and record that automation owner in ticket closeout; run focused goldens; run required ignored exact goldens; run the wrapper or equivalent live gates; finish with stale-claim scans.
+- When authored `scenarios/*` fixtures are optional or under consideration, record the scenario-authoring decision either way. If new authored scenarios are added, also truth-sync `docs/scenario-roadmap.md` and any CI/workflow ownership the user or ticket requires; if programmatic or hybrid goldens are the stronger honest seam, record why no `scenarios/*` or roadmap edit landed.
 - If stronger behavior now reaches completion earlier than a test assumed, recalibrate test inputs instead of weakening the implementation.
 - When broader verification surfaces a timing-sensitive golden whose contract still holds, recalibrate the fixture's timing budget or hold window.
 - When a golden assumes agents observe co-located facts at tick 0, verify the setup explicitly seeds those beliefs or perception prerequisites.
@@ -130,6 +132,7 @@ For Rust verification commands that share Cargo build/artifact directories (for 
 ## Omitted-field serde proof fixtures
 
 For omitted-field serde proofs on complex structs, prefer a format-agnostic fixture when hand-written text would be brittle: serialize a full value, remove only the target field from the serialized text, then deserialize and assert the defaulted field value.
+When the persisted carrier is bincode-backed or otherwise positional, do not phrase a text-format omitted-field proof as full save-file or current-save-format compatibility. Treat it as a payload serde-boundary proof unless the session also builds an actual save/runtime fixture that proves the enclosing save file loads. Pair it with a non-default bincode/save roundtrip when the new field is embedded in persisted state, and record full old-version save files as rejected unless explicit compatibility work landed.
 
 ## Golden inventory refresh fallout
 

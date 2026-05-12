@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: No new engine state — adds test coverage and extends an existing lint
-**Deps**: `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` fields), `archive/tickets/S141MOTSOULED-004.md` (exercises `motive_score` refactor end-to-end), 005 (exercises `decisive_motive_sources` payload end-to-end)
+**Deps**: `archive/tickets/S141MOTSOULED-002.md` (reads new `UtilityProfile` fields), `archive/tickets/S141MOTSOULED-004.md` (exercises `motive_score` refactor end-to-end), `archive/tickets/S141MOTSOULED-005.md` (exercises `decisive_motive_sources` payload end-to-end)
 
 ## Problem
 

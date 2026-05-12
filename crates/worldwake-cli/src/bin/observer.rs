@@ -5306,6 +5306,7 @@ mod tests {
                 agent,
                 goal_key: produce_goal,
                 motive_score: 420,
+                decisive_motive_sources: Vec::new(),
                 rejected_alternatives: vec![worldwake_core::RejectedAlternativeSummary {
                     goal_key: acquire_goal,
                     rejection_reason: GoalRejectionReason::LowerMotive,
@@ -6703,6 +6704,7 @@ mod tests {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 motive_score: 420,
+                decisive_motive_sources: Vec::new(),
                 rejected_alternatives: vec![worldwake_core::RejectedAlternativeSummary {
                     goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
@@ -6727,6 +6729,7 @@ mod tests {
                 agent: entity(1),
                 goal_key: GoalKey::from(GoalKind::Sleep),
                 motive_score: 420,
+                decisive_motive_sources: Vec::new(),
                 rejected_alternatives: vec![worldwake_core::RejectedAlternativeSummary {
                     goal_key: GoalKey::from(GoalKind::AcquireCommodity {
                         commodity: CommodityKind::Bread,
