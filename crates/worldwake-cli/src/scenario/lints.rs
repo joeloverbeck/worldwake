@@ -72,6 +72,7 @@ fn check_profile_homogeneity(scenario: &ScenarioDef, report: &mut LintReport) {
 
     let varies = option_field_varies(&ai_agents, |agent| agent.cognitive_profile.as_ref())
         || option_field_varies(&ai_agents, |agent| agent.utility_profile.as_ref())
+        || utility_profile_motive_class_weight_varies(&ai_agents)
         || option_field_varies(&ai_agents, |agent| agent.perception_profile.as_ref())
         || option_field_varies(&ai_agents, |agent| agent.exploration_profile.as_ref())
         || option_field_varies(&ai_agents, |agent| agent.diversification_profile.as_ref())
@@ -90,6 +91,35 @@ fn check_profile_homogeneity(scenario: &ScenarioDef, report: &mut LintReport) {
             "AI agent population shares default profiles across all checked fields; FND-22 requires concrete per-agent variation"
                 .into(),
     });
+}
+
+fn utility_profile_motive_class_weight_varies(agents: &[&AgentDef]) -> bool {
+    option_field_varies(agents, |agent| {
+        agent
+            .utility_profile
+            .as_ref()
+            .map(|profile| &profile.office_duty_weight)
+    }) || option_field_varies(agents, |agent| {
+        agent
+            .utility_profile
+            .as_ref()
+            .map(|profile| &profile.loyalty_weight)
+    }) || option_field_varies(agents, |agent| {
+        agent
+            .utility_profile
+            .as_ref()
+            .map(|profile| &profile.greed_weight)
+    }) || option_field_varies(agents, |agent| {
+        agent
+            .utility_profile
+            .as_ref()
+            .map(|profile| &profile.shame_weight)
+    }) || option_field_varies(agents, |agent| {
+        agent
+            .utility_profile
+            .as_ref()
+            .map(|profile| &profile.revenge_weight)
+    })
 }
 
 fn option_field_varies<T: PartialEq>(
@@ -380,6 +410,46 @@ mod tests {
                 .iter()
                 .any(|failure| failure.rule == LintRule::ProfileHomogeneity)
         );
+    }
+
+    #[test]
+    fn profile_homogeneity_passes_when_each_motive_class_weight_varies() {
+        for mutate in [
+            |profile: &mut UtilityProfile| {
+                profile.office_duty_weight = Permille::new_unchecked(625);
+            },
+            |profile: &mut UtilityProfile| {
+                profile.loyalty_weight = Permille::new_unchecked(625);
+            },
+            |profile: &mut UtilityProfile| {
+                profile.greed_weight = Permille::new_unchecked(625);
+            },
+            |profile: &mut UtilityProfile| {
+                profile.shame_weight = Permille::new_unchecked(625);
+            },
+            |profile: &mut UtilityProfile| {
+                profile.revenge_weight = Permille::new_unchecked(625);
+            },
+        ] {
+            let mut varied = fully_profiled_ai("Cara");
+            let mut utility = UtilityProfile::default();
+            mutate(&mut utility);
+            varied.utility_profile = Some(utility);
+            let scenario = scenario_with_agents(vec![
+                fully_profiled_ai("Alice"),
+                fully_profiled_ai("Bob"),
+                varied,
+            ]);
+
+            let report = run_lints(&scenario);
+
+            assert!(
+                !report
+                    .failures
+                    .iter()
+                    .any(|failure| failure.rule == LintRule::ProfileHomogeneity)
+            );
+        }
     }
 
     #[test]

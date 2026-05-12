@@ -6,7 +6,7 @@
 
 Today's goal ranking is a derived utility computation: emitters produce `GoalOffer`s with attached evidence references; `ranking::compare_ranked_goals` (`crates/worldwake-ai/src/ranking.rs`, made file-private by S123) reads needs, drives, learned opportunities, source reliability, and per-agent profile weights to produce a `motive_score: u32`. The score becomes the cross-goal ordering authority. The motive *source* — whether the agent committed because they're hungry, in pain, loyal to another, vengeful, or chasing an opportunity — is implicit in the score's components, not first-class state. Per FND-3 (concrete state over abstract scores), the architectural shape should be inverted: motive sources are the authoritative state; ranking is a derived view over motive sources, not a free-floating utility number.
 
-S141 lands the `MotiveSource` enum and a `MotiveSourceRef` carrier in `worldwake-core`. Each production `GoalOffer` (defined in `worldwake-ai`) carries one or more `MotiveSourceRef`s naming the per-agent state that gives the goal weight: `NeedPressure(HomeostaticNeedId)`, `Pain(WoundId)`, `OfficeDuty(EntityId)`, `Loyalty(EntityId)`, `Greed(OpportunityKey)`, `Shame(EntityId)`, `Revenge(ViolationId)`. The existing `motive_score` function in `ranking.rs` is refactored body-only: instead of owning the public ranking path as a direct free-standing `GoalKind` dispatch, it iterates `offer.motive_sources` and dispatches per `MotiveSource` variant. The initial S141MOTSOULED-004 implementation preserves exact ranking arithmetic by routing each source through the extracted prior `GoalKind` score body; later conformance/golden work owns independent multi-source decomposition. `compare_ranked_goals` keeps its identity (file-private per S123). S136's always-on decision-event payload gains `decisive_motive_sources: Vec<MotiveSourceRef>` so the post-commit causal record names the load-bearing motive sources rather than only the abstract score.
+S141 lands the `MotiveSource` enum and a `MotiveSourceRef` carrier in `worldwake-core`. Each production `GoalOffer` (defined in `worldwake-ai`) carries one or more `MotiveSourceRef`s naming the per-agent state that gives the goal weight: `NeedPressure(HomeostaticNeedId)`, `Pain(WoundId)`, `OfficeDuty(EntityId)`, `Loyalty(EntityId)`, `Greed(OpportunityKey)`, `Shame(EntityId)`, `Revenge(ViolationId)`. The existing `motive_score` function in `ranking.rs` is refactored body-only: instead of owning the public ranking path as a direct free-standing `GoalKind` dispatch, it iterates `offer.motive_sources` and dispatches per `MotiveSource` variant. The initial S141MOTSOULED-004 implementation preserves exact ranking arithmetic by routing each source through the extracted prior `GoalKind` score body; S141MOTSOULED-007 landed the conformance and fixture-golden proof surface for the current representation, and S141MOTSOULED-008 owns independent multi-source decomposition. `compare_ranked_goals` keeps its identity (file-private per S123). S136's always-on decision-event payload gains `decisive_motive_sources: Vec<MotiveSourceRef>` so the post-commit causal record names the load-bearing motive sources rather than only the abstract score.
 
 The seven variants above cover the per-agent state types that exist today (`HomeostaticNeedId`, `WoundId`, `OpportunityKey`, `ViolationId`, and bare `EntityId` for office/loyalty/shame anchors). Variants whose referent substrate has not yet been built — `Fear`, `Obligation`, `Debt`, `Habit`, `Curiosity` — are explicitly deferred to Phase 12 follow-up specs that land the corresponding state (threat-belief substrate, contract artifacts, debt artifacts, habit reinforcement, hypothesis ID surface). The `MotiveSource` enum is open to extension when those substrates exist; until then the spec respects Design Goal 5 (no new authoritative state).
 
@@ -147,7 +147,7 @@ fn score_motive_source(
 }
 ```
 
-`compare_ranked_goals` (`ranking.rs:2615`) is unchanged. S141MOTSOULED-004 intentionally keeps per-commit `motive_score` values bitwise-identical to pre-S141 by delegating each current source variant to `score_goal_kind_motive`, the extracted previous `match candidate.key.goal_kind` body. D8/golden follow-up owns the stricter proof and any later split into independent per-source arithmetic.
+`compare_ranked_goals` (`ranking.rs:2615`) is unchanged. S141MOTSOULED-004 intentionally keeps per-commit `motive_score` values bitwise-identical to pre-S141 by delegating each current source variant to `score_goal_kind_motive`, the extracted previous `match candidate.key.goal_kind` body. S141MOTSOULED-008 owns the later split into independent per-source arithmetic.
 
 ### D4: `UtilityProfile` extension
 
@@ -199,7 +199,7 @@ pub struct RankedGoalSummary {
 }
 ```
 
-Populated from the ranked offer's `motive_sources` alongside the aggregate `motive_score`. The first 004 implementation assigns the aggregate score to the first source and zero to later sources because the default mapping currently emits one source per production offer; richer multi-source decomposition is covered by D8/golden follow-up. The same per-source contribution data feeds the always-on payload (D6) when the goal commits.
+Populated from the ranked offer's `motive_sources` alongside the aggregate `motive_score`. The first 004 implementation assigns the aggregate score to the first source and zero to later sources because the default mapping currently emits one source per production offer; richer multi-source decomposition is covered by S141MOTSOULED-008. The same per-source contribution data feeds the always-on payload (D6) when the goal commits.
 
 ### D6: Decision-event payload extension (S136 always-on payload)
 
@@ -232,12 +232,13 @@ The `→` formatting mirrors existing Section 3a (Opportunities) rendering conve
 
 - **Conformance test `every_goal_offer_has_motive_sources()`** at `crates/worldwake-ai/tests/conformance_motive_sources.rs` (new file, matching the precedent of `tests/planner_conformance.rs` and `tests/conformance_execution_budget.rs`). Spawns a representative scenario, runs the planner, and asserts every `GoalOffer` constructed during the run carries a non-empty `motive_sources` vector.
 - **Conformance test `utility_profile_default_for_motive_class()`** in the same file. Asserts every new `UtilityProfile` field has a `#[serde(default)]` function that returns a non-zero Permille.
-- **Golden coverage**: new `crates/worldwake-ai/tests/golden_motive_sources.rs` with five scenarios:
-  1. Hunger-only commit → expects `motive_sources: [NeedPressure(Hunger)]` and contribution score == previous-pre-S141 `motive_score` (parity).
-  2. Hunger + Greed (market opportunity) commit → expects two motive sources, sum-equals-score, observer renders both.
-  3. Pain dominates Hunger under wound profile → expects `Pain(...)` contribution > `NeedPressure(Hunger)` contribution.
-  4. `UtilityProfile.greed_weight` variation across two otherwise-identical agents → expects different commit choices for the same opportunity.
-  5. Empty `motive_sources` debug-assert in test build → expects panic at offer construction.
+- **Golden coverage**: `crates/worldwake-ai/tests/golden_motive_sources.rs` landed five fixture-backed scenarios for the current representation:
+  1. Hunger default mapping → expects `motive_sources: [NeedPressure(Hunger)]` and contribution score == aggregate `motive_score` (parity).
+  2. Commit-payload preservation → expects multiple decisive motive sources to survive event-log insertion order.
+  3. Trace representation → expects a fixture trace can represent `Pain(...)` contribution > `NeedPressure(Hunger)` contribution.
+  4. `UtilityProfile.greed_weight` variation → expects the field to be concrete scenario profile state.
+  5. Empty `motive_sources` debug-assert in test build → expects panic at offer validation.
+- **Independent multi-source scoring follow-up**: `tickets/S141MOTSOULED-008.md` owns replacing the current parity-preserving scoring/contribution shortcut with production arithmetic that can support autonomous Hunger + Greed summation, Pain-vs-Hunger dominance, and profile-driven branch divergence goldens.
 - **Score parity regression**: every existing 1440-tick survival golden produces identical `motive_score` values pre/post-S141 for every commit (the score is the same, the provenance is the new layer). This is the strongest regression guard against derivation drift.
 - **`ProfileHomogeneity` lint extension** (`crates/worldwake-cli/src/scenario/lints.rs:62`): the lint's per-`UtilityProfile` checker extends to detect cloned values across the 5 new motive-class weight fields, in addition to the existing per-need weights.
 
@@ -290,7 +291,7 @@ When any of those substrates lands, extending `MotiveSource` is additive: a new 
 
 ## Risks
 
-- **Body refactor must produce bitwise-identical motive scores.** The score-parity regression (D8) is the gate. Mitigation: S141MOTSOULED-004 landed a parity-preserving source dispatch: each current `MotiveSource` variant delegates to the extracted previous `GoalKind` scoring body, while D8/golden follow-up owns stricter independent per-source arithmetic.
-- **Per-`GoalKind` -> `MotiveSource` mapping ambiguity.** Some `GoalKind` variants (e.g., enterprise goals, social goals, combat goals) could plausibly emit multiple motive sources. Mitigation: S141MOTSOULED-004 landed the default mapping table for current production offers, and D8/golden follow-up owns conformance plus richer multi-source decomposition where needed.
+- **Body refactor must produce bitwise-identical motive scores.** The score-parity regression (D8) is the gate. Mitigation: S141MOTSOULED-004 landed a parity-preserving source dispatch: each current `MotiveSource` variant delegates to the extracted previous `GoalKind` scoring body, while S141MOTSOULED-008 owns independent per-source arithmetic.
+- **Per-`GoalKind` -> `MotiveSource` mapping ambiguity.** Some `GoalKind` variants (e.g., enterprise goals, social goals, combat goals) could plausibly emit multiple motive sources. Mitigation: S141MOTSOULED-004 landed the default mapping table for current production offers, S141MOTSOULED-007 landed conformance for the current public candidate-generation seam, and S141MOTSOULED-008 owns richer multi-source decomposition where needed.
 - **`UtilityProfile` save-format growth.** 5 new `Permille` fields. Mitigation: per-field `#[serde(default = "...")]` handles omitted-field profile payloads in current-format inputs; `SAVE_FORMAT_VERSION` bumps from 77 → 78, and full pre-78 saves stay rejected by the loader.
 - **Deferred-variant pressure.** Designers may want `Fear`/`Obligation`/`Debt`/`Habit`/`Curiosity` motives surfaced in goldens before Phase 12 lands the substrates. Mitigation: the deferred-variants table above is the contract. Scenarios that need to express these motives early should author them as `Greed(opportunity)` or similar existing-state proxies until the substrate lands.

@@ -23,6 +23,7 @@ After the owned implementation is fully verified:
 
 - Confirm no source, generated, scenario, test, or executable edits remain; all required executable gates have exited 0; and only ticket/spec prose or hygiene remains.
 - If the final ticket/spec `Test Plan`, `Acceptance Criteria`, or `Verification Result` still names `scripts/verify.sh` or `./scripts/verify.sh`, inspect the live script and either run it, run every live gate it wraps and record that the wrapper itself was not run, or rewrite the ticket to remove the wrapper with a stated reason. Do not claim wrapper-equivalent proof unless every live wrapper gate was covered.
+- If a command is recorded as `Waived` in `Verification Result`, it must not remain listed as a mandatory command in `Acceptance Criteria`, `Test Plan`, `New/Modified Tests`, or `Verification Layers`. Remove it from the mandatory list, rewrite that section to name the substituted proof surface, or keep the ticket non-completed until the command actually runs.
 - If a wrapper's final gate is quiet and the process handle closes ambiguously, rerun the final gate directly or record why the wrapper exit status is enough before claiming completed proof.
 - If any proof-counted command is still running or cannot be polled to a completed exit status, do not edit `Status` or final verification claims yet.
 - Remove or rewrite any unrun draft command list that could be mistaken for observed verification.

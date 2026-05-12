@@ -12,6 +12,7 @@ SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 STATUS_RE = re.compile(r"^\s*\**Status\**:\s*(.+?)\s*$", re.MULTILINE)
 VERIFICATION_ITEM_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)")
 VERIFICATION_LABEL_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)(Passed|Waived|Blocked)\b")
+VERIFICATION_LABELED_ITEM_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)(Passed|Waived|Blocked)\b(.*)$")
 BACKTICK_RE = re.compile(r"`([^`\n]+)`")
 COMMAND_START_RE = re.compile(
     r"^(?:"
@@ -50,6 +51,25 @@ def command_refs(body: str | None) -> set[str]:
     return refs
 
 
+def labeled_verification_commands(body: str | None) -> dict[str, set[str]]:
+    commands_by_label: dict[str, set[str]] = {
+        "Passed": set(),
+        "Waived": set(),
+        "Blocked": set(),
+    }
+    if body is None:
+        return commands_by_label
+
+    for line in body.splitlines():
+        label_match = VERIFICATION_LABELED_ITEM_RE.match(line)
+        if label_match is None:
+            continue
+        label = label_match.group(1)
+        item_text = label_match.group(2)
+        commands_by_label[label].update(command_refs(item_text))
+    return commands_by_label
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_closeout.py <ticket-path>", file=sys.stderr)
@@ -70,6 +90,7 @@ def main() -> int:
 
         verification = section_body(text, "Verification Result")
         verification_commands = command_refs(verification)
+        verification_commands_by_label = labeled_verification_commands(verification)
         if verification is not None:
             items = [
                 line
@@ -97,6 +118,15 @@ def main() -> int:
             warnings.append(
                 "command-like proof references are not mirrored in Verification Result: "
                 + ", ".join(f"`{command}`" for command in missing_commands)
+            )
+
+        waived_required_commands = sorted(
+            required_commands & verification_commands_by_label["Waived"]
+        )
+        if waived_required_commands:
+            warnings.append(
+                "waived commands are still listed as required proof: "
+                + ", ".join(f"`{command}`" for command in waived_required_commands)
             )
 
         for section in proof_sections:

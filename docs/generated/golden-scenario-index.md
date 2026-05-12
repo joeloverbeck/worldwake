@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 160
-- Contributing golden test files: 38
-- Associated tests: 192
+- Scenario blocks: 165
+- Contributing golden test files: 39
+- Associated tests: 197
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -281,7 +281,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 385: S136 Decision Payload Stale-Belief Replan References Claim
 
-- Source: `golden_decision_payload.rs:125`
+- Source: `golden_decision_payload.rs:133`
 - Systems: AI, EventLog
 - GoalKinds: ConsumeOwnedCommodity
 - ActionDomains: DecisionHistory
@@ -293,7 +293,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 386: S136 Decision Payload Commodity Assumption Breach Records Observation
 
-- Source: `golden_decision_payload.rs:176`
+- Source: `golden_decision_payload.rs:184`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -305,7 +305,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 387: S136 Decision Payload Source Failure Records Source Observation
 
-- Source: `golden_decision_payload.rs:235`
+- Source: `golden_decision_payload.rs:243`
 - Systems: AI, EventLog
 - GoalKinds: AcquireCommodity
 - ActionDomains: DecisionHistory
@@ -737,6 +737,66 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: survival-class ConsumeOwnedCommodity outranks enterprise-class SellCommodity; eating the listed lot archives it, removing SaleListing as a side effect
 
 **Cross-system chain**: critical hunger → ConsumeOwnedCommodity(Critical) beats SellCommodity(Medium) → eat action → consume_one_unit archives Quantity(1) lot → SaleListing gone
+
+### Scenario 403: S141 Motive Sources Hunger Offer Carries NeedPressure
+
+- Source: `golden_motive_sources.rs:100`
+- Systems: AI
+- GoalKinds: ConsumeOwnedCommodity
+- ActionDomains: Needs
+- Principles: P3, P20, P29
+
+**Setup**: programmatic offer fixture isolates the default source mapping; no acquisition or travel branches are staged because this scenario proves the ranked source ledger shape for a hunger-only goal.
+
+**Proves**: a hunger commit maps to NeedPressure(Hunger), and the contribution sum equals the aggregate motive_score carried by the trace summary.
+
+### Scenario 404: S141 Motive Sources Commit Payload Preserves Hunger And Greed
+
+- Source: `golden_motive_sources.rs:139`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: DecisionHistory
+- Principles: P3, P20, P29
+
+**Setup**: event-log fixture carries two decisive sources directly. Rival planner branches are excluded because this scenario proves persisted payload shape, not autonomous candidate choice.
+
+**Proves**: GoalCommitted payloads preserve multiple decisive motive sources in insertion order through the append-only event log.
+
+### Scenario 405: S141 Motive Sources Pain Contribution Dominates Hunger
+
+- Source: `golden_motive_sources.rs:184`
+- Systems: AI
+- GoalKinds: TreatWounds, ConsumeOwnedCommodity
+- ActionDomains: Medical, Needs
+- Principles: P3, P20
+
+**Setup**: trace-summary fixture excludes hunger-relief execution and medical action execution; it isolates the contribution ordering the live trace carrier can express.
+
+**Proves**: a Pain source contribution can be represented as the dominant motive over a competing Hunger source without collapsing either source into the aggregate score.
+
+### Scenario 406: S141 Motive Sources Greed Weight Variation Is Profile State
+
+- Source: `golden_motive_sources.rs:230`
+- Systems: AI
+- GoalKinds: PostNotice
+- ActionDomains: DecisionHistory
+- Principles: P3, P22
+
+**Setup**: two otherwise identical UtilityProfiles vary only greed_weight. No autonomous branch is staged because current S141 scoring is still parity-preserving; this fixture proves the per-agent state variation that later richer scoring consumes.
+
+**Proves**: Greed-backed motive sources and per-agent greed_weight variation are both representable without adding a global tuning path.
+
+### Scenario 407: S141 Motive Sources Empty Offer Assertion
+
+- Source: `golden_motive_sources.rs:265`
+- Systems: AI
+- GoalKinds: Sleep
+- ActionDomains: DecisionHistory
+- Principles: P28
+
+**Setup**: synthetic fixture constructs an explicitly empty GoalOffer. This is the remaining test-only path called out by S141; production emitters are covered by conformance_motive_sources.
+
+**Proves**: the debug assertion rejects empty motive_sources at explicit validation points in test builds.
 
 ### Scenario 11: Simple Office Claim via DeclareSupport
 
@@ -1191,7 +1251,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 
-- Source: `golden_planner_pathology.rs:681`
+- Source: `golden_planner_pathology.rs:696`
 - Systems: Needs, AI, Travel, Production
 - GoalKinds: AcquireCommodity
 - ActionDomains: Travel, Production, Needs
@@ -1206,7 +1266,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 143: CLI Evaluation Lina 0-step FreeCarryCapacity Loop
 
-- Source: `golden_planner_pathology.rs:806`
+- Source: `golden_planner_pathology.rs:821`
 - Systems: Needs, AI, Production
 - GoalKinds: FreeCarryCapacity
 - ActionDomains: Needs, Production
@@ -1221,7 +1281,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 144: Obligation satiation allows survival needs to override posting
 
-- Source: `golden_planner_pathology.rs:938`
+- Source: `golden_planner_pathology.rs:953`
 - Systems: Social artifact actions, Needs, AI, Perception
 - GoalKinds: PostNotice, AcquireCommodity(SelfConsume)
 - ActionDomains: Social, Needs
@@ -1236,7 +1296,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 167: Portfolio Rejects Infeasible Commitment After Sleep Blocker Suppression
 
-- Source: `golden_portfolio_planning.rs:213`
+- Source: `golden_portfolio_planning.rs:218`
 - Systems: AI, Needs, Social, Production, Decision History
 - GoalKinds: Sleep, ReportMissing, ProduceCommodity
 - ActionDomains: Needs, Social, Production
@@ -1971,7 +2031,7 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ### Scenario 176: Survival Theft Lands the Concealed Staged-Lot Branch
 
-- Source: `golden_survival_theft.rs:398`
+- Source: `golden_survival_theft.rs:405`
 - Systems: AI, Needs, Trade, Perception, Transport
 - GoalKinds: StealItem, ConsumeOwnedCommodity, SellCommodity, Drink, Wash, Sleep, Relieve
 - ActionDomains: Trade, Needs, Transport
