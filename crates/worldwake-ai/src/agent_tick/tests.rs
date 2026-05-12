@@ -2,7 +2,7 @@ use super::candidates::abandon_expired_facility_queues_with_limit;
 use super::execution::{enqueue_valid_step_or_handle_failure, resolve_step_targets};
 use super::observation::{
     ReadPhaseContext, facility_queue_patience_exhausted, refresh_runtime_for_read_phase,
-    update_runtime_observation_snapshot,
+    refresh_runtime_for_read_phase_with_memories, update_runtime_observation_snapshot,
 };
 use super::planning::{
     determine_selected_plan_source, plan_and_validate_next_step, summarize_plan_replacement,
@@ -201,6 +201,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         landmark_extraction_depth: CognitiveProfile::default().landmark_extraction_depth,
         use_ff_heuristic: CognitiveProfile::default().use_ff_heuristic,
         decision_history_alternatives: CognitiveProfile::default().decision_history_alternatives,
+        detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
+        compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
         slot_weights: PortfolioSlotWeights::default(),
     }
 }
@@ -969,6 +971,7 @@ fn hungry_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId, Entit
                 observation_budget: 24,
                 salience_policy: worldwake_core::SaliencePolicy::default(),
                 omission_log_capacity: worldwake_core::default_omission_log_capacity(),
+                opportunity_floor_permille: worldwake_core::default_opportunity_floor_permille(),
                 need_salience_boost: Permille::new(500).unwrap(),
                 need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
@@ -1081,6 +1084,7 @@ fn stale_remote_acquisition_harness() -> (Harness, EntityId, EntityId, EntityId,
                 observation_budget: 24,
                 salience_policy: worldwake_core::SaliencePolicy::default(),
                 omission_log_capacity: worldwake_core::default_omission_log_capacity(),
+                opportunity_floor_permille: worldwake_core::default_opportunity_floor_permille(),
                 need_salience_boost: Permille::new(500).unwrap(),
                 need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
@@ -3131,6 +3135,7 @@ fn committed_step_fulfills_matching_plan_step_expectations_in_world_store() {
     let profile = cognitive(&profile_fixture);
     let budget = execution_budget(&profile_fixture);
     let semantics = build_semantics_table(&harness.defs);
+    let effect_schema_index = crate::EffectSchemaIndex::default();
     let mut ctx = super::AgentTickContext {
         world: &mut harness.world,
         event_log: &mut harness.event_log,
@@ -3140,6 +3145,7 @@ fn committed_step_fulfills_matching_plan_step_expectations_in_world_store() {
         action_handlers: &harness.handlers,
         recipe_registry: &harness.recipes,
         semantics_table: &semantics,
+        effect_schema_index: &effect_schema_index,
         cognitive: &profile,
         execution_budget: &budget,
         tick: Tick(3),
@@ -3237,6 +3243,7 @@ fn overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy() {
     let profile = cognitive(&profile_fixture);
     let budget = execution_budget(&profile_fixture);
     let semantics = build_semantics_table(&harness.defs);
+    let effect_schema_index = crate::EffectSchemaIndex::default();
     let mut blocked_memory = BlockerMemory::default();
     let mut discrepancy_memory = DiscrepancyMemory::default();
     let mut ctx = super::AgentTickContext {
@@ -3248,6 +3255,7 @@ fn overdue_plan_step_expectation_emits_mismatch_and_records_discrepancy() {
         action_handlers: &harness.handlers,
         recipe_registry: &harness.recipes,
         semantics_table: &semantics,
+        effect_schema_index: &effect_schema_index,
         cognitive: &profile,
         execution_budget: &budget,
         tick: Tick(7),
@@ -3385,6 +3393,7 @@ fn overdue_plan_step_expectation_expires_when_plan_moved_on() {
     let profile = cognitive(&profile_fixture);
     let budget = execution_budget(&profile_fixture);
     let semantics = build_semantics_table(&harness.defs);
+    let effect_schema_index = crate::EffectSchemaIndex::default();
     let mut blocked_memory = BlockerMemory::default();
     let mut discrepancy_memory = DiscrepancyMemory::default();
     let mut ctx = super::AgentTickContext {
@@ -3396,6 +3405,7 @@ fn overdue_plan_step_expectation_expires_when_plan_moved_on() {
         action_handlers: &harness.handlers,
         recipe_registry: &harness.recipes,
         semantics_table: &semantics,
+        effect_schema_index: &effect_schema_index,
         cognitive: &profile,
         execution_budget: &budget,
         tick: Tick(7),
@@ -3516,6 +3526,7 @@ fn overdue_plan_step_expectation_classifies_discrepancy_per_kind() {
         let profile = cognitive(&profile_fixture);
         let budget = execution_budget(&profile_fixture);
         let semantics = build_semantics_table(&harness.defs);
+        let effect_schema_index = crate::EffectSchemaIndex::default();
         let mut blocked_memory = BlockerMemory::default();
         let mut discrepancy_memory = DiscrepancyMemory::default();
         let mut ctx = super::AgentTickContext {
@@ -3527,6 +3538,7 @@ fn overdue_plan_step_expectation_classifies_discrepancy_per_kind() {
             action_handlers: &harness.handlers,
             recipe_registry: &harness.recipes,
             semantics_table: &semantics,
+            effect_schema_index: &effect_schema_index,
             cognitive: &profile,
             execution_budget: &budget,
             tick: Tick(7 + index as u64),
@@ -3640,6 +3652,7 @@ fn overdue_plan_step_expectation_processes_after_sim_marks_record_overdue() {
     let profile = cognitive(&profile_fixture);
     let budget = execution_budget(&profile_fixture);
     let semantics = build_semantics_table(&harness.defs);
+    let effect_schema_index = crate::EffectSchemaIndex::default();
     let mut blocked_memory = BlockerMemory::default();
     let mut discrepancy_memory = DiscrepancyMemory::default();
     let mut ctx = super::AgentTickContext {
@@ -3651,6 +3664,7 @@ fn overdue_plan_step_expectation_processes_after_sim_marks_record_overdue() {
         action_handlers: &harness.handlers,
         recipe_registry: &harness.recipes,
         semantics_table: &semantics,
+        effect_schema_index: &effect_schema_index,
         cognitive: &profile,
         execution_budget: &budget,
         tick: Tick(7),
@@ -6111,6 +6125,7 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
         .and_then(|plan| plan.steps.first())
         .cloned()
         .expect("runtime should retain the test step");
+    let effect_schema_index = crate::EffectSchemaIndex::default();
     let mut ctx = super::AgentTickContext {
         world: &mut harness.world,
         event_log: &mut harness.event_log,
@@ -6120,6 +6135,7 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
         action_handlers: &harness.handlers,
         recipe_registry: &harness.recipes,
         semantics_table: &semantics_table,
+        effect_schema_index: &effect_schema_index,
         cognitive: &cognitive,
         execution_budget: &execution_budget,
         tick: Tick(3),
@@ -6257,6 +6273,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             true,
             previous_goal,
             &harness.recipes,
+            &std::collections::BTreeMap::new(),
         );
     assert_eq!(initial_valid, Some(true));
     assert!(!initial_continued);
@@ -6348,6 +6365,7 @@ fn trace_snapshot_continuation_records_selected_plan_provenance() {
             true,
             previous_goal,
             &harness.recipes,
+            &std::collections::BTreeMap::new(),
         );
     let selection = continuation_selection.expect("snapshot continuation trace should exist");
     let selected_plan = selection
@@ -6756,6 +6774,97 @@ fn apply_source_reliability_failure_observations_coalesces_duplicates_and_enforc
                 }],
             }),
         ]
+    );
+}
+
+#[test]
+fn read_phase_runs_opportunity_compiler_before_candidate_generation() {
+    let mut harness = Harness::new(ControlSource::Ai);
+    let place = harness.world.effective_place(harness.actor).unwrap();
+    {
+        let mut txn = new_txn(&mut harness.world, 2);
+        let bread = txn
+            .create_item_lot(CommodityKind::Bread, Quantity(1))
+            .unwrap();
+        txn.set_ground_location(bread, place).unwrap();
+        commit_txn(txn);
+    }
+    sync_all_beliefs(&mut harness.world, harness.actor, Tick(2));
+    let bread = harness
+        .world
+        .get_component_agent_belief_store(harness.actor)
+        .expect("actor should have a belief store")
+        .known_entities
+        .iter()
+        .find_map(|(entity, state)| {
+            (state
+                .last_known_inventory
+                .contains_key(&CommodityKind::Bread)
+                && harness.world.possessor_of(*entity).is_none())
+            .then_some(*entity)
+        })
+        .expect("harness should seed a believed bread lot");
+    let goal = GoalKey::from(GoalKind::AcquireCommodity {
+        commodity: CommodityKind::Bread,
+        purpose: CommodityPurpose::SelfConsume,
+        quantity: AcquisitionQuantity::single(),
+    });
+    let opportunity = OpportunityKey {
+        goal_key: goal,
+        anchor: OpportunityAnchor::Entity(bread),
+    };
+    let effect_schema_index = crate::EffectSchemaIndex {
+        by_effect: BTreeMap::from([(
+            crate::opportunity_compiler::EffectFactKey::CommodityTransfer,
+            vec![ActionDefId(0)],
+        )]),
+    };
+    let utility = UtilityProfile::default();
+    let mut runtime = AgentDecisionRuntime::default();
+    let mut facility_intents = ContentionIntents::default();
+    let mut blocked_memory = BlockerMemory::default();
+    let mut discrepancy_memory = DiscrepancyMemory::default();
+    let mut violation_memory = ViolationMemory::default();
+
+    let read = refresh_runtime_for_read_phase_with_memories(
+        &harness.world,
+        &harness.scheduler,
+        &harness.defs,
+        &mut runtime,
+        None,
+        &mut facility_intents,
+        &mut blocked_memory,
+        &mut discrepancy_memory,
+        &mut violation_memory,
+        &RepairMemory::default(),
+        &LearnedOpportunityMemory::default(),
+        &effect_schema_index,
+        harness.actor,
+        &[],
+        ReadPhaseContext {
+            recipe_registry: &harness.recipes,
+            utility: &utility,
+            tick: Tick(2),
+            travel_horizon: 6,
+            structural_block_ticks: 10,
+        },
+        true,
+    );
+
+    assert_eq!(read.opportunity_compiler_load.compiled_count, 1);
+    assert!(
+        read.opportunities
+            .iter()
+            .any(|compiled| compiled.key == opportunity)
+    );
+    assert!(
+        read.generated_keys.contains(&opportunity),
+        "candidate generation should consume the same-tick compiled opportunity"
+    );
+    assert_eq!(
+        read.candidate_sources.get(&opportunity),
+        Some(&crate::decision_trace::CandidateSource::OpportunityCompiler),
+        "opportunity-derived candidate source attribution should survive read-phase generation"
     );
 }
 
@@ -7279,6 +7388,7 @@ fn trace_planning_records_political_over_share_belief_priority_class_reason() {
                 observation_budget: 24,
                 salience_policy: worldwake_core::SaliencePolicy::default(),
                 omission_log_capacity: worldwake_core::default_omission_log_capacity(),
+                opportunity_floor_permille: worldwake_core::default_opportunity_floor_permille(),
                 need_salience_boost: Permille::new(500).unwrap(),
                 need_salience_urgency_threshold: Permille::new(500).unwrap(),
                 observation_fidelity: Permille::new(1000).unwrap(),
@@ -8376,7 +8486,10 @@ fn fresh_local_commodity_clears_assumption_discrepancy_before_ttl_expiry() {
         crate::DecisionOutcome::Dead => {
             panic!("expected Planning or ActiveAction outcome, got Dead")
         }
-    };
+    } || trace
+        .compiled_opportunities
+        .iter()
+        .any(|opportunity| opportunity.key.goal_key == fixture.goal);
     assert!(
         goal_reenabled,
         "fresh local commodity should re-enable the apple goal before TTL expiry"

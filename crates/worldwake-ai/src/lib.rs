@@ -10,6 +10,7 @@ pub mod candidate_generation;
 pub mod decision_runtime;
 pub mod decision_trace;
 pub mod dirty_set;
+pub mod effect_schema_index;
 pub mod effect_sink_hypothetical;
 mod enterprise;
 pub mod exhaustion;
@@ -26,6 +27,7 @@ mod goal_switching;
 mod institutional_queries;
 pub mod interrupts;
 pub mod knowledge_path;
+pub mod opportunity_compiler;
 pub mod opportunity_expectation_failure;
 pub mod perf_telemetry;
 pub mod plan_guard;
@@ -84,12 +86,14 @@ pub use decision_trace::{
     ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
+pub use effect_schema_index::EffectSchemaIndex;
 pub use effect_sink_hypothetical::HypotheticalEffectSink;
 pub use exhaustion::{ExhaustionBaseline, ExhaustionInvalidationCondition};
 pub use failure_handling::{PlanFailureContext, clear_resolved_failures, handle_plan_failure};
 pub use feasibility::{FeasibilityHint, feasibility_hint};
 pub use goal_dispatch_decl::{
-    FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchDeclaration, InvalidationStrategy,
+    Authority, FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchDeclaration,
+    InvalidationStrategy,
 };
 pub use goal_dispatch_key::GoalDispatchKey;
 pub use goal_model::{

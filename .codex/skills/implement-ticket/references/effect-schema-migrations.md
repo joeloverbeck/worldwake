@@ -2,6 +2,8 @@
 
 Use this reference when a ticket adds, replaces, or migrates `ActionDef.effect_schema` behavior, especially for staged S-series schema work where the authoritative runtime path and planner hypothetical path do not move in the same ticket.
 
+Also use it when a ticket consumes `ActionDef.effect_schema` through a registry index, report, or read-model. In that shape, first distinguish registry-time declarations (`EffectSchema.steps` / `EffectStep`) from runtime outcomes (`EffectFact` / `EffectOutcome`); do not assume declaration steps already carry emitted facts.
+
 ## Classify the Effect Step
 
 Before adding an `EffectStep`, decide whether it is genuinely generic or category-owned.

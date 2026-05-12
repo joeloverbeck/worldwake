@@ -51,6 +51,7 @@ pub(super) struct CandidateSearchContext<'a> {
     pub(super) blocked: &'a BlockerMemory,
     pub(super) current_tick: Tick,
     pub(super) relevant_defs: &'a BTreeSet<ActionDefId>,
+    pub(super) candidate_source: crate::decision_trace::CandidateSource,
 }
 
 #[derive(Clone, Copy)]
@@ -141,6 +142,7 @@ pub(super) fn root_candidate_trace_from_candidate(
     registry: &ActionDefRegistry,
     semantics_table: &BTreeMap<ActionDefId, PlannerOpSemantics>,
     omitted_anchor: Option<OmissionReason>,
+    source: crate::decision_trace::CandidateSource,
 ) -> crate::decision_trace::RootCandidateTrace {
     crate::decision_trace::RootCandidateTrace {
         def_id: candidate.def_id,
@@ -155,6 +157,7 @@ pub(super) fn root_candidate_trace_from_candidate(
         payload_status: root_candidate_payload_status(candidate.payload_override.as_ref(), None),
         outcome: crate::decision_trace::RootCandidateOutcome::Expanded,
         omitted_anchor,
+        source,
     }
 }
 
@@ -216,6 +219,7 @@ pub(super) fn search_candidates_with_expansion_trace(
         blocked,
         current_tick,
         relevant_defs,
+        candidate_source,
     } = context;
     let epistemic_subjects = grounded_goal_epistemic_subjects(goal, &node.state);
     let mut affordance_defs = relevant_defs.clone();
@@ -328,6 +332,7 @@ pub(super) fn search_candidates_with_expansion_trace(
                 registry,
                 semantics_table,
                 omitted_anchor,
+                candidate_source,
             ),
         );
 
@@ -1282,5 +1287,72 @@ pub(super) fn candidate_action_place(
             .effective_place_ref(PlanningEntityRef::Authoritative(
                 node.state.snapshot().actor(),
             )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_candidate_trace_from_candidate_defaults_to_emitter_source() {
+        let candidate = SearchCandidate {
+            def_id: ActionDefId(0),
+            authoritative_targets: vec![EntityId {
+                slot: 7,
+                generation: 0,
+            }],
+            planning_targets: Vec::new(),
+            payload_override: None,
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        };
+        let registry = ActionDefRegistry::new();
+        let semantics_table = BTreeMap::new();
+
+        let trace = root_candidate_trace_from_candidate(
+            &candidate,
+            &registry,
+            &semantics_table,
+            None,
+            crate::decision_trace::CandidateSource::Emitter,
+        );
+
+        assert_eq!(
+            trace.source,
+            crate::decision_trace::CandidateSource::Emitter
+        );
+    }
+
+    #[test]
+    fn root_candidate_trace_preserves_opportunity_compiler_source() {
+        let candidate = SearchCandidate {
+            def_id: ActionDefId(0),
+            authoritative_targets: vec![EntityId {
+                slot: 7,
+                generation: 0,
+            }],
+            planning_targets: Vec::new(),
+            payload_override: None,
+            planner_only: false,
+            trace_index: None,
+            expansion_trace_index: None,
+        };
+        let registry = ActionDefRegistry::new();
+        let semantics_table = BTreeMap::new();
+
+        let trace = root_candidate_trace_from_candidate(
+            &candidate,
+            &registry,
+            &semantics_table,
+            None,
+            crate::decision_trace::CandidateSource::OpportunityCompiler,
+        );
+
+        assert_eq!(
+            trace.source,
+            crate::decision_trace::CandidateSource::OpportunityCompiler
+        );
     }
 }

@@ -226,6 +226,7 @@ fn golden_perception_omission_need_weighted_priority() {
         PerceptionProfile {
             observation_budget: 12,
             omission_log_capacity: 64,
+            opportunity_floor_permille: worldwake_core::default_opportunity_floor_permille(),
             need_salience_boost: pm(500),
             need_salience_urgency_threshold: pm(500),
             observation_fidelity: pm(1000),

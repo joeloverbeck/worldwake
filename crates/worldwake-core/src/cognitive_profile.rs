@@ -103,6 +103,12 @@ pub struct CognitiveProfile {
     /// Maximum number of rejected alternatives recorded in decision history events.
     #[serde(default = "default_decision_history_alternatives")]
     pub decision_history_alternatives: u8,
+    /// Salience budget that allows opportunity-aware travel detours.
+    #[serde(default = "default_detour_budget_permille")]
+    pub detour_budget_permille: Permille,
+    /// Soft cap on compiled opportunities retained per decision cycle.
+    #[serde(default = "default_compile_opportunity_cap")]
+    pub compile_opportunity_cap: u16,
     /// Relative slot weights for portfolio candidate ordering.
     #[serde(default)]
     pub slot_weights: PortfolioSlotWeights,
@@ -141,6 +147,8 @@ impl Default for CognitiveProfile {
             landmark_extraction_depth: 4,
             use_ff_heuristic: default_use_ff_heuristic(),
             decision_history_alternatives: default_decision_history_alternatives(),
+            detour_budget_permille: default_detour_budget_permille(),
+            compile_opportunity_cap: default_compile_opportunity_cap(),
             slot_weights: PortfolioSlotWeights::default(),
         }
     }
@@ -158,6 +166,14 @@ const fn default_use_ff_heuristic() -> bool {
 
 const fn default_decision_history_alternatives() -> u8 {
     5
+}
+
+const fn default_detour_budget_permille() -> Permille {
+    Permille::new_unchecked(150)
+}
+
+const fn default_compile_opportunity_cap() -> u16 {
+    16
 }
 
 const fn default_stale_belief_backoff_ticks() -> u32 {
@@ -282,6 +298,11 @@ mod tests {
         assert_eq!(profile.landmark_extraction_depth, 4);
         assert!(profile.use_ff_heuristic);
         assert_eq!(profile.decision_history_alternatives, 5);
+        assert_eq!(
+            profile.detour_budget_permille,
+            crate::Permille::new(150).unwrap()
+        );
+        assert_eq!(profile.compile_opportunity_cap, 16);
         assert_eq!(profile.slot_weights, PortfolioSlotWeights::default());
     }
 
@@ -318,6 +339,8 @@ mod tests {
             landmark_extraction_depth: 5,
             use_ff_heuristic: false,
             decision_history_alternatives: 8,
+            detour_budget_permille: crate::Permille::new(275).unwrap(),
+            compile_opportunity_cap: 23,
             slot_weights: PortfolioSlotWeights {
                 survival: crate::Permille::new(950).unwrap(),
                 commitment: crate::Permille::new(800).unwrap(),
@@ -371,6 +394,37 @@ mod tests {
         assert_eq!(
             profile.decision_history_alternatives,
             super::default_decision_history_alternatives()
+        );
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_opportunity_fields() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                detour_budget_permille: crate::Permille::new(275).unwrap(),
+                compile_opportunity_cap: 23,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_fields = serialized
+            .lines()
+            .filter(|line| {
+                !line.contains("detour_budget_permille")
+                    && !line.contains("compile_opportunity_cap")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_fields).unwrap();
+
+        assert_eq!(
+            profile.detour_budget_permille,
+            super::default_detour_budget_permille()
+        );
+        assert_eq!(
+            profile.compile_opportunity_cap,
+            super::default_compile_opportunity_cap()
         );
     }
 

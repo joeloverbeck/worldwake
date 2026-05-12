@@ -23,6 +23,7 @@ If the falsified hypothesis was the ticket's core implementability claim rather 
 **Goal and candidate pipeline:**
 - When the ticket claims a goal family should become behaviorally selectable, check the full AI admission path: candidate generation, goal-policy suppression, ranking, selection.
 - When a ticket audits threshold alignment between candidate emission and goal satisfaction, also inspect the matching hypothetical planner transition. Record whether one step or repeated steps clear the relevant band.
+- When a planner, ranking, interrupt, or goal-switch ticket names `switch_margin`, `frame_switch_margin`, motive-score deltas, or `Permille` examples, inspect the live comparison helper before writing tests or closeout prose. Do not infer absolute score deltas from `Permille(100)`-style prose; bind examples to the helper's actual relative/absolute arithmetic.
 - When an existing operator becomes newly goal-satisfying for an additional goal family, compare operator legality across every live goal family that consumes that operator.
 - When making a payload-override action live through the AI pipeline, compare planner-step revalidation against runtime request resolution.
 
@@ -46,6 +47,8 @@ If the falsified hypothesis was the ticket's core implementability claim rather 
 ## Planner traceability and search filters
 
 When a planner/search change introduces a new pre-successor candidate filter, pruning mode, or other search-loop omission path, explicitly sweep the planner-owned traceability surfaces for that new boundary: candidate/root outcome enums, filter reasons, expansion summaries, and any existing omission/provenance structures that should explain the filtered branch. Do not leave the new planner filter behavior invisible in decision-trace inventories when the trace surface already claims to explain candidate loss.
+
+When a planner/search filter consumes a per-tick derived read-model or index, trace the whole handoff before patching: the read-phase constructor, the production planning call, any test-only or public wrappers that need neutral defaults, the search/heuristic consumer, and the trace surface that should explain retained or pruned candidates. Treat wrappers that default to empty/neutral data as acceptable only when they delegate to the canonical implementation and do not create a second lawful behavior path.
 
 ## Profile/component absent negative cases
 

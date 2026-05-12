@@ -1,3 +1,4 @@
+use crate::opportunity_compiler::Opportunity;
 use crate::{
     ExpectationFailureCause, ExpectationFailurePhase, GoalOffer,
     OpportunityExpectationFailureIncident, PlannedPlan,
@@ -5,7 +6,7 @@ use crate::{
         ArtifactAxisSnapshot, BanditCandidateOmission, BanditCandidateOmissionReason,
         BanditGoalFamily, CandidateEvidenceContributor, CandidateEvidenceExclusion,
         CandidateEvidenceExclusionReason, CandidateEvidenceKind, CandidateEvidenceTrace,
-        CandidateLegalityTrace, DesireFullyBlocked, PoliticalCandidateOmission,
+        CandidateLegalityTrace, CandidateSource, DesireFullyBlocked, PoliticalCandidateOmission,
         PoliticalCandidateOmissionReason, PoliticalGoalFamily, PursuitDiagnostic,
         PursuitOmissionReason, SocialCandidateOmission, ViolationDetectionOmission,
         ViolationDetectionOmissionReason,
@@ -163,6 +164,7 @@ struct GenerationContext<'a> {
     current_tick: Tick,
     tracing_enabled: bool,
     current_plan: Option<&'a PlannedPlan>,
+    opportunities: &'a [Opportunity],
 }
 
 #[derive(Default)]
@@ -174,6 +176,7 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_social: Vec<SocialCandidateOmission>,
     pub omitted_violation_detection: Vec<ViolationDetectionOmission>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
+    pub sources: BTreeMap<OpportunityKey, CandidateSource>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
     pub places_reachable: u32,
     pub places_after_belief_filter: u32,
@@ -294,6 +297,7 @@ pub(crate) fn generate_candidates_with_travel_horizon(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_horizon(
     view: &dyn GoalBeliefView,
     agent: EntityId,
@@ -306,6 +310,35 @@ pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_ho
     tracing_enabled: bool,
     current_plan: Option<&PlannedPlan>,
 ) -> CandidateGenerationResult {
+    generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities(
+        view,
+        agent,
+        blocked,
+        discrepancies,
+        violation_memory,
+        recipes,
+        current_tick,
+        travel_horizon,
+        tracing_enabled,
+        current_plan,
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_horizon_and_opportunities(
+    view: &dyn GoalBeliefView,
+    agent: EntityId,
+    blocked: &BlockerMemory,
+    discrepancies: &DiscrepancyMemory,
+    violation_memory: &ViolationMemory,
+    recipes: &RecipeRegistry,
+    current_tick: Tick,
+    travel_horizon: u8,
+    tracing_enabled: bool,
+    current_plan: Option<&PlannedPlan>,
+    opportunities: &[Opportunity],
+) -> CandidateGenerationResult {
     generate_candidates_with_memories_with_travel_horizon_impl(
         view,
         agent,
@@ -317,6 +350,7 @@ pub(crate) fn generate_candidates_with_current_plan_with_memories_with_travel_ho
         travel_horizon,
         tracing_enabled,
         current_plan,
+        opportunities,
     )
 }
 
@@ -343,6 +377,7 @@ pub(crate) fn generate_candidates_with_memories_with_travel_horizon(
         travel_horizon,
         tracing_enabled,
         None,
+        &[],
     )
 }
 
@@ -358,6 +393,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     travel_horizon: u8,
     tracing_enabled: bool,
     current_plan: Option<&PlannedPlan>,
+    opportunities: &[Opportunity],
 ) -> CandidateGenerationResult {
     if view.is_dead(agent) || !view.is_alive(agent) {
         return CandidateGenerationResult {
@@ -390,6 +426,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         current_tick,
         tracing_enabled,
         current_plan,
+        opportunities,
     };
 
     emit_need_candidates(&mut candidates, &mut diagnostics, &ctx, needs, thresholds);
@@ -422,6 +459,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     emit_proactive_exploration_candidates(&mut candidates, &mut diagnostics, &ctx, needs);
     let (pending_violations, pending_source_reliability_failures) =
         emit_expectation_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_opportunity_compiler_candidates(&mut candidates, &mut diagnostics, &ctx);
 
     let mut candidates = filter_suppressed_candidates(
         candidates,
@@ -450,6 +488,8 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     diagnostics
         .suppressed
         .extend(fallback_diagnostics.suppressed);
+    diagnostics.sources.extend(fallback_diagnostics.sources);
+    remove_redundant_opportunity_compiler_candidates(&mut candidates, &mut diagnostics);
 
     CandidateGenerationResult {
         candidates,
@@ -459,6 +499,114 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
         pending_source_reliability_failures,
         pending_acquisition_exhaustion_resets,
     }
+}
+
+fn emit_opportunity_compiler_candidates(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    for opportunity in ctx.opportunities {
+        let goal_kind = opportunity.key.goal_key.kind;
+        if !matches!(goal_kind, GoalKind::AcquireCommodity { .. }) {
+            continue;
+        }
+        let mut evidence = Evidence::default();
+        match opportunity.key.anchor {
+            OpportunityAnchor::Entity(entity) => {
+                evidence.entities.insert(entity);
+                if let Some(place) = ctx.view.effective_place(entity) {
+                    evidence.places.insert(place);
+                }
+            }
+            OpportunityAnchor::Place(place) => {
+                evidence.places.insert(place);
+            }
+            OpportunityAnchor::None => {}
+        }
+        if evidence.is_empty() {
+            continue;
+        }
+        if ctx
+            .current_plan
+            .is_some_and(|plan| plan.goal == opportunity.key.goal_key)
+        {
+            continue;
+        }
+        if candidates
+            .iter()
+            .any(|candidate| candidate.key == opportunity.key.goal_key)
+        {
+            continue;
+        }
+        let acquisition_quantity = goal_kind_acquisition_quantity(&goal_kind);
+        diagnostics.offers.push(CandidateOfferDiagnostic {
+            opportunity: opportunity.key,
+            emitter: EmitterTag::HomeostaticNeeds,
+            source_evidence: combined_evidence(
+                EvidenceKindTag::HomeostaticPressure,
+                EvidenceKindTag::PerceptionObservation,
+            ),
+        });
+        diagnostics
+            .sources
+            .insert(opportunity.key, CandidateSource::OpportunityCompiler);
+        candidates.push(GoalOffer {
+            key: opportunity.key.goal_key,
+            anchor: opportunity.key.anchor,
+            evidence_entities: evidence.entities,
+            evidence_places: evidence.places,
+            obligation_source: None,
+            commitment_impact_if_ignored: opportunity.salience,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            acquisition_quantity,
+        });
+    }
+}
+
+fn remove_redundant_opportunity_compiler_candidates(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+) {
+    let emitter_goals: BTreeSet<GoalKey> = candidates
+        .iter()
+        .filter_map(|candidate| {
+            let opportunity = OpportunityKey {
+                goal_key: candidate.key,
+                anchor: candidate.anchor,
+            };
+            (!matches!(
+                diagnostics.sources.get(&opportunity),
+                Some(CandidateSource::OpportunityCompiler)
+            ))
+            .then_some(candidate.key)
+        })
+        .collect();
+    let removed_opportunities: BTreeSet<OpportunityKey> = diagnostics
+        .sources
+        .iter()
+        .filter_map(|(opportunity, source)| {
+            (emitter_goals.contains(&opportunity.goal_key)
+                && matches!(source, CandidateSource::OpportunityCompiler))
+            .then_some(*opportunity)
+        })
+        .collect();
+
+    candidates.retain(|candidate| {
+        let opportunity = OpportunityKey {
+            goal_key: candidate.key,
+            anchor: candidate.anchor,
+        };
+        !removed_opportunities.contains(&opportunity)
+    });
+    diagnostics
+        .sources
+        .retain(|opportunity, _source| !removed_opportunities.contains(opportunity));
+    diagnostics
+        .offers
+        .retain(|offer| !removed_opportunities.contains(&offer.opportunity));
 }
 
 fn utility_profile_for_goal_generation(ctx: &GenerationContext<'_>) -> UtilityProfile {
@@ -553,7 +701,7 @@ fn find_matching_suppression(
     if discrepancies.entries.values().any(|entry| {
         entry.expires_tick > current_tick
             && entry.blocker_key.goal_key == candidate.key
-            && candidate_matches_blocker(candidate, &entry.blocker_key)
+            && candidate_matches_blocker(candidate, &entry.blocker_key, None)
     }) {
         return Some(SuppressionMatch::Discrepancy);
     }
@@ -562,7 +710,11 @@ fn find_matching_suppression(
         let matches = intent.blocker_key.goal_key == candidate.key
             && intent.expires_tick > current_tick
             && intent.blocks_goal_generation()
-            && candidate_matches_blocker(candidate, &intent.blocker_key);
+            && candidate_matches_blocker(
+                candidate,
+                &intent.blocker_key,
+                Some(intent.blocking_fact),
+            );
         matches.then_some(SuppressionMatch::Blocker(Box::new(
             crate::decision_trace::BlockerMatchDetail {
                 blocker_key: intent.blocker_key,
@@ -593,9 +745,24 @@ fn goal_is_suppressed(
         )
 }
 
-fn candidate_matches_blocker(candidate: &GoalOffer, blocker: &worldwake_core::BlockerKey) -> bool {
+fn candidate_matches_blocker(
+    candidate: &GoalOffer,
+    blocker: &worldwake_core::BlockerKey,
+    blocking_fact: Option<worldwake_core::BlockingFact>,
+) -> bool {
     if blocker.place.is_none() && blocker.target.is_none() && blocker.action_def.is_none() {
         return true;
+    }
+
+    if blocker.action_def.is_some()
+        && blocker.target.is_none()
+        && matches!(candidate.key.kind, GoalKind::AcquireCommodity { .. })
+        && matches!(
+            blocking_fact,
+            Some(worldwake_core::BlockingFact::TargetGone)
+        )
+    {
+        return false;
     }
 
     if let Some(place) = blocker.place {
@@ -603,6 +770,11 @@ fn candidate_matches_blocker(candidate: &GoalOffer, blocker: &worldwake_core::Bl
             matches!(candidate.anchor, OpportunityAnchor::Place(anchor) if anchor == place);
         if !anchor_matches && !candidate.evidence_places.contains(&place) {
             return false;
+        }
+        if blocker.action_def.is_some()
+            && !matches!(candidate.key.kind, GoalKind::AcquireCommodity { .. })
+        {
+            return true;
         }
     }
 
@@ -2862,12 +3034,6 @@ fn emit_exploration_candidates(
     needs: Option<HomeostaticNeeds>,
     pending_acquisition_exhaustion_resets: &mut BTreeSet<HomeostaticNeedId>,
 ) {
-    if candidates
-        .iter()
-        .any(|candidate| !goal_is_self_care_fallback(candidate.key.kind))
-    {
-        return;
-    }
     let Some(needs) = needs else {
         return;
     };
@@ -4632,6 +4798,13 @@ fn emit_candidate(
         emitter,
         source_evidence,
     });
+    diagnostics.sources.insert(
+        OpportunityKey {
+            goal_key: key,
+            anchor,
+        },
+        CandidateSource::Emitter,
+    );
     candidates.push(GoalOffer {
         key,
         anchor,
@@ -5241,6 +5414,9 @@ fn emit_candidate_with_trace(
         emitter,
         source_evidence,
     });
+    diagnostics
+        .sources
+        .insert(opportunity, CandidateSource::Emitter);
     candidates.push(GoalOffer {
         key,
         anchor,
@@ -6328,10 +6504,7 @@ fn local_owned_commodity_evidence(
         if view.item_lot_commodity(entity) != Some(commodity) || !view.can_control(agent, entity) {
             continue;
         }
-        let directly_possessed = view.direct_possessor(entity) == Some(agent);
-        let loose_local_owned = view.direct_container(entity).is_none()
-            && view.believed_owner_of(entity) == Some(agent);
-        if !directly_possessed && !loose_local_owned {
+        if view.direct_possessor(entity) != Some(agent) {
             continue;
         }
         evidence.entities.insert(entity);
@@ -7646,6 +7819,7 @@ mod tests {
             current_tick: view.current_tick,
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         }
     }
 
@@ -9073,6 +9247,7 @@ mod tests {
         );
         view.controllable.insert((agent, water_lot));
         view.believed_owners.insert(water_lot, agent);
+        view.direct_possessors.insert(water_lot, agent);
 
         let candidates = generate_candidates(
             &view,
@@ -9604,6 +9779,175 @@ mod tests {
         assert_eq!(
             acquire_goals[0].anchor,
             worldwake_core::OpportunityAnchor::Place(market)
+        );
+    }
+
+    #[test]
+    fn action_specific_place_blocker_without_target_does_not_suppress_whole_acquisition_place() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let seller = entity(2);
+        let key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, orchard);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(orchard),
+                target: None,
+                action_def: Some(worldwake_core::ActionDefId(9)),
+            },
+            blocking_fact: BlockingFact::TargetGone,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+
+        let acquire_goals = goals_for(
+            &candidates,
+            &GoalKind::AcquireCommodity {
+                commodity: CommodityKind::Bread,
+                purpose: CommodityPurpose::SelfConsume,
+                quantity: AcquisitionQuantity::single(),
+            },
+        );
+        assert_eq!(acquire_goals.len(), 1);
+        assert_eq!(
+            acquire_goals[0].anchor,
+            worldwake_core::OpportunityAnchor::Place(orchard)
+        );
+    }
+
+    #[test]
+    fn reservation_conflict_place_blocker_suppresses_matching_acquisition_place() {
+        let agent = entity(1);
+        let home = entity(10);
+        let orchard = entity(11);
+        let seller = entity(2);
+        let key = GoalKey::from(GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        });
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, seller]);
+        view.effective_places.insert(agent, home);
+        view.effective_places.insert(seller, orchard);
+        view.homeostatic_needs.insert(agent, hunger(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+        view.adjacent_places.insert(home, vec![orchard]);
+        view.adjacent_places.insert(orchard, vec![home]);
+        view.register_seller(orchard, CommodityKind::Bread, seller);
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(orchard),
+                target: None,
+                action_def: Some(worldwake_core::ActionDefId(9)),
+            },
+            blocking_fact: BlockingFact::ReservationConflict {
+                affordance: worldwake_core::AffordanceKey {
+                    facility: orchard,
+                    action: worldwake_core::ActionDefId(9),
+                },
+                contention_event: None,
+            },
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+
+        assert!(
+            goals_for(
+                &candidates,
+                &GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                },
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn action_specific_place_blocker_with_support_target_suppresses_matching_sleep_candidate() {
+        let agent = entity(1);
+        let camp = entity(10);
+        let witness = entity(2);
+        let key = GoalKey::from(GoalKind::Sleep);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([agent, witness]);
+        view.effective_places.insert(agent, camp);
+        view.effective_places.insert(witness, camp);
+        view.homeostatic_needs.insert(agent, fatigue(1000));
+        view.drive_thresholds
+            .insert(agent, DriveThresholds::default());
+
+        let unblocked = generate_candidates(
+            &view,
+            agent,
+            &BlockerMemory::default(),
+            &RecipeRegistry::new(),
+            Tick(5),
+        );
+        assert!(
+            unblocked
+                .iter()
+                .any(|candidate| candidate.key.kind == GoalKind::Sleep)
+        );
+
+        let mut blocked = BlockerMemory::default();
+        blocked.record(Blocker {
+            blocker_key: BlockerKey {
+                goal_key: key,
+                place: Some(camp),
+                target: Some(witness),
+                action_def: Some(worldwake_core::ActionDefId(9)),
+            },
+            blocking_fact: BlockingFact::TargetGone,
+            diagnostic_context: None,
+            observed_tick: Tick(1),
+            expires_tick: Tick(10),
+            clearing_condition: worldwake_core::BlockerClearingCondition::TtlOnly,
+            baseline_snapshot: None,
+        });
+
+        let candidates =
+            generate_candidates(&view, agent, &blocked, &RecipeRegistry::new(), Tick(5));
+
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| candidate.key.kind != GoalKind::Sleep)
         );
     }
 
@@ -10395,6 +10739,7 @@ mod tests {
             current_tick: Tick(0),
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         };
 
         assert!(!super::relief_path_actionable(
@@ -11949,6 +12294,7 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         };
         let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -12434,6 +12780,7 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         };
         let mut candidates = Vec::new();
         let mut diagnostics = CandidateGenerationDiagnostics::default();
@@ -18135,6 +18482,7 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
             current_plan: Some(&current_plan),
+            opportunities: &[],
         };
 
         let (_pending, incidents) = emit_expectation_violation_candidates(
@@ -18224,6 +18572,7 @@ mod tests {
             current_tick: Tick(5),
             tracing_enabled: false,
             current_plan: Some(&current_plan),
+            opportunities: &[],
         };
 
         let (_pending, incidents) = emit_expectation_violation_candidates(
@@ -19865,6 +20214,7 @@ mod tests {
             current_tick: Tick(500),
             tracing_enabled: false,
             current_plan: None,
+            opportunities: &[],
         };
 
         assert_eq!(

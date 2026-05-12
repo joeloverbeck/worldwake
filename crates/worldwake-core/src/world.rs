@@ -12,15 +12,15 @@ use crate::{
     EpistemicDispositionProfile, EventId, ExecutionBudget, ExpectationStore, ExplorationProfile,
     FactionData, GroundSince, HomeostaticNeeds, InTransitOnEdge, IntentionDispositionProfile,
     IntentionFrame, ItemLot, JusticeDispositionProfile, KnownRecipes, LastHarvestTrace,
-    LastProactiveExplorationTick, LastSeenMemory, LearnedOpportunityMemory, LoadUnits,
-    LotOperation, MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, Name,
+    LastProactiveExplorationTick, LastSeenMemory, LawAbidingProfile, LearnedOpportunityMemory,
+    LoadUnits, LotOperation, MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, Name,
     NoticeContent, ObligationExecutionTracker, ObligationSatiationProfile, OfficeData,
     OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile,
     PlaceDirtiness, PlaceTag, PlaceTagSet, PlaceVisibilityProfile, PreferenceProfile,
     ProductionJob, ProductionOutputOwnershipPolicy, ProvenanceEntry, PursuitProfile, Quantity,
     RecordData, RelationTables, RepairMemory, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RouteExperience, SaleListing, SceneEvidence, SleepEpisode,
-    SleepQualityProfile, SourceReliability, StockAssignment, StockStoragePolicy,
+    RewardEncumbrance, RiskWeightProfile, RouteExperience, SaleListing, SceneEvidence,
+    SleepEpisode, SleepQualityProfile, SourceReliability, StockAssignment, StockStoragePolicy,
     SubstitutePreferences, SurveyMemory, TellProfile, TheftDispositionProfile, Tick, Topology,
     TradeDispositionProfile, UniqueItem, UniqueItemKind, UtilityProfile,
     ViolationDispositionProfile, ViolationMemory, WashBasinState, WorkstationMarker, WorldError,
@@ -223,6 +223,8 @@ impl World {
             world
                 .insert_component_communication_profile(entity, CommunicationProfile::default())?;
             world.insert_component_preference_profile(entity, PreferenceProfile::default())?;
+            world.insert_component_risk_weight_profile(entity, RiskWeightProfile::default())?;
+            world.insert_component_law_abiding_profile(entity, LawAbidingProfile::default())?;
             world.insert_component_drive_escalation_profile(
                 entity,
                 DriveEscalationProfile::default(),
@@ -672,15 +674,16 @@ mod tests {
         DemandMemory, DeprivationExposure, DeprivationKind, DisposalProfile, DriveThresholds,
         EffectiveRight, EntityId, EntityKind, EpistemicDispositionProfile, EventId, FactionData,
         FactionPurpose, GroundSince, HomeostaticNeeds, InTransitOnEdge, InstitutionalClaim,
-        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes, LoadUnits,
-        LotOperation, MerchandiseProfile, MetabolismProfile, Name, OfficeData, OfficeForceProfile,
-        OfficeForceState, PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource,
-        Permille, Place, PlaceTag, PlaceVisitRecord, ProductionJob, ProvenanceEntry,
-        PursuitProfile, Quantity, RecordData, RecordEntryId, RecordKind, ReservationId,
-        ReservationRecord, ResourceSource, RightKind, SubstitutePreferences, SuccessionLaw,
-        SurveyMemory, TellProfile, TheftDispositionProfile, Tick, TickRange, Topology,
-        TradeDispositionProfile, TravelEdgeId, UniqueItem, UniqueItemKind, WorkstationMarker,
-        WorkstationTag, WorldError, Wound, WoundCause, WoundList, build_prototype_world,
+        InstitutionalRecordEntry, ItemLot, JusticeDispositionProfile, KnownRecipes,
+        LawAbidingProfile, LoadUnits, LotOperation, MerchandiseProfile, MetabolismProfile, Name,
+        OfficeData, OfficeForceProfile, OfficeForceState, PatrolProfile, PatrolRoute,
+        PerceptionProfile, PerceptionSource, Permille, Place, PlaceTag, PlaceVisitRecord,
+        ProductionJob, ProvenanceEntry, PursuitProfile, Quantity, RecordData, RecordEntryId,
+        RecordKind, ReservationId, ReservationRecord, ResourceSource, RightKind, RiskWeightProfile,
+        SubstitutePreferences, SuccessionLaw, SurveyMemory, TellProfile, TheftDispositionProfile,
+        Tick, TickRange, Topology, TradeDispositionProfile, TravelEdgeId, UniqueItem,
+        UniqueItemKind, WorkstationMarker, WorkstationTag, WorldError, Wound, WoundCause,
+        WoundList, build_prototype_world,
         test_utils::{
             sample_blocker_memory, sample_demand_memory, sample_merchandise_profile,
             sample_substitute_preferences, sample_trade_disposition_profile,
@@ -820,6 +823,7 @@ mod tests {
             observation_budget: 24,
             salience_policy: crate::SaliencePolicy::default(),
             omission_log_capacity: crate::default_omission_log_capacity(),
+            opportunity_floor_permille: Permille::new(100).unwrap(),
             need_salience_boost: Permille::new(500).unwrap(),
             need_salience_urgency_threshold: Permille::new(500).unwrap(),
         }
@@ -1305,6 +1309,14 @@ mod tests {
                 .entities_with_name_and_agent_data()
                 .collect::<Vec<_>>(),
             vec![id]
+        );
+        assert_eq!(
+            world.get_component_risk_weight_profile(id),
+            Some(&RiskWeightProfile::default())
+        );
+        assert_eq!(
+            world.get_component_law_abiding_profile(id),
+            Some(&LawAbidingProfile::default())
         );
     }
 

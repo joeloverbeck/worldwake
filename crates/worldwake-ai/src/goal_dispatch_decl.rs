@@ -4,6 +4,7 @@ use crate::goal_policy::{
 };
 use crate::interrupts::InterruptTrigger;
 use crate::{PlannerOpKind, RankedGoalProvenanceFamily, goal_dispatch_key::GoalDispatchKey};
+use serde::{Deserialize, Serialize};
 use worldwake_core::HomeostaticNeedId;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -51,6 +52,12 @@ pub enum FrontierExhaustionStrategy {
     CooldownRetry,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum Authority {
+    Gate,
+    HintOnly,
+}
+
 pub struct GoalDispatchDeclaration {
     pub trace_label: &'static str,
     pub provenance_family: Option<RankedGoalProvenanceFamily>,
@@ -64,6 +71,12 @@ pub struct GoalDispatchDeclaration {
     /// `ConsumeOwnedCommodity`/`MoveCargo` (special case), or `is_materialization_barrier`
     /// (step-property check) — those remain in `is_progress_barrier()`.
     pub progress_barrier_ops: &'static [PlannerOpKind],
+}
+
+impl GoalDispatchDeclaration {
+    pub fn relevant_ops_authority(&self) -> Authority {
+        Authority::HintOnly
+    }
 }
 
 const CONSUME_OPS: &[PlannerOpKind] = &[
@@ -713,7 +726,7 @@ impl GoalDispatchKey {
 #[cfg(test)]
 mod tests {
     use super::{
-        FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchDeclaration,
+        Authority, FeasibilityStrategy, FrontierExhaustionStrategy, GoalDispatchDeclaration,
         InvalidationStrategy, SELF_CARE_POLICY,
     };
     use crate::goal_policy::SuppressionRule;
@@ -975,6 +988,17 @@ mod tests {
                 key.declaration().relevant_ops,
                 goal.relevant_op_kinds(),
                 "relevant_ops mismatch for {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_relevant_ops_authority_is_hint_only_at_landing() {
+        for key in ALL_KEYS {
+            assert_eq!(
+                key.declaration().relevant_ops_authority(),
+                Authority::HintOnly,
+                "relevant_ops authority mismatch for {key:?}"
             );
         }
     }

@@ -27,9 +27,11 @@ use observation::{
     emit_expectation_mismatch, reconcile_in_flight_state,
     refresh_runtime_for_read_phase_with_memories, update_runtime_observation_snapshot,
 };
+#[cfg(test)]
+use planning::plan_and_validate_next_step_traced;
 use planning::{
-    build_candidate_plans, plan_and_validate_next_step_traced, summarize_ranked_goal,
-    summarize_step,
+    build_candidate_plans, plan_and_validate_next_step_traced_with_opportunity_index,
+    summarize_ranked_goal, summarize_step,
 };
 
 use crate::decision_trace::{
@@ -45,6 +47,7 @@ use crate::{
     OpportunityExpectationFailureIncident, PlannerOpSemantics,
     agenda_manager::goal_post_conditions_already_satisfied,
     authoritative_target, build_semantics_table,
+    effect_schema_index::EffectSchemaIndex,
     failure_handling::{classify_discrepancy, record_failure_classification},
     frame_runtime_snapshot,
     plan_step_expectations::{expire_plan_step_expectations, persist_expectation_store_update},
@@ -78,6 +81,8 @@ use worldwake_sim::{
 pub struct AgentTickDriver {
     runtime_by_agent: BTreeMap<EntityId, AgentDecisionRuntime>,
     semantics_cache: Option<(usize, BTreeMap<ActionDefId, PlannerOpSemantics>)>,
+    effect_schema_index: EffectSchemaIndex,
+    effect_schema_index_action_count: Option<usize>,
     /// Optional trace collector. When `Some`, decision traces are recorded.
     trace_sink: Option<DecisionTraceSink>,
 }
@@ -444,8 +449,17 @@ impl AgentTickDriver {
         Self {
             runtime_by_agent: BTreeMap::new(),
             semantics_cache: None,
+            effect_schema_index: EffectSchemaIndex::empty(),
+            effect_schema_index_action_count: None,
             trace_sink: None,
         }
+    }
+
+    #[must_use]
+    pub fn new_with_action_defs(action_defs: &worldwake_sim::ActionDefRegistry) -> Self {
+        let mut driver = Self::new();
+        driver.initialize_effect_schema_index(action_defs);
+        driver
     }
 
     pub fn from_saved_runtime(
@@ -467,6 +481,11 @@ impl AgentTickDriver {
     #[must_use]
     pub fn trace_sink(&self) -> Option<&DecisionTraceSink> {
         self.trace_sink.as_ref()
+    }
+
+    #[must_use]
+    pub fn effect_schema_index(&self) -> &EffectSchemaIndex {
+        &self.effect_schema_index
     }
 
     /// Read-only access to persisted per-agent runtime state for diagnostic
@@ -507,6 +526,14 @@ impl AgentTickDriver {
             .1
     }
 
+    fn initialize_effect_schema_index(&mut self, action_defs: &worldwake_sim::ActionDefRegistry) {
+        if self.effect_schema_index_action_count.is_some() {
+            return;
+        }
+        self.effect_schema_index = EffectSchemaIndex::build(action_defs);
+        self.effect_schema_index_action_count = Some(action_defs.len());
+    }
+
     #[must_use]
     pub fn frame_snapshot(
         &self,
@@ -535,6 +562,8 @@ impl AgentTickDriver {
         // No post-load fixups needed — the deserialized state is identical
         // to the pre-save state, preserving replay determinism.
         self.semantics_cache = None;
+        self.effect_schema_index = EffectSchemaIndex::empty();
+        self.effect_schema_index_action_count = None;
     }
 
     fn restore_runtime_state(&mut self, bytes: &[u8]) -> Result<(), SaveError> {
@@ -542,6 +571,8 @@ impl AgentTickDriver {
             .map_err(|error| SaveError::RuntimeDeserialization(error.to_string()))?;
         self.runtime_by_agent = state.runtime_by_agent;
         self.semantics_cache = None;
+        self.effect_schema_index = EffectSchemaIndex::empty();
+        self.effect_schema_index_action_count = None;
         self.trace_sink = None;
         Ok(())
     }
@@ -601,6 +632,7 @@ pub(super) struct AgentTickContext<'a> {
     pub(super) action_handlers: &'a ActionHandlerRegistry,
     pub(super) recipe_registry: &'a RecipeRegistry,
     pub(super) semantics_table: &'a BTreeMap<ActionDefId, PlannerOpSemantics>,
+    pub(super) effect_schema_index: &'a EffectSchemaIndex,
     pub(super) cognitive: &'a CognitiveProfile,
     pub(super) execution_budget: &'a ExecutionBudget,
     pub(super) tick: Tick,
@@ -1122,6 +1154,7 @@ impl AutonomousController for AgentTickDriver {
         // Ensure semantics cache is populated, then split-borrow fields to
         // avoid cloning the entire BTreeMap on every agent tick.
         let _ = self.semantics_table(ctx.action_defs);
+        self.initialize_effect_schema_index(ctx.action_defs);
         let semantics_table = &self.semantics_cache.as_ref().unwrap().1;
         let tracing = self.trace_sink.is_some();
         let cognitive = ctx
@@ -1144,6 +1177,7 @@ impl AutonomousController for AgentTickDriver {
                 action_handlers: ctx.action_handlers,
                 recipe_registry: ctx.recipe_registry,
                 semantics_table,
+                effect_schema_index: &self.effect_schema_index,
                 cognitive: &cognitive,
                 execution_budget: &execution_budget,
                 tick: ctx.tick,
@@ -1174,6 +1208,7 @@ fn process_agent(
     let action_handlers = ctx.action_handlers;
     let recipe_registry = ctx.recipe_registry;
     let semantics_table = ctx.semantics_table;
+    let effect_schema_index = ctx.effect_schema_index;
     let cognitive = ctx.cognitive;
     let execution_budget = ctx.execution_budget;
     let tick = ctx.tick;
@@ -1322,6 +1357,8 @@ fn process_agent(
                 agent,
                 tick,
                 outcome: DecisionOutcome::Dead,
+                compiled_opportunities: Vec::new(),
+                opportunity_compiler_load: None,
             }));
         }
     }
@@ -1504,6 +1541,7 @@ fn process_agent(
         &mut violation_memory,
         &repair_memory,
         &learned_opportunity_memory,
+        effect_schema_index,
         agent,
         replan_signals,
         ReadPhaseContext {
@@ -1829,7 +1867,7 @@ fn process_agent(
             selection_trace,
             portfolio_trace,
             pending_tracker_increments,
-        ) = plan_and_validate_next_step_traced(
+        ) = plan_and_validate_next_step_traced_with_opportunity_index(
             ctx.world,
             ctx.event_log,
             ctx.scheduler,
@@ -1853,6 +1891,8 @@ fn process_agent(
             tracing,
             previous_goal,
             ctx.recipe_registry,
+            &read_result.candidate_sources,
+            &read_result.opportunity_index,
         );
         current_active_goal = current_agenda_state.committed.clone();
         if !pending_tracker_increments.is_empty() {
@@ -2308,6 +2348,8 @@ fn process_agent(
         agent,
         tick,
         outcome,
+        compiled_opportunities: read_result.opportunities,
+        opportunity_compiler_load: Some(read_result.opportunity_compiler_load),
     }))
 }
 

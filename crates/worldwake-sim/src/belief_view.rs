@@ -15,16 +15,17 @@ use worldwake_core::{
     DriveThresholds, EffectiveRight, EntityBeliefAspect, EntityBeliefClaim, EntityId, EntityKind,
     ExpectationStore, ExplorationProfile, HomeostaticNeedId, HomeostaticNeeds, InTransitOnEdge,
     InstitutionalBeliefKey, InstitutionalBeliefRead, IntentionDispositionProfile,
-    JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LatrineFullness, LoadUnits,
-    MerchandiseProfile, MetabolismProfile, ObligationExecutionTracker, ObligationSatiationProfile,
-    ObservationOmissionLog, OfficeData, PatrolProfile, PatrolRoute, Permille, PlaceDirtiness,
-    PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
-    RecordData, RecordKind, RecordedViolation, ResourceExtractionQueues, ResourceSource,
-    RewardEncumbrance, RewardSource, RightKind, RouteExperience, SleepQualityProfile,
-    SocialObservation, SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey,
-    TellProfile, TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile,
-    UniqueItemKind, UtilityProfile, ViolationDispositionProfile, WashBasinState, WorkstationTag,
-    Wound, effective_claim_confidence,
+    JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LatrineFullness,
+    LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
+    ObligationExecutionTracker, ObligationSatiationProfile, ObservationOmissionLog, OfficeData,
+    PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceDirtiness, PlaceTag, PlaceTagSet,
+    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
+    RecordedViolation, ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource,
+    RightKind, RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation,
+    SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile,
+    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
+    UtilityProfile, ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound,
+    effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -515,6 +516,18 @@ pub trait GoalBeliefView {
         let _ = agent;
         None
     }
+    fn perception_profile(&self, agent: EntityId) -> Option<PerceptionProfile> {
+        let _ = agent;
+        None
+    }
+    fn risk_weight_profile(&self, agent: EntityId) -> Option<RiskWeightProfile> {
+        let _ = agent;
+        None
+    }
+    fn law_abiding_profile(&self, agent: EntityId) -> Option<LawAbidingProfile> {
+        let _ = agent;
+        None
+    }
     fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy;
     fn observation_fidelity(&self, agent: EntityId) -> Permille {
         let _ = agent;
@@ -845,6 +858,18 @@ pub trait ProfileBeliefView {
         ObligationExecutionTracker::default()
     }
     fn cognitive_profile(&self, agent: EntityId) -> Option<CognitiveProfile> {
+        let _ = agent;
+        None
+    }
+    fn perception_profile(&self, agent: EntityId) -> Option<PerceptionProfile> {
+        let _ = agent;
+        None
+    }
+    fn risk_weight_profile(&self, agent: EntityId) -> Option<RiskWeightProfile> {
+        let _ = agent;
+        None
+    }
+    fn law_abiding_profile(&self, agent: EntityId) -> Option<LawAbidingProfile> {
         let _ = agent;
         None
     }
@@ -1940,6 +1965,27 @@ where
         agent: worldwake_core::EntityId,
     ) -> Option<worldwake_core::CognitiveProfile> {
         ProfileBeliefView::cognitive_profile(self, agent)
+    }
+
+    fn perception_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::PerceptionProfile> {
+        ProfileBeliefView::perception_profile(self, agent)
+    }
+
+    fn risk_weight_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::RiskWeightProfile> {
+        ProfileBeliefView::risk_weight_profile(self, agent)
+    }
+
+    fn law_abiding_profile(
+        &self,
+        agent: worldwake_core::EntityId,
+    ) -> Option<worldwake_core::LawAbidingProfile> {
+        ProfileBeliefView::law_abiding_profile(self, agent)
     }
 
     fn belief_confidence_policy(

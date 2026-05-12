@@ -311,7 +311,8 @@ mod tests {
     };
     use std::collections::BTreeSet;
     use worldwake_core::{
-        AcquisitionQuantity, ActionDefId, CommodityKind, EntityId, GoalKind, Permille, Tick,
+        AcquisitionQuantity, ActionDefId, CommodityKind, EntityId, FrameState, GoalKind,
+        IntentionDomain, IntentionFrame, OpportunityAnchor, Permille, Tick,
     };
     use worldwake_sim::Interruptibility;
 
@@ -323,13 +324,27 @@ mod tests {
     }
 
     fn ranked(kind: GoalKind, priority_class: GoalPriorityClass, motive_score: u32) -> AgendaEntry {
+        ranked_with_anchor(
+            kind,
+            worldwake_core::OpportunityAnchor::None,
+            priority_class,
+            motive_score,
+        )
+    }
+
+    fn ranked_with_anchor(
+        kind: GoalKind,
+        anchor: worldwake_core::OpportunityAnchor,
+        priority_class: GoalPriorityClass,
+        motive_score: u32,
+    ) -> AgendaEntry {
         AgendaEntry {
             key: worldwake_core::OpportunityKey {
                 goal_key: GoalKey::from(kind),
-                anchor: worldwake_core::OpportunityAnchor::None,
+                anchor,
             },
             offer: GoalOffer {
-                anchor: worldwake_core::OpportunityAnchor::None,
+                anchor,
                 key: GoalKey::from(kind),
                 evidence_entities: BTreeSet::new(),
                 evidence_places: BTreeSet::new(),
@@ -395,6 +410,106 @@ mod tests {
             searched_opportunity: opportunity(goal),
             perceived_cost: plan.as_ref().map(|plan| plan.total_estimated_ticks),
             found_plan: plan,
+        }
+    }
+
+    struct OpportunityInterruptFixture {
+        runtime: AgentDecisionRuntime,
+        jc: Option<IntentionFrame>,
+        planned_candidates: Vec<SelectionCandidatePlan>,
+        active_goal: GoalKey,
+        active_kind: GoalKind,
+        opportunity_kind: GoalKind,
+        opportunity_anchor: OpportunityAnchor,
+    }
+
+    fn opportunity_interrupt_fixture(
+        opportunity_anchor_slot: u32,
+        destination_slot: u32,
+    ) -> OpportunityInterruptFixture {
+        let active_kind = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Bread,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        };
+        let active_goal = GoalKey::from(active_kind);
+        let opportunity_kind = GoalKind::AcquireCommodity {
+            commodity: CommodityKind::Apple,
+            purpose: CommodityPurpose::SelfConsume,
+            quantity: AcquisitionQuantity::single(),
+        };
+        let opportunity_goal = GoalKey::from(opportunity_kind);
+        let opportunity_anchor = OpportunityAnchor::Entity(entity(opportunity_anchor_slot));
+        let destination = entity(destination_slot);
+        let jc = Some(IntentionFrame {
+            goal: active_goal,
+            domain: IntentionDomain::Travel { destination },
+            assumptions: Vec::new(),
+            state: FrameState::Active,
+            established_at: Tick(1),
+            last_progress_tick: None,
+            stalled_ticks: 0,
+            patience_limit: 10,
+        });
+        let runtime = AgentDecisionRuntime {
+            current_plan: Some(PlannedPlan::new(
+                opportunity(active_goal),
+                active_goal,
+                vec![crate::PlannedStep {
+                    def_id: ActionDefId(1),
+                    targets: vec![crate::PlanningEntityRef::Authoritative(destination)],
+                    target_place: None,
+                    payload_override: None,
+                    op_kind: crate::PlannerOpKind::Travel,
+                    estimated_ticks: 2,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
+                }],
+                crate::PlanTerminalKind::GoalSatisfied,
+            )),
+            last_priority_class: Some(GoalPriorityClass::High),
+            ..AgentDecisionRuntime::default()
+        };
+        let planned_candidates = vec![SelectionCandidatePlan {
+            searched_opportunity: worldwake_core::OpportunityKey {
+                goal_key: opportunity_goal,
+                anchor: opportunity_anchor,
+            },
+            perceived_cost: Some(1),
+            found_plan: Some(PlannedPlan::new(
+                worldwake_core::OpportunityKey {
+                    goal_key: opportunity_goal,
+                    anchor: opportunity_anchor,
+                },
+                opportunity_goal,
+                vec![crate::PlannedStep {
+                    def_id: ActionDefId(2),
+                    targets: vec![crate::PlanningEntityRef::Authoritative(entity(
+                        opportunity_anchor_slot,
+                    ))],
+                    target_place: None,
+                    payload_override: None,
+                    op_kind: crate::PlannerOpKind::Consume,
+                    estimated_ticks: 1,
+                    is_materialization_barrier: false,
+                    expected_materializations: Vec::new(),
+                    guard: None,
+                    expectations: Vec::new(),
+                }],
+                crate::PlanTerminalKind::GoalSatisfied,
+            )),
+        }];
+
+        OpportunityInterruptFixture {
+            runtime,
+            jc,
+            planned_candidates,
+            active_goal,
+            active_kind,
+            opportunity_kind,
+            opportunity_anchor,
         }
     }
 
@@ -963,6 +1078,118 @@ mod tests {
         assert_eq!(conservative, InterruptDecision::NoInterrupt);
         assert_eq!(
             permissive,
+            InterruptDecision::InterruptForReplan {
+                trigger: InterruptTrigger::SuperiorSameClassPlan,
+            }
+        );
+    }
+
+    #[test]
+    fn opportunity_compiler_candidate_uses_existing_frame_switch_margin() {
+        let fixture = opportunity_interrupt_fixture(77, 40);
+        let below_margin = vec![
+            ranked(fixture.active_kind, GoalPriorityClass::High, 500),
+            ranked_with_anchor(
+                fixture.opportunity_kind,
+                fixture.opportunity_anchor,
+                GoalPriorityClass::High,
+                549,
+            ),
+        ];
+        let at_margin = vec![
+            ranked(fixture.active_kind, GoalPriorityClass::High, 500),
+            ranked_with_anchor(
+                fixture.opportunity_kind,
+                fixture.opportunity_anchor,
+                GoalPriorityClass::High,
+                550,
+            ),
+        ];
+
+        assert_eq!(
+            evaluate_interrupt(
+                &fixture.runtime,
+                Some(fixture.active_goal),
+                fixture.jc.as_ref(),
+                Interruptibility::FreelyInterruptible,
+                &ordered(&below_margin),
+                Some(&fixture.planned_candidates),
+                true,
+                default_switch_margin(),
+                default_switch_margin(),
+                &dummy_context(),
+            ),
+            InterruptDecision::NoInterrupt
+        );
+        assert_eq!(
+            evaluate_interrupt(
+                &fixture.runtime,
+                Some(fixture.active_goal),
+                fixture.jc.as_ref(),
+                Interruptibility::FreelyInterruptible,
+                &ordered(&at_margin),
+                Some(&fixture.planned_candidates),
+                true,
+                default_switch_margin(),
+                default_switch_margin(),
+                &dummy_context(),
+            ),
+            InterruptDecision::InterruptForReplan {
+                trigger: InterruptTrigger::SuperiorSameClassPlan,
+            }
+        );
+    }
+
+    #[test]
+    fn opportunity_rank_score_variation_changes_interrupt_decision_without_new_channel() {
+        let fixture = opportunity_interrupt_fixture(88, 41);
+        let conservative_profile_ranking = vec![
+            ranked(fixture.active_kind, GoalPriorityClass::High, 500),
+            ranked_with_anchor(
+                fixture.opportunity_kind,
+                fixture.opportunity_anchor,
+                GoalPriorityClass::High,
+                510,
+            ),
+        ];
+        let permissive_profile_ranking = vec![
+            ranked(fixture.active_kind, GoalPriorityClass::High, 500),
+            ranked_with_anchor(
+                fixture.opportunity_kind,
+                fixture.opportunity_anchor,
+                GoalPriorityClass::High,
+                800,
+            ),
+        ];
+
+        assert_eq!(
+            evaluate_interrupt(
+                &fixture.runtime,
+                Some(fixture.active_goal),
+                fixture.jc.as_ref(),
+                Interruptibility::FreelyInterruptible,
+                &ordered(&conservative_profile_ranking),
+                Some(&fixture.planned_candidates),
+                true,
+                default_switch_margin(),
+                default_switch_margin(),
+                &dummy_context(),
+            ),
+            InterruptDecision::NoInterrupt
+        );
+        assert_eq!(
+            evaluate_interrupt(
+                &fixture.runtime,
+                Some(fixture.active_goal),
+                fixture.jc.as_ref(),
+                Interruptibility::FreelyInterruptible,
+                &ordered(&permissive_profile_ranking),
+                Some(&fixture.planned_candidates),
+                true,
+                default_switch_margin(),
+                default_switch_margin(),
+                &dummy_context(),
+            ),
             InterruptDecision::InterruptForReplan {
                 trigger: InterruptTrigger::SuperiorSameClassPlan,
             }

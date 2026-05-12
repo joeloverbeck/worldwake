@@ -38,7 +38,7 @@ fn run_observer(relative_scenario_path: &str, ticks: u64) -> String {
 
 fn decision_history_section(report: &str) -> &str {
     let start = report
-        .find("## Section 3 — Decision History")
+        .find("## Section 3b — Decision History")
         .expect("decision history section start");
     let end = report[start..]
         .find("## Section 4 —")

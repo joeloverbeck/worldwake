@@ -7,7 +7,7 @@ Scenarios: 2
 
 ### Scenario 137: Resource Extraction Grant Writes Wait Memory
 
-- Source: `golden_source_reliability.rs:101`
+- Source: `golden_source_reliability.rs:102`
 - Systems: AI, Production, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production
@@ -25,7 +25,7 @@ Scenarios: 2
 
 ### Scenario 138: Perception Writes Capacity Memory
 
-- Source: `golden_source_reliability.rs:188`
+- Source: `golden_source_reliability.rs:189`
 - Systems: Perception, SourceReliability
 - GoalKinds: AcquireCommodity(SelfConsume)
 - ActionDomains: Production

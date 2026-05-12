@@ -12,8 +12,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
 use worldwake_ai::decision_trace::{
-    AffordanceSummary, AffordanceTrace, AgentDecisionTrace, DecisionOutcome, PlanAttemptTrace,
-    PlanSearchOutcome, TargetBeliefPresence,
+    AffordanceSummary, AffordanceTrace, AgentDecisionTrace, DecisionOutcome, DecisionTraceSink,
+    PlanAttemptTrace, PlanSearchOutcome, TargetBeliefPresence,
+};
+use worldwake_ai::opportunity_compiler::{
+    BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact,
 };
 use worldwake_ai::{
     ActionTraceSnapshot, AgendaEntry, AgendaState, AgentTickDriver, CriticalWindowReport,
@@ -26,7 +29,8 @@ use worldwake_core::{
     ActionInterruptReasonTag, AgentBeliefStore, ArtifactAxisValue, ArtifactHeader, AxisName,
     CommodityKind, DeadAt, DeathCause, DecisionEventPayload, EntityId, EntityKind, EventId,
     EventTag, EventView, GoalAbandonReason, HomeostaticNeedId, KnownRecipes, MetabolismProfile,
-    PlaceTag, PlanInvalidationReason, Quantity, RecipeId, ReplanReason, Tick, WorkstationTag,
+    OpportunityAnchor, PlaceTag, PlanInvalidationReason, Quantity, RecipeId, ReplanReason, Tick,
+    WorkstationTag,
 };
 use worldwake_sim::{
     ActionDefRegistry, ActionTraceEvent, ActionTraceKind, ActionTraceSink,
@@ -676,12 +680,157 @@ fn format_action_interrupt_reason(reason: ActionInterruptReasonTag) -> &'static 
     }
 }
 
+fn render_opportunity_compiler_section(
+    traces: &DecisionTraceSink,
+    agents: &[(EntityId, String)],
+    world: &worldwake_core::World,
+) -> String {
+    let agent_names = agents
+        .iter()
+        .map(|(id, name)| (*id, name.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut by_tick_agent: BTreeMap<(Tick, EntityId), Vec<&Opportunity>> = BTreeMap::new();
+    for trace in traces.traces() {
+        if trace.compiled_opportunities.is_empty() {
+            continue;
+        }
+        let opportunities = by_tick_agent.entry((trace.tick, trace.agent)).or_default();
+        opportunities.extend(trace.compiled_opportunities.iter());
+    }
+
+    if by_tick_agent.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::new();
+    writeln!(out, "## Section 3a — Opportunities\n").unwrap();
+    for ((tick, agent), mut opportunities) in by_tick_agent {
+        opportunities.sort_by_key(|opportunity| {
+            (
+                std::cmp::Reverse(opportunity.salience),
+                opportunity.key,
+                opportunity.source_belief,
+            )
+        });
+        let agent_name = agent_names
+            .get(&agent)
+            .copied()
+            .map_or_else(|| agent.to_string(), str::to_owned);
+        writeln!(out, "Tick {} — {agent_name}:", tick.0).unwrap();
+        for opportunity in opportunities.into_iter().take(8) {
+            writeln!(out, "  {}", format_opportunity_line(opportunity, world)).unwrap();
+        }
+        writeln!(out).unwrap();
+    }
+    out
+}
+
+fn format_opportunity_line(opportunity: &Opportunity, world: &worldwake_core::World) -> String {
+    let label = format_opportunity_label(opportunity, world);
+    let effects = opportunity
+        .possible_effects
+        .iter()
+        .copied()
+        .map(format_effect_fact_key)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let commodity = opportunity
+        .possible_information
+        .iter()
+        .find_map(|topic| match topic {
+            ClaimTopic::CommodityAvailability { commodity, .. } => Some(*commodity),
+            _ => None,
+        })
+        .map_or_else(String::new, |commodity| {
+            format!("; commodity: {commodity:?}")
+        });
+    let risks = if opportunity.risks.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "; risks: {}",
+            opportunity
+                .risks
+                .iter()
+                .map(|risk| format_risk_fact(risk, world))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+
+    format!(
+        "{label}: salience {} — effects: {effects}{commodity}; legal: {}; exposure: {:?}{risks}",
+        opportunity.salience.value(),
+        format_believed_legal_status(&opportunity.legal_status, world),
+        opportunity.social_exposure
+    )
+}
+
+fn format_opportunity_label(opportunity: &Opportunity, world: &worldwake_core::World) -> String {
+    if let Some(ClaimTopic::CommodityAvailability { commodity, place }) = opportunity
+        .possible_information
+        .iter()
+        .find(|topic| matches!(topic, ClaimTopic::CommodityAvailability { .. }))
+    {
+        return format!("{commodity:?}@{}", entity_display_name(world, *place));
+    }
+
+    match opportunity.key.anchor {
+        OpportunityAnchor::Entity(entity) | OpportunityAnchor::Place(entity) => {
+            entity_display_name(world, entity)
+        }
+        OpportunityAnchor::None => format!("{:?}", opportunity.key.goal_key.kind),
+    }
+}
+
+fn format_effect_fact_key(effect: EffectFactKey) -> &'static str {
+    match effect {
+        EffectFactKey::CommodityTransfer => "CommodityTransfer",
+        EffectFactKey::PartialQuantity => "PartialQuantity",
+        EffectFactKey::WoundApplied => "WoundApplied",
+        EffectFactKey::ExpectationFulfilled => "ExpectationFulfilled",
+        EffectFactKey::ContentionGrantConsumed => "ContentionGrantConsumed",
+        EffectFactKey::EventEmitted => "EventEmitted",
+    }
+}
+
+fn format_believed_legal_status(
+    status: &BelievedLegalStatus,
+    world: &worldwake_core::World,
+) -> String {
+    match status {
+        BelievedLegalStatus::BelievedOwned { owner } => {
+            format!("BelievedOwned({})", entity_display_name(world, *owner))
+        }
+        BelievedLegalStatus::BelievedUnclaimed => "BelievedUnclaimed".to_string(),
+        BelievedLegalStatus::BelievedContested => "BelievedContested".to_string(),
+        BelievedLegalStatus::SociallyOpenToRequest => "SociallyOpenToRequest".to_string(),
+        BelievedLegalStatus::Forbidden { jurisdiction } => {
+            format!("Forbidden({})", entity_display_name(world, *jurisdiction))
+        }
+    }
+}
+
+fn format_risk_fact(risk: &RiskFact, world: &worldwake_core::World) -> String {
+    match risk {
+        RiskFact::CriminalLiability { violation_kind } => {
+            format!("CriminalLiability({violation_kind:?})")
+        }
+        RiskFact::SocialShameRisk => "SocialShameRisk".to_string(),
+        RiskFact::ThreatPresence { source } => {
+            format!("ThreatPresence({})", entity_display_name(world, *source))
+        }
+        RiskFact::InjuryRisk => "InjuryRisk".to_string(),
+        RiskFact::PropertyForfeitureRisk => "PropertyForfeitureRisk".to_string(),
+    }
+}
+
 fn render_decision_history_section(
     out: &mut String,
     event_log: &worldwake_core::EventLog,
     agents: &[(EntityId, String)],
 ) {
-    writeln!(out, "## Section 3 — Decision History\n").unwrap();
+    writeln!(out, "## Section 3b — Decision History\n").unwrap();
     let agent_names = agents
         .iter()
         .map(|(id, name)| (*id, name.as_str()))
@@ -3459,6 +3608,14 @@ fn format_report(
         .unwrap();
     }
 
+    if let Some(trace_sink) = driver.trace_sink() {
+        write!(
+            out,
+            "{}",
+            render_opportunity_compiler_section(trace_sink, agents, world)
+        )
+        .unwrap();
+    }
     render_decision_history_section(&mut out, event_log, agents);
 
     // Section 4: Anomaly Flags
@@ -4620,10 +4777,12 @@ mod tests {
         failed_plan_breakdown, failed_plan_candidates, failed_plan_location, failed_plan_max_depth,
         failed_plan_outcome_label, failed_plan_target_beliefs, final_affordance_snapshot,
         format_affordance_summary, format_anomaly_header, format_behavioral_transition,
-        format_death_cause, format_report, need_high_threshold, post_travel_affordance_snapshots,
-        primary_satisfied_need, recipe_usage_rows, render_artifact_lifecycle_section,
-        render_contention_section, render_decision_history_section, render_maintenance_rates_table,
-        render_recipe_usage_table, unknown_location_entity_groups,
+        format_death_cause, format_opportunity_line, format_report, need_high_threshold,
+        post_travel_affordance_snapshots, primary_satisfied_need, recipe_usage_rows,
+        render_artifact_lifecycle_section, render_contention_section,
+        render_decision_history_section, render_maintenance_rates_table,
+        render_opportunity_compiler_section, render_recipe_usage_table,
+        unknown_location_entity_groups,
     };
     use crate::ObserverCli;
     use clap::Parser;
@@ -4632,8 +4791,12 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_ai::decision_trace::{
         AffordanceSummary, AffordanceTrace, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
-        ExecutionTrace, PatrolRouteSnapshotTrace, PlanSearchTrace, PlanningPipelineTrace,
-        SearchExpansionSummary, SelectionTrace, TargetBeliefPresence,
+        DecisionTraceSink, ExecutionTrace, OpportunityCompilerLoad, PatrolRouteSnapshotTrace,
+        PlanSearchTrace, PlanningPipelineTrace, SearchExpansionSummary, SelectionTrace,
+        TargetBeliefPresence,
+    };
+    use worldwake_ai::opportunity_compiler::{
+        BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact, SocialExposureBand,
     };
     use worldwake_ai::{
         ActiveActionSummary, AgendaEntry, AgendaEntrySnapshot, AgendaOrigin, AgendaPhase,
@@ -4788,6 +4951,31 @@ mod tests {
             },
             claim_held_at_tick: Tick(14),
             status: BeliefStatusTag::Stale,
+        }
+    }
+
+    fn sample_opportunity(anchor: EntityId, place: EntityId, salience: u16) -> Opportunity {
+        Opportunity {
+            key: worldwake_core::OpportunityKey {
+                goal_key: GoalKey::from(GoalKind::AcquireCommodity {
+                    commodity: CommodityKind::Bread,
+                    purpose: CommodityPurpose::SelfConsume,
+                    quantity: AcquisitionQuantity::single(),
+                }),
+                anchor: OpportunityAnchor::Entity(anchor),
+            },
+            perceived_at: Tick(412),
+            source_belief: belief_ref(anchor),
+            possible_effects: vec![EffectFactKey::CommodityTransfer],
+            possible_information: vec![ClaimTopic::CommodityAvailability {
+                commodity: CommodityKind::Bread,
+                place,
+            }],
+            required_actions: Vec::new(),
+            legal_status: BelievedLegalStatus::BelievedOwned { owner: entity(77) },
+            social_exposure: SocialExposureBand::Public,
+            risks: vec![RiskFact::SocialShameRisk],
+            salience: Permille::new_unchecked(salience),
         }
     }
 
@@ -5344,6 +5532,8 @@ mod tests {
         AgentDecisionTrace {
             agent,
             tick: Tick(tick),
+            compiled_opportunities: Vec::new(),
+            opportunity_compiler_load: None,
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: Some(affordances),
                 dirty: DirtySet::default(),
@@ -6389,7 +6579,7 @@ mod tests {
 
         render_decision_history_section(&mut out, &log, &[(agent, "Guard Theron".to_string())]);
 
-        assert!(out.contains("## Section 3 — Decision History"));
+        assert!(out.contains("## Section 3b — Decision History"));
         assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
         assert_eq!(
             out.lines().filter(|line| line.starts_with("| ")).count(),
@@ -6425,6 +6615,82 @@ mod tests {
         assert!(
             out.contains("water=1 agent_dirtiness_delta=500 basin_dirtiness_delta=25 partial=true")
         );
+    }
+
+    #[test]
+    fn render_opportunity_compiler_section_empty_trace_returns_empty_string() {
+        let sink = DecisionTraceSink::new();
+        let world = World::new(build_prototype_world()).unwrap();
+
+        let out = render_opportunity_compiler_section(&sink, &[], &world);
+
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn format_opportunity_line_renders_plain_text_summary() {
+        let world = World::new(build_prototype_world()).unwrap();
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let opportunity = sample_opportunity(entity(8), place, 720);
+
+        let line = format_opportunity_line(&opportunity, &world);
+
+        assert!(line.contains("Bread@Village Square: salience 720"));
+        assert!(line.contains("effects: CommodityTransfer; commodity: Bread"));
+        assert!(line.contains("legal: BelievedOwned(Unknown#77)"));
+        assert!(line.contains("exposure: Public"));
+        assert!(line.contains("risks: SocialShameRisk"));
+    }
+
+    #[test]
+    fn render_opportunity_compiler_section_orders_by_salience_and_precedes_decision_history() {
+        let agent = entity(1);
+        let place = prototype_place_entity(PrototypePlace::VillageSquare);
+        let mut trace = planning_affordance_trace(
+            agent,
+            412,
+            AffordanceTrace {
+                available: Vec::new(),
+                place: None,
+            },
+        );
+        trace.compiled_opportunities = vec![
+            sample_opportunity(entity(8), place, 540),
+            sample_opportunity(entity(9), place, 720),
+            sample_opportunity(entity(10), place, 380),
+        ];
+        trace.opportunity_compiler_load = Some(OpportunityCompilerLoad {
+            compiled_count: 3,
+            salience_floored: 0,
+            learned_memory_damped: 0,
+            cap_truncated: 0,
+        });
+        let mut sink = DecisionTraceSink::new();
+        sink.record(trace);
+        let world = World::new(build_prototype_world()).unwrap();
+
+        let opportunities =
+            render_opportunity_compiler_section(&sink, &[(agent, "Agent A".to_string())], &world);
+        let mut decision = String::new();
+        render_decision_history_section(
+            &mut decision,
+            &EventLog::new(),
+            &[(agent, "Agent A".to_string())],
+        );
+        let report = format!("{opportunities}{decision}");
+
+        assert!(report.contains("## Section 3a — Opportunities"));
+        assert!(report.contains("## Section 3b — Decision History"));
+        assert!(
+            report.find("## Section 3a — Opportunities")
+                < report.find("## Section 3b — Decision History")
+        );
+        let first = report.find("salience 720").expect("top opportunity");
+        let second = report.find("salience 540").expect("second opportunity");
+        let third = report.find("salience 380").expect("third opportunity");
+        assert!(first < second);
+        assert!(second < third);
+        assert!(report.contains("Tick 412 — Agent A:"));
     }
 
     #[test]
@@ -6746,7 +7012,7 @@ mod tests {
 
         assert!(report.contains("## Section 10 — Critical Window Forensics"));
         assert!(report.contains("### Window 1 — Guard Theron / Fatigue"));
-        assert!(report.contains("## Section 3 — Decision History"));
+        assert!(report.contains("## Section 3b — Decision History"));
         assert!(report.contains("**Selected goals across captured frames**: Sleep x1"));
         assert!(
             report.contains("**Exhaustion states**: frontier-exhausted (expansions_used=7) x1")
