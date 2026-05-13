@@ -1,3 +1,5 @@
+**Status**: COMPLETED
+
 ## **Verdict**
 
 The baseline proves **causal substrate sufficiency**, not deep survival gameplay. That is a good result, but it should not be mistaken for a “full” mechanic set. The agents discover resources, satisfy all five needs, recover from simple reservation blockers, and stay far below critical thresholds; but the loop becomes mostly solved after the first few ticks: food and water are abundant, travel is free, sleep is a repeated recovery commit, relieving and washing are periodic maintenance checks, perception mostly admits local truth into memory, and contention becomes a blocker cooldown rather than a visible social/physical situation.
@@ -1020,3 +1022,9 @@ Do **not** let need salience become omniscience. A hungry agent may notice food 
 
 The deepest version of this baseline is not a harsher tamagotchi loop. It is a small local world where hunger, thirst, fatigue, bladder, dirtiness, perception, exploration, and facility contention continuously reshape each other through concrete state.
 
+## Outcome
+
+- Completion date: 2026-05-13
+- What changed: Archived as exploited after the proposal's findings had been consumed by follow-on work.
+- Deviations from original plan: None.
+- Verification results: Archival-only change; no code verification required.

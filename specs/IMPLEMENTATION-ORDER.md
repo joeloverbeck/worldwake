@@ -580,9 +580,9 @@ S134 (completed, archived)    S135 (completed, archived)    S140 (completed, arc
          │
          ├── S137 (completed, archived; soft deps on S134, S136, S138)
          │     │
-         │     └── S139 (soft deps on S137, S138)
+         │     └── S139 (completed, archived; soft deps on S137, S138)
          │
-         └── (S139 also soft deps on S138)
+         └── (S139 completed with soft deps on S138)
 
 S136 (completed, archived)
    │
@@ -607,16 +607,15 @@ S136 (completed, archived)
 **Completed Wave 3 slice**:
 - **S137**: Plan Causal Links and Localized Repair Search — completed and archived at `archive/specs/S137-plan-causal-links-and-repair.md` through the `S137PLACAULIN-001` through `S137PLACAULIN-012` ticket chain. Landed causal-link provenance, bounded localized repair before full replan, repair-memory and trace surfaces, observer rendering, generated plan-repair goldens, and the corrected Phase 11 full-replan reduction witness. Folds in PR-15.
 
-**Remaining Wave 3 slice**:
-- **S139**: Epistemic Sensing Subgoals — Ask Witness and Inspect Container — discrete `GoalKind::AskWitness` and `GoalKind::InspectContainer` with `EpistemicProfile`. Required for FOUNDATIONS Scenarios C and G end-to-end.
-  - soft depends on archived S137 (`RepairKind::InsertVerification` splices these), S138 (opportunity compiler emits witness/container anchors)
+**Completed Wave 3 final slice**:
+- **S139**: Ask-Witness Goal Layer — completed and archived at `archive/specs/S139-epistemic-sensing-subgoals.md` through the `S139EPISENSUB-001` through `S139EPISENSUB-007` ticket chain. Landed `GoalKind::AskWitness`, the existing-`EpistemicDispositionProfile` extension, candidate emission, planner/search/payload integration, ranking and feasibility support, observer-surface audit, generated golden inventory updates, and `golden_epistemic_sensing.rs` coverage for stale-report refresh, cold-start witness import, critical-survival suppression, cooldown expiry/resume, relocation revalidation, and replay determinism. `InspectContainer` and full contradiction/adjudication Scenario G consequences were explicitly deferred outside the completed AskWitness sensing seam.
 
 ### Phase 11 Gate
 
-- [ ] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
+- [x] All 9 specs reassessed (`/reassess-spec`) and ticket-decomposed
 - [x] Wave 1 specs implemented and passing golden E2E tests
 - [x] Wave 2 specs implemented and passing golden E2E tests
-- [ ] Wave 3 specs implemented and passing golden E2E tests
+- [x] Wave 3 specs implemented and passing golden E2E tests
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
 - [x] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
 - [x] S136 always-on decision payload extension landed: rejected-goal dimensions, failure-path `decisive_*` refs, frame assumptions with step provenance, observer summaries, replay/save-load coverage, golden payload-shape coverage, and payload-size soak enforcement
@@ -625,8 +624,8 @@ S136 (completed, archived)
 - [x] S140 multi-axis artifact lifecycle core goldens prove the five axis paths, including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation; full Scenario G justice/witness/case-chain coverage remains owned outside S140.
 - [x] Motive-source ranking regression: single-source behavior remains stable under existing goldens, and multi-source offers prove contribution sums through dedicated S141 tests
 - [x] Contention-resolution events emit at every grant-issuance site under `survival-contested.ron`
-- [ ] FOUNDATIONS Scenario C (stored gold robbery): owner-believes-gold-present → `InspectContainer` → mismatch → robbery report producible end-to-end
-- [ ] FOUNDATIONS Scenario G (false rumor → wrongful accusation → correction): `AskWitness` chain across two contradicting witnesses producible end-to-end
+- [ ] Downstream Scenario C carry-forward (outside completed S139 AskWitness seam): owner-believes-gold-present → future `InspectContainer` substrate → mismatch → robbery report producible end-to-end
+- [ ] Downstream Scenario G carry-forward (outside completed first AskWitness sensing golden): false rumor → wrongful accusation → correction across contradictory testimony and adjudication consequences
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` clean
 - [x] `cargo test --workspace` passing
-- [ ] Golden E2E coverage for each new spec's core behavior
+- [x] Golden E2E coverage for each new spec's core behavior

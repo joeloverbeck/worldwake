@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 83;
+pub const SAVE_FORMAT_VERSION: u32 = 84;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -203,22 +203,23 @@ mod tests {
         CauseRef, ClaimId, ClaimValue, ClaimantOutcome, CloseCause, CommodityKind,
         CommodityPurpose, ContentionClaimant, ContentionEventPayload, ContentionResolutionRule,
         ControlSource, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
-        DiscrepancyMemory, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId, EventLog,
-        EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExpectationBasis,
-        ExpectationId, ExpectationMismatchPayload, ExpectationRecord, ExpectationState,
-        ExpectationStore, GoalAbandonReason, GoalAbandonedPayload, GoalCommittedPayload, GoalKey,
-        GoalKind, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
-        GoalSuspendedPayload, GoalSwitchReason, GroundComfortTag, HomeostaticNeedId,
-        LastSeenMemory, LastSeenProvenance, LastSeenRecord, LatrineFullness, LawAbidingProfile,
-        MaterializationTag, MetabolismProfile, MotiveSource, MotiveSourceRef, ObservationOmission,
-        ObservationRef, OmissionReason, PendingEvent, PerceptionSource, PlaceDirtiness,
-        PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
-        PursuitInvalidationReasonTag, Quantity, RankedGoalComparisonDimensionTag, RecordRef,
-        RejectedAlternativeSummary, RepairAppliedPayload, RepairKind, ReplanReason,
-        ReplanTriggeredPayload, ReservationId, RewardEncumbrance, RiskWeightProfile, Seed,
-        ShelterTag, SleepEpisode, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SleepQualityProfile, SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange,
-        UniqueItemKind, UtilityProfile, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
+        DiscrepancyMemory, EmitterTag, EntityBeliefAspect, EntityBeliefClaim, EntityId,
+        EpistemicDispositionProfile, EventLog, EventPayload, EventTag, EventView, EvidenceKindTag,
+        EvidenceSummary, ExpectationBasis, ExpectationId, ExpectationMismatchPayload,
+        ExpectationRecord, ExpectationState, ExpectationStore, GoalAbandonReason,
+        GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
+        GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
+        GroundComfortTag, HomeostaticNeedId, LastSeenMemory, LastSeenProvenance, LastSeenRecord,
+        LatrineFullness, LawAbidingProfile, MaterializationTag, MetabolismProfile, MotiveSource,
+        MotiveSourceRef, ObservationOmission, ObservationRef, OmissionReason, PendingEvent,
+        PerceptionSource, PlaceDirtiness, PlanAdoptedPayload, PlanAssumptionRef,
+        PlanInvalidatedPayload, PlanInvalidationReason, PursuitInvalidationReasonTag, Quantity,
+        RankedGoalComparisonDimensionTag, RecordRef, RejectedAlternativeSummary,
+        RepairAppliedPayload, RepairKind, ReplanReason, ReplanTriggeredPayload, ReservationId,
+        RewardEncumbrance, RiskWeightProfile, Seed, ShelterTag, SleepEpisode,
+        SleepEpisodeEndedPayload, SleepEpisodeStartedPayload, SleepQualityProfile,
+        SleepRecoveryModifier, StateHash, SuspensionReason, Tick, TickRange, UniqueItemKind,
+        UtilityProfile, VisibilitySpec, WakeCondition, WakeReason, WashBasinState,
         WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
         WorkstationTag, World, WorldTxn, build_prototype_world,
         test_utils::{
@@ -328,6 +329,17 @@ mod tests {
         let actor = spawn_agent(&mut world, &mut event_log, Tick(0), "save-actor");
         let target = spawn_agent(&mut world, &mut event_log, Tick(1), "save-target");
         let mut profile_txn = new_txn(&mut world, Tick(1), CauseRef::Bootstrap);
+        profile_txn
+            .set_component_epistemic_disposition_profile(
+                actor,
+                EpistemicDispositionProfile {
+                    stale_evidence_barrier_threshold: worldwake_core::Permille::new_unchecked(425),
+                    witness_query_duration_ticks: NonZeroU32::new(4).unwrap(),
+                    ask_memory_retention_ticks: 15,
+                    witness_recency_preference: worldwake_core::Permille::new_unchecked(675),
+                },
+            )
+            .unwrap();
         profile_txn
             .set_component_metabolism_profile(
                 actor,
@@ -1228,8 +1240,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_83_after_repair_memory_migration() {
-        assert_eq!(SAVE_FORMAT_VERSION, 83);
+    fn save_format_version_is_84_after_epistemic_disposition_profile_recency_field() {
+        assert_eq!(SAVE_FORMAT_VERSION, 84);
     }
 
     #[test]
@@ -1240,7 +1252,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 83);
+        assert_eq!(SAVE_FORMAT_VERSION, 84);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1318,6 +1330,17 @@ mod tests {
                 shame_weight: worldwake_core::Permille::new_unchecked(275),
                 revenge_weight: worldwake_core::Permille::new_unchecked(325),
                 ..UtilityProfile::default()
+            })
+        );
+        assert_eq!(
+            restored
+                .world()
+                .get_component_epistemic_disposition_profile(actor),
+            Some(&EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: worldwake_core::Permille::new_unchecked(425),
+                witness_query_duration_ticks: NonZeroU32::new(4).unwrap(),
+                ask_memory_retention_ticks: 15,
+                witness_recency_preference: worldwake_core::Permille::new_unchecked(675),
             })
         );
         assert_eq!(

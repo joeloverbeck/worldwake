@@ -164,6 +164,7 @@ const FULFILL_BOUNTY_OPS: &[PlannerOpKind] = &[
 const POST_BOUNTY_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::PostBounty];
 const POST_NOTICE_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::PostNotice];
 const SHARE_BELIEF_OPS: &[PlannerOpKind] = &[PlannerOpKind::Tell];
+const ASK_WITNESS_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind::AskWitness];
 const CLAIM_OFFICE_OPS: &[PlannerOpKind] = &[
     PlannerOpKind::Travel,
     PlannerOpKind::ConsultRecord,
@@ -243,6 +244,12 @@ const SHARE_BELIEF_TESTIMONY_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
     free_interrupt: FreeInterruptRole::Normal,
 };
 
+const EPISTEMIC_SENSING_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical),
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Normal,
+};
+
 const SHARE_BELIEF_GOSSIP_POLICY: GoalFamilyPolicy = SOCIAL_POLICY;
 
 // ---------------------------------------------------------------------------
@@ -262,6 +269,7 @@ const ACCUSE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Accuse];
 const STAFF_MARKET_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::StaffMarket];
 const FINE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Fine];
 const EXILE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::Exile];
+const ASK_WITNESS_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::AskWitness];
 const POST_BOUNTY_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::PostBounty];
 const POST_NOTICE_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::PostNotice];
 const OFFICE_CLAIM_BARRIER: &[PlannerOpKind] = &[
@@ -584,6 +592,16 @@ static DECL_SHARE_BELIEF_GOSSIP: GoalDispatchDeclaration = GoalDispatchDeclarati
     family_policy: SHARE_BELIEF_GOSSIP_POLICY,
     progress_barrier_ops: TELL_BARRIER,
 };
+static DECL_ASK_WITNESS: GoalDispatchDeclaration = GoalDispatchDeclaration {
+    trace_label: "AskWitness",
+    provenance_family: Some(RankedGoalProvenanceFamily::EpistemicSensing),
+    relevant_ops: ASK_WITNESS_OPS,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
+    family_policy: EPISTEMIC_SENSING_POLICY,
+    progress_barrier_ops: ASK_WITNESS_BARRIER,
+};
 static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
     trace_label: "ClaimOffice",
     provenance_family: None,
@@ -710,6 +728,7 @@ impl GoalDispatchKey {
             Self::ShareBeliefAlarm => &DECL_SHARE_BELIEF_ALARM,
             Self::ShareBeliefTestimony => &DECL_SHARE_BELIEF_TESTIMONY,
             Self::ShareBeliefGossip => &DECL_SHARE_BELIEF_GOSSIP,
+            Self::AskWitness => &DECL_ASK_WITNESS,
             Self::ClaimOffice => &DECL_CLAIM_OFFICE,
             Self::SupportCandidateForOffice => &DECL_SUPPORT_CANDIDATE_FOR_OFFICE,
             Self::InvestigateViolation => &DECL_INVESTIGATE_VIOLATION,
@@ -769,6 +788,7 @@ mod tests {
         GoalDispatchKey::ShareBeliefAlarm,
         GoalDispatchKey::ShareBeliefTestimony,
         GoalDispatchKey::ShareBeliefGossip,
+        GoalDispatchKey::AskWitness,
         GoalDispatchKey::ClaimOffice,
         GoalDispatchKey::SupportCandidateForOffice,
         GoalDispatchKey::InvestigateViolation,
@@ -911,6 +931,10 @@ mod tests {
                 topic: TellTopic::EntityBelief { subject: office },
                 communication_class: worldwake_core::CommunicationClass::Gossip,
             },
+            GoalDispatchKey::AskWitness => GoalKind::AskWitness {
+                witness: target,
+                topic: TellTopic::EntityBelief { subject: office },
+            },
             GoalDispatchKey::ClaimOffice => GoalKind::ClaimOffice { office },
             GoalDispatchKey::SupportCandidateForOffice => GoalKind::SupportCandidateForOffice {
                 office,
@@ -960,7 +984,7 @@ mod tests {
 
     #[test]
     fn test_declaration_completeness() {
-        assert_eq!(ALL_KEYS.len(), 40);
+        assert_eq!(ALL_KEYS.len(), 41);
 
         for key in ALL_KEYS {
             let declaration: &'static GoalDispatchDeclaration = key.declaration();
@@ -1038,6 +1062,18 @@ mod tests {
         );
         assert_eq!(declaration.family_policy, SELF_CARE_POLICY);
         assert_eq!(declaration.progress_barrier_ops, &[PlannerOpKind::DropItem]);
+    }
+
+    #[test]
+    fn ask_witness_declaration_uses_epistemic_sensing_policy() {
+        let declaration = GoalDispatchKey::AskWitness.declaration();
+
+        assert_eq!(declaration.trace_label, "AskWitness");
+        assert_eq!(declaration.family_policy, super::EPISTEMIC_SENSING_POLICY);
+        assert_eq!(
+            declaration.progress_barrier_ops,
+            &[PlannerOpKind::AskWitness]
+        );
     }
 
     #[test]

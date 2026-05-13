@@ -1479,6 +1479,28 @@ impl SocialBeliefView for PlanningState<'_> {
             .collect()
     }
 
+    fn entity_beliefs_sourced_from_witness(
+        &self,
+        agent: EntityId,
+        witness: EntityId,
+    ) -> Vec<(EntityId, BelievedEntityState)> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot
+            .actor_known_entity_beliefs
+            .iter()
+            .filter(|(_, belief)| {
+                matches!(
+                    belief.source,
+                    worldwake_core::PerceptionSource::Report { from, .. } if from == witness
+                )
+            })
+            .map(|(entity, belief)| (*entity, belief.clone()))
+            .collect()
+    }
+
     fn agent_belief_store(&self, agent: EntityId) -> Option<&worldwake_core::AgentBeliefStore> {
         (agent == self.snapshot.actor()).then_some(&self.snapshot.actor_belief_store)
     }
@@ -1713,6 +1735,26 @@ impl SocialBeliefView for PlanningState<'_> {
             }
             None => RecipientKnowledgeStatus::UnknownToSpeaker,
         })
+    }
+
+    fn ask_witness_memory(
+        &self,
+        actor: EntityId,
+        key: &worldwake_core::AskWitnessMemoryKey,
+    ) -> Option<worldwake_core::AskWitnessMemory> {
+        if actor != self.snapshot.actor() {
+            return None;
+        }
+
+        let profile = self.epistemic_disposition_profile(actor)?;
+        self.snapshot
+            .actor_belief_store
+            .ask_witness_memory(
+                key,
+                self.snapshot.current_tick,
+                profile.ask_memory_retention_ticks,
+            )
+            .cloned()
     }
 }
 
@@ -4659,6 +4701,7 @@ mod tests {
                 stale_evidence_barrier_threshold: pm(400),
                 witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
                 ask_memory_retention_ticks: 10,
+                witness_recency_preference: pm(500),
             },
         );
         view.theft_profiles.insert(

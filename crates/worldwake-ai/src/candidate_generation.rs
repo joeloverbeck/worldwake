@@ -29,20 +29,20 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    AcquisitionQuantity, ArtifactPostingContext, ArtifactPostingProfile, BelievedEntityState,
-    BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms, CommodityKind,
-    CommodityPurpose, Discrepancy, DiscrepancyClearing, DiscrepancyMemory, DiversificationProfile,
-    DriveThresholds, EligibilityRule, EmitterTag, EntityId, EntityKind, EvidenceKindTag,
-    EvidenceSummary, ExpectationBasis, ExpectationOutcome, ExpectationRecord, ExpectationState,
-    ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind, GoalRejectionReason,
-    HomeostaticNeedId, HomeostaticNeeds, HypothesisKind, InstitutionalBeliefKey,
-    InstitutionalBeliefRead, InstitutionalClaim, InstitutionalKnowledgeSource, NoticeTopic,
-    OfficeData, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille, PlaceVisitRecord,
-    ProofRequirement, PunishmentFineSelectionTrace, PunishmentFineTraceFacts, PunishmentKind,
-    Quantity, RecordData, RecordEntryId, RecordKind, RightKind, SocialObservation,
-    SocialObservationDetail, TellTopic, TheftFacts, Tick, TradeCategory, UtilityProfile,
-    ViolationId, ViolationKind, ViolationMemory, WorkstationTag, classify_communication,
-    current_institutional_belief_topics, load_per_unit,
+    AcquisitionQuantity, ArtifactPostingContext, ArtifactPostingProfile, AskWitnessMemoryKey,
+    BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms,
+    CommodityKind, CommodityPurpose, Discrepancy, DiscrepancyClearing, DiscrepancyMemory,
+    DiversificationProfile, DriveThresholds, EligibilityRule, EmitterTag, EntityId, EntityKind,
+    EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
+    ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
+    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
+    InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
+    InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
+    PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
+    PunishmentFineTraceFacts, PunishmentKind, Quantity, RecordData, RecordEntryId, RecordKind,
+    RightKind, SocialObservation, SocialObservationDetail, TellTopic, TheftFacts, Tick,
+    TradeCategory, UtilityProfile, ViolationId, ViolationKind, ViolationMemory, WorkstationTag,
+    belief_confidence, classify_communication, current_institutional_belief_topics, load_per_unit,
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
@@ -50,6 +50,8 @@ use worldwake_sim::{
     belief_view::BeliefStatus, listener_aware_tell_topic_selection,
 };
 use worldwake_systems::trade_actions::select_substitute_trade_candidate_for_view;
+
+const ASK_WITNESS_EMISSION_CAP_PER_TOPIC: usize = 3;
 
 #[derive(Clone, Default)]
 struct Evidence {
@@ -176,6 +178,7 @@ pub(crate) struct CandidateGenerationDiagnostics {
     pub omitted_bandit: Vec<BanditCandidateOmission>,
     pub omitted_social: Vec<SocialCandidateOmission>,
     pub omitted_violation_detection: Vec<ViolationDetectionOmission>,
+    pub ask_witness_gate_rejections: Vec<AskWitnessGateRejection>,
     pub evidence: BTreeMap<OpportunityKey, CandidateEvidenceTrace>,
     pub sources: BTreeMap<OpportunityKey, CandidateSource>,
     pub fully_blocked_desires: Vec<DesireFullyBlocked>,
@@ -194,6 +197,19 @@ pub(crate) struct CandidateOfferDiagnostic {
 pub(crate) struct CandidateSuppressionDiagnostic {
     pub opportunity: OpportunityKey,
     pub reason: GoalRejectionReason,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct AskWitnessGateRejection {
+    pub witness: EntityId,
+    pub topic: TellTopic,
+    pub reason: AskWitnessGateRejectionReason,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AskWitnessGateRejectionReason {
+    ConfidenceAtOrAboveThreshold,
+    CooldownActive,
 }
 
 pub(crate) struct CandidateGenerationResult {
@@ -444,6 +460,7 @@ fn generate_candidates_with_memories_with_travel_horizon_impl(
     emit_combat_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_crime_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_social_candidates(&mut candidates, &mut diagnostics, &ctx);
+    emit_ask_witness_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_patrol_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_political_candidates(&mut candidates, &mut diagnostics, &ctx);
     emit_recorded_violation_candidates(&mut candidates, &mut diagnostics, &ctx);
@@ -2562,6 +2579,215 @@ fn emit_engage_hostile_goals(
         &raid_targets,
         &current_attackers,
     );
+}
+
+fn emit_ask_witness_candidates(
+    candidates: &mut Vec<GoalOffer>,
+    diagnostics: &mut CandidateGenerationDiagnostics,
+    ctx: &GenerationContext<'_>,
+) {
+    let Some(place) = ctx.place else {
+        return;
+    };
+    let Some(profile) = ctx.view.epistemic_disposition_profile(ctx.agent) else {
+        return;
+    };
+    let policy = ctx.view.belief_confidence_policy(ctx.agent);
+    let local_witnesses = ctx
+        .view
+        .entities_at(place)
+        .into_iter()
+        .filter(|entity| *entity != ctx.agent)
+        .filter(|entity| ctx.view.entity_kind(*entity) == Some(EntityKind::Agent))
+        .collect::<BTreeSet<_>>();
+
+    if local_witnesses.is_empty() {
+        return;
+    }
+
+    let mut topic_emissions: BTreeMap<TellTopic, Vec<(EntityId, Permille, BelievedEntityState)>> =
+        BTreeMap::new();
+    let mut considered_pairs = BTreeSet::new();
+
+    for witness in &local_witnesses {
+        for (subject, belief) in ctx
+            .view
+            .entity_beliefs_sourced_from_witness(ctx.agent, *witness)
+        {
+            let topic = TellTopic::EntityBelief { subject };
+            considered_pairs.insert((*witness, topic));
+            let confidence = compute_belief_confidence(&belief, ctx.current_tick, &policy);
+            if confidence >= profile.stale_evidence_barrier_threshold {
+                diagnostics
+                    .ask_witness_gate_rejections
+                    .push(AskWitnessGateRejection {
+                        witness: *witness,
+                        topic,
+                        reason: AskWitnessGateRejectionReason::ConfidenceAtOrAboveThreshold,
+                    });
+                continue;
+            }
+
+            let cooldown_key = AskWitnessMemoryKey {
+                counterparty: *witness,
+                topic_entity: Some(subject),
+                topic_commodity: None,
+            };
+            if ctx
+                .view
+                .ask_witness_memory(ctx.agent, &cooldown_key)
+                .is_some()
+            {
+                diagnostics
+                    .ask_witness_gate_rejections
+                    .push(AskWitnessGateRejection {
+                        witness: *witness,
+                        topic,
+                        reason: AskWitnessGateRejectionReason::CooldownActive,
+                    });
+                continue;
+            }
+
+            let salience = compute_recency_weighted_salience(
+                &belief,
+                ctx.current_tick,
+                profile.witness_recency_preference,
+            );
+            topic_emissions
+                .entry(topic)
+                .or_default()
+                .push((*witness, salience, belief));
+        }
+    }
+
+    for (subject, belief) in ctx.view.known_entity_beliefs(ctx.agent) {
+        let topic = TellTopic::EntityBelief { subject };
+        let confidence = compute_belief_confidence(&belief, ctx.current_tick, &policy);
+        for witness in &local_witnesses {
+            if considered_pairs.contains(&(*witness, topic)) {
+                continue;
+            }
+            considered_pairs.insert((*witness, topic));
+            if confidence >= profile.stale_evidence_barrier_threshold {
+                diagnostics
+                    .ask_witness_gate_rejections
+                    .push(AskWitnessGateRejection {
+                        witness: *witness,
+                        topic,
+                        reason: AskWitnessGateRejectionReason::ConfidenceAtOrAboveThreshold,
+                    });
+                continue;
+            }
+
+            let cooldown_key = AskWitnessMemoryKey {
+                counterparty: *witness,
+                topic_entity: Some(subject),
+                topic_commodity: None,
+            };
+            if ctx
+                .view
+                .ask_witness_memory(ctx.agent, &cooldown_key)
+                .is_some()
+            {
+                diagnostics
+                    .ask_witness_gate_rejections
+                    .push(AskWitnessGateRejection {
+                        witness: *witness,
+                        topic,
+                        reason: AskWitnessGateRejectionReason::CooldownActive,
+                    });
+                continue;
+            }
+
+            let salience = compute_recency_weighted_salience(
+                &belief,
+                ctx.current_tick,
+                profile.witness_recency_preference,
+            );
+            topic_emissions
+                .entry(topic)
+                .or_default()
+                .push((*witness, salience, belief.clone()));
+        }
+    }
+
+    for (topic, mut entries) in topic_emissions {
+        entries.sort_by(
+            |(left_witness, left_salience, _), (right_witness, right_salience, _)| {
+                right_salience
+                    .cmp(left_salience)
+                    .then_with(|| left_witness.cmp(right_witness))
+            },
+        );
+
+        for (witness, _, belief) in entries.into_iter().take(ASK_WITNESS_EMISSION_CAP_PER_TOPIC) {
+            let mut evidence = Evidence::with_entity(witness);
+            evidence.places.insert(place);
+            let mut trace = EvidenceTrace::default();
+            if ctx.tracing_enabled
+                && let TellTopic::EntityBelief { subject } = topic
+            {
+                trace.knowledge_path.entity_beliefs.push(BeliefProvenance {
+                    subject,
+                    aspect: BeliefAspect::LocationAt {
+                        place: belief.last_known_place.unwrap_or(place),
+                    },
+                    source: belief.source,
+                    observed_tick: belief.last_observed_tick().unwrap_or(Tick(0)),
+                });
+            }
+
+            emit_candidate_with_trace(
+                candidates,
+                diagnostics,
+                EmitterTag::EpistemicSensing,
+                single_evidence(EvidenceKindTag::TestimonyProvenance),
+                GoalKind::AskWitness { witness, topic },
+                OpportunityAnchor::Entity(witness),
+                evidence,
+                trace,
+            );
+        }
+    }
+}
+
+fn compute_belief_confidence(
+    belief: &BelievedEntityState,
+    current_tick: Tick,
+    policy: &worldwake_core::BeliefConfidencePolicy,
+) -> Permille {
+    let staleness_ticks = current_tick
+        .0
+        .saturating_sub(belief.last_observed_tick().unwrap_or(Tick(0)).0);
+    belief_confidence(&belief.source, staleness_ticks, policy)
+}
+
+fn compute_recency_weighted_salience(
+    belief: &BelievedEntityState,
+    current_tick: Tick,
+    recency_preference: Permille,
+) -> Permille {
+    let staleness_ticks = current_tick
+        .0
+        .saturating_sub(belief.last_observed_tick().unwrap_or(Tick(0)).0);
+    let recency_signal = 1000u16.saturating_sub(
+        u16::try_from(staleness_ticks)
+            .unwrap_or(u16::MAX)
+            .saturating_mul(10),
+    );
+    let testimony_signal = match belief.source {
+        PerceptionSource::Report { chain_len, .. } => {
+            1000u16.saturating_sub(u16::from(chain_len.saturating_sub(1)).saturating_mul(100))
+        }
+        _ => 0,
+    };
+    let weight = recency_preference.value();
+    let inverse_weight = 1000u16.saturating_sub(weight);
+    let weighted = u32::from(recency_signal)
+        .saturating_mul(u32::from(weight))
+        .saturating_add(u32::from(testimony_signal).saturating_mul(u32::from(inverse_weight)))
+        / 1000;
+    Permille::new(u16::try_from(weighted).unwrap_or(1000)).unwrap()
 }
 
 fn emit_remote_engage_hostile_targets(
@@ -6591,9 +6817,10 @@ pub(crate) fn relieved_needs_for_commodity(
 #[cfg(test)]
 mod tests {
     use super::{
-        AcquisitionSearchOptions, BeliefGateOptions, CandidateGenerationDiagnostics,
-        CandidateOfferDiagnostic, CandidateSuppressionDiagnostic, GenerationContext,
-        belief_gated_places, combined_evidence, deliverable_quantity,
+        AcquisitionSearchOptions, AskWitnessGateRejection, AskWitnessGateRejectionReason,
+        BeliefGateOptions, CandidateGenerationDiagnostics, CandidateOfferDiagnostic,
+        CandidateSuppressionDiagnostic, GenerationContext, GoalOffer, belief_gated_places,
+        combined_evidence, deliverable_quantity, emit_ask_witness_candidates,
         emit_expectation_violation_candidates, emit_produce_goals, emit_restock_goals,
         filter_suppressed_candidates, generate_candidates, generate_candidates_with_travel_horizon,
         need_hypothesis, proactive_curiosity_pressure, proactive_familiarity, proactive_novelty,
@@ -6614,12 +6841,13 @@ mod tests {
     use worldwake_core::{
         AcquisitionQuantity, AgentBeliefStore, ArtifactActionability, ArtifactCredibility,
         ArtifactExistence, ArtifactKind, ArtifactLegalEffect, ArtifactPostingContext,
-        ArtifactPostingProfile, ArtifactVisibility, BelievedArtifactState, BelievedBountyTerms,
-        BelievedEntityState, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
-        BlockerReason, BlockingFact, BodyPart, BountyTarget, BountyTerms, CloseCause,
-        CognitiveProfile, CombatProfile, CommodityConsumableProfile, CommodityKind,
-        CommodityPurpose, CommunicationClass, DemandObservation, DemandObservationReason,
-        Discrepancy, DiscrepancyEntry, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
+        ArtifactPostingProfile, ArtifactVisibility, AskWitnessMemory, AskWitnessMemoryKey,
+        BelievedArtifactState, BelievedBountyTerms, BelievedEntityState,
+        BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory, BlockerReason,
+        BlockingFact, BodyPart, BountyTarget, BountyTerms, CloseCause, CognitiveProfile,
+        CombatProfile, CommodityConsumableProfile, CommodityKind, CommodityPurpose,
+        CommunicationClass, DemandObservation, DemandObservationReason, Discrepancy,
+        DiscrepancyEntry, DiscrepancyMemory, DisposalProfile, DiversificationProfile,
         DriveThresholds, EffectiveRight, EligibilityRule, EmitterTag, EntityId, EntityKind,
         EpistemicDispositionProfile, EvidenceKindTag, ExpectationBasis, ExpectationId,
         ExpectationKindTag, ExpectationRecord, ExpectationState, ExpectationStore,
@@ -7129,6 +7357,25 @@ mod tests {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
         }
 
+        fn entity_beliefs_sourced_from_witness(
+            &self,
+            agent: EntityId,
+            witness: EntityId,
+        ) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(_, belief)| {
+                    matches!(
+                        belief.source,
+                        PerceptionSource::Report { from, .. } if from == witness
+                    )
+                })
+                .collect()
+        }
+
         fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
             self.belief_stores.get(&agent)
         }
@@ -7277,6 +7524,18 @@ mod tests {
                 }
                 None => RecipientKnowledgeStatus::UnknownToSpeaker,
             })
+        }
+
+        fn ask_witness_memory(
+            &self,
+            actor: EntityId,
+            key: &AskWitnessMemoryKey,
+        ) -> Option<AskWitnessMemory> {
+            let profile = self.epistemic_disposition_profile(actor)?;
+            self.belief_stores
+                .get(&actor)?
+                .ask_witness_memory(key, self.current_tick, profile.ask_memory_retention_ticks)
+                .cloned()
         }
     }
 
@@ -8734,6 +8993,268 @@ mod tests {
         )
     }
 
+    fn reported_entity_belief(
+        subject: EntityId,
+        place: EntityId,
+        observed_tick: u64,
+        witness: EntityId,
+    ) -> (EntityId, BelievedEntityState) {
+        (
+            subject,
+            BelievedEntityState {
+                last_known_place: Some(place),
+                ..believed_state(
+                    observed_tick,
+                    PerceptionSource::Report {
+                        from: witness,
+                        chain_len: 1,
+                    },
+                )
+            },
+        )
+    }
+
+    fn ask_witness_fixture(
+        current_tick: u64,
+        witnesses: impl IntoIterator<Item = EntityId>,
+    ) -> (TestBeliefView, EntityId, EntityId) {
+        let agent = entity(1);
+        let place = entity(2);
+        let witnesses = witnesses.into_iter().collect::<Vec<_>>();
+        let mut view = TestBeliefView {
+            current_tick: Tick(current_tick),
+            ..TestBeliefView::default()
+        };
+        view.alive.insert(agent);
+        view.entity_kinds.insert(agent, EntityKind::Agent);
+        view.effective_places.insert(agent, place);
+        let mut local_entities = vec![agent];
+        for witness in witnesses {
+            view.alive.insert(witness);
+            view.entity_kinds.insert(witness, EntityKind::Agent);
+            view.effective_places.insert(witness, place);
+            local_entities.push(witness);
+        }
+        view.entities_at.insert(place, local_entities);
+        view.epistemic_disposition_profiles.insert(
+            agent,
+            EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: pm(400),
+                witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+                ask_memory_retention_ticks: 12,
+                witness_recency_preference: pm(500),
+            },
+        );
+        (view, agent, place)
+    }
+
+    fn run_ask_witness_emitter(
+        view: &TestBeliefView,
+        agent: EntityId,
+        place: EntityId,
+    ) -> (Vec<GoalOffer>, CandidateGenerationDiagnostics) {
+        let blocked = BlockerMemory::default();
+        let discrepancies = DiscrepancyMemory::default();
+        let violation_memory = ViolationMemory::default();
+        let recipes = RecipeRegistry::new();
+        let mut candidates = Vec::new();
+        let mut diagnostics = CandidateGenerationDiagnostics::default();
+        let ctx = GenerationContext {
+            view,
+            agent,
+            place: Some(place),
+            travel_horizon: 6,
+            enterprise: EnterpriseSignals::default(),
+            blocked: &blocked,
+            discrepancies: &discrepancies,
+            violation_memory: &violation_memory,
+            recipes: &recipes,
+            current_tick: view.current_tick,
+            tracing_enabled: true,
+            current_plan: None,
+            opportunities: &[],
+        };
+        emit_ask_witness_candidates(&mut candidates, &mut diagnostics, &ctx);
+        (candidates, diagnostics)
+    }
+
+    #[test]
+    fn ask_witness_emitter_emits_for_stale_report_from_local_witness() {
+        let witness = entity(3);
+        let subject = entity(4);
+        let (mut view, agent, place) = ask_witness_fixture(45, [witness]);
+        view.beliefs.insert(
+            agent,
+            vec![reported_entity_belief(subject, place, 5, witness)],
+        );
+        view.sync_belief_store(agent);
+
+        let (candidates, diagnostics) = run_ask_witness_emitter(&view, agent, place);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0].key.kind,
+            GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+            }
+        );
+        assert_eq!(candidates[0].anchor, OpportunityAnchor::Entity(witness));
+        assert!(candidates[0].evidence_entities.contains(&witness));
+        assert!(candidates[0].evidence_places.contains(&place));
+        assert!(diagnostics.ask_witness_gate_rejections.is_empty());
+        assert!(diagnostics.offers.iter().any(|offer| {
+            offer.emitter == EmitterTag::EpistemicSensing
+                && offer
+                    .source_evidence
+                    .evidence_kind_counts
+                    .contains_key(&EvidenceKindTag::TestimonyProvenance)
+        }));
+    }
+
+    #[test]
+    fn ask_witness_emitter_emits_cold_start_for_low_confidence_topic_and_local_witness() {
+        let witness = entity(3);
+        let subject = entity(4);
+        let (mut view, agent, place) = ask_witness_fixture(1, [witness]);
+        view.epistemic_disposition_profiles.insert(
+            agent,
+            EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: pm(800),
+                witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+                ask_memory_retention_ticks: 12,
+                witness_recency_preference: pm(500),
+            },
+        );
+        let (_, rumor_belief) = reported_entity_belief(subject, place, 0, witness);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                BelievedEntityState {
+                    source: PerceptionSource::Rumor { chain_len: 1 },
+                    ..rumor_belief
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        let (candidates, diagnostics) = run_ask_witness_emitter(&view, agent, place);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0].key.kind,
+            GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+            }
+        );
+        assert_eq!(candidates[0].anchor, OpportunityAnchor::Entity(witness));
+        assert!(diagnostics.ask_witness_gate_rejections.is_empty());
+    }
+
+    #[test]
+    fn ask_witness_emitter_skips_high_confidence_report() {
+        let witness = entity(3);
+        let subject = entity(4);
+        let (mut view, agent, place) = ask_witness_fixture(45, [witness]);
+        view.beliefs.insert(
+            agent,
+            vec![reported_entity_belief(subject, place, 44, witness)],
+        );
+        view.sync_belief_store(agent);
+
+        let (candidates, diagnostics) = run_ask_witness_emitter(&view, agent, place);
+
+        assert!(candidates.is_empty());
+        assert_eq!(
+            diagnostics.ask_witness_gate_rejections,
+            vec![AskWitnessGateRejection {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+                reason: AskWitnessGateRejectionReason::ConfidenceAtOrAboveThreshold,
+            }]
+        );
+    }
+
+    #[test]
+    fn ask_witness_emitter_skips_active_cooldown() {
+        let witness = entity(3);
+        let subject = entity(4);
+        let (mut view, agent, place) = ask_witness_fixture(45, [witness]);
+        view.beliefs.insert(
+            agent,
+            vec![reported_entity_belief(subject, place, 5, witness)],
+        );
+        view.sync_belief_store(agent);
+        view.belief_stores
+            .get_mut(&agent)
+            .unwrap()
+            .asked_witnesses
+            .insert(
+                AskWitnessMemoryKey {
+                    counterparty: witness,
+                    topic_entity: Some(subject),
+                    topic_commodity: None,
+                },
+                AskWitnessMemory {
+                    asked_tick: Tick(44),
+                },
+            );
+
+        let (candidates, diagnostics) = run_ask_witness_emitter(&view, agent, place);
+
+        assert!(candidates.is_empty());
+        assert_eq!(
+            diagnostics.ask_witness_gate_rejections,
+            vec![AskWitnessGateRejection {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+                reason: AskWitnessGateRejectionReason::CooldownActive,
+            }]
+        );
+    }
+
+    #[test]
+    fn ask_witness_emitter_caps_witness_fanout_per_topic_by_salience() {
+        let witnesses = (10..20).map(entity).collect::<Vec<_>>();
+        let subject = entity(4);
+        let (mut view, agent, place) = ask_witness_fixture(45, witnesses.iter().copied());
+        view.epistemic_disposition_profiles
+            .get_mut(&agent)
+            .unwrap()
+            .stale_evidence_barrier_threshold = pm(900);
+        view.beliefs.insert(
+            agent,
+            witnesses
+                .iter()
+                .enumerate()
+                .map(|(idx, witness)| {
+                    reported_entity_belief(
+                        subject,
+                        place,
+                        5 + u64::try_from(idx).unwrap(),
+                        *witness,
+                    )
+                })
+                .collect(),
+        );
+        view.sync_belief_store(agent);
+
+        let (candidates, diagnostics) = run_ask_witness_emitter(&view, agent, place);
+
+        assert_eq!(candidates.len(), 3);
+        let emitted_witnesses = candidates
+            .iter()
+            .map(|candidate| match candidate.key.kind {
+                GoalKind::AskWitness { witness, .. } => witness,
+                other => panic!("unexpected candidate: {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(emitted_witnesses, vec![entity(19), entity(18), entity(17)]);
+        assert!(diagnostics.ask_witness_gate_rejections.is_empty());
+    }
+
     fn told_memory(
         counterparty: EntityId,
         subject: EntityId,
@@ -8825,6 +9346,7 @@ mod tests {
             stale_evidence_barrier_threshold: pm(500),
             witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
+            witness_recency_preference: pm(500),
         }
     }
 

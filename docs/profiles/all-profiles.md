@@ -178,6 +178,7 @@ Per-agent parameters governing deliberate epistemic behavior.
 | `stale_evidence_barrier_threshold` | `Permille` | Staleness level at which a grounded goal inserts an epistemic barrier requiring evidence refresh. (default: `Permille::new_unchecked(400)`) |
 | `witness_query_duration_ticks` | `NonZeroU32` | Duration in ticks for an ask-witness action. (default: `NonZeroU32::new(2).unwrap()`) |
 | `ask_memory_retention_ticks` | `u32` | How long (in ticks) the agent remembers a previous ask-witness attempt to avoid redundant queries. (default: `12`) |
+| `witness_recency_preference` | `Permille` | Relative preference for fresh testimony over shorter source distance. (default: `default_witness_recency_preference()`) |
 
 ---
 

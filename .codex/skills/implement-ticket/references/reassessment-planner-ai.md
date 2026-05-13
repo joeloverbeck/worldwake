@@ -39,6 +39,7 @@ If the falsified hypothesis was the ticket's core implementability claim rather 
 - When a new world artifact becomes perceivable and the spec says discovery affects behavior, verify at least one lawful downstream consumer exists.
 - When the ticket says information should be "internalized," search for an existing belief lane or consumer before inventing a new belief substrate.
 - When the ticket changes historical event content or view semantics, inspect renderers and detail views for reconstruction from live runtime state instead of stored event records.
+- When candidate emission depends on testimony provenance, source identity, report chains, or multiplicity, verify that focused test doubles preserve the same provenance and multiplicity semantics as the runtime read surface. Do not rely on canonicalized helper stores that deduplicate by subject when the owned behavior must distinguish several witnesses or reports for the same subject.
 
 **Planning state parity:**
 - When making a new action handler's affordance enumeration live through the planner's search pipeline, verify that every `RuntimeBeliefView` method the handler calls is implemented on `PlanningState` (via `PlanningSnapshot`), not just on `PerAgentBeliefView`. The planning state's view defaults most trait methods to `None`.

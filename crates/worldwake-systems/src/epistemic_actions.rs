@@ -548,6 +548,7 @@ mod tests {
                 stale_evidence_barrier_threshold: pm(400),
                 witness_query_duration_ticks: nz(duration),
                 ask_memory_retention_ticks: 12,
+                witness_recency_preference: pm(500),
             },
         )
         .unwrap();

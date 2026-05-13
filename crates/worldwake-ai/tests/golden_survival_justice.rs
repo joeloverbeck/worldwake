@@ -564,12 +564,13 @@ fn run_survival_justice() -> JusticeObservation {
             sink.events_for(searcher)
                 .into_iter()
                 .filter(|event| {
-                    matches!(
-                        event.outcome,
-                        RequestResolutionOutcome::RejectedBeforeStart {
-                            reason: RequestResolutionRejectionReason::ExactIdentityRequired
-                        }
-                    )
+                    event.action_name == "ask_about_person"
+                        && matches!(
+                            event.outcome,
+                            RequestResolutionOutcome::RejectedBeforeStart {
+                                reason: RequestResolutionRejectionReason::ExactIdentityRequired
+                            }
+                        )
                 })
                 .count()
                 .try_into()

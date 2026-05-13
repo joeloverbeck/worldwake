@@ -5,9 +5,9 @@ Do not hand-edit it.
 
 ## Summary
 
-- Golden test files: 43
-- Files contributing `golden_*` tests: 43
-- Total `golden_*` tests: 209
+- Golden test files: 44
+- Files contributing `golden_*` tests: 44
+- Total `golden_*` tests: 215
 
 ## Per-File Inventory
 
@@ -19,6 +19,7 @@ Do not hand-edit it.
 | `golden_contention_inspectability.rs` | 5 |
 | `golden_decision_history_events.rs` | 1 |
 | `golden_decision_payload.rs` | 4 |
+| `golden_epistemic_sensing.rs` | 6 |
 | `golden_experience_preferences.rs` | 3 |
 | `golden_exploration.rs` | 16 |
 | `golden_final_integration.rs` | 2 |
@@ -110,6 +111,15 @@ Do not hand-edit it.
 - `golden_decision_payload_replan_triggered_records_stale_belief_and_assumptions`
 - `golden_decision_payload_expectation_mismatch_records_assumption_and_observation`
 - `golden_decision_payload_source_expectation_failure_records_source_observation_only`
+
+### `golden_epistemic_sensing.rs`
+
+- `golden_ask_witness_refreshes_stale_report`
+- `golden_ask_witness_refreshes_stale_report_replay_is_deterministic`
+- `golden_ask_witness_cold_start_imports_local_witness_report`
+- `golden_ask_witness_critical_survival_suppression`
+- `golden_ask_witness_cooldown_gate_resumes_after_retention`
+- `golden_ask_witness_revalidates_when_witness_relocates_before_commit`
 
 ### `golden_experience_preferences.rs`
 

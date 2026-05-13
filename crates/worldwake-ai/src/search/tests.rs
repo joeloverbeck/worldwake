@@ -921,6 +921,7 @@ fn epistemic_profile() -> EpistemicDispositionProfile {
         stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
         witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
         ask_memory_retention_ticks: 10,
+        witness_recency_preference: Permille::new(500).unwrap(),
     }
 }
 

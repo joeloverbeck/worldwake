@@ -9,7 +9,7 @@ Post-implementation review and follow-up planning. Archives the completed ticket
 
 Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDATIONS.md), [tickets/README.md](../../../tickets/README.md), and [tickets/_TEMPLATE.md](../../../tickets/_TEMPLATE.md) before making changes.
 
-**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), add a factual post-ticket-review blocker note or status correction when archival is blocked by an in-scope deliverable, apply mechanical path/link rewrites caused solely by moving the completed ticket into `archive/` including archived siblings that still reference the just-moved active path, archive it, create new tickets in `tickets/`, update existing active tickets, factually update active specs under `specs/` when the completed ticket's landed contract makes the drift unambiguous.
+**Allowed actions**: update the completed ticket's `Outcome` and verification notes (factual, unambiguous only), add a factual post-ticket-review blocker note or status correction when archival is blocked by an in-scope deliverable, apply mechanical path/link rewrites caused solely by moving the completed ticket into `archive/` including archived siblings that still reference the just-moved active path, mechanically refresh or remove stale source line numbers in ticket/spec handoff prose without changing scope or requirements, archive it, create new tickets in `tickets/`, update existing active tickets, factually update active specs under `specs/` when the completed ticket's landed contract makes the drift unambiguous.
 
 **Forbidden**: modifying production code or tests.
 
@@ -75,6 +75,7 @@ Read [AGENTS.md](../../../AGENTS.md), [docs/FOUNDATIONS.md](../../../docs/FOUNDA
    - tracked deletion at the active path plus untracked archive file
 10. Re-read the archived ticket after the move and fix any purely mechanical path fallout caused by relocation (for example relative markdown links in `Deps`, archive-ticket references, or other moved-path links inside the archived file). Also sweep archived sibling tickets for unambiguous links that still point at the just-moved active path and rewrite those as archival mechanics when no ownership judgment is required. Preserve historical meaning in archived sibling prose; if a past-tense note says review created an active ticket, rewrite it as "the now-archived `archive/tickets/<id>.md`" rather than implying the original creation happened at the archive path. Treat these edits as archival mechanics, not scope changes.
 11. If rereading the archived ticket exposes stale verification or handoff wording, factual corrections to archived `Outcome`, `Verification Result`, `Verification Layers`, or similar proof-surface sections are allowed when they only make the archived proof truthful. Do not use this allowance to rewrite the ticket's problem statement, original scope, or acceptance criteria after archival.
+12. If the archived ticket or active spec contains stale source line numbers in handoff lists, either refresh every line number in that list from a live sweep or remove the line numbers and keep stable file/symbol references. This is allowed as mechanical handoff cleanup only when it does not change the ticket's scope, requirements, or proof claims.
 
 ### 3. Establish the review surface
 
@@ -144,6 +145,7 @@ Run these checks before archival to keep the active roadmap accurate:
 - **Active spec drift**: When the completed ticket falsifies or narrows a claim in an active spec under `specs/`, classify that as active spec drift. This includes narrowed implementations where the draft spec still describes the broader pre-reassessment plan. Update the spec factually if in scope for this handoff; otherwise create/update a follow-up ticket that owns bringing the spec into alignment.
 - **Dependency chain impact**: When a new follow-up ticket changes architectural ordering or prerequisites, also check adjacent active tickets in the same subsystem sequence and update their scope or `Deps` factually.
 - **Final landing ticket drift**: When creating a new follow-up in a numbered ticket family, check the terminal landing, roadmap, docs-regeneration, or spec-archive ticket for stale completion ranges such as "once tickets 001-007 land." Update that terminal ticket when the new follow-up extends the sequence or changes final closeout prerequisites.
+- **Source TODO ownership**: Before deciding no follow-up is needed, run a focused source/document sweep for the reviewed ticket id, such as `rg "TODO\\(<ticket-id>\\)|<ticket-id>" crates specs tickets archive/tickets`. Classify each hit as historical/archive-only, mechanical active-path fallout, still-owned blocker for the reviewed ticket, covered by an active sibling, or a new follow-up owner. Do not archive over a source TODO that still points at the reviewed ticket unless it is historical or has an active owner.
 - **Broader verification blockers**: When the completed ticket's broader verification surfaced a failure outside the ticket's owned surface, rerun the failing proof in isolation before deciding action. If the failure is real and still outside scope, first check nearby active tickets/specs for an existing owner, then record it in the archived handoff and create or update a bounded follow-up ticket instead of folding it silently into the completed ticket.
 
 ### 6. Author follow-up tickets
@@ -205,7 +207,7 @@ If archival is blocked by an in-scope deliverable, use this compact report shape
 **Follow-up**: 0 new tickets, <N> updated tickets, 0 covered by existing tickets
 ```
 
-For archived, already-archived, or follow-up-producing reviews, use the full report shape:
+For archived, already-archived, or follow-up-producing reviews with substantive findings, use the full report shape:
 
 ```markdown
 # Post-Ticket Review: <ticket-id>
@@ -272,6 +274,8 @@ For archived, already-archived, or follow-up-producing reviews, use the full rep
 ```
 
 If no follow-up tickets are warranted, still report reviewed areas and state that no new ticket was needed.
+
+For straightforward archive-ready reviews where there are no unresolved architecture findings beyond ticket actions, a compact report is acceptable. It must still state the ticket path, review date, implementation state, archival status, created/updated/covered tickets, active-spec or dependency rewrites, and verification commands run or intentionally not rerun.
 
 ## Guardrails
 

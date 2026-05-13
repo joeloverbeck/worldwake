@@ -142,6 +142,10 @@ pub enum GoalKind {
         topic: TellTopic,
         communication_class: CommunicationClass,
     },
+    AskWitness {
+        witness: EntityId,
+        topic: TellTopic,
+    },
     ClaimOffice {
         office: EntityId,
     },
@@ -272,6 +276,7 @@ impl From<GoalKind> for GoalKey {
                 (None, None, Some(posting.posting_place))
             }
             GoalKind::ShareBelief { listener, .. } => (None, Some(listener), None),
+            GoalKind::AskWitness { witness, .. } => (None, Some(witness), None),
             GoalKind::RegroupWithFaction { faction }
             | GoalKind::EstablishBanditCamp { faction } => (None, Some(faction), None),
             GoalKind::SupportCandidateForOffice { office, candidate } => {

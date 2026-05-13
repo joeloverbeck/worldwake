@@ -1,5 +1,7 @@
 # Survival And Drive-Escalation Gameplay Report
 
+**Status**: COMPLETED
+
 ## Purpose
 
 This report explains the gameplay features exercised by these authored scenarios:
@@ -364,3 +366,10 @@ If the goal is to make these features fuller, rounder, and more in-depth while s
 The survival scenarios are currently testing a world where staying alive is a recurring local logistics problem, not an abstract status bar problem. The drive-escalation scenario adds a crucial correction: long-ignored maintenance needs must eventually become urgent enough to break convenience loops.
 
 The strongest existing foundations are already in place: physical needs, physical places, physical travel, depletable resources, belief-limited planning, and explicit maintenance actions. The biggest opportunity for future depth is not inventing a new survival framework, but thickening the consequences, procedures, and social meaning around the one that already exists.
+
+## Outcome
+
+- Completion date: 2026-05-13
+- What changed: Archived as exploited after the gameplay report's findings had been consumed by follow-on work.
+- Deviations from original plan: None.
+- Verification results: Archival-only change; no code verification required.

@@ -316,6 +316,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn ask_witness_epistemic_sensing_suppresses_at_critical_stress() {
+        let goal = GoalKind::AskWitness {
+            witness: dummy_entity(),
+            topic: worldwake_core::TellTopic::EntityBelief {
+                subject: dummy_entity(),
+            },
+        };
+        let policy = crate::GoalDispatchKey::from_goal_kind(&goal)
+            .declaration()
+            .family_policy;
+
+        assert_eq!(
+            policy.suppression,
+            SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical)
+        );
+        assert_eq!(policy.penalty_interrupt, PenaltyInterruptEligibility::Never);
+        assert_eq!(policy.free_interrupt, FreeInterruptRole::Normal);
+
+        let below_critical = DecisionContext {
+            max_self_care_class: GoalPriorityClass::High,
+            danger_class: GoalPriorityClass::Low,
+        };
+        assert_eq!(
+            evaluate_suppression(&goal, &below_critical),
+            GoalPolicyOutcome::Available
+        );
+
+        let critical = DecisionContext {
+            max_self_care_class: GoalPriorityClass::Critical,
+            danger_class: GoalPriorityClass::Low,
+        };
+        assert_eq!(
+            evaluate_suppression(&goal, &critical),
+            GoalPolicyOutcome::Suppressed {
+                threshold: GoalPriorityClass::Critical,
+                max_self_care: GoalPriorityClass::Critical,
+                danger: GoalPriorityClass::Low,
+            }
+        );
+    }
+
     // -- Penalty interrupt eligibility tests --
 
     #[test]

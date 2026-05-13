@@ -1,5 +1,7 @@
 # Scenario Narrative Report — survival-baseline
 
+**Status**: COMPLETED
+
 **Scenario**: `scenarios/survival-baseline.ron`
 **Run timestamp**: 2026-04-25 22:34:23
 **Ticks simulated**: 1440
@@ -132,3 +134,10 @@ Three moments show agents reaching goals through more than the most direct path.
 ### Resilience
 
 Three moments show recovery from setbacks without collapse. First, every reservation-conflict blocker in the run (twenty plus two on Agent B, twenty on Agent A, none on Agent C) cleared inside the cognitive profile's `transient_block_ticks` envelope of twenty ticks; the planner did not escalate to `structural_block_ticks` (200), did not deepen-search itself into budget exhaustion (zero budget-exhaustion events recorded across all three agents), and did not abandon the goal class altogether — it waited, replanned, and tried again. Second, Agent A's anomaly-flagged length-two `sleep → sleep` loop at the end of the run is a benign artifact of consecutive sleeps resolving in the same decision tick rather than a stuck-loop pathology — her behavioral-transition narrowing at tick 1400 (six action types to one) coincides with all five of her needs sitting below 300 permille, exactly the situation where sleep should dominate. Third, the survival-health contract terminating the run at tick 1440 finds zero ticks above 750 permille for any need on any agent, zero authored-critical windows entered, and all five required self-care families exercised — a flat survival profile in a sparse world produced 1440 ticks of homeostatic equilibrium under a resource regime where two of the three agents were drinking from the same well and all three were eating from the same orchard.
+
+## Outcome
+
+- Completion date: 2026-05-13
+- What changed: Archived as exploited after the narrative report had been consumed by follow-on work.
+- Deviations from original plan: None.
+- Verification results: Archival-only change; no code verification required.

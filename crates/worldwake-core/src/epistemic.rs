@@ -27,6 +27,13 @@ pub struct EpistemicDispositionProfile {
     pub witness_query_duration_ticks: NonZeroU32,
     /// How long (in ticks) the agent remembers a previous ask-witness attempt to avoid redundant queries.
     pub ask_memory_retention_ticks: u32,
+    /// Relative preference for fresh testimony over shorter source distance.
+    #[serde(default = "default_witness_recency_preference")]
+    pub witness_recency_preference: Permille,
+}
+
+fn default_witness_recency_preference() -> Permille {
+    Permille::new_unchecked(500)
 }
 
 impl Default for EpistemicDispositionProfile {
@@ -35,6 +42,7 @@ impl Default for EpistemicDispositionProfile {
             stale_evidence_barrier_threshold: Permille::new_unchecked(400),
             witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
+            witness_recency_preference: default_witness_recency_preference(),
         }
     }
 }
@@ -93,6 +101,7 @@ mod tests {
             stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
             witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
             ask_memory_retention_ticks: 17,
+            witness_recency_preference: Permille::new(650).unwrap(),
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
@@ -114,5 +123,9 @@ mod tests {
             NonZeroU32::new(2).unwrap()
         );
         assert_eq!(profile.ask_memory_retention_ticks, 12);
+        assert_eq!(
+            profile.witness_recency_preference,
+            Permille::new(500).unwrap()
+        );
     }
 }

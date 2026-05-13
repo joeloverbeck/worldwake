@@ -33,7 +33,7 @@ Phase 11: Belief-First Continual Planning Architectural — Completed
 - S134 (Canonical Effect Schema) — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. `RepairKind::ReplaceProvider` benefits from the queryable effect-schema surface (`apply_effects_with_context`) when picking a replacement step.
 - S136 (Decision Event Payload Extension) — completed and archived at `archive/specs/S136-decision-event-payload-extension.md`. `RepairAttemptTrace` reuses S136's representable `decisive_*` ref families; record refs should be populated only when the repair emission seam carries a lawful record entity.
 - S138 (Affordance-to-Opportunity Compiler) — completed and archived at `archive/specs/S138-opportunity-compiler.md`. Soft dependency satisfied: `RepairKind::RebindTarget` reads the opportunity index this spec produced when picking a sibling target.
-- S139 (Epistemic Sensing Subgoals) — Phase 11 sibling draft (`specs/S139-epistemic-sensing-subgoals.md`). Soft dependency in the inverse direction: `RepairKind::InsertVerification` splices `AskWitness`/`InspectContainer` goals as repair steps. Order-independent: without S139, `InsertVerification` returns `RepairFailure::NoEpistemicSubstrate` and the search falls through to the next `RepairKind`.
+- S139 (Ask-Witness Goal Layer) — completed and archived at `archive/specs/S139-epistemic-sensing-subgoals.md`. Soft dependency in the inverse direction: `RepairKind::InsertVerification` can splice AskWitness-class verification goals as repair steps. Order-independent: without an epistemic substrate, `InsertVerification` returns `RepairFailure::NoEpistemicSubstrate` and the search falls through to the next `RepairKind`.
 
 ## Design Goals
 
