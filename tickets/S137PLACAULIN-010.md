@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: None — net-new test file + scenario fixtures
-**Deps**: archive/tickets/S137PLACAULIN-011.md (successful localized repair handlers), archive/tickets/S137PLACAULIN-007.md (revalidation routing), archive/tickets/S137PLACAULIN-008.md (RepairAttemptTrace), tickets/S137PLACAULIN-009.md (observer rendering)
+**Deps**: archive/tickets/S137PLACAULIN-011.md (successful localized repair handlers), archive/tickets/S137PLACAULIN-007.md (revalidation routing), archive/tickets/S137PLACAULIN-008.md (RepairAttemptTrace), archive/tickets/S137PLACAULIN-009.md (observer rendering)
 
 ## Problem
 

@@ -31,7 +31,7 @@ Keep this top-level skill as routing plus hard stops. Load the referenced files 
 
 ## Common Fast Lanes
 
-- Small/local CLI, observer, report, or formatter work: classify through `references/ticket-classification.md` small/local guidance; keep the proof beside the owned render/output surface; if the focused test lives in `src/bin/*.rs`, resolve the full bin-local test id with `cargo test -p <crate> --bin <bin> -- --list` before any `--exact` proof.
+- Small/local CLI, observer, report, or formatter work: classify through `references/ticket-classification.md` small/local guidance; keep the proof beside the owned render/output surface; if the focused test lives in `src/bin/*.rs`, resolve the full bin-local test id with `cargo test -p <crate> --bin <bin> -- --list` before any `--exact` proof unless the test was just authored in the current patch and its full module-qualified path is visible. If that direct exact run reports zero tests or an unexpected target set, discard it as non-proof and fall back to `-- --list`.
 - Golden/observer fixture drift: use the Quick Routing golden/observer branch; prove the strongest existing lower-layer event/report contract before editing fixtures, then record fixture-only closeout when production stayed unchanged.
 - Shared carrier, payload, field, or enum work: use the shared-surface and carrier-chain routes before source edits; sweep constructors, consumers, renderers, and save/version boundaries according to the matching reference.
 - Closeout-only or post-proof truthing: load `references/closeout.md`; rewrite stale draft proof/spec/ticket wording first, then run scoped Markdown/diff hygiene and final dirty-path classification.
@@ -66,7 +66,7 @@ Before any Cargo command:
 - Do not bundle it with `rg`, `sed`, `git status`, `git diff`, or any other read-only helper command.
 - Poll or wait for any known in-flight Cargo session before starting another one.
 - If `cargo test ... -- --list` returns several tests for a shared family/prefix, do not append `--exact` to that same prefix. Either run the family filter without `--exact` and record the nonzero test set, or run each concrete listed test name exactly.
-- For tests inside `src/bin/*.rs`, use the binary target during selector discovery and exact proof. Prefer `cargo test -p <crate> --bin <bin> -- --list`, copy the full listed id such as `tests::name`, then run `cargo test -p <crate> --bin <bin> tests::name -- --exact`; a package-level bare function name can compile targets while executing zero tests.
+- For tests inside `src/bin/*.rs`, use the binary target during selector discovery and exact proof. Prefer `cargo test -p <crate> --bin <bin> -- --list`, copy the full listed id such as `tests::name`, then run `cargo test -p <crate> --bin <bin> tests::name -- --exact`; a package-level bare function name can compile targets while executing zero tests. For a just-authored bin-local test whose module-qualified path is visible in the edited file, a direct exact run is acceptable; if it executes zero tests or the wrong target set, treat it as non-proof and rerun through list-based selector discovery.
 
 For CLI smoke checks where the ticket drafts a Cargo command piped to a read-only filter, such as `cargo run ... -- --help | grep flag-name`, keep the Cargo execution itself unambiguous. Prefer one of these proof shapes:
 - Run the Cargo command alone and inspect or relay the relevant output line.

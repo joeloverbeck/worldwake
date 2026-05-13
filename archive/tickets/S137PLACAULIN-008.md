@@ -131,12 +131,12 @@ Completed on 2026-05-13.
 2. Wired localized repair attempts in `agent_tick/execution.rs` into per-tick decision traces for both successful and failed repair outcomes. `RepairOutcome::Repaired` now carries prior rejected attempts so a successful trace can report the alternatives tried before the chosen kind.
 3. Added derived cap-hit reporting from the final traced plan by comparing each guarded step's `required_facts` with retained `causal_links`.
 4. Updated explicit `AgentDecisionTrace` literals in AI tests, golden harness helpers, observer tests, survival forensics, and visualizer trace buffers for the new trace fields.
-5. Truth-synced `specs/S137-plan-causal-links-and-repair.md` for the landed trace fields and `RepairOutcome::Repaired` shape. Updated `tickets/S137PLACAULIN-009.md` to cite this completed ticket by path.
+5. Truth-synced `specs/S137-plan-causal-links-and-repair.md` for the landed trace fields and `RepairOutcome::Repaired` shape. Updated the now-archived `archive/tickets/S137PLACAULIN-009.md` to cite this completed ticket by path.
 
 ## Deviations
 
 1. `CausalLinkCapHit` is emitted as a derived `AgentDecisionTrace.causal_link_cap_hits` entry from the final traced plan, not as a separate planner event pipeline.
-2. Observer rendering remains out of scope and is still owned by `tickets/S137PLACAULIN-009.md`.
+2. Observer rendering remains out of scope and was later completed by `archive/tickets/S137PLACAULIN-009.md`.
 
 ## Verification Result
 
