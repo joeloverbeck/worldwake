@@ -67,6 +67,7 @@ For implementation-only completion:
 - Append factual close-out notes: `## Outcome`, `## Verification Result`, and any explicit deviations.
 - If the active ticket is short-form or pre-template, add only the minimum missing sections: `## Assumption Reassessment`, `## Outcome`, optional `## Deviations`, and `## Verification Result`.
 - If `## Verification Result` is absent, create it before changing `Status` to `COMPLETED`. Every command or proof item in that section must start with `Passed`, `Waived`, or `Blocked`.
+- Keep `## Verification Result` as the final list-bearing closeout section, or ensure any later list sections are under a new top-level heading that `check_closeout.py` will not parse as verification rows. If the ticket still needs result-tense `Invariants`, `Test Plan Result`, or similar lists, place them before `## Verification Result` so the checker does not treat those bullets as bare proof claims.
 
 For reassessment-only rejection:
 - Set a factual non-completion status such as `REJECTED` when the live contract disproves the ticket's implementability claim.

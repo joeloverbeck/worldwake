@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `RepairMemory` shape, save-load, removal of `RepairKey`
-**Deps**: archive/tickets/S137PLACAULIN-001.md (BreachSignature), archive/tickets/S137PLACAULIN-003.md (new RepairKind variants populated in RepairEntry), 004 (save-format baseline if it lands before this ticket)
+**Deps**: archive/tickets/S137PLACAULIN-001.md (BreachSignature), archive/tickets/S137PLACAULIN-003.md (new RepairKind variants populated in RepairEntry), archive/tickets/S137PLACAULIN-004.md (completed save-format baseline at `82`)
 
 ## Problem
 

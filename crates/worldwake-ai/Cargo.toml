@@ -16,6 +16,7 @@ soak = []
 
 [dev-dependencies]
 blake3 = "1"
+ron = "0.8"
 worldwake-cli = { path = "../worldwake-cli" }
 
 [lints]

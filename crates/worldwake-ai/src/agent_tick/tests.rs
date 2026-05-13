@@ -6081,6 +6081,7 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
                     },
                 },
             ],
+            causal_links: Vec::new(),
         }),
         expectations: Vec::new(),
     };

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — new `plan_repair` module, planner emitter populates causal_links, classify_accepted_repair preserved as fall-through
-**Deps**: archive/tickets/S137PLACAULIN-001.md (CausalLink, BreachSignature), archive/tickets/S137PLACAULIN-002.md (repair_budget_fraction, causal_links_per_step_cap), archive/tickets/S137PLACAULIN-003.md (new RepairKind variants), 004 (PlanGuard.causal_links field), 005 (RepairMemory shape)
+**Deps**: archive/tickets/S137PLACAULIN-001.md (CausalLink, BreachSignature), archive/tickets/S137PLACAULIN-002.md (repair_budget_fraction, causal_links_per_step_cap), archive/tickets/S137PLACAULIN-003.md (new RepairKind variants), archive/tickets/S137PLACAULIN-004.md (completed PlanGuard.causal_links field), 005 (RepairMemory shape)
 
 ## Problem
 

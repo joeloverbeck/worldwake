@@ -248,6 +248,7 @@ pub fn build_plan_guard(
             .iter()
             .filter_map(|spec| build_invalidator(spec, step, adoption_tick))
             .collect(),
+        causal_links: Vec::new(),
     })
 }
 
