@@ -18,7 +18,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 
 - `worldwake-core` — extends `GoalKind` at `crates/worldwake-core/src/goal.rs:62` with `AskWitness { witness: EntityId, topic: TellTopic }`. Extends the existing universal `EpistemicDispositionProfile` at `crates/worldwake-core/src/epistemic.rs:23` with one new field `witness_recency_preference: Permille` (weighting per-tick freshness vs first-hand-distance), `#[serde(default)]`-annotated so existing RON scenarios deserialize unchanged. Reuses `stale_evidence_barrier_threshold` (already consumed by `crates/worldwake-ai/src/goal_model.rs:148` as a confidence/staleness gate) as the verification threshold; reuses `ask_memory_retention_ticks` (already consumed by `epistemic_actions.rs:466` and `ask_about_person_actions.rs:518` to gate re-ask) as the witness inquiry cooldown.
 - `worldwake-sim` — extends the `GoalBeliefView` trait at `crates/worldwake-sim/src/belief_view.rs:270` with `entity_beliefs_sourced_from_witness(agent, witness)` — a new accessor that surfaces `BelievedEntityState` entries whose `source = PerceptionSource::Report { from: witness, .. }`. The existing `epistemic_disposition_profile(actor)` accessor at `belief_view.rs:548` (also exposed via `SocialBeliefView::epistemic_disposition_profile` at line 1171 and the `RuntimeBeliefView` impl at line 2020) is reused unchanged. Provides the `impl_goal_belief_view!` forwarding for the one new method.
-- `worldwake-ai` — extends `GoalDispatchKey` at `crates/worldwake-ai/src/goal_dispatch_key.rs:6` with `AskWitness` (bumps `ALL` from `[Self; 40]` to `[Self; 41]` at line 50 and adds the `from_goal_kind` match arm at line 99). Adds a `DECL_ASK_WITNESS` `GoalDispatchDeclaration` at `crates/worldwake-ai/src/goal_dispatch_decl.rs` referencing a new `ASK_WITNESS_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::AskWitness]` and a new `EPISTEMIC_SENSING_POLICY: GoalFamilyPolicy` constant in `crates/worldwake-ai/src/goal_policy.rs`. Implements all 11 `GoalKindPlannerExt` methods at `crates/worldwake-ai/src/goal_model.rs:40-82` for the new variant (reusing the existing private helpers `ask_witness_payload_matches_subject` at line 95 and `epistemic_subject_for_belief` at line 107). Adds `emit_ask_witness_candidates` in `crates/worldwake-ai/src/candidate_generation.rs`. Adds `GoalPriorityClass` assignment and the `motive_score` contribution in `crates/worldwake-ai/src/ranking.rs`.
+- `worldwake-ai` — extends `GoalDispatchKey` at `crates/worldwake-ai/src/goal_dispatch_key.rs:6` with `AskWitness` (bumps `ALL` from `[Self; 40]` to `[Self; 41]` at line 50 and adds the `from_goal_kind` match arm at line 99). Adds a `DECL_ASK_WITNESS` `GoalDispatchDeclaration` at `crates/worldwake-ai/src/goal_dispatch_decl.rs` referencing a new `ASK_WITNESS_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::AskWitness]` and a new `EPISTEMIC_SENSING_POLICY: GoalFamilyPolicy` constant beside the existing family policy constants in `crates/worldwake-ai/src/goal_dispatch_decl.rs`. Implements all 11 `GoalKindPlannerExt` methods at `crates/worldwake-ai/src/goal_model.rs:40-82` for the new variant (reusing the existing private helpers `ask_witness_payload_matches_subject` at line 95 and `epistemic_subject_for_belief` at line 107). Adds `emit_ask_witness_candidates` in `crates/worldwake-ai/src/candidate_generation.rs`. Adds `GoalPriorityClass` assignment and the `motive_score` contribution in `crates/worldwake-ai/src/ranking.rs`.
 - `worldwake-cli` — no `AgentDef` plumbing change — `AgentDef.epistemic_disposition: Option<EpistemicDispositionProfile>` already exists at `crates/worldwake-cli/src/scenario/types.rs:603`, and `spawn_agent()` already applies it. The new `witness_recency_preference` field flows through automatically because (a) `EpistemicDispositionProfile` derives `Serialize`/`Deserialize`, (b) the new field is `#[serde(default)]`-annotated, and (c) the existing `unwrap_or_default()` / `set_component_epistemic_disposition_profile` plumbing carries the extended struct unchanged. Observer rendering of `GoalKind::AskWitness` commits routes through the existing decision-trace path (Section 3b Decision History in `crates/worldwake-cli/src/bin/observer.rs`); no new observer section is introduced.
 
 ## Dependencies
@@ -145,32 +145,32 @@ const ASK_WITNESS_OPS: &[PlannerOpKind] = &[PlannerOpKind::Travel, PlannerOpKind
 const ASK_WITNESS_BARRIER: &[PlannerOpKind] = &[PlannerOpKind::AskWitness];
 
 const DECL_ASK_WITNESS: GoalDispatchDeclaration = GoalDispatchDeclaration {
-    trace_label: "ask_witness",
+    trace_label: "AskWitness",
     provenance_family: Some(RankedGoalProvenanceFamily::EpistemicSensing),
     relevant_ops: ASK_WITNESS_OPS,
-    invalidation_strategy: /* chosen to match the existing ask_witness action semantics */,
-    feasibility_strategy: /* chosen to match the existing ask_witness action semantics */,
-    frontier_exhaustion_strategy: /* chosen to match the existing ask_witness action semantics */,
+    invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
+    feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
+    frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
     family_policy: EPISTEMIC_SENSING_POLICY,
     progress_barrier_ops: ASK_WITNESS_BARRIER,
 };
 ```
 
-The `invalidation_strategy`, `feasibility_strategy`, and `frontier_exhaustion_strategy` choices are implementation details left to the ticket — match the closest existing declaration (e.g., the `ShareBelief` declaration is a structural analog).
+The `invalidation_strategy`, `feasibility_strategy`, and `frontier_exhaustion_strategy` choices match the existing ask-witness action semantics and the closest testimony-path declaration.
 
 ### D5. `EPISTEMIC_SENSING_POLICY` constant
 
-In `crates/worldwake-ai/src/goal_policy.rs`, alongside `SELF_CARE_POLICY`, `ENTERPRISE_POLICY`, `SOCIAL_POLICY`, `SHARE_BELIEF_TESTIMONY_POLICY` (lines 191-246):
+In `crates/worldwake-ai/src/goal_dispatch_decl.rs`, alongside `SELF_CARE_POLICY`, `ENTERPRISE_POLICY`, `SOCIAL_POLICY`, `SHARE_BELIEF_TESTIMONY_POLICY`:
 
 ```rust
-pub const EPISTEMIC_SENSING_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+const EPISTEMIC_SENSING_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
     suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical),
-    penalty_interrupt: /* match SOCIAL_POLICY */,
-    free_interrupt: /* match SOCIAL_POLICY */,
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Normal,
 };
 ```
 
-`GoalFamilyPolicy` is a struct, not an enum (`goal_policy.rs:71-75`); the family is created by defining the constant, not by adding an enum variant. `GoalPriorityClass::Critical` is the actual top variant in `ranking.rs:1989-1995`.
+`GoalFamilyPolicy` is a struct, not an enum (`goal_policy.rs:71-75`); the family is created by defining the constant, not by adding an enum variant. `GoalPriorityClass::Critical` is the actual top variant in `ranking.rs:1989-1995`. `goal_policy.rs` keeps the shared policy types, evaluation helper, and focused policy tests; the concrete dispatch-family constants live with the declaration table.
 
 ### D6. `GoalKindPlannerExt` implementations
 

@@ -244,6 +244,12 @@ const SHARE_BELIEF_TESTIMONY_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
     free_interrupt: FreeInterruptRole::Normal,
 };
 
+const EPISTEMIC_SENSING_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+    suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical),
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Normal,
+};
+
 const SHARE_BELIEF_GOSSIP_POLICY: GoalFamilyPolicy = SOCIAL_POLICY;
 
 // ---------------------------------------------------------------------------
@@ -593,7 +599,7 @@ static DECL_ASK_WITNESS: GoalDispatchDeclaration = GoalDispatchDeclaration {
     invalidation_strategy: InvalidationStrategy::PositionAndTargetDead,
     feasibility_strategy: FeasibilityStrategy::ColocationOrDead,
     frontier_exhaustion_strategy: FrontierExhaustionStrategy::PermanentUntilInvalidator,
-    family_policy: SHARE_BELIEF_TESTIMONY_POLICY,
+    family_policy: EPISTEMIC_SENSING_POLICY,
     progress_barrier_ops: ASK_WITNESS_BARRIER,
 };
 static DECL_CLAIM_OFFICE: GoalDispatchDeclaration = GoalDispatchDeclaration {
@@ -1056,6 +1062,18 @@ mod tests {
         );
         assert_eq!(declaration.family_policy, SELF_CARE_POLICY);
         assert_eq!(declaration.progress_barrier_ops, &[PlannerOpKind::DropItem]);
+    }
+
+    #[test]
+    fn ask_witness_declaration_uses_epistemic_sensing_policy() {
+        let declaration = GoalDispatchKey::AskWitness.declaration();
+
+        assert_eq!(declaration.trace_label, "AskWitness");
+        assert_eq!(declaration.family_policy, super::EPISTEMIC_SENSING_POLICY);
+        assert_eq!(
+            declaration.progress_barrier_ops,
+            &[PlannerOpKind::AskWitness]
+        );
     }
 
     #[test]

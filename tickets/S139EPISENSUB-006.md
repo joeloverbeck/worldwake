@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: No — adds new test file and exercises the existing observer decision-trace surface
-**Deps**: archive/tickets/S139EPISENSUB-001.md, archive/tickets/S139EPISENSUB-002.md, tickets/S139EPISENSUB-003.md, tickets/S139EPISENSUB-004.md, tickets/S139EPISENSUB-005.md, archive/tickets/S139EPISENSUB-007.md
+**Deps**: archive/tickets/S139EPISENSUB-001.md, archive/tickets/S139EPISENSUB-002.md, archive/tickets/S139EPISENSUB-003.md, tickets/S139EPISENSUB-004.md, tickets/S139EPISENSUB-005.md, archive/tickets/S139EPISENSUB-007.md
 
 ## Problem
 

@@ -1,6 +1,6 @@
 # S139EPISENSUB-003: AskWitness dispatch policy refinement and EPISTEMIC_SENSING_POLICY
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` (`goal_dispatch_decl.rs`, `goal_policy.rs`)
@@ -16,13 +16,14 @@ Ticket 001 landed the `GoalDispatchKey::AskWitness` variant and, because the liv
 
 1. `GoalDispatchDeclaration` is a struct at `crates/worldwake-ai/src/goal_dispatch_decl.rs:61-74` with fields `trace_label`, `provenance_family`, `relevant_ops`, `invalidation_strategy`, `feasibility_strategy`, `frontier_exhaustion_strategy`, `family_policy`, `progress_barrier_ops`. Existing declarations like `DECL_ENGAGE_HOSTILE` and `DECL_SHARE_BELIEF` at lines 358+ are the structural analogs.
 2. `GoalFamilyPolicy` is a struct (not an enum) at `crates/worldwake-ai/src/goal_policy.rs:71-75` with fields `suppression: SuppressionRule`, `penalty_interrupt: PenaltyInterruptEligibility`, `free_interrupt: FreeInterruptRole`. `SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass)` exists at line 35+. `GoalPriorityClass::Critical` is the actual top variant (not `CriticalSurvival` — the spec's earlier draft used a non-existent name, corrected in reassessment).
-3. Shared abstraction boundary under audit: `GoalDispatchDeclaration` policy metadata. Ticket 001 already preserved declaration completeness for `GoalDispatchKey::ALL`; this ticket must keep that completeness green while changing only the AskWitness family policy from the temporary existing policy to the dedicated epistemic-sensing policy.
-4. Existing inline tests that must continue to pass after this ticket:
+3. Live placement correction: the concrete family policy constants (`SELF_CARE_POLICY`, `SOCIAL_POLICY`, `SHARE_BELIEF_TESTIMONY_POLICY`) live in `crates/worldwake-ai/src/goal_dispatch_decl.rs` beside the declaration table, while `goal_policy.rs` owns the shared policy types, evaluation helper, and policy tests. `EPISTEMIC_SENSING_POLICY` landed in `goal_dispatch_decl.rs`, not in `goal_policy.rs`.
+4. Shared abstraction boundary under audit: `GoalDispatchDeclaration` policy metadata. Ticket 001 already preserved declaration completeness for `GoalDispatchKey::ALL`; this ticket must keep that completeness green while changing only the AskWitness family policy from the temporary existing policy to the dedicated epistemic-sensing policy.
+5. Existing inline tests that must continue to pass after this ticket:
    - `goal_dispatch_decl.rs:962 test_declaration_completeness`
    - `goal_dispatch_decl.rs:972 test_declaration_provenance_matches_live_goal_model`
    - `goal_dispatch_decl.rs:984 test_declaration_relevant_ops_match_live_goal_model`
    - `goal_dispatch_decl.rs:1052 test_trace_labels_nonempty_and_distinct_for_payload_splits`
-5. Existing inline tests in `goal_policy.rs` that reference the new family after addition:
+6. Existing inline tests in `goal_policy.rs` that reference the new family after addition:
    - `goal_policy.rs:144 suppression_never_for_self_care_goals`
    - `goal_policy.rs:207 suppression_when_stressed_for_corpse_social_political` (the `EpistemicSensing` family belongs in the same suppression-under-stress class; the test may need extension)
    - `goal_policy.rs:278 share_belief_suppression_depends_on_communication_class`
@@ -36,24 +37,24 @@ Ticket 001 landed the `GoalDispatchKey::AskWitness` variant and, because the liv
 
 1. `DECL_ASK_WITNESS` remains registered in the declaration table → `test_declaration_completeness` continues to pass after ticket 001's `ALL` bump.
 2. The existing declaration's `relevant_ops` and `provenance_family` continue to match the live `GoalKindPlannerExt` implementation (ticket 001) → `test_declaration_provenance_matches_live_goal_model` and `test_declaration_relevant_ops_match_live_goal_model` pass.
-3. `EPISTEMIC_SENSING_POLICY.suppression == WhenStressedAtOrAbove(GoalPriorityClass::Critical)` → new focused unit test in `goal_policy.rs` asserting suppression behavior under simulated critical stress.
+3. `EPISTEMIC_SENSING_POLICY.suppression == WhenStressedAtOrAbove(GoalPriorityClass::Critical)` → focused unit test in `goal_policy.rs` asserts suppression behavior under simulated critical stress.
 4. Single-layer ticket: this ticket is policy/declaration metadata only. No runtime behavior change beyond the metadata that downstream tickets consume.
 
 ## What to Change
 
 ### 1. Add `EPISTEMIC_SENSING_POLICY` constant
 
-In `crates/worldwake-ai/src/goal_policy.rs` (after `SHARE_BELIEF_TESTIMONY_POLICY` at line 246):
+In `crates/worldwake-ai/src/goal_dispatch_decl.rs` (after `SHARE_BELIEF_TESTIMONY_POLICY`):
 
 ```rust
-pub const EPISTEMIC_SENSING_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
+const EPISTEMIC_SENSING_POLICY: GoalFamilyPolicy = GoalFamilyPolicy {
     suppression: SuppressionRule::WhenStressedAtOrAbove(GoalPriorityClass::Critical),
-    penalty_interrupt: PenaltyInterruptEligibility::Allowed,  // confirm against SOCIAL_POLICY at line 230
-    free_interrupt: FreeInterruptRole::None,                  // confirm against SOCIAL_POLICY
+    penalty_interrupt: PenaltyInterruptEligibility::Never,
+    free_interrupt: FreeInterruptRole::Normal,
 };
 ```
 
-The exact `penalty_interrupt` and `free_interrupt` values are chosen to match the closest existing analog (`SOCIAL_POLICY`); verify the live values during implementation. The spec's intent is that epistemic-sensing detours can be interrupted by penalty triggers but do not themselves grant interrupt privilege — same shape as social goals.
+The exact `penalty_interrupt` and `free_interrupt` values match the closest existing analog (`SOCIAL_POLICY`). The spec's intent is that epistemic-sensing detours do not themselves grant interrupt privilege — same shape as social goals.
 
 ### 2. Refine the existing `DECL_ASK_WITNESS` declaration
 
@@ -86,7 +87,7 @@ Extend `suppression_when_stressed_for_corpse_social_political:207` (or add a new
 ## Files to Touch
 
 - `crates/worldwake-ai/src/goal_dispatch_decl.rs` (modify — switch the existing AskWitness declaration to `EPISTEMIC_SENSING_POLICY` + focused policy assertion)
-- `crates/worldwake-ai/src/goal_policy.rs` (modify — EPISTEMIC_SENSING_POLICY constant + test extension)
+- `crates/worldwake-ai/src/goal_policy.rs` (modify — focused suppression/evaluation test for the new policy through `GoalDispatchKey::AskWitness`)
 
 ## Out of Scope
 
@@ -101,9 +102,9 @@ Extend `suppression_when_stressed_for_corpse_social_political:207` (or add a new
 ### Tests That Must Pass
 
 1. `test_declaration_completeness:962` continues to pass with `AskWitness` covered.
-2. `test_declaration_provenance_matches_live_goal_model:972` continues to pass (asserts `DECL_ASK_WITNESS.provenance_family` matches `GoalKindPlannerExt::ranked_goal_provenance_family` for the new variant).
-3. `test_declaration_relevant_ops_match_live_goal_model:984` continues to pass (asserts `DECL_ASK_WITNESS.relevant_ops` matches `GoalKindPlannerExt::relevant_op_kinds` for the new variant).
-4. New focused unit test in `goal_policy.rs` asserting `EPISTEMIC_SENSING_POLICY.suppression` suppresses emission at `GoalPriorityClass::Critical` and above.
+2. `test_declaration_provenance_matches_live_goal_model:972` continues to pass (asserts `DECL_ASK_WITNESS.provenance_family` matches `GoalKindPlannerExt::ranked_goal_provenance_family` for `GoalKind::AskWitness`).
+3. `test_declaration_relevant_ops_match_live_goal_model:984` continues to pass (asserts `DECL_ASK_WITNESS.relevant_ops` matches `GoalKindPlannerExt::relevant_op_kinds` for `GoalKind::AskWitness`).
+4. Focused unit test in `goal_policy.rs` asserts `EPISTEMIC_SENSING_POLICY.suppression` suppresses emission at `GoalPriorityClass::Critical` and above.
 5. Existing suite: `cargo test -p worldwake-ai` passes.
 
 ### Invariants
@@ -114,13 +115,38 @@ Extend `suppression_when_stressed_for_corpse_social_political:207` (or add a new
 
 ## Test Plan
 
-### New/Modified Tests
+### Added/Modified Tests
 
 1. `crates/worldwake-ai/src/goal_dispatch_decl.rs` — switch the existing AskWitness declaration to `EPISTEMIC_SENSING_POLICY` and add/extend a focused family-policy assertion.
-2. `crates/worldwake-ai/src/goal_policy.rs` (extend `#[cfg(test)]` block at line 121) — new focused unit test for epistemic-sensing suppression.
+2. `crates/worldwake-ai/src/goal_policy.rs` (extended `#[cfg(test)]` block) — focused unit test for epistemic-sensing suppression.
 
 ### Commands
 
-1. `cargo test -p worldwake-ai -- goal_dispatch_decl::tests goal_policy::tests` — targeted test run.
-2. `cargo clippy -p worldwake-ai --all-targets -- -D warnings` — confirm the refined declaration compiles cleanly.
-3. `./scripts/verify.sh` — full pre-PR gate.
+1. `cargo test -p worldwake-ai --lib goal_dispatch_decl::tests` — targeted declaration test run.
+2. `cargo test -p worldwake-ai --lib goal_policy::tests` — targeted policy test run.
+3. `cargo clippy -p worldwake-ai --all-targets -- -D warnings` — confirm the refined declaration compiles cleanly.
+4. `./scripts/verify.sh` — full pre-PR gate.
+
+## Outcome
+
+Completed on 2026-05-13.
+
+- Added `EPISTEMIC_SENSING_POLICY` beside the existing declaration-family policy constants in `crates/worldwake-ai/src/goal_dispatch_decl.rs`.
+- Switched `DECL_ASK_WITNESS.family_policy` from the temporary share-belief testimony policy to `EPISTEMIC_SENSING_POLICY` without changing its ops, barrier ops, trace label, provenance family, invalidation strategy, feasibility strategy, frontier exhaustion strategy, or representative fixture.
+- Added a focused declaration assertion that `GoalDispatchKey::AskWitness` uses the new policy and a focused policy/evaluation test proving AskWitness remains available below critical stress and suppresses at `GoalPriorityClass::Critical`.
+- Updated `specs/S139-epistemic-sensing-subgoals.md` so the spec matches the live placement of policy constants and the landed AskWitness declaration shape.
+
+## Deviations
+
+- The draft placed `EPISTEMIC_SENSING_POLICY` in `goal_policy.rs`, but the live code keeps concrete family policy constants in `goal_dispatch_decl.rs`; `goal_policy.rs` stayed focused on shared policy types, suppression evaluation, and tests.
+- The drafted combined focused command used multiple positional filters. Verification was split into valid module-level Cargo invocations.
+
+## Verification Result
+
+- Passed `cargo test -p worldwake-ai --lib goal_dispatch_decl::tests::ask_witness_declaration_uses_epistemic_sensing_policy -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib goal_policy::tests::ask_witness_epistemic_sensing_suppresses_at_critical_stress -- --exact`.
+- Passed `cargo test -p worldwake-ai --lib goal_dispatch_decl::tests`.
+- Passed `cargo test -p worldwake-ai --lib goal_policy::tests`.
+- Passed `cargo test -p worldwake-ai`.
+- Passed `cargo clippy -p worldwake-ai --all-targets -- -D warnings`.
+- Passed `./scripts/verify.sh`.
