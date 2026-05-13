@@ -8908,11 +8908,14 @@ fn completed_alternate_plan_records_repair_memory_entry() {
 
     let entry = repair_memory
         .repairs
-        .get(&worldwake_core::RepairKey {
+        .get(&worldwake_core::BreachSignature {
             goal_key: goal,
-            alternate_target: successful_place,
+            invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+            step_target: Some(successful_place),
         })
         .expect("repair success should be recorded");
+    assert_eq!(entry.kind, RepairKind::RebindTarget);
+    assert!(entry.succeeded);
     assert_eq!(entry.observed_tick, Tick(10));
     assert_eq!(entry.expires_tick, Tick(130));
     assert_eq!(entry.success_count, 1);

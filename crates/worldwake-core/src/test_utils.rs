@@ -5,15 +5,15 @@
 
 use crate::{
     AcquisitionQuantity, ActionDefId, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory,
-    BlockingFact, ClearingBaseline, CommodityKind, CommodityPurpose, CommodityValuationProfile,
-    ContentionDispositionProfile, DemandMemory, DemandObservation, DemandObservationReason,
-    Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, EdgeExperience,
-    EntityId, GoalKey, GoalKind, LearnedOpportunityMemory, MemoryCapacityProfile,
-    MerchandiseProfile, OpportunityAnchor, OpportunityEntry, OpportunityKey, Permille,
-    PreferenceProfile, Quantity, ReliabilityRecord, RepairEntry, RepairKey, RepairMemory,
-    RouteExperience, Seed, SourceKey, SourceReliability, StockAssignment, StockAssignmentKind,
-    StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory, TradeDispositionProfile,
-    TravelEdgeId, UtilityProfile,
+    BlockingFact, BreachSignature, ClearingBaseline, CommodityKind, CommodityPurpose,
+    CommodityValuationProfile, ContentionDispositionProfile, DemandMemory, DemandObservation,
+    DemandObservationReason, Discrepancy, DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory,
+    EdgeExperience, EntityId, GoalKey, GoalKind, InvalidatorTag, LearnedOpportunityMemory,
+    MemoryCapacityProfile, MerchandiseProfile, OpportunityAnchor, OpportunityEntry, OpportunityKey,
+    Permille, PreferenceProfile, Quantity, ReliabilityRecord, RepairEntry, RepairKind,
+    RepairMemory, RouteExperience, Seed, SourceKey, SourceReliability, StockAssignment,
+    StockAssignmentKind, StockStoragePolicy, SubstitutePreferences, Tick, TradeCategory,
+    TradeDispositionProfile, TravelEdgeId, UtilityProfile,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU8, NonZeroU32};
@@ -236,16 +236,19 @@ pub fn sample_discrepancy_memory() -> DiscrepancyMemory {
 /// Returns a representative repair memory fixture for authoritative component tests.
 pub fn sample_repair_memory() -> RepairMemory {
     let entry = RepairEntry {
-        repair_key: RepairKey {
+        signature: BreachSignature {
             goal_key: sample_goal_key(),
-            alternate_target: entity_id(14, 0),
+            invalidator: InvalidatorTag::TargetMoved,
+            step_target: Some(entity_id(14, 0)),
         },
+        kind: RepairKind::RebindTarget,
+        succeeded: true,
         observed_tick: Tick(13),
         expires_tick: Tick(133),
         success_count: 2,
     };
     let mut repairs = BTreeMap::new();
-    repairs.insert(entry.repair_key, entry);
+    repairs.insert(entry.signature, entry);
     RepairMemory { repairs }
 }
 

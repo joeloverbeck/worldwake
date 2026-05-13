@@ -67,8 +67,8 @@ use worldwake_core::{
     LearnedOpportunityMemory, MismatchDetail, ObservationPredicate, ObservationRef,
     OpportunityAnchor, OpportunityEntry, OpportunityExpectationKindTag, PendingEvent,
     PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
-    PursuitInvalidationReasonTag, RecordRef, RepairAppliedPayload, RepairEntry, RepairKey,
-    RepairMemory, ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
+    PursuitInvalidationReasonTag, RecordRef, RepairAppliedPayload, RepairEntry, RepairMemory,
+    ReplanReason, ReplanTriggeredPayload, SourceAttributionOutcomeTag,
     SourceExpectationFailurePayload, SourceKeyPayload, StatePredicate, Tick, VisibilitySpec,
     WitnessData, WorldTxn,
 };
@@ -2374,17 +2374,20 @@ fn record_repair_memory_from_completed_plan(
     }
     if accepted_repair.records_repair_memory {
         let alternate_target = accepted_repair.substitute_target?;
-        let repair_key = RepairKey {
+        let signature = worldwake_core::BreachSignature {
             goal_key: summary.goal_key,
-            alternate_target,
+            invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+            step_target: Some(alternate_target),
         };
         let success_count = repair_memory
             .repairs
-            .get(&repair_key)
+            .get(&signature)
             .filter(|entry| entry.expires_tick > current_tick)
             .map_or(1, |entry| entry.success_count.saturating_add(1));
         repair_memory.record(RepairEntry {
-            repair_key,
+            signature,
+            kind: accepted_repair.repair_kind,
+            succeeded: true,
             observed_tick: current_tick,
             expires_tick: Tick(current_tick.0 + u64::from(ttl_ticks)),
             success_count,

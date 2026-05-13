@@ -259,7 +259,7 @@ pub use production::{
 };
 pub use pursuit::PursuitProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
-pub use repair_memory::{BreachSignature, RepairEntry, RepairKey, RepairMemory};
+pub use repair_memory::{BreachSignature, RepairEntry, RepairMemory};
 pub use reward_encumbrance::{RewardEncumbrance, RewardReservation};
 pub use rights::{EffectiveRight, RightKind};
 pub use risk_weight_profile::RiskWeightProfile;

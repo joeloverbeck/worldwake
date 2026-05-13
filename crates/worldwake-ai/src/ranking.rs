@@ -52,7 +52,7 @@ use worldwake_core::{
     InstitutionalClaim, InstitutionalKnowledgeSource, LearnedOpportunityMemory, MotiveSource,
     MotiveSourceRef, MultiplierPermille, NoticeTopic, ObligationExecutionTracker,
     ObligationSatiationProfile, OpportunityAnchor, OpportunityKey, PerceptionSource, Permille,
-    PreferenceProfile, Quantity, ReliabilityRecord, RepairKey, RepairMemory, RightKind, SourceKey,
+    PreferenceProfile, Quantity, ReliabilityRecord, RepairMemory, RightKind, SourceKey,
     SubstitutePreferences, SurveyRecord, TellTopic, ThresholdBand, Tick, UtilityProfile,
     ViolationKind, belief_confidence, escalation_multiplier, failure_ratio_permille,
 };
@@ -382,11 +382,12 @@ fn repair_memory_bonus(
         OpportunityAnchor::Place(place) | OpportunityAnchor::Entity(place) => place,
         OpportunityAnchor::None => return 0,
     };
-    let repair_key = RepairKey {
+    let signature = worldwake_core::BreachSignature {
         goal_key: candidate.key,
-        alternate_target,
+        invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+        step_target: Some(alternate_target),
     };
-    let Some(entry) = context.repair_memory.repairs.get(&repair_key) else {
+    let Some(entry) = context.repair_memory.repairs.get(&signature) else {
         return 0;
     };
     if entry.expires_tick <= context.current_tick {
@@ -5500,10 +5501,13 @@ mod tests {
         let baseline = rank(&candidates, &view, agent, current_tick(), &utility).into_ranked();
         let mut repair_memory = worldwake_core::RepairMemory::default();
         repair_memory.record(worldwake_core::RepairEntry {
-            repair_key: worldwake_core::RepairKey {
+            signature: worldwake_core::BreachSignature {
                 goal_key: worldwake_core::GoalKey::from(goal_kind),
-                alternate_target: place_b,
+                invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+                step_target: Some(place_b),
             },
+            kind: worldwake_core::RepairKind::RebindTarget,
+            succeeded: true,
             observed_tick: Tick(2),
             expires_tick: Tick(20),
             success_count: 1,
