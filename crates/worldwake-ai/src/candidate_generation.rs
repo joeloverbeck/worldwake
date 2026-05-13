@@ -2607,19 +2607,21 @@ fn emit_ask_witness_candidates(
 
     let mut topic_emissions: BTreeMap<TellTopic, Vec<(EntityId, Permille, BelievedEntityState)>> =
         BTreeMap::new();
+    let mut considered_pairs = BTreeSet::new();
 
-    for witness in local_witnesses {
+    for witness in &local_witnesses {
         for (subject, belief) in ctx
             .view
-            .entity_beliefs_sourced_from_witness(ctx.agent, witness)
+            .entity_beliefs_sourced_from_witness(ctx.agent, *witness)
         {
             let topic = TellTopic::EntityBelief { subject };
+            considered_pairs.insert((*witness, topic));
             let confidence = compute_belief_confidence(&belief, ctx.current_tick, &policy);
             if confidence >= profile.stale_evidence_barrier_threshold {
                 diagnostics
                     .ask_witness_gate_rejections
                     .push(AskWitnessGateRejection {
-                        witness,
+                        witness: *witness,
                         topic,
                         reason: AskWitnessGateRejectionReason::ConfidenceAtOrAboveThreshold,
                     });
@@ -2627,7 +2629,7 @@ fn emit_ask_witness_candidates(
             }
 
             let cooldown_key = AskWitnessMemoryKey {
-                counterparty: witness,
+                counterparty: *witness,
                 topic_entity: Some(subject),
                 topic_commodity: None,
             };
@@ -2639,7 +2641,7 @@ fn emit_ask_witness_candidates(
                 diagnostics
                     .ask_witness_gate_rejections
                     .push(AskWitnessGateRejection {
-                        witness,
+                        witness: *witness,
                         topic,
                         reason: AskWitnessGateRejectionReason::CooldownActive,
                     });
@@ -2654,7 +2656,58 @@ fn emit_ask_witness_candidates(
             topic_emissions
                 .entry(topic)
                 .or_default()
-                .push((witness, salience, belief));
+                .push((*witness, salience, belief));
+        }
+    }
+
+    for (subject, belief) in ctx.view.known_entity_beliefs(ctx.agent) {
+        let topic = TellTopic::EntityBelief { subject };
+        let confidence = compute_belief_confidence(&belief, ctx.current_tick, &policy);
+        for witness in &local_witnesses {
+            if considered_pairs.contains(&(*witness, topic)) {
+                continue;
+            }
+            considered_pairs.insert((*witness, topic));
+            if confidence >= profile.stale_evidence_barrier_threshold {
+                diagnostics
+                    .ask_witness_gate_rejections
+                    .push(AskWitnessGateRejection {
+                        witness: *witness,
+                        topic,
+                        reason: AskWitnessGateRejectionReason::ConfidenceAtOrAboveThreshold,
+                    });
+                continue;
+            }
+
+            let cooldown_key = AskWitnessMemoryKey {
+                counterparty: *witness,
+                topic_entity: Some(subject),
+                topic_commodity: None,
+            };
+            if ctx
+                .view
+                .ask_witness_memory(ctx.agent, &cooldown_key)
+                .is_some()
+            {
+                diagnostics
+                    .ask_witness_gate_rejections
+                    .push(AskWitnessGateRejection {
+                        witness: *witness,
+                        topic,
+                        reason: AskWitnessGateRejectionReason::CooldownActive,
+                    });
+                continue;
+            }
+
+            let salience = compute_recency_weighted_salience(
+                &belief,
+                ctx.current_tick,
+                profile.witness_recency_preference,
+            );
+            topic_emissions
+                .entry(topic)
+                .or_default()
+                .push((*witness, salience, belief.clone()));
         }
     }
 
@@ -9057,6 +9110,47 @@ mod tests {
                     .evidence_kind_counts
                     .contains_key(&EvidenceKindTag::TestimonyProvenance)
         }));
+    }
+
+    #[test]
+    fn ask_witness_emitter_emits_cold_start_for_low_confidence_topic_and_local_witness() {
+        let witness = entity(3);
+        let subject = entity(4);
+        let (mut view, agent, place) = ask_witness_fixture(1, [witness]);
+        view.epistemic_disposition_profiles.insert(
+            agent,
+            EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: pm(800),
+                witness_query_duration_ticks: NonZeroU32::new(2).unwrap(),
+                ask_memory_retention_ticks: 12,
+                witness_recency_preference: pm(500),
+            },
+        );
+        let (_, rumor_belief) = reported_entity_belief(subject, place, 0, witness);
+        view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                BelievedEntityState {
+                    source: PerceptionSource::Rumor { chain_len: 1 },
+                    ..rumor_belief
+                },
+            )],
+        );
+        view.sync_belief_store(agent);
+
+        let (candidates, diagnostics) = run_ask_witness_emitter(&view, agent, place);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0].key.kind,
+            GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+            }
+        );
+        assert_eq!(candidates[0].anchor, OpportunityAnchor::Entity(witness));
+        assert!(diagnostics.ask_witness_gate_rejections.is_empty());
     }
 
     #[test]

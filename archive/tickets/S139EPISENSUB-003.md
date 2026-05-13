@@ -134,7 +134,7 @@ Completed on 2026-05-13.
 - Added `EPISTEMIC_SENSING_POLICY` beside the existing declaration-family policy constants in `crates/worldwake-ai/src/goal_dispatch_decl.rs`.
 - Switched `DECL_ASK_WITNESS.family_policy` from the temporary share-belief testimony policy to `EPISTEMIC_SENSING_POLICY` without changing its ops, barrier ops, trace label, provenance family, invalidation strategy, feasibility strategy, frontier exhaustion strategy, or representative fixture.
 - Added a focused declaration assertion that `GoalDispatchKey::AskWitness` uses the new policy and a focused policy/evaluation test proving AskWitness remains available below critical stress and suppresses at `GoalPriorityClass::Critical`.
-- Updated `specs/S139-epistemic-sensing-subgoals.md` so the spec matches the live placement of policy constants and the landed AskWitness declaration shape.
+- Updated `archive/specs/S139-epistemic-sensing-subgoals.md` so the spec matches the live placement of policy constants and the landed AskWitness declaration shape.
 
 ## Deviations
 

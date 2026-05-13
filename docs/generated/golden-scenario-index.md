@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 172
-- Contributing golden test files: 40
-- Associated tests: 204
+- Scenario blocks: 177
+- Contributing golden test files: 41
+- Associated tests: 210
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -314,6 +314,66 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: fixture isolates a concrete-source depletion incident; no belief or record carrier is staged because the live source-expectation seam only carries the source observation address.
 
 **Proves**: SourceExpectationFailure payloads carry source-attribution observation refs while belief and record refs remain empty.
+
+### Scenario 415: S139 AskWitness Refreshes Stale Report
+
+- Source: `golden_epistemic_sensing.rs:332`
+- Systems: AI, EpistemicActions, EventLog
+- GoalKinds: AskWitness
+- ActionDomains: Epistemic
+- Principles: P7, P14, P15, P29
+
+**Setup**: a seeker has a low-confidence report-sourced entity belief from a co-located witness; rival self-care pressure is absent.
+
+**Proves**: the AI emits and commits AskWitness, the existing action imports the witness belief through Report provenance, and the belief-store delta records the refresh path.
+
+### Scenario 416: S139 AskWitness Cold-Start Local Witness
+
+- Source: `golden_epistemic_sensing.rs:362`
+- Systems: AI, EpistemicActions, EventLog
+- GoalKinds: AskWitness
+- ActionDomains: Epistemic
+- Principles: P7, P14, P15
+
+**Setup**: the seeker has only a low-confidence rumor about the subject, while a co-located witness has direct belief about that subject.
+
+**Proves**: the cold-start branch emits AskWitness without prior testimony from that witness and imports the witness's belief as Report provenance.
+
+### Scenario 417: S139 Critical Survival Suppresses AskWitness
+
+- Source: `golden_epistemic_sensing.rs:380`
+- Systems: AI, Needs, EpistemicSensing
+- GoalKinds: AskWitness, ConsumeOwnedCommodity
+- ActionDomains: Epistemic, Needs
+- Principles: P8, P20, P29
+
+**Setup**: a critically hungry seeker has local bread and a low-confidence AskWitness topic; the intended branch excludes remote acquisition.
+
+**Proves**: the epistemic candidate is suppressed by stress policy while the self-care action remains available and commits.
+
+### Scenario 418: S139 AskWitness Cooldown Gate
+
+- Source: `golden_epistemic_sensing.rs:459`
+- Systems: AI, EpistemicSensing, BeliefMemory
+- GoalKinds: AskWitness
+- ActionDomains: Epistemic
+- Principles: P20, P21, P29
+
+**Setup**: the seeker has a low-confidence AskWitness topic and a live AskWitnessMemory entry for the same witness/topic pair.
+
+**Proves**: the cooldown gate suppresses AskWitness before retention elapses and emission resumes once the retained memory expires.
+
+### Scenario 419: S139 Witness Relocation Revalidates AskWitness
+
+- Source: `golden_epistemic_sensing.rs:501`
+- Systems: AI, EpistemicActions, ActionTrace
+- GoalKinds: AskWitness
+- ActionDomains: Epistemic
+- Principles: P7, P21, P29
+
+**Setup**: after the seeker commits an AskWitness plan, the witness relocates before the action can commit; the remote-query branch is intentionally excluded because S139 only emits co-located witness inquiries.
+
+**Proves**: the retained ask step does not import a report after the witness has moved, and a later decision trace remains available for replanning.
 
 ### Scenario 91: Hostile Completed Travel Reweights the Next Route Choice
 

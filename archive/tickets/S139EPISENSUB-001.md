@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-core` (`goal.rs`), `worldwake-ai` (`goal_dispatch_key.rs`, `goal_dispatch_decl.rs`, `goal_model.rs`, `planning_state.rs`, `ranking.rs`, `search/transition.rs`), `worldwake-sim` (`belief_view.rs`), `worldwake-cli` (`display.rs`)
-**Deps**: specs/S139-epistemic-sensing-subgoals.md
+**Deps**: archive/specs/S139-epistemic-sensing-subgoals.md
 
 ## Problem
 

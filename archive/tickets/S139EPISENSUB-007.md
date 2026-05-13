@@ -130,7 +130,7 @@ Completed on 2026-05-13.
 - Added `report_is_fresh_enough_for_witness_preference` in `goal_model.rs`, deriving the freshness branch from report age, `BeliefConfidencePolicy.staleness_penalty_per_tick`, and `EpistemicDispositionProfile.witness_recency_preference`.
 - Replaced the stale `TODO(S139EPISENSUB-002)` confidence-only gate in `ask_witness_goal_satisfied` with `confidence_satisfies || freshness_satisfies`, still scoped to matching report-sourced entity beliefs from the requested witness.
 - Extended `goal_model.rs` unit coverage for a recent below-threshold report satisfying through freshness, a stale below-threshold report remaining unsatisfied, and a stale report satisfying through the confidence branch.
-- Updated `specs/S139-epistemic-sensing-subgoals.md` so the active spec no longer describes ticket 007 as future TODO ownership.
+- Updated `archive/specs/S139-epistemic-sensing-subgoals.md` so the spec no longer describes ticket 007 as future TODO ownership.
 
 ## Deviations
 

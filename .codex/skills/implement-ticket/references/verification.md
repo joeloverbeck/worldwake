@@ -118,6 +118,8 @@ Before running focused Rust tests, resolve the exact live test IDs first (for ex
 
 For a just-authored test whose module path is visible in the edited file and whose exact name was introduced in the current patch, a direct module-qualified exact run is acceptable without a prior list probe. If that direct run reports zero tests or an unexpected target set, discard it as non-proof, resolve the selector with `-- --list`, and record only the corrected proof.
 
+For library unit tests, `--exact` requires the full listed test id, not just the function name. If `cargo test -p <crate> --lib <function_name> -- --exact` executes zero tests, treat it as selector discovery fallout, rerun with `-- --list` or without `--exact`, and record only the corrected nonzero proof. Prefer `cargo test -p <crate> --lib <module_path>::<test_name> -- --exact` after list discovery when exactness matters.
+
 Before running a ticket-named focused command, verify that the selector actually proves the owned surface. If a substring filter would compile a target while running zero tests, or would run a broader unrelated surface than the ticket claims, correct the command immediately and update the ticket's command list during reassessment/closeout.
 When adding several new tests whose names do not share a prefix, do not use one filtered `-- --list` query as proof that the whole set exists. Use an unfiltered list plus a focused text search, or run separate list queries for every intended exact selector before relying on exact test runs or writing closeout verification. If a list query used for discovery includes unrelated tests, record it as selector discovery only; use the exact test run or a cleaner list query as verification evidence.
 If a passing focused selector matches only the wrong test set, discard it as non-proof. Do not record it as ticket verification except, when useful, as a corrected false start that led to the final truthful selector.
@@ -144,6 +146,8 @@ When the ticket adds, renames, or materially re-scopes a `golden_*.rs` file or s
 Classify the generated diff before closeout: new scenario/detail content, semantic metadata/prose changes, source-line-only churn from regenerated references, or unexpected drift in checked manual docs. Keep source-line-only churn when it is produced by the canonical generator and `--check-docs` passes, but record it as regenerated reference drift rather than manual doc work.
 
 When `python3 scripts/golden_inventory.py --write --check-docs` is part of the owned verification contract, also expect validation fallout outside the generated markdown files themselves: orphaned `// Scenario ...` blocks that no longer own any `#[test]` function, and stale manual ``golden_*`` references in checked docs such as `docs/golden-e2e-testing.md`, both count as current-ticket fallout and should be fixed before closeout.
+
+After regenerating golden docs, compare `docs/generated/golden-e2e-inventory.md` and any new or changed scenario-detail page against the ticket's claimed scenario or test count. If the inventory row or detail blocks show fewer/more scenarios than the ticket claims, fix the test metadata, add the missing proof, or truth-sync the ticket before closeout.
 
 ## Golden, observer, and report proof rebinding
 

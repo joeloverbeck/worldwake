@@ -130,6 +130,9 @@ fn goal_specific_feasibility(
         (FeasibilityStrategy::ColocationOrDead, GoalKind::ShareBelief { listener, .. }) => {
             check_colocated_or_dead(view, agent, *listener)
         }
+        (FeasibilityStrategy::ColocationOrDead, GoalKind::AskWitness { witness, .. }) => {
+            check_colocated_or_dead(view, agent, *witness)
+        }
         (
             FeasibilityStrategy::ColocationOrDead,
             GoalKind::SupportCandidateForOffice { candidate, .. },

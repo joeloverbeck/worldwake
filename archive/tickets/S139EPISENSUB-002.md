@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-core` (`epistemic.rs`, `world.rs` test fixture, `save_load.rs` version bump)
-**Deps**: specs/S139-epistemic-sensing-subgoals.md
+**Deps**: archive/specs/S139-epistemic-sensing-subgoals.md
 
 ## Problem
 

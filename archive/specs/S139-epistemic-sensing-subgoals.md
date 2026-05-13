@@ -1,6 +1,6 @@
 # S139: Ask-Witness Goal Layer
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -12,7 +12,7 @@ S139 lands `GoalKind::AskWitness { witness, topic }` as a discrete `GoalKind` va
 
 ## Phase and Status
 
-Phase 11: Belief-First Continual Planning Architectural — Draft
+Phase 11: Belief-First Continual Planning Architectural — Completed and archived
 
 ## Crates
 
@@ -28,7 +28,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - S114 (Plan Step Guards) — completed and archived at `archive/specs/S114-plan-step-guards.md`. The new goal produces a belief-update effect that satisfies guards on later plan steps.
 - S109 (Typed Discrepancy Taxonomy) — completed and archived at `archive/specs/S109-typed-discrepancy-taxonomy.md`. Provides `LearnedOpportunityMemory`, which is already threaded through ranking via `RankingContext` and reused by `AskWitness` scoring for repeated-inquiry dampening.
 - S110 (Decision History Events) — completed and archived at `archive/specs/S110-decision-history-events.md`. Existing event tags carry the new goal commits without modification.
-- S134 (Canonical Effect Schema) — active at `specs/S134-canonical-effect-schema.md` and implemented. The existing `EffectStep::AskWitness` at `crates/worldwake-sim/src/effect_schema.rs:185` and its sink dispatch at line 942 are the action-layer surface S139 reuses verbatim.
+- S134 (Canonical Effect Schema) — completed and archived at `archive/specs/S134-canonical-effect-schema.md`. The existing `EffectStep::AskWitness` at `crates/worldwake-sim/src/effect_schema.rs:185` and its sink dispatch at line 942 are the action-layer surface S139 reuses verbatim.
 - S137 (Plan Causal Links and Repair) — completed and archived at `archive/specs/S137-plan-causal-links-and-repair.md`. Soft dependency: `RepairKind::InsertVerification` splices the new goal as a repair step before a low-confidence-belief guard.
 - S138 (Affordance-to-Opportunity Compiler) — completed and archived at `archive/specs/S138-opportunity-compiler.md`. The emitter scans the agent's belief envelope directly rather than consuming S138's opportunity records (the opportunity surface does not currently model per-witness testimony topics).
 - S59 (Expectation and Obligation Substrate) — completed and archived at `archive/specs/S59-expectation-obligation-substrate.md`. Not directly consumed by S139 (with `InspectContainer` deferred, `expectation_id` linkage is no longer needed in this spec).
@@ -51,7 +51,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - **`VerifyBelief`, `ConsultRecord`, `ScoutPlace`.** Deferred. `VerifyBelief` is a meta-goal whose decomposition produces `AskWitness`-class instances — the right shape after HTN methods (Phase 12) land. `ConsultRecord` is partially covered by existing `consult_record_actions`; promoting it to a `GoalKind` adds little until S140's artifact lifecycle differentiates "actionable" vs "reference-only" records. `ScoutPlace` overlaps with S130's hypothesis-driven `ExploreLocation`.
 - **A new `EpistemicProfile` component.** The existing `EpistemicDispositionProfile` is the per-agent substrate. Two epistemic-related universal components would create dual truth (FND-28) and unacknowledged semantic overlap (spec-drafting-rules 5f).
 - **`TellTopic::SocialObservation` and `TellTopic::InstitutionalClaim` topics.** The initial `GoalKind::AskWitness` payload override accepts only `TellTopic::EntityBelief { subject }` and maps it to `AskWitnessPayload { target: witness, topic_entity: Some(subject), topic_commodity: None }`. The `SocialObservation` and `InstitutionalClaim` variants of `TellTopic` do not have a clean projection onto the current `AskWitnessPayload` split-field shape; their handling is deferred.
-- **Forced honesty.** Witnesses can lie, refuse, or misremember. `AskWitness` produces a belief update sourced from the witness, not a truth update. Lie modeling is exercised by Scenario G goldens.
+- **Forced honesty.** Witnesses can lie, refuse, or misremember. `AskWitness` produces a belief update sourced from the witness, not a truth update. Broader lie/dispute modeling is downstream of the first AskWitness sensing golden.
 - **Cross-room shouting.** The action requires co-location (FND-7). Long-distance witness inquiry routes through travel.
 - **Multi-witness fan-out.** The agent asks one witness per `AskWitness` commit. Multi-witness compare-and-contrast is the planner's job through repeated emission, not a single-goal aggregation.
 
@@ -236,7 +236,7 @@ In `crates/worldwake-ai/src/ranking.rs`, add `GoalKind::AskWitness` to the `Goal
 - Recency bonus proportional to staleness of the belief being verified, weighted by `EpistemicDispositionProfile.witness_recency_preference`.
 - Damping via the existing `LearnedOpportunityMemory` parameter already threaded through ranking. `AskWitness` applies a family-specific unexpired-entry dampening factor without adding a new memory type or `GoalBeliefView` accessor.
 
-The motive_score formula must be expressible in `Permille` arithmetic (no floats per CLAUDE.md determinism invariant).
+The motive_score formula must be expressible in `Permille` arithmetic (no floats per `AGENTS.md` determinism invariant).
 
 ### D10. `PlannerOpKind::AskWitness` classification audit
 
@@ -265,7 +265,7 @@ Regenerate `docs/profiles/all-profiles.md` via `python3 scripts/profile_docs.py 
    - `LearnedOpportunityMemory` (S109) damps repeated fruitless witness inquiries through the existing ranking context parameter; `AskWitness` checks the unexpired matching `OpportunityKey` directly.
    - Per-tick emission cap `K = 3` per topic prevents fan-out spikes when many co-located witnesses match.
 10. **Agent-local learned, memory, habit, trust updates.** `AskWitnessMemory` (existing) captures asked-tick per `(counterparty, topic_entity, topic_commodity)`. `LearnedOpportunityMemory` (existing) progressively damps fruitless asks through ranking. Authoritative state: both memories. Summary: the emitter's per-tick decision (transient).
-11. **How agents become wrong, how they correct, provenance/freshness markers.** Imported beliefs carry `PerceptionSource::Report { from, chain_len }` provenance with attached confidence (computed via `BeliefConfidencePolicy` at `belief.rs:2489-2498`). Stale or contradicted beliefs surface through the existing `BeliefStatus::Stale | Disputed | Contradicted` axis at `belief_view.rs:41-47`. A witness who lies produces a belief with normal Report provenance whose later contradiction surfaces through perception of conflicting evidence — Scenario G goldens exercise this path.
+11. **How agents become wrong, how they correct, provenance/freshness markers.** Imported beliefs carry `PerceptionSource::Report { from, chain_len }` provenance with attached confidence (computed via `BeliefConfidencePolicy` at `belief.rs:2489-2498`). Stale or contradicted beliefs surface through the existing `BeliefStatus::Stale | Disputed | Contradicted` axis at `belief_view.rs:41-47`. A witness who lies produces a belief with normal Report provenance whose later contradiction surfaces through perception of conflicting evidence; broader Scenario G contradiction proof remains outside the first AskWitness sensing golden.
 12. **Lifecycle states, transitions, visibility, legality, actionability differences.** `AskWitnessMemory` entries do not expire; they are referenced by cooldown checks. `EpistemicDispositionProfile` is configured at spawn and persists for agent lifetime. No new lifecycle is introduced.
 13. **Temporal/spatial resolution, scheduling regime, tie-breaking.** Same as the existing `ask_witness` action: per-tick scheduling, co-location precondition, deterministic `BTreeMap` iteration in candidate generation, scheduler arbitration when multiple agents ask the same witness.
 14. **Boundary conditions, external drivers, off-map interfaces.** None. The new goal kind operates entirely on local beliefs and co-located witnesses; no off-map interaction.
@@ -296,27 +296,28 @@ No direct cross-system calls (FND-26).
 
 ## Authoritative-to-AI Impact Analysis
 
-The spec adds a new `GoalKind` variant and a new candidate emitter. Per CLAUDE.md's Authoritative-to-AI Impact Rule, the 7-checklist applies:
+The spec adds a new `GoalKind` variant and a new candidate emitter. Per `AGENTS.md`'s Authoritative-to-AI Impact Rule, the 7-checklist applies:
 
 1. **`get_affordances`** — N/A. No new affordances. The existing `ask_witness` action's affordance generation is unchanged.
 2. **`generate_candidates`** — affected. New `emit_ask_witness_candidates` wired into the agent_tick candidate-generation phase. The emitter respects locality (co-located witnesses only) and confidence thresholds (per-agent).
 3. **`search_plan`** — affected. The new `ASK_WITNESS_BARRIER` plus `relevant_op_kinds = [Travel, AskWitness]` define plan shape. Terminal ordering matches the existing `ShareBelief` pattern (travel-then-terminal).
 4. **`BestEffort` action start** — N/A. The new GoalKind reuses the existing `ask_witness` action handler unchanged.
-5. **`handle_plan_failure`** — affected. Failure of the `AskWitness` step (witness moved, witness incapacitated, target-place no longer reachable) must trigger correct replan. Verified by Validation Scenario 6 below.
+5. **`handle_plan_failure`** — affected. Failure of the `AskWitness` step (witness moved or witness incapacitated) must trigger correct replan. The landed sensing golden verifies witness relocation before ask commit; broader route-to-last-known-place failure belongs to later remote/route-backed inquiry work if S139 is widened.
 6. **Payload revalidation** — affected. `build_payload_override` synthesizes `AskWitnessPayload` from the goal's `(witness, topic)` pair. The handler must register `with_payload_override_validator` pointing at the existing `ask_witness_payload_matches_subject` helper at `goal_model.rs:95` so `plan_revalidation.rs` accepts the synthesized payload at step start.
-7. **Golden tests** — required. New `golden_epistemic_sensing.rs` covers the six scenarios listed below. Existing 1440-tick survival goldens must remain green (the emitter fires only when `stale_evidence_barrier_threshold` is breached, which does not occur in survival-baseline scenarios with default profiles).
+7. **Golden tests** — required. `golden_epistemic_sensing.rs` covers the documented scenarios below and a replay determinism check. Broader survival-golden regression remains appropriate before PR push because the emitter fires only when `stale_evidence_barrier_threshold` is breached.
 
 ## Validation and Falsification
 
-- **Golden coverage**: new `crates/worldwake-ai/tests/golden_epistemic_sensing.rs` with six scenarios:
+- **Golden coverage**: `crates/worldwake-ai/tests/golden_epistemic_sensing.rs` covers the live AskWitness sensing seam with five documented scenario blocks plus a deterministic replay check:
   1. **Stale-belief verification**: agent holds a belief about subject X imported with `PerceptionSource::Report { from: witness_a, chain_len: 1 }` whose confidence has decayed below `stale_evidence_barrier_threshold`; witness_a is co-located. Expected: `AskWitness { witness: witness_a, topic: TellTopic::EntityBelief { subject: X } }` commit, action executes, belief refreshed with updated tick, threshold crossed.
-  2. **Cold-start ask**: agent has no prior belief about subject X but has a low-confidence belief acquired from rumor (`PerceptionSource::Rumor`); a co-located known witness has a belief about X. Expected: emitter fires, ask commits, witness's belief imports with Report provenance.
-  3. **FOUNDATIONS Scenario G chain**: agent receives testimony A about subject X from witness_a, later receives contradicting testimony B from witness_b. Expected: belief status transitions to `Disputed`; emitter fires for follow-up asks; contradiction surfaces in the belief envelope without omniscient correction.
-  4. **Critical-survival suppression**: hungry agent at `GoalPriorityClass::Critical` stress holds a low-confidence belief about subject X with a co-located witness. Expected: emitter does not fire (suppressed by `EPISTEMIC_SENSING_POLICY.suppression`), agent prioritizes self-care.
-  5. **Cooldown gate**: agent asks witness W about topic T at tick `t0`; at tick `t0 + (ask_memory_retention_ticks - 1)`, the belief envelope still shows low confidence. Expected: emitter does NOT fire (cooldown active); at tick `t0 + ask_memory_retention_ticks`, emitter fires again.
-  6. **Plan-failure replan**: agent commits `AskWitness`, travels to witness's last-known place; witness has relocated. Expected: travel-step revalidation fails, plan replan re-runs candidate generation with updated belief about witness's location.
+  2. **Cold-start ask**: agent has a low-confidence belief acquired from rumor (`PerceptionSource::Rumor`); a co-located known witness has a belief about X. Expected: emitter fires without prior testimony from that exact witness, ask commits, witness's belief imports with Report provenance.
+  3. **Critical-survival suppression**: hungry agent at `GoalPriorityClass::Critical` stress holds a low-confidence belief about subject X with a co-located witness. Expected: emitter does not fire (suppressed by `EPISTEMIC_SENSING_POLICY.suppression`), agent prioritizes self-care.
+  4. **Cooldown gate**: agent asks witness W about topic T at tick `t0`; before `t0 + ask_memory_retention_ticks`, the belief envelope still shows low confidence. Expected: emitter does NOT fire (cooldown active); at or after `t0 + ask_memory_retention_ticks`, emitter fires again.
+  5. **Witness relocation revalidation**: agent selects a co-located `AskWitness` plan; the witness relocates before the ask action can commit. Expected: action revalidation prevents the report import and the decision trace remains available for replanning.
 
-- **No regression**: existing 1440-tick survival goldens unaffected — the emitter fires only when `stale_evidence_barrier_threshold` is breached, which does not happen at default profiles in survival-baseline.
+- **Deferred broader Scenario G proof**: contradicting testimony and downstream wrongful-accusation consequences remain outside the first AskWitness sensing golden because they depend on the belief-dispute/adjudication chain rather than the goal-layer sensing seam alone.
+
+- **No regression target**: existing 1440-tick survival goldens should remain unaffected because the emitter fires only when `stale_evidence_barrier_threshold` is breached at the agent's live profile.
 
 ## Risks
 
@@ -325,3 +326,28 @@ The spec adds a new `GoalKind` variant and a new candidate emitter. Per CLAUDE.m
 - **Belief-update collision.** A witness can be asked about a topic the agent's belief envelope holds with high confidence from another source. Mitigation: emitter only fires below `stale_evidence_barrier_threshold`; satisfaction predicate respects the existing belief-merge rules (S113 envelope merge), not naive overwrite.
 - **Cooldown-tuning sensitivity.** Too-short retention allows spam; too-long blocks legitimate repeat checks. Mitigation: default `ask_memory_retention_ticks = 12` (existing value); golden Scenario 5 locks the boundary.
 - **Field-addition save-format bump.** Extending `EpistemicDispositionProfile` requires `SAVE_FORMAT_VERSION` 83 → 84 because the bincode-backed serialized layout changes. Mitigation: the new field is `#[serde(default)]` for omitted-field authored/self-describing serde inputs, while full pre-bump save files remain rejected by the save header.
+
+## Outcome
+
+Completed on 2026-05-13.
+
+- Landed the AskWitness goal-layer surface across core/sim/AI: `GoalKind::AskWitness`, dispatch registration, planner model integration, candidate emission, ranking/motive scoring, feasibility handling, payload override/revalidation, satisfaction through report-provenance belief state, and cooldown handling through existing `AskWitnessMemory`.
+- Extended `EpistemicDispositionProfile` with `witness_recency_preference` and kept the design on the existing epistemic-disposition component rather than adding a parallel profile.
+- Reused the existing `ask_witness` action/effect path; no new `worldwake-systems` action infrastructure was introduced.
+- Added golden coverage in `crates/worldwake-ai/tests/golden_epistemic_sensing.rs` for stale-report refresh, deterministic replay, cold-start local witness import, critical-survival suppression, cooldown expiry/resume, and witness relocation revalidation.
+- Regenerated golden inventory documentation, including `docs/generated/golden-scenario-details/epistemic-sensing.md`.
+
+Deviations from the original plan:
+
+- `InspectContainer` stayed out of scope. It still requires separate action/perception/access-right substrate rather than being bundled into the completed AskWitness slice.
+- The first S139 golden proves the AskWitness sensing seam, not the full false-rumor wrongful-accusation adjudication chain. Broader Scenario G contradiction/dispute consequences remain downstream of this spec.
+- The relocation proof is co-located revalidation after plan selection, matching the live S139 emitter boundary; route-to-last-known-place witness inquiry remains outside this spec.
+
+Verification:
+
+- `cargo test -p worldwake-ai --test golden_epistemic_sensing`
+- `cargo test -p worldwake-ai --lib ask_witness_emitter_emits_cold_start_for_low_confidence_topic_and_local_witness`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo fmt --all`
+- `python3 .codex/skills/implement-ticket/scripts/check_closeout.py archive/tickets/S139EPISENSUB-006.md`
+- `git diff --check`
