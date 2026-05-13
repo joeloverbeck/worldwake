@@ -27,7 +27,7 @@ An implement-ticket invocation authorizes narrow truthing edits to the active ti
 - Leave active ticket status non-completed until the last executable gate required for the final source diff has passed. Provisional verification notes may name remaining gates, but `Status: COMPLETED` must remain unset until those gates are observed complete.
 - Do not archive from `implement-ticket` alone; archive only when the user explicitly asks for archival or another invoked workflow owns it.
 
-Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail. When new guidance is not a global hard stop, put the detailed rule in the relevant `references/*.md` file and keep any top-level change to a one-sentence routing note.
+Keep this top-level skill as routing plus hard stops. Load the referenced files for detailed case law only when the ticket shape, reassessment, implementation, verification, or closeout step needs that detail. When new guidance is not a global hard stop, put the detailed rule in the relevant `references/*.md` file and keep any top-level change to a one-sentence routing note; if the guidance needs more than one sentence, it belongs in a reference file, not here.
 
 ## Common Fast Lanes
 
@@ -57,7 +57,7 @@ Top-level closeout hard stops:
 - Rewrite stale drafted acceptance/proof/spec wording before final status: remove unrun command lists, unproved `Verification Layers`, false implementation sketches, and disproved phrases from the active ticket and directly cited active specs.
 - Add or update `## Verification Result`; every recorded command/proof item must start with `Passed`, `Waived`, or `Blocked`, and wrapper-equivalent proof may be claimed only when the live wrapper gates were run or individually covered.
 - Run Markdown/diff hygiene after final ticket/spec edits, normally `git diff --check`, and use explicit untracked-file whitespace checks for owned untracked files.
-- Normal completion order: draft result-tense closeout while `Status` remains non-completed, run `python3 .codex/skills/implement-ticket/scripts/check_closeout.py <ticket-path>`, fix warnings, then apply the status flip as a status-only or status-plus-clerical patch. Same-patch completion is allowed only when the closeout prose was already checked and the status flip does not hide unresolved warnings.
+- Normal completion order: draft result-tense closeout while `Status` remains non-completed, run `python3 .codex/skills/implement-ticket/scripts/check_closeout.py <ticket-path>`, fix warnings, then apply the status flip as a status-only or status-plus-clerical patch. Same-patch completion is allowed only when `check_closeout.py` has already passed for the final closeout prose in the same turn and the status flip does not hide unresolved warnings.
 - Finish with `git status --short` and classify new, pre-existing, generated, and unrelated dirty paths so the final summary attributes only the owned work.
 
 Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here. Do not include a Cargo command inside any `multi_tool_use.parallel` bundle, even when the other bundled commands are read-only; run the Cargo command separately.

@@ -4681,6 +4681,7 @@ mod tests {
                 stale_evidence_barrier_threshold: pm(400),
                 witness_query_duration_ticks: NonZeroU32::new(3).unwrap(),
                 ask_memory_retention_ticks: 10,
+                witness_recency_preference: pm(500),
             },
         );
         view.theft_profiles.insert(

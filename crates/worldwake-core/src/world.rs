@@ -4968,6 +4968,7 @@ mod tests {
             stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
             witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
+            witness_recency_preference: Permille::new(500).unwrap(),
         };
 
         world
@@ -4988,6 +4989,7 @@ mod tests {
             stale_evidence_barrier_threshold: Permille::new(400).unwrap(),
             witness_query_duration_ticks: std::num::NonZeroU32::new(2).unwrap(),
             ask_memory_retention_ticks: 12,
+            witness_recency_preference: Permille::new(500).unwrap(),
         };
 
         let err = world

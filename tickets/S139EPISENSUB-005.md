@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: Yes — `worldwake-ai` (`ranking.rs`)
-**Deps**: archive/tickets/S139EPISENSUB-001.md, tickets/S139EPISENSUB-002.md
+**Deps**: archive/tickets/S139EPISENSUB-001.md, archive/tickets/S139EPISENSUB-002.md
 
 ## Problem
 

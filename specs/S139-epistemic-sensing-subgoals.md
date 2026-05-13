@@ -112,16 +112,18 @@ impl Default for EpistemicDispositionProfile {
 }
 ```
 
-Update all explicit-construction sites that enumerate every field (no `..Default::default()` spread) to include `witness_recency_preference`. Verified sites (7 total):
+Update all explicit-construction sites that enumerate every field (no `..Default::default()` spread) to include `witness_recency_preference`. Verified implementation fallout for ticket 002 covered 11 pre-existing explicit sites:
 
-- `crates/worldwake-systems/src/ask_about_person_actions.rs:620`
-- `crates/worldwake-systems/src/epistemic_actions.rs:548`
-- `crates/worldwake-sim/src/action_semantics.rs:897`
-- `crates/worldwake-ai/src/planning_state.rs:4659`
-- `crates/worldwake-ai/src/goal_model.rs:7309`
-- `crates/worldwake-ai/src/search/tests.rs:921`
-- `crates/worldwake-core/src/world.rs:4970`
-- `crates/worldwake-core/src/epistemic.rs:93` (existing `Default`-mirroring fixture; verify it stays in sync)
+- `crates/worldwake-systems/src/ask_about_person_actions.rs`
+- `crates/worldwake-systems/src/epistemic_actions.rs`
+- `crates/worldwake-sim/src/action_semantics.rs`
+- `crates/worldwake-ai/src/planning_state.rs`
+- `crates/worldwake-ai/src/goal_model.rs`
+- `crates/worldwake-ai/src/search/tests.rs`
+- `crates/worldwake-core/src/world.rs` (two fixtures)
+- `crates/worldwake-core/src/delta.rs`
+- `crates/worldwake-ai/src/candidate_generation.rs`
+- `crates/worldwake-core/src/epistemic.rs` (existing `Default`-mirroring fixture; verify it stays in sync)
 
 RON scenario files in `scenarios/` (3 sites: `survival-ask-consult.ron`, `cli-evaluation.ron`, `final-integration.ron`) do NOT need editing because the new field is `#[serde(default)]`.
 
@@ -180,7 +182,7 @@ In `crates/worldwake-ai/src/goal_model.rs` (trait at lines 40-82), add match arm
 4. `relevant_observed_commodities` → `None`.
 5. `build_payload_override` → constructs `AskWitnessPayload { target: witness, topic_entity, topic_commodity }` from `topic` per the mapping below. Registered with `with_payload_override_validator` because `AskWitnessPayload` is planner-synthesized (not affordance-derived). The validator is the existing `ask_witness_payload_matches_subject` helper at `goal_model.rs:95`.
 6. `is_progress_barrier` → `true` when the step's op is `PlannerOpKind::AskWitness` and the binding matches the goal's witness.
-7. `is_satisfied` → reads `view.entity_beliefs_sourced_from_witness(agent, witness)` (new `GoalBeliefView` accessor — see D8) and returns `true` when a belief on `topic`'s subject exists with `source = PerceptionSource::Report { from: witness, .. }` whose acquisition tick is within the freshness window derived from `EpistemicDispositionProfile.witness_recency_preference`, OR the belief's confidence ≥ `stale_evidence_barrier_threshold`.
+7. `is_satisfied` → reads `view.entity_beliefs_sourced_from_witness(agent, witness)` (new `GoalBeliefView` accessor — see D8) and returns `true` when a belief on `topic`'s subject exists with `source = PerceptionSource::Report { from: witness, .. }` whose observed tick is within the freshness window derived from `EpistemicDispositionProfile.witness_recency_preference` and the live `BeliefConfidencePolicy.staleness_penalty_per_tick`, OR the belief's confidence ≥ `stale_evidence_barrier_threshold`. Ticket 007 owns replacing the stale `TODO(S139EPISENSUB-002)` satisfaction placeholder with this concrete freshness branch before the golden ticket lands.
 8. `goal_relevant_places` → `[view.effective_place(witness)]` (uses the existing accessor — co-location is the only relevant place).
 9. `prerequisite_places` → same as `goal_relevant_places`.
 10. `matches_binding` → `authoritative_targets.contains(&witness)` for `PlannerOpKind::AskWitness`; standard travel-binding for `PlannerOpKind::Travel`.
@@ -270,7 +272,7 @@ Regenerate `docs/profiles/all-profiles.md` via `python3 scripts/profile_docs.py 
 15. **Derived views, caches, optimizations.** Candidate emission is transient (per-tick derived view). `LearnedOpportunityMemory` is authoritative cached state that survives ticks. No new caches.
 16. **Causal records, event identities, provenance links emitted.** No new event tags. Existing `Social + Discovery` event tags + decision-history payloads emitted by the action carry the causal trace. `PerceptionSource::Report` on imported beliefs carries the knowledge-path link to the witness.
 17. **Target patterns, invariants, regression cases, falsification checks.** See Validation and Falsification.
-18. **What must survive save/load, replay, offscreen compression.** Extended `EpistemicDispositionProfile` (existing serde derives; new field has `#[serde(default)]` for backward-compatible decode of pre-bump bytes). `AskWitnessMemory` (already saved). `GoalKind::AskWitness` variant in active goal commits (already part of save format via existing `GoalKind` derive). `SAVE_FORMAT_VERSION` bumps from 83 → 84 because the serialized layout of `EpistemicDispositionProfile` changes.
+18. **What must survive save/load, replay, offscreen compression.** Extended `EpistemicDispositionProfile` (existing serde derives; new field has `#[serde(default)]` for omitted-field serde inputs such as authored RON profile snippets). `AskWitnessMemory` (already saved). `GoalKind::AskWitness` variant in active goal commits (already part of save format via existing `GoalKind` derive). `SAVE_FORMAT_VERSION` bumps from 83 → 84 because the bincode-backed serialized layout of `EpistemicDispositionProfile` changes; full pre-bump save files remain rejected by the save header.
 
 ## SystemFn Integration
 
@@ -322,4 +324,4 @@ The spec adds a new `GoalKind` variant and a new candidate emitter. Per CLAUDE.m
 - **Topic-shape impedance mismatch.** `TellTopic` is a tagged-union; `AskWitnessPayload`'s `topic_entity`/`topic_commodity` is a filter shape. Initial scope handles only `TellTopic::EntityBelief`. Mitigation: `build_payload_override` returns `GoalPayloadOverrideError::UnsupportedTopic` for `SocialObservation` / `InstitutionalClaim` variants until a follow-up spec widens `AskWitnessPayload` or introduces parallel payloads.
 - **Belief-update collision.** A witness can be asked about a topic the agent's belief envelope holds with high confidence from another source. Mitigation: emitter only fires below `stale_evidence_barrier_threshold`; satisfaction predicate respects the existing belief-merge rules (S113 envelope merge), not naive overwrite.
 - **Cooldown-tuning sensitivity.** Too-short retention allows spam; too-long blocks legitimate repeat checks. Mitigation: default `ask_memory_retention_ticks = 12` (existing value); golden Scenario 5 locks the boundary.
-- **Field-addition save-format bump.** Extending `EpistemicDispositionProfile` requires `SAVE_FORMAT_VERSION` 83 → 84 because the serialized layout changes. Mitigation: the new field is `#[serde(default)]`, so pre-bump bytes still decode (the `default_witness_recency_preference()` helper provides `pm(500)`); the version bump exists primarily to make the format change auditable.
+- **Field-addition save-format bump.** Extending `EpistemicDispositionProfile` requires `SAVE_FORMAT_VERSION` 83 → 84 because the bincode-backed serialized layout changes. Mitigation: the new field is `#[serde(default)]` for omitted-field authored/self-describing serde inputs, while full pre-bump save files remain rejected by the save header.

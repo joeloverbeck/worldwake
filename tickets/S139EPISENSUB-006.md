@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: No — adds new test file and exercises the existing observer decision-trace surface
-**Deps**: archive/tickets/S139EPISENSUB-001.md, tickets/S139EPISENSUB-002.md, tickets/S139EPISENSUB-003.md, tickets/S139EPISENSUB-004.md, tickets/S139EPISENSUB-005.md
+**Deps**: archive/tickets/S139EPISENSUB-001.md, archive/tickets/S139EPISENSUB-002.md, tickets/S139EPISENSUB-003.md, tickets/S139EPISENSUB-004.md, tickets/S139EPISENSUB-005.md, tickets/S139EPISENSUB-007.md
 
 ## Problem
 
@@ -17,10 +17,10 @@ The full S139 pipeline (foundation, profile extension, dispatch, emitter, rankin
 1. Worldwake's golden-test conventions are documented in `docs/golden-e2e-testing.md` (canonical guide per `tickets/README.md`). Existing precedent goldens for goal-emission scenarios: `golden_share_belief.rs` (closest structural analog — both `ShareBelief` and `AskWitness` are testimony-path goals routing through co-located agents). Verify the file's structure during implementation.
 2. The six scenarios encoded in `specs/S139-epistemic-sensing-subgoals.md` "Validation and Falsification" section: stale-belief verification, cold-start ask, FOUNDATIONS Scenario G chain, critical-survival suppression, cooldown gate, plan-failure replan. Each scenario is one `#[test]` function.
 3. Shared abstraction boundary under audit: end-to-end behavior of the AskWitness goal layer — candidate emission, ranking, plan search, action execution, belief import, satisfaction predicate, decision-trace surfacing. The intended invariant is "agent autonomously verifies a stale belief through testimony when co-located with the original witness, respecting per-agent thresholds, cooldowns, and stress suppression."
-4. Live `GoalKind` under test: `GoalKind::AskWitness` (landed by tickets 001-005). Live operator surface: `PlannerOpKind::Travel` + `PlannerOpKind::AskWitness`. Existing `EffectStep::AskWitness` and `apply_ask_witness_commit` are the action-layer endpoints; these are unchanged by S139.
+4. Live `GoalKind` under test: `GoalKind::AskWitness` (landed by tickets 001-005, with satisfaction freshness completed by ticket 007). Live operator surface: `PlannerOpKind::Travel` + `PlannerOpKind::AskWitness`. Existing `EffectStep::AskWitness` and `apply_ask_witness_commit` are the action-layer endpoints; these are unchanged by S139.
 5. Scenario isolation (precision-rules Rule 8): for each scenario, name what's intentionally excluded from setup. Scenario 1 (stale-belief verification) excludes competing self-care drives (no hunger pressure). Scenario 4 (critical-survival suppression) requires hunger pressure to trigger `GoalPriorityClass::Critical`; verify the existing survival-suppression fixtures in `golden_survival_*.rs` for the canonical pressure setup. Scenarios 3 and 6 may involve multiple witnesses / travel; isolate scenario contracts to avoid cross-contamination.
 6. Coverage classification (precision-rules Rule 3): all six scenarios are *golden E2E* coverage. Targeted-unit coverage for the same paths landed in tickets 001 and 004; this ticket's role is end-to-end integration verification.
-7. Authoritative-to-AI Impact (CLAUDE.md): all 7 checklist points are covered by tickets 001-005 + this ticket. Scenario 6 specifically exercises `handle_plan_failure` after travel-step revalidation fails (witness relocated).
+7. Authoritative-to-AI Impact (CLAUDE.md): all 7 checklist points are covered by tickets 001-005, ticket 007, and this ticket. Scenario 6 specifically exercises `handle_plan_failure` after travel-step revalidation fails (witness relocated).
 8. Existing 1440-tick survival goldens (`golden_survival_baseline.rs`, `golden_survival_contested.rs`, etc.) must remain green. The new emitter fires only when `stale_evidence_barrier_threshold` is breached — verify with default profiles that no survival scenario triggers the threshold.
 
 ## Architecture Check

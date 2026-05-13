@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `worldwake-ai` (`candidate_generation.rs`, `agent_tick/candidates.rs`)
-**Deps**: archive/tickets/S139EPISENSUB-001.md, tickets/S139EPISENSUB-002.md
+**Deps**: archive/tickets/S139EPISENSUB-001.md, archive/tickets/S139EPISENSUB-002.md
 
 ## Problem
 
