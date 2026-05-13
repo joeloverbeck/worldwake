@@ -172,6 +172,9 @@ pub(crate) fn grounded_goal_epistemic_subjects(
     goal.evidence_entities
         .iter()
         .filter_map(|entity| {
+            if *entity == actor {
+                return None;
+            }
             let belief = state
                 .known_entity_beliefs(actor)
                 .into_iter()
@@ -6979,6 +6982,51 @@ mod tests {
         assert!(
             grounded_goal_epistemic_subjects(&goal, &state).is_empty(),
             "Accuse should not inherit stale-evidence travel barriers from witness evidence"
+        );
+    }
+
+    #[test]
+    fn grounded_goal_epistemic_subjects_skip_actor_self_evidence() {
+        let actor = entity(1);
+        let town = entity(10);
+        let mut view = TestBeliefView::default();
+        view.alive.extend([actor, town]);
+        view.kinds.insert(actor, EntityKind::Agent);
+        view.kinds.insert(town, EntityKind::Place);
+        view.current_tick = Tick(50);
+        view.effective_places.insert(actor, town);
+        view.entities_at.insert(town, vec![actor]);
+        view.epistemic_profiles.insert(actor, epistemic_profile());
+        view.known_entity_beliefs.insert(
+            actor,
+            vec![(actor, believed_entity_state_at(town, Tick(0), None))],
+        );
+
+        let snapshot = build_planning_snapshot(
+            &view,
+            actor,
+            &BTreeSet::from([actor]),
+            &BTreeSet::from([town]),
+            1,
+        );
+        let state = PlanningState::new(&snapshot);
+        let goal = GoalOffer {
+            anchor: worldwake_core::OpportunityAnchor::Place(town),
+            key: GoalKey::from(GoalKind::Sleep),
+            evidence_entities: BTreeSet::from([actor]),
+            evidence_places: BTreeSet::from([town]),
+            obligation_source: None,
+            commitment_impact_if_ignored: worldwake_core::Permille::ZERO,
+            required_information_gaps: Vec::new(),
+            invalidators: Vec::new(),
+            learned_expectation_refs: Vec::new(),
+            motive_sources: Vec::new(),
+            acquisition_quantity: None,
+        };
+
+        assert!(
+            grounded_goal_epistemic_subjects(&goal, &state).is_empty(),
+            "Self-care goals grounded in actor self-evidence must not create witness-refresh barriers"
         );
     }
 
