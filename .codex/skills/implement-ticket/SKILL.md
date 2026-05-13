@@ -56,7 +56,7 @@ Top-level closeout hard stops:
 - Rewrite stale drafted acceptance/proof/spec wording before final status: remove unrun command lists, unproved `Verification Layers`, false implementation sketches, and disproved phrases from the active ticket and directly cited active specs.
 - Add or update `## Verification Result`; every recorded command/proof item must start with `Passed`, `Waived`, or `Blocked`, and wrapper-equivalent proof may be claimed only when the live wrapper gates were run or individually covered.
 - Run Markdown/diff hygiene after final ticket/spec edits, normally `git diff --check`, and use explicit untracked-file whitespace checks for owned untracked files.
-- Run `python3 .codex/skills/implement-ticket/scripts/check_closeout.py <ticket-path>` before the final response when practical; treat warnings as a prompt to reread and truth the ticket, not as a substitute for the checklist.
+- Run `python3 .codex/skills/implement-ticket/scripts/check_closeout.py <ticket-path>` before changing `Status: COMPLETED` when practical, then again after any later ticket prose edits that could affect closeout wording; treat warnings as a prompt to reread and truth the ticket, not as a substitute for the checklist.
 - Finish with `git status --short` and classify new, pre-existing, generated, and unrelated dirty paths so the final summary attributes only the owned work.
 
 Cargo hard stop: never use `multi_tool_use.parallel` for any Cargo invocation in this workflow. Cargo lock contention makes parallel `cargo test`, `cargo clippy`, and even `cargo test ... -- --list` probes unreliable here. Do not include a Cargo command inside any `multi_tool_use.parallel` bundle, even when the other bundled commands are read-only; run the Cargo command separately.

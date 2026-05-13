@@ -1,19 +1,30 @@
-use crate::{PlannedPlan, PlannedStep};
+use crate::{PlanTerminalKind, PlannedPlan, PlannedStep};
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    BeliefRef, BreachSignature, CausalLink, CognitiveProfile, DiscrepancyClearing,
-    DiscrepancyEntry, RepairKind, RepairMemory,
+    BeliefClaimKey, BeliefRef, BreachSignature, CausalLink, CausalProvider, CognitiveProfile,
+    DiscrepancyClearing, DiscrepancyEntry, EntityBeliefAspect, OpportunityKey, PlanningFact,
+    RecordTopic, RepairKind, RepairMemory,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlanRepairContext<'a> {
+    pub opportunity: OpportunityKey,
     pub failed_step: u16,
     pub broken_link: CausalLink,
     pub breach_signature: BreachSignature,
     pub preserved_prefix: &'a [PlannedStep],
     pub reusable_suffix: &'a [PlannedStep],
+    pub replacement_candidates: &'a [RepairPlanCandidate],
     pub new_evidence: &'a [BeliefRef],
     pub discrepancy_entry: &'a DiscrepancyEntry,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepairPlanCandidate {
+    pub kind: RepairKind,
+    pub provider: CausalProvider,
+    pub fact: PlanningFact,
+    pub step: PlannedStep,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -34,6 +45,7 @@ pub enum RepairFailure {
     NoEpistemicSubstrate,
     BudgetExhausted,
     RecentlyFailed,
+    NoPreservedPrefix,
 }
 
 #[must_use]
@@ -71,13 +83,20 @@ pub fn attempt_repair_then_replan(
             break;
         }
 
-        let failure = if recently_failed(repair_memory, context.breach_signature, kind) {
-            RepairFailure::RecentlyFailed
+        if recently_failed(repair_memory, context.breach_signature, kind) {
+            tried.push((kind, RepairFailure::RecentlyFailed));
         } else {
             expansions = expansions.saturating_add(1);
-            attempt_kind(context, kind)
-        };
-        tried.push((kind, failure));
+            match attempt_kind(context, kind) {
+                Ok(new_plan) => {
+                    return RepairOutcome::Repaired {
+                        kind,
+                        new_plan: Box::new(new_plan),
+                    };
+                }
+                Err(failure) => tried.push((kind, failure)),
+            }
+        }
     }
 
     RepairOutcome::Failed { tried }
@@ -94,18 +113,154 @@ fn recently_failed(
         .is_some_and(|entry| entry.kind == kind && !entry.succeeded)
 }
 
-fn attempt_kind(context: &PlanRepairContext<'_>, kind: RepairKind) -> RepairFailure {
+fn attempt_kind(
+    context: &PlanRepairContext<'_>,
+    kind: RepairKind,
+) -> Result<PlannedPlan, RepairFailure> {
     match kind {
-        RepairKind::RebindTarget => RepairFailure::NoSiblingTargetFound,
-        RepairKind::ReplaceProvider => RepairFailure::NoProviderReplacement,
-        RepairKind::InsertVerification => RepairFailure::NoEpistemicSubstrate,
-        RepairKind::DowngradeToProgressBarrier | RepairKind::Abandon => {
-            if discrepancy_clearing_is_repair_search_visible(context.discrepancy_entry) {
-                RepairFailure::NoProviderReplacement
-            } else {
-                RepairFailure::BudgetExhausted
-            }
+        RepairKind::RebindTarget => {
+            attempt_candidate_repair(context, kind).ok_or(RepairFailure::NoSiblingTargetFound)
         }
+        RepairKind::ReplaceProvider => {
+            attempt_candidate_repair(context, kind).ok_or(RepairFailure::NoProviderReplacement)
+        }
+        RepairKind::InsertVerification => Err(RepairFailure::NoEpistemicSubstrate),
+        RepairKind::DowngradeToProgressBarrier => downgrade_to_progress_barrier(context),
+        RepairKind::Abandon => Ok(PlannedPlan::new(
+            context.opportunity,
+            context.breach_signature.goal_key,
+            Vec::new(),
+            PlanTerminalKind::ProgressBarrier,
+        )),
+    }
+}
+
+fn attempt_candidate_repair(
+    context: &PlanRepairContext<'_>,
+    kind: RepairKind,
+) -> Option<PlannedPlan> {
+    let candidate = context.replacement_candidates.iter().find(|candidate| {
+        candidate.kind == kind
+            && candidate.fact == context.broken_link.fact
+            && provider_supports_fact(candidate.provider, candidate.fact)
+    })?;
+    Some(plan_from_parts(
+        context,
+        Some(candidate.step.clone()),
+        PlanTerminalKind::GoalSatisfied,
+        true,
+    ))
+}
+
+fn downgrade_to_progress_barrier(
+    context: &PlanRepairContext<'_>,
+) -> Result<PlannedPlan, RepairFailure> {
+    if !discrepancy_clearing_is_repair_search_visible(context.discrepancy_entry) {
+        return Err(RepairFailure::BudgetExhausted);
+    }
+    if context.preserved_prefix.is_empty() {
+        return Err(RepairFailure::NoPreservedPrefix);
+    }
+    Ok(plan_from_parts(
+        context,
+        None,
+        PlanTerminalKind::ProgressBarrier,
+        false,
+    ))
+}
+
+fn plan_from_parts(
+    context: &PlanRepairContext<'_>,
+    replacement_step: Option<PlannedStep>,
+    terminal_kind: PlanTerminalKind,
+    include_reusable_suffix: bool,
+) -> PlannedPlan {
+    let reusable_suffix_len = if include_reusable_suffix {
+        context.reusable_suffix.len()
+    } else {
+        0
+    };
+    let mut steps = Vec::with_capacity(
+        context.preserved_prefix.len()
+            + usize::from(replacement_step.is_some())
+            + reusable_suffix_len,
+    );
+    steps.extend_from_slice(context.preserved_prefix);
+    if let Some(step) = replacement_step {
+        steps.push(step);
+    }
+    if include_reusable_suffix {
+        steps.extend_from_slice(context.reusable_suffix);
+    }
+    PlannedPlan::new(
+        context.opportunity,
+        context.breach_signature.goal_key,
+        steps,
+        terminal_kind,
+    )
+}
+
+fn provider_supports_fact(provider: CausalProvider, fact: PlanningFact) -> bool {
+    match (provider, fact) {
+        (
+            CausalProvider::Observation {
+                observed_entity,
+                aspect: EntityBeliefAspect::Location,
+            },
+            PlanningFact::TargetPresent { target, .. },
+        ) => observed_entity == target,
+        (
+            CausalProvider::Belief {
+                claim_key:
+                    BeliefClaimKey {
+                        subject,
+                        aspect: EntityBeliefAspect::Location,
+                    },
+            },
+            PlanningFact::TargetPresent { target, .. },
+        ) => subject == target,
+        (
+            CausalProvider::Observation {
+                observed_entity,
+                aspect: EntityBeliefAspect::Inventory(observed_kind),
+            },
+            PlanningFact::CommodityAvailable { place, kind, .. },
+        ) => observed_entity == place && observed_kind == kind,
+        (
+            CausalProvider::Belief {
+                claim_key:
+                    BeliefClaimKey {
+                        subject,
+                        aspect: EntityBeliefAspect::Location,
+                    },
+            },
+            PlanningFact::RouteKnown { to, .. },
+        ) => subject == to,
+        (
+            CausalProvider::Record {
+                topic: RecordTopic::RouteSafety,
+                ..
+            },
+            PlanningFact::RouteKnown { .. },
+        ) => true,
+        (
+            CausalProvider::Observation {
+                observed_entity,
+                aspect: EntityBeliefAspect::Location,
+            },
+            PlanningFact::ResourceAccess { resource, .. },
+        ) => observed_entity == resource,
+        (
+            CausalProvider::Belief {
+                claim_key:
+                    BeliefClaimKey {
+                        subject,
+                        aspect: EntityBeliefAspect::Location,
+                    },
+            },
+            PlanningFact::ResourceAccess { resource, .. },
+        ) => subject == resource,
+        _ => false,
     }
 }
 
@@ -123,14 +278,14 @@ pub fn discrepancy_clearing_is_repair_search_visible(entry: &DiscrepancyEntry) -
 #[cfg(test)]
 mod tests {
     use super::{
-        PlanRepairContext, RepairFailure, RepairOutcome, attempt_order, attempt_repair_then_replan,
-        discrepancy_clearing_is_repair_search_visible, repair_budget,
+        PlanRepairContext, RepairFailure, RepairOutcome, RepairPlanCandidate, attempt_order,
+        attempt_repair_then_replan, discrepancy_clearing_is_repair_search_visible, repair_budget,
     };
-    use crate::{PlannedPlan, PlannedStep, PlannerOpKind};
+    use crate::{PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
     use worldwake_core::{
         ActionDefId, BreachSignature, CausalLink, CausalProvider, Discrepancy, DiscrepancyClearing,
-        DiscrepancyEntry, EntityId, InvalidatorTag, Permille, PlanningFact, RepairEntry,
-        RepairKind, RepairMemory, Tick,
+        DiscrepancyEntry, EntityId, InvalidatorTag, OpportunityAnchor, OpportunityKey, Permille,
+        PlanningFact, RepairEntry, RepairKind, RepairMemory, Tick,
         test_utils::{sample_blocker_key, sample_goal_key},
     };
 
@@ -187,17 +342,26 @@ mod tests {
         }
     }
 
+    fn opportunity() -> OpportunityKey {
+        OpportunityKey {
+            goal_key: sample_goal_key(),
+            anchor: OpportunityAnchor::None,
+        }
+    }
+
     fn context<'a>(
         prefix: &'a [PlannedStep],
         suffix: &'a [PlannedStep],
         entry: &'a DiscrepancyEntry,
     ) -> PlanRepairContext<'a> {
         PlanRepairContext {
+            opportunity: opportunity(),
             failed_step: 1,
             broken_link: broken_link(),
             breach_signature: signature(),
             preserved_prefix: prefix,
             reusable_suffix: suffix,
+            replacement_candidates: &[],
             new_evidence: &[],
             discrepancy_entry: entry,
         }
@@ -258,7 +422,7 @@ mod tests {
         let suffix = vec![step()];
         let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
         let context = context(&prefix, &suffix, &entry);
-        let cognitive = cognitive(20, Permille::new(1000).unwrap());
+        let cognitive = cognitive(1, Permille::new(1000).unwrap());
         let mut memory = RepairMemory::default();
         memory.record(RepairEntry {
             signature: signature(),
@@ -286,7 +450,7 @@ mod tests {
         let suffix = vec![step()];
         let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
         let context = context(&prefix, &suffix, &entry);
-        let cognitive = cognitive(20, Permille::new(1000).unwrap());
+        let cognitive = cognitive(3, Permille::new(1000).unwrap());
 
         let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
 
@@ -358,5 +522,149 @@ mod tests {
         let roundtrip: RepairFailure = bincode::deserialize(&bytes).unwrap();
 
         assert_eq!(roundtrip, RepairFailure::NoEpistemicSubstrate);
+    }
+
+    #[test]
+    fn rebind_target_returns_repaired_plan_with_prefix_candidate_and_suffix() {
+        let prefix = vec![step()];
+        let suffix = vec![step()];
+        let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
+        let replacement = PlannedStep {
+            targets: vec![crate::PlanningEntityRef::Authoritative(entity(17))],
+            target_place: Some(entity(8)),
+            ..step()
+        };
+        let candidates = vec![RepairPlanCandidate {
+            kind: RepairKind::RebindTarget,
+            provider: CausalProvider::Observation {
+                observed_entity: entity(7),
+                aspect: worldwake_core::EntityBeliefAspect::Location,
+            },
+            fact: broken_link().fact,
+            step: replacement.clone(),
+        }];
+        let mut context = context(&prefix, &suffix, &entry);
+        context.replacement_candidates = &candidates;
+        let cognitive = cognitive(20, Permille::new(1000).unwrap());
+
+        let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
+
+        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+            panic!("rebind candidate should repair plan");
+        };
+        assert_eq!(kind, RepairKind::RebindTarget);
+        assert_eq!(new_plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+        assert_eq!(
+            new_plan.steps,
+            vec![prefix[0].clone(), replacement, suffix[0].clone()]
+        );
+    }
+
+    #[test]
+    fn replace_provider_rejects_provider_that_does_not_support_fact() {
+        let prefix = vec![step()];
+        let suffix = vec![step()];
+        let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
+        let candidates = vec![RepairPlanCandidate {
+            kind: RepairKind::ReplaceProvider,
+            provider: CausalProvider::Observation {
+                observed_entity: entity(99),
+                aspect: worldwake_core::EntityBeliefAspect::Location,
+            },
+            fact: broken_link().fact,
+            step: step(),
+        }];
+        let mut context = context(&prefix, &suffix, &entry);
+        context.replacement_candidates = &candidates;
+        let cognitive = cognitive(3, Permille::new(1000).unwrap());
+
+        let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
+
+        let RepairOutcome::Failed { tried } = outcome else {
+            panic!("unsupported provider should not repair plan");
+        };
+        assert_eq!(
+            tried[1],
+            (
+                RepairKind::ReplaceProvider,
+                RepairFailure::NoProviderReplacement
+            )
+        );
+        assert_eq!(
+            tried[2],
+            (
+                RepairKind::InsertVerification,
+                RepairFailure::NoEpistemicSubstrate
+            )
+        );
+    }
+
+    #[test]
+    fn replace_provider_returns_repaired_plan_for_lawful_route_provider() {
+        let prefix = vec![step()];
+        let suffix = vec![step()];
+        let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
+        let route_fact = PlanningFact::RouteKnown {
+            from: entity(1),
+            to: entity(2),
+        };
+        let candidates = vec![RepairPlanCandidate {
+            kind: RepairKind::ReplaceProvider,
+            provider: CausalProvider::Record {
+                record_entity: entity(30),
+                topic: worldwake_core::RecordTopic::RouteSafety,
+            },
+            fact: route_fact,
+            step: step(),
+        }];
+        let mut context = context(&prefix, &suffix, &entry);
+        context.broken_link.fact = route_fact;
+        context.replacement_candidates = &candidates;
+        let cognitive = cognitive(20, Permille::new(1000).unwrap());
+
+        let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
+
+        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+            panic!("route record provider should repair plan");
+        };
+        assert_eq!(kind, RepairKind::ReplaceProvider);
+        assert_eq!(new_plan.steps.len(), 3);
+        assert_eq!(new_plan.terminal_kind, PlanTerminalKind::GoalSatisfied);
+    }
+
+    #[test]
+    fn downgrade_to_progress_barrier_preserves_committed_prefix_only() {
+        let prefix = vec![step()];
+        let suffix = vec![step()];
+        let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
+        let context = context(&prefix, &suffix, &entry);
+        let cognitive = cognitive(4, Permille::new(1000).unwrap());
+
+        let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
+
+        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+            panic!("visible discrepancy should downgrade to a progress barrier");
+        };
+        assert_eq!(kind, RepairKind::DowngradeToProgressBarrier);
+        assert_eq!(new_plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert_eq!(new_plan.steps, prefix);
+    }
+
+    #[test]
+    fn abandon_returns_empty_progress_barrier_after_prior_strategies_fail() {
+        let prefix = Vec::new();
+        let suffix = vec![step()];
+        let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
+        let context = context(&prefix, &suffix, &entry);
+        let cognitive = cognitive(5, Permille::new(1000).unwrap());
+
+        let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
+
+        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+            panic!("abandon should be the final local outcome after earlier attempts fail");
+        };
+        assert_eq!(kind, RepairKind::Abandon);
+        assert_eq!(new_plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
+        assert!(new_plan.steps.is_empty());
     }
 }

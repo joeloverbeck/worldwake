@@ -21,7 +21,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 ## Crates
 
 - `worldwake-core` — extends `DiscrepancyClearing` (`crates/worldwake-core/src/discrepancy.rs:57-70`) with any new clearing variants the repair search requires beyond the existing five (`TtlExpiry`, `ReobservationOf`, `BeliefUpdate`, `CommodityAvailabilityChanged`, `WorldStructureChange`). Adds `CausalLink`, `CausalProvider`, `PlanningFact`, `RecordTopic`, and `BreachSignature` types. D8 migrated `RepairKind` (`crates/worldwake-core/src/decision_event_payload.rs`) from 4 post-hoc-classification variants to 5 search-axis variants. Migrates `RepairMemory` (`crates/worldwake-core/src/repair_memory.rs:19-22`) from `BTreeMap<RepairKey, RepairEntry>` to `BTreeMap<BreachSignature, RepairEntry>` with discriminated success/failure recording. D8 extended `RepairAppliedPayload` with a `substitute_recipe: Option<RecipeId>` field so the rebinding alternative is preserved through the variant merge. Extends `CognitiveProfile` (`crates/worldwake-core/src/cognitive_profile.rs:23-114`) with `repair_budget_fraction: Permille` and `causal_links_per_step_cap: u8`, both with `#[serde(default)]` for scenario/text-serde omission and updated `Default` impl. Because persisted runtime/profile shape changes are current-format-only, tickets 002, 003, 004, and 005 bumped `SAVE_FORMAT_VERSION` `79→80→81→82→83`; later S137 persisted-shape tickets continue the version chain.
-- `worldwake-ai` — extends `PlanGuard` (`crates/worldwake-ai/src/plan_guard.rs:8`) to carry `causal_links: Vec<CausalLink>` per plan step (capped by `CognitiveProfile.causal_links_per_step_cap`). Adds `plan_repair` module owning `PlanRepairContext`, bounded attempt ordering, and repair outcomes. The module first lands as an explicit bounded attempt surface; successful localized strategy construction is owned by `tickets/S137PLACAULIN-011.md`, then `agent_tick/execution.rs:90-146` routes invalidator breaches through `attempt_repair_then_replan` instead of falling straight through to `handle_current_step_failure`. The existing post-hoc `classify_accepted_repair` at `planning.rs:1452-1526` is preserved as the fall-through case for the full-replan branch but is no longer the primary repair surface once routing lands. `decision_trace.rs` adds `RepairAttemptTrace`.
+- `worldwake-ai` — extends `PlanGuard` (`crates/worldwake-ai/src/plan_guard.rs:8`) to carry `causal_links: Vec<CausalLink>` per plan step (capped by `CognitiveProfile.causal_links_per_step_cap`). Adds `plan_repair` module owning `PlanRepairContext`, bounded attempt ordering, and repair outcomes. The module first lands as an explicit bounded attempt surface; successful localized strategy construction is owned by `archive/tickets/S137PLACAULIN-011.md`, then `agent_tick/execution.rs:90-146` routes invalidator breaches through `attempt_repair_then_replan` instead of falling straight through to `handle_current_step_failure`. The existing post-hoc `classify_accepted_repair` at `planning.rs:1452-1526` is preserved as the fall-through case for the full-replan branch but is no longer the primary repair surface once routing lands. `decision_trace.rs` adds `RepairAttemptTrace`.
 - `worldwake-sim` — no repair-search behavior change. S137 persisted-shape tickets update `SAVE_FORMAT_VERSION` as runtime/profile payloads change; repair search itself is internal to the AI crate, and calls to `apply_effects_with_context` (`crates/worldwake-sim/src/effect_schema.rs`) use the existing shared-service surface (FND-26).
 - `worldwake-cli` — observer Section 3b (`crates/worldwake-cli/src/bin/observer.rs:828` `render_decision_history_section`) renders the chosen `RepairKind` and the rejected alternatives. Migration of the 20 `RepairKind::*` call sites includes observer and scenario test references.
 
@@ -144,13 +144,22 @@ pub struct PlanGuard {
 
 ```rust
 pub struct PlanRepairContext<'a> {
+    pub opportunity: OpportunityKey,
     pub failed_step: u16,
     pub broken_link: CausalLink,
     pub breach_signature: BreachSignature,
     pub preserved_prefix: &'a [PlannedStep],
     pub reusable_suffix: &'a [PlannedStep],
+    pub replacement_candidates: &'a [RepairPlanCandidate],
     pub new_evidence: &'a [BeliefRef],
     pub discrepancy_entry: &'a DiscrepancyEntry,    // includes per-instance clearing_condition
+}
+
+pub struct RepairPlanCandidate {
+    pub kind: RepairKind,
+    pub provider: CausalProvider,
+    pub fact: PlanningFact,
+    pub step: PlannedStep,
 }
 
 pub enum RepairKind {
@@ -173,7 +182,7 @@ pub fn attempt_repair_then_replan(
 ) -> RepairOutcome { /* … */ }
 ```
 
-The new module starts as a small public repair-attempt surface: it applies the S137 budget, deterministic `RepairKind` ordering, and `RepairMemory` skip behavior without taking a broad runtime object. Successful localized plan construction is separated into `tickets/S137PLACAULIN-011.md`; D6 routing should call the finalized `RepairOutcome` API rather than synthesize replacement plans inside the revalidation seam. The existing post-hoc `classify_accepted_repair` (`planning.rs:1452-1526`) remains as the fall-through path that runs after `RepairOutcome::Failed` triggers full replan; D8's migration updates its variant mapping but does not delete the function.
+The module applies the S137 budget, deterministic `RepairKind` ordering, and `RepairMemory` skip behavior without taking a broad runtime object. Ticket `S137PLACAULIN-011` added explicit `RepairPlanCandidate` inputs so localized construction can return `RepairOutcome::Repaired` while ticket 007 still owns constructing those candidates at the revalidation seam. The existing post-hoc `classify_accepted_repair` (`planning.rs:1452-1526`) remains as the fall-through path that runs after `RepairOutcome::Failed` triggers full replan; D8's migration updates its variant mapping but does not delete the function.
 
 `PlannedPlan` and `PlannedStep` are the existing types at `crates/worldwake-ai/src/planner_ops.rs:256-307`.
 

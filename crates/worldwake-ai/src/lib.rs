@@ -116,7 +116,8 @@ pub use plan_guard_build::{
     build_plan_expectations, build_plan_guard, build_plan_guard_with_causal_links,
 };
 pub use plan_repair::{
-    PlanRepairContext, RepairFailure, RepairOutcome, attempt_repair_then_replan,
+    PlanRepairContext, RepairFailure, RepairOutcome, RepairPlanCandidate,
+    attempt_repair_then_replan,
 };
 pub use plan_revalidation::{
     RevalidationOutcome, classify_revalidation, is_pursuit_plan_invalid, revalidate_next_step,

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `agent_tick/execution.rs` revalidation seam; payload revalidation for RebindTarget
-**Deps**: archive/tickets/S137PLACAULIN-006.md (plan_repair module and causal-link emission), tickets/S137PLACAULIN-011.md (successful localized repair handlers)
+**Deps**: archive/tickets/S137PLACAULIN-006.md (plan_repair module and causal-link emission), archive/tickets/S137PLACAULIN-011.md (successful localized repair handlers)
 
 ## Problem
 
@@ -45,11 +45,13 @@ let (plan_invalidation_reason, expectation_kind, mismatch_detail) = match classi
     RevalidationOutcome::Valid => (None, None, None),
     RevalidationOutcome::Invalidated { reason, expectation_kind, mismatch_detail } => {
         let repair_context = PlanRepairContext {
+            opportunity,
             failed_step,
             broken_link,
             breach_signature,
             preserved_prefix,
             reusable_suffix,
+            replacement_candidates,
             new_evidence,
             discrepancy_entry,
         };
@@ -78,7 +80,9 @@ let (plan_invalidation_reason, expectation_kind, mismatch_detail) = match classi
 // existing path continues with handle_current_step_failure → ReplanTriggered emission
 ```
 
-### 2. Payload revalidation audit for `RebindTarget`
+### 2. Build explicit replacement candidates and audit payload revalidation for `RebindTarget`
+
+Ticket 011 changed the finalized repair API: `PlanRepairContext` now requires the current `OpportunityKey` plus explicit `RepairPlanCandidate` entries. Build those candidates at the invalidator seam from the same local search/belief inputs the current full-replan path can lawfully use; do not pass `AgentDecisionRuntime` into `plan_repair`.
 
 Grep `with_payload_override_validator` across action handler registrations. For each handler that may receive a rebound target (travel, trade, harvest, craft handlers), verify the validator accepts the synthesized payload. If any validator rejects, update its registration in this ticket — splitting to a follow-up would leave repair in a half-working state.
 
@@ -89,6 +93,7 @@ Implement `record_repair_attempts` writing `RepairEntry { signature, kind, succe
 ## Files to Touch
 
 - `crates/worldwake-ai/src/agent_tick/execution.rs` (modify — revalidation seam at 90-146, runtime tests at 844+)
+- `crates/worldwake-ai/src/plan_repair.rs` (read API only — construct `RepairPlanCandidate` inputs; do not move strategy logic into execution)
 - Likely: `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — `replace_current_plan` helper if it lives here; otherwise create in execution.rs)
 - Likely: `crates/worldwake-systems/src/` action handler registration files (modify — `with_payload_override_validator` updates if audit surfaces rejections; grep `with_payload_override_validator` to confirm)
 
