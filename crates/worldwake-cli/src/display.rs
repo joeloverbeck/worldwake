@@ -409,6 +409,11 @@ pub fn format_goal_kind(world: &World, kind: &GoalKind) -> String {
             let topic_str = format_tell_topic_brief(world, topic);
             format!("ShareBelief({communication_class:?}, tell {listener_name} about {topic_str})")
         }
+        GoalKind::AskWitness { witness, topic } => {
+            let witness_name = entity_display_name(world, *witness);
+            let topic_str = format_tell_topic_brief(world, topic);
+            format!("AskWitness({witness_name} about {topic_str})")
+        }
         GoalKind::ClaimOffice { office } => {
             format!("ClaimOffice({})", entity_display_name(world, *office))
         }

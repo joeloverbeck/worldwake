@@ -276,7 +276,9 @@ fn root_candidate_payload_error(
 
     let reason = match error {
         GoalPayloadOverrideError::MissingTarget => TracePayloadError::MissingTarget,
-        GoalPayloadOverrideError::UnsupportedGoal => TracePayloadError::UnsupportedGoal,
+        GoalPayloadOverrideError::UnsupportedGoal | GoalPayloadOverrideError::UnsupportedTopic => {
+            TracePayloadError::UnsupportedGoal
+        }
         GoalPayloadOverrideError::MissingActorPlace => TracePayloadError::MissingActorPlace,
         GoalPayloadOverrideError::SellerUnavailable => TracePayloadError::SellerUnavailable,
         GoalPayloadOverrideError::SellerOutOfStock => TracePayloadError::SellerOutOfStock,

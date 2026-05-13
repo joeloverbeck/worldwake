@@ -666,7 +666,7 @@ fn goal_ranking_provenance(
         Some(RankedGoalProvenanceFamily::Danger) => Some(RankedGoalProvenance::Danger(
             context.danger_assessment.clone(),
         )),
-        None => None,
+        Some(RankedGoalProvenanceFamily::EpistemicSensing) | None => None,
     }
 }
 
@@ -937,6 +937,11 @@ fn priority_class(candidate: &GoalOffer, context: &RankingContext<'_>) -> GoalPr
         }
         | GoalKind::Accuse { .. }
         | GoalKind::PunishAccused { .. } => GoalPriorityClass::Low,
+        GoalKind::AskWitness { .. } => {
+            // TODO(S139EPISENSUB-005): replace this staged compile-only
+            // placeholder with the witness-recency-weighted priority contract.
+            GoalPriorityClass::Background
+        }
     }
 }
 
@@ -1361,6 +1366,11 @@ fn score_goal_kind_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -
                 CommunicationClass::Testimony | CommunicationClass::Gossip => pressure,
             };
             score_product(context.utility.social_weight, boosted_pressure)
+        }
+        GoalKind::AskWitness { .. } => {
+            // TODO(S139EPISENSUB-005): replace this compile-only placeholder with the
+            // confidence-gap and witness-recency-weighted motive formula.
+            0
         }
         GoalKind::LootCorpse { corpse } => corpse_loot_assessment(corpse, context)
             .map_or(1, |assessment| assessment.motive_score.max(1)),
@@ -2942,20 +2952,21 @@ fn goal_kind_discriminant(kind: GoalKind) -> u8 {
         GoalKind::BuryCorpse { .. } => 17,
         GoalKind::FulfillBounty { .. } => 18,
         GoalKind::ShareBelief { .. } => 19,
-        GoalKind::ClaimOffice { .. } => 20,
-        GoalKind::SupportCandidateForOffice { .. } => 21,
-        GoalKind::InvestigateViolation { .. } => 22,
-        GoalKind::Patrol { .. } => 23,
-        GoalKind::StealItem { .. } => 24,
-        GoalKind::Accuse { .. } => 25,
-        GoalKind::PunishAccused { .. } => 26,
-        GoalKind::PostBounty { .. } => 27,
-        GoalKind::PostNotice { .. } => 28,
-        GoalKind::SearchForMissing { .. } => 29,
-        GoalKind::ReportMissing { .. } => 30,
-        GoalKind::EscortToSafety { .. } => 31,
-        GoalKind::ReportFound { .. } => 32,
-        GoalKind::ExploreLocation { .. } => 33,
+        GoalKind::AskWitness { .. } => 20,
+        GoalKind::ClaimOffice { .. } => 21,
+        GoalKind::SupportCandidateForOffice { .. } => 22,
+        GoalKind::InvestigateViolation { .. } => 23,
+        GoalKind::Patrol { .. } => 24,
+        GoalKind::StealItem { .. } => 25,
+        GoalKind::Accuse { .. } => 26,
+        GoalKind::PunishAccused { .. } => 27,
+        GoalKind::PostBounty { .. } => 28,
+        GoalKind::PostNotice { .. } => 29,
+        GoalKind::SearchForMissing { .. } => 30,
+        GoalKind::ReportMissing { .. } => 31,
+        GoalKind::EscortToSafety { .. } => 32,
+        GoalKind::ReportFound { .. } => 33,
+        GoalKind::ExploreLocation { .. } => 34,
     }
 }
 

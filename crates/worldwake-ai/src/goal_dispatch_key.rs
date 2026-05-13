@@ -35,6 +35,7 @@ pub enum GoalDispatchKey {
     ShareBeliefAlarm,
     ShareBeliefTestimony,
     ShareBeliefGossip,
+    AskWitness,
     ClaimOffice,
     SupportCandidateForOffice,
     InvestigateViolation,
@@ -47,7 +48,7 @@ pub enum GoalDispatchKey {
 }
 
 impl GoalDispatchKey {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::ConsumeOwnedCommodity,
         Self::AcquireSelfConsume,
         Self::AcquireRecipeInput,
@@ -79,6 +80,7 @@ impl GoalDispatchKey {
         Self::ShareBeliefAlarm,
         Self::ShareBeliefTestimony,
         Self::ShareBeliefGossip,
+        Self::AskWitness,
         Self::ClaimOffice,
         Self::SupportCandidateForOffice,
         Self::InvestigateViolation,
@@ -138,6 +140,7 @@ impl GoalDispatchKey {
                 worldwake_core::CommunicationClass::Testimony => Self::ShareBeliefTestimony,
                 worldwake_core::CommunicationClass::Gossip => Self::ShareBeliefGossip,
             },
+            GoalKind::AskWitness { .. } => Self::AskWitness,
             GoalKind::ClaimOffice { .. } => Self::ClaimOffice,
             GoalKind::SupportCandidateForOffice { .. } => Self::SupportCandidateForOffice,
             GoalKind::InvestigateViolation { .. } => Self::InvestigateViolation,
@@ -437,6 +440,10 @@ mod tests {
                 topic: TellTopic::EntityBelief { subject: office },
                 communication_class: worldwake_core::CommunicationClass::Gossip,
             },
+            GoalKind::AskWitness {
+                witness: target,
+                topic: TellTopic::EntityBelief { subject: office },
+            },
             GoalKind::ClaimOffice { office },
             GoalKind::SupportCandidateForOffice {
                 office,
@@ -466,7 +473,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(goals.len(), 29);
+        assert_eq!(goals.len(), 30);
         for goal in goals {
             let _ = GoalDispatchKey::from(goal);
         }
@@ -482,13 +489,14 @@ mod tests {
     #[test]
     fn test_goal_dispatch_key_all_lists_each_dispatch_key_once() {
         assert_eq!(GoalDispatchKey::all(), &GoalDispatchKey::ALL);
-        assert_eq!(GoalDispatchKey::all().len(), 40);
+        assert_eq!(GoalDispatchKey::all().len(), 41);
         for (idx, key) in GoalDispatchKey::all().iter().enumerate() {
             assert!(
                 !GoalDispatchKey::all()[idx + 1..].contains(key),
                 "duplicate key in exhaustive dispatch-key list: {key:?}"
             );
         }
+        assert!(GoalDispatchKey::all().contains(&GoalDispatchKey::AskWitness));
     }
 
     #[test]

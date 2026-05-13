@@ -1479,6 +1479,28 @@ impl SocialBeliefView for PlanningState<'_> {
             .collect()
     }
 
+    fn entity_beliefs_sourced_from_witness(
+        &self,
+        agent: EntityId,
+        witness: EntityId,
+    ) -> Vec<(EntityId, BelievedEntityState)> {
+        if agent != self.snapshot.actor() {
+            return Vec::new();
+        }
+
+        self.snapshot
+            .actor_known_entity_beliefs
+            .iter()
+            .filter(|(_, belief)| {
+                matches!(
+                    belief.source,
+                    worldwake_core::PerceptionSource::Report { from, .. } if from == witness
+                )
+            })
+            .map(|(entity, belief)| (*entity, belief.clone()))
+            .collect()
+    }
+
     fn agent_belief_store(&self, agent: EntityId) -> Option<&worldwake_core::AgentBeliefStore> {
         (agent == self.snapshot.actor()).then_some(&self.snapshot.actor_belief_store)
     }

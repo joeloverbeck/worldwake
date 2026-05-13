@@ -608,7 +608,7 @@ S136 (completed, archived)
 - **S137**: Plan Causal Links and Localized Repair Search — completed and archived at `archive/specs/S137-plan-causal-links-and-repair.md` through the `S137PLACAULIN-001` through `S137PLACAULIN-012` ticket chain. Landed causal-link provenance, bounded localized repair before full replan, repair-memory and trace surfaces, observer rendering, generated plan-repair goldens, and the corrected Phase 11 full-replan reduction witness. Folds in PR-15.
 
 **Remaining Wave 3 slice**:
-- **S139**: Epistemic Sensing Subgoals — Ask Witness and Inspect Container — discrete `GoalKind::AskWitness` and `GoalKind::InspectContainer` with `EpistemicProfile`. Required for FOUNDATIONS Scenarios C and G end-to-end.
+- **S139**: Epistemic Sensing Subgoals — Ask Witness and Inspect Container — discrete `GoalKind::AskWitness` and `GoalKind::InspectContainer` with the existing `EpistemicDispositionProfile`. Required for FOUNDATIONS Scenarios C and G end-to-end.
   - soft depends on archived S137 (`RepairKind::InsertVerification` splices these), S138 (opportunity compiler emits witness/container anchors)
 
 ### Phase 11 Gate

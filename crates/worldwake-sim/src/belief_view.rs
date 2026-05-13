@@ -18,14 +18,14 @@ use worldwake_core::{
     JusticeDispositionProfile, LastHarvestTrace, LastSeenMemory, LatrineFullness,
     LawAbidingProfile, LoadUnits, MerchandiseProfile, MetabolismProfile,
     ObligationExecutionTracker, ObligationSatiationProfile, ObservationOmissionLog, OfficeData,
-    PatrolProfile, PatrolRoute, PerceptionProfile, Permille, PlaceDirtiness, PlaceTag, PlaceTagSet,
-    PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus, RecordData, RecordKind,
-    RecordedViolation, ResourceExtractionQueues, ResourceSource, RewardEncumbrance, RewardSource,
-    RightKind, RiskWeightProfile, RouteExperience, SleepQualityProfile, SocialObservation,
-    SourceReliability, StockStoragePolicy, SubstitutePreferences, TellMemoryKey, TellProfile,
-    TellTopic, Tick, TickRange, ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind,
-    UtilityProfile, ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound,
-    effective_claim_confidence,
+    PatrolProfile, PatrolRoute, PerceptionProfile, PerceptionSource, Permille, PlaceDirtiness,
+    PlaceTag, PlaceTagSet, PreferenceProfile, Quantity, RecipeId, RecipientKnowledgeStatus,
+    RecordData, RecordKind, RecordedViolation, ResourceExtractionQueues, ResourceSource,
+    RewardEncumbrance, RewardSource, RightKind, RiskWeightProfile, RouteExperience,
+    SleepQualityProfile, SocialObservation, SourceReliability, StockStoragePolicy,
+    SubstitutePreferences, TellMemoryKey, TellProfile, TellTopic, Tick, TickRange,
+    ToldBeliefMemory, TradeDispositionProfile, UniqueItemKind, UtilityProfile,
+    ViolationDispositionProfile, WashBasinState, WorkstationTag, Wound, effective_claim_confidence,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -287,6 +287,21 @@ pub trait GoalBeliefView {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
+    }
+    fn entity_beliefs_sourced_from_witness(
+        &self,
+        agent: EntityId,
+        witness: EntityId,
+    ) -> Vec<(EntityId, BelievedEntityState)> {
+        self.known_entity_beliefs(agent)
+            .into_iter()
+            .filter(|(_, belief)| {
+                matches!(
+                    belief.source,
+                    PerceptionSource::Report { from, .. } if from == witness
+                )
+            })
+            .collect()
     }
     fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
         let _ = agent;
@@ -1103,6 +1118,27 @@ pub trait SocialBeliefView {
         let _ = agent;
         Vec::new()
     }
+    fn entity_beliefs_sourced_from_witness(
+        &self,
+        agent: EntityId,
+        witness: EntityId,
+    ) -> Vec<(EntityId, BelievedEntityState)> {
+        self.agent_belief_store(agent)
+            .map(|store| {
+                store
+                    .known_entities
+                    .iter()
+                    .filter(|(_, belief)| {
+                        matches!(
+                            belief.source,
+                            PerceptionSource::Report { from, .. } if from == witness
+                        )
+                    })
+                    .map(|(entity, belief)| (*entity, belief.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
     fn agent_belief_store(&self, agent: EntityId) -> Option<&AgentBeliefStore> {
         let _ = agent;
         None
@@ -1511,6 +1547,17 @@ where
         worldwake_core::BelievedEntityState,
     )> {
         SocialBeliefView::known_entity_beliefs(self, agent)
+    }
+
+    fn entity_beliefs_sourced_from_witness(
+        &self,
+        agent: worldwake_core::EntityId,
+        witness: worldwake_core::EntityId,
+    ) -> Vec<(
+        worldwake_core::EntityId,
+        worldwake_core::BelievedEntityState,
+    )> {
+        SocialBeliefView::entity_beliefs_sourced_from_witness(self, agent, witness)
     }
 
     fn agent_belief_store(
@@ -2917,6 +2964,90 @@ mod tests {
         state.last_known_place = Some(place);
         state.last_known_inventory.insert(commodity, Quantity(1));
         state
+    }
+
+    #[test]
+    fn entity_beliefs_sourced_from_witness_filters_report_provenance_in_key_order() {
+        let mut world = World::new(build_prototype_world()).unwrap();
+        let place = world.topology().place_ids().next().unwrap();
+        let actor;
+        let witness;
+        let other_witness;
+        let subject_low = EntityId {
+            slot: 20,
+            generation: 0,
+        };
+        let subject_high = EntityId {
+            slot: 30,
+            generation: 0,
+        };
+        {
+            let mut txn = new_txn(&mut world, 1);
+            actor = txn.create_agent("Aster", ControlSource::Ai).unwrap();
+            witness = txn.create_agent("Bryn", ControlSource::Ai).unwrap();
+            other_witness = txn.create_agent("Cato", ControlSource::Ai).unwrap();
+            txn.set_ground_location(actor, place).unwrap();
+            txn.set_ground_location(witness, place).unwrap();
+            txn.set_ground_location(other_witness, place).unwrap();
+
+            let mut beliefs = AgentBeliefStore::new();
+            let mut from_witness_high =
+                observed_entity(place, EntityKind::Agent, CommodityKind::Bread);
+            from_witness_high.source = PerceptionSource::Report {
+                from: witness,
+                chain_len: 1,
+            };
+            let mut direct = observed_entity(place, EntityKind::Agent, CommodityKind::Apple);
+            direct.source = PerceptionSource::DirectObservation;
+            let mut from_other_witness =
+                observed_entity(place, EntityKind::Agent, CommodityKind::Grain);
+            from_other_witness.source = PerceptionSource::Report {
+                from: other_witness,
+                chain_len: 1,
+            };
+            let mut from_witness_low =
+                observed_entity(place, EntityKind::Agent, CommodityKind::Coin);
+            from_witness_low.source = PerceptionSource::Report {
+                from: witness,
+                chain_len: 1,
+            };
+            beliefs
+                .known_entities
+                .insert(subject_high, from_witness_high);
+            beliefs.known_entities.insert(
+                EntityId {
+                    slot: 10,
+                    generation: 0,
+                },
+                direct,
+            );
+            beliefs.known_entities.insert(
+                EntityId {
+                    slot: 40,
+                    generation: 0,
+                },
+                from_other_witness,
+            );
+            beliefs.known_entities.insert(subject_low, from_witness_low);
+            txn.set_component_agent_belief_store(actor, beliefs)
+                .unwrap();
+            commit_txn(txn);
+        }
+        let view = PerAgentBeliefView::from_world(actor, &world);
+
+        let entries = SocialBeliefView::entity_beliefs_sourced_from_witness(&view, actor, witness);
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|(entity, _)| *entity)
+                .collect::<Vec<_>>(),
+            vec![subject_low, subject_high]
+        );
+        assert!(entries.iter().all(|(_, belief)| matches!(
+            belief.source,
+            PerceptionSource::Report { from, .. } if from == witness
+        )));
     }
 
     fn accusation_case(
