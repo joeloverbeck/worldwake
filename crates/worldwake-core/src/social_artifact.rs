@@ -68,7 +68,7 @@ impl Default for ArtifactPostingProfile {
 
 impl Component for ArtifactPostingProfile {}
 
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ArtifactPostingContext {
     pub posting_place: EntityId,
     pub issuing_authority: Option<EntityId>,
@@ -224,7 +224,7 @@ pub struct ArtifactTransitionPayload {
     pub at: Tick,
 }
 
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct BountyTerms {
     pub target: BountyTarget,
     pub proof_requirement: ProofRequirement,
@@ -236,7 +236,7 @@ pub struct BountyTerms {
 
 impl Component for BountyTerms {}
 
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum BountyTarget {
     EliminateEntity {
         target: EntityId,
@@ -248,28 +248,28 @@ pub enum BountyTarget {
     },
 }
 
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum ProofRequirement {
     PhysicalEvidence,
     WitnessTestimony,
     SelfReport,
 }
 
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum RewardSource {
     InstitutionalTreasury { treasury_entity: EntityId },
     PersonalFunds { issuer: EntityId },
     ReservedLot { lot: EntityId },
 }
 
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct NoticeContent {
     pub topic: NoticeTopic,
 }
 
 impl Component for NoticeContent {}
 
-#[derive(Copy, Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum NoticeTopic {
     ThreatWarning {
         place: EntityId,

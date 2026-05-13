@@ -1,4 +1,4 @@
-use crate::{Component, EntityId, GoalKey, MemoryCapacityProfile, Tick};
+use crate::{Component, EntityId, GoalKey, InvalidatorTag, MemoryCapacityProfile, Tick};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -6,6 +6,13 @@ use std::collections::BTreeMap;
 pub struct RepairKey {
     pub goal_key: GoalKey,
     pub alternate_target: EntityId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct BreachSignature {
+    pub goal_key: GoalKey,
+    pub invalidator: InvalidatorTag,
+    pub step_target: Option<EntityId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -54,7 +61,7 @@ impl Component for RepairMemory {}
 
 #[cfg(test)]
 mod tests {
-    use super::{RepairEntry, RepairKey, RepairMemory};
+    use super::{BreachSignature, RepairEntry, RepairKey, RepairMemory};
     use crate::{
         GoalKind, MemoryCapacityProfile, Tick,
         test_utils::{entity_id, sample_goal_key},
@@ -68,6 +75,11 @@ mod tests {
     fn assert_value_bounds<T: Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
 
     fn assert_copy_value_bounds<T: Copy + Clone + Eq + Debug + Serialize + DeserializeOwned>() {}
+
+    fn assert_copy_ord_hash_value_bounds<
+        T: Copy + Clone + Eq + Ord + std::hash::Hash + Debug + Serialize + DeserializeOwned,
+    >() {
+    }
 
     fn repair_key(slot: u32) -> RepairKey {
         RepairKey {
@@ -90,7 +102,22 @@ mod tests {
         assert_component_bounds::<RepairMemory>();
         assert_value_bounds::<RepairMemory>();
         assert_copy_value_bounds::<RepairKey>();
+        assert_copy_ord_hash_value_bounds::<BreachSignature>();
         assert_copy_value_bounds::<RepairEntry>();
+    }
+
+    #[test]
+    fn breach_signature_roundtrips_through_bincode() {
+        let signature = BreachSignature {
+            goal_key: sample_goal_key(),
+            invalidator: crate::InvalidatorTag::TargetMoved,
+            step_target: Some(entity_id(7, 0)),
+        };
+
+        let bytes = bincode::serialize(&signature).unwrap();
+        let roundtrip: BreachSignature = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, signature);
     }
 
     #[test]

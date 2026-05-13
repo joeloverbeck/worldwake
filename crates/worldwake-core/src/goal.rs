@@ -8,7 +8,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::num::{NonZeroU16, NonZeroU32};
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum CommodityPurpose {
     SelfConsume,
     Restock,
@@ -58,7 +58,7 @@ impl AcquisitionQuantity {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum GoalKind {
     ConsumeOwnedCommodity {
         commodity: CommodityKind,
@@ -178,7 +178,7 @@ pub enum GoalKind {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct GoalKey {
     pub kind: GoalKind,
     pub commodity: Option<CommodityKind>,
@@ -188,7 +188,7 @@ pub struct GoalKey {
 
 /// Concrete world-state anchor distinguishing one opportunity from another
 /// for the same desire (`GoalKey`).
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum OpportunityAnchor {
     Place(EntityId),
     Entity(EntityId),
@@ -197,7 +197,7 @@ pub enum OpportunityAnchor {
 
 /// Identifies a specific opportunity: a desire plus the concrete anchor
 /// being pursued for that desire.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct OpportunityKey {
     pub goal_key: GoalKey,
     pub anchor: OpportunityAnchor,
