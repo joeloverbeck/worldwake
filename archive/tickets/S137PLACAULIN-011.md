@@ -64,7 +64,7 @@ Successful handlers still respect the budget and skip recently failed `(BreachSi
 - `crates/worldwake-ai/src/plan_repair.rs` (modify)
 - `crates/worldwake-ai/src/lib.rs` (modify)
 - `specs/S137-plan-causal-links-and-repair.md` (modify)
-- `tickets/S137PLACAULIN-007.md` (modify)
+- `archive/tickets/S137PLACAULIN-007.md` (modify)
 - `archive/tickets/S137PLACAULIN-011.md` (modify)
 
 ## Out of Scope
@@ -118,7 +118,7 @@ Implemented successful localized repair construction in `crates/worldwake-ai/src
 - `Abandon` returns an empty progress-barrier plan after earlier strategies fail or are skipped.
 - `InsertVerification` still returns `RepairFailure::NoEpistemicSubstrate` until S139.
 
-Truth-synced `specs/S137-plan-causal-links-and-repair.md` and `tickets/S137PLACAULIN-007.md` for the finalized `RepairPlanCandidate` API and candidate-construction responsibility.
+Truth-synced `specs/S137-plan-causal-links-and-repair.md` and `archive/tickets/S137PLACAULIN-007.md` for the finalized `RepairPlanCandidate` API and candidate-construction responsibility.
 
 ## Deviations
 

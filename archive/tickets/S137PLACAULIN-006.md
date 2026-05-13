@@ -84,7 +84,7 @@ The post-hoc `classify_accepted_repair` path remains unchanged and still emits t
 - `crates/worldwake-ai/src/search/mod.rs` (passes `CognitiveProfile` through search)
 - `crates/worldwake-ai/src/search/tests.rs` (updated direct successor-builder calls)
 - `specs/S137-plan-causal-links-and-repair.md` (D5 truth-sync)
-- `tickets/S137PLACAULIN-007.md` (dependency/API truth-sync)
+- `archive/tickets/S137PLACAULIN-007.md` (dependency/API truth-sync)
 - `tickets/S137PLACAULIN-010.md` (dependency truth-sync)
 - `tickets/S137PLACAULIN-011.md` (new follow-up)
 

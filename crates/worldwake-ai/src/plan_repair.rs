@@ -25,6 +25,7 @@ pub struct RepairPlanCandidate {
     pub provider: CausalProvider,
     pub fact: PlanningFact,
     pub step: PlannedStep,
+    pub reusable_suffix_index: Option<u16>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -147,6 +148,7 @@ fn attempt_candidate_repair(
     Some(plan_from_parts(
         context,
         Some(candidate.step.clone()),
+        candidate.reusable_suffix_index,
         PlanTerminalKind::GoalSatisfied,
         true,
     ))
@@ -164,6 +166,7 @@ fn downgrade_to_progress_barrier(
     Ok(plan_from_parts(
         context,
         None,
+        None,
         PlanTerminalKind::ProgressBarrier,
         false,
     ))
@@ -172,6 +175,7 @@ fn downgrade_to_progress_barrier(
 fn plan_from_parts(
     context: &PlanRepairContext<'_>,
     replacement_step: Option<PlannedStep>,
+    replaced_reusable_suffix_index: Option<u16>,
     terminal_kind: PlanTerminalKind,
     include_reusable_suffix: bool,
 ) -> PlannedPlan {
@@ -190,7 +194,14 @@ fn plan_from_parts(
         steps.push(step);
     }
     if include_reusable_suffix {
-        steps.extend_from_slice(context.reusable_suffix);
+        steps.extend(
+            context
+                .reusable_suffix
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| replaced_reusable_suffix_index != u16::try_from(*index).ok())
+                .map(|(_, step)| step.clone()),
+        );
     }
     PlannedPlan::new(
         context.opportunity,
@@ -542,6 +553,7 @@ mod tests {
             },
             fact: broken_link().fact,
             step: replacement.clone(),
+            reusable_suffix_index: None,
         }];
         let mut context = context(&prefix, &suffix, &entry);
         context.replacement_candidates = &candidates;
@@ -561,6 +573,44 @@ mod tests {
     }
 
     #[test]
+    fn suffix_sourced_candidate_is_promoted_without_duplication() {
+        let prefix = vec![step()];
+        let promoted = PlannedStep {
+            targets: vec![crate::PlanningEntityRef::Authoritative(entity(17))],
+            target_place: Some(entity(8)),
+            ..step()
+        };
+        let trailing = PlannedStep {
+            targets: vec![crate::PlanningEntityRef::Authoritative(entity(18))],
+            target_place: Some(entity(8)),
+            ..step()
+        };
+        let suffix = vec![promoted.clone(), trailing.clone()];
+        let entry = discrepancy_entry(DiscrepancyClearing::TtlExpiry);
+        let candidates = vec![RepairPlanCandidate {
+            kind: RepairKind::RebindTarget,
+            provider: CausalProvider::Observation {
+                observed_entity: entity(7),
+                aspect: worldwake_core::EntityBeliefAspect::Location,
+            },
+            fact: broken_link().fact,
+            step: promoted.clone(),
+            reusable_suffix_index: Some(0),
+        }];
+        let mut context = context(&prefix, &suffix, &entry);
+        context.replacement_candidates = &candidates;
+        let cognitive = cognitive(20, Permille::new(1000).unwrap());
+
+        let outcome = attempt_repair_then_replan(&context, &cognitive, &RepairMemory::default());
+
+        let RepairOutcome::Repaired { kind, new_plan } = outcome else {
+            panic!("suffix-sourced candidate should repair plan");
+        };
+        assert_eq!(kind, RepairKind::RebindTarget);
+        assert_eq!(new_plan.steps, vec![prefix[0].clone(), promoted, trailing]);
+    }
+
+    #[test]
     fn replace_provider_rejects_provider_that_does_not_support_fact() {
         let prefix = vec![step()];
         let suffix = vec![step()];
@@ -573,6 +623,7 @@ mod tests {
             },
             fact: broken_link().fact,
             step: step(),
+            reusable_suffix_index: None,
         }];
         let mut context = context(&prefix, &suffix, &entry);
         context.replacement_candidates = &candidates;
@@ -616,6 +667,7 @@ mod tests {
             },
             fact: route_fact,
             step: step(),
+            reusable_suffix_index: None,
         }];
         let mut context = context(&prefix, &suffix, &entry);
         context.broken_link.fact = route_fact;

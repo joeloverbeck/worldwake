@@ -6123,7 +6123,8 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
     let original_violation_memory = ViolationMemory::default();
     let violation_memory = ViolationMemory::default();
     let original_repair_memory = RepairMemory::default();
-    let repair_memory = RepairMemory::default();
+    let mut repair_memory = RepairMemory::default();
+    let memory_capacity = worldwake_core::MemoryCapacityProfile::default();
     let original_learned_opportunity_memory = LearnedOpportunityMemory::default();
     let learned_opportunity_memory = LearnedOpportunityMemory::default();
     let step = runtime
@@ -6162,7 +6163,8 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
         &original_violation_memory,
         &violation_memory,
         &original_repair_memory,
-        &repair_memory,
+        &mut repair_memory,
+        memory_capacity,
         &original_learned_opportunity_memory,
         &learned_opportunity_memory,
         &step,

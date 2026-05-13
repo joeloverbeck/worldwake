@@ -50,6 +50,12 @@ When a planner/search change introduces a new pre-successor candidate filter, pr
 
 When a planner/search filter consumes a per-tick derived read-model or index, trace the whole handoff before patching: the read-phase constructor, the production planning call, any test-only or public wrappers that need neutral defaults, the search/heuristic consumer, and the trace surface that should explain retained or pruned candidates. Treat wrappers that default to empty/neutral data as acceptable only when they delegate to the canonical implementation and do not create a second lawful behavior path.
 
+## Plan repair and revalidation seams
+
+For plan-repair or agent-tick revalidation-seam tickets, classify the exact breach input and context assembly before patching: the `RevalidationOutcome` or invalidation reason, the causal link selected as broken, the breach signature, the preserved prefix, reusable suffix, replacement candidates, discrepancy entry, repair memory read/write, runtime plan replacement, and event-log payload. If the repair module composes a new plan from `preserved_prefix`, one chosen candidate step, and `reusable_suffix`, verify whether each replacement candidate is already present in the suffix. Do not accidentally duplicate a suffix step or skip the failing step without a focused test that proves the intended composition.
+
+When the seam can repair without a replacement candidate, such as a progress-barrier downgrade, still add or identify a proof that the runtime state and event log change together. When the seam constructs replacement candidates from existing plan steps or newly synthesized steps, add at least one candidate-based focused test unless the ticket explicitly owns only a no-candidate repair mode and records that limitation in closeout.
+
 ## Profile/component absent negative cases
 
 When a ticket's proof or negative case depends on a profile, component, or carrier being absent, verify whether that data is actually optional on the live runtime subject under test. If the runtime bootstrap or factory path seeds it universally by default, correct the ticket and proof surface to the lawful distinction that still exists (for example self vs. non-self access, empty contents vs. missing carrier, or pre-perception vs. post-perception state) instead of writing tests around an impossible "component missing" state.
