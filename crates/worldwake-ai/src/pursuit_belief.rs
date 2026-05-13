@@ -145,6 +145,7 @@ mod tests {
     }
 
     impl worldwake_sim::BelievedAuthorityView for StubView {}
+    impl worldwake_sim::LocalPhysicalObservationView for StubView {}
 
     impl GoalBeliefView for StubView {
         fn is_alive(&self, _entity: EntityId) -> bool {

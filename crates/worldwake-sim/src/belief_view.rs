@@ -273,10 +273,6 @@ pub trait GoalSpatialBeliefView {
         let _ = (agent, place, kind);
         Vec::new()
     }
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        let _ = agent;
-        self.entities_at(place)
-    }
     fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
         let _ = agent;
         None
@@ -318,7 +314,7 @@ pub trait GoalControlBeliefView {
 /// - queue and reservation helpers
 /// - duration estimation
 /// - broader affordance/runtime helpers used by snapshot/search code
-pub trait GoalBeliefView: BelievedAuthorityView {
+pub trait GoalBeliefView: BelievedAuthorityView + LocalPhysicalObservationView {
     fn current_tick(&self) -> Tick {
         Tick(0)
     }
@@ -331,10 +327,6 @@ pub trait GoalBeliefView: BelievedAuthorityView {
     fn entity_kind(&self, entity: EntityId) -> Option<EntityKind>;
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        let _ = agent;
-        self.entities_at(place)
-    }
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
         let _ = agent;
         Vec::new()
@@ -1068,10 +1060,6 @@ pub trait SpatialBeliefView {
     fn effective_place(&self, entity: EntityId) -> Option<EntityId>;
     fn is_in_transit(&self, entity: EntityId) -> bool;
     fn entities_at(&self, place: EntityId) -> Vec<EntityId>;
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        let _ = agent;
-        self.entities_at(place)
-    }
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId>;
     fn place_has_tag(&self, place: EntityId, tag: PlaceTag) -> bool {
         let _ = (place, tag);
@@ -1568,6 +1556,7 @@ pub trait RuntimeBeliefView:
     + PoliticalBeliefView
     + FacilityBeliefView
     + BelievedAuthorityView
+    + LocalPhysicalObservationView
 {
 }
 
@@ -1587,10 +1576,6 @@ impl<T: SpatialBeliefView + ?Sized> GoalSpatialBeliefView for T {
         kind: EntityKind,
     ) -> Vec<BeliefValue<EntityId>> {
         SpatialBeliefView::believed_entities_at(self, agent, place, kind)
-    }
-
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        SpatialBeliefView::locally_observed_entities_at(self, agent, place)
     }
 
     fn route_experience(&self, agent: EntityId) -> Option<RouteExperience> {
@@ -1640,6 +1625,7 @@ where
         + PoliticalBeliefView
         + FacilityBeliefView
         + BelievedAuthorityView
+        + LocalPhysicalObservationView
         + ?Sized,
 {
     fn current_tick(&self) -> worldwake_core::Tick {
@@ -1675,14 +1661,6 @@ where
 
     fn entities_at(&self, place: worldwake_core::EntityId) -> Vec<worldwake_core::EntityId> {
         GoalSpatialBeliefView::entities_at(self, place)
-    }
-
-    fn locally_observed_entities_at(
-        &self,
-        agent: worldwake_core::EntityId,
-        place: worldwake_core::EntityId,
-    ) -> Vec<worldwake_core::EntityId> {
-        GoalSpatialBeliefView::locally_observed_entities_at(self, agent, place)
     }
 
     fn direct_possessions(
@@ -2795,6 +2773,8 @@ mod tests {
     }
 
     struct StubGoalBeliefView;
+
+    impl LocalPhysicalObservationView for StubGoalBeliefView {}
 
     impl GoalSpatialBeliefView for StubGoalBeliefView {
         fn effective_place(&self, _entity: EntityId) -> Option<EntityId> {

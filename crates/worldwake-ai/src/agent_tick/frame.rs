@@ -805,6 +805,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for MockBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for MockBeliefView {}
 
     impl worldwake_sim::SocialBeliefView for MockBeliefView {
         fn belief_confidence_policy(&self, _agent: EntityId) -> BeliefConfidencePolicy {

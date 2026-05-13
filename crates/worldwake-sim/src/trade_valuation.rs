@@ -317,6 +317,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubBeliefView {}
+    impl crate::LocalPhysicalObservationView for StubBeliefView {}
 
     impl crate::SocialBeliefView for StubBeliefView {
         fn known_entity_beliefs(&self, _agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {

@@ -850,6 +850,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for StubBeliefView {}
 
     fn entity(slot: u32) -> EntityId {
         EntityId {

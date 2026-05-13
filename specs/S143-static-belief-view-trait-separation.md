@@ -116,7 +116,7 @@ Method-origin classification (audit-table source — see D3 for the cross-trait 
 
 | Method | Origin | Notes |
 |--------|--------|-------|
-| `colocated_entities` | Migrated from `SpatialBeliefView::locally_observed_entities_at` (`belief_view.rs:909`) and `EntityBeliefView::locally_observed_entities_at` (`belief_view.rs:791`); renamed. | Two existing sites with identical semantics consolidate onto one method. |
+| `colocated_entities` | Migrated from `SpatialBeliefView::locally_observed_entities_at` (`belief_view.rs:909`); renamed. | The legacy `GoalSpatialBeliefView` and `GoalBeliefView` forwarding defaults were also removed so the planner cannot reach the old `Vec<EntityId>` shape through goal-facing traits. |
 | `observed_item_lot_quantity` | Net-new. | Existing `InventoryBeliefView::locally_observed_commodity_quantity` (`belief_view.rs:1030`) is per-(agent, holder, kind) and stays on `InventoryBeliefView` as a belief-backed accessor. The lot-shaped variant on the observation trait is fresh. |
 | `observed_workstation_tag` | Net-new. | No existing co-located equivalent; today the planner reads `FacilityBeliefView::workstation_tag` directly. |
 | `observed_resource_source` | Net-new. | Today the planner reads `FacilityBeliefView::resource_source` directly. The observation variant returns the existing `ResourceSource` core type wrapped in `ObservedRead`. |
@@ -158,7 +158,7 @@ The 11 existing sub-traits (`ControlBeliefView`, `EntityBeliefView`, `ProfileBel
 | Source trait (line) | Method | Destination | Rationale |
 |---------------------|--------|-------------|-----------|
 | `SpatialBeliefView` (909) | `locally_observed_entities_at` | `LocalPhysicalObservationView::colocated_entities` | Co-located physical perception |
-| `EntityBeliefView` (791) | `locally_observed_entities_at` | `LocalPhysicalObservationView::colocated_entities` | Duplicate of above; consolidates |
+| `GoalSpatialBeliefView` / `GoalBeliefView` forwarding defaults | `locally_observed_entities_at` | Removed; callers use `LocalPhysicalObservationView::colocated_entities` | Duplicate goal-facing access paths consolidated |
 | `ControlBeliefView` (780) | `believed_owner_of` | `BelievedAuthorityView::believed_owner_of` | Ownership is FND-24 authority |
 | `PoliticalBeliefView` (1306) | `believed_office_holder` | `BelievedAuthorityView::believed_office_holder` | Office is FND-24 authority |
 

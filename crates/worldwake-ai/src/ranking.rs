@@ -3393,6 +3393,29 @@ mod tests {
 
     impl RuntimeBeliefView for TestBeliefView {}
 
+    impl worldwake_sim::LocalPhysicalObservationView for TestBeliefView {
+        fn colocated_entities(
+            &self,
+            actor: EntityId,
+        ) -> worldwake_sim::ObservedRead<Vec<EntityId>> {
+            let value = self
+                .effective_place(actor)
+                .map(|place| {
+                    let mut entities = self.entities_at(place);
+                    entities.sort();
+                    entities.dedup();
+                    entities
+                })
+                .unwrap_or_default();
+
+            worldwake_sim::ObservedRead {
+                value,
+                observed_tick: Tick(0),
+                source: worldwake_sim::ObservationSource::CoLocatedSameTick,
+            }
+        }
+    }
+
     impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()

@@ -1709,6 +1709,7 @@ impl TemporalBeliefView for QueuePatienceBeliefView {
 }
 
 impl RuntimeBeliefView for QueuePatienceBeliefView {}
+impl worldwake_sim::LocalPhysicalObservationView for QueuePatienceBeliefView {}
 
 impl worldwake_sim::SocialBeliefView for QueuePatienceBeliefView {
     fn belief_confidence_policy(&self, _agent: EntityId) -> worldwake_core::BeliefConfidencePolicy {

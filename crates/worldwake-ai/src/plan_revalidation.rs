@@ -652,6 +652,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for TestBeliefView {}
 
     impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn belief_confidence_policy(

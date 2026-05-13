@@ -939,17 +939,6 @@ impl SpatialBeliefView for PerAgentBeliefView<'_> {
         entities
     }
 
-    fn locally_observed_entities_at(&self, agent: EntityId, place: EntityId) -> Vec<EntityId> {
-        if agent != self.agent || self.world.effective_place(agent) != Some(place) {
-            return self.entities_at(place);
-        }
-
-        let mut entities = self.world.entities_effectively_at(place);
-        entities.sort();
-        entities.dedup();
-        entities
-    }
-
     fn adjacent_places(&self, place: EntityId) -> Vec<EntityId> {
         self.world.topology().neighbors(place)
     }
@@ -5000,12 +4989,14 @@ mod tests {
         let beliefs = AgentBeliefStore::new();
         let view = PerAgentBeliefView::new_at_tick(agent, Tick(9), &world, &beliefs);
         let observed = LocalPhysicalObservationView::colocated_entities(&view, agent);
-        let legacy = SpatialBeliefView::locally_observed_entities_at(&view, agent, local_place);
 
-        assert_eq!(observed.value, legacy);
         assert!(observed.value.contains(&agent));
         assert!(observed.value.contains(&local_lot));
         assert!(!observed.value.contains(&remote_agent));
+        let mut expected = world.entities_effectively_at(local_place);
+        expected.sort();
+        expected.dedup();
+        assert_eq!(observed.value, expected);
         assert_eq!(observed.observed_tick, Tick(9));
         assert_eq!(observed.source, ObservationSource::CoLocatedSameTick);
     }

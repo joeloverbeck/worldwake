@@ -483,6 +483,7 @@ mod tests {
     impl GoalTemporalBeliefView for StubBeliefView {}
 
     impl crate::BelievedAuthorityView for StubBeliefView {}
+    impl crate::LocalPhysicalObservationView for StubBeliefView {}
 
     impl EntityBeliefView for StubBeliefView {
         fn is_alive(&self, _entity: EntityId) -> bool {

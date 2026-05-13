@@ -563,6 +563,7 @@ impl TemporalBeliefView for TestBeliefView {
 }
 
 impl RuntimeBeliefView for TestBeliefView {}
+impl worldwake_sim::LocalPhysicalObservationView for TestBeliefView {}
 
 impl worldwake_sim::SocialBeliefView for TestBeliefView {
     fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {

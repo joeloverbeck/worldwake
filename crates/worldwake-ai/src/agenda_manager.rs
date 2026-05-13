@@ -636,6 +636,7 @@ mod tests {
     }
 
     impl worldwake_sim::BelievedAuthorityView for MockGoalBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for MockGoalBeliefView {}
 
     impl GoalBeliefView for MockGoalBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {

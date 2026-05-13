@@ -1598,6 +1598,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for StubBeliefView {}
 
     impl worldwake_sim::SocialBeliefView for StubBeliefView {
         fn belief_confidence_policy(&self, agent: EntityId) -> BeliefConfidencePolicy {

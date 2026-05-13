@@ -1319,4 +1319,5 @@ mod tests {
     }
 
     impl RuntimeBeliefView for MockView {}
+    impl worldwake_sim::LocalPhysicalObservationView for MockView {}
 }

@@ -1382,6 +1382,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubTellBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for StubTellBeliefView {}
 
     impl worldwake_sim::SocialBeliefView for StubTellBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {

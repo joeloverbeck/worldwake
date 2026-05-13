@@ -617,6 +617,8 @@ mod tests {
         }
     }
 
+    impl worldwake_sim::LocalPhysicalObservationView for MockView {}
+
     impl GoalBeliefView for MockView {
         fn is_alive(&self, entity: EntityId) -> bool {
             !self.dead.contains(&entity)

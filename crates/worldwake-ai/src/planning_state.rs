@@ -19,8 +19,9 @@ use worldwake_sim::belief_view::{BeliefStatus, BeliefValue};
 use worldwake_sim::{
     ActionDuration, ActionPayload, BeliefRead, BelievedAuthorityView, CombatBeliefView,
     ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView, FacilityBeliefView,
-    InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView,
-    SocialBeliefView, SpatialBeliefView, TemporalBeliefView, estimate_duration_from_beliefs,
+    InventoryBeliefView, LocalPhysicalObservationView, ObservationSource, ObservedRead,
+    PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView,
+    TemporalBeliefView, estimate_duration_from_beliefs,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -1904,6 +1905,24 @@ impl PoliticalBeliefView for PlanningState<'_> {
 
 impl RuntimeBeliefView for PlanningState<'_> {}
 
+impl LocalPhysicalObservationView for PlanningState<'_> {
+    fn colocated_entities(&self, actor: EntityId) -> ObservedRead<Vec<EntityId>> {
+        let value = if actor == self.snapshot.actor() {
+            self.effective_place(actor)
+                .map(|place| self.entities_at(place))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        ObservedRead {
+            value,
+            observed_tick: self.snapshot.current_tick,
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+}
+
 impl CombatBeliefView for PlanningState<'_> {
     fn combat_profile(&self, agent: EntityId) -> Option<CombatProfile> {
         self.snapshot
@@ -2658,6 +2677,7 @@ mod tests {
     }
 
     impl RuntimeBeliefView for StubBeliefView {}
+    impl worldwake_sim::LocalPhysicalObservationView for StubBeliefView {}
 
     impl SocialBeliefView for StubBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {

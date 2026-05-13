@@ -4355,7 +4355,7 @@ fn local_raid_targets(
     agent: EntityId,
     place: Option<EntityId>,
 ) -> Vec<EntityId> {
-    let Some(place) = place else {
+    let Some(_place) = place else {
         return Vec::new();
     };
 
@@ -4367,7 +4367,8 @@ fn local_raid_targets(
         return Vec::new();
     }
 
-    view.locally_observed_entities_at(agent, place)
+    view.colocated_entities(agent)
+        .value
         .into_iter()
         .filter(|target| *target != agent)
         .filter(|target| {
@@ -4919,7 +4920,7 @@ fn emit_theft_candidates(
         return;
     }
 
-    let locally_observed = ctx.view.locally_observed_entities_at(ctx.agent, place);
+    let locally_observed = ctx.view.colocated_entities(ctx.agent).value;
 
     let Some(carry_capacity) = ctx.view.carry_capacity(ctx.agent) else {
         return;
@@ -5423,7 +5424,8 @@ fn emit_expectation_violation_candidates(
     let beliefs = ctx.view.known_entity_beliefs(ctx.agent);
     let observed_at_place: BTreeSet<EntityId> = ctx
         .view
-        .locally_observed_entities_at(ctx.agent, current_place)
+        .colocated_entities(ctx.agent)
+        .value
         .into_iter()
         .collect();
 
@@ -7396,6 +7398,29 @@ mod tests {
     }
 
     impl RuntimeBeliefView for TestBeliefView {}
+
+    impl worldwake_sim::LocalPhysicalObservationView for TestBeliefView {
+        fn colocated_entities(
+            &self,
+            actor: EntityId,
+        ) -> worldwake_sim::ObservedRead<Vec<EntityId>> {
+            let value = self
+                .effective_place(actor)
+                .map(|place| {
+                    let mut entities = self.entities_at(place);
+                    entities.sort();
+                    entities.dedup();
+                    entities
+                })
+                .unwrap_or_default();
+
+            worldwake_sim::ObservedRead {
+                value,
+                observed_tick: self.current_tick,
+                source: worldwake_sim::ObservationSource::CoLocatedSameTick,
+            }
+        }
+    }
 
     impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
