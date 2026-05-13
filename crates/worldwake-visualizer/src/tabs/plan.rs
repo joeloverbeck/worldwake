@@ -294,6 +294,7 @@ mod tests {
                     }],
                     min_confidence: Permille::new(700).expect("valid permille"),
                     invalidators: Vec::new(),
+                    causal_links: Vec::new(),
                 }),
                 expectations: Vec::new(),
             }],

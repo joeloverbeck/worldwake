@@ -15,6 +15,7 @@ When in doubt, treat the mismatch as recommendation-changing and re-present — 
 
 ## Apply Changes
 
+- **Intra-spec D-number cross-reference pre-check (full-Write strategy)**: When applying a full Write that introduces new intra-spec deliverable cross-references (e.g., "see D9", "per D8", "absorbed into D11"), build the deliverable index of the new D-section ordering *before* drafting the Write payload and validate every cross-reference against that index in-message immediately before invoking Write. List the index inline as a short table (deliverable number → deliverable title) so the cross-reference mapping is auditable, then grep the drafted Write payload for the `\bD[0-9]+\b` pattern and confirm each match resolves to the intended deliverable in the new ordering. The post-apply grep (Post-Apply Confirmation #5) remains the safety net for cross-references that slip through; this is a cheaper earlier check that prevents the spec from landing in a known-inconsistent state. The check is most failure-prone when the Write reorders or inserts deliverables (e.g., a finding adds D9 between original D8 and D9, shifting all later numbers).
 - Incorporate corrections from the user's plan approval or question responses.
 - Preserve existing structure and voice. Change only what was agreed upon.
 - When changes are numerous and spread throughout, a full Write is acceptable. Prefer Edit for <=3 localized changes; prefer full Write when changes span >50% of deliverables or when insertions cause cascading renumbering.

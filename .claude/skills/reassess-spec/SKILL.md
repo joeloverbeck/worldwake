@@ -176,6 +176,7 @@ Example:
 |---------|-------|--------|
 | I1 | `grep -n "pm(750)" crates/worldwake-ai/tests/golden_survival_*.rs` | 0 matches — confirms stale constant eliminated |
 | I2 | `grep -rn "AnomalyKind::" crates/worldwake-cli/src/` | 17 matches, all in `bin/observer.rs` — no external consumers to migrate |
+| Q1=(a) approved | Final variant set per Q1 resolution | confirmed: `RebindTarget, ReplaceProvider, InsertVerification, DowngradeToProgressBarrier, Abandon` (5 variants, `AlternateRoute` folds into `ReplaceProvider`) |
 | M3 | `test -f specs/S118-stuck-agent-detector-active-frame-exclusion.md` | file exists — dependency path valid |
 | F1 | `grep -n "## Section 11" crates/worldwake-cli/src/bin/observer.rs` | 0 matches — Section 11 unused; safe insertion identifier for the new addition |
 

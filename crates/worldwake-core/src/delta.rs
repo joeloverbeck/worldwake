@@ -632,6 +632,8 @@ mod tests {
                 detour_budget_permille: Permille::new(150).unwrap(),
                 compile_opportunity_cap: 16,
                 slot_weights: PortfolioSlotWeights::default(),
+                repair_budget_fraction: Permille::new(250).unwrap(),
+                causal_links_per_step_cap: 8,
             }),
             ComponentValue::AgendaProfile(AgendaProfile {
                 pending_capacity: 16,

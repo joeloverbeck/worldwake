@@ -21,6 +21,32 @@ Tag severity: CRITICAL (blocks tickets), HIGH (fix before tickets), MEDIUM (impr
 
 **Material-change boundary — anchoring examples**: Borderline cases appear frequently, so the material-vs-refinement boundary needs concrete anchors. Examples of *refinements that do not count as material*: field renames (`observed_at` → `acquired_tick`), type-shape adjustments that preserve the deliverable's read-model role (`BeliefSet<Vec<T>>` → `Vec<BeliefValue<T>>`), signature-preserving parameter reorderings, prose rewording of the deliverable's framing without changing what the implementation does. Examples of *material changes*: elimination of a deliverable, replacement of its mechanism (e.g., derived from stored field X becomes computed from physical process Y), restructuring that changes the set of crates or call sites the deliverable touches, changing the read/write direction of data flow, introducing a new authoritative state where the original was a derived view (or vice versa).
 
+**Worked example — redesign and addition counting**: Suppose a spec has 7 original deliverables and the reassessment surfaces the following:
+
+| Deliverable | Disposition | Material change or refinement? |
+|-------------|-------------|--------------------------------|
+| D1 (extend `Discrepancy` with `clearing_condition()` method) | Eliminated — existing per-instance `DiscrepancyClearing` already serves the role | **material** (elimination) |
+| D2 (define new `CausalLink` type) | Kept; collection type swapped `SmallVec` → `Vec` | refinement (signature-preserving substitution) |
+| D3 (extend `PlanGuard` with new field) | Kept; field-type narrowed | refinement (field-type adjustment) |
+| D4 (new `plan_repair` module) | Kept; module's variant set restructured from 6 to 5 variants with cross-crate migration of existing variants | **material** (restructuring changes the set of crates and call sites touched) |
+| D5 (revalidation routing) | Kept; routing now passes through `attempt_repair_then_replan` before `handle_current_step_failure` | **material** (changes read/write data flow) |
+| D6 (extend `RepairMemory` with new fields) | Kept; existing field is migrated, not augmented | **material** (replaces mechanism — single-truth migration vs. dual-field coexistence) |
+| D7 (extend observer rendering) | Kept; format tweaked | refinement (prose rewording) |
+
+Redesign count: **4/7 = 57%** (D1, D4, D5, D6) — exceeds 50% threshold, fires the Substantial Redesign Flag.
+
+Additions surfaced by reassessment (net-new deliverables added on top of the 7 original):
+- D8 (migrate existing `RepairKind` variants across ~20 call sites) — addition
+- D9 (define new `BreachSignature` type) — addition
+- D10 (extend `decision_trace.rs` with `RepairAttemptTrace`) — addition
+- D11 (extend `CognitiveProfile` with `repair_budget_fraction`) — addition
+- D12 (extend `PlanningFact`/`RecordTopic` typing) — addition
+- D13 (Section H abbreviation note) — addition
+
+Addition count: **6/7 = 86%** — exceeds 25% threshold, also fires the Substantial Redesign Flag (compounded).
+
+Note that D2 and D3 above land in the "refinement" column even though both modify a deliverable's pseudocode — the criterion is whether the implementation path remains a refinement of the original (signature swaps, field-type narrowing) versus a material change to the mechanism, crate set, or data flow. Borderline cases (e.g., D7 — adds a new rendering case to existing observer section) default to refinement when the rendering site already exists and the change is additive at the prose level.
+
 Present in this format:
 
 ```
@@ -44,8 +70,8 @@ Present in this format:
 ### FOUNDATIONS.md Alignment
 - <Foundation N>: <aligned | see Issue #N [SEVERITY]>
 
-### Authoritative-to-AI Impact Rule
-[Only if Step 4.4 triggered. Otherwise omit. Format each point as:]
+### Authoritative-to-AI Impact Analysis
+[Only if Step 4.4 triggered. Otherwise omit. Canonical heading text for both the Step 6 findings report and the Step 7 spec-file section is `Authoritative-to-AI Impact Analysis` — use this exact wording in both surfaces so downstream spec-to-tickets literal-match heading checks resolve cleanly. Format each point as:]
 1. `get_affordances` — pass | N/A | **flag** (reason)
 2. `generate_candidates` — pass | N/A | **flag** (reason)
 3. `search_plan` — pass | N/A | **flag** (reason)
@@ -69,7 +95,7 @@ Present in this format:
 
 ## Question Handling
 
-- **Option fidelity**: Each option that names an existing type, field, or function must cite its current definition (grepped at presentation time), not a summary characterization. The user's approval binds to the option label, so an imprecise label — e.g., describing a field as `BTreeSet<T>` when the actual type is `Vec<WrapperT>` — produces an ambiguously approved fix that the Step 7 pre-apply check must then disambiguate. Ground every option in current code before presenting. When an option's viability depends on a storage mechanism (ECS component vs. runtime struct vs. belief-view accessor), visibility qualifier, or cross-crate reachability, grep the precedent pattern — how comparable types are currently registered, where their definitions live, which crates see them — before presenting. The option's label must accurately describe the mechanism the user would end up approving; a mechanism mismatch discovered at Step 7 pre-apply verification forces a mid-apply reframe and erodes the consent contract.
+- **Option fidelity**: Each option that names an existing type, field, or function must cite its current definition (grepped at presentation time), not a summary characterization. The user's approval binds to the option label, so an imprecise label — e.g., describing a field as `BTreeSet<T>` when the actual type is `Vec<WrapperT>` — produces an ambiguously approved fix that the Step 7 pre-apply check must then disambiguate. Ground every option in current code before presenting. When an option's viability depends on a storage mechanism (ECS component vs. runtime struct vs. belief-view accessor), visibility qualifier, or cross-crate reachability, grep the precedent pattern — how comparable types are currently registered, where their definitions live, which crates see them — before presenting. The option's label must accurately describe the mechanism the user would end up approving; a mechanism mismatch discovered at Step 7 pre-apply verification forces a mid-apply reframe and erodes the consent contract. When an option describes a *transformation* that yields a target set (rename, subsume, add, remove), enumerate the exact final set explicitly in the option label — e.g., "Final 5 variants: A, B, C, D, E" — rather than letting the final count be inferred from a sketch of renames and subsumptions. Implicit subsumption math (where the count given in the option label and the count derivable from the transformation sketch disagree) produces consistency-check ambiguity at Step 7 that the user's binary approval cannot arbitrate.
 - **Initial report**: At most 3 questions. If more, prioritize blockers and defer rest to follow-up.
 - **Interdependent questions**: Present as a single combined question with labeled option combinations.
 - **Discrete options (2-4), single question**: Use `AskUserQuestion` with a recommended default.

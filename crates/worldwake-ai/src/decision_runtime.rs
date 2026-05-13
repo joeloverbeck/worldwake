@@ -67,6 +67,8 @@ pub struct AcceptedRepairProvenance {
     pub goal_key: GoalKey,
     pub repair_kind: RepairKind,
     pub substitute_target: Option<EntityId>,
+    pub substitute_recipe: Option<worldwake_core::RecipeId>,
+    pub records_repair_memory: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -458,6 +460,8 @@ mod tests {
             detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
             compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
             slot_weights: worldwake_core::PortfolioSlotWeights::default(),
+            repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
+            causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
         }
     }
 
@@ -650,8 +654,10 @@ mod tests {
                     purpose: CommodityPurpose::SelfConsume,
                     quantity: AcquisitionQuantity::single(),
                 }),
-                repair_kind: RepairKind::AlternateMerchant,
+                repair_kind: RepairKind::RebindTarget,
                 substitute_target: Some(entity(99)),
+                substitute_recipe: None,
+                records_repair_memory: false,
             }),
             dead_cleanup_done: false,
             exhaustion_cache: BTreeMap::from([(

@@ -129,6 +129,8 @@ Stable per-agent cognitive reasoning parameters used by the AI layer.
 | `detour_budget_permille` | `Permille` | Salience budget that allows opportunity-aware travel detours. (default: `default_detour_budget_permille()`) |
 | `compile_opportunity_cap` | `u16` | Soft cap on compiled opportunities retained per decision cycle. (default: `default_compile_opportunity_cap()`) |
 | `slot_weights` | `PortfolioSlotWeights` | Relative slot weights for portfolio candidate ordering. (default: `PortfolioSlotWeights::default()`) |
+| `repair_budget_fraction` | `Permille` | Fraction of max node expansions available to localized plan repair. (default: `default_repair_budget_fraction()`) |
+| `causal_links_per_step_cap` | `u8` | Maximum causal links retained per guarded plan step. (default: `default_causal_links_per_step_cap()`) |
 
 ---
 

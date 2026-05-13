@@ -53,6 +53,7 @@ When the ticket primarily introduces a shared schema, payload, enum, save-format
 For this shape:
 
 1. Reassess the carrier contract, derive/trait surface, constructor fallout, save/replay/version boundaries, and focused round-trip coverage first.
+   When the substrate introduces a net-new shared type name, first run an exact workspace name sweep across `crates/` and classify every hit as `same boundary`, `private unrelated helper`, or `blocking collision`; truth-sync the active ticket when a same-name private helper already exists but does not own the shared boundary.
 2. Expect existing emitters/builders to keep populating the new surface with `None`/empty/default values until a later sibling ticket wires runtime use.
 3. Record the staged state explicitly in closeout instead of implying the new schema is already live.
 4. If the staged ticket also claims a real action, authored template, or downstream runtime exercise path, identify at least one truthful production consumer that carries the new substrate into live runtime state and prove that seam with focused verification.
@@ -83,12 +84,14 @@ For this shape:
 8. Use that sweep to seed the real `Files to Touch` / closeout boundary before the first broadened verification run.
 9. If the changed type is embedded inside persisted runtime state or another enclosing saveable carrier, treat the ticket as a save-shape change and verify the enclosing persisted seam and version policy up front.
 10. Inspect semantic consumers, not only exhaustive matches. Sorting, filtering, goal emission, report routing, discrepancy classification, and similar consumers may need explicit exclusion or routing updates.
+    When several old variants collapse into one new public variant, identify every consumer that previously used the old variant name as branch provenance. If the new public payload shape cannot disambiguate all old branches, keep the event/report payload on the drafted public contract and add or preserve an internal producer/runtime discriminator for the lost branch semantics.
 11. If the staged runtime path depends on place, entity, claim, or other bound semantics carried through an existing runtime step/report record, inspect whether the current carrier stores that fact explicitly or only infers it from another field.
 12. If the inferred path would make the live binding dishonest, treat the carrier-field fix and constructor fallout as current-ticket scope before closeout.
 13. If the ticket lands a new read-only wrapper or view type, check trait/lint expectations for the full surface early, including iterator companion impls.
 14. If the ticket broadly flips consumer signatures from a raw collection to a wrapper/view type, sweep nearby and same-crate `#[cfg(test)]` modules for raw fixtures such as `vec![...]`, arrays, `&[]`, and `std::slice::from_ref`.
 15. If the ticket introduces a mirrored enum or record in one crate to represent a type owned by another crate, identify the nearest lawful proof seam that can see both sides and prove parity there.
 16. During closeout, rewrite any stale drafted `Files to Touch`, `Out of Scope`, or "no consumer/rendering change" prose when the consumer sweep or broadened verification proves a downstream observer, report, fixture, save/load, or renderer update was required.
+17. Before the final broad verification gate, scan the cited active spec and same-family active tickets for old variant names, old save-version baselines, and present-tense claims that the pre-migration shape is still current. Truth-sync only the wording that becomes false once the shared migration lands.
 
 ## Shared field/type migration quick path
 
@@ -139,19 +142,20 @@ When the migrated type is formatted for humans outside the primary owner module,
 
 ## Shared additive fast checklist
 
-1. Confirm whether the new field/type is serde-deserialized from scenarios, saves, or other authored input; if so, decide the omitted-field/defaulting proof up front. If the draft claims old-save or cross-version loading from `#[serde(default)]`, inspect `SAVE_FORMAT_VERSION` and the live loader first; full old save files remain rejected unless explicit compatibility work is requested.
-2. For authored scenario/schema fields, check generator/report/catalog readers such as `scenario_coverage`, golden inventory, or feature catalogs before coding; decide whether the new field is mapped now, intentionally unmapped, or follow-up owned.
+1. For net-new shared type names, run an exact name sweep across `crates/` before trusting draft claims that the type does not exist. Classify hits as `same boundary`, `private unrelated helper`, or `blocking collision`, and update ticket/spec wording when a non-blocking private helper or sibling surface makes the draft premise false.
+2. Confirm whether the new field/type is serde-deserialized from scenarios, saves, or other authored input; if so, decide the omitted-field/defaulting proof up front. If the draft claims old-save or cross-version loading from `#[serde(default)]`, inspect `SAVE_FORMAT_VERSION` and the live loader first; full old save files remain rejected unless explicit compatibility work is requested.
+3. For authored scenario/schema fields, check generator/report/catalog readers such as `scenario_coverage`, golden inventory, or feature catalogs before coding; decide whether the new field is mapped now, intentionally unmapped, or follow-up owned.
    For universal or optional profile structs, also check whether `docs/profiles/all-profiles.md` is generator-owned and run the repo's profile-doc generator, normally `python3 scripts/profile_docs.py --write` or its check mode if available.
    If `scripts/profile_docs.py --write` exits 0 but reports doc-comment gaps unrelated to the new field, record those warnings as pre-existing generator output in closeout and keep the generated diff only when it matches the landed profile surface.
-3. Sweep manual literals and separate full `Type { ... }` literals from partial `..Default::default()` literals before accepting the drafted file list as real scope.
-4. Edit constructor fallout with precise patches or syntax-aware tooling. Do not use broad regex/perl insertion across Rust struct literals; if any mechanical rewrite is still used, immediately inspect each changed hunk and re-scan touched files for accidental insertions before compiling.
-5. If the additive field lands on a serialized root, persisted carrier, or component payload included in save/load state, decide the save-version policy and the focused non-default roundtrip proof up front rather than leaving it to late broad verification. Do not treat `#[serde(default)]` on a bincode-backed persisted payload as old-save compatibility by itself.
-6. Name the honest proof surfaces early: default/serde behavior, authored-input parsing, bootstrap/default seeding, save/load proof when applicable, and the narrowest existing focused tests that already touch the shape.
-7. Land the first shared field/type patch, then run `cargo test --workspace --no-run` early to let all-target compile fallout enumerate the remaining exhaustive constructors and helpers.
-8. Treat compiler fallout as the source of truth for the remaining shared literal patch set; do not patch default-spread call sites unless the live contract actually requires it.
-9. Before running focused Rust tests, resolve exact test IDs with `cargo test -- --list` and prefer module-qualified or `--exact` selectors over loose substrings.
-10. Rerun the same broadened command that exposed fallout after each fix; do not rely on only the focused rerun when the broad proof has not yet gone green.
-11. Update the active ticket's scope and verification sections to match the real shared-field fallout, especially when reassessment narrows the drafted constructor count or adds focused serde/authored-input/save-load proof.
+4. Sweep manual literals and separate full `Type { ... }` literals from partial `..Default::default()` literals before accepting the drafted file list as real scope.
+5. Edit constructor fallout with precise patches or syntax-aware tooling. Do not use broad regex/perl insertion across Rust struct literals; if any mechanical rewrite is still used, immediately inspect each changed hunk and re-scan touched files for accidental insertions before compiling.
+6. If the additive field lands on a serialized root, persisted carrier, or component payload included in save/load state, decide the save-version policy and the focused non-default roundtrip proof up front rather than leaving it to late broad verification. Do not treat `#[serde(default)]` on a bincode-backed persisted payload as old-save compatibility by itself.
+7. Name the honest proof surfaces early: default/serde behavior, authored-input parsing, bootstrap/default seeding, save/load proof when applicable, and the narrowest existing focused tests that already touch the shape.
+8. Land the first shared field/type patch, then run `cargo test --workspace --no-run` early to let all-target compile fallout enumerate the remaining exhaustive constructors and helpers.
+9. Treat compiler fallout as the source of truth for the remaining shared literal patch set; do not patch default-spread call sites unless the live contract actually requires it.
+10. Before running focused Rust tests, resolve exact test IDs with `cargo test -- --list` and prefer module-qualified or `--exact` selectors over loose substrings.
+11. Rerun the same broadened command that exposed fallout after each fix; do not rely on only the focused rerun when the broad proof has not yet gone green.
+12. Update the active ticket's scope and verification sections to match the real shared-field fallout, especially when reassessment narrows the drafted constructor count or adds focused serde/authored-input/save-load proof.
 
 For shared-field removals on existing structs/components, use the same early shared-surface discipline even when the ticket feels mechanically simple: start with a repo-wide accessor/literal/serde/authored-input sweep, then prefer an early `cargo test --workspace --no-run` pass to flush stale constructors, exhaustive fixtures, and test helpers before broad verification. Field removals often have narrower production ownership than additive tickets but broader compile fallout, so keep the patch set centered on real field readers, explicit literals, scenario/save inputs, and active docs rather than assuming only the defining type and first consumer need edits.
 

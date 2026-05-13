@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 165
-- Contributing golden test files: 39
-- Associated tests: 197
+- Scenario blocks: 172
+- Contributing golden test files: 40
+- Associated tests: 204
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1248,6 +1248,90 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Proves**: WashBasinState stays at zero without hidden refill or negative water.
 
 **Cross-system chain**: wash commit -> clean_water_units reaches zero -> item_decay_system zero-refill plateau.
+
+### Scenario 408: S137 Merchant-Moved Breach Rebinds To Sibling
+
+- Source: `golden_plan_repair.rs:215`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: PlanRepair
+- Principles: P14, P20, P21
+
+**Setup**: distilled repair context with a failed target-present guard and one sibling suffix candidate; rival route/provider repairs are absent.
+
+**Proves**: localized repair chooses RebindTarget and preserves the prefix before the replacement step.
+
+### Scenario 409: S137 Stale Belief Attempts Insert Verification
+
+- Source: `golden_plan_repair.rs:287`
+- Systems: AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: PlanRepair
+- Principles: P15, P16, P21
+
+**Setup**: stale belief-backed breach with no replacement candidates; the S139 epistemic-subgoal substrate is intentionally absent.
+
+**Proves**: InsertVerification is tried and rejected with NoEpistemicSubstrate, rather than silently skipping the epistemic repair axis.
+
+### Scenario 410: S137 Recently Failed Repair Kind Is Skipped
+
+- Source: `golden_plan_repair.rs:339`
+- Systems: AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: PlanRepair
+- Principles: P20, P21, P22A
+
+**Setup**: repair memory records RebindTarget as recently failed for the same BreachSignature; other local repair axes remain lawful.
+
+**Proves**: retry suppression skips the matching failed kind without globally blocking later repair kinds.
+
+### Scenario 411: S137 Commodity Availability Changed Clears Blocker Structurally
+
+- Source: `golden_plan_repair.rs:390`
+- Systems: AI, Core
+- GoalKinds: AcquireCommodity
+- ActionDomains: PlanRepair
+- Principles: P3, P17, P21
+
+**Setup**: blocker memory contains a commodity-availability blocker plus a repair context whose discrepancy has the matching clearing condition.
+
+**Proves**: the blocker can be removed by its structural clearing condition and the same condition is visible to localized repair.
+
+### Scenario 412: S137 Repair Budget Exhaustion Falls Through To Full Replan
+
+- Source: `golden_plan_repair.rs:464`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: PlanRepair
+- Principles: P20, P21
+
+**Setup**: zero repair budget makes the first repair axis exhaust before any candidate can succeed.
+
+**Proves**: repair records Failed/no chosen kind, and the downstream replan event remains the explicit fall-through path.
+
+### Scenario 413: S137 Abandon Produces Empty Progress Barrier
+
+- Source: `golden_plan_repair.rs:519`
+- Systems: AI
+- GoalKinds: AcquireCommodity
+- ActionDomains: PlanRepair
+- Principles: P20, P21
+
+**Setup**: repair context has no preserved prefix and no replacement candidates, so earlier local strategies cannot preserve progress.
+
+**Proves**: Abandon is the deterministic final local outcome and returns an empty progress-barrier plan.
+
+### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
+
+- Source: `golden_plan_repair.rs:562`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: PlanRepair
+- Principles: P20, P21, P29
+
+**Setup**: replay the same linked merchant-moved breach six times through the localized repair substrate and compare it with the pre-S137 full replan baseline for that causal class.
+
+**Proves**: localized RebindTarget repair replaces full ReplanTriggered fallback by more than the Phase 11 30% reduction threshold while preserving a real causal-link breach and emitting RepairApplied events.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 

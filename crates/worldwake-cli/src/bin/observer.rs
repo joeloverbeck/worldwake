@@ -13,7 +13,7 @@ use std::fmt::Write as FmtWrite;
 use std::path::PathBuf;
 use worldwake_ai::decision_trace::{
     AffordanceSummary, AffordanceTrace, AgentDecisionTrace, DecisionOutcome, DecisionTraceSink,
-    PlanAttemptTrace, PlanSearchOutcome, TargetBeliefPresence,
+    PlanAttemptTrace, PlanSearchOutcome, RepairAttemptTrace, TargetBeliefPresence,
 };
 use worldwake_ai::opportunity_compiler::{
     BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact,
@@ -866,12 +866,103 @@ fn render_decision_history_section(
                 writeln!(out, "|  |  |  | {line} |").unwrap();
             }
         }
+        if let DecisionEventPayload::RepairApplied(inner) = payload {
+            for line in repair_applied_detail_lines(inner, traces, record.tick()) {
+                writeln!(out, "|  |  |  | {line} |").unwrap();
+            }
+        }
         rendered_any = true;
     }
     if !rendered_any {
         writeln!(out, "| - | - | - | No decision events recorded. |").unwrap();
     }
     writeln!(out).unwrap();
+}
+
+fn repair_applied_detail_lines(
+    payload: &worldwake_core::RepairAppliedPayload,
+    traces: Option<&DecisionTraceSink>,
+    tick: Tick,
+) -> Vec<String> {
+    let trace = traces.and_then(|sink| repair_attempt_trace_for_payload(sink, payload, tick));
+    let mut lines = Vec::new();
+
+    if let Some(trace) = trace {
+        lines.push(format!(
+            "&nbsp;&nbsp;breach: Invalidator::{:?}(target={}) at step {}",
+            trace.breach.invalidator,
+            format_optional_entity(trace.breach.step_target),
+            payload.step_index
+        ));
+    } else {
+        lines.push(format!(
+            "&nbsp;&nbsp;breach: unavailable at step {}",
+            payload.step_index
+        ));
+    }
+
+    lines.push(format!(
+        "&nbsp;&nbsp;substitute_target: {}",
+        format_optional_entity(payload.substitute_target)
+    ));
+    lines.push(format!(
+        "&nbsp;&nbsp;substitute_recipe: {}",
+        format_optional_recipe(payload.substitute_recipe)
+    ));
+    lines.push(format!(
+        "&nbsp;&nbsp;rejected: {}",
+        trace.map_or_else(
+            || "unavailable".to_string(),
+            |trace| format_repair_rejections(&trace.rejected)
+        )
+    ));
+
+    lines
+}
+
+fn repair_attempt_trace_for_payload<'a>(
+    sink: &'a DecisionTraceSink,
+    payload: &worldwake_core::RepairAppliedPayload,
+    tick: Tick,
+) -> Option<&'a RepairAttemptTrace> {
+    let trace = sink.trace_at(payload.agent, tick)?;
+    trace
+        .repair_attempts
+        .iter()
+        .find(|attempt| {
+            attempt.chosen_kind == Some(payload.repair_kind)
+                && attempt.breach.goal_key == payload.goal_key
+        })
+        .or_else(|| {
+            trace
+                .repair_attempts
+                .iter()
+                .find(|attempt| attempt.breach.goal_key == payload.goal_key)
+        })
+}
+
+fn format_optional_entity(entity: Option<EntityId>) -> String {
+    entity.map_or_else(|| "None".to_string(), |entity| format!("Some({entity})"))
+}
+
+fn format_optional_recipe(recipe: Option<RecipeId>) -> String {
+    recipe.map_or_else(|| "None".to_string(), |recipe| format!("Some({recipe:?})"))
+}
+
+fn format_repair_rejections(
+    rejected: &[(worldwake_core::RepairKind, worldwake_ai::RepairFailure)],
+) -> String {
+    if rejected.is_empty() {
+        return "None".to_string();
+    }
+
+    let mut sorted = rejected.to_vec();
+    sorted.sort_by_key(|(kind, _)| *kind);
+    sorted
+        .into_iter()
+        .map(|(kind, failure)| format!("{kind:?} ({failure:?})"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn goal_committed_motive_source_lines(
@@ -4869,8 +4960,8 @@ mod tests {
     use worldwake_ai::decision_trace::{
         AffordanceSummary, AffordanceTrace, AgentDecisionTrace, CandidateTrace, DecisionOutcome,
         DecisionTraceSink, ExecutionTrace, OpportunityCompilerLoad, PatrolRouteSnapshotTrace,
-        PlanSearchTrace, PlanningPipelineTrace, SearchExpansionSummary, SelectionTrace,
-        TargetBeliefPresence,
+        PlanSearchTrace, PlanningPipelineTrace, RepairAttemptTrace, SearchExpansionSummary,
+        SelectionTrace, TargetBeliefPresence,
     };
     use worldwake_ai::opportunity_compiler::{
         BelievedLegalStatus, ClaimTopic, EffectFactKey, Opportunity, RiskFact, SocialExposureBand,
@@ -4879,7 +4970,8 @@ mod tests {
         ActiveActionSummary, AgendaEntry, AgendaEntrySnapshot, AgendaOrigin, AgendaPhase,
         AgentDecisionRuntime, AgentTickDriver, BlockerSummary, CriticalWindowFrame,
         CriticalWindowReport, DirtySet, ExhaustionSummary, GoalOffer, GoalPriorityClass,
-        KillCondition, LocalSurvivalStateSummary, RevivalTrigger, SelectedPlanSource,
+        KillCondition, LocalSurvivalStateSummary, RepairFailure, RevivalTrigger,
+        SelectedPlanSource,
     };
     use worldwake_core::PerceptionSource;
     use worldwake_core::{
@@ -4893,14 +4985,15 @@ mod tests {
         EntityKind, EventLog, EventPayload, EventTag, FrameAssumption, GoalAbandonReason,
         GoalAbandonedPayload, GoalCommittedPayload, GoalKey, GoalKind, GoalOfferedPayload,
         GoalRejectionReason, GoalSuppressedPayload, GoalSuspendedPayload, GoalSwitchReason,
-        HomeostaticNeedId, KnownRecipes, MetabolismProfile, Name, ObservationOmission,
-        ObservationRef, OmissionReason, OpportunityAnchor, PendingEvent, Permille,
-        PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload, PlanInvalidationReason,
-        PrototypePlace, Quantity, RankedGoalComparisonDimensionTag, RecipeId, RecordRef,
-        ResourceSource, SaliencePolicy, SleepEpisodeEndedPayload, SleepEpisodeStartedPayload,
-        SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition, WakeReason,
-        WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData, WorkstationMarker,
-        WorkstationTag, World, WorldTxn, build_prototype_world, prototype_place_entity,
+        HomeostaticNeedId, InvalidatorTag, KnownRecipes, MetabolismProfile, Name,
+        ObservationOmission, ObservationRef, OmissionReason, OpportunityAnchor, PendingEvent,
+        Permille, PlanAdoptedPayload, PlanAssumptionRef, PlanInvalidatedPayload,
+        PlanInvalidationReason, PrototypePlace, Quantity, RankedGoalComparisonDimensionTag,
+        RecipeId, RecordRef, ResourceSource, SaliencePolicy, SleepEpisodeEndedPayload,
+        SleepEpisodeStartedPayload, SleepRecoveryModifier, Tick, VisibilitySpec, WakeCondition,
+        WakeReason, WashFacilityUsedPayload, WasteCreatedPayload, WasteSource, WitnessData,
+        WorkstationMarker, WorkstationTag, World, WorldTxn, build_prototype_world,
+        prototype_place_entity,
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionHandlerId, ActionInstanceId, ActionPayload,
@@ -5474,8 +5567,9 @@ mod tests {
                 agent,
                 goal_key: support_goal,
                 step_index: 2,
-                repair_kind: worldwake_core::RepairKind::AlternateMerchant,
+                repair_kind: worldwake_core::RepairKind::RebindTarget,
                 substitute_target: Some(target),
+                substitute_recipe: None,
             }),
         );
         emit_decision_event(
@@ -5612,6 +5706,8 @@ mod tests {
             tick: Tick(tick),
             compiled_opportunities: Vec::new(),
             opportunity_compiler_load: None,
+            repair_attempts: Vec::new(),
+            causal_link_cap_hits: Vec::new(),
             outcome: DecisionOutcome::Planning(Box::new(PlanningPipelineTrace {
                 affordances: Some(affordances),
                 dirty: DirtySet::default(),
@@ -6670,7 +6766,7 @@ mod tests {
         assert!(out.contains("| Tick | Agent | Event | Payload Summary |"));
         assert_eq!(
             out.lines().filter(|line| line.starts_with("| ")).count(),
-            16
+            20
         );
         for event_name in [
             "GoalOffered",
@@ -6702,6 +6798,83 @@ mod tests {
         assert!(
             out.contains("water=1 agent_dirtiness_delta=500 basin_dirtiness_delta=25 partial=true")
         );
+        assert!(out.contains("&nbsp;&nbsp;substitute_recipe: None"));
+        assert!(out.contains("&nbsp;&nbsp;rejected: unavailable"));
+    }
+
+    #[test]
+    fn render_repair_applied_with_rejected_alternatives() {
+        let agent = entity(1);
+        let target = entity(2);
+        let recipe = RecipeId(7);
+        let goal_key = GoalKey::from(GoalKind::ProduceCommodity { recipe_id: recipe });
+        let mut log = EventLog::new();
+        emit_decision_event(
+            &mut log,
+            412,
+            agent,
+            EventTag::RepairApplied,
+            DecisionEventPayload::RepairApplied(worldwake_core::RepairAppliedPayload {
+                agent,
+                goal_key,
+                step_index: 3,
+                repair_kind: worldwake_core::RepairKind::ReplaceProvider,
+                substitute_target: Some(target),
+                substitute_recipe: Some(recipe),
+            }),
+        );
+
+        let mut trace = planning_affordance_trace(
+            agent,
+            412,
+            AffordanceTrace {
+                available: Vec::new(),
+                place: None,
+            },
+        );
+        trace.repair_attempts.push(RepairAttemptTrace {
+            breach: worldwake_core::BreachSignature {
+                goal_key,
+                invalidator: InvalidatorTag::TargetMoved,
+                step_target: Some(target),
+            },
+            chosen_kind: Some(worldwake_core::RepairKind::ReplaceProvider),
+            rejected: vec![
+                (
+                    worldwake_core::RepairKind::InsertVerification,
+                    RepairFailure::RecentlyFailed,
+                ),
+                (
+                    worldwake_core::RepairKind::RebindTarget,
+                    RepairFailure::NoSiblingTargetFound,
+                ),
+            ],
+            budget_consumed: 2,
+            budget_total: 5,
+        });
+        let mut sink = DecisionTraceSink::new();
+        sink.record(trace);
+
+        let mut out = String::new();
+        render_decision_history_section(
+            &mut out,
+            &log,
+            &[(agent, "Agent A".to_string())],
+            Some(&sink),
+        );
+
+        assert!(out.contains("| 412 | Agent A | RepairApplied |"));
+        assert!(out.contains("kind=ReplaceProvider"));
+        assert!(
+            out.contains(
+                "&nbsp;&nbsp;breach: Invalidator::TargetMoved(target=Some(e2g0)) at step 3"
+            )
+        );
+        assert!(out.contains("&nbsp;&nbsp;substitute_target: Some(e2g0)"));
+        assert!(out.contains("&nbsp;&nbsp;substitute_recipe: Some(RecipeId(7))"));
+        assert!(out.contains(
+            "&nbsp;&nbsp;rejected: RebindTarget (NoSiblingTargetFound), InsertVerification (RecentlyFailed)"
+        ));
     }
 
     #[test]

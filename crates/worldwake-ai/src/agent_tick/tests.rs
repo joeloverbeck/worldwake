@@ -9,8 +9,8 @@ use super::planning::{
 };
 use super::{
     AgentTickDriver, AssumptionRefContext, advance_completed_step,
-    apply_step_materialization_bindings, committed_action_for_step, effective_goal_switch_margin,
-    emit_replan_triggered, handle_recoverable_travel_step_blockage,
+    apply_step_materialization_bindings, causal_link_cap_hits_from_plan, committed_action_for_step,
+    effective_goal_switch_margin, emit_replan_triggered, handle_recoverable_travel_step_blockage,
     invalidate_committed_source_after_reliability_failure, persist_blocked_memory,
     persist_discrepancy_memory, plan_and_validate_next_step_traced,
     record_learned_opportunities_from_read_phase, record_repair_memory_from_completed_plan,
@@ -36,24 +36,25 @@ use std::path::PathBuf;
 use worldwake_core::{
     AcquisitionQuantity, ActionDefId, AgentBeliefStore, BanditFactionPolicy,
     BeliefConfidencePolicy, BelievedInstitutionalClaim, Blocker, BlockerKey, BlockerMemory,
-    BlockerRecordedPayload, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CauseRef,
-    CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents, ContentionPolicy,
-    ContentionQueue, ControlSource, DeadAt, DecisionEventPayload, DemandMemory, DemandObservation,
-    DemandObservationReason, DeprivationExposure, Discrepancy, DiscrepancyClearing,
-    DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag, EntityId, EntityKind,
-    EventLog, EventPayload, EventTag, EventView, EvidenceKindTag, EvidenceSummary, ExecutionBudget,
-    ExpectationBasis, ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId,
-    ExpectationKindTag, ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord,
-    ExpectationState, ExplorationProfile, FrameAssumption, FrameClearReason, FrameState,
-    GoalAbandonReason, GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason,
-    GoalSuppressedPayload, HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey,
-    InstitutionalClaim, InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain,
-    IntentionFrame, InvalidatorTag, KnownRecipes, LearnedOpportunityMemory, LoadUnits,
-    MemoryCapacityProfile, MerchandiseProfile, MetabolismProfile, MismatchDetail,
-    ObservationPredicate, OfficeData, OpportunityExpectationKindTag, PatrolProfile, PatrolRoute,
-    PendingEvent, PerceptionProfile, PerceptionSource, Permille, Place, PortfolioSlotWeights,
-    Quantity, QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload,
-    RepairKind, RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
+    BlockerRecordedPayload, BlockingFact, BodyCostPerTick, BodyPart, CarryCapacity, CausalLink,
+    CausalProvider, CauseRef, CognitiveProfile, CommodityKind, ContentionGrant, ContentionIntents,
+    ContentionPolicy, ContentionQueue, ControlSource, DeadAt, DecisionEventPayload, DemandMemory,
+    DemandObservation, DemandObservationReason, DeprivationExposure, Discrepancy,
+    DiscrepancyClearing, DiscrepancyEntry, DiscrepancyMemory, DriveThresholds, EmitterTag,
+    EntityBeliefAspect, EntityId, EntityKind, EventLog, EventPayload, EventTag, EventView,
+    EvidenceKindTag, EvidenceSummary, ExecutionBudget, ExpectationBasis,
+    ExpectationFailureCauseTag, ExpectationFailurePhaseTag, ExpectationId, ExpectationKindTag,
+    ExpectationMismatchPayload, ExpectationOutcome, ExpectationRecord, ExpectationState,
+    ExplorationProfile, FrameAssumption, FrameClearReason, FrameState, GoalAbandonReason,
+    GoalAbandonedPayload, GoalOfferedPayload, GoalRejectionReason, GoalSuppressedPayload,
+    HomeostaticNeedId, HomeostaticNeeds, InstitutionalBeliefKey, InstitutionalClaim,
+    InstitutionalKnowledgeSource, IntentionDispositionProfile, IntentionDomain, IntentionFrame,
+    InvalidatorTag, KnownRecipes, LearnedOpportunityMemory, LoadUnits, MemoryCapacityProfile,
+    MerchandiseProfile, MetabolismProfile, MismatchDetail, ObservationPredicate, OfficeData,
+    OpportunityExpectationKindTag, PatrolProfile, PatrolRoute, PendingEvent, PerceptionProfile,
+    PerceptionSource, Permille, Place, PlanningFact, PortfolioSlotWeights, Quantity,
+    QueuedContentionIntent, RecipeId, RecordData, RecordKind, RepairAppliedPayload, RepairKind,
+    RepairMemory, ResourceSource, Seed, SourceAttributionOutcomeTag,
     SourceExpectationFailurePayload, SourceKey, SourceKeyPayload, StatePredicate, SuccessionLaw,
     TellMemoryKey, TellProfile, TellTopic, Tick, ToldBeliefMemory, Topology, TravelEdge,
     TravelEdgeId, UniqueItemKind, UtilityProfile, ViolationMemory, VisibilitySpec, WitnessData,
@@ -206,6 +207,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
         compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
         slot_weights: PortfolioSlotWeights::default(),
+        repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
+        causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
     }
 }
 
@@ -1271,6 +1274,58 @@ fn entity(slot: u32) -> EntityId {
 
 fn pm(value: u16) -> Permille {
     Permille::new(value).unwrap()
+}
+
+#[test]
+fn causal_link_cap_hits_report_truncated_plan_guards() {
+    let target = entity(10);
+    let place = entity(11);
+    let required_fact = crate::RequiredFact::TargetPresent {
+        target,
+        at_place: place,
+    };
+    let step = PlannedStep {
+        def_id: ActionDefId(0),
+        targets: vec![PlanningEntityRef::Authoritative(target)],
+        target_place: Some(place),
+        payload_override: None,
+        op_kind: PlannerOpKind::Trade,
+        estimated_ticks: 1,
+        is_materialization_barrier: false,
+        expected_materializations: Vec::new(),
+        guard: Some(PlanGuard {
+            required_facts: vec![required_fact, required_fact],
+            min_confidence: Permille::new(500).unwrap(),
+            invalidators: Vec::new(),
+            causal_links: vec![CausalLink {
+                provider: CausalProvider::Observation {
+                    observed_entity: target,
+                    aspect: EntityBeliefAspect::Location,
+                },
+                fact: PlanningFact::TargetPresent {
+                    target,
+                    at_place: place,
+                },
+                consumer_step_index: 0,
+                source_tick: Tick(4),
+                confidence: Permille::new(1000).unwrap(),
+            }],
+        }),
+        expectations: Vec::new(),
+    };
+    let plan = PlannedPlan::new(
+        default_opportunity(GoalKey::from(GoalKind::Sleep)),
+        GoalKey::from(GoalKind::Sleep),
+        vec![step],
+        PlanTerminalKind::GoalSatisfied,
+    );
+
+    let hits = causal_link_cap_hits_from_plan(Some(&plan), 1);
+
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].plan_step_index, 0);
+    assert_eq!(hits[0].truncated_count, 1);
+    assert_eq!(hits[0].cap, 1);
 }
 
 fn harvest_apple_recipe() -> RecipeDefinition {
@@ -6079,6 +6134,7 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
                     },
                 },
             ],
+            causal_links: Vec::new(),
         }),
         expectations: Vec::new(),
     };
@@ -6120,7 +6176,8 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
     let original_violation_memory = ViolationMemory::default();
     let violation_memory = ViolationMemory::default();
     let original_repair_memory = RepairMemory::default();
-    let repair_memory = RepairMemory::default();
+    let mut repair_memory = RepairMemory::default();
+    let memory_capacity = worldwake_core::MemoryCapacityProfile::default();
     let original_learned_opportunity_memory = LearnedOpportunityMemory::default();
     let learned_opportunity_memory = LearnedOpportunityMemory::default();
     let step = runtime
@@ -6159,11 +6216,13 @@ fn revalidation_guard_breach_emits_expectation_mismatch_before_enqueue() {
         &original_violation_memory,
         &violation_memory,
         &original_repair_memory,
-        &repair_memory,
+        &mut repair_memory,
+        memory_capacity,
         &original_learned_opportunity_memory,
         &learned_opportunity_memory,
         &step,
         false,
+        None,
     )
     .expect("guard-breach start failure handling should succeed");
 
@@ -8879,8 +8938,10 @@ fn completed_alternate_plan_records_repair_memory_entry() {
         &mut repair_memory,
         Some(AcceptedRepairProvenance {
             goal_key: goal,
-            repair_kind: RepairKind::AlternateTarget,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(successful_place),
+            substitute_recipe: None,
+            records_repair_memory: true,
         }),
         &super::CompletedPlanSummary {
             goal_key: goal,
@@ -8903,11 +8964,14 @@ fn completed_alternate_plan_records_repair_memory_entry() {
 
     let entry = repair_memory
         .repairs
-        .get(&worldwake_core::RepairKey {
+        .get(&worldwake_core::BreachSignature {
             goal_key: goal,
-            alternate_target: successful_place,
+            invalidator: worldwake_core::InvalidatorTag::TargetMoved,
+            step_target: Some(successful_place),
         })
         .expect("repair success should be recorded");
+    assert_eq!(entry.kind, RepairKind::RebindTarget);
+    assert!(entry.succeeded);
     assert_eq!(entry.observed_tick, Tick(10));
     assert_eq!(entry.expires_tick, Tick(130));
     assert_eq!(entry.success_count, 1);
@@ -8923,8 +8987,9 @@ fn completed_alternate_plan_records_repair_memory_entry() {
             agent,
             goal_key: goal,
             step_index: 2,
-            repair_kind: RepairKind::AlternateTarget,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(successful_place),
+            substitute_recipe: None,
         })
     );
 }
@@ -8943,8 +9008,10 @@ fn completed_alternate_merchant_plan_emits_without_recording_target_memory() {
         &mut repair_memory,
         Some(AcceptedRepairProvenance {
             goal_key: goal,
-            repair_kind: RepairKind::AlternateMerchant,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: Some(merchant),
+            substitute_recipe: None,
+            records_repair_memory: false,
         }),
         &super::CompletedPlanSummary {
             goal_key: goal,
@@ -8959,23 +9026,27 @@ fn completed_alternate_merchant_plan_emits_without_recording_target_memory() {
     .expect("merchant repairs should emit from accepted provenance");
 
     assert!(repair_memory.repairs.is_empty());
-    assert_eq!(payload.repair_kind, RepairKind::AlternateMerchant);
+    assert_eq!(payload.repair_kind, RepairKind::RebindTarget);
     assert_eq!(payload.substitute_target, Some(merchant));
+    assert_eq!(payload.substitute_recipe, None);
 }
 
 #[test]
-fn completed_alternate_recipe_plan_emits_without_substitute_target() {
+fn completed_alternate_recipe_plan_emits_with_substitute_recipe() {
     let goal = GoalKey::from(GoalKind::ProduceCommodity {
         recipe_id: RecipeId(4),
     });
+    let substitute_recipe = RecipeId(5);
     let mut repair_memory = RepairMemory::default();
 
     let payload = record_repair_memory_from_completed_plan(
         &mut repair_memory,
         Some(AcceptedRepairProvenance {
             goal_key: goal,
-            repair_kind: RepairKind::AlternateRecipe,
+            repair_kind: RepairKind::RebindTarget,
             substitute_target: None,
+            substitute_recipe: Some(substitute_recipe),
+            records_repair_memory: false,
         }),
         &super::CompletedPlanSummary {
             goal_key: goal,
@@ -8990,12 +9061,13 @@ fn completed_alternate_recipe_plan_emits_without_substitute_target() {
     .expect("recipe repairs should emit from accepted provenance");
 
     assert!(repair_memory.repairs.is_empty());
-    assert_eq!(payload.repair_kind, RepairKind::AlternateRecipe);
+    assert_eq!(payload.repair_kind, RepairKind::RebindTarget);
     assert_eq!(payload.substitute_target, None);
+    assert_eq!(payload.substitute_recipe, Some(substitute_recipe));
 }
 
 #[test]
-fn completed_alternate_route_plan_emits_without_substitute_target() {
+fn completed_replace_provider_plan_emits_without_substitute_target() {
     let goal = GoalKey::from(GoalKind::Sleep);
     let mut repair_memory = RepairMemory::default();
 
@@ -9003,8 +9075,10 @@ fn completed_alternate_route_plan_emits_without_substitute_target() {
         &mut repair_memory,
         Some(AcceptedRepairProvenance {
             goal_key: goal,
-            repair_kind: RepairKind::AlternateRoute,
+            repair_kind: RepairKind::ReplaceProvider,
             substitute_target: None,
+            substitute_recipe: None,
+            records_repair_memory: false,
         }),
         &super::CompletedPlanSummary {
             goal_key: goal,
@@ -9019,8 +9093,9 @@ fn completed_alternate_route_plan_emits_without_substitute_target() {
     .expect("route repairs should emit from accepted provenance");
 
     assert!(repair_memory.repairs.is_empty());
-    assert_eq!(payload.repair_kind, RepairKind::AlternateRoute);
+    assert_eq!(payload.repair_kind, RepairKind::ReplaceProvider);
     assert_eq!(payload.substitute_target, None);
+    assert_eq!(payload.substitute_recipe, None);
 }
 
 #[test]

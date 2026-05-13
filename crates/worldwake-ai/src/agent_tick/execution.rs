@@ -7,16 +7,25 @@ use super::{
     decisive_evidence_from_discrepancy_entry, decisive_evidence_from_replan_reason,
     emit_decision_event, handle_recoverable_travel_step_blockage, runtime_belief_view,
 };
+use crate::RepairAttemptTrace;
 use crate::failure_handling::exact_target_belief_discrepancy;
+use crate::plan_repair::{
+    PlanRepairContext, RepairOutcome, RepairPlanCandidate, attempt_repair_then_replan,
+    repair_budget,
+};
 use crate::plan_step_expectations::{
     expire_plan_step_expectations, persist_expectation_store_update,
 };
-use crate::{AgentDecisionRuntime, PlannedStep, RevalidationOutcome, classify_revalidation};
+use crate::{
+    AgentDecisionRuntime, PlannedPlan, PlannedStep, RevalidationOutcome, classify_revalidation,
+};
 use worldwake_core::{
-    AffordanceKey, BeliefSnapshot, BeliefStatusTag, BlockerMemory, BlockerRecordedPayload,
-    BlockingFact, CauseRef, ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyEntry,
-    DiscrepancyMemory, EntityId, EventId, EventLog, EventTag, EventView, LearnedOpportunityMemory,
-    RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
+    AffordanceKey, BeliefSnapshot, BeliefStatusTag, BlockerKey, BlockerMemory,
+    BlockerRecordedPayload, BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef,
+    ContentionIntents, DecisionEventPayload, Discrepancy, DiscrepancyClearing, DiscrepancyEntry,
+    DiscrepancyMemory, EntityId, EventId, EventLog, EventTag, EventView, InvalidatorTag,
+    LearnedOpportunityMemory, MismatchDetail, PlanningFact, RepairAppliedPayload, RepairEntry,
+    RepairKind, RepairMemory, ReplanTriggeredPayload, Tick, VisibilitySpec, WitnessData, WorldTxn,
 };
 use worldwake_sim::{
     CommitOutcome, CommittedAction, EntityBeliefView, InputKind, PerAgentBeliefView, Scheduler,
@@ -39,11 +48,13 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     original_violation_memory: &worldwake_core::ViolationMemory,
     violation_memory: &worldwake_core::ViolationMemory,
     original_repair_memory: &RepairMemory,
-    repair_memory: &RepairMemory,
+    repair_memory: &mut RepairMemory,
+    memory_capacity: worldwake_core::MemoryCapacityProfile,
     original_learned_opportunity_memory: &LearnedOpportunityMemory,
     learned_opportunity_memory: &LearnedOpportunityMemory,
     step: &PlannedStep,
     valid: bool,
+    mut repair_attempt_traces: Option<&mut Vec<RepairAttemptTrace>>,
 ) -> Result<(), TickInputError> {
     let active_assumptions = jc
         .as_ref()
@@ -105,7 +116,78 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
                 reason,
                 expectation_kind,
                 mismatch_detail,
-            } => (Some(reason), expectation_kind, mismatch_detail),
+            } => {
+                if let Some(goal_key) =
+                    active_goal.or_else(|| runtime.current_plan.as_ref().map(|plan| plan.goal))
+                    && let Some(repair_outcome) = attempt_local_repair_for_invalidated_step(
+                        runtime,
+                        repair_memory,
+                        ctx.cognitive,
+                        tick,
+                        goal_key,
+                        step,
+                        reason,
+                        mismatch_detail,
+                    )
+                {
+                    match repair_outcome {
+                        RepairOutcome::Repaired {
+                            kind,
+                            new_plan,
+                            rejected,
+                        } => {
+                            let step_index = runtime
+                                .current_step_index
+                                .try_into()
+                                .expect("current step index exceeds u16");
+                            if let Some(traces) = &mut repair_attempt_traces {
+                                traces.push(RepairAttemptTrace {
+                                    breach: breach_signature_for_step(
+                                        goal_key,
+                                        step,
+                                        mismatch_detail,
+                                    ),
+                                    chosen_kind: Some(kind),
+                                    budget_consumed: repair_budget_consumed(&rejected, true),
+                                    rejected,
+                                    budget_total: repair_budget(ctx.cognitive),
+                                });
+                            }
+                            apply_repaired_plan_and_emit(
+                                ctx.event_log,
+                                runtime,
+                                tick,
+                                agent,
+                                goal_key,
+                                step_index,
+                                kind,
+                                *new_plan,
+                            );
+                            return Ok(());
+                        }
+                        RepairOutcome::Failed { tried } => {
+                            let signature =
+                                breach_signature_for_step(goal_key, step, mismatch_detail);
+                            if let Some(traces) = &mut repair_attempt_traces {
+                                traces.push(repair_attempt_trace_from_failed(
+                                    signature,
+                                    &tried,
+                                    ctx.cognitive,
+                                ));
+                            }
+                            record_failed_repair_attempts(
+                                repair_memory,
+                                signature,
+                                &tried,
+                                tick,
+                                ctx.cognitive.repair_memory_ticks,
+                            );
+                            repair_memory.enforce_capacity(&memory_capacity);
+                        }
+                    }
+                }
+                (Some(reason), expectation_kind, mismatch_detail)
+            }
         };
         let belief_discrepancy = exact_target_belief_discrepancy(&view, agent, step);
         let mismatch_goal_key =
@@ -294,6 +376,304 @@ pub(super) fn enqueue_valid_step_or_handle_failure(
     );
     runtime.step_in_flight = true;
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn attempt_local_repair_for_invalidated_step(
+    runtime: &AgentDecisionRuntime,
+    repair_memory: &RepairMemory,
+    cognitive: &worldwake_core::CognitiveProfile,
+    tick: Tick,
+    goal_key: worldwake_core::GoalKey,
+    step: &PlannedStep,
+    reason: worldwake_core::PlanInvalidationReason,
+    mismatch_detail: Option<MismatchDetail>,
+) -> Option<RepairOutcome> {
+    if !matches!(
+        reason,
+        worldwake_core::PlanInvalidationReason::ExpectationMismatch { .. }
+    ) {
+        return None;
+    }
+    let active_plan = runtime.current_plan.as_ref()?;
+    if runtime.current_step_index >= active_plan.steps.len() {
+        return None;
+    }
+    let failed_step = runtime.current_step_index.try_into().ok()?;
+    let broken_link = broken_link_for_step(step, failed_step)?;
+    let signature = breach_signature_for_step(goal_key, step, mismatch_detail);
+    let discrepancy_entry =
+        discrepancy_entry_for_repair(goal_key, step, broken_link, signature, tick);
+    let preserved_prefix = &active_plan.steps[..runtime.current_step_index];
+    let reusable_suffix = active_plan
+        .steps
+        .get(runtime.current_step_index + 1..)
+        .unwrap_or(&[]);
+    let replacement_candidates = repair_candidates_from_reusable_suffix(reusable_suffix);
+    let context = PlanRepairContext {
+        opportunity: active_plan.opportunity,
+        failed_step,
+        broken_link,
+        breach_signature: signature,
+        preserved_prefix,
+        reusable_suffix,
+        replacement_candidates: &replacement_candidates,
+        new_evidence: &[],
+        discrepancy_entry: &discrepancy_entry,
+    };
+    Some(attempt_repair_then_replan(
+        &context,
+        cognitive,
+        repair_memory,
+    ))
+}
+
+fn broken_link_for_step(step: &PlannedStep, failed_step: u16) -> Option<CausalLink> {
+    step.guard
+        .as_ref()?
+        .causal_links
+        .iter()
+        .copied()
+        .find(|link| link.consumer_step_index == failed_step)
+        .or_else(|| step.guard.as_ref()?.causal_links.first().copied())
+}
+
+fn breach_signature_for_step(
+    goal_key: worldwake_core::GoalKey,
+    step: &PlannedStep,
+    mismatch_detail: Option<MismatchDetail>,
+) -> BreachSignature {
+    let invalidator = match mismatch_detail {
+        Some(MismatchDetail::GuardInvalidator(tag)) => tag,
+        _ => InvalidatorTag::TargetMoved,
+    };
+    BreachSignature {
+        goal_key,
+        invalidator,
+        step_target: step.primary_target(),
+    }
+}
+
+fn discrepancy_entry_for_repair(
+    goal_key: worldwake_core::GoalKey,
+    step: &PlannedStep,
+    broken_link: CausalLink,
+    signature: BreachSignature,
+    tick: Tick,
+) -> DiscrepancyEntry {
+    let (discrepancy, clearing_condition) =
+        discrepancy_for_repair_signature(signature, broken_link);
+    DiscrepancyEntry {
+        blocker_key: BlockerKey {
+            goal_key,
+            place: step.target_place,
+            target: signature.step_target.or_else(|| match broken_link.fact {
+                PlanningFact::TargetPresent { target, .. } => Some(target),
+                PlanningFact::CommodityAvailable { place, .. } => Some(place),
+                PlanningFact::RouteKnown { to, .. } => Some(to),
+                PlanningFact::ResourceAccess { resource, .. } => Some(resource),
+            }),
+            action_def: Some(step.def_id),
+        },
+        discrepancy,
+        observed_tick: tick,
+        expires_tick: Tick(tick.0 + 1),
+        clearing_condition,
+    }
+}
+
+fn discrepancy_for_repair_signature(
+    signature: BreachSignature,
+    broken_link: CausalLink,
+) -> (Discrepancy, DiscrepancyClearing) {
+    match signature.invalidator {
+        InvalidatorTag::BeliefStatusChange => {
+            let clearing = match broken_link.provider {
+                CausalProvider::Belief { claim_key } => {
+                    DiscrepancyClearing::BeliefUpdate { claim_key }
+                }
+                _ => DiscrepancyClearing::TtlExpiry,
+            };
+            (Discrepancy::BeliefStale, clearing)
+        }
+        InvalidatorTag::TargetMoved => {
+            let target = signature.step_target.or_else(|| match broken_link.fact {
+                PlanningFact::TargetPresent { target, .. } => Some(target),
+                PlanningFact::ResourceAccess { resource, .. } => Some(resource),
+                PlanningFact::CommodityAvailable { place, .. }
+                | PlanningFact::RouteKnown { to: place, .. } => Some(place),
+            });
+            (
+                Discrepancy::BeliefContradicted,
+                target.map_or(DiscrepancyClearing::TtlExpiry, |target| {
+                    DiscrepancyClearing::ReobservationOf { target }
+                }),
+            )
+        }
+        InvalidatorTag::CommodityDepleted => {
+            let clearing = match broken_link.fact {
+                PlanningFact::CommodityAvailable { place, kind, .. } => {
+                    DiscrepancyClearing::CommodityAvailabilityChanged {
+                        commodity: kind,
+                        place,
+                    }
+                }
+                _ => DiscrepancyClearing::TtlExpiry,
+            };
+            (Discrepancy::SourceInvalidated, clearing)
+        }
+        InvalidatorTag::NewBlockerRecorded => (
+            Discrepancy::PartialExecutionDrift,
+            DiscrepancyClearing::TtlExpiry,
+        ),
+    }
+}
+
+fn repair_candidates_from_reusable_suffix(
+    reusable_suffix: &[PlannedStep],
+) -> Vec<RepairPlanCandidate> {
+    reusable_suffix
+        .iter()
+        .enumerate()
+        .filter_map(|(index, step)| {
+            let link = step.guard.as_ref()?.causal_links.first().copied()?;
+            Some(RepairPlanCandidate {
+                kind: repair_kind_for_fact(link.fact),
+                provider: link.provider,
+                fact: link.fact,
+                step: step.clone(),
+                reusable_suffix_index: Some(index.try_into().ok()?),
+            })
+        })
+        .collect()
+}
+
+const fn repair_kind_for_fact(fact: PlanningFact) -> RepairKind {
+    match fact {
+        PlanningFact::RouteKnown { .. } => RepairKind::ReplaceProvider,
+        PlanningFact::TargetPresent { .. }
+        | PlanningFact::CommodityAvailable { .. }
+        | PlanningFact::ResourceAccess { .. } => RepairKind::RebindTarget,
+    }
+}
+
+fn record_failed_repair_attempts(
+    repair_memory: &mut RepairMemory,
+    signature: BreachSignature,
+    tried: &[(RepairKind, crate::RepairFailure)],
+    tick: Tick,
+    ttl_ticks: u32,
+) {
+    for (kind, _) in tried {
+        repair_memory.record(RepairEntry {
+            signature,
+            kind: *kind,
+            succeeded: false,
+            observed_tick: tick,
+            expires_tick: Tick(tick.0 + u64::from(ttl_ticks)),
+            success_count: 0,
+        });
+    }
+}
+
+fn repair_attempt_trace_from_failed(
+    breach: BreachSignature,
+    tried: &[(RepairKind, crate::RepairFailure)],
+    cognitive: &worldwake_core::CognitiveProfile,
+) -> RepairAttemptTrace {
+    RepairAttemptTrace {
+        breach,
+        chosen_kind: None,
+        rejected: tried.to_vec(),
+        budget_consumed: repair_budget_consumed(tried, false),
+        budget_total: repair_budget(cognitive),
+    }
+}
+
+fn repair_budget_consumed(
+    rejected: &[(RepairKind, crate::RepairFailure)],
+    includes_successful_attempt: bool,
+) -> u16 {
+    let failed_expansions = rejected
+        .iter()
+        .filter(|(_, failure)| {
+            !matches!(
+                failure,
+                crate::RepairFailure::RecentlyFailed | crate::RepairFailure::BudgetExhausted
+            )
+        })
+        .count();
+    u16::try_from(failed_expansions)
+        .unwrap_or(u16::MAX)
+        .saturating_add(u16::from(includes_successful_attempt))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_repaired_plan_and_emit(
+    event_log: &mut EventLog,
+    runtime: &mut AgentDecisionRuntime,
+    tick: Tick,
+    agent: EntityId,
+    goal_key: worldwake_core::GoalKey,
+    step_index: u16,
+    kind: RepairKind,
+    new_plan: PlannedPlan,
+) {
+    let substitute_target = substitute_target_from_repaired_plan(kind, step_index, &new_plan);
+    let substitute_recipe = substitute_recipe_from_repaired_plan(&new_plan);
+    install_repaired_plan(runtime, new_plan);
+    emit_decision_event(
+        event_log,
+        tick,
+        agent,
+        EventTag::RepairApplied,
+        DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+            agent,
+            goal_key,
+            step_index,
+            repair_kind: kind,
+            substitute_target,
+            substitute_recipe,
+        }),
+    );
+}
+
+fn install_repaired_plan(runtime: &mut AgentDecisionRuntime, mut new_plan: PlannedPlan) {
+    let next_step_index = runtime.current_step_index.min(new_plan.steps.len());
+    if let Some(current_plan) = runtime.current_plan.as_ref() {
+        new_plan.committed_source = current_plan.committed_source;
+        new_plan.expectation_kind = current_plan.expectation_kind;
+    }
+    runtime.current_step_index = next_step_index;
+    runtime.current_plan = Some(new_plan);
+    runtime.step_in_flight = false;
+    runtime.accepted_repair = None;
+}
+
+fn substitute_target_from_repaired_plan(
+    kind: RepairKind,
+    step_index: u16,
+    new_plan: &PlannedPlan,
+) -> Option<EntityId> {
+    matches!(kind, RepairKind::RebindTarget)
+        .then(|| {
+            new_plan
+                .steps
+                .get(usize::from(step_index))?
+                .primary_target()
+        })
+        .flatten()
+}
+
+fn substitute_recipe_from_repaired_plan(
+    new_plan: &PlannedPlan,
+) -> Option<worldwake_core::RecipeId> {
+    new_plan.steps.iter().find_map(|step| {
+        step.payload_override
+            .as_ref()
+            .and_then(worldwake_sim::ActionPayload::as_craft)
+            .map(|payload| payload.recipe_id)
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -843,13 +1223,21 @@ pub(super) fn plan_finished(runtime: &AgentDecisionRuntime) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::populate_contention_event_refs;
+    use super::{
+        apply_repaired_plan_and_emit, attempt_local_repair_for_invalidated_step,
+        breach_signature_for_step, populate_contention_event_refs, record_failed_repair_attempts,
+        repair_attempt_trace_from_failed, repair_budget_consumed,
+    };
+    use crate::RepairOutcome;
+    use crate::{PlanGuard, PlanTerminalKind, PlannedPlan, PlannedStep, PlannerOpKind};
     use std::collections::{BTreeMap, BTreeSet};
     use worldwake_core::{
         ActionDefId, AffordanceKey, Blocker, BlockerClearingCondition, BlockerKey, BlockerMemory,
-        BlockingFact, CauseRef, ClaimantOutcome, ContentionClaimant, ContentionEventPayload,
-        ContentionResolutionRule, EntityId, EventLog, EventPayload, EventTag, GoalKey, GoalKind,
-        PendingEvent, Tick, VisibilitySpec, WitnessData,
+        BlockingFact, BreachSignature, CausalLink, CausalProvider, CauseRef, ClaimantOutcome,
+        ContentionClaimant, ContentionEventPayload, ContentionResolutionRule, DecisionEventPayload,
+        EntityId, EventLog, EventPayload, EventTag, EventView, GoalKey, GoalKind, InvalidatorTag,
+        MismatchDetail, OpportunityKey, PendingEvent, Permille, PlanningFact, RepairAppliedPayload,
+        RepairKind, RepairMemory, Tick, VisibilitySpec, WitnessData, test_utils::sample_goal_key,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -864,6 +1252,77 @@ mod tests {
             facility: entity(facility_slot),
             action: ActionDefId(action),
         }
+    }
+
+    fn opportunity(goal_key: GoalKey) -> OpportunityKey {
+        OpportunityKey {
+            goal_key,
+            anchor: worldwake_core::OpportunityAnchor::None,
+        }
+    }
+
+    fn causal_link(consumer_step_index: u16) -> CausalLink {
+        CausalLink {
+            provider: CausalProvider::PriorStep { step_index: 0 },
+            fact: PlanningFact::TargetPresent {
+                target: entity(7),
+                at_place: entity(8),
+            },
+            consumer_step_index,
+            source_tick: Tick(3),
+            confidence: Permille::new(800).unwrap(),
+        }
+    }
+
+    fn observed_target_link(consumer_step_index: u16) -> CausalLink {
+        CausalLink {
+            provider: CausalProvider::Observation {
+                observed_entity: entity(7),
+                aspect: worldwake_core::EntityBeliefAspect::Location,
+            },
+            fact: PlanningFact::TargetPresent {
+                target: entity(7),
+                at_place: entity(8),
+            },
+            consumer_step_index,
+            source_tick: Tick(3),
+            confidence: Permille::new(800).unwrap(),
+        }
+    }
+
+    fn planned_step(slot: u32, link: Option<CausalLink>) -> PlannedStep {
+        PlannedStep {
+            def_id: ActionDefId(slot),
+            targets: vec![crate::PlanningEntityRef::Authoritative(entity(slot))],
+            target_place: Some(entity(8)),
+            payload_override: None,
+            op_kind: PlannerOpKind::Travel,
+            estimated_ticks: 1,
+            is_materialization_barrier: false,
+            expected_materializations: Vec::new(),
+            guard: link.map(|link| PlanGuard {
+                required_facts: Vec::new(),
+                min_confidence: Permille::new(500).unwrap(),
+                invalidators: Vec::new(),
+                causal_links: vec![link],
+            }),
+            expectations: Vec::new(),
+        }
+    }
+
+    fn cognitive(
+        max_node_expansions: u16,
+        repair_budget_fraction: Permille,
+    ) -> worldwake_core::CognitiveProfile {
+        worldwake_core::CognitiveProfile {
+            max_node_expansions,
+            repair_budget_fraction,
+            ..worldwake_core::CognitiveProfile::default()
+        }
+    }
+
+    fn repair_mismatch() -> MismatchDetail {
+        MismatchDetail::GuardInvalidator(InvalidatorTag::TargetMoved)
     }
 
     fn blocker_memory_for(affordance: AffordanceKey) -> BlockerMemory {
@@ -942,6 +1401,245 @@ mod tests {
             panic!("expected reservation conflict blocker");
         };
         contention_event
+    }
+
+    #[test]
+    fn local_repair_success_emits_repair_applied_and_replaces_plan() {
+        let agent = entity(1);
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let failed = planned_step(11, Some(causal_link(1)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let cognitive = cognitive(4, Permille::new(1000).unwrap());
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive,
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("causal-link invalidator should attempt localized repair");
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+            panic!(
+                "visible discrepancy with a committed prefix should repair to a progress barrier"
+            );
+        };
+        assert_eq!(kind, RepairKind::DowngradeToProgressBarrier);
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            agent,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+        );
+
+        let repaired_plan = runtime
+            .current_plan
+            .as_ref()
+            .expect("repaired plan should stay active");
+        assert_eq!(
+            repaired_plan.terminal_kind,
+            PlanTerminalKind::ProgressBarrier
+        );
+        assert_eq!(repaired_plan.steps, vec![prefix]);
+        assert_eq!(runtime.current_step_index, 1);
+        let events = event_log.events_by_tag(EventTag::RepairApplied);
+        assert_eq!(events.len(), 1);
+        let payload = event_log
+            .get(events[0])
+            .and_then(|event| event.decision_payload())
+            .expect("repair event should carry a payload");
+        assert_eq!(
+            payload,
+            &DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+                agent,
+                goal_key,
+                step_index: 1,
+                repair_kind: RepairKind::DowngradeToProgressBarrier,
+                substitute_target: None,
+                substitute_recipe: None,
+            })
+        );
+    }
+
+    #[test]
+    fn suffix_sourced_local_repair_promotes_candidate_without_duplication() {
+        let agent = entity(1);
+        let goal_key = sample_goal_key();
+        let prefix = planned_step(10, None);
+        let failed = planned_step(11, Some(observed_target_link(1)));
+        let promoted = planned_step(7, Some(observed_target_link(2)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![prefix.clone(), failed.clone(), promoted.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let mut runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let cognitive = cognitive(4, Permille::new(1000).unwrap());
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive,
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("causal-link invalidator should attempt localized repair");
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+            panic!("suffix candidate should repair the invalidated step");
+        };
+        assert_eq!(kind, RepairKind::RebindTarget);
+
+        let mut event_log = EventLog::new();
+        apply_repaired_plan_and_emit(
+            &mut event_log,
+            &mut runtime,
+            Tick(9),
+            agent,
+            goal_key,
+            1,
+            kind,
+            *new_plan,
+        );
+
+        let repaired_plan = runtime
+            .current_plan
+            .as_ref()
+            .expect("repaired plan should stay active");
+        assert_eq!(repaired_plan.steps, vec![prefix, promoted]);
+        assert_eq!(runtime.current_step_index, 1);
+        let events = event_log.events_by_tag(EventTag::RepairApplied);
+        assert_eq!(events.len(), 1);
+        let payload = event_log
+            .get(events[0])
+            .and_then(|event| event.decision_payload())
+            .expect("repair event should carry a payload");
+        assert_eq!(
+            payload,
+            &DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+                agent,
+                goal_key,
+                step_index: 1,
+                repair_kind: RepairKind::RebindTarget,
+                substitute_target: Some(entity(7)),
+                substitute_recipe: None,
+            })
+        );
+    }
+
+    #[test]
+    fn local_repair_failure_records_failed_attempts_in_repair_memory() {
+        let goal_key = sample_goal_key();
+        let failed = planned_step(11, Some(causal_link(1)));
+        let plan = PlannedPlan::new(
+            opportunity(goal_key),
+            goal_key,
+            vec![planned_step(10, None), failed.clone()],
+            PlanTerminalKind::GoalSatisfied,
+        );
+        let runtime = crate::AgentDecisionRuntime {
+            current_plan: Some(plan),
+            current_step_index: 1,
+            ..crate::AgentDecisionRuntime::default()
+        };
+        let cognitive = cognitive(0, Permille::new(1000).unwrap());
+        let outcome = attempt_local_repair_for_invalidated_step(
+            &runtime,
+            &RepairMemory::default(),
+            &cognitive,
+            Tick(9),
+            goal_key,
+            &failed,
+            worldwake_core::PlanInvalidationReason::ExpectationMismatch { step_index: 1 },
+            Some(repair_mismatch()),
+        )
+        .expect("causal-link invalidator should attempt localized repair");
+        let RepairOutcome::Failed { tried } = outcome else {
+            panic!("zero repair budget should fail before a local repair succeeds");
+        };
+        let signature = breach_signature_for_step(goal_key, &failed, Some(repair_mismatch()));
+        let mut repair_memory = RepairMemory::default();
+        record_failed_repair_attempts(&mut repair_memory, signature, &tried, Tick(9), 20);
+
+        assert_eq!(tried.len(), 1);
+        let entry = repair_memory
+            .repairs
+            .get(&BreachSignature {
+                goal_key,
+                invalidator: InvalidatorTag::TargetMoved,
+                step_target: Some(entity(11)),
+            })
+            .expect("failed repair attempt should be recorded");
+        assert_eq!(entry.kind, RepairKind::RebindTarget);
+        assert!(!entry.succeeded);
+        assert_eq!(entry.observed_tick, Tick(9));
+        assert_eq!(entry.expires_tick, Tick(29));
+        assert_eq!(entry.success_count, 0);
+    }
+
+    #[test]
+    fn failed_local_repair_attempt_trace_records_budget_and_rejections() {
+        let goal_key = sample_goal_key();
+        let signature = BreachSignature {
+            goal_key,
+            invalidator: InvalidatorTag::TargetMoved,
+            step_target: Some(entity(11)),
+        };
+        let tried = vec![
+            (
+                RepairKind::RebindTarget,
+                crate::RepairFailure::NoSiblingTargetFound,
+            ),
+            (
+                RepairKind::InsertVerification,
+                crate::RepairFailure::NoEpistemicSubstrate,
+            ),
+            (RepairKind::Abandon, crate::RepairFailure::BudgetExhausted),
+        ];
+        let cognitive = cognitive(12, Permille::new(500).unwrap());
+
+        let trace = repair_attempt_trace_from_failed(signature, &tried, &cognitive);
+
+        assert_eq!(trace.breach, signature);
+        assert_eq!(trace.chosen_kind, None);
+        assert_eq!(trace.rejected, tried);
+        assert_eq!(trace.budget_consumed, 2);
+        assert_eq!(trace.budget_total, 6);
+    }
+
+    #[test]
+    fn successful_local_repair_budget_consumed_includes_chosen_attempt() {
+        let rejected = vec![(
+            RepairKind::RebindTarget,
+            crate::RepairFailure::NoSiblingTargetFound,
+        )];
+
+        assert_eq!(repair_budget_consumed(&rejected, true), 2);
     }
 
     #[test]

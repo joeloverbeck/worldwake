@@ -32,6 +32,7 @@ pub mod belief;
 pub mod belief_claim_key;
 pub mod blocker_memory;
 pub mod canonical;
+pub mod causal_link;
 pub mod cause;
 pub mod cognitive_profile;
 pub mod combat;
@@ -138,6 +139,7 @@ pub use canonical::{
     CanonicalError, StateHash, canonical_bytes, hash_bytes, hash_event_log, hash_serializable,
     hash_world,
 };
+pub use causal_link::{CausalLink, CausalProvider, PlanningFact, RecordTopic};
 pub use cause::CauseRef;
 pub use cognitive_profile::{CognitiveProfile, PortfolioSlotWeights};
 pub use combat::{CombatProfile, CombatStance, DeadAt, DeathCause};
@@ -257,7 +259,7 @@ pub use production::{
 };
 pub use pursuit::PursuitProfile;
 pub use relations::{ArchiveDependency, ArchiveDependencyKind, RelationTables, ReservationRecord};
-pub use repair_memory::{RepairEntry, RepairKey, RepairMemory};
+pub use repair_memory::{BreachSignature, RepairEntry, RepairMemory};
 pub use reward_encumbrance::{RewardEncumbrance, RewardReservation};
 pub use rights::{EffectiveRight, RightKind};
 pub use risk_weight_profile::RiskWeightProfile;

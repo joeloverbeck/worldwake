@@ -86,6 +86,33 @@ def labeled_verification_commands(body: str | None) -> dict[str, set[str]]:
     return commands_by_label
 
 
+def line_number_for_offset(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def draft_matches(text: str, section: str, pattern: re.Pattern[str]) -> list[str]:
+    matches = list(SECTION_RE.finditer(text))
+    for index, match in enumerate(matches):
+        if match.group(1).strip().lower() != section.lower():
+            continue
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        body = text[start:end]
+        results: list[str] = []
+        for draft_match in pattern.finditer(body):
+            absolute = start + draft_match.start()
+            line_no = line_number_for_offset(text, absolute)
+            line_start = text.rfind("\n", 0, absolute) + 1
+            line_end = text.find("\n", absolute)
+            if line_end == -1:
+                line_end = len(text)
+            line = text[line_start:line_end].strip()
+            token = draft_match.group(0)
+            results.append(f"line {line_no} (`{token}`): {line}")
+        return results
+    return []
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_closeout.py <ticket-path>", file=sys.stderr)
@@ -142,14 +169,19 @@ def main() -> int:
         for section in PROOF_SECTIONS:
             body = section_body(text, section)
             if body and PROOF_DRAFT_RE.search(body):
-                warnings.append(f"completed ticket has future/draft wording in ## {section}")
+                details = "; ".join(draft_matches(text, section, PROOF_DRAFT_RE))
+                warnings.append(
+                    f"completed ticket has future/draft wording in ## {section}: {details}"
+                )
 
         for section in NARRATIVE_SECTIONS:
             body = section_body(text, section)
             if body and NARRATIVE_STALE_RE.search(body):
+                details = "; ".join(draft_matches(text, section, NARRATIVE_STALE_RE))
                 warnings.append(
                     f"completed ticket may have stale present/future wording in ## {section}; "
-                    "use result tense or explicit before-this-ticket framing"
+                    "use result tense or explicit before-this-ticket framing: "
+                    + details
                 )
 
     if warnings:

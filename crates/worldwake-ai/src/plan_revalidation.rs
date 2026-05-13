@@ -1774,6 +1774,7 @@ mod tests {
                             },
                         },
                     ],
+                    causal_links: Vec::new(),
                 },
             ),
             &MaterializationBindings::new(),
@@ -1830,6 +1831,7 @@ mod tests {
                             aspect: worldwake_core::EntityBeliefAspect::Location,
                         },
                     }],
+                    causal_links: Vec::new(),
                 },
             ),
             &MaterializationBindings::new(),
@@ -1888,6 +1890,7 @@ mod tests {
                     }],
                     min_confidence: pm(500),
                     invalidators: vec![Invalidator::TargetMoved { target: merchant }],
+                    causal_links: Vec::new(),
                 },
             ),
             &MaterializationBindings::new(),
@@ -1942,6 +1945,7 @@ mod tests {
                             aspect: worldwake_core::EntityBeliefAspect::Location,
                         },
                     }],
+                    causal_links: Vec::new(),
                 },
             ),
             &MaterializationBindings::new(),
@@ -1982,6 +1986,7 @@ mod tests {
                 invalidators: vec![Invalidator::NewBlockerRecorded {
                     baseline_tick: Tick(0),
                 }],
+                causal_links: Vec::new(),
             }),
             expectations: Vec::new(),
         };
@@ -2048,6 +2053,7 @@ mod tests {
                 }],
                 min_confidence: pm(500),
                 invalidators: vec![Invalidator::TargetMoved { target: merchant }],
+                causal_links: Vec::new(),
             },
         );
 

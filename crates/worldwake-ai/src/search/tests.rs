@@ -89,6 +89,8 @@ fn cognitive(reasoning: &ProfileFixture) -> CognitiveProfile {
         detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
         compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
         slot_weights: PortfolioSlotWeights::default(),
+        repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
+        causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
     }
 }
 
@@ -211,6 +213,7 @@ fn build_successor<'snapshot>(
         node,
         candidate,
         recipes,
+        &cognitive(reasoning),
         &execution_budget(reasoning),
         None,
         &super::landmarks::LandmarkSet::empty(),
@@ -324,6 +327,7 @@ fn collect_root_non_terminal_successors_for_tactical_goal<'snapshot>(
             &node,
             &candidate,
             recipes,
+            &CognitiveProfile::default(),
             &budget,
             Some(tactical_goal),
             &super::landmarks::LandmarkSet::empty(),
@@ -10628,6 +10632,7 @@ fn ff_successor_rewrite_preserves_spatial_heuristic_when_it_exceeds_relaxed_plan
         &node,
         move_cargo,
         &recipes,
+        &CognitiveProfile::default(),
         &budget,
         Some(&tactical_goal),
         &super::landmarks::LandmarkSet::empty(),

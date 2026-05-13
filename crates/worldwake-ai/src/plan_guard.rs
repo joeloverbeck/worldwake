@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use worldwake_core::{
-    BeliefClaimKey, CommodityKind, EntityId, EventTag, ObservationPredicate, Permille, Quantity,
-    StatePredicate, Tick,
+    BeliefClaimKey, CausalLink, CommodityKind, EntityId, EventTag, ObservationPredicate, Permille,
+    Quantity, StatePredicate, Tick,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -9,6 +9,8 @@ pub struct PlanGuard {
     pub required_facts: Vec<RequiredFact>,
     pub min_confidence: Permille,
     pub invalidators: Vec<Invalidator>,
+    #[serde(default)]
+    pub causal_links: Vec<CausalLink>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -66,9 +68,11 @@ pub enum ExpectationKind {
 #[cfg(test)]
 mod tests {
     use super::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
+    use serde::Serialize;
     use worldwake_core::{
-        BeliefClaimKey, CommodityKind, EntityBeliefAspect, EntityId, EventTag, EvidenceKind,
-        ExpectationKindTag, ObservationPredicate, Permille, Quantity, StatePredicate, Tick,
+        BeliefClaimKey, CausalLink, CausalProvider, CommodityKind, EntityBeliefAspect, EntityId,
+        EventTag, EvidenceKind, ExpectationKindTag, ObservationPredicate, Permille, PlanningFact,
+        Quantity, StatePredicate, Tick,
     };
 
     fn entity(slot: u32) -> EntityId {
@@ -86,6 +90,26 @@ mod tests {
     }
 
     fn assert_value_bounds<T: Clone + std::fmt::Debug + Eq + PartialEq>() {}
+
+    #[derive(Serialize)]
+    struct LegacyPlanGuard {
+        required_facts: Vec<RequiredFact>,
+        min_confidence: Permille,
+        invalidators: Vec<Invalidator>,
+    }
+
+    fn sample_causal_link() -> CausalLink {
+        CausalLink {
+            provider: CausalProvider::PriorStep { step_index: 1 },
+            fact: PlanningFact::TargetPresent {
+                target: entity(8),
+                at_place: entity(9),
+            },
+            consumer_step_index: 2,
+            source_tick: Tick(3),
+            confidence: Permille::new(650).unwrap(),
+        }
+    }
 
     #[test]
     fn plan_guard_runtime_types_satisfy_required_bounds() {
@@ -119,6 +143,7 @@ mod tests {
                     baseline_tick: Tick(9),
                 },
             ],
+            causal_links: vec![sample_causal_link()],
         };
         let expectation = PlanExpectation {
             kind: ExpectationKind::Informed {
@@ -160,5 +185,45 @@ mod tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn plan_guard_causal_links_default_to_empty_via_serde() {
+        let legacy_guard = LegacyPlanGuard {
+            required_facts: vec![RequiredFact::RouteKnown {
+                from: entity(1),
+                to: entity(2),
+            }],
+            min_confidence: Permille::new(500).unwrap(),
+            invalidators: vec![Invalidator::TargetMoved { target: entity(3) }],
+        };
+        let encoded = ron::to_string(&legacy_guard).unwrap();
+
+        let guard: PlanGuard = ron::from_str(&encoded).unwrap();
+
+        assert_eq!(guard.required_facts, legacy_guard.required_facts);
+        assert_eq!(guard.min_confidence, legacy_guard.min_confidence);
+        assert_eq!(guard.invalidators, legacy_guard.invalidators);
+        assert!(guard.causal_links.is_empty());
+    }
+
+    #[test]
+    fn plan_guard_causal_links_roundtrip_through_bincode() {
+        let guard = PlanGuard {
+            required_facts: vec![RequiredFact::ResourceAccess {
+                resource: entity(10),
+                agent_holds_permission: true,
+            }],
+            min_confidence: Permille::new(800).unwrap(),
+            invalidators: vec![Invalidator::NewBlockerRecorded {
+                baseline_tick: Tick(5),
+            }],
+            causal_links: vec![sample_causal_link()],
+        };
+
+        let bytes = bincode::serialize(&guard).unwrap();
+        let restored: PlanGuard = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(restored, guard);
     }
 }

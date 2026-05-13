@@ -33,6 +33,7 @@ pub mod opportunity_expectation_failure;
 pub mod perf_telemetry;
 pub mod plan_guard;
 pub mod plan_guard_build;
+pub mod plan_repair;
 pub mod plan_revalidation;
 pub mod plan_selection;
 mod plan_step_expectations;
@@ -70,20 +71,21 @@ pub use decision_trace::{
     BanditGoalFamily, BindingRejection, CandidateDampingEntry, CandidateDampingReason,
     CandidateEvidenceContributor, CandidateEvidenceExclusion, CandidateEvidenceExclusionReason,
     CandidateEvidenceKind, CandidateEvidenceTrace, CandidateLegalityTrace, CandidateTrace,
-    CompetitionDiscount, DecisionOutcome, DecisionTraceSink, DesireFullyBlocked,
+    CausalLinkCapHit, CompetitionDiscount, DecisionOutcome, DecisionTraceSink, DesireFullyBlocked,
     ExecutionFailureReason, ExecutionTrace, ExhaustionTraceEntry, GoalHistoryEntry,
     GoalSwitchSummary, GoalTraceStatus, InterruptTrace, PatrolRouteSnapshotTrace,
     PayloadOverrideFailureReason, PlanAttemptTrace, PlanSearchOutcome, PlanSearchTrace,
     PlannedStepSummary, PlanningPipelineTrace, PoliticalCandidateOmission,
     PoliticalCandidateOmissionReason, PoliticalGoalFamily, PrerequisiteExclusionReason,
     PrerequisiteExclusionTrace, PrerequisiteGuidanceTrace, PursuitDiagnostic,
-    PursuitInvalidationReason, PursuitOmissionReason, RankedGoalSummary, RootCandidateFilterReason,
-    RootCandidateOutcome, RootCandidatePayloadStatus, RootCandidateSkipReason, RootCandidateTrace,
-    RootOperatorOmissionDetail, RootOperatorOmissionReason, RootOperatorOmissionTrace,
-    SameGoalPlanningStopReason, SameGoalPlanningTrace, SelectedPlanReplacementKind,
-    SelectedPlanReplacementTrace, SelectedPlanSearchProvenance, SelectedPlanSource,
-    SelectedPlanTrace, SelectionTrace, SnapshotContinuationOutcome, SnapshotContinuationTrace,
-    SocialCandidateOmission, TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
+    PursuitInvalidationReason, PursuitOmissionReason, RankedGoalSummary, RepairAttemptTrace,
+    RootCandidateFilterReason, RootCandidateOutcome, RootCandidatePayloadStatus,
+    RootCandidateSkipReason, RootCandidateTrace, RootOperatorOmissionDetail,
+    RootOperatorOmissionReason, RootOperatorOmissionTrace, SameGoalPlanningStopReason,
+    SameGoalPlanningTrace, SelectedPlanReplacementKind, SelectedPlanReplacementTrace,
+    SelectedPlanSearchProvenance, SelectedPlanSource, SelectedPlanTrace, SelectionTrace,
+    SnapshotContinuationOutcome, SnapshotContinuationTrace, SocialCandidateOmission,
+    TravelPruningTrace, TravelSuccessorTrace, ViolationDetectionOmission,
     ViolationDetectionOmissionReason,
 };
 pub use dirty_set::DirtySet;
@@ -111,7 +113,13 @@ pub use opportunity_expectation_failure::{
     ExpectationFailureCause, ExpectationFailurePhase, OpportunityExpectationFailureIncident,
 };
 pub use plan_guard::{ExpectationKind, Invalidator, PlanExpectation, PlanGuard, RequiredFact};
-pub use plan_guard_build::{build_plan_expectations, build_plan_guard};
+pub use plan_guard_build::{
+    build_plan_expectations, build_plan_guard, build_plan_guard_with_causal_links,
+};
+pub use plan_repair::{
+    PlanRepairContext, RepairFailure, RepairOutcome, RepairPlanCandidate,
+    attempt_repair_then_replan,
+};
 pub use plan_revalidation::{
     RevalidationOutcome, classify_revalidation, is_pursuit_plan_invalid, revalidate_next_step,
 };

@@ -2,7 +2,8 @@ use crate::{
     ActionDefId, BeliefClaimKey, BlockerKey, BlockingFact, CommodityKind, Discrepancy,
     EntityBeliefAspect, EntityId, ExpectationKindTag, FrameAssumption, FrameClearReason, GoalKey,
     HomeostaticNeedId, HypothesisKind, MaterializationTag, MismatchDetail, MotiveSourceRef,
-    OpportunityKey, Permille, SleepRecoveryModifier, SuspensionReason, Tick, WakeCondition,
+    OpportunityKey, Permille, RecipeId, SleepRecoveryModifier, SuspensionReason, Tick,
+    WakeCondition,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -412,14 +413,17 @@ pub struct RepairAppliedPayload {
     pub step_index: u16,
     pub repair_kind: RepairKind,
     pub substitute_target: Option<EntityId>,
+    #[serde(default)]
+    pub substitute_recipe: Option<RecipeId>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum RepairKind {
-    AlternateTarget,
-    AlternateRoute,
-    AlternateMerchant,
-    AlternateRecipe,
+    RebindTarget,
+    ReplaceProvider,
+    InsertVerification,
+    DowngradeToProgressBarrier,
+    Abandon,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -506,7 +510,7 @@ mod tests {
         ActionDefId, BeliefClaimKey, BlockingFact, CommodityKind, Discrepancy, EntityBeliefAspect,
         ExpectationKindTag, FrameAssumption, FrameClearReason, HomeostaticNeedId, HypothesisKind,
         InvalidatorTag, MaterializationTag, MismatchDetail, MotiveSourceRef, ObservationPredicate,
-        OpportunityAnchor, OpportunityKey, SuspensionReason, Tick, WakeCondition,
+        OpportunityAnchor, OpportunityKey, RecipeId, SuspensionReason, Tick, WakeCondition,
         test_utils::{entity_id, sample_blocker_key, sample_goal_key},
     };
     use serde::{Serialize, de::DeserializeOwned};
@@ -702,8 +706,9 @@ mod tests {
                 agent: entity_id(10, 0),
                 goal_key: sample_goal_key(),
                 step_index: 2,
-                repair_kind: RepairKind::AlternateTarget,
+                repair_kind: RepairKind::RebindTarget,
                 substitute_target: Some(entity_id(11, 0)),
+                substitute_recipe: None,
             }),
             DecisionEventPayload::ReplanTriggered(ReplanTriggeredPayload {
                 agent: entity_id(12, 0),
@@ -859,6 +864,24 @@ mod tests {
             let roundtrip: DecisionEventPayload = bincode::deserialize(&bytes).unwrap();
             assert_eq!(roundtrip, payload);
         }
+    }
+
+    #[test]
+    fn repair_applied_payload_substitute_recipe_roundtrips_through_bincode() {
+        let payload = RepairAppliedPayload {
+            agent: entity_id(10, 0),
+            goal_key: sample_goal_key(),
+            step_index: 2,
+            repair_kind: RepairKind::RebindTarget,
+            substitute_target: None,
+            substitute_recipe: Some(RecipeId(7)),
+        };
+
+        let bytes = bincode::serialize(&payload).unwrap();
+        let roundtrip: RepairAppliedPayload = bincode::deserialize(&bytes).unwrap();
+
+        assert_eq!(roundtrip, payload);
+        assert_eq!(roundtrip.substitute_recipe, Some(RecipeId(7)));
     }
 
     #[test]

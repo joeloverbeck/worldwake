@@ -1,7 +1,7 @@
 use crate::{EntityBeliefAspect, EntityId};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct BeliefClaimKey {
     pub subject: EntityId,
     pub aspect: EntityBeliefAspect,
@@ -14,7 +14,10 @@ mod tests {
     use serde::{Serialize, de::DeserializeOwned};
     use std::fmt::Debug;
 
-    fn assert_value_bounds<T: Copy + Clone + Eq + Ord + Debug + Serialize + DeserializeOwned>() {}
+    fn assert_value_bounds<
+        T: Copy + Clone + Eq + Ord + std::hash::Hash + Debug + Serialize + DeserializeOwned,
+    >() {
+    }
 
     #[test]
     fn belief_claim_key_satisfies_required_bounds() {

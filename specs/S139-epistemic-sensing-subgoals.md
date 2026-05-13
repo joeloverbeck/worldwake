@@ -29,7 +29,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 - S109 (Typed Discrepancy Taxonomy) — completed. `Discrepancy::WitnessUnreachable` and `Discrepancy::ContainerInaccessible` join the taxonomy.
 - S110 (Decision History Events) — completed. Existing event tags carry the new goal commits.
 - S59 (Expectation and Obligation Substrate) — completed. `InspectContainer.expectation_id` references existing `ExpectationId`; the inspection result resolves the expectation as fulfilled, mismatched, or unchanged.
-- S137 (Plan Causal Links and Repair) — Phase 11 sibling. Soft dependency: `RepairKind::InsertVerification` splices these goals as repair steps. Order-independent.
+- S137 (Plan Causal Links and Repair) — completed and archived at `archive/specs/S137-plan-causal-links-and-repair.md`. Soft dependency: `RepairKind::InsertVerification` splices these goals as repair steps. Order-independent.
 - S138 (Affordance-to-Opportunity Compiler) — Phase 11 sibling. Soft dependency: opportunities anchored on perceived witnesses/containers feed the new emitters.
 
 ## Design Goals

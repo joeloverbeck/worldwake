@@ -1,9 +1,9 @@
-# Mixed Outcome: Narrow Fix Landed, Broader Golden Still False
+# Mixed Outcome: Narrow Fix Landed, Broader Drafted Ending Still False
 
-Use this branch whenever focused live proof confirms a real narrow production fix inside the ticket's domain, but the drafted higher-level golden/E2E ending still does not hold afterward.
+Use this branch whenever focused live proof confirms a real narrow production fix, staged substrate, or earlier architectural seam inside the ticket's domain, but the drafted broader ending still does not hold afterward. Golden/E2E fallout is one common case; API, routing, integration, or successful-behavior claims can use the same split when a narrower truthful seam lands first.
 
 1. Land the narrow production fix at the strongest honest owning seam.
-2. Stop before adding more exploratory end-to-end proof edits for the drafted broader ending.
+2. Stop before adding more exploratory end-to-end, API, routing, or integration edits for the drafted broader ending.
    Short-lived diagnostic probes are allowed only when needed to isolate the remaining owner or failure seam after the narrow fix lands. Do not keep those probes as part of the final proof surface unless they become the truthful owned seam.
 3. Rewrite the active ticket/spec immediately to the newly proved boundary.
 4. Record the exact still-false higher-level premise and the focused evidence that disproved it.
