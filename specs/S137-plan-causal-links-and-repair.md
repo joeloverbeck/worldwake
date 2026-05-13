@@ -20,7 +20,7 @@ Phase 11: Belief-First Continual Planning Architectural — Draft
 
 ## Crates
 
-- `worldwake-core` — extends `DiscrepancyClearing` (`crates/worldwake-core/src/discrepancy.rs:57-70`) with any new clearing variants the repair search requires beyond the existing five (`TtlExpiry`, `ReobservationOf`, `BeliefUpdate`, `CommodityAvailabilityChanged`, `WorldStructureChange`). Adds `CausalLink`, `CausalProvider`, `PlanningFact`, `RecordTopic`, and `BreachSignature` types. Migrates `RepairKind` (`crates/worldwake-core/src/decision_event_payload.rs:418-423`) from 4 post-hoc-classification variants to 5 search-axis variants. Migrates `RepairMemory` (`crates/worldwake-core/src/repair_memory.rs:19-22`) from `BTreeMap<RepairKey, RepairEntry>` to `BTreeMap<BreachSignature, RepairEntry>` with discriminated success/failure recording. Extends `RepairAppliedPayload` with a `substitute_recipe: Option<RecipeId>` field so the rebinding alternative is preserved through the variant merge. Extends `CognitiveProfile` (`crates/worldwake-core/src/cognitive_profile.rs:23-114`) with `repair_budget_fraction: Permille` and `causal_links_per_step_cap: u8`, both with `#[serde(default)]` and updated `Default` impl.
+- `worldwake-core` — extends `DiscrepancyClearing` (`crates/worldwake-core/src/discrepancy.rs:57-70`) with any new clearing variants the repair search requires beyond the existing five (`TtlExpiry`, `ReobservationOf`, `BeliefUpdate`, `CommodityAvailabilityChanged`, `WorldStructureChange`). Adds `CausalLink`, `CausalProvider`, `PlanningFact`, `RecordTopic`, and `BreachSignature` types. Migrates `RepairKind` (`crates/worldwake-core/src/decision_event_payload.rs:418-423`) from 4 post-hoc-classification variants to 5 search-axis variants. Migrates `RepairMemory` (`crates/worldwake-core/src/repair_memory.rs:19-22`) from `BTreeMap<RepairKey, RepairEntry>` to `BTreeMap<BreachSignature, RepairEntry>` with discriminated success/failure recording. Extends `RepairAppliedPayload` with a `substitute_recipe: Option<RecipeId>` field so the rebinding alternative is preserved through the variant merge. Extends `CognitiveProfile` (`crates/worldwake-core/src/cognitive_profile.rs:23-114`) with `repair_budget_fraction: Permille` and `causal_links_per_step_cap: u8`, both with `#[serde(default)]` for scenario/text-serde omission and updated `Default` impl. Because `CognitiveProfile` is persisted component state, ticket 002 bumps `SAVE_FORMAT_VERSION` `79→80`; later S137 persisted-shape tickets continue the version chain.
 - `worldwake-ai` — extends `PlanGuard` (`crates/worldwake-ai/src/plan_guard.rs:8`) to carry `causal_links: Vec<CausalLink>` per plan step (capped by `CognitiveProfile.causal_links_per_step_cap`). Adds `plan_repair` module owning `PlanRepairContext`, `RepairAttempt`, and the bounded repair search. `agent_tick/execution.rs:90-146` and `plan_revalidation.rs` route invalidator breaches through `attempt_repair_then_replan` instead of falling straight through to `handle_current_step_failure`. The existing post-hoc `classify_accepted_repair` at `planning.rs:1452-1526` is preserved as the fall-through case for the full-replan branch but is no longer the primary repair surface. The existing `pending_repair_context` on `AgentDecisionRuntime` is reused by the new pre-failure repair path. `decision_trace.rs` adds `RepairAttemptTrace`.
 - `worldwake-sim` — no change. Repair search is internal to the AI crate; calls to `apply_effects_with_context` (`crates/worldwake-sim/src/effect_schema.rs`) use the existing shared-service surface (FND-26).
 - `worldwake-cli` — observer Section 3b (`crates/worldwake-cli/src/bin/observer.rs:828` `render_decision_history_section`) renders the chosen `RepairKind` and the rejected alternatives. Migration of the 20 `RepairKind::*` call sites includes observer and scenario test references.
@@ -254,7 +254,7 @@ pub struct RepairAppliedPayload {
     pub step_index: u16,
     pub repair_kind: RepairKind,
     pub substitute_target: Option<EntityId>,
-    pub substitute_recipe: Option<RecipeId>,    // NEW; #[serde(default)] for save/replay compatibility
+    pub substitute_recipe: Option<RecipeId>,    // NEW; #[serde(default)] for omitted-field serde payloads; save files still version-bump
 }
 ```
 
@@ -291,7 +291,7 @@ fn default_repair_budget_fraction() -> Permille { Permille::new_unchecked(250) }
 fn default_causal_links_per_step_cap() -> u8 { 8 }
 ```
 
-`Default` impl at `cognitive_profile.rs:117-155` is updated. AgentDef at `crates/worldwake-cli/src/scenario/types.rs:593` carries `cognitive_profile: Option<CognitiveProfile>` and continues to deserialize existing scenarios cleanly because both new fields have `#[serde(default)]`. Per FND-22, repair budget is per-agent: a panicked, wounded agent might have lower repair budget; a rested strategist higher.
+`Default` impl at `cognitive_profile.rs:117-155` is updated. AgentDef at `crates/worldwake-cli/src/scenario/types.rs:593` carries `cognitive_profile: Option<CognitiveProfile>` and continues to deserialize existing scenarios cleanly because both new fields have `#[serde(default)]`. Saved bincode state is not back-compatible; ticket 002 bumps the current save format to `80` so pre-80 saves remain rejected at the version gate. Per FND-22, repair budget is per-agent: a panicked, wounded agent might have lower repair budget; a rested strategist higher.
 
 ### D12. Observer Section 3b extension
 
@@ -325,7 +325,7 @@ No new `SystemFn`. Repair runs within the existing `agent_tick` system at the re
 ## Component Registration
 
 - `RepairMemory` — already registered (S109) at `crates/worldwake-core/src/component_schema.rs:784-802`. Field-shape migration (D7) preserves the registration; bincode-roundtrip tests in `repair_memory.rs:97-115` update to the new shape.
-- `CognitiveProfile` — already registered at `component_schema.rs:1009-1027`. New fields (D11) deserialize cleanly via `#[serde(default)]`.
+- `CognitiveProfile` — already registered at `component_schema.rs:1009-1027`. New fields (D11) deserialize cleanly from scenario/text-serde inputs via `#[serde(default)]`; save/load uses the current-format version bump rather than a legacy bincode shim.
 - `CausalLink`, `CausalProvider`, `PlanningFact`, `RecordTopic`, `BreachSignature` — payload types on existing components and events, not standalone components.
 - `DiscrepancyClearing` extension (D1, conditional) — variant addition to an existing enum; no new registration.
 
@@ -343,7 +343,7 @@ No direct cross-system calls (FND-26). `apply_effects_with_context` is a shared-
 - `repair_budget_fraction: Permille` — default `Permille::new_unchecked(250)` (25% of `max_node_expansions`).
 - `causal_links_per_step_cap: u8` — default 8 (cap on `PlanGuard.causal_links` length).
 
-Both have `#[serde(default)]` for save/replay compatibility. Per FND-22, both are per-agent: an attention-impaired agent might have a smaller causal-link cap (records fewer dependencies, repairs less precisely); a rested strategist may have a larger budget.
+Both have `#[serde(default)]` for scenario/text-serde omitted-field tolerance. Because the profile is persisted component state, save/replay compatibility is handled by advancing `SAVE_FORMAT_VERSION` and rejecting older versions rather than adding a migration shim. Per FND-22, both are per-agent: an attention-impaired agent might have a smaller causal-link cap (records fewer dependencies, repairs less precisely); a rested strategist may have a larger budget.
 
 ## Authoritative-to-AI Checklist
 

@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `RepairMemory` shape, save-load, removal of `RepairKey`
-**Deps**: archive/tickets/S137PLACAULIN-001.md (BreachSignature), 003 (new RepairKind variants populated in RepairEntry)
+**Deps**: archive/tickets/S137PLACAULIN-001.md (BreachSignature), 003 (new RepairKind variants populated in RepairEntry), 004 (save-format baseline if it lands before this ticket)
 
 ## Problem
 
@@ -17,7 +17,7 @@ S137 D7 migrates `RepairMemory.repairs` from `BTreeMap<RepairKey, RepairEntry>` 
 1. `RepairMemory` is defined at `crates/worldwake-core/src/repair_memory.rs:19-22` as `BTreeMap<RepairKey, RepairEntry>` with `success_count: u32` on `RepairEntry`. `RepairKey { goal_key, alternate_target: EntityId }` at lines 5-9; `RepairEntry { repair_key, observed_tick, expires_tick, success_count }` at lines 11-17. Component registration at `crates/worldwake-core/src/component_schema.rs:784-802`. Existing `#[cfg(test)]` tests at lines 55-202 cover bincode roundtrip, `record`, `expire`, `enforce_capacity`. Three test fixtures use `RepairKey` — must be migrated to `BreachSignature` keys.
 2. Spec `specs/S137-plan-causal-links-and-repair.md` D7 specifies the new shape including `kind: RepairKind`, `succeeded: bool`, preserved `success_count: u32` field for FND-22A compatibility. `BreachSignature` landed in `archive/tickets/S137PLACAULIN-001.md`. New `RepairKind` variant set lands in ticket 003.
 3. Shared boundary: the `RepairMemory` component state surface. Reads from `crates/worldwake-ai/src/agent_tick/planning.rs` and `crates/worldwake-ai/src/agent_tick/mod.rs` (record-write sites). After migration, `RepairKey` is removed entirely (FND-28) — every site referencing the type updates.
-4. **Save-format bump cascade**: `SAVE_FORMAT_VERSION` advances `80→81` (ticket 003 bumps `79→80`). Pre-`81` `RepairMemory` byte streams cannot deserialize because the BTreeMap key type changes. Per the FND-28 single-truth invariant, no migration logic is written — the bump signals the format change.
+4. **Save-format bump cascade**: `SAVE_FORMAT_VERSION` advances from the then-current S137 baseline after tickets 002/003/004. If those tickets land in numeric order, this ticket advances `82→83`. Pre-`83` `RepairMemory` byte streams cannot deserialize because the BTreeMap key type changes. Per the FND-28 single-truth invariant, no migration logic is written — the bump signals the format change.
 5. **Adjacent contradiction classification**: removing `RepairKey` requires updating every `RepairKey::` construction or pattern-match site. Grep `rg "RepairKey" crates/` workspace-wide before implementation to enumerate the blast radius. Per current grep, sites are mostly internal to `repair_memory.rs` plus the few `record()` callers in `agent_tick/`. Classified as a required consequence per Divergence Protocol — not deferred.
 
 ## Architecture Check
@@ -28,7 +28,7 @@ S137 D7 migrates `RepairMemory.repairs` from `BTreeMap<RepairKey, RepairEntry>` 
 ## Verification Layers
 
 1. New shape + key migration → focused unit tests in `repair_memory.rs` `#[cfg(test)]` (bincode roundtrip with `BreachSignature`-keyed entries; `record`, `expire`, `enforce_capacity` against new shape).
-2. Save-load version bump → focused unit test in `save_load.rs` asserting `SAVE_FORMAT_VERSION == 81` and that pre-`81` `RepairMemory` payloads fail with `UnsupportedVersion`.
+2. Save-load version bump → focused unit test in `save_load.rs` asserting the next current `SAVE_FORMAT_VERSION` (expected `83` if tickets 002-004 landed in numeric order) and that prior-version `RepairMemory` payloads fail with `UnsupportedVersion`.
 3. Cross-crate blast radius → workspace-build assertion (`cargo build --workspace`) confirms all `RepairKey` consumers updated.
 
 ## What to Change
@@ -86,13 +86,13 @@ Grep `rg "RepairKey" crates/` and enumerate every site. Each site that construct
 
 ### 6. SAVE_FORMAT_VERSION bump
 
-In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from `80` (set by ticket 003) to `81`. Update load-current-format match.
+In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from the then-current S137 baseline to the next value. If tickets 002-004 landed in numeric order, this is expected to be `82→83`. Update load-current-format match.
 
 ## Files to Touch
 
 - `crates/worldwake-core/src/repair_memory.rs` (modify — types + methods + tests)
 - `crates/worldwake-core/src/lib.rs` (modify — remove `RepairKey` re-export)
-- `crates/worldwake-sim/src/save_load.rs` (modify — version bump 80→81)
+- `crates/worldwake-sim/src/save_load.rs` (modify — version bump from the then-current S137 baseline; expected 82→83 after tickets 002-004)
 - Likely: `crates/worldwake-ai/src/agent_tick/planning.rs` (modify — `record` callers using legacy `RepairKey`; grep `RepairKey::` to confirm site list)
 - Likely: `crates/worldwake-ai/src/agent_tick/mod.rs` (modify — `record` callers; grep `RepairKey::` to confirm)
 
@@ -101,14 +101,14 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from `8
 - The repair search reading `repairs.get(&signature)` to skip failed kinds — ticket 006.
 - New `RepairKind` variant set used in `RepairEntry.kind` — already landed in ticket 003.
 - `BreachSignature` definition — already landed in `archive/tickets/S137PLACAULIN-001.md`.
-- Migration logic for pre-`81` byte streams — none written (FND-28: no backward compatibility); the bump rejects legacy streams.
+- Migration logic for prior-version byte streams — none written (FND-28: no backward compatibility); the bump rejects legacy streams.
 
 ## Acceptance Criteria
 
 ### Tests That Must Pass
 
 1. `cargo test -p worldwake-core repair_memory` — all existing tests pass with `BreachSignature` keys.
-2. `cargo test -p worldwake-sim save_load` — `SAVE_FORMAT_VERSION == 81`; legacy fixture rejection.
+2. `cargo test -p worldwake-sim save_load` — `SAVE_FORMAT_VERSION` has the next current value; legacy fixture rejection.
 3. `cargo test --workspace` — workspace builds; all `RepairKey` references removed.
 4. Existing suite: `cargo clippy --workspace --all-targets -- -D warnings`.
 
@@ -116,7 +116,7 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from `8
 
 1. `RepairKey` does not exist anywhere in `crates/` after this ticket — `rg "RepairKey" crates/` returns 0 matches (excluding archived files).
 2. `RepairMemory.repairs` is keyed by `BreachSignature`.
-3. `SAVE_FORMAT_VERSION == 81`; pre-`81` `RepairMemory` byte streams fail with `UnsupportedVersion`.
+3. `SAVE_FORMAT_VERSION` has the next current value; prior-version `RepairMemory` byte streams fail with `UnsupportedVersion`.
 4. `RepairEntry.success_count` is preserved for FND-22A habit-strength semantics.
 
 ## Test Plan
@@ -124,7 +124,7 @@ In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from `8
 ### New/Modified Tests
 
 1. `crates/worldwake-core/src/repair_memory.rs` `#[cfg(test)]` — all 6 existing tests migrated to `BreachSignature`-keyed construction; new test `repair_entry_carries_kind_and_succeeded` asserting the new fields roundtrip through bincode.
-2. `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` — new test `save_format_version_is_81_after_repair_memory_migration`.
+2. `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` — new test named for the actual current version after repair memory migration, expected `save_format_version_is_83_after_repair_memory_migration` if tickets 002-004 landed in numeric order.
 
 ### Commands
 

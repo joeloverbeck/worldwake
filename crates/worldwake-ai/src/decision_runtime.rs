@@ -458,6 +458,8 @@ mod tests {
             detour_budget_permille: CognitiveProfile::default().detour_budget_permille,
             compile_opportunity_cap: CognitiveProfile::default().compile_opportunity_cap,
             slot_weights: worldwake_core::PortfolioSlotWeights::default(),
+            repair_budget_fraction: CognitiveProfile::default().repair_budget_fraction,
+            causal_links_per_step_cap: CognitiveProfile::default().causal_links_per_step_cap,
         }
     }
 

@@ -112,6 +112,12 @@ pub struct CognitiveProfile {
     /// Relative slot weights for portfolio candidate ordering.
     #[serde(default)]
     pub slot_weights: PortfolioSlotWeights,
+    /// Fraction of max node expansions available to localized plan repair.
+    #[serde(default = "default_repair_budget_fraction")]
+    pub repair_budget_fraction: Permille,
+    /// Maximum causal links retained per guarded plan step.
+    #[serde(default = "default_causal_links_per_step_cap")]
+    pub causal_links_per_step_cap: u8,
 }
 
 impl Default for CognitiveProfile {
@@ -150,6 +156,8 @@ impl Default for CognitiveProfile {
             detour_budget_permille: default_detour_budget_permille(),
             compile_opportunity_cap: default_compile_opportunity_cap(),
             slot_weights: PortfolioSlotWeights::default(),
+            repair_budget_fraction: default_repair_budget_fraction(),
+            causal_links_per_step_cap: default_causal_links_per_step_cap(),
         }
     }
 }
@@ -174,6 +182,14 @@ const fn default_detour_budget_permille() -> Permille {
 
 const fn default_compile_opportunity_cap() -> u16 {
     16
+}
+
+const fn default_repair_budget_fraction() -> Permille {
+    Permille::new_unchecked(250)
+}
+
+const fn default_causal_links_per_step_cap() -> u8 {
+    8
 }
 
 const fn default_stale_belief_backoff_ticks() -> u32 {
@@ -304,6 +320,11 @@ mod tests {
         );
         assert_eq!(profile.compile_opportunity_cap, 16);
         assert_eq!(profile.slot_weights, PortfolioSlotWeights::default());
+        assert_eq!(
+            profile.repair_budget_fraction,
+            crate::Permille::new(250).unwrap()
+        );
+        assert_eq!(profile.causal_links_per_step_cap, 8);
     }
 
     #[test]
@@ -346,6 +367,8 @@ mod tests {
                 commitment: crate::Permille::new(800).unwrap(),
                 economic: crate::Permille::new(650).unwrap(),
             },
+            repair_budget_fraction: crate::Permille::new(375).unwrap(),
+            causal_links_per_step_cap: 12,
         };
 
         let bytes = bincode::serialize(&profile).unwrap();
@@ -425,6 +448,37 @@ mod tests {
         assert_eq!(
             profile.compile_opportunity_cap,
             super::default_compile_opportunity_cap()
+        );
+    }
+
+    #[test]
+    fn cognitive_profile_deserialization_defaults_repair_budget_fields() {
+        let serialized = to_string_pretty(
+            &CognitiveProfile {
+                repair_budget_fraction: crate::Permille::new(375).unwrap(),
+                causal_links_per_step_cap: 12,
+                ..CognitiveProfile::default()
+            },
+            PrettyConfig::default(),
+        )
+        .unwrap();
+        let without_fields = serialized
+            .lines()
+            .filter(|line| {
+                !line.contains("repair_budget_fraction")
+                    && !line.contains("causal_links_per_step_cap")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let profile: CognitiveProfile = from_str(&without_fields).unwrap();
+
+        assert_eq!(
+            profile.repair_budget_fraction,
+            super::default_repair_budget_fraction()
+        );
+        assert_eq!(
+            profile.causal_links_per_step_cap,
+            super::default_causal_links_per_step_cap()
         );
     }
 

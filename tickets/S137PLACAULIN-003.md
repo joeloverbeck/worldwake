@@ -15,7 +15,7 @@ S137 D8 migrates `RepairKind` from 4 post-hoc-classification variants (`Alternat
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `RepairKind` is defined at `crates/worldwake-core/src/decision_event_payload.rs:418-423` with 4 variants. `RepairAppliedPayload` at lines 409-415 carries `repair_kind: RepairKind` and `substitute_target: Option<EntityId>` but no `substitute_recipe`. Existing tests covering the legacy 4-variant emission live in `crates/worldwake-ai/src/agent_tick/planning.rs` `#[cfg(test)]` (boundary at line 2571): `classify_accepted_repair_prefers_alternate_merchant_over_anchor_change:3354`, `classify_accepted_repair_detects_alternate_recipe_for_same_output:3397`, `classify_accepted_repair_detects_alternate_route_for_same_anchor:3461`. Additional construction sites in `agent_tick/tests.rs` lines 8882, 8926, 8946, 8962, 8977, 8993, 9006, 9022 (all in `#[cfg(test)]`).
-2. Spec `specs/S137-plan-causal-links-and-repair.md` D8 enumerates all 20 call sites with the variant mapping table and the `substitute_recipe` field addition. `SAVE_FORMAT_VERSION` currently `79` (`crates/worldwake-sim/src/save_load.rs:6`) — bump to `80` required because the variant rename changes serialized representation (no `#[serde(rename)]` shim, per FND-28).
+2. Spec `specs/S137-plan-causal-links-and-repair.md` D8 enumerates all 20 call sites with the variant mapping table and the `substitute_recipe` field addition. `SAVE_FORMAT_VERSION` is `80` after S137PLACAULIN-002 — bump to `81` required because the variant rename changes serialized representation (no `#[serde(rename)]` shim, per FND-28).
 3. Shared boundary: the `RepairKind` enum surface across crates. Per `references/worldwake-validation-patterns.md` Existing Variant Payload Widening, the payload field addition + enum rename must land atomically across all 20 sites; intermediate workspace states fail to compile because pattern-match arms reference renamed variants.
 4. **Equality-check semantics shift at `agent_tick/mod.rs:2375`**: the line currently reads `if accepted_repair.repair_kind == RepairKind::AlternateTarget`. After migration, `RebindTarget` covers anchor-change + merchant-change + recipe-change cases. The check's original semantic (anchor change specifically) must be preserved by inspecting `substitute_target.is_some()` together with absence of `substitute_recipe`. Implementer reassessment must read the surrounding code to determine the correct disambiguator predicate.
 5. **Adjacent contradictions**: the post-hoc classifier `classify_accepted_repair` (planning.rs:1452-1526) currently emits one of the four legacy variants based on which axis differs between failed and selected plans. After migration: AlternateTarget/Merchant/Recipe branches all emit `RebindTarget` with appropriate `substitute_target`/`substitute_recipe`; AlternateRoute branch emits `ReplaceProvider`. The 3 new variants (`InsertVerification`, `DowngradeToProgressBarrier`, `Abandon`) have no emission sites in this ticket — they are forward declarations awaiting ticket 006's `plan_repair` module. Forward-declared variants are not "dead code" because they have a declared semantic and a near-term emission site; classified as required consequence per Divergence Protocol.
@@ -29,7 +29,7 @@ S137 D8 migrates `RepairKind` from 4 post-hoc-classification variants (`Alternat
 
 1. Enum variant set + payload shape → focused unit tests (`RepairKind` variant count, `RepairAppliedPayload` field bincode roundtrip).
 2. `classify_accepted_repair` mapping → existing planning.rs tests (updated to assert new variants).
-3. Save-load version handling → focused unit test in `save_load.rs` asserting `SAVE_FORMAT_VERSION == 80` and that legacy fixtures fail with the expected `UnsupportedVersion` error rather than silently misdeserializing.
+3. Save-load version handling → focused unit test in `save_load.rs` asserting `SAVE_FORMAT_VERSION == 81` and that legacy fixtures fail with the expected `UnsupportedVersion` error rather than silently misdeserializing.
 4. Equality-check semantic preservation at `agent_tick/mod.rs:2375` → focused runtime coverage in `agent_tick/tests.rs` asserting the original anchor-change-specific predicate still holds when only anchor differs vs. when merchant/recipe also differ.
 
 ## What to Change
@@ -77,7 +77,7 @@ pub struct RepairAppliedPayload {
 }
 ```
 
-`#[serde(default)]` allows pre-bump saves to deserialize even though the file format bumps overall.
+`#[serde(default)]` keeps omitted-field serde payloads lawful; save files still use the bumped current-format version and older versions remain rejected.
 
 ### 3. `classify_accepted_repair` mapping update
 
@@ -94,7 +94,7 @@ Read the surrounding code to determine the predicate's original intent (likely a
 
 ### 5. SAVE_FORMAT_VERSION bump
 
-In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from `79` to `80`. Update the load-current-format match at line 129 to reference `80`.
+In `crates/worldwake-sim/src/save_load.rs:6`, bump `SAVE_FORMAT_VERSION` from `80` to `81`. Update the load-current-format match at line 129 to reference `81`.
 
 ### 6. Test updates
 
@@ -137,7 +137,7 @@ Update the 3 existing `classify_accepted_repair_*` tests at planning.rs:3354, 33
 ### Invariants
 
 1. Exactly 20 call sites migrated; no legacy variant names (`AlternateTarget`, `AlternateMerchant`, `AlternateRecipe`, `AlternateRoute`) remain anywhere in `crates/` after this ticket.
-2. `SAVE_FORMAT_VERSION` is `80`; pre-`80` byte streams fail with `UnsupportedVersion`.
+2. `SAVE_FORMAT_VERSION` is `81`; pre-`81` byte streams fail with `UnsupportedVersion`.
 3. `classify_accepted_repair` emits `RebindTarget` for legacy target/merchant/recipe inputs and `ReplaceProvider` for route inputs.
 4. `RepairAppliedPayload.substitute_recipe` carries `Some(_)` exactly when the legacy `AlternateRecipe` branch fires.
 
@@ -146,7 +146,7 @@ Update the 3 existing `classify_accepted_repair_*` tests at planning.rs:3354, 33
 ### New/Modified Tests
 
 1. `crates/worldwake-ai/src/agent_tick/planning.rs` — modify `classify_accepted_repair_prefers_alternate_merchant_over_anchor_change`, `classify_accepted_repair_detects_alternate_recipe_for_same_output`, `classify_accepted_repair_detects_alternate_route_for_same_anchor` for new variants.
-2. `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` — new test `save_format_version_is_80_after_repair_kind_migration` asserting the constant value and that a synthetic pre-`80` payload rejects with `UnsupportedVersion`.
+2. `crates/worldwake-sim/src/save_load.rs` `#[cfg(test)]` — new test `save_format_version_is_81_after_repair_kind_migration` asserting the constant value and that a synthetic pre-`81` payload rejects with `UnsupportedVersion`.
 3. `crates/worldwake-core/src/decision_event_payload.rs` `#[cfg(test)]` — new test `repair_applied_payload_substitute_recipe_roundtrips_through_bincode`.
 
 ### Commands
@@ -156,4 +156,4 @@ Update the 3 existing `classify_accepted_repair_*` tests at planning.rs:3354, 33
 3. `cargo test --workspace`
 4. `cargo clippy --workspace --all-targets -- -D warnings`
 
-Merge note: Ticket 003 bumps `SAVE_FORMAT_VERSION 79→80`; Ticket 005 will cascade `80→81` (see Step 6 Merge-Order Constraints).
+Merge note: Ticket 002 bumps `SAVE_FORMAT_VERSION 79→80`; ticket 003 bumps `80→81`; ticket 004 is expected to bump the next current-format value for `PlanGuard.causal_links`; ticket 005 cascades after that (see Step 6 Merge-Order Constraints).
