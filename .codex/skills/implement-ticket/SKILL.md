@@ -250,7 +250,7 @@ Use `references/verification.md` for focused selector rules, exact-test pitfalls
 
 If repo guidance or the active verification contract requires `cargo fmt --all`, run it, then immediately inspect `git status --short` and classify any formatter spillover in already-dirty files as unrelated or adjacent fallout unless the current ticket truly owns those paths. Record that spillover explicitly in closeout rather than silently attributing the formatted files to the ticket.
 
-When a tooling or CI-script ticket needs a deliberate negative probe and the owned contract is that a whole script fails at a new late-added gate, let the full script run and record the exact failing step/message instead of short-circuiting through a narrower surrogate. Pair that probe with cleanup-safe restoration so the worktree returns to its pre-probe state before closeout.
+When a tooling or CI-script ticket needs a deliberate negative probe and the owned contract is that a whole script fails at a new late-added gate, let the full script run and record the exact failing step/message instead of short-circuiting through a narrower surrogate. Pair that probe with cleanup-safe restoration so the worktree returns to its pre-probe state before closeout. For grep/path lints, prefer a temporary mirror outside the repo (for example under `/tmp`) that preserves the searched relative path, copy or invoke the script there, and remove probe files afterward so no real source file needs a synthetic violation.
 
 #### Focused vs. broadened scope isolation
 

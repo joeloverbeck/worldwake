@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None (test infrastructure only; new golden + doctest)
-**Deps**: archive/tickets/S143STABELVIE-002.md, archive/tickets/S143STABELVIE-003.md, archive/tickets/S143STABELVIE-004.md
+**Deps**: archive/tickets/S143STABELVIE-002.md, archive/tickets/S143STABELVIE-003.md, archive/tickets/S143STABELVIE-004.md, archive/tickets/S143STABELVIE-005.md
 
 ## Problem
 
