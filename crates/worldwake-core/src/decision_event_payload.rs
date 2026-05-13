@@ -125,6 +125,7 @@ pub enum EmitterTag {
     Exploration,
     ProactiveExploration,
     ExpectationViolation,
+    EpistemicSensing,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -144,6 +145,7 @@ pub enum EvidenceKindTag {
     PatrolRoute,
     EnterpriseState,
     LearnedOpportunity,
+    TestimonyProvenance,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
