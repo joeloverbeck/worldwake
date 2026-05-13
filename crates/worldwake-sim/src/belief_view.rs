@@ -907,6 +907,23 @@ pub trait BelievedAuthorityView {
     }
 }
 
+/// Debug/observer access to authoritative world state.
+///
+/// `DebugWorldView` is deliberately outside the runtime belief-view trait
+/// composition. Planner-facing code may read through `RuntimeBeliefView`, but
+/// adding debug-world methods to that surface would pierce the FND-14A wall.
+///
+/// ```compile_fail
+/// use worldwake_core::EntityId;
+/// use worldwake_sim::{DebugWorldView, RuntimeBeliefView};
+///
+/// fn debug_read_from_runtime_view<T: RuntimeBeliefView + ?Sized>(
+///     view: &T,
+///     entity: EntityId,
+/// ) {
+///     let _ = view.world_owner_of(entity);
+/// }
+/// ```
 #[cfg(any(debug_assertions, test))]
 pub trait DebugWorldView {
     fn world_entity_state(&self, entity: EntityId) -> worldwake_core::EntityState;

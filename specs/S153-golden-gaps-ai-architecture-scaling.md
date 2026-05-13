@@ -4,13 +4,15 @@
 
 ## Summary
 
-PR-15 (Adversarial regression scenarios) from `reports/ai-architecture-improvements.md` lists eight adversarial scenario patterns the architecture should produce but currently lacks golden coverage for. The triage scope-down narrows this spec to four patterns where Phase 12's other accepted specs provide the substrate to make the goldens meaningful: belief-wall trap (regression for S143's trait separation), false rumor justice (regression for S151's testimony reliability), office vacancy → patrol gap (regression for S148's portfolio expansion exercising obligation/duty slots under stress), scaled contention (regression for S150's cross-goal blocker scoping under realistic resource pressure).
+PR-15 (Adversarial regression scenarios) from `reports/ai-architecture-improvements.md` lists eight adversarial scenario patterns the architecture should produce but currently lacks golden coverage for. The triage scope-down originally narrowed this spec to four patterns where Phase 12's other accepted specs provide the substrate to make the goldens meaningful: belief-wall trap (regression for S143's trait separation), false rumor justice (regression for S151's testimony reliability), office vacancy → patrol gap (regression for S148's portfolio expansion exercising obligation/duty slots under stress), scaled contention (regression for S150's cross-goal blocker scoping under realistic resource pressure).
+
+Status update (2026-05-13): `archive/tickets/S143STABELVIE-006.md` landed the belief-wall trap regression as `crates/worldwake-ai/tests/golden_belief_wall_trap.rs` with inline harness construction rather than a RON scenario. S153's remaining active scope is therefore the three not-yet-landed adversarial patterns: false rumor justice, office vacancy → patrol gap, and scaled contention.
 
 Four scenarios deferred until substrate ships: 100-goal dense market (needs S144 diagnostics to verify behavior at scale); 20-agent route bottleneck (needs S147 HTN methods for caravan/escort decomposition); long production chain (4+ prereqs) (covered after S146 GoalSchema per-goal budgets land); boundary shock (covered by Phase 7's planned S62 + S64).
 
-Each shipped scenario block follows the project's golden-gaps convention: per-scenario Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." Scenarios are committed RON files (`scenarios/golden-*.ron`) plus golden test files (`crates/worldwake-ai/tests/golden_*.rs`) — same shape as archived `S81-golden-gaps-simulation-remediation.md` and `S76-golden-gaps-simulation-observer.md`.
+Each remaining S153 scenario block follows the project's golden-gaps convention: per-scenario Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." The remaining scenarios are committed RON files (`scenarios/golden-*.ron`) plus golden test files (`crates/worldwake-ai/tests/golden_*.rs`) — same shape as archived `S81-golden-gaps-simulation-remediation.md` and `S76-golden-gaps-simulation-observer.md`.
 
-This spec is the final wave of Phase 12: it validates the other accepted specs by exercising them under adversarial conditions. Failures in S153 goldens diagnose regressions in S143, S148, S150, S151 directly.
+This spec is the final wave of Phase 12: it validates the other accepted specs by exercising them under adversarial conditions. After S143STABELVIE-006, the remaining S153 goldens diagnose regressions in S148, S150, and S151 directly; the S143 belief-wall regression is covered by the landed S143 golden.
 
 ## Phase and Status
 
@@ -18,13 +20,13 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Crates
 
-- `worldwake-ai` — owns the new golden test files (`golden_belief_wall_trap.rs`, `golden_false_rumor_justice.rs`, `golden_office_vacancy.rs`, `golden_scaled_contention.rs`).
-- `worldwake-cli` — owns the supporting RON scenario files (`scenarios/golden-belief-wall-trap.ron`, etc.) and the golden-harness assertions.
+- `worldwake-ai` — owns the remaining new golden test files (`golden_false_rumor_justice.rs`, `golden_office_vacancy.rs`, `golden_scaled_contention.rs`). `golden_belief_wall_trap.rs` already landed under S143STABELVIE-006.
+- `worldwake-cli` — owns the remaining supporting RON scenario files (`scenarios/golden-false-rumor-justice.ron`, etc.) and the golden-harness assertions.
 - Other crates: no source change.
 
 ## Dependencies
 
-- S143 (Static Belief-View Trait Separation, Phase 12) — provides the trait fences the belief-wall trap golden exercises.
+- S143 (Static Belief-View Trait Separation, Phase 12, archived at `archive/specs/S143-static-belief-view-trait-separation.md`) — provides the trait fences the belief-wall trap golden exercises; `S143STABELVIE-006` already landed that regression.
 - S148 (Portfolio Slot Expansion, Phase 12) — provides the seven-slot portfolio the office-vacancy golden exercises.
 - S150 (Cross-Goal Blocker Scoping, Phase 12) — provides the typed scopes the scaled-contention golden checks.
 - S151 (Testimony Reliability and Route Preferences, Phase 12) — provides the testimony substrate the false-rumor-justice golden exercises.
@@ -33,7 +35,7 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Design Goals
 
-1. **Each golden block proves one architectural claim.** Belief-wall trap proves trait separation. False-rumor justice proves testimony reliability. Office-vacancy proves portfolio breadth under obligation pressure. Scaled-contention proves cross-goal blocker scoping.
+1. **Each golden block proves one architectural claim.** Belief-wall trap proves trait separation and is already covered by S143STABELVIE-006. False-rumor justice proves testimony reliability. Office-vacancy proves portfolio breadth under obligation pressure. Scaled-contention proves cross-goal blocker scoping.
 2. **Scenarios use only authored profile sets exercised by Phase 12 specs.** No `DiversificationProfile`-only behaviors, no `ExplorationProfile`-only fallbacks. The proof is about the architectural pieces, not feature stacking.
 3. **Deterministic replay.** Each scenario has a fixed seed; the golden harness asserts replay produces identical event sequences.
 4. **No false negatives.** Each scenario's assertions check the desired *positive* behavior, not the absence of pathologies.
@@ -55,26 +57,17 @@ Phase 12: AI Architecture Evolution — Draft
 | FND-15 (Knowledge Is Acquired Locally and Travels Physically) | False-rumor justice golden traces rumor propagation through testimony carriers and reliability updates. |
 | FND-21 (Intentions Are Revisable Commitments) | Office-vacancy golden requires agents to suspend / abandon office-dependent commitments when succession fails. |
 | FND-25 (Social Artifacts Are First-Class) | Scaled-contention golden exercises queue tickets and grants as world artifacts. |
-| FND-31 (Validation and Falsification Are First-Class) | The whole spec exists to make S143/S148/S150/S151 falsifiable through committed scenarios. |
+| FND-31 (Validation and Falsification Are First-Class) | The whole spec exists to keep the remaining S148/S150/S151 scenarios falsifiable through committed scenarios while preserving the already-landed S143 belief-wall regression. |
 
 ## Deliverables
 
-### D1: `golden_belief_wall_trap.rs` + `scenarios/golden-belief-wall-trap.ron`
+### D1: Belief-wall trap covered by S143STABELVIE-006
 
-**Setup**: Single agent at an office building containing an unlocked chest with 300 coin. The agent has *no* belief entries for: chest owner, building jurisdiction, current magistrate, building access rights. The agent has Greed motive sources (S141 substrate) — they would prefer the coin.
+`archive/tickets/S143STABELVIE-006.md` landed `crates/worldwake-ai/tests/golden_belief_wall_trap.rs` as an inline fixture rather than `scenarios/golden-belief-wall-trap.ron`. The landed Scenario 420 proves the S143/FND-14A wall at the trait/read-surface boundary: an actor has local physical observation of a co-located item lot and facility, has no owner/holder/jurisdiction/office-holder beliefs, emits no theft candidate, commits no steal action, and includes a compile-fail doctest proving `DebugWorldView` remains outside `RuntimeBeliefView`.
 
-**Assertions**:
-1. Agent observes the chest (physical observation per FND-14A): `LocalPhysicalObservationView::colocated_entities` returns the chest, and `observed_container_contents` returns the coin.
-2. Agent does *not* "know" the owner: `BelievedSocialView::believed_owner_of(chest)` returns `BeliefRead::absent`.
-3. The `Steal` candidate is suppressed because the legality predicate requires `believed_owner_of(chest)` (S150 substrate gates this through `SuppressionReason::LegallyForbidden`).
-4. The decision-history payload (S136) records the suppression with attribution to the missing social belief.
-5. Compile-fail assertion: a test attempting to widen `LocalPhysicalObservationView` with `believed_owner_of` fails to compile.
+The earlier RON-backed sketch and suppression-reason wording are superseded by the stronger live proof seam for S143: candidate absence at generation and decision-trace layers, authoritative no-commit, and a runtime trait-composition compile-fail witness.
 
-**GoalKinds/ActionDomains exercised**: `Steal`, `LegalAdjudication`, default candidate emission for greed-motive goals.
-
-**Emergence justification**: The agent reaches the chest *and stops* through the type system, not through a hand-coded "do not steal if owner unknown" check. The legality predicate evaluates over belief state because the underlying view *cannot* read authoritative state for social facts.
-
-**Why not a duplicate**: Prior goldens test legality predicates with belief entries present; this golden tests the *absent-belief* path against the trait-fence enforcement.
+**Why not a duplicate**: Prior goldens test legality predicates with belief entries present; the landed S143 golden tests the *absent-belief* path against the trait-fence enforcement.
 
 ### D2: `golden_false_rumor_justice.rs` + `scenarios/golden-false-rumor-justice.ron`
 
@@ -141,7 +134,7 @@ Three new helpers in the existing `golden_harness/` directory:
 
 ### D6: Determinism regression
 
-Each of the four scenarios runs with a fixed seed and the golden harness asserts:
+Each of the three remaining S153 scenarios runs with a fixed seed and the golden harness asserts:
 1. Event log byte-stable across reruns.
 2. Final `ScenarioDiagnosticsReport` (S144) byte-stable across reruns.
 
@@ -154,7 +147,7 @@ Each `golden_*.rs` file carries a `// Falsification:` comment block: what would 
 ### Information-Path Analysis
 
 Each scenario exercises an existing information path:
-- Belief-wall trap: observation through S143's `LocalPhysicalObservationView`; absent-belief through `BelievedSocialView`.
+- Belief-wall trap: already covered by S143STABELVIE-006 through observation via S143's `LocalPhysicalObservationView` and absent authority beliefs through `BelievedAuthorityView`.
 - False-rumor justice: testimony through S139's AskWitness; reliability updates through S151's confirmation/refutation hooks.
 - Office vacancy: obligation expiration through S59's TTL; portfolio slot dynamics through S148; route-danger propagation through perception.
 - Scaled contention: grant/queue lifecycle through S140; route blockers through S150; route preferences through S151.
@@ -183,7 +176,7 @@ Not applicable.
 
 ## Cross-System Interactions
 
-Goldens exercise integration paths between S143 / S148 / S150 / S151 substrate; no new cross-system interaction is introduced.
+Goldens exercise integration paths between archived S143 and the remaining S148 / S150 / S151 substrate; no new cross-system interaction is introduced.
 
 ## Profile-Driven Parameters
 
@@ -191,7 +184,7 @@ Not applicable. Goldens use authored scenario data; no new profile fields.
 
 ## Test Plan
 
-- Four golden test files (one per scenario block) with the per-block assertions above.
+- Three remaining S153 golden test files with the per-block assertions above; the belief-wall trap golden is already covered by S143STABELVIE-006.
 - D6 determinism regression.
 - All goldens passing — `cargo test --workspace`.
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.

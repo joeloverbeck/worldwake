@@ -14,6 +14,11 @@ STATUS_RE = re.compile(r"^\s*\**Status\**:\s*(.+?)\s*$", re.MULTILINE)
 VERIFICATION_ITEM_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)")
 VERIFICATION_LABEL_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)(Passed|Waived|Blocked)\b")
 VERIFICATION_LABELED_ITEM_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)(Passed|Waived|Blocked)\b(.*)$")
+PROVISIONAL_COMPLETED_RE = re.compile(
+    r"\b(pending|provisional|remaining|still listed|not run|not yet run|unrun|"
+    r"to run|will run|needs to run)\b",
+    re.IGNORECASE,
+)
 BACKTICK_RE = re.compile(r"`([^`\n]+)`")
 COMMAND_START_RE = re.compile(
     r"^(?:"
@@ -192,6 +197,17 @@ def main() -> int:
             if unlabeled:
                 warnings.append(
                     "Verification Result has list items that do not start with Passed, Waived, or Blocked"
+                )
+            provisional = [
+                line.strip()
+                for line in items
+                if not VERIFICATION_LABEL_RE.match(line)
+                or PROVISIONAL_COMPLETED_RE.search(line)
+            ]
+            if provisional:
+                warnings.append(
+                    "completed ticket has provisional or pending Verification Result rows: "
+                    + "; ".join(provisional)
                 )
 
         required_commands: set[str] = set()

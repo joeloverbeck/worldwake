@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `AgentBeliefStore` entity-claim schema gains explicit ownership and holder claim lanes; save format bumps for the persisted belief-store shape.
-**Deps**: archive/tickets/S143STABELVIE-001.md, archive/tickets/S143STABELVIE-002.md, specs/S143-static-belief-view-trait-separation.md
+**Deps**: archive/tickets/S143STABELVIE-001.md, archive/tickets/S143STABELVIE-002.md, archive/specs/S143-static-belief-view-trait-separation.md
 
 ## Problem
 
@@ -46,7 +46,7 @@ Bump `SAVE_FORMAT_VERSION` and update the non-default save/load fixture to inclu
 ## Landed Files
 
 - `archive/tickets/S143STABELVIE-003.md` (modify — dependency truth-sync)
-- `specs/S143-static-belief-view-trait-separation.md` (modify — substrate correction)
+- `archive/specs/S143-static-belief-view-trait-separation.md` (modify — substrate correction)
 - `crates/worldwake-core/src/entity_belief_claim.rs` (modify)
 - `crates/worldwake-sim/src/belief_view.rs` (modify)
 - `crates/worldwake-sim/src/per_agent_belief_view.rs` (modify)
@@ -96,7 +96,7 @@ Completed on 2026-05-13.
 - Added distinct `EntityBeliefAspect::Owner` and `EntityBeliefAspect::Holder` lanes plus `ClaimValue::Entity(Option<EntityId>)` for explicit per-agent authority beliefs.
 - Added a shared entity-claim projection helper and wired `PerAgentBeliefView`'s `BelievedAuthorityView` implementation to read explicit owner/holder claims without consulting authoritative world ownership or possession.
 - Bumped the current save format from 84 to 85 and extended the full non-default save/load fixture to round-trip owner and holder claims by value.
-- Updated the now-archived `archive/tickets/S143STABELVIE-003.md` and `specs/S143-static-belief-view-trait-separation.md` so the original trait migration depends on this substrate instead of assuming it already existed.
+- Updated the now-archived `archive/tickets/S143STABELVIE-003.md` and `archive/specs/S143-static-belief-view-trait-separation.md` so the original trait migration depends on this substrate instead of assuming it already existed.
 
 ## Deviations
 

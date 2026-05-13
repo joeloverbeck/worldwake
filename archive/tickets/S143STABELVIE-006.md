@@ -1,6 +1,6 @@
 # S143STABELVIE-006: Belief-wall trap golden + `compile_fail` doctest on `DebugWorldView`
 
-**Status**: PENDING
+**Status**: COMPLETED
 **Priority**: MEDIUM
 **Effort**: Medium
 **Engine Changes**: None (test infrastructure only; new golden + doctest)
@@ -25,18 +25,26 @@ The spec's two type-level guarantees need explicit regression coverage:
 2. The `compile_fail` doctest lands on `DebugWorldView`'s trait doc comment in `crates/worldwake-sim/src/belief_view.rs`. Compile-fail doctests are exercised by `cargo test --doc -p worldwake-sim`; they produce a clear failure signal if the cfg-gate is ever relaxed or the trait is moved.
 3. The golden's assertions cover both the legal path (physical observation succeeds for co-located entities) and the illegal-by-FND-14A path (authority-belief reads return `BeliefRead::Unknown` despite co-location).
 
-## Verification Layers
+## Outcome
+
+Completed on 2026-05-13. The implementation landed the belief-wall trap golden,
+the `DebugWorldView` compile-fail doctest, generated golden inventory updates,
+and S143 spec/order wording that matches the two live proof surfaces.
+
+## Verified Layers
 
 1. **Decision-trace assertion (FND-14A wall)**: After the agent observes the chest, no `Steal` candidate appears in the agent's decision trace — verified via `AgentDecisionTrace` inspection in the golden. This is the primary behavioral proof that the wall holds end-to-end.
 2. **Authority-belief absence (focused)**: A focused unit test within the golden directly verifies `view.believed_owner_of(chest) == BeliefRead::Unknown` and `view.believed_office_holder(office) == BeliefRead::Unknown` for the test agent at scenario start. This is the lower-layer proof surface for the type-system contract.
 3. **Co-located physical observation (legal path)**: A focused unit test verifies `view.colocated_entities(actor).value.contains(&chest)` and `value.contains(&building)` — confirming the legal `LocalPhysicalObservationView` reads succeed.
 4. **Compile-time enforcement (`DebugWorldView`)**: `cargo test --doc -p worldwake-sim` exercises the `compile_fail` doctest — its absence of compile failure (i.e., if the doctest unexpectedly compiles) means the trait surface no longer enforces the boundary; the doctest fails the test run.
 
-## What to Change
+## Landed Changes
 
-### 1. New golden test `crates/worldwake-ai/tests/golden_belief_wall_trap.rs`
+### 1. Golden test `crates/worldwake-ai/tests/golden_belief_wall_trap.rs`
 
-Per spec D8. Scenario setup:
+Per spec D8. The landed golden uses an inline programmatic fixture rather than a
+RON scenario because the owned seam is the trait/read surface and planner
+candidate boundary. Scenario 420 (`Belief Wall Trap Suppresses Theft`) sets up:
 - One agent, located at one place ("office_building").
 - One chest (`ItemLot` entity) at the same place, owned (in authoritative world state) by a second agent the test agent has never met.
 - The office building has an institutional record (`OfficeHeld`) indicating a magistrate's jurisdiction.
@@ -56,18 +64,29 @@ Assertions:
 
 ### 2. `compile_fail` doctest on `DebugWorldView` in `crates/worldwake-sim/src/belief_view.rs`
 
-Add to the trait's doc comment:
+The ticket's drafted cfg/import doctest was reassessed as stale: live doctests
+run in a context where `#[cfg(any(debug_assertions, test))]` makes the trait
+visible, so that snippet would not truthfully prove release-style import
+unreachability. The landed doctest instead proves the FND-14A type boundary that
+matters for runtime planner composition: a `RuntimeBeliefView` cannot call
+`DebugWorldView::world_owner_of`.
 
 ```rust
-/// `DebugWorldView` is a labeled surface for debug/observer/test access. It is
-/// cfg-gated and must not be reachable from release builds of `worldwake-ai`.
+/// Debug/observer access to authoritative world state.
+///
+/// `DebugWorldView` is deliberately outside the runtime belief-view trait
+/// composition. Planner-facing code may read through `RuntimeBeliefView`, but
+/// adding debug-world methods to that surface would pierce the FND-14A wall.
 ///
 /// ```compile_fail
-/// // This doctest fails to compile because DebugWorldView is gated by
-/// // #[cfg(any(debug_assertions, test))] and the doctest harness compiles
-/// // doctest code in release-equivalent context for this assertion.
-/// fn requires_release_debug() {
-///     let _check: fn(&dyn worldwake_sim::DebugWorldView) = |_| {};
+/// use worldwake_core::EntityId;
+/// use worldwake_sim::{DebugWorldView, RuntimeBeliefView};
+///
+/// fn debug_read_from_runtime_view<T: RuntimeBeliefView + ?Sized>(
+///     view: &T,
+///     entity: EntityId,
+/// ) {
+///     let _ = view.world_owner_of(entity);
 /// }
 /// ```
 #[cfg(any(debug_assertions, test))]
@@ -76,14 +95,16 @@ pub trait DebugWorldView {
 }
 ```
 
-The exact doctest framing follows the existing precedents (`planning_snapshot.rs:402-414`, `ranking.rs:7-19`); the implementer should mirror that style. If the doctest harness's cfg behavior makes the cfg-gate approach unverifiable via `compile_fail`, fall back to a different witness — e.g., a `compile_fail` doctest exercising a private trait method or a sealed-trait pattern. The implementer documents the chosen witness in the doc comment.
-
-## Files to Touch
+## Landed Files
 
 - `crates/worldwake-ai/tests/golden_belief_wall_trap.rs` (new)
 - `crates/worldwake-sim/src/belief_view.rs` (modify — add `compile_fail` doctest on `DebugWorldView`)
-
-Likely: scenario fixture file for the belief-wall trap setup may be needed if existing golden tests use RON files rather than inline construction. To be confirmed during implementation: inspect adjacent goldens (`golden_epistemic_sensing.rs`, `golden_perception_omission.rs`, `golden_perception_exposure.rs`) and follow whichever fixture convention they use.
+- `docs/generated/golden-scenario-details/belief-wall-trap.md` (new)
+- `docs/generated/golden-coverage-matrix.md` (regenerated)
+- `docs/generated/golden-e2e-inventory.md` (regenerated)
+- `docs/generated/golden-scenario-index.md` (regenerated)
+- `docs/generated/golden-scenario-details/opportunity-compiler.md` (regenerated source-line metadata)
+- `docs/generated/golden-scenario-details/survival-justice.md` (regenerated source-line metadata)
 
 ## Out of Scope
 
@@ -91,33 +112,33 @@ Likely: scenario fixture file for the belief-wall trap setup may be needed if ex
 - The CI grep lint — ticket 005 (already lands enforcement on `DebugWorldView` imports, separately from the doctest).
 - Trait migration — tickets 003 and 004.
 
-## Acceptance Criteria
+## Acceptance Result
 
-### Tests That Must Pass
+### Passed Tests
 
-1. `cargo test -p worldwake-ai golden_belief_wall_trap` — the new golden passes.
-2. `cargo test -p worldwake-sim --doc` — the new `compile_fail` doctest on `DebugWorldView` exercises correctly (the harness reports the expected compile failure as a passing doctest).
-3. Existing adjacent goldens continue to pass: `cargo test -p worldwake-ai golden_epistemic_sensing`, `golden_perception_omission`, `golden_perception_exposure`.
-4. Existing suite: `cargo test --workspace`.
+1. `cargo test -p worldwake-ai --test golden_belief_wall_trap` passed.
+2. `cargo test -p worldwake-sim --doc` passed and exercised the `DebugWorldView` compile-fail doctest.
+3. Adjacent goldens passed as separate cargo invocations: `cargo test -p worldwake-ai --test golden_epistemic_sensing`, `cargo test -p worldwake-ai --test golden_perception_omission`, and `cargo test -p worldwake-ai --test golden_perception_exposure`.
+4. `cargo test -p worldwake-ai` passed.
+5. `cargo test --workspace` passed.
+6. `cargo clippy --workspace --all-targets -- -D warnings` passed.
+7. `python3 scripts/golden_inventory.py --write --check-docs` passed and refreshed the generated golden inventory.
 
 ### Invariants
 
-1. The golden encodes the FND-14A "co-location does not tell you who owns the chest" rule as a regression check — future refactors that re-introduce authoritative reads on `BelievedAuthorityView` impls will fail this golden.
-2. The `compile_fail` doctest is the type-level witness that `DebugWorldView` imports from non-debug code paths are caught at compile time. A passing doctest means the boundary holds.
-3. The golden's decision-trace and event-log assertions are layered per `docs/precision-rules.md` Rule 5 — decision-trace for AI reasoning behavior, event-log for authoritative outcome.
+1. The golden encodes the FND-14A "co-location does not tell you who owns the chest" rule as a regression check. It proves co-located physical reads succeed while authority reads remain `BeliefRead::Unknown`.
+2. The `compile_fail` doctest is the type-level witness that `DebugWorldView` remains outside `RuntimeBeliefView`, so runtime planner composition does not gain debug-world authority reads.
+3. The golden's decision-trace and event-log assertions are layered per `docs/precision-rules.md` Rule 5: decision trace for AI candidate suppression, event log for authoritative no-commit outcome.
 
-## Test Plan
+## Verification Result
 
-### New/Modified Tests
-
-1. `crates/worldwake-ai/tests/golden_belief_wall_trap.rs` (new) — full golden per spec D8, with decision-trace, focused belief-read, and event-log layer assertions.
-2. `crates/worldwake-sim/src/belief_view.rs` — `compile_fail` doctest on `DebugWorldView` (per existing precedents at `planning_snapshot.rs:402-414`, `ranking.rs:7-19`).
-
-### Commands
-
-1. `cargo test -p worldwake-ai golden_belief_wall_trap`
-2. `cargo test -p worldwake-sim --doc`
-3. `cargo test -p worldwake-ai golden_epistemic_sensing golden_perception_omission golden_perception_exposure`
-4. `cargo test --workspace`
-5. `cargo clippy --workspace --all-targets -- -D warnings`
-6. `scripts/verify.sh`
+1. Passed `cargo test -p worldwake-ai --test golden_belief_wall_trap`.
+2. Passed `cargo test -p worldwake-sim --doc`.
+3. Passed `cargo test -p worldwake-ai --test golden_epistemic_sensing`.
+4. Passed `cargo test -p worldwake-ai --test golden_perception_omission`.
+5. Passed `cargo test -p worldwake-ai --test golden_perception_exposure`.
+6. Passed `python3 scripts/golden_inventory.py --write --check-docs`.
+7. Passed `cargo test -p worldwake-ai`.
+8. Passed `cargo test --workspace`.
+9. Passed `cargo clippy --workspace --all-targets -- -D warnings`.
+10. Passed `./scripts/verify.sh`.

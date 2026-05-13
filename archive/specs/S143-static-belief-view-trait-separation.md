@@ -1,6 +1,6 @@
 # S143: Static Belief-View Trait Separation
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -12,7 +12,7 @@ This is a correctness refactor; it preserves all current legal reads and changes
 
 ## Phase and Status
 
-Phase 12: AI Architecture Evolution — Draft
+Phase 12: AI Architecture Evolution — Completed 2026-05-13
 
 ## Crates
 
@@ -267,7 +267,7 @@ The script is wired into `scripts/verify.sh` alongside the existing precedent sc
 
 The new golden composes with the adjacent existing goldens that cover related ground: `crates/worldwake-ai/tests/golden_epistemic_sensing.rs`, `golden_perception_omission.rs`, and `golden_perception_exposure.rs` exercise perception and observation boundaries; the belief-wall trap exercises the authority-belief absence specifically.
 
-A `compile_fail` doctest on the `DebugWorldView` trait definition proves that `worldwake-ai` source files cannot import it. Compile-fail doctests are an established pattern in worldwake (precedents at `crates/worldwake-ai/src/planning_snapshot.rs:402-414` and `crates/worldwake-ai/src/ranking.rs:7-19`).
+A `compile_fail` doctest on the `DebugWorldView` trait definition proves that `RuntimeBeliefView` does not expose debug-world methods. The D7 grep lint remains the source-level proof that `worldwake-ai/src` cannot import `DebugWorldView`. Compile-fail doctests are an established pattern in worldwake (precedents at `crates/worldwake-ai/src/planning_snapshot.rs:402-414` and `crates/worldwake-ai/src/ranking.rs:7-19`).
 
 ## FND-01 Section H Analysis
 
@@ -315,8 +315,43 @@ Not applicable. S143 introduces no new profile parameters.
 ## Test Plan
 
 - Per-method audit table inline in D3 — every accessor classified as migrated to `LocalPhysicalObservationView`, migrated to `BelievedAuthorityView`, or staying on its current domain sub-trait.
-- Compile-fail doctest on `DebugWorldView` proving it cannot be imported from `worldwake-ai/src/`.
+- Compile-fail doctest on `DebugWorldView` proving it remains outside `RuntimeBeliefView`; D7 proves it cannot be imported from `worldwake-ai/src/`.
 - Belief-wall trap golden (`crates/worldwake-ai/tests/golden_belief_wall_trap.rs`).
 - All existing goldens pass unchanged (`cargo test --workspace`).
 - CI grep check (`scripts/check_no_debug_view_in_ai.sh`, wired into `scripts/verify.sh`) verifying no `worldwake-ai` source file imports `DebugWorldView`.
 - `cargo clippy --workspace --all-targets -- -D warnings` passes after the import rewrite in D6 (no unused imports, no dead trait imports).
+
+## Outcome
+
+Completed on 2026-05-13.
+
+S143 landed as a seven-ticket sequence:
+
+- `archive/tickets/S143STABELVIE-001.md` added the read-shape substrate.
+- `archive/tickets/S143STABELVIE-002.md` added `LocalPhysicalObservationView`, `BelievedAuthorityView`, and `DebugWorldView`.
+- `archive/tickets/S143STABELVIE-003A.md` added explicit owner/holder belief-claim substrate required by FND-14A.
+- `archive/tickets/S143STABELVIE-003.md` migrated authority reads to `BelievedAuthorityView`.
+- `archive/tickets/S143STABELVIE-004.md` migrated co-located physical observation to `LocalPhysicalObservationView::colocated_entities`.
+- `archive/tickets/S143STABELVIE-005.md` added the `DebugWorldView` import grep-CI check.
+- `archive/tickets/S143STABELVIE-006.md` landed the belief-wall trap golden, generated golden inventory updates, and the `DebugWorldView` compile-fail doctest.
+
+Deviations from the draft:
+
+- FND-14A reassessment required the additional `S143STABELVIE-003A` owner/holder belief-claim substrate before authority reads could truthfully move to `BelievedAuthorityView`.
+- The belief-wall trap landed as an inline golden fixture rather than a RON scenario because the owned proof seam is the trait/read-surface and candidate-generation boundary.
+- The `DebugWorldView` doctest proves `DebugWorldView` remains outside `RuntimeBeliefView`; the source-level `worldwake-ai/src` import ban is owned by `scripts/check_no_debug_view_in_ai.sh`.
+
+Verification:
+
+- `cargo test -p worldwake-ai --test golden_belief_wall_trap`
+- `cargo test -p worldwake-sim --doc`
+- `cargo test -p worldwake-ai --test golden_epistemic_sensing`
+- `cargo test -p worldwake-ai --test golden_perception_omission`
+- `cargo test -p worldwake-ai --test golden_perception_exposure`
+- `python3 scripts/golden_inventory.py --write --check-docs`
+- `cargo test -p worldwake-ai`
+- `cargo test --workspace`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `./scripts/verify.sh`
+
+`specs/S153-golden-gaps-ai-architecture-scaling.md` now treats belief-wall trap as covered by S143 and keeps only the remaining three AI architecture scaling goldens active.

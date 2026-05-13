@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: None (net-new types, no consumers yet)
-**Deps**: spec `specs/S143-static-belief-view-trait-separation.md`
+**Deps**: spec `archive/specs/S143-static-belief-view-trait-separation.md`
 
 ## Problem
 
@@ -15,7 +15,7 @@ Tickets 002–006 needed four foundation types before any trait or migration wor
 1. `BeliefValue<T>` lives at `crates/worldwake-sim/src/belief_view.rs:32` (struct with `value, confidence, acquired_tick, claimed_event_tick, status` fields), NOT in `worldwake-core` as the spec's Crates row 1 implied. `worldwake-core` has zero `BeliefValue<T>` consumers; `worldwake-sim` has 2 files, `worldwake-ai` has 6 files. Spec drafting assumed core placement; codebase truth places it in sim. `BeliefRead::Known(BeliefValue<T>)` requires `BeliefValue<T>` to be reachable, so `BeliefRead<T>` lands in `worldwake-sim/src/belief_view.rs` next to `BeliefValue<T>` rather than in `worldwake-core`.
 2. `EntityState` references only `EntityKind` and `EntityId` (both in `worldwake-core`); placing it in `worldwake-core` keeps the spec's D4 framing intact. `worldwake-core/src/world/` is a directory module (`lifecycle.rs`, `ownership.rs`, `placement.rs`, etc.), not a single file — a new sibling module `crates/worldwake-core/src/debug_view.rs` is the cleanest placement.
 3. Sub-check (d): zero existing struct literal or construction sites for any of the four new types (`grep -rn "EntityState\|BeliefRead\|ObservedRead\|ObservationSource" crates/` returns only the spec file). Pure additions with no blast radius.
-4. Adjacent contradiction (was item 13): spec Crates row 1 claimed `worldwake-core` defines `BeliefRead<T>`. Classification: required consequence — corrected here because workspace layering forbids `worldwake-core → worldwake-sim`, not because of a separate bug. The Crates row and D1 placement snippet in `specs/S143-static-belief-view-trait-separation.md` were updated to reflect the actual placement.
+4. Adjacent contradiction (was item 13): spec Crates row 1 claimed `worldwake-core` defines `BeliefRead<T>`. Classification: required consequence — corrected here because workspace layering forbids `worldwake-core → worldwake-sim`, not because of a separate bug. The Crates row and D1 placement snippet in `archive/specs/S143-static-belief-view-trait-separation.md` were updated to reflect the actual placement.
 5. Mismatch + correction (was item 14): spec D1 places `BeliefRead<T>` and `ObservedRead<T>` in `worldwake-core/src/belief.rs (or a new sibling module)`. Correction: `BeliefRead<T>`, `ObservedRead<T>`, and `ObservationSource` land in `worldwake-sim/src/belief_view.rs` next to `BeliefValue<T>`. `EntityState` lands in a new `crates/worldwake-core/src/debug_view.rs`. The spec's intent (foundation types available to dependent tickets) is preserved.
 
 ## Architecture Check
@@ -83,7 +83,7 @@ Derives: `Debug, Clone, Default, Eq, PartialEq`.
 - `crates/worldwake-sim/src/lib.rs` — extended the `belief_view` re-export list.
 - `crates/worldwake-core/src/debug_view.rs` — added `EntityState` and focused tests.
 - `crates/worldwake-core/src/lib.rs` — added `pub mod debug_view;` and re-exported `EntityState`.
-- `specs/S143-static-belief-view-trait-separation.md` — corrected read-shape type placement.
+- `archive/specs/S143-static-belief-view-trait-separation.md` — corrected read-shape type placement.
 - `specs/IMPLEMENTATION-ORDER.md` — corrected the S143 trait label.
 
 ## Out of Scope
@@ -121,7 +121,7 @@ Completed on 2026-05-13.
 - Added `BeliefRead<T>`, `ObservedRead<T>`, and `ObservationSource` in `crates/worldwake-sim/src/belief_view.rs` beside `BeliefValue<T>`.
 - Added `EntityState` in `crates/worldwake-core/src/debug_view.rs`.
 - Re-exported `EntityState` from `worldwake-core` and the read-shape types from `worldwake-sim`.
-- Updated `specs/S143-static-belief-view-trait-separation.md` so the Crates row and D1 snippet match the live placement.
+- Updated `archive/specs/S143-static-belief-view-trait-separation.md` so the Crates row and D1 snippet match the live placement.
 - Updated the S143 row in `specs/IMPLEMENTATION-ORDER.md` to name `BelievedAuthorityView` instead of the stale `BelievedSocialView` label.
 
 ## Deviations

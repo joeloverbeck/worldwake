@@ -649,7 +649,7 @@ Phase 12 runs independently of Phase 7's pending consequence-carrier specs (S60�
 ### Dependency Graph
 
 ```text
-S143 (independent)    S144 (independent)    S145 (independent)    S150 (independent)
+S143 (archived)       S144 (independent)    S145 (independent)    S150 (independent)
    │                                            │                     │
    │                  ┌─────────────────────────┘                     │
    │                  ▼                                               │
@@ -664,13 +664,13 @@ S143 (independent)    S144 (independent)    S145 (independent)    S150 (independ
             │
             └── S152 (soft deps on S146/S148/S151; modifies their profile types)
 
-S153 (hard deps on S143, S148, S150, S151)
+S153 (hard deps on archived S143, S148, S150, S151)
 ```
 
 ### Active Execution Steps
 
 **Wave 1** (parallel, no Phase 12 deps):
-- **S143**: Static Belief-View Trait Separation — split `LocalPhysicalObservationView` vs `BelievedAuthorityView` vs `DebugWorldView`; FND-14A widening becomes a compile error.
+- **S143**: Static Belief-View Trait Separation — completed and archived at `archive/specs/S143-static-belief-view-trait-separation.md`; split `LocalPhysicalObservationView` vs `BelievedAuthorityView` vs `DebugWorldView`; FND-14A widening becomes a compile error.
 - **S144**: Aggregate Scenario Diagnostics — `ScenarioDiagnosticsReport` over existing traces, observer Section 13, `PercentileBucket` helper, JSON output; S144 backs all future tuning decisions.
 - **S145**: Planning Substrate Hardening — stage-aware strategic budget (`2 * stages * max_prerequisite_locations`), shared cache invariant regression suite, cache hit/miss/invalidation counters.
 - **S150**: Cross-Goal Blocker Scoping — typed `BlockerScope` enum with `Exact`/`RouteSegment`/`Counterparty` variants, per-scope TTL profile, decision-history surface, S144 aggregation.
@@ -696,8 +696,8 @@ S153 (hard deps on S143, S148, S150, S151)
   - soft depends on S146/S148/S151 (modifies profile types each introduces)
 
 **Wave 5** (final, after Wave 4):
-- **S153**: Golden Gaps — AI Architecture Scaling — four scenarios: belief-wall trap (regression for S143), false rumor justice (regression for S151), office vacancy → patrol gap (regression for S148 portfolio breadth), scaled contention (regression for S150 cross-goal blockers); 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
-  - hard depends on S143, S148, S150, S151
+- **S153**: Golden Gaps — AI Architecture Scaling — three remaining scenarios: false rumor justice (regression for S151), office vacancy → patrol gap (regression for S148 portfolio breadth), scaled contention (regression for S150 cross-goal blockers). Belief-wall trap (regression for S143) is covered by S143STABELVIE-006; 4 PR-15 scenarios deferred (100-goal dense market, 20-agent contention, long production chain, boundary shock).
+  - hard depends on archived S143, S148, S150, S151
 
 ### Phase 12 Gate
 
@@ -707,7 +707,7 @@ S153 (hard deps on S143, S148, S150, S151)
 - [ ] Wave 3 specs implemented and passing golden E2E tests
 - [ ] Wave 4 specs implemented and passing golden E2E tests
 - [ ] Wave 5 implemented and passing golden E2E tests
-- [ ] S143 trait separation: compile-fail doctest blocks `DebugWorldView` import from `worldwake-ai/src/`; belief-wall trap golden passes
+- [x] S143 trait separation archived: grep-CI blocks `DebugWorldView` imports from `worldwake-ai/src/`; compile-fail doctest keeps debug-world reads outside `RuntimeBeliefView`; belief-wall trap golden passes
 - [ ] S144 `ScenarioDiagnosticsReport` produces byte-stable output across reruns on `survival-baseline.ron`; observer Section 13 renders text + JSON formats
 - [ ] S145 strategic budget formula confirmed: 5-stage production chain completes under stage-aware budget where it timed out under the old `* 2` formula; cache invariant regression suite (3 tests) passes
 - [ ] S146 goal-schema registry covers every `GoalKindDiscriminant` variant (workspace-level coverage test); per-goal budget regression proves PRODUCTION-tier `BakeBread` depth 16 vs SELF_CARE-tier `Eat` depth 6
@@ -717,7 +717,7 @@ S153 (hard deps on S143, S148, S150, S151)
 - [ ] S150 cross-goal blocker goldens prove `RouteSegment` and `Counterparty` blockers suppress multi-goal candidates and clear on observation
 - [ ] S151 testimony-reliability golden proves trust update from confirmation/refutation/contradiction; route-preference golden proves dangerous-traversal penalty plus decay
 - [ ] S152 archetype golden proves deterministic seeded assignment + 10-template behavioral diversification + `PersonalityAssigned` event replay
-- [ ] S153 four golden scenarios all pass with byte-stable event log on fixed seeds
+- [ ] S153 remaining three golden scenarios all pass with byte-stable event log on fixed seeds; belief-wall trap is covered by S143STABELVIE-006
 - [ ] PR-9 (incremental snapshots / multi-queue search) reassessed against S144 diagnostics: actual planning-cost bottlenecks identified or proposal stays deferred
 - [ ] Canonical regression G (false rumor → wrongful accusation → correction) producible through S151 + S149 + S153/golden_false_rumor_justice end-to-end
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
