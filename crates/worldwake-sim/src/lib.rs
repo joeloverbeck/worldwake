@@ -101,12 +101,15 @@ pub use affordance_query::{
 pub use autonomous_controller::{
     AutonomousController, AutonomousControllerContext, AutonomousControllerRuntime,
 };
+#[cfg(any(debug_assertions, test))]
+pub use belief_view::DebugWorldView;
 pub use belief_view::{
-    BeliefRead, CombatBeliefView, ControlBeliefView, EconomicBeliefView, EntityBeliefView,
-    FacilityBeliefView, GoalBeliefView, GoalControlBeliefView, GoalSpatialBeliefView,
-    GoalTemporalBeliefView, InventoryBeliefView, ObservationSource, ObservedRead,
-    PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView,
-    TemporalBeliefView, estimate_duration_from_beliefs,
+    BeliefRead, BelievedAuthorityView, CombatBeliefView, ControlBeliefView, EconomicBeliefView,
+    EntityBeliefView, FacilityBeliefView, GoalBeliefView, GoalControlBeliefView,
+    GoalSpatialBeliefView, GoalTemporalBeliefView, InventoryBeliefView,
+    LocalPhysicalObservationView, ObservationSource, ObservedRead, PoliticalBeliefView,
+    ProfileBeliefView, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView, TemporalBeliefView,
+    estimate_duration_from_beliefs,
 };
 pub use commodity_opportunity::{CommodityOpportunityBreakdown, commodity_opportunity_score};
 pub use compaction::compact_event_log;

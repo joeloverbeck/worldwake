@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — belief-view trait surface migration; observation call sites re-routed; `RuntimeBeliefView` supertrait extended.
-**Deps**: archive/tickets/S143STABELVIE-001.md, S143STABELVIE-002
+**Deps**: archive/tickets/S143STABELVIE-001.md, archive/tickets/S143STABELVIE-002.md
 
 ## Problem
 
@@ -18,7 +18,7 @@ S143's compile-error guarantee for FND-14A requires `locally_observed_entities_a
    - `GoalBeliefView::locally_observed_entities_at` default impl: line 283 (similar; overridden by blanket impl at line 1527).
    Consumer files (per workspace grep): `worldwake-ai/src/theft.rs`, `worldwake-ai/src/candidate_generation.rs`, `worldwake-ai/src/agent_tick/observation.rs`, plus `worldwake-sim/src/per_agent_belief_view.rs` (provider).
 2. Spec D3 audit table cites `EntityBeliefView (791)` as a "duplicate" source of `locally_observed_entities_at`. Correction: the method at `belief_view.rs:791` is `locally_observed_is_dead`, not `locally_observed_entities_at` (verified by direct read of lines 789–817). The actual duplicate surface that needs migrating consists of the `GoalSpatialBeliefView` and `GoalBeliefView` default impls plus their blanket-impl forwarders. The spec's table is updated implicitly by this ticket's What to Change; the audit-row inaccuracy is documented here and does not block ticket execution.
-3. The new `LocalPhysicalObservationView::colocated_entities` returns `ObservedRead<Vec<EntityId>>` — `value` is the same `Vec<EntityId>` the current method returns; `observed_tick` is the current tick; `source` is `ObservationSource::CoLocatedSameTick`. The canonical `PerAgentBeliefView::colocated_entities` impl (introduced in ticket 002 with default behavior) is updated here to read the same data path the removed `SpatialBeliefView::locally_observed_entities_at` impl used.
+3. The new `LocalPhysicalObservationView::colocated_entities` returns `ObservedRead<Vec<EntityId>>` — `value` is the same `Vec<EntityId>` the current method returns; `observed_tick` is the current tick; `source` is `ObservationSource::CoLocatedSameTick`. The canonical `PerAgentBeliefView::colocated_entities` impl was introduced in completed ticket 002 with the co-located authoritative read path; this ticket removes the legacy declarations and migrates callers to that canonical method.
 4. Adjacent contradiction (was item 13): per Step 2's 1-3-1 (a) approval, this ticket extends the spec's D3 audit table scope to also migrate the `GoalSpatialBeliefView` and `GoalBeliefView` default declarations. Classification: required consequence of the spec's compile-error guarantee reaching `GoalBeliefView` (the planner's primary read surface). The fix in this ticket is removal of the default-impl declarations from both Goal-prefixed surfaces, paired with the blanket-impl rewrites.
 
 ## Architecture Check
@@ -49,7 +49,7 @@ S143's compile-error guarantee for FND-14A requires `locally_observed_entities_a
 ### 2. Canonical impl updates in `crates/worldwake-sim/src/per_agent_belief_view.rs`
 
 - Remove `locally_observed_entities_at` impl from `impl SpatialBeliefView for PerAgentBeliefView`.
-- Update `impl LocalPhysicalObservationView for PerAgentBeliefView` (added in ticket 002 with empty defaults) — `colocated_entities(actor)` now provides the canonical impl: returns `ObservedRead { value: <co-located entities>, observed_tick: <current tick>, source: ObservationSource::CoLocatedSameTick }` using the same authoritative-state read path the removed `SpatialBeliefView::locally_observed_entities_at` impl used.
+- Preserve the `impl LocalPhysicalObservationView for PerAgentBeliefView` landed in completed ticket 002 — `colocated_entities(actor)` already provides the canonical impl: returns `ObservedRead { value: <co-located entities>, observed_tick: <current tick>, source: ObservationSource::CoLocatedSameTick }` using the same authoritative-state read path the removed `SpatialBeliefView::locally_observed_entities_at` impl used.
 
 ### 3. Consumer call-site migration
 

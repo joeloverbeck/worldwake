@@ -4,7 +4,7 @@
 **Priority**: MEDIUM
 **Effort**: Small
 **Engine Changes**: None (CI tooling; no Rust source changes)
-**Deps**: S143STABELVIE-002
+**Deps**: archive/tickets/S143STABELVIE-002.md
 
 ## Problem
 

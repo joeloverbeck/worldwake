@@ -94,10 +94,12 @@ When shared types, serialized carriers, or persisted components change, sweep th
 ## Trait surface checks
 
 - When extending a narrow trait or read surface, check for forwarding macros, blanket impls, paired runtime traits, or generated surfaces. Distinguish the canonical consumer boundary from implementation-detail mirrors.
+- For every new trait/read-surface method name, run a targeted symbol sweep before editing. Classify existing same-name trait methods, inherent methods, UFCS calls, and unqualified `self.method(...)` call sites; plan explicit trait qualification where a new blanket/default provider would make a previously unambiguous call ambiguous.
 - If a concrete type receives the target trait through a forwarding macro, treat the owned implementation boundary as potentially spanning the source trait, any paired runtime trait, and the macro site itself.
 - If the named facade trait is blanket-implemented from narrower subtraits, verify which subtrait actually owns the default method body or read contract. In that pattern, the real implementation boundary may be the owning subtrait plus the blanket forwarding impl rather than the facade trait alone.
 - When widening a shared trait, choose the narrowest ownership/borrowing form that preserves the canonical consumer path while minimizing snapshot and test-double fallout.
 - When a trait/read-surface method enforces belief locality or another actor-relative rule, verify the signature carries the actor/agent identity needed to enforce that rule. If the drafted signature only carries the subject or target while the contract says "known to the agent", correct the signature and dependent ticket/spec snippets before coding.
+- When a trait, wrapper, or debug-view ticket includes code-like accessor sketches, validate every named field, receiver, and accessor against live definitions before patching. If the live shape uses a different field form, lookup direction, or accessor name, update the active ticket/spec sketch during reassessment instead of leaving the stale form for compile fallout or final closeout cleanup.
 
 **Trait extraction sweep (for trait-split tickets):**
 - Run a workspace-wide fallout sweep before editing: search for the old impl boundary and any forwarding macros or trait-forwarding sites across all crates, tests, and golden helpers.

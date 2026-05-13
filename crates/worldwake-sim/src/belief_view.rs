@@ -806,6 +806,126 @@ pub trait ControlBeliefView {
     fn has_control(&self, entity: EntityId) -> bool;
 }
 
+pub trait LocalPhysicalObservationView {
+    fn colocated_entities(&self, actor: EntityId) -> ObservedRead<Vec<EntityId>> {
+        let _ = actor;
+        ObservedRead {
+            value: Vec::new(),
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_item_lot_quantity(&self, lot: EntityId) -> ObservedRead<Option<Quantity>> {
+        let _ = lot;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_workstation_tag(&self, entity: EntityId) -> ObservedRead<Option<WorkstationTag>> {
+        let _ = entity;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_resource_source(&self, entity: EntityId) -> ObservedRead<Option<ResourceSource>> {
+        let _ = entity;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_container_contents(&self, container: EntityId) -> ObservedRead<Vec<EntityId>> {
+        let _ = container;
+        ObservedRead {
+            value: Vec::new(),
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+
+    fn observed_entity_kind(&self, entity: EntityId) -> ObservedRead<Option<EntityKind>> {
+        let _ = entity;
+        ObservedRead {
+            value: None,
+            observed_tick: Tick(0),
+            source: ObservationSource::CoLocatedSameTick,
+        }
+    }
+}
+
+pub trait BelievedAuthorityView {
+    fn believed_owner_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+        let _ = entity;
+        BeliefRead::Unknown
+    }
+
+    fn believed_holder_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+        let _ = entity;
+        BeliefRead::Unknown
+    }
+
+    fn believed_access_right(
+        &self,
+        actor: EntityId,
+        target: EntityId,
+    ) -> BeliefRead<EffectiveRight> {
+        let _ = (actor, target);
+        BeliefRead::Unknown
+    }
+
+    fn believed_jurisdiction(&self, place: EntityId) -> BeliefRead<EntityId> {
+        let _ = place;
+        BeliefRead::Unknown
+    }
+
+    fn believed_office_holder(&self, office: EntityId) -> BeliefRead<EntityId> {
+        let _ = office;
+        BeliefRead::Unknown
+    }
+}
+
+#[cfg(any(debug_assertions, test))]
+pub trait DebugWorldView {
+    fn world_entity_state(&self, entity: EntityId) -> worldwake_core::EntityState;
+    fn world_owner_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn world_location_of(&self, entity: EntityId) -> Option<EntityId>;
+    fn world_inventory_of(&self, entity: EntityId) -> Vec<EntityId>;
+}
+
+#[cfg(any(debug_assertions, test))]
+impl DebugWorldView for &worldwake_core::World {
+    fn world_entity_state(&self, entity: EntityId) -> worldwake_core::EntityState {
+        worldwake_core::EntityState {
+            kind: self.entity_kind(entity),
+            place: self.effective_place(entity),
+            alive: self.is_alive(entity),
+            container: self.direct_container(entity),
+            possessor: self.possessor_of(entity),
+        }
+    }
+
+    fn world_owner_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.owner_of(entity)
+    }
+
+    fn world_location_of(&self, entity: EntityId) -> Option<EntityId> {
+        self.effective_place(entity)
+    }
+
+    fn world_inventory_of(&self, entity: EntityId) -> Vec<EntityId> {
+        self.possessions_of(entity)
+    }
+}
+
 pub trait EntityBeliefView {
     fn is_alive(&self, entity: EntityId) -> bool;
     fn locally_observed_is_dead(&self, agent: EntityId, entity: EntityId) -> bool {
@@ -2629,8 +2749,8 @@ fn estimate_route_duration_from_beliefs(
 #[cfg(test)]
 mod tests {
     use super::{
-        BeliefRead, BeliefStatus, BeliefValue, ObservationSource, ObservedRead,
-        estimate_duration_from_beliefs,
+        BeliefRead, BeliefStatus, BeliefValue, BelievedAuthorityView, LocalPhysicalObservationView,
+        ObservationSource, ObservedRead, estimate_duration_from_beliefs,
     };
     use crate::{
         ActionPayload, CombatBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView,
@@ -4076,5 +4196,68 @@ mod tests {
             ObservationSource::CoLocatedSameTick,
             ObservationSource::BeliefStoreSnapshot
         );
+    }
+
+    #[test]
+    fn local_physical_observation_view_defaults_return_empty_same_tick_reads() {
+        struct EmptyObservationView;
+        impl LocalPhysicalObservationView for EmptyObservationView {}
+
+        let view = EmptyObservationView;
+        let actor = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+        let subject = EntityId {
+            slot: 2,
+            generation: 0,
+        };
+
+        let colocated = view.colocated_entities(actor);
+        assert!(colocated.value.is_empty());
+        assert_eq!(colocated.observed_tick, Tick(0));
+        assert_eq!(colocated.source, ObservationSource::CoLocatedSameTick);
+        assert_eq!(view.observed_item_lot_quantity(subject).value, None);
+        assert_eq!(view.observed_workstation_tag(subject).value, None);
+        assert_eq!(view.observed_resource_source(subject).value, None);
+        assert!(view.observed_container_contents(subject).value.is_empty());
+        assert_eq!(view.observed_entity_kind(subject).value, None);
+    }
+
+    #[test]
+    fn believed_authority_view_defaults_return_unknown() {
+        struct EmptyAuthorityView;
+        impl BelievedAuthorityView for EmptyAuthorityView {}
+
+        let view = EmptyAuthorityView;
+        let actor = EntityId {
+            slot: 1,
+            generation: 0,
+        };
+        let subject = EntityId {
+            slot: 2,
+            generation: 0,
+        };
+
+        assert!(matches!(
+            view.believed_owner_of(subject),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            view.believed_holder_of(subject),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            view.believed_access_right(actor, subject),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            view.believed_jurisdiction(subject),
+            BeliefRead::Unknown
+        ));
+        assert!(matches!(
+            view.believed_office_holder(subject),
+            BeliefRead::Unknown
+        ));
     }
 }

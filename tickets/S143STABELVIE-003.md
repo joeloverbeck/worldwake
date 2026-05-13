@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Large
 **Engine Changes**: Yes — belief-view trait surface migration; `AgentBeliefStore` read paths re-routed for `believed_owner_of` and `believed_office_holder`; `RuntimeBeliefView` supertrait extended.
-**Deps**: archive/tickets/S143STABELVIE-001.md, S143STABELVIE-002
+**Deps**: archive/tickets/S143STABELVIE-001.md, archive/tickets/S143STABELVIE-002.md
 
 ## Problem
 
