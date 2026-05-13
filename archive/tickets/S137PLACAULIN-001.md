@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Small
 **Engine Changes**: Core type substrate only; no runtime consumers in this ticket. Existing key types gained `Hash` derives where required by the new shared type bounds.
-**Deps**: specs/S137-plan-causal-links-and-repair.md (D2, D3, D9)
+**Deps**: archive/specs/S137-plan-causal-links-and-repair.md (D2, D3, D9)
 
 ## Problem
 
@@ -15,7 +15,7 @@ S137's downstream tickets (causal-links field on `PlanGuard`, `RepairMemory` sha
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. Four of the five shared core types (`CausalLink`, `CausalProvider`, `RecordTopic`, `BreachSignature`) did not exist anywhere in `crates/` before this ticket. A private `worldwake-ai::search::landmarks::PlanningFact` helper already existed, but it is not the S137 shared core boundary and has no public/runtime dependency relationship with this ticket's `worldwake_core::PlanningFact`. No existing focused/unit, runtime trace/integration, or golden/E2E coverage referenced the new core substrate.
-2. Spec `specs/S137-plan-causal-links-and-repair.md` D2, D3, D9 define the proposed shapes, derives, and intended consumers. Per Pre-Process classification (a)+(b) hybrid, these are the (a)-component net-new types.
+2. Spec `archive/specs/S137-plan-causal-links-and-repair.md` D2, D3, D9 define the proposed shapes, derives, and intended consumers. Per Pre-Process classification (a)+(b) hybrid, these are the (a)-component net-new types.
 3. Shared abstraction boundary: the core/ai crate split. `CausalLink` and `CausalProvider` live in core because (a) `BreachSignature` references `InvalidatorTag` (core, `crates/worldwake-core/src/plan_step_guards.rs:38-44`) and (b) downstream tickets need the types referenced from both ai (`PlanGuard.causal_links`) and core (`RepairMemory.repairs` and `RepairAppliedPayload`).
 
 ## Architecture Check

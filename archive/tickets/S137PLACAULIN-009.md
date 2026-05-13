@@ -15,7 +15,7 @@ S137 D12 extends Observer Section 3b (`render_decision_history_section` at `crat
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `render_decision_history_section` lives at `crates/worldwake-cli/src/bin/observer.rs`. Existing format is a table with columns `| Tick | Agent | Event | Payload Summary |`, rendering all decision events via `decision_event_name()` and `decision_payload_summary()`. Before this ticket, `RepairApplied` used only the generic payload summary. `archive/tickets/S137PLACAULIN-003.md` adds `substitute_recipe: Option<RecipeId>` to `RepairAppliedPayload`; ticket 008 adds `RepairAttemptTrace` to `AgentDecisionTrace`.
-2. Spec `specs/S137-plan-causal-links-and-repair.md` D12 specifies the new output format (example at the bottom of the spec): `Tick 412 — Agent A — RepairApplied: ReplaceProvider`, then indented lines for breach, substitute_target, substitute_recipe, and rejected alternatives.
+2. Spec `archive/specs/S137-plan-causal-links-and-repair.md` D12 specifies the new output format (example at the bottom of the spec): `Tick 412 — Agent A — RepairApplied: ReplaceProvider`, then indented lines for breach, substitute_target, substitute_recipe, and rejected alternatives.
 3. Shared boundary: the observer's read-only consumer relationship with the event log and decision trace per `references/worldwake-validation-patterns.md` Read-Only Tooling Consumer. Observer reads via public APIs (`scheduler.active_actions()`, decision-trace sink iteration); does not mutate simulation state.
 4. **Tooling-only ticket**: this ticket has no engine changes. Per the spec-to-tickets observer-only guidance, Assumption Reassessment items 1-3 are sufficient; items 4-15 do not apply.
 

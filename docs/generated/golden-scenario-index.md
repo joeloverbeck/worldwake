@@ -9,9 +9,9 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 
 ## Summary
 
-- Scenario blocks: 171
+- Scenario blocks: 172
 - Contributing golden test files: 40
-- Associated tests: 203
+- Associated tests: 204
 
 ### Scenario 145: Activation Decay Prunes Stale Entities At The Threshold Boundary
 
@@ -1320,6 +1320,18 @@ the per-file documents in `docs/generated/golden-scenario-details/`.
 **Setup**: repair context has no preserved prefix and no replacement candidates, so earlier local strategies cannot preserve progress.
 
 **Proves**: Abandon is the deterministic final local outcome and returns an empty progress-barrier plan.
+
+### Scenario 414: S137 Phase 11 Approved Repair Gate Witness
+
+- Source: `golden_plan_repair.rs:562`
+- Systems: AI, EventLog
+- GoalKinds: AcquireCommodity
+- ActionDomains: PlanRepair
+- Principles: P20, P21, P29
+
+**Setup**: replay the same linked merchant-moved breach six times through the localized repair substrate and compare it with the pre-S137 full replan baseline for that causal class.
+
+**Proves**: localized RebindTarget repair replaces full ReplanTriggered fallback by more than the Phase 11 30% reduction threshold while preserving a real causal-link breach and emitting RepairApplied events.
 
 ### Scenario 142: Dusty Trail Remote Water Acquisition Recovery
 

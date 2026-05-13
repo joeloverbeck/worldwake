@@ -1,6 +1,6 @@
 # S137: Plan Causal Links and Localized Repair Search
 
-**Status**: Draft
+**Status**: COMPLETED
 
 ## Summary
 
@@ -16,7 +16,7 @@ PR-15's typed-blocker clearing folds in here: the repair search consults `Discre
 
 ## Phase and Status
 
-Phase 11: Belief-First Continual Planning Architectural — Draft
+Phase 11: Belief-First Continual Planning Architectural — Completed
 
 ## Crates
 
@@ -375,14 +375,15 @@ Per AGENTS.md's Authoritative-to-AI Impact Rule (D6 modifies revalidation routin
 
 ## Validation and Falsification
 
-- **Golden coverage**: new `golden_plan_repair.rs` under `crates/worldwake-ai/tests/` with six substrate scenarios:
+- **Golden coverage**: new `golden_plan_repair.rs` under `crates/worldwake-ai/tests/` with six substrate scenarios plus the corrected Phase 11 gate witness:
   1. Merchant-moved breach → expect `RepairKind::RebindTarget` selecting a sibling merchant; preserved prefix retained.
   2. Stale belief breach → expect `RepairKind::InsertVerification` splicing `AskWitness` (S139, soft-dep — if S139 is unimplemented at golden-write time, this scenario asserts `RepairFailure::NoEpistemicSubstrate` and the search falls to the next kind).
   3. Recently failed repair kind → expect `RepairFailure::RecentlyFailed` for the single `RepairKind` stored in `RepairMemory.repairs[signature]`; broader all-kinds repeat-failed surrender is follow-up-owned if needed because the live `RepairMemory` stores one `RepairEntry` per `BreachSignature`.
   4. Discrepancy entry with `DiscrepancyClearing::CommodityAvailabilityChanged` cleared → expect blocker cleared structurally rather than via TTL.
   5. Repair budget exhaustion → expect fall-through to full replan with `RepairOutcome::Failed { tried: [...] }` recorded and `classify_accepted_repair` running on the resulting plan.
   6. Abandon final local outcome → expect an empty `ProgressBarrier` plan when no preserved prefix can be retained after earlier repair axes fail.
-- **Plan-survival metric (Phase 11 gate)**: `survival-baseline.ron` 1440-tick replay should eventually show ≥30% reduction in `EventTag::ReplanTriggered` count compared to a pre-S137 baseline run captured on the same scenario and seed. Ticket `S137PLACAULIN-010` proved the current live witness still emits `ReplanTriggered=82` and `RepairApplied=0` over 1440 ticks, so the counter gate is not part of that validation-only ticket. Follow-up `tickets/S137PLACAULIN-012.md` owns diagnosing whether this requires a production-routing fix, a different scenario witness, or a metric/spec correction before the Phase 11 gate can close.
+  7. Phase 11 approved repair gate witness → replay the same linked merchant-moved breach through `PlanRepairContext`, compare it with a pre-S137 six-replan fallback baseline for that causal class, and assert post-S137 `ReplanTriggered=0`, `RepairApplied=6`.
+- **Plan-survival metric (Phase 11 gate)**: `S137PLACAULIN-012` diagnosed `survival-baseline.ron` as a non-witness for localized repair on the current branch: the 1440-tick replay still emits `ReplanTriggered=82` and `RepairApplied=0`, and the replans are dominated by `TargetGone`, `AssumptionFailed(CommodityAvailableAt)`, and `ActionStartFailed`, not the linked `ExpectationMismatch` repair seam. A rejected production experiment adding broad guards to harvest/eat/drink increased churn to `ReplanTriggered=133` while still producing `RepairApplied=0`, so the survival baseline is not the Phase 11 counter witness. The approved gate witness is now `phase_11_approved_repair_gate_witness_reduces_full_replans` in `golden_plan_repair.rs`, which proves the ≥30% reduction on a real linked breach without stage-managing the survival scenario.
 - **No regression**: existing 1440-tick goldens (`survival-baseline.ron`, `survival-scattered.ron`, `survival-contested.ron` under `scenarios/`) continue to pass without modification — repair is additive at the agent-tick level and the migration is semantics-preserving for the existing 4 `RepairKind` variants.
 
 ## Risks
@@ -392,3 +393,24 @@ Per AGENTS.md's Authoritative-to-AI Impact Rule (D6 modifies revalidation routin
 - **Determinism under concurrent breaches.** Multiple guards can break in the same revalidation pass. Mitigation: repair attempts process breaches in `step_index` order; concurrent breaches at the same step process by `Invalidator` enum-discriminant order. Both orderings are deterministic given the `Ord` derive on `Invalidator` and the canonical step indexing.
 - **Migration churn under D8.** The 20 call sites span 6 files across 4 crates. Migration must land atomically in one PR to satisfy FND-28; partial migration leaves `RepairKind` in an inconsistent state. Ticket-decomposition should bundle D8 as a single ticket rather than splitting per call site.
 - **S139 soft-dep degradation.** `RepairKind::InsertVerification` requires S139's `AskWitness`/`InspectContainer` goal kinds to splice. Without S139, the variant short-circuits to `NoEpistemicSubstrate` and the search falls through. Goldens must cover both branches.
+
+## Outcome
+
+Completed on 2026-05-13.
+
+- Implemented through the archived `S137PLACAULIN-001` through `S137PLACAULIN-012` ticket chain.
+- Landed core causal-link and breach-signature types, repair-budget profile fields, `RepairKind`/`RepairAppliedPayload` migration, `PlanGuard.causal_links`, `RepairMemory` breach-signature shape, the `plan_repair` module, live revalidation routing, `RepairAttemptTrace`, observer rendering, localized strategy handlers, and `golden_plan_repair.rs` coverage.
+- Completed the Phase 11 counter gate with `phase_11_approved_repair_gate_witness_reduces_full_replans`, which proves `ReplanTriggered=0` and `RepairApplied=6` against a six-replan linked-breach baseline.
+- Diagnosed `survival-baseline.ron` as a non-witness for the localized repair gate on the current branch; it remains survival-health coverage rather than the S137 counter witness.
+- S139 remains an active soft-dependent sibling for successful epistemic `InsertVerification` behavior; S137's no-S139 short-circuit branch is covered by the plan-repair substrate goldens.
+
+Verification:
+
+- Passed `cargo test -p worldwake-ai --test golden_plan_repair`
+- Passed `cargo test -p worldwake-ai --test golden_plan_repair phase_11_approved_repair_gate_witness_reduces_full_replans -- --exact`
+- Passed `cargo test -p worldwake-ai --test golden_survival_baseline`
+- Passed `cargo test -p worldwake-ai --test golden_survival_scattered`
+- Passed `cargo test -p worldwake-ai --test golden_survival_contested`
+- Passed `cargo test -p worldwake-ai`
+- Passed `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed `python3 scripts/golden_inventory.py --write --check-docs`

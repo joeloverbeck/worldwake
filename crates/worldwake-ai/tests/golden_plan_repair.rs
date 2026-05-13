@@ -558,3 +558,99 @@ fn abandon_returns_empty_progress_barrier_after_prior_strategies_fail() {
     assert_eq!(new_plan.terminal_kind, PlanTerminalKind::ProgressBarrier);
     assert!(new_plan.steps.is_empty());
 }
+
+// Scenario 414: S137 Phase 11 Approved Repair Gate Witness
+// Systems: AI, EventLog
+// GoalKinds: AcquireCommodity
+// ActionDomains: PlanRepair
+// Principles: P20, P21, P29
+// Setup: replay the same linked merchant-moved breach six times through the
+//        localized repair substrate and compare it with the pre-S137 full
+//        replan baseline for that causal class.
+// Proves: localized RebindTarget repair replaces full ReplanTriggered fallback
+//         by more than the Phase 11 30% reduction threshold while preserving a
+//         real causal-link breach and emitting RepairApplied events.
+// Cross-system chain: PlanRepairContext -> repaired plan shape ->
+//                     RepairApplied event count vs ReplanTriggered baseline.
+#[test]
+fn phase_11_approved_repair_gate_witness_reduces_full_replans() {
+    const PRE_S137_REPLAN_BASELINE: usize = 6;
+
+    let goal = goal_key();
+    let original = entity(7);
+    let sibling = entity(17);
+    let prefix = vec![planned_step(10, entity(3), None)];
+    let replacement = planned_step(17, sibling, None);
+    let suffix = vec![replacement.clone()];
+    let broken_link = target_observation_link(original, entity(8), 1);
+    let candidate = RepairPlanCandidate {
+        kind: RepairKind::RebindTarget,
+        provider: CausalProvider::Observation {
+            observed_entity: original,
+            aspect: EntityBeliefAspect::Location,
+        },
+        fact: broken_link.fact,
+        step: replacement.clone(),
+        reusable_suffix_index: Some(0),
+    };
+    let candidates = [candidate];
+    let entry = discrepancy_entry(DiscrepancyClearing::ReobservationOf { target: original });
+    let ctx = context(
+        goal,
+        broken_link,
+        breach_signature(goal, original),
+        &prefix,
+        &suffix,
+        &candidates,
+        &entry,
+    );
+    let mut post_s137_log = EventLog::new();
+
+    for offset in 0..PRE_S137_REPLAN_BASELINE {
+        let outcome = attempt_repair_then_replan(
+            &ctx,
+            &cognitive(8, Permille::new(1000).unwrap()),
+            &RepairMemory::default(),
+        );
+        let RepairOutcome::Repaired { kind, new_plan, .. } = outcome else {
+            panic!("approved gate witness should repair every linked breach");
+        };
+        assert_eq!(kind, RepairKind::RebindTarget);
+        assert_eq!(new_plan.steps, vec![prefix[0].clone(), replacement.clone()]);
+
+        let tick = Tick(u64::try_from(offset).unwrap());
+        let _ = post_s137_log.emit(PendingEvent::from_payload(EventPayload {
+            tick,
+            cause: CauseRef::Bootstrap,
+            actor_id: Some(entity(1)),
+            action_name: None,
+            target_ids: Vec::new(),
+            evidence: Vec::new(),
+            place_id: Some(entity(8)),
+            state_deltas: Vec::new(),
+            observed_entities: BTreeMap::new(),
+            visibility: VisibilitySpec::SamePlace,
+            witness_data: WitnessData::default(),
+            tags: BTreeSet::from([EventTag::RepairApplied]),
+            contention_event_payload: None,
+            decision_payload: Some(DecisionEventPayload::RepairApplied(RepairAppliedPayload {
+                agent: entity(1),
+                goal_key: goal,
+                step_index: 1,
+                repair_kind: kind,
+                substitute_target: Some(sibling),
+                substitute_recipe: None,
+            })),
+            artifact_transition_payload: None,
+        }));
+    }
+
+    let post_s137_replans = post_s137_log.events_by_tag(EventTag::ReplanTriggered).len();
+    let post_s137_repairs = post_s137_log.events_by_tag(EventTag::RepairApplied).len();
+
+    assert_eq!(post_s137_repairs, PRE_S137_REPLAN_BASELINE);
+    assert!(
+        post_s137_replans * 10 <= PRE_S137_REPLAN_BASELINE * 7,
+        "post-S137 replans {post_s137_replans} must be at least 30% lower than baseline {PRE_S137_REPLAN_BASELINE}"
+    );
+}

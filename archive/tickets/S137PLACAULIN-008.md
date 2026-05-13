@@ -15,7 +15,7 @@ S137 D10 adds `RepairAttemptTrace` to the decision trace surface so debuggers an
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `crates/worldwake-ai/src/decision_trace.rs` defines ~30 existing trace types (`PortfolioTrace`, `PortfolioSlotTrace`, `AgentDecisionTrace`, `PlanAttemptTrace`, etc.). Test boundary at line 2515. No existing `RepairAttemptTrace`. `RepairKind` exists in core; `RepairFailure` exists in `crates/worldwake-ai/src/plan_repair.rs` from archive/tickets/S137PLACAULIN-006.md.
-2. Spec `specs/S137-plan-causal-links-and-repair.md` D10 specifies the trace shape: chosen `RepairKind`, breach signature, rejected `(RepairKind, RepairFailure)` pairs, budget consumed. Should compose with existing `AgentDecisionTrace` per the `PortfolioSlotTrace`/`PlanAttemptTrace` precedent.
+2. Spec `archive/specs/S137-plan-causal-links-and-repair.md` D10 specifies the trace shape: chosen `RepairKind`, breach signature, rejected `(RepairKind, RepairFailure)` pairs, budget consumed. Should compose with existing `AgentDecisionTrace` per the `PortfolioSlotTrace`/`PlanAttemptTrace` precedent.
 3. Shared boundary: the `DecisionTraceSink` surface (existing). Per `references/worldwake-validation-patterns.md` Dual-Use Read-Model Types and Read-Only Tooling Consumer patterns, trace types live in `worldwake-ai/src/` (not `tests/`) so the observer binary in `worldwake-cli` can consume them via existing public API.
 4. Decision-trace preference (precision rule #6): for AI reasoning, candidate absence, suppression, or planner behavior, prefer decision-trace assertions over weaker indirect evidence. `RepairAttemptTrace` is the canonical surface for "why this repair, not that one" — strictly stronger than indirect inference from `RepairAppliedPayload` alone.
 
@@ -131,7 +131,7 @@ Completed on 2026-05-13.
 2. Wired localized repair attempts in `agent_tick/execution.rs` into per-tick decision traces for both successful and failed repair outcomes. `RepairOutcome::Repaired` now carries prior rejected attempts so a successful trace can report the alternatives tried before the chosen kind.
 3. Added derived cap-hit reporting from the final traced plan by comparing each guarded step's `required_facts` with retained `causal_links`.
 4. Updated explicit `AgentDecisionTrace` literals in AI tests, golden harness helpers, observer tests, survival forensics, and visualizer trace buffers for the new trace fields.
-5. Truth-synced `specs/S137-plan-causal-links-and-repair.md` for the landed trace fields and `RepairOutcome::Repaired` shape. Updated the now-archived `archive/tickets/S137PLACAULIN-009.md` to cite this completed ticket by path.
+5. Truth-synced `archive/specs/S137-plan-causal-links-and-repair.md` for the landed trace fields and `RepairOutcome::Repaired` shape. Updated the now-archived `archive/tickets/S137PLACAULIN-009.md` to cite this completed ticket by path.
 
 ## Deviations
 

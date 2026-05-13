@@ -7,7 +7,7 @@ Do not hand-edit it.
 
 - Golden test files: 43
 - Files contributing `golden_*` tests: 43
-- Total `golden_*` tests: 208
+- Total `golden_*` tests: 209
 
 ## Per-File Inventory
 
@@ -31,7 +31,7 @@ Do not hand-edit it.
 | `golden_perception_exposure.rs` | 7 |
 | `golden_perception_omission.rs` | 3 |
 | `golden_place_dirtiness.rs` | 9 |
-| `golden_plan_repair.rs` | 6 |
+| `golden_plan_repair.rs` | 7 |
 | `golden_planner_pathology.rs` | 3 |
 | `golden_portfolio_planning.rs` | 1 |
 | `golden_quantity_aware_acquisition.rs` | 5 |
@@ -232,6 +232,7 @@ Do not hand-edit it.
 - `commodity_availability_changed_clears_blocker_structurally`
 - `repair_budget_exhaustion_falls_through_to_full_replan`
 - `abandon_returns_empty_progress_barrier_after_prior_strategies_fail`
+- `phase_11_approved_repair_gate_witness_reduces_full_replans`
 
 ### `golden_planner_pathology.rs`
 

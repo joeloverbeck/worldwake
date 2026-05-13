@@ -578,7 +578,7 @@ S134 (completed, archived)    S135 (completed, archived)    S140 (completed, arc
    │                                                                                            
    └── S138 (completed, archived)
          │
-         ├── S137 (soft deps on S134, S136, S138)
+         ├── S137 (completed, archived; soft deps on S134, S136, S138)
          │     │
          │     └── S139 (soft deps on S137, S138)
          │
@@ -604,11 +604,12 @@ S136 (completed, archived)
 - **S138**: Affordance-to-Opportunity Compiler with Effect-Schema Indexing — completed and archived at `archive/specs/S138-opportunity-compiler.md` through the `S138OPPCOM-001` through `S138OPPCOM-011` ticket chain. Landed the bottom-up opportunity compiler driven by `EffectSchemaIndex`, profile-driven opportunity salience/risk, opportunity-derived candidate/source tracing, observer opportunity rendering, travel-pruning and interrupt integration, and golden coverage in `golden_opportunity_compiler.rs` scenarios 398-402. Folds in PR-7, PR-13, PR-20.
 - **S141**: Motive Source Ledger — completed and archived at `archive/specs/S141-motive-source-ledger.md` through the `S141MOTSOULED-001` through `S141MOTSOULED-008` ticket chain. Landed motive-source carriers, goal-offer and decision-payload provenance, trace contribution storage/rendering, profile/lint support, save-shape updates, and independent live-source contribution arithmetic. FND-3 direct compliance.
 
-**Wave 3** (after Wave 2):
-- **S137**: Plan Causal Links and Localized Repair Search — extend `PlanGuard` with `CausalLink` provenance; `PlanRepairContext` localized repair before full replan; per-`Discrepancy` `ClearingCondition`. Folds in PR-15.
-  - S134 and S136 soft dependencies are satisfied (repair benefits from queryable effect-schema; repair-applied payload integration can reuse S136 decisive-ref families); still soft depends on S138 (rebind-target consumes opportunity output)
+**Completed Wave 3 slice**:
+- **S137**: Plan Causal Links and Localized Repair Search — completed and archived at `archive/specs/S137-plan-causal-links-and-repair.md` through the `S137PLACAULIN-001` through `S137PLACAULIN-012` ticket chain. Landed causal-link provenance, bounded localized repair before full replan, repair-memory and trace surfaces, observer rendering, generated plan-repair goldens, and the corrected Phase 11 full-replan reduction witness. Folds in PR-15.
+
+**Remaining Wave 3 slice**:
 - **S139**: Epistemic Sensing Subgoals — Ask Witness and Inspect Container — discrete `GoalKind::AskWitness` and `GoalKind::InspectContainer` with `EpistemicProfile`. Required for FOUNDATIONS Scenarios C and G end-to-end.
-  - soft depends on S137 (`RepairKind::InsertVerification` splices these), S138 (opportunity compiler emits witness/container anchors)
+  - soft depends on archived S137 (`RepairKind::InsertVerification` splices these), S138 (opportunity compiler emits witness/container anchors)
 
 ### Phase 11 Gate
 
@@ -619,7 +620,7 @@ S136 (completed, archived)
 - [x] `apply_hypothetical_transition` removed; conformance test reshaped to coverage assertions over `EffectSchema`
 - [x] `max_snapshot_entities_per_place` removed; planner snapshot reads from `observation_budget`-truncated belief observations only
 - [x] S136 always-on decision payload extension landed: rejected-goal dimensions, failure-path `decisive_*` refs, frame assumptions with step provenance, observer summaries, replay/save-load coverage, golden payload-shape coverage, and payload-size soak enforcement
-- [ ] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on `survival-baseline.ron` or an explicitly corrected Phase 11 witness. `S137PLACAULIN-010` landed substrate goldens but proved the current survival-baseline replay still emits `ReplanTriggered=82` and `RepairApplied=0`; `tickets/S137PLACAULIN-012.md` owns the remaining gate diagnosis and landing.
+- [x] Plan repair golden shows ≥30% reduction in full-replan triggers vs pre-S137 baseline on the explicitly corrected Phase 11 witness. `S137PLACAULIN-012` diagnosed `survival-baseline.ron` as a non-witness (`ReplanTriggered=82`, `RepairApplied=0`; dominated by `TargetGone`, `AssumptionFailed(CommodityAvailableAt)`, and `ActionStartFailed`) and landed `phase_11_approved_repair_gate_witness_reduces_full_replans` in `golden_plan_repair.rs` with `ReplanTriggered=0`, `RepairApplied=6` against a six-replan linked-breach baseline.
 - [x] Opportunity compiler goldens prove profile/risk salience, trace/load carriage, effect-schema index miss behavior, learned-memory damping, deterministic replay hashing, and compiler-load bounds
 - [x] S140 multi-axis artifact lifecycle core goldens prove the five axis paths, including source-backed legal-effect suspension/restoration and bounded source-backed credibility refutation; full Scenario G justice/witness/case-chain coverage remains owned outside S140.
 - [x] Motive-source ranking regression: single-source behavior remains stable under existing goldens, and multi-source offers prove contribution sums through dedicated S141 tests

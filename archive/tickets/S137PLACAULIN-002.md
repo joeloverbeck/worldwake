@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — `CognitiveProfile` profile component on `EntityKind::Agent`
-**Deps**: specs/S137-plan-causal-links-and-repair.md (D11)
+**Deps**: archive/specs/S137-plan-causal-links-and-repair.md (D11)
 
 ## Problem
 
@@ -19,7 +19,7 @@ Without these fields, downstream tickets (004 reads the cap; 006 reads the budge
 <!-- Apply all domain-specific precision rules from docs/precision-rules.md -->
 
 1. `CognitiveProfile` is defined at `crates/worldwake-core/src/cognitive_profile.rs:23-114` (32+ fields) with `Default` impl at lines 117-155. No existing `repair_budget_fraction` or `causal_links_per_step_cap` field — confirmed by grep. Component registered at `crates/worldwake-core/src/component_schema.rs:1009-1027`. `AgentDef.cognitive_profile: Option<CognitiveProfile>` at `crates/worldwake-cli/src/scenario/types.rs:593`.
-2. Spec `specs/S137-plan-causal-links-and-repair.md` D11 specifies field types, `#[serde(default)]`, and default values (`Permille::new_unchecked(250)` and `8`). `Permille` is defined at `crates/worldwake-core/src/numerics.rs:24-65` with `new_unchecked(value: u16)` (compile-time const, lines 31-47).
+2. Spec `archive/specs/S137-plan-causal-links-and-repair.md` D11 specifies field types, `#[serde(default)]`, and default values (`Permille::new_unchecked(250)` and `8`). `Permille` is defined at `crates/worldwake-core/src/numerics.rs:24-65` with `new_unchecked(value: u16)` (compile-time const, lines 31-47).
 3. Shared boundary: the universal profile-component contract. `CognitiveProfile` is universal-on-Agent per `docs/spec-drafting-rules.md` Section 5 — `unwrap_or_default()` applied in `spawn_agent()`, `Default` impl mandatory.
 4. Existing focused tests covering `CognitiveProfile` construction live in `crates/worldwake-core/src/cognitive_profile.rs` (`#[cfg(test)]` block). The new fields roundtrip through bincode, and omitted text-serde/RON fields default through `#[serde(default)]`.
 5. **Construction-site spread-syntax audit**: 16 original construction sites were located by `rg '^\s*CognitiveProfile\s*\{$' crates/`; compile fallout also found one `ComponentValue::CognitiveProfile` fixture in `crates/worldwake-core/src/delta.rs`. The final split was:
