@@ -9,10 +9,11 @@ use worldwake_ai::opportunity_compiler::{BelievedLegalStatus, RiskFact, compile_
 use worldwake_ai::{EffectSchemaIndex, OpportunityAnchor};
 use worldwake_cli::scenario::{load_scenario_file, spawn_scenario};
 use worldwake_core::{
-    AcquisitionQuantity, CommodityKind, CommodityPurpose, GoalKey, GoalKind, HomeostaticNeeds,
-    LawAbidingProfile, LearnedOpportunityMemory, MetabolismProfile, OpportunityEntry,
-    OpportunityKey, PerceptionProfile, PerceptionSource, Permille, Quantity, RiskWeightProfile,
-    Seed, Tick, UtilityProfile, hash_event_log,
+    AcquisitionQuantity, ClaimId, ClaimValue, CommodityKind, CommodityPurpose, EntityBeliefAspect,
+    EntityBeliefClaim, GoalKey, GoalKind, HomeostaticNeeds, LawAbidingProfile,
+    LearnedOpportunityMemory, MetabolismProfile, OpportunityEntry, OpportunityKey,
+    PerceptionProfile, PerceptionSource, Permille, Quantity, RiskWeightProfile, Seed, Tick,
+    UtilityProfile, hash_event_log,
 };
 use worldwake_sim::PerAgentBeliefView;
 
@@ -97,6 +98,25 @@ fn owned_bread_fixture(
         Tick(0),
         PerceptionSource::DirectObservation,
     );
+    let mut store = h
+        .world
+        .get_component_agent_belief_store(actor)
+        .cloned()
+        .unwrap_or_default();
+    store.record_entity_claim(EntityBeliefClaim {
+        claim_id: ClaimId(0),
+        subject: lot,
+        aspect: EntityBeliefAspect::Owner,
+        value: ClaimValue::Entity(Some(owner)),
+        source: PerceptionSource::DirectObservation,
+        acquired_tick: Tick(0),
+        claimed_event_tick: Some(Tick(0)),
+        confidence: Permille::new(1000).unwrap(),
+        refuted_at_tick: None,
+    });
+    let mut txn = new_txn(&mut h.world, 0);
+    txn.set_component_agent_belief_store(actor, store).unwrap();
+    commit_txn(txn, &mut h.event_log);
     (h, actor, lot)
 }
 

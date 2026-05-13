@@ -441,16 +441,43 @@ impl Default for TestBeliefView {
 }
 
 impl ControlBeliefView for TestBeliefView {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        self.owners.get(&entity).copied()
-    }
-
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
         self.controllable.contains(&(actor, entity))
     }
 
     fn has_control(&self, entity: EntityId) -> bool {
         self.kinds.get(&entity) == Some(&EntityKind::Agent)
+    }
+}
+
+impl worldwake_sim::BelievedAuthorityView for TestBeliefView {
+    fn believed_owner_of(&self, entity: EntityId) -> worldwake_sim::BeliefRead<EntityId> {
+        self.owners
+            .get(&entity)
+            .copied()
+            .map_or(worldwake_sim::BeliefRead::Unknown, |owner| {
+                worldwake_sim::BeliefRead::known_certain(owner, worldwake_core::Tick(0))
+            })
+    }
+
+    fn believed_office_holder(
+        &self,
+        office: EntityId,
+    ) -> worldwake_sim::BeliefRead<Option<EntityId>> {
+        match self
+            .office_holder_beliefs
+            .get(&office)
+            .cloned()
+            .unwrap_or(worldwake_core::InstitutionalBeliefRead::Unknown)
+        {
+            worldwake_core::InstitutionalBeliefRead::Certain(holder) => {
+                worldwake_sim::BeliefRead::known_certain(holder, worldwake_core::Tick(0))
+            }
+            worldwake_core::InstitutionalBeliefRead::Conflicted(_)
+            | worldwake_core::InstitutionalBeliefRead::Unknown => {
+                worldwake_sim::BeliefRead::Unknown
+            }
+        }
     }
 }
 
@@ -573,15 +600,6 @@ impl worldwake_sim::PoliticalBeliefView for TestBeliefView {
     }
     fn office_data(&self, office: EntityId) -> Option<worldwake_core::OfficeData> {
         self.office_data.get(&office).cloned()
-    }
-    fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> worldwake_core::InstitutionalBeliefRead<Option<EntityId>> {
-        self.office_holder_beliefs
-            .get(&office)
-            .cloned()
-            .unwrap_or(worldwake_core::InstitutionalBeliefRead::Unknown)
     }
     fn violation_disposition_profile(
         &self,

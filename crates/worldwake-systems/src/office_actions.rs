@@ -12,7 +12,7 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionExecutionContext, ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance,
-    ActionPayload, ActionProgress, ActionState, BribeActionPayload, CommitOutcome,
+    ActionPayload, ActionProgress, ActionState, BeliefRead, BribeActionPayload, CommitOutcome,
     DeclareSupportActionPayload, DeterministicRng, DurationExpr, EffectEvaluationContext,
     EffectMode, EffectPrecondition, EffectSchema, EffectSink, EffectStep, Interruptibility,
     PayloadEntityRole, Precondition, PressForceClaimActionPayload, RuntimeBeliefView, TargetSpec,
@@ -485,7 +485,7 @@ fn enumerate_press_force_claim_payloads(
             }
             if matches!(
                 view.believed_office_holder(office),
-                InstitutionalBeliefRead::Certain(Some(holder)) if holder == actor
+                BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(actor)
             ) {
                 return None;
             }

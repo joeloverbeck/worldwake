@@ -44,6 +44,27 @@ pub enum BeliefRead<T> {
     Stale(BeliefValue<T>),
 }
 
+impl<T> BeliefRead<T> {
+    #[must_use]
+    pub fn known_certain(value: T, tick: Tick) -> Self {
+        Self::Known(BeliefValue {
+            value,
+            confidence: Permille::new(1000).unwrap(),
+            acquired_tick: tick,
+            claimed_event_tick: Some(tick),
+            status: BeliefStatus::Certain,
+        })
+    }
+
+    #[must_use]
+    pub fn known_or_stale_value(self) -> Option<T> {
+        match self {
+            Self::Known(value) | Self::Stale(value) => Some(value.value),
+            Self::Unknown => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ObservedRead<T> {
     pub value: T,
@@ -218,6 +239,17 @@ pub fn location_claim_value(claim: &EntityBeliefClaim) -> Option<Option<EntityId
 }
 
 #[doc(hidden)]
+pub fn entity_claim_value(
+    claim: &EntityBeliefClaim,
+    aspect: EntityBeliefAspect,
+) -> Option<Option<EntityId>> {
+    match (&claim.aspect, &claim.value) {
+        (claim_aspect, ClaimValue::Entity(entity)) if *claim_aspect == aspect => Some(*entity),
+        _ => None,
+    }
+}
+
+#[doc(hidden)]
 pub fn inventory_claim_value(claim: &EntityBeliefClaim, kind: CommodityKind) -> Option<Quantity> {
     match (&claim.aspect, &claim.value) {
         (EntityBeliefAspect::Inventory(claim_kind), ClaimValue::Quantity(quantity))
@@ -267,7 +299,6 @@ pub trait GoalTemporalBeliefView {
 }
 
 pub trait GoalControlBeliefView {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         let _ = (actor, entity);
         Vec::new()
@@ -287,7 +318,7 @@ pub trait GoalControlBeliefView {
 /// - queue and reservation helpers
 /// - duration estimation
 /// - broader affordance/runtime helpers used by snapshot/search code
-pub trait GoalBeliefView {
+pub trait GoalBeliefView: BelievedAuthorityView {
     fn current_tick(&self) -> Tick {
         Tick(0)
     }
@@ -454,7 +485,6 @@ pub trait GoalBeliefView {
     fn item_lot_consumable_profile(&self, entity: EntityId) -> Option<CommodityConsumableProfile>;
     fn direct_container(&self, entity: EntityId) -> Option<EntityId>;
     fn direct_possessor(&self, entity: EntityId) -> Option<EntityId>;
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         let _ = (actor, entity);
         Vec::new()
@@ -708,13 +738,6 @@ pub trait GoalBeliefView {
         let _ = office;
         None
     }
-    fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        let _ = office;
-        InstitutionalBeliefRead::Unknown
-    }
     fn believed_force_controller(
         &self,
         office: EntityId,
@@ -797,7 +820,6 @@ pub trait GoalBeliefView {
 }
 
 pub trait ControlBeliefView {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId>;
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         let _ = (actor, entity);
         Vec::new()
@@ -887,7 +909,7 @@ pub trait BelievedAuthorityView {
         BeliefRead::Unknown
     }
 
-    fn believed_office_holder(&self, office: EntityId) -> BeliefRead<EntityId> {
+    fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>> {
         let _ = office;
         BeliefRead::Unknown
     }
@@ -1440,13 +1462,6 @@ pub trait PoliticalBeliefView {
         let _ = office;
         None
     }
-    fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        let _ = office;
-        InstitutionalBeliefRead::Unknown
-    }
     fn believed_force_controller(
         &self,
         office: EntityId,
@@ -1552,6 +1567,7 @@ pub trait RuntimeBeliefView:
     + SocialBeliefView
     + PoliticalBeliefView
     + FacilityBeliefView
+    + BelievedAuthorityView
 {
 }
 
@@ -1601,10 +1617,6 @@ impl<T: TemporalBeliefView + ?Sized> GoalTemporalBeliefView for T {
 }
 
 impl<T: ControlBeliefView + ?Sized> GoalControlBeliefView for T {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        ControlBeliefView::believed_owner_of(self, entity)
-    }
-
     fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
         ControlBeliefView::believed_rights(self, actor, entity)
     }
@@ -1627,6 +1639,7 @@ where
         + SocialBeliefView
         + PoliticalBeliefView
         + FacilityBeliefView
+        + BelievedAuthorityView
         + ?Sized,
 {
     fn current_tick(&self) -> worldwake_core::Tick {
@@ -1913,13 +1926,6 @@ where
         entity: worldwake_core::EntityId,
     ) -> Option<worldwake_core::EntityId> {
         InventoryBeliefView::direct_possessor(self, entity)
-    }
-
-    fn believed_owner_of(
-        &self,
-        entity: worldwake_core::EntityId,
-    ) -> Option<worldwake_core::EntityId> {
-        GoalControlBeliefView::believed_owner_of(self, entity)
     }
 
     fn believed_rights(
@@ -2420,13 +2426,6 @@ where
         PoliticalBeliefView::office_data(self, office)
     }
 
-    fn believed_office_holder(
-        &self,
-        office: worldwake_core::EntityId,
-    ) -> worldwake_core::InstitutionalBeliefRead<Option<worldwake_core::EntityId>> {
-        PoliticalBeliefView::believed_office_holder(self, office)
-    }
-
     fn believed_force_controller(
         &self,
         office: worldwake_core::EntityId,
@@ -2510,7 +2509,7 @@ where
     }
 }
 
-fn actor_lawful_reward_source_from_beliefs<V: GoalBeliefView + ?Sized>(
+fn actor_lawful_reward_source_from_beliefs<V: GoalBeliefView + BelievedAuthorityView + ?Sized>(
     view: &V,
     actor: EntityId,
     accusation: &BelievedInstitutionalClaim,
@@ -2537,7 +2536,7 @@ fn actor_lawful_reward_source_from_beliefs<V: GoalBeliefView + ?Sized>(
     }
     if !matches!(
         view.believed_office_holder(office),
-        InstitutionalBeliefRead::Certain(Some(holder)) if holder == actor
+        BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(actor)
     ) {
         return None;
     }
@@ -2815,10 +2814,6 @@ mod tests {
     }
 
     impl GoalControlBeliefView for StubGoalBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
             false
         }
@@ -3032,6 +3027,8 @@ mod tests {
     }
 
     impl crate::PoliticalBeliefView for StubGoalBeliefView {}
+
+    impl BelievedAuthorityView for StubGoalBeliefView {}
 
     impl FacilityBeliefView for StubGoalBeliefView {
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {

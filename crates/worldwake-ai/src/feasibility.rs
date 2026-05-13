@@ -307,6 +307,8 @@ mod tests {
         merchandise: Option<MerchandiseProfile>,
     }
 
+    impl worldwake_sim::BelievedAuthorityView for MockView {}
+
     impl GoalBeliefView for MockView {
         fn is_alive(&self, entity: EntityId) -> bool {
             !self.dead.contains(&entity)
@@ -401,10 +403,6 @@ mod tests {
         }
 
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
 

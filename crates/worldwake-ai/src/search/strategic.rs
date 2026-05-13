@@ -508,10 +508,6 @@ mod tests {
     }
 
     impl ControlBeliefView for StubBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
             actor == entity
         }
@@ -520,6 +516,8 @@ mod tests {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
         }
     }
+
+    impl worldwake_sim::BelievedAuthorityView for StubBeliefView {}
 
     impl EntityBeliefView for StubBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
@@ -674,13 +672,6 @@ mod tests {
     impl PoliticalBeliefView for StubBeliefView {
         fn office_data(&self, _office: EntityId) -> Option<worldwake_core::OfficeData> {
             None
-        }
-
-        fn believed_office_holder(
-            &self,
-            _office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            InstitutionalBeliefRead::Unknown
         }
 
         fn believed_support_declarations_for_office(

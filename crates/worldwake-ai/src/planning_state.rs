@@ -11,15 +11,16 @@ use worldwake_core::{
     InstitutionalBeliefRead, JusticeDispositionProfile, LoadUnits, MetabolismProfile, OfficeData,
     PatrolProfile, PatrolRoute, Permille, PlaceTag, Quantity, RecipeId, RecipientKnowledgeStatus,
     RecordData, ResourceSource, SharedTellState, SocialObservation, SuccessionLaw, TellMemoryKey,
-    TellProfile, TellTopic, TheftDispositionProfile, TickRange, ToldBeliefMemory,
+    TellProfile, TellTopic, TheftDispositionProfile, Tick, TickRange, ToldBeliefMemory,
     TradeDispositionProfile, UniqueItemKind, ViolationDispositionProfile, WorkstationTag, Wound,
     load_per_unit, to_shared_belief_snapshot,
 };
+use worldwake_sim::belief_view::{BeliefStatus, BeliefValue};
 use worldwake_sim::{
-    ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
-    EconomicBeliefView, EntityBeliefView, FacilityBeliefView, InventoryBeliefView,
-    PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView, SocialBeliefView, SpatialBeliefView,
-    TemporalBeliefView, estimate_duration_from_beliefs,
+    ActionDuration, ActionPayload, BeliefRead, BelievedAuthorityView, CombatBeliefView,
+    ControlBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView, FacilityBeliefView,
+    InventoryBeliefView, PoliticalBeliefView, ProfileBeliefView, RuntimeBeliefView,
+    SocialBeliefView, SpatialBeliefView, TemporalBeliefView, estimate_duration_from_beliefs,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -1126,13 +1127,6 @@ impl PlanningState<'_> {
 }
 
 impl ControlBeliefView for PlanningState<'_> {
-    fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-        self.snapshot
-            .entities
-            .get(&entity)
-            .and_then(|snapshot| snapshot.control.owner)
-    }
-
     fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
         actor == self.snapshot.actor()
             && self
@@ -1839,13 +1833,6 @@ impl PoliticalBeliefView for PlanningState<'_> {
         self.snapshot.office_data(office)
     }
 
-    fn believed_office_holder(
-        &self,
-        office: EntityId,
-    ) -> InstitutionalBeliefRead<Option<EntityId>> {
-        PlanningState::believed_office_holder(self, office)
-    }
-
     fn believed_force_controller(
         &self,
         office: EntityId,
@@ -2157,6 +2144,39 @@ impl EconomicBeliefView for PlanningState<'_> {
     }
 }
 
+fn known_authority_entity<T>(entity: T, tick: Tick) -> BeliefRead<T> {
+    BeliefRead::Known(BeliefValue {
+        value: entity,
+        confidence: Permille::new(1000).unwrap(),
+        acquired_tick: tick,
+        claimed_event_tick: Some(tick),
+        status: BeliefStatus::Certain,
+    })
+}
+
+impl BelievedAuthorityView for PlanningState<'_> {
+    fn believed_owner_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+        self.snapshot
+            .entities
+            .get(&entity)
+            .and_then(|snapshot| snapshot.control.owner)
+            .map_or(BeliefRead::Unknown, |owner| {
+                known_authority_entity(owner, self.snapshot.current_tick)
+            })
+    }
+
+    fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>> {
+        match PlanningState::believed_office_holder(self, office) {
+            InstitutionalBeliefRead::Certain(holder) => {
+                known_authority_entity(holder, self.snapshot.current_tick)
+            }
+            InstitutionalBeliefRead::Conflicted(_) | InstitutionalBeliefRead::Unknown => {
+                BeliefRead::Unknown
+            }
+        }
+    }
+}
+
 impl InventoryBeliefView for PlanningState<'_> {
     fn direct_possessions(&self, holder: EntityId) -> Vec<EntityId> {
         let mut entities = self
@@ -2349,11 +2369,11 @@ mod tests {
     };
     use worldwake_sim::{
         ActionDef, ActionDefRegistry, ActionDuration, ActionError, ActionHandler, ActionHandlerId,
-        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, CombatActionPayload,
-        CombatBeliefView, Constraint, ControlBeliefView, DeterministicRng, DurationExpr,
-        EconomicBeliefView, EffectSink, EntityBeliefView, GoalBeliefView, Interruptibility,
-        PoliticalBeliefView, Precondition, ProfileBeliefView, ReservationReq, RuntimeBeliefView,
-        SocialBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
+        ActionHandlerRegistry, ActionPayload, ActionProgress, ActionState, BeliefRead,
+        CombatActionPayload, CombatBeliefView, Constraint, ControlBeliefView, DeterministicRng,
+        DurationExpr, EconomicBeliefView, EffectSink, EntityBeliefView, GoalBeliefView,
+        Interruptibility, PoliticalBeliefView, Precondition, ProfileBeliefView, ReservationReq,
+        RuntimeBeliefView, SocialBeliefView, SpatialBeliefView, TargetSpec, TemporalBeliefView,
         estimate_duration_from_beliefs, get_affordances,
     };
     use worldwake_systems::register_office_actions;
@@ -2474,10 +2494,6 @@ mod tests {
     }
 
     impl ControlBeliefView for StubBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
             actor == entity
                 || <Self as worldwake_sim::InventoryBeliefView>::direct_possessor(self, entity)
@@ -2486,6 +2502,24 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.kinds.get(&entity) == Some(&EntityKind::Agent)
+        }
+    }
+
+    impl worldwake_sim::BelievedAuthorityView for StubBeliefView {
+        fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>> {
+            match self
+                .office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+            {
+                InstitutionalBeliefRead::Certain(holder) => {
+                    BeliefRead::known_certain(holder, Tick(0))
+                }
+                InstitutionalBeliefRead::Conflicted(_) | InstitutionalBeliefRead::Unknown => {
+                    BeliefRead::Unknown
+                }
+            }
         }
     }
 
@@ -2687,16 +2721,6 @@ mod tests {
             agent: EntityId,
         ) -> Option<ViolationDispositionProfile> {
             self.violation_profiles.get(&agent).cloned()
-        }
-
-        fn believed_office_holder(
-            &self,
-            office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            self.office_holder_beliefs
-                .get(&office)
-                .cloned()
-                .unwrap_or(InstitutionalBeliefRead::Unknown)
         }
 
         fn believed_faction_rally_point(

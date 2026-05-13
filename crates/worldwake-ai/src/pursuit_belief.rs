@@ -144,6 +144,8 @@ mod tests {
         beliefs: Vec<(EntityId, BelievedEntityState)>,
     }
 
+    impl worldwake_sim::BelievedAuthorityView for StubView {}
+
     impl GoalBeliefView for StubView {
         fn is_alive(&self, _entity: EntityId) -> bool {
             true
@@ -213,9 +215,6 @@ mod tests {
             None
         }
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
         fn workstation_tag(&self, _entity: EntityId) -> Option<WorkstationTag> {

@@ -12,7 +12,7 @@ use worldwake_core::{
     CommodityPurpose, EntityBeliefAspect, EntityId, GoalKind, HypothesisKind, OpportunityAnchor,
     OpportunityKey, Permille, Quantity, Tick,
 };
-use worldwake_sim::RuntimeBeliefView;
+use worldwake_sim::{BeliefRead, RuntimeBeliefView};
 
 pub fn compile_opportunities(
     agent: EntityId,
@@ -70,28 +70,34 @@ pub fn compile_opportunities(
             let owned = belief_view.believed_owner_of(entity);
             let mut salience = salience_for_quantity(quantity);
             let mut risks = Vec::new();
-            let legal_status = if let Some(owner) = owned {
-                if owner == agent {
-                    BelievedLegalStatus::BelievedOwned { owner }
-                } else {
-                    risks.push(RiskFact::CriminalLiability {
-                        violation_kind: worldwake_core::ViolationKind::SuspectedTheft {
-                            theft: worldwake_core::TheftFacts {
-                                missing_entity: entity,
-                                expected_place: place,
-                                commodity,
-                                quantity,
+            let legal_status =
+                if let BeliefRead::Known(owner_read) | BeliefRead::Stale(owner_read) = owned {
+                    let believed_owner = owner_read.value;
+                    if believed_owner == agent {
+                        BelievedLegalStatus::BelievedOwned {
+                            owner: believed_owner,
+                        }
+                    } else {
+                        risks.push(RiskFact::CriminalLiability {
+                            violation_kind: worldwake_core::ViolationKind::SuspectedTheft {
+                                theft: worldwake_core::TheftFacts {
+                                    missing_entity: entity,
+                                    expected_place: place,
+                                    commodity,
+                                    quantity,
+                                },
+                                suspect: Some(agent),
                             },
-                            suspect: Some(agent),
-                        },
-                    });
-                    salience = penalize(salience, risk.theft_aversion);
-                    salience = penalize(salience, law.criminal_threshold);
-                    BelievedLegalStatus::BelievedOwned { owner }
-                }
-            } else {
-                BelievedLegalStatus::BelievedUnclaimed
-            };
+                        });
+                        salience = penalize(salience, risk.theft_aversion);
+                        salience = penalize(salience, law.criminal_threshold);
+                        BelievedLegalStatus::BelievedOwned {
+                            owner: believed_owner,
+                        }
+                    }
+                } else {
+                    BelievedLegalStatus::BelievedUnclaimed
+                };
             if !matches!(legal_status, BelievedLegalStatus::BelievedUnclaimed) {
                 salience = penalize(salience, risk.exposure_aversion);
                 salience = penalize(salience, law.social_norm_weight);

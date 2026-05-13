@@ -7,10 +7,10 @@ use worldwake_core::{
 use worldwake_sim::{
     AbortReason, ActionAbortRequestReason, ActionDef, ActionDefRegistry, ActionError,
     ActionHandler, ActionHandlerId, ActionHandlerRegistry, ActionInstance, ActionPayload,
-    ActionProgress, ActionState, CommitOutcome, Constraint, ControlBeliefView, DeterministicRng,
-    DurationExpr, EffectEvaluationContext, EffectMode, EffectSink, EffectStep, Interruptibility,
-    InvestigateActionPayload, PerAgentBeliefView, Precondition, RuntimeBeliefView,
-    SocialBeliefView, TargetSpec, apply_effects_with_context,
+    ActionProgress, ActionState, BeliefRead, BelievedAuthorityView, CommitOutcome, Constraint,
+    DeterministicRng, DurationExpr, EffectEvaluationContext, EffectMode, EffectSink, EffectStep,
+    Interruptibility, InvestigateActionPayload, PerAgentBeliefView, Precondition,
+    RuntimeBeliefView, SocialBeliefView, TargetSpec, apply_effects_with_context,
 };
 
 pub fn register_investigate_action(
@@ -214,7 +214,10 @@ fn apply_investigate_commit(
 ) -> Result<CommitOutcome, ActionError> {
     let (violation_id, subject, place, commodity) = investigate_state(instance)?;
     let belief = PerAgentBeliefView::from_world(instance.actor, txn);
-    let owner_is_investigating_actor = belief.believed_owner_of(subject) == Some(instance.actor);
+    let owner_is_investigating_actor = matches!(
+        belief.believed_owner_of(subject),
+        BeliefRead::Known(owner) | BeliefRead::Stale(owner) if owner.value == instance.actor
+    );
     let subjective_theft = belief
         .known_social_observations(instance.actor)
         .into_iter()
@@ -541,10 +544,11 @@ mod tests {
     use std::num::NonZeroU32;
     use worldwake_core::{
         AgentBeliefStore, BelievedEntityState, BelievedEvidenceEntry, BelievedEvidenceState,
-        CauseRef, CombatProfile, ControlSource, DisturbanceKind, EventLog, EvidenceKind, LoadUnits,
-        PerceptionSource, Permille, Quantity, SaleListing, SceneEvidence, Seed, StockAssignment,
-        StockAssignmentKind, Tick, ViolationDispositionProfile, ViolationMemory, WitnessData,
-        World, Wound, WoundCause, WoundId, WoundList, build_prototype_world,
+        CauseRef, ClaimId, ClaimValue, CombatProfile, ControlSource, DisturbanceKind,
+        EntityBeliefAspect, EntityBeliefClaim, EventLog, EvidenceKind, LoadUnits, PerceptionSource,
+        Permille, Quantity, SaleListing, SceneEvidence, Seed, StockAssignment, StockAssignmentKind,
+        Tick, ViolationDispositionProfile, ViolationMemory, WitnessData, World, Wound, WoundCause,
+        WoundId, WoundList, build_prototype_world,
     };
     use worldwake_sim::{
         ActionExecutionAuthority, ActionInstanceId, Affordance, DeterministicRng,
@@ -699,6 +703,33 @@ mod tests {
                 )
             },
         );
+        txn.set_component_agent_belief_store(actor, store).unwrap();
+        commit_txn(txn);
+    }
+
+    fn mark_owner_known(world: &mut World, actor: EntityId, entity: EntityId, owner: EntityId) {
+        let mut txn = new_txn(world, 1);
+        let mut store = txn
+            .get_component_agent_belief_store(actor)
+            .cloned()
+            .expect("actor should have a belief store");
+        let claim_id = store.next_claim_id;
+        store.next_claim_id = ClaimId(claim_id.0 + 1);
+        store
+            .entity_claims
+            .entry(entity)
+            .or_default()
+            .push(EntityBeliefClaim {
+                claim_id,
+                subject: entity,
+                aspect: EntityBeliefAspect::Owner,
+                value: ClaimValue::Entity(Some(owner)),
+                source: PerceptionSource::DirectObservation,
+                acquired_tick: Tick(1),
+                claimed_event_tick: Some(Tick(1)),
+                confidence: pm(1000),
+                refuted_at_tick: None,
+            });
         txn.set_component_agent_belief_store(actor, store).unwrap();
         commit_txn(txn);
     }
@@ -1415,6 +1446,7 @@ mod tests {
         let actor = spawn_actor(&mut world, place);
         set_violation_profile(&mut world, actor, 2, 50);
         let missing = create_item_lot_at_place(&mut world, place, Some(actor));
+        mark_owner_known(&mut world, actor, missing, actor);
         let violation_id = record_violation(
             &mut world,
             actor,
@@ -1571,6 +1603,7 @@ mod tests {
             commit_txn(txn);
             lot
         };
+        mark_owner_known(&mut world, actor, missing, actor);
         let violation_id = record_violation(
             &mut world,
             actor,

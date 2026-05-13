@@ -635,6 +635,8 @@ mod tests {
         demand_memory: BTreeMap<EntityId, Vec<DemandObservation>>,
     }
 
+    impl worldwake_sim::BelievedAuthorityView for MockGoalBeliefView {}
+
     impl GoalBeliefView for MockGoalBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {
             !self.dead.contains(&entity)
@@ -720,10 +722,6 @@ mod tests {
         }
 
         fn direct_possessor(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
             None
         }
 

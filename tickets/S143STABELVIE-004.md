@@ -4,7 +4,7 @@
 **Priority**: HIGH
 **Effort**: Medium
 **Engine Changes**: Yes — belief-view trait surface migration; observation call sites re-routed; `RuntimeBeliefView` supertrait extended.
-**Deps**: archive/tickets/S143STABELVIE-001.md, archive/tickets/S143STABELVIE-002.md
+**Deps**: archive/tickets/S143STABELVIE-001.md, archive/tickets/S143STABELVIE-002.md, archive/tickets/S143STABELVIE-003.md
 
 ## Problem
 
@@ -42,7 +42,7 @@ S143's compile-error guarantee for FND-14A requires `locally_observed_entities_a
 - Remove `fn locally_observed_entities_at(...)` from `SpatialBeliefView` (line 909).
 - Remove `fn locally_observed_entities_at(...)` (default impl) from `GoalSpatialBeliefView` (line 224).
 - Remove `fn locally_observed_entities_at(...)` (default impl) from `GoalBeliefView` (line 283).
-- Extend `RuntimeBeliefView`'s supertrait list at line 1403 — insert `+ LocalPhysicalObservationView` alongside `BelievedAuthorityView` (added in ticket 003). If ticket 003 has not yet landed, add `+ LocalPhysicalObservationView + BelievedAuthorityView` together so the supertrait list reaches its final S143 shape regardless of merge order. Reassessment at implementation start must confirm whether ticket 003 has landed and adjust accordingly.
+- Extend `RuntimeBeliefView`'s supertrait list at line 1403 — insert `+ LocalPhysicalObservationView` alongside `BelievedAuthorityView` (landed in archived ticket 003). Reassessment at implementation start must confirm the live supertrait list before patching.
 - Update `GoalSpatialBeliefView` blanket impl (around line 1436) — remove the `locally_observed_entities_at` forwarding stanza (the method no longer lives on the source trait).
 - Update `GoalBeliefView` blanket impl (around line 1527) — same.
 

@@ -88,10 +88,6 @@ mod tests {
     }
 
     impl ControlBeliefView for TestBeliefView {
-        fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-            None
-        }
-
         fn can_control(&self, actor: EntityId, entity: EntityId) -> bool {
             self.controlled_entities.contains(&entity)
                 || self.controllable.contains(&(actor, entity))
@@ -101,6 +97,8 @@ mod tests {
             self.controlled_entities.contains(&entity)
         }
     }
+
+    impl worldwake_sim::BelievedAuthorityView for TestBeliefView {}
 
     impl EntityBeliefView for TestBeliefView {
         fn is_alive(&self, entity: EntityId) -> bool {

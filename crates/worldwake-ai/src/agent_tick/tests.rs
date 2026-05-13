@@ -1607,10 +1607,6 @@ struct QueuePatienceBeliefView {
 }
 
 impl ControlBeliefView for QueuePatienceBeliefView {
-    fn believed_owner_of(&self, _entity: EntityId) -> Option<EntityId> {
-        None
-    }
-
     fn can_control(&self, _actor: EntityId, _entity: EntityId) -> bool {
         false
     }
@@ -1619,6 +1615,8 @@ impl ControlBeliefView for QueuePatienceBeliefView {
         false
     }
 }
+
+impl worldwake_sim::BelievedAuthorityView for QueuePatienceBeliefView {}
 
 impl EntityBeliefView for QueuePatienceBeliefView {
     fn is_alive(&self, _entity: EntityId) -> bool {

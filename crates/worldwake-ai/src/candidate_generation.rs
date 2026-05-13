@@ -29,13 +29,13 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use worldwake_core::{
-    AcquisitionQuantity, ArtifactPostingContext, ArtifactPostingProfile, AskWitnessMemoryKey,
-    BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory, BountyTarget, BountyTerms,
-    CommodityKind, CommodityPurpose, Discrepancy, DiscrepancyClearing, DiscrepancyMemory,
-    DiversificationProfile, DriveThresholds, EligibilityRule, EmitterTag, EntityId, EntityKind,
-    EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationOutcome, ExpectationRecord,
-    ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey, GoalKind,
-    GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
+    AcquisitionQuantity, AgentBeliefStore, ArtifactPostingContext, ArtifactPostingProfile,
+    AskWitnessMemoryKey, BelievedEntityState, BelievedInstitutionalClaim, BlockerMemory,
+    BountyTarget, BountyTerms, CommodityKind, CommodityPurpose, Discrepancy, DiscrepancyClearing,
+    DiscrepancyMemory, DiversificationProfile, DriveThresholds, EligibilityRule, EmitterTag,
+    EntityId, EntityKind, EvidenceKindTag, EvidenceSummary, ExpectationBasis, ExpectationOutcome,
+    ExpectationRecord, ExpectationState, ExplorationMotivation, ExplorationProfile, GoalKey,
+    GoalKind, GoalRejectionReason, HomeostaticNeedId, HomeostaticNeeds, HypothesisKind,
     InstitutionalBeliefKey, InstitutionalBeliefRead, InstitutionalClaim,
     InstitutionalKnowledgeSource, NoticeTopic, OfficeData, OpportunityAnchor, OpportunityKey,
     PerceptionSource, Permille, PlaceVisitRecord, ProofRequirement, PunishmentFineSelectionTrace,
@@ -46,7 +46,7 @@ use worldwake_core::{
     social_observation_is_redundant_for_listener, tell_subject_is_directly_observable_by_listener,
 };
 use worldwake_sim::{
-    GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
+    BeliefRead, GoalBeliefView, RecipeDefinition, RecipeRegistry, TellTopicOmissionReason,
     belief_view::BeliefStatus, listener_aware_tell_topic_selection,
 };
 use worldwake_systems::trade_actions::select_substitute_trade_candidate_for_view;
@@ -1121,7 +1121,7 @@ fn emit_bounty_posting_candidates(
         };
         if !matches!(
             ctx.view.believed_office_holder(office),
-            InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+            BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(ctx.agent)
         ) {
             continue;
         }
@@ -1487,7 +1487,7 @@ fn known_authority_crime_registers(ctx: &GenerationContext<'_>) -> Vec<(EntityId
             record_data.record_kind == RecordKind::CrimeRegister
                 && matches!(
                     ctx.view.believed_office_holder(record_data.issuer),
-                    InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+                    BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(ctx.agent)
                 )
         })
         .collect()
@@ -1597,7 +1597,7 @@ fn emit_punishment_candidate_for_case(
     };
     if !matches!(
         ctx.view.believed_office_holder(office),
-        InstitutionalBeliefRead::Certain(Some(holder)) if holder == ctx.agent
+        BeliefRead::Known(holder) | BeliefRead::Stale(holder) if holder.value == Some(ctx.agent)
     ) {
         return;
     }
@@ -2181,17 +2181,34 @@ fn political_office_evidence(
         return Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant);
     }
 
-    match ctx.view.believed_office_holder(office) {
+    match office_holder_institutional_read(ctx, office) {
         InstitutionalBeliefRead::Certain(None) => Ok(Evidence::default()),
         InstitutionalBeliefRead::Certain(Some(_)) => {
             Err(PoliticalCandidateOmissionReason::OfficeNotVisiblyVacant)
         }
-        InstitutionalBeliefRead::Unknown => known_consultable_office_register(ctx, office)
-            .ok_or(PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord),
         InstitutionalBeliefRead::Conflicted(_) => {
             Err(PoliticalCandidateOmissionReason::OfficeHolderBeliefConflicted)
         }
+        InstitutionalBeliefRead::Unknown => known_consultable_office_register(ctx, office)
+            .ok_or(PoliticalCandidateOmissionReason::OfficeHolderBeliefUnknownNoConsultableRecord),
     }
+}
+
+fn office_holder_institutional_read(
+    ctx: &GenerationContext<'_>,
+    office: EntityId,
+) -> InstitutionalBeliefRead<Option<EntityId>> {
+    if let Some(store) = ctx.view.agent_belief_store(ctx.agent) {
+        return store.believed_office_holder(office);
+    }
+    let key = InstitutionalBeliefKey::OfficeHolderOf { office };
+    let claims = ctx.view.institutional_belief_claims(ctx.agent, key);
+    if claims.is_empty() {
+        return InstitutionalBeliefRead::Unknown;
+    }
+    let mut store = AgentBeliefStore::new();
+    store.institutional_beliefs.insert(key, claims);
+    store.believed_office_holder(office)
 }
 
 fn force_political_office_evidence(
@@ -4924,6 +4941,7 @@ fn emit_theft_candidates(
         let Some(owner) = ctx
             .view
             .believed_owner_of(item)
+            .known_or_stale_value()
             .or_else(|| ctx.view.seller_for_sale_lot(item))
         else {
             continue;
@@ -5442,7 +5460,11 @@ fn emit_expectation_violation_candidates(
         if believed_state.last_known_place == Some(current_place)
             && observed_at_place.contains(entity_id)
             && ctx.view.entity_kind(*entity_id) == Some(EntityKind::ItemLot)
-            && ctx.view.believed_owner_of(*entity_id) == Some(ctx.agent)
+            && ctx
+                .view
+                .believed_owner_of(*entity_id)
+                .known_or_stale_value()
+                == Some(ctx.agent)
             && ctx
                 .view
                 .direct_possessor(*entity_id)
@@ -6867,9 +6889,9 @@ mod tests {
         WoundCause, WoundId,
     };
     use worldwake_sim::{
-        ActionDuration, ActionPayload, ControlBeliefView, DurationExpr, EntityBeliefView,
-        ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView, SpatialBeliefView,
-        TellTopicOmissionReason, TemporalBeliefView,
+        ActionDuration, ActionPayload, BeliefRead, ControlBeliefView, DurationExpr,
+        EntityBeliefView, ProfileBeliefView, RecipeDefinition, RecipeRegistry, RuntimeBeliefView,
+        SpatialBeliefView, TellTopicOmissionReason, TemporalBeliefView,
     };
 
     #[test]
@@ -7141,10 +7163,6 @@ mod tests {
     }
 
     impl ControlBeliefView for TestBeliefView {
-        fn believed_owner_of(&self, entity: EntityId) -> Option<EntityId> {
-            self.believed_owners.get(&entity).copied()
-        }
-
         fn believed_rights(&self, actor: EntityId, entity: EntityId) -> Vec<EffectiveRight> {
             self.believed_rights
                 .get(&(actor, entity))
@@ -7158,6 +7176,33 @@ mod tests {
 
         fn has_control(&self, entity: EntityId) -> bool {
             self.controlled_entities.contains(&entity)
+        }
+    }
+
+    impl worldwake_sim::BelievedAuthorityView for TestBeliefView {
+        fn believed_owner_of(&self, entity: EntityId) -> BeliefRead<EntityId> {
+            self.believed_owners
+                .get(&entity)
+                .copied()
+                .map_or(BeliefRead::Unknown, |owner| {
+                    BeliefRead::known_certain(owner, Tick(0))
+                })
+        }
+
+        fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>> {
+            match self
+                .office_holder_beliefs
+                .get(&office)
+                .cloned()
+                .unwrap_or(InstitutionalBeliefRead::Unknown)
+            {
+                InstitutionalBeliefRead::Certain(holder) => {
+                    BeliefRead::known_certain(holder, Tick(0))
+                }
+                InstitutionalBeliefRead::Conflicted(_) | InstitutionalBeliefRead::Unknown => {
+                    BeliefRead::Unknown
+                }
+            }
         }
     }
 
@@ -7587,16 +7632,6 @@ mod tests {
             self.office_data.get(&office).cloned()
         }
 
-        fn believed_office_holder(
-            &self,
-            office: EntityId,
-        ) -> InstitutionalBeliefRead<Option<EntityId>> {
-            self.office_holder_beliefs
-                .get(&office)
-                .cloned()
-                .unwrap_or(InstitutionalBeliefRead::Unknown)
-        }
-
         fn believed_force_controller(
             &self,
             office: EntityId,
@@ -7665,10 +7700,42 @@ mod tests {
             agent: EntityId,
             key: InstitutionalBeliefKey,
         ) -> Vec<BelievedInstitutionalClaim> {
-            self.institutional_claims
-                .get(&(agent, key))
-                .cloned()
-                .unwrap_or_default()
+            if let Some(claims) = self.institutional_claims.get(&(agent, key)) {
+                return claims.clone();
+            }
+            if let InstitutionalBeliefKey::OfficeHolderOf { office } = key
+                && let Some(read) = self.office_holder_beliefs.get(&office)
+            {
+                return match read {
+                    InstitutionalBeliefRead::Certain(holder) => {
+                        vec![BelievedInstitutionalClaim {
+                            claim: InstitutionalClaim::OfficeHolder {
+                                office,
+                                holder: *holder,
+                                effective_tick: Tick(0),
+                            },
+                            source: InstitutionalKnowledgeSource::WitnessedEvent,
+                            learned_tick: Tick(0),
+                            learned_at: self.effective_place(agent),
+                        }]
+                    }
+                    InstitutionalBeliefRead::Conflicted(values) => values
+                        .iter()
+                        .map(|holder| BelievedInstitutionalClaim {
+                            claim: InstitutionalClaim::OfficeHolder {
+                                office,
+                                holder: *holder,
+                                effective_tick: Tick(0),
+                            },
+                            source: InstitutionalKnowledgeSource::WitnessedEvent,
+                            learned_tick: Tick(0),
+                            learned_at: self.effective_place(agent),
+                        })
+                        .collect(),
+                    InstitutionalBeliefRead::Unknown => Vec::new(),
+                };
+            }
+            Vec::new()
         }
 
         fn violation_disposition_profile(

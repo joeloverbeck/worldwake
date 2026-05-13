@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::Path;
 
 pub const SAVE_MAGIC: [u8; 4] = *b"WWAK";
-pub const SAVE_FORMAT_VERSION: u32 = 84;
+pub const SAVE_FORMAT_VERSION: u32 = 85;
 
 const SAVE_HEADER_LEN: usize = SAVE_MAGIC.len() + std::mem::size_of::<u32>();
 const PAYLOAD_LEN_WIDTH: usize = std::mem::size_of::<u64>();
@@ -493,6 +493,34 @@ mod tests {
             claimed_event_tick: None,
             confidence: worldwake_core::Permille::new(1000).unwrap(),
             refuted_at_tick: Some(Tick(18)),
+        });
+        beliefs.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(3),
+            subject: target,
+            aspect: EntityBeliefAspect::Owner,
+            value: ClaimValue::Entity(Some(actor)),
+            source: PerceptionSource::Report {
+                from: actor,
+                chain_len: 0,
+            },
+            acquired_tick: Tick(4),
+            claimed_event_tick: Some(Tick(3)),
+            confidence: worldwake_core::Permille::new(800).unwrap(),
+            refuted_at_tick: None,
+        });
+        beliefs.record_entity_claim(EntityBeliefClaim {
+            claim_id: ClaimId(4),
+            subject: target,
+            aspect: EntityBeliefAspect::Holder,
+            value: ClaimValue::Entity(Some(reserved_item)),
+            source: PerceptionSource::Report {
+                from: actor,
+                chain_len: 0,
+            },
+            acquired_tick: Tick(4),
+            claimed_event_tick: Some(Tick(3)),
+            confidence: worldwake_core::Permille::new(700).unwrap(),
+            refuted_at_tick: None,
         });
         beliefs
             .observation_omission_log
@@ -1240,8 +1268,8 @@ mod tests {
     }
 
     #[test]
-    fn save_format_version_is_84_after_epistemic_disposition_profile_recency_field() {
-        assert_eq!(SAVE_FORMAT_VERSION, 84);
+    fn save_format_version_is_85_after_authority_belief_claim_lanes() {
+        assert_eq!(SAVE_FORMAT_VERSION, 85);
     }
 
     #[test]
@@ -1252,7 +1280,7 @@ mod tests {
         let (restored, runtime) = load_from_bytes(&bytes).unwrap();
 
         assert_eq!(&bytes[..SAVE_MAGIC.len()], &SAVE_MAGIC);
-        assert_eq!(SAVE_FORMAT_VERSION, 84);
+        assert_eq!(SAVE_FORMAT_VERSION, 85);
         assert_eq!(
             u32::from_le_bytes(
                 bytes[SAVE_MAGIC.len()..SAVE_MAGIC.len() + std::mem::size_of::<u32>()]
@@ -1408,12 +1436,19 @@ mod tests {
             })
         );
         let restored_claims = restored_belief.entity_claims.get(&target).unwrap();
-        assert_eq!(restored_claims.len(), 2);
+        assert_eq!(restored_claims.len(), 4);
         assert_eq!(restored_claims[0].claim_id, ClaimId(1));
         assert_eq!(restored_claims[0].refuted_at_tick, None);
         assert_eq!(restored_claims[1].claim_id, ClaimId(2));
         assert_eq!(restored_claims[1].refuted_at_tick, Some(Tick(18)));
-        assert_eq!(restored_belief.next_claim_id, ClaimId(3));
+        assert_eq!(restored_claims[2].aspect, EntityBeliefAspect::Owner);
+        assert_eq!(restored_claims[2].value, ClaimValue::Entity(Some(actor)));
+        assert_eq!(restored_claims[3].aspect, EntityBeliefAspect::Holder);
+        assert_eq!(
+            restored_claims[3].value,
+            ClaimValue::Entity(Some(reserved_item))
+        );
+        assert_eq!(restored_belief.next_claim_id, ClaimId(5));
         assert_eq!(
             restored_belief.observation_omission_log.entries.front(),
             Some(&ObservationOmission {

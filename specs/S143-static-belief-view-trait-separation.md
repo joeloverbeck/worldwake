@@ -40,7 +40,7 @@ Phase 12: AI Architecture Evolution — Draft
 
 ## Non-Goals
 
-- **No change to belief-store data layout.** `AgentBeliefStore` field set is unchanged.
+- **No broad change to belief-store fields.** `AgentBeliefStore` field set is unchanged, but S143 now includes the prerequisite `archive/tickets/S143STABELVIE-003A.md` extension of the existing `entity_claims` enum lanes for explicit owner and holder beliefs. This correction is required by FND-14A: ownership and custody cannot be inferred from co-location or authoritative world state by `BelievedAuthorityView`.
 - **No change to perception output.** What gets observed and stored is determined by the perception pipeline, not by the trait split.
 - **No new ECS component.** This spec is a Rust trait refactor.
 - **No relaxation of FND-14A's narrow exception.** Same-tick co-located physical reads remain legal exactly where they are legal today.
@@ -133,7 +133,7 @@ pub trait BelievedAuthorityView {
     fn believed_holder_of(&self, entity: EntityId) -> BeliefRead<EntityId>;
     fn believed_access_right(&self, actor: EntityId, target: EntityId) -> BeliefRead<EffectiveRight>;
     fn believed_jurisdiction(&self, place: EntityId) -> BeliefRead<EntityId>;
-    fn believed_office_holder(&self, office: EntityId) -> BeliefRead<EntityId>;
+    fn believed_office_holder(&self, office: EntityId) -> BeliefRead<Option<EntityId>>;
 }
 ```
 
@@ -145,7 +145,7 @@ Method-origin classification:
 | `believed_holder_of` | Net-new. | No current method named `believed_holder_of`. Existing `direct_possessor`/`direct_container` (`belief_view.rs:435–436`) read authoritative state and stay on `InventoryBeliefView` for the FND-14A-legal co-located case. The belief-backed variant on the authority trait is fresh. |
 | `believed_access_right` | Net-new. | Returns the existing `EffectiveRight` core type (`crates/worldwake-core/src/rights.rs:15`) wrapped in `BeliefRead`. |
 | `believed_jurisdiction` | Net-new. | No current method named `believed_jurisdiction`. Jurisdiction is presently surfaced as `record_data` / `office_data` on `PoliticalBeliefView`; the dedicated belief-backed accessor here makes the FND-14A wall explicit for jurisdiction reads. |
-| `believed_office_holder` | Migrated from `PoliticalBeliefView::believed_office_holder` (`belief_view.rs:1306`). | Current method returns `InstitutionalBeliefRead<Option<EntityId>>`. The migration converts to `BeliefRead<EntityId>`; `Option<T>` collapses into `BeliefRead::Unknown` for absent holders, and `Conflicted(Vec<T>)` from the institutional variant has no analog on `BelievedAuthorityView` because authority-belief callers should treat contradiction as `Unknown` for legality purposes (planner can still consult the underlying institutional read via `PoliticalBeliefView` if it needs the conflict surface). |
+| `believed_office_holder` | Migrated from `PoliticalBeliefView::believed_office_holder` (`belief_view.rs:1306`) and the goal-side read surface. | Current method returns `InstitutionalBeliefRead<Option<EntityId>>`. The stable authority view converts certain holder knowledge to `BeliefRead<Option<EntityId>>`, preserving `Some(holder)` and known vacancy as `None`; `Unknown` and `Conflicted(Vec<T>)` collapse to `BeliefRead::Unknown` because stable authority callers should not branch on contested claim detail. Planner code that needs conflict/provenance continues to read the underlying institutional claims directly. |
 
 All methods return `BeliefRead<T>`. No method on this trait may consult authoritative world state, even for co-located entities — co-location does not tell you who owns the chest. The existing `SocialBeliefView` (`belief_view.rs:1116`, 30 methods covering testimony, rumor, source-reliability, known social observations) is untouched by S143 and continues to expose its current accessor surface; its scope (epistemic propagation) is disjoint from `BelievedAuthorityView`'s scope (relational/institutional normativity).
 
