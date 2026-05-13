@@ -58,6 +58,10 @@ use worldwake_core::{
 };
 use worldwake_sim::{CommodityOpportunityBreakdown, GoalBeliefView, commodity_opportunity_score};
 
+const ASK_WITNESS_GAP_WEIGHT: Permille = Permille::new_unchecked(750);
+const ASK_WITNESS_STALENESS_NORMALIZATION_TICKS: u64 = 100;
+const ASK_WITNESS_LEARNED_DAMPING_FACTOR: Permille = Permille::new_unchecked(500);
+
 /// Outcome of the ranking pipeline, preserving information about filtered candidates.
 #[derive(Clone, Debug)]
 pub struct RankingOutcome {
@@ -936,12 +940,8 @@ fn priority_class(candidate: &GoalOffer, context: &RankingContext<'_>) -> GoalPr
             ..
         }
         | GoalKind::Accuse { .. }
-        | GoalKind::PunishAccused { .. } => GoalPriorityClass::Low,
-        GoalKind::AskWitness { .. } => {
-            // TODO(S139EPISENSUB-005): replace this staged compile-only
-            // placeholder with the witness-recency-weighted priority contract.
-            GoalPriorityClass::Background
-        }
+        | GoalKind::PunishAccused { .. }
+        | GoalKind::AskWitness { .. } => GoalPriorityClass::Low,
     }
 }
 
@@ -1367,10 +1367,8 @@ fn score_goal_kind_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -
             };
             score_product(context.utility.social_weight, boosted_pressure)
         }
-        GoalKind::AskWitness { .. } => {
-            // TODO(S139EPISENSUB-005): replace this compile-only placeholder with the
-            // confidence-gap and witness-recency-weighted motive formula.
-            0
+        GoalKind::AskWitness { witness, topic } => {
+            ask_witness_motive(candidate, context, witness, topic)
         }
         GoalKind::LootCorpse { corpse } => corpse_loot_assessment(corpse, context)
             .map_or(1, |assessment| assessment.motive_score.max(1)),
@@ -1414,6 +1412,106 @@ fn score_goal_kind_motive(candidate: &GoalOffer, context: &RankingContext<'_>) -
                 score_product(context.utility.social_weight, loyalty)
             }),
     }
+}
+
+fn ask_witness_motive(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+    witness: EntityId,
+    topic: TellTopic,
+) -> u32 {
+    let TellTopic::EntityBelief { subject } = topic else {
+        return 0;
+    };
+    let Some(profile) = context.view.epistemic_disposition_profile(context.agent) else {
+        return 0;
+    };
+    let policy = context.view.belief_confidence_policy(context.agent);
+    let confidence = context
+        .view
+        .entity_beliefs_sourced_from_witness(context.agent, witness)
+        .into_iter()
+        .find_map(|(candidate_subject, belief)| {
+            (candidate_subject == subject)
+                .then(|| ask_witness_belief_confidence(&belief, context, &policy))
+        })
+        .unwrap_or(Permille::ZERO);
+    let gap = profile
+        .stale_evidence_barrier_threshold
+        .saturating_sub(confidence);
+    let weighted_gap = scale_permille(gap, ASK_WITNESS_GAP_WEIGHT);
+
+    let staleness_ticks = context
+        .view
+        .known_entity_beliefs(context.agent)
+        .into_iter()
+        .find_map(|(candidate_subject, belief)| {
+            (candidate_subject == subject).then(|| {
+                context
+                    .current_tick
+                    .0
+                    .saturating_sub(belief.last_observed_tick().unwrap_or(Tick(0)).0)
+            })
+        })
+        .unwrap_or(0);
+    let recency_bonus = scale_permille(
+        normalized_staleness_signal(staleness_ticks),
+        profile.witness_recency_preference,
+    );
+    let signal = weighted_gap.saturating_add(recency_bonus);
+    let base = score_product(context.utility.social_weight, signal);
+    apply_ask_witness_learned_damping(candidate, context, base)
+}
+
+fn ask_witness_belief_confidence(
+    belief: &BelievedEntityState,
+    context: &RankingContext<'_>,
+    policy: &worldwake_core::BeliefConfidencePolicy,
+) -> Permille {
+    let staleness_ticks = context
+        .current_tick
+        .0
+        .saturating_sub(belief.last_observed_tick().unwrap_or(Tick(0)).0);
+    belief_confidence(&belief.source, staleness_ticks, policy)
+}
+
+fn normalized_staleness_signal(staleness_ticks: u64) -> Permille {
+    let scaled = staleness_ticks
+        .saturating_mul(1000)
+        .checked_div(ASK_WITNESS_STALENESS_NORMALIZATION_TICKS)
+        .unwrap_or(1000)
+        .min(1000);
+    Permille::new(scaled as u16).expect("clamped staleness signal is a valid permille")
+}
+
+fn scale_permille(value: Permille, factor: Permille) -> Permille {
+    let scaled = u32::from(value.value()).saturating_mul(u32::from(factor.value())) / 1000;
+    Permille::new(scaled as u16).expect("scaled permille remains within 0..=1000")
+}
+
+fn apply_ask_witness_learned_damping(
+    candidate: &GoalOffer,
+    context: &RankingContext<'_>,
+    base: u32,
+) -> u32 {
+    if base == 0 {
+        return 0;
+    }
+    let opportunity = OpportunityKey {
+        goal_key: candidate.key,
+        anchor: candidate.anchor,
+    };
+    let Some(entry) = context
+        .learned_opportunity_memory
+        .opportunities
+        .get(&opportunity)
+    else {
+        return base;
+    };
+    if entry.expires_tick <= context.current_tick {
+        return base;
+    }
+    scale_motive_by_confidence(base, ASK_WITNESS_LEARNED_DAMPING_FACTOR)
 }
 
 fn matching_survey_record<'a>(
@@ -3002,14 +3100,14 @@ mod tests {
         JusticeDispositionProfile, LastSeenMemory, LatrineFullness, LoadUnits, MerchandiseProfile,
         MetabolismProfile, MotiveSource, MotiveSourceRef, MultiplierPermille, NoticeTopic,
         ObligationExecutionTracker, ObligationSatiationProfile, OfficeData, OpportunityAnchor,
-        OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille, PlaceDirtiness,
-        PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId, RecordedViolation,
-        ReliabilityRecord, ResourceSource, RewardSource, RightKind, RouteExperience, ShelterTag,
-        SleepQualityProfile, SleepRecoveryModifier, SourceKey, SourceReliability,
-        SubstitutePreferences, SurveyMemory, SurveyRecord, TellTopic, TheftDispositionProfile,
-        TheftFacts, Tick, TickRange, TradeCategory, TradeDispositionProfile, UniqueItemKind,
-        UtilityProfile, ViolationId, ViolationKind, WashBasinState, WorkstationTag, Wound,
-        WoundCause, WoundId, belief_confidence,
+        OpportunityEntry, OpportunityKey, PatrolProfile, PatrolRoute, PerceptionSource, Permille,
+        PlaceDirtiness, PreferenceProfile, ProofRequirement, PunishmentKind, Quantity, RecipeId,
+        RecordedViolation, ReliabilityRecord, ResourceSource, RewardSource, RightKind,
+        RouteExperience, ShelterTag, SleepQualityProfile, SleepRecoveryModifier, SourceKey,
+        SourceReliability, SubstitutePreferences, SurveyMemory, SurveyRecord, TellTopic,
+        TheftDispositionProfile, TheftFacts, Tick, TickRange, TradeCategory,
+        TradeDispositionProfile, UniqueItemKind, UtilityProfile, ViolationId, ViolationKind,
+        WashBasinState, WorkstationTag, Wound, WoundCause, WoundId, belief_confidence,
     };
     use worldwake_sim::{
         ActionDuration, ActionPayload, CombatBeliefView, ControlBeliefView, DurationExpr,
@@ -3275,6 +3373,24 @@ mod tests {
     impl worldwake_sim::SocialBeliefView for TestBeliefView {
         fn known_entity_beliefs(&self, agent: EntityId) -> Vec<(EntityId, BelievedEntityState)> {
             self.beliefs.get(&agent).cloned().unwrap_or_default()
+        }
+        fn entity_beliefs_sourced_from_witness(
+            &self,
+            agent: EntityId,
+            witness: EntityId,
+        ) -> Vec<(EntityId, BelievedEntityState)> {
+            self.beliefs
+                .get(&agent)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(_, belief)| {
+                    matches!(
+                        belief.source,
+                        PerceptionSource::Report { from, .. } if from == witness
+                    )
+                })
+                .collect()
         }
         fn believed_activity_of(&self, entity: EntityId) -> Option<&BelievedActivity> {
             self.beliefs.values().find_map(|beliefs| {
@@ -7374,6 +7490,274 @@ mod tests {
         assert!(
             ranked.is_empty(),
             "zero social_weight and missing-subject goals should produce zero motive and be excluded from the ranked list"
+        );
+    }
+
+    #[test]
+    fn ask_witness_priority_class_is_low() {
+        let agent = entity(1);
+        let witness = entity(2);
+        let subject = entity(3);
+        let mut view = base_view(agent);
+        view.epistemic_profiles
+            .insert(agent, EpistemicDispositionProfile::default());
+        view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                believed_state(
+                    1,
+                    PerceptionSource::Report {
+                        from: witness,
+                        chain_len: 1,
+                    },
+                ),
+            )],
+        );
+
+        let ranked = rank(
+            &[goal_at_entity(
+                GoalKind::AskWitness {
+                    witness,
+                    topic: TellTopic::EntityBelief { subject },
+                },
+                witness,
+            )],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(ranked[0].priority_class, GoalPriorityClass::Low);
+    }
+
+    #[test]
+    fn ask_witness_motive_score_rises_with_confidence_gap() {
+        let agent = entity(1);
+        let witness = entity(2);
+        let high_gap_subject = entity(3);
+        let low_gap_subject = entity(4);
+        let mut view = base_view(agent);
+        view.epistemic_profiles.insert(
+            agent,
+            EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: pm(800),
+                witness_recency_preference: pm(0),
+                ..EpistemicDispositionProfile::default()
+            },
+        );
+        view.confidence_policies.insert(
+            agent,
+            BeliefConfidencePolicy {
+                report_base: pm(700),
+                report_chain_penalty: pm(150),
+                staleness_penalty_per_tick: pm(0),
+                ..BeliefConfidencePolicy::default()
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![
+                (
+                    high_gap_subject,
+                    believed_state(
+                        10,
+                        PerceptionSource::Report {
+                            from: witness,
+                            chain_len: 3,
+                        },
+                    ),
+                ),
+                (
+                    low_gap_subject,
+                    believed_state(
+                        10,
+                        PerceptionSource::Report {
+                            from: witness,
+                            chain_len: 1,
+                        },
+                    ),
+                ),
+            ],
+        );
+
+        let ranked = rank(
+            &[
+                goal_at_entity(
+                    GoalKind::AskWitness {
+                        witness,
+                        topic: TellTopic::EntityBelief {
+                            subject: high_gap_subject,
+                        },
+                    },
+                    witness,
+                ),
+                goal_at_entity(
+                    GoalKind::AskWitness {
+                        witness,
+                        topic: TellTopic::EntityBelief {
+                            subject: low_gap_subject,
+                        },
+                    },
+                    witness,
+                ),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        assert_eq!(
+            ranked[0].offer.key.kind,
+            GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief {
+                    subject: high_gap_subject
+                },
+            }
+        );
+        assert!(ranked[0].motive_score > ranked[1].motive_score);
+    }
+
+    #[test]
+    fn ask_witness_motive_score_is_damped_by_learned_opportunity_memory() {
+        let agent = entity(1);
+        let witness = entity(2);
+        let subject = entity(3);
+        let mut view = base_view(agent);
+        view.epistemic_profiles
+            .insert(agent, EpistemicDispositionProfile::default());
+        view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                believed_state(
+                    1,
+                    PerceptionSource::Report {
+                        from: witness,
+                        chain_len: 1,
+                    },
+                ),
+            )],
+        );
+        let candidate = goal_at_entity(
+            GoalKind::AskWitness {
+                witness,
+                topic: TellTopic::EntityBelief { subject },
+            },
+            witness,
+        );
+        let baseline = rank(
+            std::slice::from_ref(&candidate),
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+        let mut learned = worldwake_core::LearnedOpportunityMemory::default();
+        learned.record(OpportunityEntry {
+            opportunity: OpportunityKey {
+                goal_key: candidate.key,
+                anchor: candidate.anchor,
+            },
+            observed_tick: Tick(8),
+            expires_tick: Tick(20),
+            observed_at: witness,
+        });
+
+        let damped = rank_with_memories(
+            &[candidate],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+            &worldwake_core::RepairMemory::default(),
+            &learned,
+        )
+        .into_ranked();
+
+        assert!(baseline[0].motive_score > 0);
+        assert!(damped[0].motive_score < baseline[0].motive_score);
+    }
+
+    #[test]
+    fn ask_witness_and_share_belief_scores_diverge_for_same_topic_pressure() {
+        let agent = entity(1);
+        let witness = entity(2);
+        let listener = entity(3);
+        let subject = entity(4);
+        let mut view = base_view(agent);
+        view.epistemic_profiles.insert(
+            agent,
+            EpistemicDispositionProfile {
+                stale_evidence_barrier_threshold: pm(700),
+                witness_recency_preference: pm(0),
+                ..EpistemicDispositionProfile::default()
+            },
+        );
+        view.confidence_policies.insert(
+            agent,
+            BeliefConfidencePolicy {
+                report_base: pm(500),
+                staleness_penalty_per_tick: pm(0),
+                ..BeliefConfidencePolicy::default()
+            },
+        );
+        view.beliefs.insert(
+            agent,
+            vec![(
+                subject,
+                believed_state(
+                    10,
+                    PerceptionSource::Report {
+                        from: witness,
+                        chain_len: 1,
+                    },
+                ),
+            )],
+        );
+
+        let ranked = rank(
+            &[
+                goal_at_entity(
+                    GoalKind::AskWitness {
+                        witness,
+                        topic: TellTopic::EntityBelief { subject },
+                    },
+                    witness,
+                ),
+                goal(GoalKind::ShareBelief {
+                    listener,
+                    topic: TellTopic::EntityBelief { subject },
+                    communication_class: worldwake_core::CommunicationClass::Testimony,
+                }),
+            ],
+            &view,
+            agent,
+            current_tick(),
+            &utility(),
+        )
+        .into_ranked();
+
+        let ask_witness_score = ranked
+            .iter()
+            .find(|entry| matches!(entry.offer.key.kind, GoalKind::AskWitness { .. }))
+            .expect("AskWitness should be ranked")
+            .motive_score;
+        let share_belief_score = ranked
+            .iter()
+            .find(|entry| matches!(entry.offer.key.kind, GoalKind::ShareBelief { .. }))
+            .expect("ShareBelief should be ranked")
+            .motive_score;
+        assert_ne!(ask_witness_score, share_belief_score);
+        assert!(
+            share_belief_score > ask_witness_score,
+            "ShareBelief scores known-confidence pressure while AskWitness scores the threshold gap"
         );
     }
 
