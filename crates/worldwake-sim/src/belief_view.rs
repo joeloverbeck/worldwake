@@ -37,6 +37,26 @@ pub struct BeliefValue<T> {
     pub status: BeliefStatus,
 }
 
+#[derive(Clone, Debug)]
+pub enum BeliefRead<T> {
+    Unknown,
+    Known(BeliefValue<T>),
+    Stale(BeliefValue<T>),
+}
+
+#[derive(Clone, Debug)]
+pub struct ObservedRead<T> {
+    pub value: T,
+    pub observed_tick: Tick,
+    pub source: ObservationSource,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ObservationSource {
+    CoLocatedSameTick,
+    BeliefStoreSnapshot,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum BeliefStatus {
     Certain,
@@ -2608,7 +2628,10 @@ fn estimate_route_duration_from_beliefs(
 
 #[cfg(test)]
 mod tests {
-    use super::estimate_duration_from_beliefs;
+    use super::{
+        BeliefRead, BeliefStatus, BeliefValue, ObservationSource, ObservedRead,
+        estimate_duration_from_beliefs,
+    };
     use crate::{
         ActionPayload, CombatBeliefView, DurationExpr, EconomicBeliefView, EntityBeliefView,
         FacilityBeliefView, GoalBeliefView, GoalControlBeliefView, GoalSpatialBeliefView,
@@ -4002,5 +4025,56 @@ mod tests {
             Some(super::BeliefStatus::Certain)
         );
         assert!(set.alternatives.is_empty());
+    }
+
+    #[test]
+    fn belief_read_encodes_unknown_known_and_stale() {
+        let value = BeliefValue {
+            value: EntityId {
+                slot: 7,
+                generation: 0,
+            },
+            confidence: Permille::new(900).unwrap(),
+            acquired_tick: Tick(12),
+            claimed_event_tick: Some(Tick(11)),
+            status: BeliefStatus::Probable,
+        };
+
+        assert!(matches!(
+            BeliefRead::<EntityId>::Unknown,
+            BeliefRead::Unknown
+        ));
+        match BeliefRead::Known(value) {
+            BeliefRead::Known(known) => {
+                assert_eq!(known.value.slot, 7);
+                assert_eq!(known.confidence, Permille::new(900).unwrap());
+                assert_eq!(known.acquired_tick, Tick(12));
+            }
+            BeliefRead::Unknown | BeliefRead::Stale(_) => panic!("expected known belief read"),
+        }
+        match BeliefRead::Stale(value) {
+            BeliefRead::Stale(stale) => {
+                assert_eq!(stale.value.slot, 7);
+                assert_eq!(stale.status, BeliefStatus::Probable);
+            }
+            BeliefRead::Unknown | BeliefRead::Known(_) => panic!("expected stale belief read"),
+        }
+    }
+
+    #[test]
+    fn observed_read_carries_tick_and_source() {
+        let observed = ObservedRead {
+            value: Quantity(4),
+            observed_tick: Tick(21),
+            source: ObservationSource::CoLocatedSameTick,
+        };
+
+        assert_eq!(observed.value, Quantity(4));
+        assert_eq!(observed.observed_tick, Tick(21));
+        assert_eq!(observed.source, ObservationSource::CoLocatedSameTick);
+        assert_ne!(
+            ObservationSource::CoLocatedSameTick,
+            ObservationSource::BeliefStoreSnapshot
+        );
     }
 }

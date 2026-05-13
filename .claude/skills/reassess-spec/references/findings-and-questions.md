@@ -91,7 +91,7 @@ Present in this format:
 1. <question>
 ```
 
-**Finding-key convention**: In Step 7's Pre-Apply Verification table and Step 8's status reporting, Issues are keyed `I1, I2, …`; Improvements are keyed `M1, M2, …`; Additions are keyed `F1, F2, …`. Preserve the within-category number from this section (e.g., the third Improvement listed here becomes `M3` in Step 7).
+**Finding-key convention**: In Step 7's Pre-Apply Verification table and Step 8's status reporting, Issues are keyed `I1, I2, …`; Improvements are keyed `M1, M2, …`; Additions are keyed `F1, F2, …`. Preserve the within-category number from this section (e.g., the third Improvement listed here becomes `M3` in Step 7). Additions absorbed into an existing deliverable as a scope-extending edit (per the Step 7 pre-apply table's scope-extending tier) do not get a separate F-key — they are tracked in the table row of the originating finding or question with a `scope-extending` tag. Only net-new deliverables (new D-sections, new public types declared as their own deliverable surface) get F-keys.
 
 ## Question Handling
 

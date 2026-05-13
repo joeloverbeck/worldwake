@@ -52,7 +52,7 @@ For each element found, trace into source and record: concrete type names with f
 **Pipeline stages to trace** (in pipeline order):
 
 1. **Goal ranking** — pressure-based selection, `rank_candidates()`, suppression filters, `GoalKind` variants, how needs become goals, priority ordering
-2. **Candidate generation** — `generate_candidates()`, `generate_candidates_with_travel_horizon()`, the 17 `emit_*` gate functions (e.g., `emit_need_candidates()`, `emit_production_candidates()`), blocked-intent filtering, how candidate count relates to branching factor
+2. **Candidate generation** — `generate_candidates()`, `generate_candidates_with_travel_horizon()`, every `emit_*` gate function in `candidate_generation.rs` (currently ~17 — confirm the live count; e.g., `emit_need_candidates()`, `emit_production_candidates()`), blocked-intent filtering, how candidate count relates to branching factor
 3. **Affordance queries** — `get_affordances_for_defs()`, `enumerate_targets()`, `RuntimeBeliefView`, locality scoping via `effective_place()`, `ActionDef` structure, `relevant_ops` per goal kind
 4. **Plan search** — `search_plan()`, strategic planner (`strategic.rs` — location-visit itinerary from beliefs), tactical planner, landmark extraction (`landmarks.rs` — delete-relaxation, `PlanningFact`, achievers, shared preconditions), dual frontier (`frontier.rs` — preferred/regular queues, boost mechanism), heuristics (`heuristic.rs` — spatial + landmark count), beam truncation, expansion budget, `PlanningSnapshot` as belief surface
 5. **Plan revalidation** — `plan_revalidation.rs`, `requested_affordance_matches()`, `with_payload_override_validator`, stale plan detection
@@ -72,7 +72,7 @@ If trace infrastructure exists, describe it in the report. Do not run `cargo tes
 
 ### Phase 3 — Report Assembly
 
-Before assembling, spot-verify any signature, struct definition, or default-value table you intend to quote verbatim — agent excerpts can lag behind recent renames. Use `grep`/`Read` directly for the canonical source.
+Before assembling, spot-verify any signature, struct definition, or default-value table you intend to quote verbatim — agent excerpts can lag behind recent renames. Use `grep`/`Read` directly for the canonical source. Note that `CognitiveProfile` defaults indirect through `default_*()` helpers in the same file — read past the `impl Default` block to capture every literal.
 
 If the codebase has visible compile-error or dead-code diagnostics at session start (e.g., from rust-analyzer), include a `> **In-flight refactor warning**:` blockquote at the top of the report listing the affected files and noting that architectural shape is described correctly even where specific field initializers will shift when the refactor completes.
 
@@ -98,7 +98,8 @@ considered). Priority ordering. Key types and function signatures.
 
 ## 3. Candidate Generation
 How goals become plannable candidates. generate_candidates_with_travel_horizon(),
-the 17 emit_* gate functions, blocked-intent filtering. Emission gates.
+every emit_* gate function in candidate_generation.rs (currently ~17 — confirm
+the live count), blocked-intent filtering. Emission gates.
 Locality scoping via RuntimeBeliefView. How candidate count relates to
 branching factor. Include actual candidate count ranges if available.
 
@@ -144,6 +145,10 @@ For each relevant principle (at minimum FND-1, 3, 7, 12, 14, 16, 20, 22,
 - How the current architecture satisfies or tensions it
 - Where alignment is strong vs. where there may be gaps
 
+Include a sub-principle (e.g., FND-14A, FND-22A, FND-29A) when its parent is
+in the minimum list AND the architecture explicitly surfaces the sub-principle's
+distinction; otherwise omit.
+
 ## 10. Live Diagnostics
 (If captured) Candidate counts per expansion, nodes expanded, plan depths
 reached, landmarks extracted, plan success/failure rates from representative
@@ -160,6 +165,7 @@ and propose changes.
 ## Guardrails
 
 - **Self-contained**: The report must make complete sense without repository access. Never write "see file X" without including the relevant content inline. Include type definitions with fields, enum variants, function signatures, algorithm pseudocode.
+- **Path breadcrumbs**: Inline file path references (e.g., "File: `crates/.../foo.rs`") ARE allowed and encouraged before each major type/function block; they orient the reader within the §1 workspace shape without violating self-containment — provided the relevant content still appears inline below the breadcrumb.
 - **Planning pipeline only**: Focus on the decision cycle from goal ranking through replanning. Exclude domain-specific system details (needs/metabolism mechanics, production recipes, trade protocols, combat rules). Include domain systems only where they illustrate how the planner interfaces with them (e.g., "production goals use these candidate generation paths").
 - **No prescriptions**: Section 11 flags patterns but does not recommend fixes. The external LLM's job is evaluation and recommendation.
 - **Concrete over vague**: Exact type names, field lists, function signatures, algorithm pseudocode. `GoalKind::SatisfyNeed { need_kind: NeedKind }` not "goals for satisfying needs."

@@ -172,6 +172,8 @@ Before editing, build a per-finding verification mini-table **and emit it in cha
 
 **Many-path batching allowance**: When the spec introduces 5+ new paths across multiple findings or deliverable sections, the path-existence verification may be performed via a single Bash batch (`test -f <path1> && test -f <path2> …` or a `for f in <paths>; do test -f "$f" …; done` loop) emitted in chat immediately before the pre-apply table, with per-finding rows then citing the verified paths by `path:line` anchor (e.g., `| F3 | crates/worldwake-core/src/belief.rs:69 for SaliencePolicy | confirmed by path-batch above |`). The literal `test -f` (or `ls`) command must still appear in chat so the verification is auditable — only its row-placement is relaxed. Below the 5-path threshold, inline `test -f` rows are still preferred because they keep each finding's evidence self-contained in the table.
 
+**Full-Write strategy path-batching**: When the apply strategy is a full `Write` (rather than targeted `Edit`s), batch all file paths cited in the rewritten body — the full-Write rewrites the entire spec body so every cited path is effectively new relative to the surviving text, and per-path inline rows lose their evidentiary advantage. The post-apply file-path check confirms each landed correctly. The literal `test -f` (or `ls`) batch command must still appear in chat immediately before the pre-apply table so the verification is auditable.
+
 Example:
 
 | Finding | Check | Result |

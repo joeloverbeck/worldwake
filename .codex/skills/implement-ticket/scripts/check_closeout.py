@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+HEADING_RE = re.compile(r"^(#{2,6})\s+(.+?)\s*$", re.MULTILINE)
 STATUS_RE = re.compile(r"^\s*\**Status\**:\s*(.+?)\s*$", re.MULTILINE)
 VERIFICATION_ITEM_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)")
 VERIFICATION_LABEL_RE = re.compile(r"^\s*(?:-\s*|\d+\.\s+)(Passed|Waived|Blocked)\b")
@@ -36,6 +37,21 @@ NARRATIVE_SECTIONS = (
     "Problem",
     "Assumption Reassessment",
     "What to Change",
+)
+PLANNING_ONLY_SECTIONS = (
+    "What to Change",
+    "Files to Touch",
+    "Test Plan",
+    "New/Modified Tests",
+    "Verification Layers",
+)
+PLANNING_ONLY_SUBSECTIONS = (
+    "Commands",
+    "Tests That Must Pass",
+)
+RESULT_TENSE_ALLOWLIST_RE = re.compile(
+    r"\b(landed|completed|actual|result|verified|added|modified|no-change)\b",
+    re.IGNORECASE,
 )
 PROOF_DRAFT_RE = re.compile(r"\b(new|will|should|planned|TODO|TBD)\b", re.IGNORECASE)
 NARRATIVE_STALE_RE = re.compile(
@@ -113,6 +129,36 @@ def draft_matches(text: str, section: str, pattern: re.Pattern[str]) -> list[str
     return []
 
 
+def planning_heading_warnings(text: str) -> list[str]:
+    warnings: list[str] = []
+    matches = list(HEADING_RE.finditer(text))
+    for index, match in enumerate(matches):
+        level = len(match.group(1))
+        title = match.group(2).strip()
+        start = match.end()
+        end = len(text)
+        for next_match in matches[index + 1 :]:
+            if len(next_match.group(1)) <= level:
+                end = next_match.start()
+                break
+        body = text[start:end]
+        if title in PLANNING_ONLY_SECTIONS:
+            if not RESULT_TENSE_ALLOWLIST_RE.search(body):
+                warnings.append(
+                    f"completed ticket retains planning-only heading ## {title}; "
+                    "rename it to a result-tense heading such as Landed Files, "
+                    "Landed Changes, Verified Layers, or Test Plan Result"
+                )
+        elif level >= 3 and title in PLANNING_ONLY_SUBSECTIONS:
+            if not RESULT_TENSE_ALLOWLIST_RE.search(body):
+                line_no = line_number_for_offset(text, match.start())
+                warnings.append(
+                    f"completed ticket retains planning-only subsection line {line_no} "
+                    f"({match.group(1)} {title}); rename or fold it into Verification Result"
+                )
+    return warnings
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_closeout.py <ticket-path>", file=sys.stderr)
@@ -127,6 +173,8 @@ def main() -> int:
     is_completed = status.upper() == "COMPLETED"
 
     if is_completed:
+        warnings.extend(planning_heading_warnings(text))
+
         for section in ("Outcome", "Verification Result"):
             if section_body(text, section) is None:
                 warnings.append(f"completed ticket is missing ## {section}")

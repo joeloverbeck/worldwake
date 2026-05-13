@@ -56,7 +56,7 @@ Read ALL of these files before any analysis:
 
 From the assessment document, extract every distinct proposal. For each proposal, record:
 
-- **Proposal ID**: Sequential number (PR-1, PR-2, PR-3, ...). If the assessment already uses structured proposal IDs (e.g., GT-1, SC-2, TK-3), reuse those IDs instead of renumbering. Note the mapping if the assessment IDs are non-sequential or ambiguous.
+- **Proposal ID**: Sequential number (PR-1, PR-2, PR-3, ...). If the assessment already uses structured proposal IDs (e.g., GT-1, SC-2, TK-3), reuse those IDs instead of renumbering. Note the mapping if the assessment IDs are non-sequential or ambiguous. If the assessment uses prose-only section labels (e.g., "Upgrade A...N", "Section 4 fix", "Recommendation 1"), assign sequential PR-N IDs in document-reading order and present the mapping as a small table at the top of the triage report's "Accepted" section so the PR-N → assessment-label correspondence is preserved.
 - **Title**: Short descriptive name
 - **Priority**: As stated in the assessment (Priority 0, 1, 2, etc.), or "Unranked" if not prioritized
 - **Claim**: What the assessment says is wrong, missing, or improvable
@@ -81,7 +81,7 @@ For each proposal, validate the assessment's assumptions against the actual code
 5. **Check for overlap with active specs**: Glob `specs/S*.md` and check whether any existing active spec already covers the proposal's scope. If so, classify as Reject with reason "already covered by S{N}."
 6. **Check root-cause accuracy**: If the assessment correctly identifies a problem but misdiagnoses the root cause, note the corrected diagnosis. This typically leads to Scope-Down classification where the spec addresses the real root cause, not the assessment's proposed fix.
 
-When the proposal count is large (>5), use up to 3 Explore agents in parallel to validate different proposal groups simultaneously. Provide each agent with the proposals it should validate and the checklist above. Group proposals by codebase area (e.g., AI/planner proposals together, perception proposals together, ECS/core proposals together) so each agent can efficiently share grep context. If proposals span many areas, group by estimated validation complexity instead.
+When the proposal count is large (>5), use 3–5 Explore agents in parallel, sized so each agent's grep surface stays bounded (typically one agent per major codebase area), to validate different proposal groups simultaneously. Provide each agent with the proposals it should validate and the checklist above. Group proposals by codebase area (e.g., AI/planner proposals together, perception proposals together, ECS/core proposals together) so each agent can efficiently share grep context. If proposals span many areas, group by estimated validation complexity instead.
 
 **Verify critical agent negatives**: Explore agents can return confidently-wrong negatives — "type X does not exist," "field Y is missing," "no call sites for Z" — when the agent's grep strategy did not cover the call sites where those names actually live. Any agent negative that would flip a classification outcome ("reject as already addressed," "accept because missing," "reject as overlap") must be independently verified with a direct `Grep` before being used to classify the proposal. One or two verifications per audit is cheap; trusting a false negative can silently reject valid proposals or accept already-implemented ones. Agent positives (the type was found at file:line) are lower-risk but still warrant a spot-check when they drive a scope-down decision.
 
@@ -89,7 +89,7 @@ When the proposal count is large (>5), use up to 3 Explore agents in parallel to
 
 **S-number**: Scan `specs/S*.md` and `archive/specs/S*.md` for the highest existing S-number. Increment by 1 for the first new spec. This is needed before presenting the triage report so that spec number assignments are concrete.
 
-**Phase number**: Scan `specs/IMPLEMENTATION-ORDER.md` (or its archived equivalent) for the highest existing `## Phase N` heading regardless of completion status. Increment by 1 for the new phase. The "highest existing" rule (rather than "highest completed") avoids ambiguity when prior phases have outstanding work — Phase 7 with partial drafts still counts as Phase 7's slot occupied. This number is the tentative phase; the user may redirect to an adjunct-wave inside an existing phase during Step 10. Carry the tentative phase number into Phase 2's spec drafts so each spec's "Phase and Status" line can be written without later rework. If Step 10 ultimately resolves to an adjunct-wave inside a different phase, update the affected specs' "Phase and Status" lines in the same pass that writes IMPLEMENTATION-ORDER.md.
+**Phase number**: Scan `specs/IMPLEMENTATION-ORDER.md` (or its archived equivalent) for the highest existing `## Phase N` heading regardless of completion status. Increment by 1 for the new phase. (When the new specs are an obvious continuation of a just-completed phase's theme, Step 10 often revises this tentative number to an adjunct-wave classification — anticipate this when writing Phase 2 spec drafts.) The "highest existing" rule (rather than "highest completed") avoids ambiguity when prior phases have outstanding work — Phase 7 with partial drafts still counts as Phase 7's slot occupied. This number is the tentative phase; the user may redirect to an adjunct-wave inside an existing phase during Step 10. Carry the tentative phase number into Phase 2's spec drafts so each spec's "Phase and Status" line can be written without later rework. If Step 10 ultimately resolves to an adjunct-wave inside a different phase, update the affected specs' "Phase and Status" lines in the same pass that writes IMPLEMENTATION-ORDER.md.
 
 #### Step 5: Classify Each Proposal
 
@@ -101,6 +101,8 @@ For each proposal, assign one of four classifications:
 - **Scope-Down**: The core idea is valuable but the proposal is too ambitious or mixes concerns. Record: what the reduced spec would cover, what is deferred to later.
 - **Fold**: The proposal's intent is preserved but absorbed into another accepted spec's deliverables — no standalone spec. Use when one proposal's core ask is naturally a feature of another proposal's spec (e.g., partial-failure outcomes folding into the action-handler spec; event-tag declarations folding into the spec that owns each tag's source-of-truth state). Record: which receiving spec absorbs it, and which aspect of the proposal lands there. Distinct from Reject because the intent survives; distinct from Scope-Down because no new spec is created. The receiving spec must cite the absorbed PR-N per Step 7.
 - **Reject**: The proposal's assumptions are wrong (already addressed, codebase differs from what assessment assumes), it violates FOUNDATIONS, or it fails YAGNI (no meaningful downstream consequences). Record: the specific reason for rejection. Use *only* when the proposal's intent is discarded — fold-ins go in the Fold bucket above.
+
+**Spec count target**: Aim for 6–11 specs per phase. If accepting more than 11 distinct proposals, look for natural Folds before classifying — folds are appropriate when (a) two proposals address the same architectural layer, (b) one is a feature of another, or (c) their Deliverables sections would substantially overlap. If the count still exceeds 11 after Folds, consider whether some proposals belong to a *subsequent* phase rather than this one (record the deferral rationale in the triage report's Rejected section).
 
 **Tooling and debuggability proposals**: Proposals that improve diagnostic capability (observer enhancements, trace enrichment, dump format improvements) should not be rejected as YAGNI solely because they don't introduce new simulation components or systems. FND-29 (Debuggability Is a Product Feature) makes diagnostic capability a first-class architectural concern. If a tooling proposal concretely improves the ability to diagnose an identified architectural gap or behavioral pathology, it has meaningful downstream consequences and should be classified as Accept. The proposal must still cite a specific diagnostic gap it addresses — "generally useful" is not sufficient.
 
@@ -176,7 +178,7 @@ Each spec MUST follow project conventions from `docs/spec-drafting-rules.md`:
 12. **Cross-System Interactions**: How the spec interacts with existing systems through state (Principle 26 — never direct calls)
 13. **Profile-Driven Parameters**: Per-agent profile structs instead of hardcoded constants
 
-For pure refactor specs (no new types, systems, or components), many sections will be "Not applicable." This is expected. Include the section header with "Not applicable" rather than omitting it, so reassess-spec can confirm the omission was deliberate.
+For pure refactor specs (no new types, systems, or components), many sections will be "Not applicable." This is expected. Include the section header with "Not applicable" rather than omitting it, so reassess-spec can confirm the omission was deliberate. For tooling, observer-boundary, and pure-refactor specs that add no simulation state, the Section H subsections "Information-Path Analysis", "Positive-Feedback Analysis", and "Concrete Dampeners" are typically "Not applicable." The "Stored State vs. Derived Read-Model List" subsection still applies — even pure refactors must declare whether their new types are authoritative or derived.
 
 For golden-gaps specs (bundled test scenarios), use the project's golden-gaps convention: per-scenario blocks with Setup, Assertion, GoalKinds/ActionDomains exercised, emergence justification, and "Why it is not a duplicate." See existing archived golden-gaps specs (e.g., `archive/specs/S67-*.md`) for the format.
 
@@ -188,7 +190,7 @@ When writing multiple specs and the existing context from Phase 1 is insufficien
 
 #### Step 8: Verify and Present Written Specs
 
-After writing all specs, spot-check that each contains: FOUNDATIONS Alignment table (verify principle numbers match `docs/FOUNDATIONS.md` headings), Section H (where applicable), Deliverables with concrete types, and Component Registration section. If the spot-check finds missing sections or misnumbered principles, fix them before presenting the summary. The summary should confirm all mandatory sections are present.
+After writing all specs, verify each contains: FOUNDATIONS Alignment table (verify principle numbers match `docs/FOUNDATIONS.md` headings), Section H (where applicable), Deliverables with concrete types, and Component Registration section. For batches of 5+ specs, grep across `specs/S{N..M}-*.md` for each mandatory header (`## FOUNDATIONS Alignment`, `## FND-01 Section H Analysis` or the project's per-section variant, `## Deliverables`, `## Component Registration`) — any spec missing one of these headers gets fixed before presenting the summary. For smaller batches, a per-file Read pass is sufficient. If verification finds missing sections or misnumbered principles, fix them before presenting the summary. The summary should confirm all mandatory sections are present.
 
 ```
 ## Specs Written
@@ -226,6 +228,7 @@ The phase number was tentatively assigned in Step 4 (highest existing phase + 1)
 **When to skip the AskUserQuestion**:
 - Plan-mode approval earlier in the conversation specified the strategy.
 - No active `specs/IMPLEMENTATION-ORDER.md` exists (read from `archive/` per Step 1) — (C) is the only option.
+- User has explicitly directed autonomous operation in the current session ("don't stop for questions," "work without stopping for clarifying questions," or equivalent) — in this case, apply the recommended-default heuristic from the next paragraph and note the choice in the Step 11 summary as "Strategy (B/C) — chosen autonomously per user directive."
 
 **When to ask**: All other cases. The decision affects file lifecycle and prior plan preservation; the user must own it.
 
@@ -250,6 +253,13 @@ See `archive/` for detailed completion records.
 Derived from external assessment (`<assessment-path>`) validated against
 the actual codebase and `docs/FOUNDATIONS.md`.
 
+### Key triage decisions
+
+- **Rejected as premature optimization**: PR-N — <reason>; reassess after S{M} surfaces evidence.
+- **Defer to post-Phase-X work**: PR-N — overlaps with already-drafted S{K}/<topic>.
+- **Folded into accepted specs**: PR-N → S{M}; PR-K → S{L}.
+- **Scope-down**: PR-N — included [...] / deferred [...].
+
 ### Dependency Graph
 
 \```text
@@ -266,7 +276,10 @@ S50, S51 (parallel)
 
 **Wave 2** (after Wave 1):
 - **S52**: <title> — <1-line summary>
-  - depends on S51
+  - hard depends on S51
+- **S53**: <title> — <1-line summary>
+  - hard depends on S51
+  - soft depends on S50 (benefits from but does not require)
 
 ...
 
